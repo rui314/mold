@@ -144,7 +144,6 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     let mut leaders: Vec<CieHandle> = Vec::new();
     let mut offset = 0u64;
     for file in &mut ctx.objs {
-        let file = file.as_mut();
         let file_ptr = file as *mut ObjectFile;
         let cies = file.cies.as_mut_ptr();
         for ci in 0..file.cies.len() {

@@ -280,9 +280,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         let mut objs = ctx
             .objs
             .iter()
-            .enumerate()
-            .filter(|&(i, _)| Some(crate::input_files::ObjId(i as u32)) != internal)
-            .map(|(_, f)| f);
+            .filter(|file| Some(file.id()) != internal);
         let Some(first) = objs.next() else { return 0 };
         let mut ret = first.base.e_flags;
         for file in objs {

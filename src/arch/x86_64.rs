@@ -864,10 +864,10 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
 
     // Rewrite the landing pads of all global functions. File-scoped
     // functions don't get one unless their address is taken anyway.
-    for (fi, file) in ctx.objs.iter().enumerate() {
+    for file in &ctx.objs {
         for &id in file.base.global_symbols() {
             let sym = &ctx.symbols[id];
-            if sym.file() != Some(FileId::Obj(crate::input_files::ObjId(fi as u32)))
+            if sym.file() != Some(FileId::Obj(file.id()))
                 || sym.st_type() != STT_FUNC
             {
                 continue;

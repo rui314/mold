@@ -18,8 +18,8 @@ use crate::symbol::SymbolId;
 /// Maps each input section to the symbols defined in it, sorted by value.
 fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<SectionRef, Vec<SymbolId>> {
     let mut map: HashMap<SectionRef, Vec<SymbolId>> = HashMap::new();
-    for (fi, file) in ctx.objs.iter().enumerate() {
-        let file_id = FileId::Obj(crate::input_files::ObjId(fi as u32));
+    for file in &ctx.objs {
+        let file_id = FileId::Obj(file.id());
         for &id in &file.base.symbols {
             let sym = &ctx.symbols[id];
             if sym.file() == Some(file_id) && sym.ty() != STT_SECTION {

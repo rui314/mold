@@ -601,6 +601,7 @@ struct PubnamesInput {
 /// contents are either input mappings or leaked decompression buffers, so the
 /// foreground passes may continue mutating their ObjectFiles independently.
 pub struct GdbInputFile {
+    file: u32,
     name: String,
     debug_info: Vec<DebugInfoInput>,
     pubnames: Vec<PubnamesInput>,
@@ -614,6 +615,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
     ctx.objs
         .par_iter_mut()
         .map(|file| {
+            let file_id = file.id().0;
             let name = file.to_string();
             let mut debug_info = Vec::new();
             for shndx in file.debug_info_sections.clone() {
@@ -673,6 +675,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
             }
 
             GdbInputFile {
+                file: file_id,
                 name,
                 debug_info,
                 pubnames,
@@ -922,9 +925,8 @@ pub fn read_inputs<E: Arch>(
     let _timer = timer;
     let per_file: Vec<FileUnits> = files
         .par_iter()
-        .enumerate()
-        .map(|(i, file)| {
-            let mut units = read_debug_units::<E>(diag, file, i as u32);
+        .map(|file| {
+            let mut units = read_debug_units::<E>(diag, file, file.file);
             read_pubnames::<E>(diag, file, &mut units);
             for cu in &mut units.cus {
                 dedup_names(&mut cu.names);

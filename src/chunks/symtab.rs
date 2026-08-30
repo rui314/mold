@@ -311,8 +311,8 @@ pub mod symtab {
         // after them, with the names laid out in the same order.
         enum Writer {
             Chunk(ChunkId),
-            Obj(usize),
-            Dso(usize),
+            Obj(crate::input_files::ObjId),
+            Dso(crate::input_files::DsoId),
         }
         struct Part {
             writer: Writer,
@@ -333,22 +333,22 @@ pub mod symtab {
                 });
             }
         }
-        for (i, file) in ctx.objs.iter().enumerate() {
+        for file in &ctx.objs {
             let base = &file.base;
             let locals = (base.local_symtab_idx, base.num_local_symtab);
             let globals = (base.global_symtab_idx, base.num_global_symtab);
             parts.push(Part {
-                writer: Writer::Obj(i),
+                writer: Writer::Obj(file.id()),
                 locals,
                 globals,
                 strtab: (base.strtab_offset, base.strtab_size),
             });
         }
-        for (i, file) in ctx.dsos.iter().enumerate() {
+        for file in &ctx.dsos {
             let base = &file.base;
             let globals = (base.global_symtab_idx, base.num_global_symtab);
             parts.push(Part {
-                writer: Writer::Dso(i),
+                writer: Writer::Dso(file.id()),
                 locals: (0, 0),
                 globals,
                 strtab: (base.strtab_offset, base.strtab_size),
@@ -400,16 +400,12 @@ pub mod symtab {
                 );
                 match part.writer {
                     Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
-                    Writer::Obj(i) => ctx.objs[i].populate_symtab(
-                        ctx,
-                        crate::input_files::ObjId(i as u32),
-                        &mut block,
-                    ),
-                    Writer::Dso(i) => ctx.dsos[i].populate_symtab(
-                        ctx,
-                        crate::input_files::DsoId(i as u32),
-                        &mut block,
-                    ),
+                    Writer::Obj(id) => {
+                        ctx.objs[id.index()].populate_symtab(ctx, id, &mut block)
+                    }
+                    Writer::Dso(id) => {
+                        ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block)
+                    }
                 }
             });
     }

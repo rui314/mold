@@ -33,8 +33,8 @@ use crate::chunks::{
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{
-    resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, ObjId, ObjectFile,
-    SymbolEditor, SymbolResolver,
+    resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, FileList, ObjId,
+    ObjectFile, SymbolEditor, SymbolResolver,
 };
 use crate::input_sections::{InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
@@ -327,12 +327,11 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
                 ..
             } = &*ctx;
             objs.par_iter()
-                .enumerate()
-                .filter(|(_, file)| !file.base.is_reachable())
-                .filter_map(|(i, file)| {
+                .filter(|file| !file.base.is_reachable())
+                .filter_map(|file| {
                     file.base.global_symbols().iter().copied().find(|&id| {
                         let sym = &symbols[id];
-                        sym.file() == Some(FileId::Obj(ObjId(i as u32)))
+                        sym.file() == Some(FileId::Obj(file.id()))
                             && args.undefined_glob.find(sym.name()) != -1
                     })
                 })
@@ -346,20 +345,20 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
     }
 
     let mut roots: Vec<FileId> = Vec::new();
-    for (i, file) in ctx.objs.iter().enumerate() {
+    for file in &ctx.objs {
         if !file.base.as_needed {
             file.base.set_reachable(true);
         }
         if file.base.is_reachable() {
-            roots.push(FileId::Obj(ObjId(i as u32)));
+            roots.push(FileId::Obj(file.id()));
         }
     }
-    for (i, file) in ctx.dsos.iter().enumerate() {
+    for file in &ctx.dsos {
         if !file.base.as_needed {
             file.base.set_reachable(true);
         }
         if file.base.is_reachable() {
-            roots.push(FileId::Dso(crate::input_files::DsoId(i as u32)));
+            roots.push(FileId::Dso(file.id()));
         }
     }
     mark_live_files(ctx, roots);
@@ -482,8 +481,8 @@ fn resolve_skip_dso_symbols_pass<E: Arch>(ctx: &mut Context<E>) {
         ..
     } = ctx;
     let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
-    objs.par_iter().enumerate().for_each(|(i, file)| {
-        file.resolve_skip_dso_symbols::<E>(&resolver, ObjId(i as u32));
+    objs.par_iter().for_each(|file| {
+        file.resolve_skip_dso_symbols::<E>(&resolver, file.id());
     });
 }
 
@@ -654,8 +653,11 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|file| file.pending_comdat_signatures = Vec::new());
     }
 
+    let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
+
     // IR objects name their COMDAT groups per symbol.
-    for fi in 0..ctx.objs.len() {
+    for obj_id in obj_ids.iter().copied() {
+        let fi = obj_id.index();
         for i in 0..ctx.objs[fi].lto_comdat_keys.len() {
             if let (Some(key), None) = (
                 ctx.objs[fi].lto_comdat_keys[i],
@@ -690,7 +692,8 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     // already has. Its claim is permanent: the LTO result provides the
     // group's definitions, so a regular object extracted after LTO must
     // not win the group and resurrect a copy of them.
-    for fi in 0..ctx.objs.len() {
+    for obj_id in obj_ids {
+        let fi = obj_id.index();
         let file = &ctx.objs[fi];
         if !file.base.is_reachable() || file.lto_comdat_signatures.is_empty() {
             continue;
@@ -749,7 +752,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             ..
         } = ctx;
         symbols.with_parallel_appender(maximum, |allocator| {
-            objs.par_iter_mut().enumerate().for_each(|(i, file)| {
+            objs.par_iter_mut().for_each(|file| {
                 if file.base.is_reachable()
                     && file.base.mf.is_some()
                     && !file.is_lto_input
@@ -758,7 +761,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                     file.parse_sections::<E>(
                         diag,
                         args,
-                        ObjId(i as u32),
+                        file.id(),
                         section_arena,
                         allocator,
                         keep_discarded_comdat,
@@ -793,9 +796,11 @@ pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("resolve_symbols");
     gather_symbols(ctx);
 
-    let files: Vec<FileId> = (0..ctx.objs.len())
-        .map(|i| FileId::Obj(ObjId(i as u32)))
-        .chain((0..ctx.dsos.len()).map(|i| FileId::Dso(crate::input_files::DsoId(i as u32))))
+    let files: Vec<FileId> = ctx
+        .objs
+        .iter()
+        .map(|file| FileId::Obj(file.id()))
+        .chain(ctx.dsos.iter().map(|file| FileId::Dso(file.id())))
         .collect();
 
     // Call resolve_symbols() to find the most appropriate file for each
@@ -870,48 +875,7 @@ pub fn remove_unreachable_files<E: Arch>(ctx: &mut Context<E>) {
 
 /// Drops the object files `remove` selects and renumbers the rest.
 fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile) -> bool) {
-    if !ctx.objs.iter().any(|file| remove(file)) {
-        return;
-    }
-    let objs = std::mem::take(&mut ctx.objs);
-    let mut obj_map: Vec<Option<ObjId>> = vec![None; objs.len()];
-    let mut removed = Vec::new();
-    for (i, file) in objs.into_iter().enumerate() {
-        if remove(&file) {
-            removed.push(file);
-        } else {
-            obj_map[i] = Some(ObjId(ctx.objs.len() as u32));
-            ctx.objs.push(file);
-        }
-    }
-    // C++ InputFiles are arena-owned, so erasing a pointer from ctx.objs does
-    // not destroy the file. Keep the boxes until Context teardown too.
-    ctx.discarded_objs.extend(removed);
-
-    ctx.symbols.as_mut_slice().par_iter_mut().for_each(|sym| {
-        if let Some(FileId::Obj(o)) = sym.file() {
-            match obj_map[o.index()] {
-                Some(new) => sym.set_file(FileId::Obj(new)),
-                None => clear_symbol(sym),
-            }
-        }
-    });
-    for slot in &mut ctx.file_by_priority {
-        if let Some(FileId::Obj(o)) = *slot {
-            *slot = obj_map[o.index()].map(FileId::Obj);
-        }
-    }
-    ctx.internal_obj = ctx.internal_obj.and_then(|id| obj_map[id.index()]);
-
-    // Section references inside sections refer to their own file.
-    ctx.objs.par_iter_mut().enumerate().for_each(|(i, file)| {
-        let n = file.sections.len();
-        for shndx in 0..n {
-            if let Some(isec) = file.section_mut(shndx) {
-                isec.file = ObjId(i as u32);
-            }
-        }
-    });
+    ctx.objs.retain(|file| !remove(file));
 }
 
 /// Whether the link involves the LTO plugin.
@@ -979,7 +943,7 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
 /// Registers direct, stable member borrows with their merged sections for a
 /// parallel resolution phase.
 fn merged_resolve_members(
-    objs: &mut [Box<ObjectFile>],
+    objs: &mut FileList<ObjectFile>,
     count: usize,
 ) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
     let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
@@ -1024,12 +988,12 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
 
     // Register each mergeable section with its merged section.
     let t = ctx.timer("register_members");
-    for (fi, file) in ctx.objs.iter().enumerate() {
+    for file in &ctx.objs {
         for m in file.mergeable_sections() {
             ctx.merged_sections[m.parent.index()]
                 .members
                 .push(SectionRef {
-                    file: ObjId(fi as u32),
+                    file: file.id(),
                     shndx: m.shndx,
                 });
         }
@@ -1085,17 +1049,18 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                 rest = tail;
                 offset += count;
             }
-            objs.par_iter_mut().enumerate().zip(slices).for_each(
-                |((i, file), (base_id, slots))| {
+            objs.par_iter_mut().zip(slices).for_each(
+                |(file, (base_id, slots))| {
+                    let id = file.id();
                     file.reattach_section_symbols::<E>(
                         diag,
-                        ObjId(i as u32),
+                        id,
                         &editor,
                         merged_sections,
                     );
                     file.reattach_fragment_relocations::<E>(
                         diag,
-                        ObjId(i as u32),
+                        id,
                         merged_sections,
                         base_id,
                         slots,
@@ -1109,19 +1074,19 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
 pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("convert_common_symbols");
     let default_version = ctx.default_version;
-    for fi in 0..ctx.objs.len() {
-        let Context {
-            objs,
-            symbols,
+    let Context {
+        objs,
+        symbols,
+        diag,
+        args,
+        section_arena,
+        ..
+    } = ctx;
+    for file in objs {
+        file.convert_common_symbols::<E>(
             diag,
             args,
-            section_arena,
-            ..
-        } = ctx;
-        objs[fi].convert_common_symbols::<E>(
-            diag,
-            args,
-            ObjId(fi as u32),
+            file.id(),
             symbols,
             default_version,
             section_arena,
@@ -1524,8 +1489,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     }
 
     obj.base.elf_syms = SymTable::from_records(RecordLayout::of::<E>(), &ctx.internal_esyms);
-    ctx.objs.push(Box::new(obj));
-    let id = ObjId(ctx.objs.len() as u32 - 1);
+    let id = ObjId(ctx.objs.push(Box::new(obj)));
     ctx.internal_obj = Some(id);
     if ctx.file_by_priority.is_empty() {
         ctx.file_by_priority.push(None);
@@ -1763,8 +1727,8 @@ pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
             .get(&GNU_PROPERTY_X86_FEATURE_1_AND)
             .is_some_and(|v| v & feature != 0)
     };
-    for (i, file) in ctx.objs.iter().enumerate() {
-        if ctx.is_internal(ObjId(i as u32)) {
+    for file in &ctx.objs {
+        if ctx.is_internal(file.id()) {
             continue;
         }
         for (feature, name) in [
@@ -1814,7 +1778,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
         }
     };
 
-    for (fi, file) in ctx.objs.iter().enumerate() {
+    for file in &ctx.objs {
         for isec in file.input_sections() {
             let mut visited: HashSet<SymbolId> = HashSet::new();
             for r in isec.rels::<E>(file) {
@@ -1826,7 +1790,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
                 let sym = &ctx.symbols[id];
                 if esym.is_undef()
                     && sym.file().is_some()
-                    && sym.file() != Some(FileId::Obj(ObjId(fi as u32)))
+                    && sym.file() != Some(FileId::Obj(file.id()))
                     && visited.insert(id)
                 {
                     println(&isec.display(file), sym, esym);
@@ -1834,13 +1798,13 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
             }
         }
     }
-    for (fi, file) in ctx.dsos.iter().enumerate() {
+    for file in &ctx.dsos {
         for i in 0..file.base.elf_syms.len() {
             let esym = &file.base.elf_syms.at_in::<E>(i);
             let sym = &ctx.symbols[file.base.symbols[i]];
             if esym.is_undef()
                 && sym.file().is_some()
-                && sym.file() != Some(FileId::Dso(crate::input_files::DsoId(fi as u32)))
+                && sym.file() != Some(FileId::Dso(file.id()))
             {
                 println(file, sym, esym);
             }
@@ -1912,11 +1876,11 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
 
 pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
     let _t = ctx.timer("check_duplicate_symbols");
-    ctx.objs.par_iter().enumerate().for_each(|(fi, file)| {
+    ctx.objs.par_iter().for_each(|file| {
         if !file.base.is_reachable() {
             return;
         }
-        let file_id = FileId::Obj(ObjId(fi as u32));
+        let file_id = FileId::Obj(file.id());
         for i in file.base.first_global..file.base.elf_syms.len() {
             let esym = &file.base.elf_syms.at_in::<E>(i);
             let sym = &ctx.symbols[file.base.symbols[i]];
@@ -2030,7 +1994,7 @@ pub fn convert_zero_to_bss<E: Arch>(ctx: &mut Context<E>) {
 }
 
 fn has_dso_definition<E: Arch>(ctx: &Context<E>, id: SymbolId) -> bool {
-    ctx.dsos.iter().any(|dso| {
+    ctx.dsos.pool_iter().any(|dso| {
         dso.base
             .symbols
             .iter()
@@ -2059,10 +2023,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
                 let id = file.base.symbols[i];
                 let sym = &ctx.symbols[id];
                 let is_sparc_register = E::IS_SPARC && esym.st_type() == STT_SPARC_REGISTER;
-                let defined = match sym.file() {
-                    Some(_) => sym.visibility() != STV_HIDDEN,
-                    None => ctx.dropped_dso_definitions.contains(&id),
-                };
+                let defined = sym.file().is_some() && sym.visibility() != STV_HIDDEN;
                 if esym.is_undef()
                     && !esym.is_weak()
                     && !is_sparc_register
@@ -2100,49 +2061,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
 
 /// Drops DSOs that are no longer needed, renumbering the rest.
 pub fn remove_unreachable_dsos<E: Arch>(ctx: &mut Context<E>) {
-    if ctx.dsos.iter().all(|d| d.base.is_reachable()) {
-        return;
-    }
-    let dsos = std::mem::take(&mut ctx.dsos);
-    let mut map: Vec<Option<crate::input_files::DsoId>> = vec![None; dsos.len()];
-    let mut removed = Vec::new();
-    for (i, file) in dsos.into_iter().enumerate() {
-        if file.base.is_reachable() {
-            map[i] = Some(crate::input_files::DsoId(ctx.dsos.len() as u32));
-            ctx.dsos.push(file);
-        } else {
-            removed.push(file);
-        }
-    }
-    // SharedFiles have the same arena lifetime in C++ mold.
-    ctx.discarded_dsos.extend(removed);
-    let dropped: Vec<SymbolId> = ctx
-        .symbols
-        .as_mut_slice()
-        .par_iter_mut()
-        .enumerate()
-        .filter_map(|(i, sym)| {
-            let Some(FileId::Dso(d)) = sym.file() else {
-                return None;
-            };
-            match map[d.index()] {
-                Some(new) => {
-                    sym.set_file(FileId::Dso(new));
-                    None
-                }
-                None => {
-                    clear_symbol(sym);
-                    Some(SymbolId(i as u32))
-                }
-            }
-        })
-        .collect();
-    ctx.dropped_dso_definitions.extend(dropped);
-    for slot in &mut ctx.file_by_priority {
-        if let Some(FileId::Dso(d)) = *slot {
-            *slot = map[d.index()].map(FileId::Dso);
-        }
-    }
+    ctx.dsos.retain(|file| file.base.is_reachable());
 }
 
 pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
@@ -2171,8 +2090,8 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
         }
     };
 
-    ctx.objs.par_iter().enumerate().for_each(|(fi, file)| {
-        let id = FileId::Obj(ObjId(fi as u32));
+    ctx.objs.par_iter().for_each(|file| {
+        let id = FileId::Obj(file.id());
         for i in file.base.first_global..file.base.elf_syms.len() {
             let sym = &ctx.symbols[file.base.symbols[i]];
             if sym.file().is_some() && sym.file() != Some(id) {
@@ -2180,8 +2099,8 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
             }
         }
     });
-    ctx.dsos.par_iter().enumerate().for_each(|(fi, file)| {
-        let id = FileId::Dso(crate::input_files::DsoId(fi as u32));
+    ctx.dsos.par_iter().for_each(|file| {
+        let id = FileId::Dso(file.id());
         for i in 0..file.base.elf_syms.len() {
             let sym = &ctx.symbols[file.base.symbols[i]];
             if sym.file().is_some() && sym.file() != Some(id) {
@@ -2448,8 +2367,9 @@ pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
-    for i in 0..ctx.dsos.len() {
-        let audit = ctx.dsos[i].dt_audit::<E>(&ctx.diag);
+    let dso_ids: Vec<_> = ctx.dsos.iter().map(crate::input_files::SharedFile::id).collect();
+    for id in dso_ids {
+        let audit = ctx.dsos[id.index()].dt_audit::<E>(&ctx.diag);
         if !audit.is_empty() {
             if !ctx.args.depaudit.is_empty() {
                 ctx.args.depaudit.push(':');
@@ -2559,31 +2479,31 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // Nearly all references are to defined symbols, which are filtered
     // out first.
-    let candidates: Vec<(usize, usize)> = {
+    let candidates: Vec<(ObjId, usize)> = {
         let ctx_ref: &Context<E> = ctx;
         ctx_ref
             .objs
             .par_iter()
-            .enumerate()
-            .flat_map_iter(|(fi, file)| {
-                let internal = ctx_ref.is_internal(ObjId(fi as u32));
+            .flat_map_iter(|file| {
+                let file_id = file.id();
+                let internal = ctx_ref.is_internal(file_id);
                 (file.base.first_global..file.base.elf_syms.len())
                     .filter(move |&i| {
                         !internal
                             && file.base.elf_syms.at_in::<E>(i).is_undef()
                             && ctx_ref.symbols[file.base.symbols[i]].file().is_none()
                     })
-                    .map(move |i| (fi, i))
+                    .map(move |i| (file_id, i))
             })
             .collect()
     };
 
-    for (fi, i) in candidates {
-        let file = &ctx.objs[fi];
+    for (obj_id, i) in candidates {
+        let file = &ctx.objs[obj_id.index()];
         let esym = file.base.elf_syms.at_in::<E>(i);
         let id = file.base.symbols[i];
         let priority = file.base.priority;
-        let file_id = FileId::Obj(ObjId(fi as u32));
+        let file_id = FileId::Obj(obj_id);
 
         {
             let sym = &ctx.symbols[id];
@@ -2600,12 +2520,12 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
                 out!(
                     ctx,
                     "trace-symbol: {}: unresolved{} symbol {sym}",
-                    ctx.objs[fi],
+                    ctx.objs[obj_id.index()],
                     if esym.is_weak() { " weak" } else { "" }
                 );
             }
             let default_version = ctx.default_version;
-            let is_rust = ctx.objs[fi].is_rust_obj;
+            let is_rust = ctx.objs[obj_id.index()].is_rust_obj;
             let sym = &mut ctx.symbols[id];
             sym.set_file(file_id);
             sym.clear_origin();
@@ -2692,9 +2612,8 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         let objs: Vec<Vec<SymbolId>> = ctx_ref
             .objs
             .par_iter()
-            .enumerate()
-            .map(|(i, file)| {
-                let id = FileId::Obj(ObjId(i as u32));
+            .map(|file| {
+                let id = FileId::Obj(file.id());
                 file.base
                     .symbols
                     .iter()
@@ -2710,9 +2629,8 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         let dsos: Vec<Vec<SymbolId>> = ctx_ref
             .dsos
             .par_iter()
-            .enumerate()
-            .map(|(i, file)| {
-                let id = FileId::Dso(crate::input_files::DsoId(i as u32));
+            .map(|file| {
+                let id = FileId::Dso(file.id());
                 file.base
                     .symbols
                     .iter()
@@ -2963,8 +2881,7 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
         ctx_ref
             .objs
             .par_iter()
-            .enumerate()
-            .map(|(i, f)| f.plan_symtab(ctx_ref, ObjId(i as u32)))
+            .map(|f| f.plan_symtab(ctx_ref, f.id()))
             .collect()
     };
     let dso_plans: Vec<crate::input_files::SymtabPlan> = {
@@ -2972,8 +2889,7 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
         ctx_ref
             .dsos
             .par_iter()
-            .enumerate()
-            .map(|(i, f)| f.plan_symtab(ctx_ref, crate::input_files::DsoId(i as u32)))
+            .map(|f| f.plan_symtab(ctx_ref, f.id()))
             .collect()
     };
     for (file, plan) in ctx.objs.iter_mut().zip(obj_plans) {
@@ -3087,13 +3003,16 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
         })
         .collect();
 
-    for fi in 0..ctx.objs.len() {
-        if ctx.is_internal(ObjId(fi as u32)) {
+    let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
+    for obj_id in obj_ids {
+        if ctx.is_internal(obj_id) {
             continue;
         }
-        let file_id = FileId::Obj(ObjId(fi as u32));
-        for i in ctx.objs[fi].base.first_global..ctx.objs[fi].base.elf_syms.len() {
-            let file = &ctx.objs[fi];
+        let file_id = FileId::Obj(obj_id);
+        for i in ctx.objs[obj_id.index()].base.first_global
+            ..ctx.objs[obj_id.index()].base.elf_syms.len()
+        {
+            let file = &ctx.objs[obj_id.index()];
             if !file.has_symver[i - file.base.first_global] {
                 continue;
             }
@@ -3119,7 +3038,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
                 error!(
                     ctx,
                     "{}: symbol {} has undefined version {}",
-                    ctx.objs[fi],
+                    ctx.objs[obj_id.index()],
                     ctx.symbols[id],
                     crate::util::display(ver)
                 );
@@ -3138,7 +3057,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             if let Some(id2) = ctx.symbols.lookup(sym_name) {
                 if id2 != id && ctx.symbols[id2].file() == Some(file_id) {
                     let sym2_idx = ctx.symbols[id2].sym_idx as usize;
-                    let file = &ctx.objs[fi];
+                    let file = &ctx.objs[obj_id.index()];
                     if !file.has_symver[sym2_idx - file.base.first_global] {
                         let v2 = ctx.symbols[id2].ver_idx as u32;
                         if v2 == ctx.default_version as u32
@@ -3223,9 +3142,8 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
         ctx_ref
             .objs
             .par_iter()
-            .enumerate()
-            .flat_map_iter(|(fi, file)| {
-                let file_id = FileId::Obj(ObjId(fi as u32));
+            .flat_map_iter(|file| {
+                let file_id = FileId::Obj(file.id());
                 file.base
                     .global_symbols()
                     .iter()

@@ -345,9 +345,8 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     file.base.set_reachable(true);
     file.base.priority = ctx.file_by_priority.len() as u32;
     file.register_global_symbols::<E>(&ctx.args, &mut ctx.symbol_bin());
-    ctx.file_by_priority
-        .push(Some(FileId::Obj(ObjId(ctx.objs.len() as u32))));
-    ctx.objs.push(Box::new(file));
+    let id = ObjId(ctx.objs.push(Box::new(file)));
+    ctx.file_by_priority.push(Some(FileId::Obj(id)));
     LDPS_OK
 }
 
@@ -473,11 +472,10 @@ unsafe fn get_symbols<E: Arch>(
     let ctx = &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>);
     let psyms = std::slice::from_raw_parts_mut(psyms, nsyms as usize);
     let handle = handle as *const MappedFile;
-    let Some((fi, file)) = ctx
+    let Some(file) = ctx
         .objs
         .iter()
-        .enumerate()
-        .find(|(_, f)| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
+        .find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {
         return LDPS_BAD_HANDLE;
     };
@@ -490,7 +488,7 @@ unsafe fn get_symbols<E: Arch>(
         return LDPS_NO_SYMS;
     }
 
-    let this = FileId::Obj(ObjId(fi as u32));
+    let this = FileId::Obj(file.id());
     for (i, psym) in psyms.iter_mut().enumerate() {
         let esym = &file.base.elf_syms.at(i + 1);
         let sym = &ctx.symbols[file.base.symbols[i + 1]];
@@ -884,8 +882,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         .unwrap()
         .claim_file
         .expect("the plugin registered a claim_file hook");
-    for fi in 0..ctx.objs.len() {
-        let file = &ctx.objs[fi];
+    for file in &ctx.objs {
         if file.base.is_reachable() && !file.is_lto_input && file.is_gcc_offload_obj {
             let (input, _file) = plugin_input_file(ctx, file.base.mf.unwrap());
             let mut claimed: c_int = 0;

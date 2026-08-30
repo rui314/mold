@@ -7,8 +7,12 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
+
+use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
 use crate::args::Args;
@@ -91,6 +95,168 @@ impl DsoId {
     }
 }
 
+/// Owns all files in stable storage and keeps the live files in a separate
+/// pointer vector. This is the Rust equivalent of C++ mold's `obj_pool` /
+/// `dso_pool` and `objs` / `dsos` vectors.
+pub struct FileList<T: FileInPool> {
+    pool: Vec<Box<T>>,
+    live: Vec<FileRef<T>>,
+}
+
+/// A file in the live pointer vector. The pointee is owned by `FileList::pool`
+/// and therefore does not move until the entire list is dropped.
+pub struct FileRef<T>(NonNull<T>);
+
+// SAFETY: FileRefs in a FileList are unique pointers into separately allocated
+// boxes. Shared and mutable iteration follow the same rules as slice iteration.
+unsafe impl<T: Send> Send for FileRef<T> {}
+unsafe impl<T: Sync> Sync for FileRef<T> {}
+
+impl<T> Deref for FileRef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        // SAFETY: the pointee is owned by the surrounding FileList and outlives
+        // this reference.
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl<T> DerefMut for FileRef<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        // SAFETY: each live pointer occurs once, and mutable iteration borrows
+        // the live vector mutably.
+        unsafe { self.0.as_mut() }
+    }
+}
+
+/// Supplies the stable pool index stored in each input file.
+pub trait FileInPool {
+    fn set_file_index(&mut self, index: u32);
+}
+
+fn file_ref<T>(file: &FileRef<T>) -> &T {
+    file
+}
+
+fn file_ref_mut<T>(file: &mut FileRef<T>) -> &mut T {
+    file
+}
+
+impl<T: FileInPool> Default for FileList<T> {
+    fn default() -> FileList<T> {
+        FileList {
+            pool: Vec::new(),
+            live: Vec::new(),
+        }
+    }
+}
+
+impl<T: FileInPool> FileList<T> {
+    /// Adds a file to the arena and the live pointer vector, returning its
+    /// stable pool index.
+    pub fn push(&mut self, mut file: Box<T>) -> u32 {
+        let index = u32::try_from(self.pool.len()).expect("too many input files");
+        file.set_file_index(index);
+        let ptr = NonNull::from(file.as_mut());
+        self.pool.push(file);
+        self.live.push(FileRef(ptr));
+        index
+    }
+
+    pub fn len(&self) -> usize {
+        self.live.len()
+    }
+
+    pub fn pool_len(&self) -> usize {
+        self.pool.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
+
+    pub fn first(&self) -> Option<&T> {
+        self.live.first().map(file_ref)
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator {
+        self.live.iter().map(file_ref)
+    }
+
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> + DoubleEndedIterator {
+        self.live.iter_mut().map(file_ref_mut)
+    }
+
+    /// Iterates over the arena, including files erased from the live vector.
+    pub fn pool_iter(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator {
+        self.pool.iter().map(Box::as_ref)
+    }
+
+    pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = &T>
+    where
+        T: Sync,
+    {
+        self.live.par_iter().map(|file| &**file)
+    }
+
+    pub fn par_iter_mut(&mut self) -> impl IndexedParallelIterator<Item = &mut T>
+    where
+        T: Send,
+    {
+        self.live.par_iter_mut().map(|file| &mut **file)
+    }
+
+    /// Erases pointers from the live vector without destroying their
+    /// arena-owned files.
+    pub fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
+        self.live.retain(|file| keep(file));
+    }
+}
+
+impl<T: FileInPool> Index<usize> for FileList<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &T {
+        &self.pool[index]
+    }
+}
+
+impl<T: FileInPool> IndexMut<usize> for FileList<T> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        &mut self.pool[index]
+    }
+}
+
+impl<'a, T: FileInPool> IntoIterator for &'a FileList<T> {
+    type Item = &'a T;
+    type IntoIter = std::iter::Map<std::slice::Iter<'a, FileRef<T>>, fn(&FileRef<T>) -> &T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.live.iter().map(file_ref)
+    }
+}
+
+impl<'a, T: FileInPool> IntoIterator for &'a mut FileList<T> {
+    type Item = &'a mut T;
+    type IntoIter =
+        std::iter::Map<std::slice::IterMut<'a, FileRef<T>>, fn(&mut FileRef<T>) -> &mut T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.live.iter_mut().map(file_ref_mut)
+    }
+}
+
+impl<T: FileInPool> IntoIterator for FileList<T> {
+    type Item = Box<T>;
+    type IntoIter = std::vec::IntoIter<Box<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        debug_assert_eq!(self.live.len(), self.pool.len());
+        self.pool.into_iter()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FileId {
     Obj(ObjId),
@@ -138,6 +304,7 @@ pub struct InputFile {
     /// Position in the command line; lower is earlier. Symbol resolution
     /// breaks ties in favor of earlier files.
     pub priority: u32,
+    file_index: u32,
     pub is_reachable: AtomicBool,
     pub is_little_endian: bool,
     pub e_flags: u32,
@@ -176,6 +343,7 @@ impl InputFile {
             mf: None,
             filename: filename.to_string(),
             priority: 0,
+            file_index: u32::MAX,
             is_reachable: AtomicBool::new(false),
             is_little_endian: true,
             e_flags: 0,
@@ -549,6 +717,12 @@ impl fmt::Display for ObjectFile {
     }
 }
 
+impl FileInPool for ObjectFile {
+    fn set_file_index(&mut self, index: u32) {
+        self.base.file_index = index;
+    }
+}
+
 #[cold]
 #[inline(never)]
 fn invalid_relocation_symbol(file: &ObjectFile, r_sym: usize) -> ! {
@@ -686,6 +860,10 @@ fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]
 }
 
 impl ObjectFile {
+    pub fn id(&self) -> ObjId {
+        ObjId(self.base.file_index)
+    }
+
     /// Creates the internal object file that holds linker-synthesized
     /// symbols.
     pub fn internal() -> ObjectFile {
@@ -2614,7 +2792,17 @@ impl fmt::Display for SharedFile {
     }
 }
 
+impl FileInPool for SharedFile {
+    fn set_file_index(&mut self, index: u32) {
+        self.base.file_index = index;
+    }
+}
+
 impl SharedFile {
+    pub fn id(&self) -> DsoId {
+        DsoId(self.base.file_index)
+    }
+
     pub fn new<E: Arch>(diag: &Diagnostics, mf: &'static MappedFile) -> SharedFile {
         let base = InputFile::parse::<E>(diag, mf, &FileName(&mf.name, ""));
         let mut file = SharedFile {
@@ -3030,8 +3218,8 @@ impl<'a> SymbolEditor<'a> {
 /// The files and defaults needed while editing symbols during resolution.
 pub struct SymbolResolver<'a> {
     editor: SymbolEditor<'a>,
-    objs: &'a [Box<ObjectFile>],
-    dsos: &'a [Box<SharedFile>],
+    objs: &'a FileList<ObjectFile>,
+    dsos: &'a FileList<SharedFile>,
     default_version: u16,
 }
 
@@ -3041,8 +3229,8 @@ unsafe impl Sync for SymbolResolver<'_> {}
 impl<'a> SymbolResolver<'a> {
     pub fn new(
         symbols: &'a mut [Symbol],
-        objs: &'a [Box<ObjectFile>],
-        dsos: &'a [Box<SharedFile>],
+        objs: &'a FileList<ObjectFile>,
+        dsos: &'a FileList<SharedFile>,
         default_version: u16,
     ) -> SymbolResolver<'a> {
         SymbolResolver {

@@ -310,7 +310,6 @@ fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
     let mut leaders: Vec<crate::chunks::eh_frame::CieHandle> = Vec::new();
     for file in &mut ctx.objs {
-        let file = file.as_mut();
         let file_ptr = file as *mut ObjectFile;
         let cies = file.cies.as_mut_ptr();
         for ci in 0..file.cies.len() {
@@ -483,7 +482,7 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
                 if isec.icf_index().is_some() {
                     isec.set_icf_index((base + local) as u32);
                     out[local] = SectionRef {
-                        file: ObjId(fi as u32),
+                        file: file.id(),
                         shndx: isec.shndx,
                     };
                     local += 1;

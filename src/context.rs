@@ -30,7 +30,7 @@ use crate::chunks::{
 };
 use crate::diagnostics::{Diagnostics, HasDiagnostics};
 use crate::elf::ElfSym;
-use crate::input_files::{DsoId, FileId, InputFile, ObjId, ObjectFile, SharedFile};
+use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
 };
@@ -90,13 +90,8 @@ pub struct Context<E: Arch> {
     /// Rayon worker plus one for callers outside the pool.
     symbol_bins: OnceLock<Vec<Mutex<Bins<SymbolSlot>>>>,
 
-    pub objs: Vec<Box<ObjectFile>>,
-    pub dsos: Vec<Box<SharedFile>>,
-
-    /// Files removed from the live vectors remain allocated until teardown,
-    /// as C++ mold's arena-owned InputFiles do.
-    pub discarded_objs: Vec<Box<ObjectFile>>,
-    pub discarded_dsos: Vec<Box<SharedFile>>,
+    pub objs: FileList<ObjectFile>,
+    pub dsos: FileList<SharedFile>,
 
     // Declared after all object files so their SectionLists are dropped
     // before the arena releases its backing mapping.
@@ -113,10 +108,6 @@ pub struct Context<E: Arch> {
     /// ones later dropped as unneeded; --no-allow-shlib-undefined can
     /// only be checked if the set of libraries is complete.
     pub dso_sonames: HashSet<String>,
-
-    /// Symbols defined by shared libraries that were dropped as unneeded.
-    /// Like mold, --no-allow-shlib-undefined still considers them provided.
-    pub dropped_dso_definitions: HashSet<SymbolId>,
 
     /// IR objects the LTO plugin consumed. They leave the link once
     /// compiled, but the output still depends on them.
@@ -248,15 +239,12 @@ impl<E: Arch> Context<E> {
             timers: Timers::new(),
             symbols,
             symbol_bins: OnceLock::new(),
-            objs: Vec::new(),
-            dsos: Vec::new(),
-            discarded_objs: Vec::new(),
-            discarded_dsos: Vec::new(),
+            objs: FileList::default(),
+            dsos: FileList::default(),
             section_arena: SectionArena::new(),
             file_by_priority: Vec::new(),
             pending_files: Vec::new(),
             dso_sonames: HashSet::new(),
-            dropped_dso_definitions: HashSet::new(),
             lto_input_files: Vec::new(),
             internal_obj: None,
             internal_esyms: Vec::new(),

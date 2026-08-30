@@ -175,20 +175,17 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
 
         // Uniquify shared object files by soname, keeping the first of each.
         {
-            let dsos = std::mem::take(&mut ctx.dsos);
-            let mut map = Vec::with_capacity(dsos.len());
-            let mut retained = Vec::with_capacity(dsos.len());
-            for file in dsos {
-                if ctx.dso_sonames.insert(file.soname.clone()) {
-                    map.push(Some(crate::input_files::DsoId(retained.len() as u32)));
-                    retained.push(file);
-                } else {
-                    map.push(None);
-                }
+            let mut dsos = std::mem::take(&mut ctx.dsos);
+            let mut keep = vec![false; dsos.len()];
+            for file in &dsos {
+                keep[file.id().index()] = ctx.dso_sonames.insert(file.soname.clone());
             }
+            dsos.retain(|file| keep[file.id().index()]);
             for slot in &mut ctx.file_by_priority {
                 if let Some(FileId::Dso(d)) = *slot {
-                    *slot = map[d.index()].map(FileId::Dso);
+                    if !keep[d.index()] {
+                        *slot = None;
+                    }
                 }
             }
 
@@ -197,11 +194,11 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             // gather even when duplicate sonames were present on the command line.
             {
                 let mut bin = ctx.symbol_bin();
-                for file in &mut retained {
+                for file in &mut dsos {
                     file.record_global_symbols(&mut bin);
                 }
             }
-            ctx.dsos = retained;
+            ctx.dsos = dsos;
         }
 
         if ctx.args.repro {

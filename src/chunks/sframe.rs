@@ -43,10 +43,10 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("sframe");
 
     let mut fdes = Vec::new();
-    for (fi, file) in ctx.objs.iter().enumerate() {
+    for file in &ctx.objs {
         for (i, fde) in file.sframe_fdes.iter().enumerate() {
             if file.section_at(fde.section).is_alive() {
-                fdes.push((ObjId(fi as u32), i as u32));
+                fdes.push((file.id(), i as u32));
             }
         }
     }

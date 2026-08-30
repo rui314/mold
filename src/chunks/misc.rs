@@ -276,9 +276,7 @@ pub mod note_property {
         let files: Vec<&crate::input_files::ObjectFile> = ctx
             .objs
             .iter()
-            .enumerate()
-            .filter(|&(i, _)| !ctx.is_internal(crate::input_files::ObjId(i as u32)))
-            .map(|(_, f)| f.as_ref())
+            .filter(|file| !ctx.is_internal(file.id()))
             .collect();
         let keys: BTreeSet<u32> = files
             .iter()

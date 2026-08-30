@@ -1014,10 +1014,10 @@ fn find_comdat_owner<E: Arch>(
         if group.is_owner() || !file.comdat_members(group).any(|m| m == shndx as u32) {
             continue;
         }
-        for (i, other) in ctx.objs.iter().enumerate() {
+        for other in &ctx.objs {
             for other_group in &other.comdat_groups {
                 if other_group.is_owner() && other_group.signature() == group.signature() {
-                    return Some(ObjId(i as u32));
+                    return Some(other.id());
                 }
             }
         }

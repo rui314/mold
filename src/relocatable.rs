@@ -90,18 +90,18 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
 /// belonging to some input file.
 fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("r_claim_unresolved_symbols");
-    let candidates: Vec<(usize, usize)> = ctx
+    let candidates: Vec<(crate::input_files::ObjId, usize)> = ctx
         .objs
         .par_iter()
-        .enumerate()
-        .flat_map_iter(|(fi, file)| {
+        .flat_map_iter(|file| {
+            let file_id = file.id();
             (file.base.first_global..file.base.elf_syms.len())
                 .filter(move |&i| file.base.elf_syms.at(i).is_undef())
-                .map(move |i| (fi, i))
+                .map(move |i| (file_id, i))
         })
         .collect();
-    for (fi, i) in candidates {
-        let file = &ctx.objs[fi];
+    for (obj_id, i) in candidates {
+        let file = &ctx.objs[obj_id.index()];
         let id = file.base.symbols[i];
         let esym = file.base.elf_syms.at(i);
         let priority = file.base.priority;
@@ -112,7 +112,7 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
             }
         }
         let sym = &mut ctx.symbols[id];
-        sym.set_file(FileId::Obj(crate::input_files::ObjId(fi as u32)));
+        sym.set_file(FileId::Obj(obj_id));
         sym.clear_origin();
         sym.value = 0;
         sym.sym_idx = i as u32;

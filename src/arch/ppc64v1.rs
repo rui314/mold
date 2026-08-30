@@ -120,7 +120,9 @@ fn toc(ctx: &Context<Ppc64V1>) -> u64 {
 pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("rewrite_opd");
 
-    for i in 0..ctx.objs.len() {
+    let obj_ids: Vec<_> = ctx.objs.iter().map(|file| file.id()).collect();
+    for obj_id in obj_ids {
+        let i = obj_id.index();
         let Some(opd) = ctx.objs[i]
             .input_sections()
             .find(|s| s.name(&ctx.objs[i]) == ".opd")

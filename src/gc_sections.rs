@@ -82,9 +82,8 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
 
     ctx.objs
         .par_iter()
-        .enumerate()
-        .flat_map_iter(|(fi, file)| {
-            let file_id = FileId::Obj(crate::input_files::ObjId(fi as u32));
+        .flat_map_iter(|file| {
+            let file_id = FileId::Obj(file.id());
             let mut roots = Vec::new();
 
             // Sections not subject to garbage collection. Only SHF_ALLOC

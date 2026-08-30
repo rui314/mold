@@ -216,14 +216,12 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
 fn push_loaded<E: Arch>(ctx: &mut Context<E>, loaded: Loaded) {
     match loaded {
         Loaded::Obj(pos, file) => {
-            ctx.objs.push(file);
-            ctx.pending_files
-                .push((pos, FileId::Obj(ObjId(ctx.objs.len() as u32 - 1))));
+            let id = ObjId(ctx.objs.push(file));
+            ctx.pending_files.push((pos, FileId::Obj(id)));
         }
         Loaded::Dso(pos, file) => {
-            ctx.dsos.push(file);
-            ctx.pending_files
-                .push((pos, FileId::Dso(DsoId(ctx.dsos.len() as u32 - 1))));
+            let id = DsoId(ctx.dsos.push(file));
+            ctx.pending_files.push((pos, FileId::Dso(id)));
         }
     }
 }
@@ -429,9 +427,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 if ctx.args.trace {
                     out!(ctx, "trace: {file}");
                 }
-                ctx.objs.push(file);
-                ctx.file_by_priority
-                    .push(Some(FileId::Obj(ObjId(ctx.objs.len() as u32 - 1))));
+                let id = ObjId(ctx.objs.push(file));
+                ctx.file_by_priority.push(Some(FileId::Obj(id)));
             }
             FileId::Dso(idx) => {
                 let mut file = dsos[idx.index()].take().unwrap();
@@ -439,9 +436,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 if ctx.args.trace {
                     out!(ctx, "trace: {file}");
                 }
-                ctx.dsos.push(file);
-                ctx.file_by_priority
-                    .push(Some(FileId::Dso(DsoId(ctx.dsos.len() as u32 - 1))));
+                let id = DsoId(ctx.dsos.push(file));
+                ctx.file_by_priority.push(Some(FileId::Dso(id)));
             }
         }
     }

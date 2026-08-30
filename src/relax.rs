@@ -82,8 +82,10 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // Symbols past removed bytes move with their sections.
-    for fi in 0..ctx.objs.len() {
-        let file_id = crate::input_files::FileId::Obj(crate::input_files::ObjId(fi as u32));
+    let obj_ids: Vec<_> = ctx.objs.iter().map(crate::input_files::ObjectFile::id).collect();
+    for obj_id in obj_ids {
+        let fi = obj_id.index();
+        let file_id = crate::input_files::FileId::Obj(obj_id);
         for i in 0..ctx.objs[fi].base.symbols.len() {
             let id = ctx.objs[fi].base.symbols[i];
             let sym = &ctx.symbols[id];

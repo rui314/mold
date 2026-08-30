@@ -244,7 +244,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     let gc_sections = args.gc_sections;
 
     // The members, by file: a file's sections are worked on by one task.
-    let mut member_shndx: Vec<Vec<u32>> = vec![Vec::new(); objs.len()];
+    let mut member_shndx: Vec<Vec<u32>> = vec![Vec::new(); objs.pool_len()];
     for m in &msec.members {
         member_shndx[m.file.index()].push(m.shndx);
     }
@@ -254,8 +254,10 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     let t = timers.start("split_contents");
     let estimate = objs
         .par_iter_mut()
-        .zip(&member_shndx)
-        .filter(|(_, shndx)| !shndx.is_empty())
+        .filter_map(|file| {
+            let shndx = &member_shndx[file.id().index()];
+            (!shndx.is_empty()).then_some((file, shndx))
+        })
         .fold(HyperLogLog::default, |mut sketch, (file, shndx)| {
             let mut slots = std::mem::take(&mut file.sections);
             for &i in shndx {
@@ -280,8 +282,10 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 
     let t = timers.start("resolve_contents");
     objs.par_iter_mut()
-        .zip(&member_shndx)
-        .filter(|(_, shndx)| !shndx.is_empty())
+        .filter_map(|file| {
+            let shndx = &member_shndx[file.id().index()];
+            (!shndx.is_empty()).then_some((file, shndx))
+        })
         .for_each(|(file, shndx)| {
             for &i in shndx {
                 let (m, isec) = file
