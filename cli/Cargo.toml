@@ -1,0 +1,62 @@
+[package]
+name = "mold-cli"
+version = "2.42.0"
+edition = "2021"
+description = "The mold executable"
+license = "MIT"
+
+[[bin]]
+name = "mold"
+path = "src/main.rs"
+
+[dependencies]
+mold-mimalloc = { path = "../mimalloc" }
+mold = { path = ".." }
+mold-target-x86_64 = { path = "../targets/x86_64", optional = true }
+mold-target-i386 = { path = "../targets/i386", optional = true }
+mold-target-arm32 = { path = "../targets/arm32", optional = true }
+mold-target-arm32be = { path = "../targets/arm32be", optional = true }
+mold-target-arm64 = { path = "../targets/arm64", optional = true }
+mold-target-arm64be = { path = "../targets/arm64be", optional = true }
+mold-target-riscv64 = { path = "../targets/riscv64", optional = true }
+mold-target-riscv64be = { path = "../targets/riscv64be", optional = true }
+mold-target-riscv32 = { path = "../targets/riscv32", optional = true }
+mold-target-riscv32be = { path = "../targets/riscv32be", optional = true }
+mold-target-ppc64v2 = { path = "../targets/ppc64v2", optional = true }
+mold-target-ppc32 = { path = "../targets/ppc32", optional = true }
+mold-target-ppc64v1 = { path = "../targets/ppc64v1", optional = true }
+mold-target-s390x = { path = "../targets/s390x", optional = true }
+mold-target-sparc64 = { path = "../targets/sparc64", optional = true }
+mold-target-m68k = { path = "../targets/m68k", optional = true }
+mold-target-sh4 = { path = "../targets/sh4", optional = true }
+mold-target-sh4be = { path = "../targets/sh4be", optional = true }
+mold-target-loongarch64 = { path = "../targets/loongarch64", optional = true }
+mold-target-loongarch32 = { path = "../targets/loongarch32", optional = true }
+
+# One feature per target. All are built by default; a build for one
+# target alone (`--no-default-features --features x86_64`) is much faster.
+[features]
+default = [
+    "x86_64", "i386", "arm32", "arm32be", "arm64", "arm64be", "riscv64", "riscv64be", "riscv32", "riscv32be",
+    "ppc64v2", "ppc32", "ppc64v1", "s390x", "sparc64", "m68k", "sh4", "sh4be", "loongarch64", "loongarch32",
+]
+x86_64 = ["dep:mold-target-x86_64"]
+i386 = ["dep:mold-target-i386"]
+arm32 = ["dep:mold-target-arm32"]
+arm32be = ["dep:mold-target-arm32be"]
+arm64 = ["dep:mold-target-arm64"]
+arm64be = ["dep:mold-target-arm64be"]
+riscv64 = ["dep:mold-target-riscv64"]
+riscv64be = ["dep:mold-target-riscv64be"]
+riscv32 = ["dep:mold-target-riscv32"]
+riscv32be = ["dep:mold-target-riscv32be"]
+ppc64v2 = ["dep:mold-target-ppc64v2"]
+ppc32 = ["dep:mold-target-ppc32"]
+ppc64v1 = ["dep:mold-target-ppc64v1"]
+s390x = ["dep:mold-target-s390x"]
+sparc64 = ["dep:mold-target-sparc64"]
+m68k = ["dep:mold-target-m68k"]
+sh4 = ["dep:mold-target-sh4"]
+sh4be = ["dep:mold-target-sh4be"]
+loongarch64 = ["dep:mold-target-loongarch64"]
+loongarch32 = ["dep:mold-target-loongarch32"]

@@ -1,0 +1,9 @@
+[package]
+name = "mold-target-riscv64"
+version = "2.42.0"
+edition = "2021"
+description = "The mold linker instantiated for riscv64"
+license = "MIT"
+
+[dependencies]
+mold = { path = "../.." }

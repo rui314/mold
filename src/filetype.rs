@@ -1,0 +1,281 @@
+//! Input file classification.
+
+use crate::arch::{self, TargetInfo};
+use crate::archive;
+use crate::diagnostics::Diagnostics;
+use crate::elf::*;
+use crate::mapped_file::MappedFile;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileType {
+    Unknown,
+    Empty,
+    ElfObj,
+    ElfDso,
+    Ar,
+    ThinAr,
+    Text,
+    GccLtoObj,
+    LlvmBitcode,
+}
+
+fn is_text_file(data: &[u8]) -> bool {
+    let is_text = |c: u8| c.is_ascii_graphic() || c == b' ' || c == b'\n' || c == b'\t';
+    data.len() >= 4 && data[..4].iter().all(|&c| is_text(c))
+}
+
+/// Whether an ELF relocatable object is really a GCC LTO object.
+fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
+    let Some(ehdr) = data.get(..ElfEhdr::size::<E>()).map(ElfEhdr::parse::<E>) else {
+        return false;
+    };
+    let shoff = ehdr.e_shoff as usize;
+    let shdr_size = ElfShdr::size::<E>();
+    let Some(shdr_bytes) = data.get(shoff..shoff + ehdr.e_shnum as usize * shdr_size) else {
+        return false;
+    };
+    let shdrs = ShdrTable::in_file(shdr_bytes, RecordLayout::of::<E>());
+    let Some(first) = shdrs.get(0) else {
+        return false;
+    };
+
+    // e_shstrndx is a 16-bit field. If .shstrtab's section index is too
+    // large, the actual number is stored in sh_link of the first header.
+    let shstrtab_idx = if ehdr.e_shstrndx as u32 == SHN_XINDEX {
+        first.sh_link as usize
+    } else {
+        ehdr.e_shstrndx as usize
+    };
+    let shstrtab_offset = if has_gcc_plugin {
+        shdrs.get(shstrtab_idx).map(|shdr| shdr.sh_offset as usize)
+    } else {
+        None
+    };
+
+    for i in 0..shdrs.len() {
+        // GCC FAT LTO objects contain both regular ELF sections and
+        // GCC-specific LTO sections, so that they can be linked as LTO
+        // objects if the plugin is available and as regular objects
+        // otherwise. They can be identified by a `.gnu.lto_.symtab.` section.
+        if let Some(offset) = shstrtab_offset {
+            let name = crate::util::cstr_at(data, offset + shdrs.sh_name_in::<E>(i) as usize);
+            if name.starts_with(b".gnu.lto_.symtab.") {
+                return true;
+            }
+        }
+
+        if shdrs.sh_type_in::<E>(i) != SHT_SYMTAB {
+            continue;
+        }
+        let shdr = shdrs.at_in::<E>(i);
+
+        // A non-FAT GCC LTO object contains only section symbols followed
+        // by a common symbol named `__gnu_lto_slim` (or `__gnu_lto_v1` in
+        // older releases).
+        let off = shdr.sh_offset as usize;
+        let Some(bytes) = data.get(off..off + shdr.sh_size as usize) else {
+            return false;
+        };
+        let syms = bytes
+            .chunks_exact(ElfSym::size::<E>())
+            .map(ElfSym::parse::<E>);
+        let skip = |ty: u32| ty == STT_NOTYPE || ty == STT_FILE || ty == STT_SECTION;
+
+        if let Some(sym) = syms.skip(1).find(|s| !skip(s.st_type())) {
+            if sym.st_shndx as u32 == SHN_COMMON {
+                let Some(strtab) = shdrs.get(shdr.sh_link as usize) else {
+                    return false;
+                };
+                let name =
+                    crate::util::cstr_at(data, strtab.sh_offset as usize + sym.st_name as usize);
+                if name.starts_with(b"__gnu_lto_") {
+                    return true;
+                }
+            }
+        }
+        break;
+    }
+    false
+}
+
+/// Classifies a file by its contents.
+pub fn get_file_type(plugin: &str, mf: &MappedFile) -> FileType {
+    let data = mf.data();
+    if data.is_empty() {
+        return FileType::Empty;
+    }
+
+    // GCC FAT LTO objects can be linked as regular ELF objects. If the
+    // active plugin is LLVM's, treat them as regular objects so that we
+    // fall back to native code instead of routing them through GCC LTO.
+    let has_gcc_plugin = !plugin.is_empty() && !plugin.contains("LLVMgold.");
+
+    if data.starts_with(b"\x7fELF") && data.len() >= 20 {
+        let is_le = data[EI_DATA as usize] == ELFDATA2LSB as u8;
+        let is_32 = data[EI_CLASS as usize] == ELFCLASS32 as u8;
+        let e_type = if is_le {
+            u16::from_le_bytes([data[16], data[17]]) as u32
+        } else {
+            u16::from_be_bytes([data[16], data[17]]) as u32
+        };
+
+        if e_type == ET_REL {
+            let is_lto = match (is_le, is_32) {
+                (true, true) => is_gcc_lto_obj::<Elf32Le>(data, has_gcc_plugin),
+                (true, false) => is_gcc_lto_obj::<Elf64Le>(data, has_gcc_plugin),
+                (false, true) => is_gcc_lto_obj::<Elf32Be>(data, has_gcc_plugin),
+                (false, false) => is_gcc_lto_obj::<Elf64Be>(data, has_gcc_plugin),
+            };
+            return if is_lto {
+                FileType::GccLtoObj
+            } else {
+                FileType::ElfObj
+            };
+        }
+        if e_type == ET_DYN {
+            return FileType::ElfDso;
+        }
+        return FileType::Unknown;
+    }
+
+    if data.starts_with(b"!<arch>\n") {
+        return FileType::Ar;
+    }
+    if data.starts_with(b"!<thin>\n") {
+        return FileType::ThinAr;
+    }
+    if is_text_file(data) {
+        return FileType::Text;
+    }
+    if data.starts_with(b"\xde\xc0\x17\x0b") || data.starts_with(b"BC\xc0\xde") {
+        return FileType::LlvmBitcode;
+    }
+    FileType::Unknown
+}
+
+/// Returns the target name of an ELF file, or `None` if its machine type
+/// is not one we recognize.
+pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
+    if data.len() < 52 {
+        return None;
+    }
+    let is_le = data[EI_DATA as usize] == ELFDATA2LSB as u8;
+    let is_64 = data[EI_CLASS as usize] == ELFCLASS64 as u8;
+    let read_u16 = |off: usize| {
+        let b = [data[off], data[off + 1]];
+        if is_le {
+            u16::from_le_bytes(b)
+        } else {
+            u16::from_be_bytes(b)
+        }
+    };
+    let read_u32 = |off: usize| {
+        let b = [data[off], data[off + 1], data[off + 2], data[off + 3]];
+        if is_le {
+            u32::from_le_bytes(b)
+        } else {
+            u32::from_be_bytes(b)
+        }
+    };
+    let e_machine = read_u16(18) as u32;
+    // e_flags follows the three word-sized fields after e_version.
+    let e_flags = read_u32(if is_64 { 48 } else { 36 });
+
+    let name = match e_machine {
+        EM_386 => "i386",
+        EM_X86_64 => "x86_64",
+        EM_ARM => {
+            if is_le {
+                "arm32"
+            } else {
+                "arm32be"
+            }
+        }
+        EM_AARCH64 => {
+            if is_le {
+                "arm64"
+            } else {
+                "arm64be"
+            }
+        }
+        EM_RISCV => match (is_le, is_64) {
+            (true, true) => "riscv64",
+            (true, false) => "riscv32",
+            (false, true) => "riscv64be",
+            (false, false) => "riscv32be",
+        },
+        EM_PPC => "ppc32",
+        EM_PPC64 => {
+            // ELFv1 is big-endian and ELFv2 is little-endian by convention,
+            // but that's not a rule; musl for example uses ELFv2 on
+            // big-endian too. We support only the usual combinations, so
+            // treat the others as unrecognizable rather than silently
+            // linking them against the wrong ABI.
+            let abi = e_flags & EF_PPC64_ABI;
+            if !is_le && (abi == 0 || abi == 1) {
+                "ppc64v1"
+            } else if is_le && (abi == 0 || abi == 2) {
+                "ppc64v2"
+            } else {
+                return None;
+            }
+        }
+        EM_S390X => "s390x",
+        EM_SPARC64 => "sparc64",
+        EM_68K => "m68k",
+        EM_SH => {
+            if is_le {
+                "sh4"
+            } else {
+                "sh4be"
+            }
+        }
+        EM_LOONGARCH => {
+            if is_64 {
+                "loongarch64"
+            } else {
+                "loongarch32"
+            }
+        }
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// Reads the beginning of a file and returns the target it was compiled
+/// for, looking inside archives if necessary.
+pub fn get_machine_type(
+    diag: &Diagnostics,
+    plugin: &str,
+    mf: &'static MappedFile,
+    script_target: impl FnOnce() -> Option<&'static str>,
+) -> Option<&'static str> {
+    match get_file_type(plugin, mf) {
+        FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
+        FileType::Ar => archive::read_fat_archive_members(diag, mf)
+            .into_iter()
+            .find(|child| {
+                matches!(
+                    get_file_type(plugin, child),
+                    FileType::ElfObj | FileType::GccLtoObj
+                )
+            })
+            .and_then(|child| get_elf_target(child.data())),
+        FileType::ThinAr => archive::read_thin_archive_members(diag, mf)
+            .into_iter()
+            .find(|child| {
+                matches!(
+                    get_file_type(plugin, child),
+                    FileType::ElfObj | FileType::GccLtoObj
+                )
+            })
+            .and_then(|child| get_elf_target(child.data())),
+        FileType::Text => script_target(),
+        _ => None,
+    }
+}
+
+/// Looks up the description of a target by name.
+pub fn target_info(name: &str) -> Option<&'static TargetInfo> {
+    arch::TARGETS.iter().find(|t| t.name == name)
+}

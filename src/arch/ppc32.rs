@@ -1,0 +1,384 @@
+//! PowerPC, 32-bit.
+//!
+//! PPC32 is a big-endian RISC ISA with 32 general-purpose registers, of
+//! which `r0`, `r11` and `r12` are reserved for the linker's use in PLT
+//! entries and thunks. The link register LR holds return addresses and
+//! CTR is a branch target register.
+//!
+//! What complicates the psABI is the lack of PC-relative loads and
+//! stores. A position-independent function finds its own address with
+//!
+//! ```text
+//!    mflr  r0        // save the return address
+//!    bcl   20, 31, 4 // "call" the next instruction
+//!    mflr  r12       // the return address is our own address
+//!    mtlr  r0        // restore the return address
+//! ```
+//!
+//! and an object compiled with `-fPIC` has a `.got2` section holding the
+//! addresses of the objects it refers to. A PIC function sets `r30` to
+//! its own file's `.got2 + 0x8000` so that any of those addresses is one
+//! 16-bit-offset load away. Each input file has its own `.got2`, so `r30`
+//! means different things in functions from different files; GNU ld
+//! exploits it anyway with per-file PLTs, but the PLT here simply
+//! doesn't depend on `r30`.
+//!
+//! https://github.com/rui314/psabi/blob/main/ppc32.pdf
+
+use std::sync::atomic::Ordering;
+
+use crate::arch::{Arch, Family, ThunkLayout};
+use crate::chunks::eh_frame;
+use crate::context::Context;
+use crate::elf::*;
+use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
+use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::thunks::Thunk;
+use crate::util::{bits, is_int};
+use crate::{error, fatal};
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Ppc32;
+
+impl Layout for Ppc32 {
+    type Endian = BigEndian;
+    const IS_64: bool = false;
+    const IS_RELA: bool = true;
+}
+
+fn lo(x: u64) -> u64 {
+    x & 0xffff
+}
+
+fn hi(x: u64) -> u64 {
+    x >> 16
+}
+
+fn ha(x: u64) -> u64 {
+    x.wrapping_add(0x8000) >> 16
+}
+
+fn higha(x: u64) -> u64 {
+    ha(x) & 0xffff
+}
+
+fn w16(loc: &mut [u8], v: u64) {
+    BigEndian::write_u16(loc, v as u16);
+}
+
+fn w32(loc: &mut [u8], v: u64) {
+    BigEndian::write_u32(loc, v as u32);
+}
+
+fn or32(loc: &mut [u8], v: u64) {
+    let cur = BigEndian::read_u32(loc);
+    BigEndian::write_u32(loc, cur | v as u32);
+}
+
+fn write_insns(buf: &mut [u8], insns: &[u32]) {
+    for (i, &insn) in insns.iter().enumerate() {
+        BigEndian::write_u32(&mut buf[i * 4..], insn);
+    }
+}
+
+/// A PLT entry, also used as a thunk to a PLT symbol: it materializes
+/// its own address, loads the destination from the GOT entry at a
+/// known offset and jumps there.
+const PLT_ENTRY: [u32; 9] = [
+    0x7c08_02a6, // mflr    r0
+    0x429f_0005, // bcl     20, 31, 4
+    0x7d88_02a6, // mflr    r12
+    0x7c08_03a6, // mtlr    r0
+    0x3d6c_0000, // addis   r11, r12, OFFSET@higha
+    0x396b_0000, // addi    r11, r11, OFFSET@lo
+    0x818b_0000, // lwz     r12, 0(r11)
+    0x7d89_03a6, // mtctr   r12
+    0x4e80_0420, // bctr
+];
+
+/// Writes a PLT entry that loads its destination from `got`.
+fn write_plt_like(buf: &mut [u8], got: u64, entry_addr: u64) {
+    write_insns(buf, &PLT_ENTRY);
+    let offset = got.wrapping_sub(entry_addr).wrapping_sub(8);
+    or32(&mut buf[16..], higha(offset));
+    or32(&mut buf[20..], lo(offset));
+}
+
+impl Arch for Ppc32 {
+    const NAME: &'static str = "ppc32";
+    const FAMILY: Family = Family::Ppc32;
+    const PAGE_SIZE: u64 = 65536;
+    const E_MACHINE: u32 = EM_PPC;
+    const PLT_HDR_SIZE: u64 = 64;
+    const PLT_SIZE: u64 = 36;
+    const PLTGOT_SIZE: u64 = 36;
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
+        header_size: 0,
+        entry_size: 36,
+    });
+    const TRAP: &'static [u8] = &[0x7f, 0xe0, 0x00, 0x08]; // trap
+
+    const R_COPY: u32 = R_PPC_COPY;
+    const R_GLOB_DAT: u32 = R_PPC_GLOB_DAT;
+    const R_JUMP_SLOT: u32 = R_PPC_JMP_SLOT;
+    const R_ABS: u32 = R_PPC_ADDR32;
+    const R_RELATIVE: u32 = R_PPC_RELATIVE;
+    const R_IRELATIVE: Option<u32> = Some(R_PPC_IRELATIVE);
+    const R_DTPOFF: u32 = R_PPC_DTPREL32;
+    const R_TPOFF: u32 = R_PPC_TPREL32;
+    const R_DTPMOD: u32 = R_PPC_DTPMOD32;
+    const R_FUNCALL: &'static [u32] = &[R_PPC_REL24, R_PPC_PLTREL24, R_PPC_LOCAL24PC];
+
+    fn rel_to_string(r_type: u32) -> String {
+        ppc32_rel_to_string(r_type)
+    }
+
+    fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
+        const INSN: [u32; 16] = [
+            // Get the address of this PLT section.
+            0x7c08_02a6, //    mflr    r0
+            0x429f_0005, //    bcl     20, 31, 4
+            0x7d88_02a6, // 1: mflr    r12
+            0x7c08_03a6, //    mtlr    r0
+            // Compute the runtime address of GOTPLT+12.
+            0x3d8c_0000, //    addis   r12, r12, (GOTPLT - 1b)@higha
+            0x398c_0000, //    addi    r12, r12, (GOTPLT - 1b)@lo
+            // Compute the PLT entry offset.
+            0x7d6c_5850, //    sub     r11, r11, r12
+            0x1d6b_0003, //    mulli   r11, r11, 3
+            // Load GOTPLT[2] and branch to GOTPLT[1].
+            0x800c_fff8, //    lwz     r0,  -8(r12)
+            0x7c09_03a6, //    mtctr   r0
+            0x818c_fffc, //    lwz     r12, -4(r12)
+            0x4e80_0420, //    bctr
+            0x6000_0000, //    nop
+            0x6000_0000, //    nop
+            0x6000_0000, //    nop
+            0x6000_0000, //    nop
+        ];
+        write_insns(buf, &INSN);
+        let offset = ctx
+            .gotplt
+            .hdr
+            .shdr
+            .sh_addr
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr)
+            .wrapping_add(4);
+        or32(&mut buf[16..], higha(offset));
+        or32(&mut buf[20..], lo(offset));
+    }
+
+    fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
+        write_plt_like(buf, sym.gotplt_addr(ctx), sym.plt_addr(ctx));
+    }
+
+    fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
+        write_plt_like(buf, sym.got_pltgot_addr(ctx), sym.plt_addr(ctx));
+    }
+
+    fn apply_eh_reloc(
+        ctx: &Context<Self>,
+        _isec: &InputSection,
+        rel: &ElfRel,
+        loc: &mut [u8],
+        p: u64,
+        val: u64,
+    ) {
+        match rel.r_type {
+            R_NONE => {}
+            R_PPC_ADDR32 => w32(loc, val),
+            R_PPC_REL32 => w32(loc, val.wrapping_sub(p)),
+            _ => eh_frame::unsupported(ctx, rel),
+        }
+    }
+
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+        debug_assert!(isec.is_alloc());
+        let file = &ctx.objs[isec.file.index()];
+        isec.for_each_reloc::<Self>(ctx, |rel, _| {
+            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+                return;
+            }
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            if sym.is_ifunc() {
+                sym.add_flags(NEEDS_GOT | NEEDS_PLT);
+            }
+
+            match rel.r_type {
+                R_PPC_ADDR14 | R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO | R_PPC_ADDR16_HI
+                | R_PPC_ADDR16_HA | R_PPC_ADDR24 | R_PPC_ADDR30 => {
+                    scan_absrel(ctx, isec, sym, &rel)
+                }
+                R_PPC_REL14 | R_PPC_REL16 | R_PPC_REL16_LO | R_PPC_REL16_HI | R_PPC_REL16_HA
+                | R_PPC_REL32 => scan_pcrel(ctx, isec, sym, &rel),
+                R_PPC_GOT16 | R_PPC_GOT16_LO | R_PPC_GOT16_HI | R_PPC_GOT16_HA | R_PPC_PLT16_LO
+                | R_PPC_PLT16_HI | R_PPC_PLT16_HA | R_PPC_PLT32 => sym.add_flags(NEEDS_GOT),
+                R_PPC_REL24 | R_PPC_PLTREL24 | R_PPC_PLTREL32 => {
+                    if sym.is_imported() {
+                        sym.add_flags(NEEDS_PLT);
+                    }
+                }
+                R_PPC_GOT_TLSGD16 => sym.add_flags(NEEDS_TLSGD),
+                R_PPC_GOT_TLSLD16 => ctx.needs_tlsld.store(true, Ordering::Relaxed),
+                R_PPC_GOT_TPREL16 => sym.add_flags(NEEDS_GOTTP),
+                R_PPC_TPREL16_LO | R_PPC_TPREL16_HI | R_PPC_TPREL16_HA => {
+                    check_tlsle(ctx, isec, sym, &rel)
+                }
+                R_PPC_ADDR32 | R_PPC_UADDR32 | R_PPC_LOCAL24PC | R_PPC_TLS | R_PPC_TLSGD
+                | R_PPC_TLSLD | R_PPC_DTPREL16_LO | R_PPC_DTPREL16_HI | R_PPC_DTPREL16_HA
+                | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}
+                _ => error!(
+                    ctx,
+                    "{}: unknown relocation: {}",
+                    isec.display(file),
+                    rel.type_name::<Self>()
+                ),
+            }
+        });
+    }
+
+    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+        let file = &ctx.objs[isec.file.index()];
+        let got = ctx.got.hdr.shdr.sh_addr;
+        let got2 = file
+            .got2
+            .map_or(0, |shndx| file.section_at(shndx).addr(ctx));
+
+        for rel in isec.rels::<Self>(file) {
+            if rel.r_type == R_NONE {
+                continue;
+            }
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
+                continue;
+            }
+
+            let s = sym.addr(ctx);
+            let a = rel.r_addend as u64;
+            let p = isec.addr(ctx) + rel.r_offset;
+            let g = || sym.got_addr(ctx).wrapping_sub(got);
+            let sa = s.wrapping_add(a);
+            let pcrel = sa.wrapping_sub(p);
+            // PLT16/PLT32 relocations are relative to the file's .got2.
+            let plt = || sym.got_addr(ctx).wrapping_sub(a).wrapping_sub(got2);
+            let loc = &mut buf[rel.r_offset as usize..];
+
+            match rel.r_type {
+                R_PPC_ADDR14 => or32(loc, bits(sa, 15, 2) << 2),
+                R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO => w16(loc, lo(sa)),
+                R_PPC_ADDR16_HI => w16(loc, hi(sa)),
+                R_PPC_ADDR16_HA => w16(loc, ha(sa)),
+                R_PPC_ADDR24 => or32(loc, bits(sa, 25, 2) << 2),
+                R_PPC_ADDR30 => or32(loc, bits(sa, 31, 2) << 2),
+                R_PPC_PLT16_LO => w16(loc, lo(plt())),
+                R_PPC_PLT16_HI => w16(loc, hi(plt())),
+                R_PPC_PLT16_HA => w16(loc, ha(plt())),
+                R_PPC_PLT32 => w32(loc, plt()),
+                R_PPC_REL14 => or32(loc, bits(pcrel, 15, 2) << 2),
+                R_PPC_REL16 | R_PPC_REL16_LO => w16(loc, lo(pcrel)),
+                R_PPC_REL16_HI => w16(loc, hi(pcrel)),
+                R_PPC_REL16_HA => w16(loc, ha(pcrel)),
+                R_PPC_REL24 | R_PPC_LOCAL24PC => {
+                    let mut val = pcrel as i64;
+                    if !is_int(val, 26) {
+                        val = sym.thunk_addr(ctx, p).wrapping_sub(p) as i64;
+                    }
+                    or32(loc, bits(val as u64, 25, 2) << 2);
+                }
+                R_PPC_PLTREL24 => {
+                    let mut val = s.wrapping_sub(p) as i64;
+                    if sym.has_plt(&ctx.symbols) || !is_int(val, 26) {
+                        val = sym.thunk_addr(ctx, p).wrapping_sub(p) as i64;
+                    }
+                    or32(loc, bits(val as u64, 25, 2) << 2);
+                }
+                R_PPC_REL32 | R_PPC_PLTREL32 => w32(loc, pcrel),
+                R_PPC_GOT16 | R_PPC_GOT16_LO => w16(loc, lo(g().wrapping_add(a))),
+                R_PPC_GOT16_HI => w16(loc, hi(g().wrapping_add(a))),
+                R_PPC_GOT16_HA => w16(loc, ha(g().wrapping_add(a))),
+                R_PPC_TPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.tp_addr))),
+                R_PPC_TPREL16_HI => w16(loc, hi(sa.wrapping_sub(ctx.tp_addr))),
+                R_PPC_TPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.tp_addr))),
+                R_PPC_DTPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.dtp_addr))),
+                R_PPC_DTPREL16_HI => w16(loc, hi(sa.wrapping_sub(ctx.dtp_addr))),
+                R_PPC_DTPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.dtp_addr))),
+                R_PPC_GOT_TLSGD16 => w16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got)),
+                R_PPC_GOT_TLSLD16 => w16(loc, ctx.got.tlsld_addr::<Self>().wrapping_sub(got)),
+                R_PPC_GOT_TPREL16 => w16(loc, sym.gottp_addr(ctx).wrapping_sub(got)),
+                R_PPC_ADDR32 | R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD
+                | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}
+                _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
+            }
+        }
+    }
+
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+        let file = &ctx.objs[isec.file.index()];
+        for rel in isec.rels::<Self>(file) {
+            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+                continue;
+            }
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let frag = isec.fragment(ctx, &rel);
+            let (s, a) = match frag {
+                Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
+                None => (sym.addr(ctx), rel.r_addend as u64),
+            };
+            let sa = s.wrapping_add(a);
+            let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
+            let loc = &mut buf[rel.r_offset as usize..];
+
+            match rel.r_type {
+                R_PPC_ADDR32 => w32(loc, tombstone.unwrap_or(sa)),
+                R_PPC_DTPREL32 => w32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr))),
+                _ => fatal!(
+                    ctx,
+                    "{}: invalid relocation for non-allocated sections: {}",
+                    isec.display(file),
+                    rel.type_name::<Self>()
+                ),
+            }
+        }
+    }
+
+    /// All PLT calls go through thunks.
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel) -> bool {
+        sym.has_plt(&ctx.symbols)
+    }
+
+    fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, addr: u64, buf: &mut [u8]) {
+        const LOCAL_THUNK: [u32; 9] = [
+            // Get this thunk's address.
+            0x7c08_02a6, // mflr    r0
+            0x429f_0005, // bcl     20, 31, 4
+            0x7d88_02a6, // mflr    r12
+            0x7c08_03a6, // mtlr    r0
+            // Materialize the destination's address in r11 and jump there.
+            0x3d6c_0000, // addis   r11, r12, OFFSET@higha
+            0x396b_0000, // addi    r11, r11, OFFSET@lo
+            0x7d69_03a6, // mtctr   r11
+            0x4e80_0420, // bctr
+            0x6000_0000, // nop
+        ];
+
+        for (i, &id) in thunk.symbols.iter().enumerate() {
+            let sym = &ctx.symbols[id];
+            let p = addr + thunk.offsets[i];
+            let entry = &mut buf[thunk.offsets[i] as usize..][..36];
+
+            if sym.has_plt(&ctx.symbols) {
+                let got = if sym.has_got(&ctx.symbols) {
+                    sym.got_addr(ctx)
+                } else {
+                    sym.gotplt_addr(ctx)
+                };
+                write_plt_like(entry, got, p);
+            } else {
+                write_insns(entry, &LOCAL_THUNK);
+                let val = sym.addr(ctx).wrapping_sub(p).wrapping_sub(8);
+                or32(&mut entry[16..], higha(val));
+                or32(&mut entry[20..], lo(val));
+            }
+        }
+    }
+}

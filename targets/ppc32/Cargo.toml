@@ -1,0 +1,9 @@
+[package]
+name = "mold-target-ppc32"
+version = "2.42.0"
+edition = "2021"
+description = "The mold linker instantiated for ppc32"
+license = "MIT"
+
+[dependencies]
+mold = { path = "../.." }

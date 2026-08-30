@@ -1,0 +1,9 @@
+[package]
+name = "mold-target-m68k"
+version = "2.42.0"
+edition = "2021"
+description = "The mold linker instantiated for m68k"
+license = "MIT"
+
+[dependencies]
+mold = { path = "../.." }

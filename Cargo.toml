@@ -1,0 +1,37 @@
+[package]
+name = "mold"
+version = "2.42.0"
+edition = "2021"
+description = "A high-performance ELF linker, rewritten in Rust"
+license = "MIT"
+
+# The linker is generic over the target. Instantiating it for all twenty
+# targets in one crate keeps the compiler on a single core for minutes, so
+# each target is instantiated in a crate of its own under targets/, and the
+# executable in cli/ dispatches to them.
+[workspace]
+members = ["cli", "mimalloc", "targets/*", "test-runner"]
+default-members = ["cli", "test-runner"]
+
+[dependencies]
+blake3 = "1.8.7"
+bstr = "1"
+cpp_demangle = "0.4"
+crc32fast = "1"
+flate2 = "1"
+hashbrown = "0.17.1"
+libc = "0.2"
+memchr = "2.8.3"
+memmap2 = "0.9"
+rayon = "1"
+rustc-demangle = "0.1"
+rustc-hash = "2"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zstd = "0.13"
+
+[profile.release]
+debug = 1
+codegen-units = 16
+
+[profile.dev]
+opt-level = 1

@@ -1,0 +1,302 @@
+//! Small helpers shared across the linker.
+
+pub mod compress;
+pub mod concurrent_map;
+pub mod demangle;
+pub mod glob;
+pub mod hyperloglog;
+pub mod tar;
+pub mod timer;
+
+/// Rounds `value` up to a multiple of `align`, which must be zero or a power
+/// of two. Zero means "no alignment".
+#[inline]
+pub fn align_to(value: u64, align: u64) -> u64 {
+    if align == 0 {
+        return value;
+    }
+    debug_assert!(align.is_power_of_two());
+    (value + align - 1) & !(align - 1)
+}
+
+/// Rounds `value` down to a multiple of `align`, which must be a power of two.
+pub fn align_down(value: u64, align: u64) -> u64 {
+    debug_assert!(align.is_power_of_two());
+    value & !(align - 1)
+}
+
+/// Returns bit `pos` of `value`.
+pub fn bit(value: u64, pos: u32) -> u64 {
+    (value >> pos) & 1
+}
+
+/// Returns bits `hi..=lo` of `value`, shifted down to start at bit zero.
+#[inline]
+pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
+    (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
+}
+
+/// Sign-extends the low `n` bits of `value`.
+pub fn sign_extend(value: u64, n: u32) -> i64 {
+    ((value << (64 - n)) as i64) >> (64 - n)
+}
+
+/// Whether `value` is representable as a signed `n`-bit integer.
+pub fn is_int(value: i64, n: u32) -> bool {
+    sign_extend(value as u64, n) == value
+}
+
+/// Whether `value` is representable as an unsigned `n`-bit integer.
+pub fn is_uint(value: u64, n: u32) -> bool {
+    n >= 64 || value >> n == 0
+}
+
+/// Writes a NUL-terminated string and returns the number of bytes written.
+pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
+    buf[..s.len()].copy_from_slice(s);
+    buf[s.len()] = 0;
+    s.len() + 1
+}
+
+/// Returns the NUL-terminated string starting at `offset` in a string table.
+/// The result excludes the terminator. A missing terminator yields the rest
+/// of the table.
+#[inline]
+pub fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
+    let rest = table.get(offset..).unwrap_or(&[]);
+    if rest.is_empty() {
+        return rest;
+    }
+
+    // ELF string tables normally end in NUL, so strlen cannot read past the
+    // table. Keep the bounded path for malformed tables without a terminator.
+    let end = unsafe {
+        if table.last() == Some(&0) {
+            libc::strlen(rest.as_ptr().cast())
+        } else {
+            libc::strnlen(rest.as_ptr().cast(), rest.len())
+        }
+    };
+    &rest[..end]
+}
+
+/// Returns the position of `byte` in `data`.
+#[inline]
+pub fn find_byte(byte: u8, data: &[u8]) -> Option<usize> {
+    // SAFETY: memchr reads at most data.len() bytes from the slice. A
+    // non-null result therefore points into the same allocation.
+    let ptr = unsafe { libc::memchr(data.as_ptr().cast(), byte.into(), data.len()) }.cast::<u8>();
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { ptr.offset_from(data.as_ptr()) as usize })
+    }
+}
+
+/// Appends `value` in unsigned LEB128 encoding.
+pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            out.push(byte);
+            return;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// Appends `value` in signed LEB128 encoding.
+pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        let negative = byte & 0x40 != 0;
+        if (value == 0 && !negative) || (value == -1 && negative) {
+            out.push(byte);
+            return;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// The number of bytes `value` occupies in unsigned LEB128 encoding.
+pub fn uleb_size(value: u64) -> usize {
+    let bits = 64 - value.leading_zeros() as usize;
+    bits.div_ceil(7).max(1)
+}
+
+/// Overwrites an existing unsigned LEB128 value in place, keeping its length.
+pub fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
+    let mut i = 0;
+    while buf[i] & 0x80 != 0 {
+        buf[i] = 0x80 | (value & 0x7f) as u8;
+        value >>= 7;
+        i += 1;
+    }
+    buf[i] = (value & 0x7f) as u8;
+}
+
+/// Reads an unsigned LEB128 value, advancing `bytes` past it.
+#[inline]
+pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
+    let mut value = 0;
+    let mut shift = 0;
+    loop {
+        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
+        *bytes = rest;
+        if shift < 64 {
+            value |= ((byte & 0x7f) as u64) << shift;
+        }
+        shift += 7;
+        if byte & 0x80 == 0 {
+            return value;
+        }
+    }
+}
+
+/// Reads a signed LEB128 value, advancing `bytes` past it.
+#[inline]
+pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
+    let mut value = 0u64;
+    let mut shift = 0;
+    loop {
+        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
+        *bytes = rest;
+        if shift < 64 {
+            value |= ((byte & 0x7f) as u64) << shift;
+        }
+        shift += 7;
+        if byte & 0x80 == 0 {
+            return if shift < 64 {
+                sign_extend(value, shift)
+            } else {
+                value as i64
+            };
+        }
+    }
+}
+
+/// Removes consecutive duplicates from a sorted vector.
+pub fn dedup_sorted<T: PartialEq>(vec: &mut Vec<T>) {
+    vec.dedup();
+}
+
+/// Fills `buf` with random bytes from the operating system.
+pub fn random_bytes(buf: &mut [u8]) {
+    use std::io::Read;
+    let mut file = std::fs::File::open("/dev/urandom").expect("cannot open /dev/urandom");
+    file.read_exact(buf).expect("cannot read /dev/urandom");
+}
+
+/// Leaks a value for the rest of the process's lifetime.
+///
+/// Input files, symbol names and a few other objects must outlive every
+/// data structure of a link, and the process exits as soon as the link is
+/// done, so never freeing them is both simplest and cheapest.
+pub fn leak<T>(value: T) -> &'static T {
+    Box::leak(Box::new(value))
+}
+
+/// Leaks a byte string for the rest of the process's lifetime.
+pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
+    Vec::leak(bytes)
+}
+
+/// Leaks a string for the rest of the process's lifetime.
+pub fn leak_str(s: String) -> &'static str {
+    String::leak(s)
+}
+
+/// Returns the path of the running executable.
+pub fn self_path() -> std::path::PathBuf {
+    std::fs::read_link("/proc/self/exe").expect("cannot read /proc/self/exe")
+}
+
+/// Normalizes a path lexically, resolving `.` and `..` components without
+/// consulting the file system.
+pub fn path_clean(path: &str) -> String {
+    use std::path::{Component, Path, PathBuf};
+    let mut out = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !matches!(
+                    out.components().next_back(),
+                    Some(Component::RootDir) | None
+                ) {
+                    out.pop();
+                } else if out.components().next_back().is_none() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    let s = out.to_string_lossy().into_owned();
+    if s.is_empty() {
+        ".".to_string()
+    } else {
+        s
+    }
+}
+
+/// Returns the directory part of a path, as `dirname(1)` would.
+pub fn path_dirname(path: &str) -> String {
+    match std::path::Path::new(path).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_string_lossy().into_owned(),
+        _ => ".".to_string(),
+    }
+}
+
+/// Returns the file name part of a path.
+pub fn path_filename(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Formats a byte string for diagnostics, replacing invalid UTF-8.
+pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leb128_roundtrip() {
+        for &value in &[0u64, 1, 127, 128, 300, u64::MAX] {
+            let mut buf = Vec::new();
+            encode_uleb(&mut buf, value);
+            assert_eq!(buf.len(), uleb_size(value));
+            let mut slice = buf.as_slice();
+            assert_eq!(read_uleb(&mut slice), value);
+            assert!(slice.is_empty());
+        }
+        for &value in &[0i64, -1, 63, 64, -64, -65, i64::MIN, i64::MAX] {
+            let mut buf = Vec::new();
+            encode_sleb(&mut buf, value);
+            let mut slice = buf.as_slice();
+            assert_eq!(read_sleb(&mut slice), value);
+        }
+    }
+
+    #[test]
+    fn sign_extension() {
+        assert_eq!(sign_extend(0xff, 8), -1);
+        assert_eq!(sign_extend(0x7f, 8), 127);
+        assert!(is_int(-128, 8));
+        assert!(!is_int(128, 8));
+    }
+
+    #[test]
+    fn clean_paths() {
+        assert_eq!(path_clean("a/./b/../c"), "a/c");
+        assert_eq!(path_clean("/a/../.."), "/");
+        assert_eq!(path_clean("../a"), "../a");
+    }
+}

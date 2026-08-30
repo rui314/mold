@@ -1,0 +1,8 @@
+/target
+/out
+/ld
+/mold-wrapper.so
+/mold
+# Byproducts of tests that write into the working directory
+/exe
+/sde-cet-checker-out.txt

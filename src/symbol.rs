@@ -1,0 +1,1922 @@
+//! Symbols and the global symbol table.
+//!
+//! There is one [`Symbol`] per unique global symbol name plus one per local
+//! symbol of each object file. All of them live in a single arena, the
+//! [`SymbolTable`], and are referred to by [`SymbolId`].
+
+use std::fmt;
+use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+
+use bstr::BStr;
+use hashbrown::{Equivalent, HashMap};
+use rayon::prelude::*;
+
+use crate::arch::Arch;
+use crate::chunks::ChunkId;
+use crate::context::Context;
+use crate::diagnostics::demangle_enabled;
+use crate::elf::*;
+use crate::input_files::FileId;
+use crate::input_sections::{FragmentRef, InputSection, SectionRef};
+use crate::util::demangle::{demangle_cpp, demangle_rust};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SymbolId(pub u32);
+
+impl SymbolId {
+    /// A placeholder for local symbols in discarded COMDAT sections.
+    pub const DISCARDED_COMDAT: SymbolId = SymbolId(0);
+
+    /// No symbol. Used where an optional id must remain four bytes.
+    pub const NONE: SymbolId = SymbolId(u32::MAX);
+
+    #[inline]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// The payload describing what a symbol's value is relative to. Its kind
+/// lives in a byte of [`Symbol`]'s padding so that the payload remains eight
+/// bytes without restricting any of the contained ids.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union Origin {
+    raw: u64,
+    fragment: FragmentRef,
+    chunk: ChunkId,
+    symbol: SymbolId,
+}
+
+impl Origin {
+    fn none() -> Origin {
+        Origin { raw: 0 }
+    }
+
+    fn section(section: &InputSection) -> Origin {
+        Origin {
+            raw: section as *const InputSection as usize as u64,
+        }
+    }
+
+    fn fragment(fragment: FragmentRef) -> Origin {
+        let mut origin = Origin::none();
+        origin.fragment = fragment;
+        origin
+    }
+
+    fn chunk(chunk: ChunkId) -> Origin {
+        let mut origin = Origin::none();
+        origin.chunk = chunk;
+        origin
+    }
+
+    fn symbol(symbol: SymbolId) -> Origin {
+        let mut origin = Origin::none();
+        origin.symbol = symbol;
+        origin
+    }
+}
+
+impl fmt::Debug for Origin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Origin")
+    }
+}
+
+const _: () = assert!(std::mem::size_of::<Origin>() == 8);
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum OriginKind {
+    /// An absolute symbol, or an undefined one.
+    #[default]
+    None,
+    Section,
+    Fragment,
+    Chunk,
+    /// A default-versioned alias (`foo@VERSION`) forwarding to `foo`.
+    Symbol,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct OriginState {
+    payload: Origin,
+    kind: OriginKind,
+}
+
+/// Symbol flags set while scanning relocations.
+pub const NEEDS_GOT: u8 = 1 << 0;
+pub const NEEDS_PLT: u8 = 1 << 1;
+/// A canonical PLT entry or a copy relocation.
+pub const NEEDS_CANONICAL: u8 = 1 << 2;
+pub const NEEDS_GOTTP: u8 = 1 << 3;
+pub const NEEDS_TLSGD: u8 = 1 << 4;
+pub const NEEDS_TLSDESC: u8 = 1 << 5;
+pub const NEEDS_PPC_OPD: u8 = 1 << 6;
+
+/// Flags for [`Symbol::addr`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AddrFlags {
+    /// Request an address other than the PLT entry.
+    pub no_plt: bool,
+    /// Request an address other than the OPD entry (PPC64 ELFv1 only).
+    pub no_opd: bool,
+}
+
+impl AddrFlags {
+    pub const NO_PLT: AddrFlags = AddrFlags {
+        no_plt: true,
+        no_opd: false,
+    };
+    pub const NO_OPD: AddrFlags = AddrFlags {
+        no_plt: false,
+        no_opd: true,
+    };
+}
+
+/// Table indices for dynamic symbols. Most symbols never need them, so
+/// they are allocated on demand.
+#[derive(Debug, Default)]
+pub struct SymbolAux {
+    pub got_idx: Option<u32>,
+    pub gottp_idx: Option<u32>,
+    pub tlsgd_idx: Option<u32>,
+    pub tlsdesc_idx: Option<u32>,
+    pub plt_idx: Option<u32>,
+    pub pltgot_idx: Option<u32>,
+    pub dynsym_idx: Option<u32>,
+    pub opd_idx: Option<u32>,
+    pub djb_hash: u32,
+    /// Addresses of range extension thunks, in ascending order.
+    pub thunk_addrs: Vec<u64>,
+}
+
+/// A nullable 32-bit file reference. C++ mold's arena pointers have the
+/// same compact representation; the high bit distinguishes shared files
+/// from object files and the all-ones value represents no file.
+#[derive(Clone, Copy, Debug)]
+struct SymbolFile(u32);
+
+impl SymbolFile {
+    const DSO: u32 = 1 << 31;
+    const NONE: u32 = u32::MAX;
+
+    #[inline]
+    fn none() -> SymbolFile {
+        SymbolFile(Self::NONE)
+    }
+
+    #[inline]
+    fn some(file: FileId) -> SymbolFile {
+        let raw = match file {
+            FileId::Obj(id) => {
+                debug_assert!(id.0 < Self::DSO);
+                id.0
+            }
+            FileId::Dso(id) => {
+                debug_assert!(id.0 < Self::DSO - 1);
+                id.0 | Self::DSO
+            }
+        };
+        SymbolFile(raw)
+    }
+
+    #[inline]
+    fn get(self) -> Option<FileId> {
+        match self.0 {
+            Self::NONE => None,
+            raw if raw & Self::DSO != 0 => {
+                Some(FileId::Dso(crate::input_files::DsoId(raw & !Self::DSO)))
+            }
+            raw => Some(FileId::Obj(crate::input_files::ObjId(raw))),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Symbol {
+    // The name bytes live in the surrounding map entry or the owner file.
+    // Rust's symbol map is separate from its symbol array, so retain a thin
+    // pointer rather than a 16-byte slice.
+    name_ptr: usize,
+    name_len: u32,
+
+    /// Serializes the parallel updates made while resolving definitions.
+    /// The byte also holds the resolution-only `skip_dso` bit; both fit in
+    /// the structure's existing padding.
+    mu: AtomicU8,
+
+    /// The file that defines the symbol, if any. If several files define
+    /// it, the one with the strongest definition owns it.
+    file: SymbolFile,
+    origin: Origin,
+
+    /// The symbol value: its address if absolute, otherwise an offset
+    /// relative to `origin`.
+    pub value: u64,
+
+    /// Index of the symbol's entry in the owner file's symbol table. The
+    /// entry itself is read from the file (see [`Self::esym`]); only its
+    /// type and binding, and the section index that tells an undefined
+    /// or common symbol, are kept here, being consulted constantly.
+    pub sym_idx: u32,
+    st_info: u8,
+
+    pub ver_idx: u16,
+    pub visibility: AtomicU8,
+    pub flags: AtomicU8,
+    aux_idx: u32,
+
+    /// The symbol's boolean attributes, packed; the accessors below name
+    /// them.
+    bits: u16,
+}
+
+const _: () = assert!(std::mem::size_of::<Symbol>() == 48);
+
+const SYMBOL_LOCKED: u8 = 1 << 0;
+const SYMBOL_SKIP_DSO: u8 = 1 << 1;
+
+const NO_AUX: u32 = u32::MAX;
+const WRITE_TO_SYMTAB: u8 = 1 << 7;
+const NEEDS_MASK: u8 = !WRITE_TO_SYMTAB;
+
+const VISIBILITY_MASK: u8 = 0b11;
+const ORIGIN_KIND_SHIFT: u32 = 2;
+const ORIGIN_KIND_MASK: u8 = 0b111 << ORIGIN_KIND_SHIFT;
+const SYMBOL_STATE_SHIFT: u32 = 5;
+const SYMBOL_STATE_MASK: u8 = 0b11 << SYMBOL_STATE_SHIFT;
+const SYMBOL_UNDEFINED: u8 = 0;
+const SYMBOL_COMMON: u8 = 1;
+const SYMBOL_DEFINED: u8 = 2;
+
+const WEAK: u16 = 1 << 0;
+
+/// A symbol that may resolve to a definition in another ELF file at
+/// runtime is imported; one that other files may use at runtime is
+/// exported. Both can be true: a symbol exported from a DSO is usually
+/// also imported by it, since a definition elsewhere may interpose it.
+const IMPORTED: u16 = 1 << 1;
+const EXPORTED: u16 = 1 << 2;
+
+/// Whether the symbol's address is that of its PLT entry. C guarantees
+/// that function pointers compare equal process-wide, so when a
+/// position-dependent executable takes the address of an imported
+/// function it uses its own PLT entry as the address, and the DSO
+/// defining the function must use the same address.
+const CANONICAL: u16 = 1 << 3;
+
+/// Whether the symbol's data is copied from a DSO into the executable's
+/// BSS at load time, so that non-PIC code can address it.
+const COPYREL: u16 = 1 << 4;
+const COPYREL_READONLY: u16 = 1 << 5;
+
+const TRACED: u16 = 1 << 6;
+const WRAPPED: u16 = 1 << 7;
+
+/// For symbols with a default version, `foo@@VERSION`.
+const VERSIONED_DEFAULT: u16 = 1 << 8;
+
+const GC_ROOT: u16 = 1 << 10;
+
+/// For LTO: referenced by a regular (non-IR) object.
+const REFERENCED_BY_REGULAR_OBJ: u16 = 1 << 11;
+
+/// For LTO: the signature of a COMDAT group claimed by an IR file.
+const COMDAT_CLAIMED_BY_IR: u16 = 1 << 12;
+
+/// A dummy symbol standing in for a relocation into a section fragment.
+const FRAGMENT_DUMMY: u16 = 1 << 13;
+
+/// Whether the symbol comes from a Rust object, which decides how a
+/// legacy-mangled name is demangled.
+const RUST: u16 = 1 << 14;
+
+/// Defines a getter and a setter for each of the packed attributes.
+macro_rules! symbol_bits {
+    ($($get:ident, $set:ident: $bit:ident;)*) => {
+        impl Symbol {
+            $(
+                #[inline]
+                pub fn $get(&self) -> bool {
+                    self.bits & $bit != 0
+                }
+
+                #[inline]
+                pub fn $set(&mut self, on: bool) {
+                    if on {
+                        self.bits |= $bit;
+                    } else {
+                        self.bits &= !$bit;
+                    }
+                }
+            )*
+        }
+    };
+}
+
+symbol_bits! {
+    is_weak, set_weak: WEAK;
+    is_imported, set_imported: IMPORTED;
+    is_exported, set_exported: EXPORTED;
+    is_canonical, set_canonical: CANONICAL;
+    has_copyrel, set_copyrel: COPYREL;
+    is_copyrel_readonly, set_copyrel_readonly: COPYREL_READONLY;
+    is_traced, set_traced: TRACED;
+    is_wrapped, set_wrapped: WRAPPED;
+    is_versioned_default, set_versioned_default: VERSIONED_DEFAULT;
+    gc_root, set_gc_root: GC_ROOT;
+    referenced_by_regular_obj, set_referenced_by_regular_obj: REFERENCED_BY_REGULAR_OBJ;
+    comdat_claimed_by_ir, set_comdat_claimed_by_ir: COMDAT_CLAIMED_BY_IR;
+    is_fragment_dummy, set_fragment_dummy: FRAGMENT_DUMMY;
+    is_rust, set_rust: RUST;
+}
+
+impl Symbol {
+    #[inline]
+    pub fn new(name: &'static BStr) -> Symbol {
+        let name_len = u32::try_from(name.len()).expect("symbol name is larger than 4 GiB");
+        Symbol {
+            name_ptr: name.as_ptr() as usize,
+            name_len,
+            mu: AtomicU8::new(0),
+            file: SymbolFile::none(),
+            origin: Origin::none(),
+            value: 0,
+            sym_idx: u32::MAX,
+            st_info: 0,
+            ver_idx: VER_NDX_UNSPECIFIED as u16,
+            visibility: AtomicU8::new(STV_DEFAULT as u8),
+            flags: AtomicU8::new(0),
+            aux_idx: NO_AUX,
+            bits: 0,
+        }
+    }
+
+    /// The name storage outlives the link. Only [`Self::new`] sets the
+    /// pointer, and it accepts a static string.
+    #[inline]
+    pub fn name(&self) -> &'static BStr {
+        // SAFETY: `name_ptr` and `name_len` came from the same static slice
+        // in `new` and are never modified.
+        BStr::new(unsafe {
+            std::slice::from_raw_parts(self.name_ptr as *const u8, self.name_len as usize)
+        })
+    }
+
+    #[inline]
+    pub fn file(&self) -> Option<FileId> {
+        self.file.get()
+    }
+
+    #[inline]
+    pub fn set_file(&mut self, file: FileId) {
+        self.file = SymbolFile::some(file);
+    }
+
+    #[inline]
+    pub fn clear_file(&mut self) {
+        self.file = SymbolFile::none();
+    }
+
+    /// Prevents a definition in a DSO from resolving the symbol.
+    #[inline]
+    pub fn skip_dso(&self) -> bool {
+        self.mu.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
+    }
+
+    #[inline]
+    pub fn set_skip_dso(&self, on: bool) {
+        if on {
+            self.mu.fetch_or(SYMBOL_SKIP_DSO, Ordering::Relaxed);
+        } else {
+            self.mu.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
+        }
+    }
+
+    /// Reads `skip_dso` without forming a reference to the rest of a Symbol
+    /// being edited by another resolver worker.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must point to a live Symbol.
+    #[inline]
+    pub(crate) unsafe fn skip_dso_at(ptr: *const Symbol) -> bool {
+        let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
+        unsafe { &*mu }.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
+    }
+
+    /// Runs `f` while holding this symbol's resolution lock.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must come from an exclusively borrowed symbol table that stays
+    /// in place for the call. All concurrent access to the pointed-to symbol
+    /// must use this function.
+    #[inline(always)]
+    pub(crate) unsafe fn with_resolution_lock<R>(
+        ptr: *mut Symbol,
+        f: impl FnOnce(&mut Symbol) -> R,
+    ) -> R {
+        let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
+        let mut unlocked = 0;
+        loop {
+            match unsafe { &*mu }.compare_exchange_weak(
+                unlocked,
+                unlocked | SYMBOL_LOCKED,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(mut actual) => {
+                    while actual & SYMBOL_LOCKED != 0 {
+                        std::hint::spin_loop();
+                        actual = unsafe { &*mu }.load(Ordering::Relaxed);
+                    }
+                    unlocked = actual;
+                }
+            }
+        }
+
+        struct Guard(*const AtomicU8, u8);
+        impl Drop for Guard {
+            #[inline(always)]
+            fn drop(&mut self) {
+                unsafe { &*self.0 }.store(self.1, Ordering::Release);
+            }
+        }
+
+        let _guard = Guard(mu, unlocked);
+        unsafe { f(&mut *ptr) }
+    }
+
+    #[inline]
+    fn set_visibility_bits(&self, mask: u8, value: u8) {
+        let mut cur = self.visibility.load(Ordering::Relaxed);
+        loop {
+            let new = (cur & !mask) | (value & mask);
+            match self.visibility.compare_exchange_weak(
+                cur,
+                new,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(actual) => cur = actual,
+            }
+        }
+    }
+
+    #[inline]
+    fn origin_kind(&self) -> OriginKind {
+        match (self.visibility.load(Ordering::Relaxed) & ORIGIN_KIND_MASK) >> ORIGIN_KIND_SHIFT {
+            0 => OriginKind::None,
+            1 => OriginKind::Section,
+            2 => OriginKind::Fragment,
+            3 => OriginKind::Chunk,
+            4 => OriginKind::Symbol,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn set_origin_kind(&mut self, kind: OriginKind) {
+        let bits = self.visibility.get_mut();
+        *bits = (*bits & !ORIGIN_KIND_MASK) | ((kind as u8) << ORIGIN_KIND_SHIFT);
+    }
+
+    #[inline]
+    fn symbol_state(&self) -> u8 {
+        (self.visibility.load(Ordering::Relaxed) & SYMBOL_STATE_MASK) >> SYMBOL_STATE_SHIFT
+    }
+
+    #[inline]
+    fn set_symbol_state(&mut self, state: u8) {
+        let bits = self.visibility.get_mut();
+        *bits = (*bits & !SYMBOL_STATE_MASK) | (state << SYMBOL_STATE_SHIFT);
+    }
+
+    #[inline]
+    pub fn visibility(&self) -> u32 {
+        (self.visibility.load(Ordering::Relaxed) & VISIBILITY_MASK) as u32
+    }
+
+    #[inline]
+    pub fn set_visibility(&self, v: u32) {
+        self.set_visibility_bits(VISIBILITY_MASK, v as u8);
+    }
+
+    /// Narrows the visibility to the most restrictive of the current one
+    /// and `vis`: a hidden reference makes a symbol hidden.
+    #[inline]
+    pub fn merge_visibility(&self, vis: u32) {
+        let vis = if vis == STV_INTERNAL { STV_HIDDEN } else { vis } as u8;
+        let rank = |v: u8| match v as u32 {
+            STV_HIDDEN => 1,
+            STV_PROTECTED => 2,
+            _ => 3,
+        };
+        let mut cur = self.visibility.load(Ordering::Relaxed);
+        while rank(vis) < rank(cur & VISIBILITY_MASK) {
+            let new = (cur & !VISIBILITY_MASK) | vis;
+            match self.visibility.compare_exchange_weak(
+                cur,
+                new,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => cur = actual,
+            }
+        }
+    }
+
+    #[inline]
+    pub fn flags(&self) -> u8 {
+        self.flags.load(Ordering::Relaxed) & NEEDS_MASK
+    }
+
+    #[inline]
+    pub fn add_flags(&self, flags: u8) {
+        debug_assert_eq!(flags & WRITE_TO_SYMTAB, 0);
+        self.flags.fetch_or(flags, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn write_to_symtab(&self) -> bool {
+        self.flags.load(Ordering::Relaxed) & WRITE_TO_SYMTAB != 0
+    }
+
+    #[inline]
+    pub fn set_write_to_symtab(&self) {
+        self.flags.fetch_or(WRITE_TO_SYMTAB, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn clear_flags(&self) {
+        self.flags.fetch_and(WRITE_TO_SYMTAB, Ordering::Relaxed);
+    }
+
+    /// Marks the symbol, returning true if it wasn't marked yet. Once the
+    /// NEEDS_* flags have been turned into GOT and PLT entries, the field
+    /// is free to serve as a scratch mark, which thunk creation uses.
+    #[inline]
+    pub fn mark(&self) -> bool {
+        // A relaxed load + branch (assuming miss) takes only around 20 cycles,
+        // while an atomic RMW can easily take hundreds on x86. We note that it's
+        // common that another thread beat us in marking, so doing an optimistic
+        // early test tends to improve performance in the ~20% ballpark.
+        if self.flags.load(Ordering::Relaxed) & NEEDS_MASK != 0 {
+            return false;
+        }
+        self.flags.fetch_or(1, Ordering::Relaxed) & NEEDS_MASK == 0
+    }
+
+    #[inline]
+    pub fn is_marked(&self) -> bool {
+        self.flags.load(Ordering::Relaxed) & NEEDS_MASK != 0
+    }
+
+    #[inline]
+    pub fn unmark(&self) {
+        self.clear_flags();
+    }
+
+    pub fn aux<'a>(&self, symbols: &'a SymbolTable) -> Option<&'a SymbolAux> {
+        (self.aux_idx != NO_AUX).then(|| &symbols.aux[self.aux_idx as usize])
+    }
+
+    pub fn got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.got_idx)
+    }
+
+    pub fn gottp_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.gottp_idx)
+    }
+
+    pub fn tlsgd_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.tlsgd_idx)
+    }
+
+    pub fn tlsdesc_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.tlsdesc_idx)
+    }
+
+    pub fn plt_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.plt_idx)
+    }
+
+    pub fn pltgot_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.pltgot_idx)
+    }
+
+    pub fn dynsym_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.dynsym_idx)
+    }
+
+    pub fn opd_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        self.aux(symbols).and_then(|a| a.opd_idx)
+    }
+
+    #[inline]
+    pub fn has_plt(&self, symbols: &SymbolTable) -> bool {
+        self.plt_idx(symbols).is_some() || self.pltgot_idx(symbols).is_some()
+    }
+
+    #[inline]
+    pub fn has_got(&self, symbols: &SymbolTable) -> bool {
+        self.got_idx(symbols).is_some()
+    }
+
+    #[inline]
+    pub fn has_gottp(&self, symbols: &SymbolTable) -> bool {
+        self.gottp_idx(symbols).is_some()
+    }
+
+    #[inline]
+    pub fn has_tlsgd(&self, symbols: &SymbolTable) -> bool {
+        self.tlsgd_idx(symbols).is_some()
+    }
+
+    #[inline]
+    pub fn has_tlsdesc(&self, symbols: &SymbolTable) -> bool {
+        self.tlsdesc_idx(symbols).is_some()
+    }
+
+    pub fn has_opd(&self, symbols: &SymbolTable) -> bool {
+        self.opd_idx(symbols).is_some()
+    }
+
+    #[inline]
+    pub fn input_section(&self) -> Option<SectionRef> {
+        self.input_section_ref().map(|section| SectionRef {
+            file: section.file,
+            shndx: section.shndx,
+        })
+    }
+
+    /// The input section itself, stored directly as in C++'s tagged origin.
+    #[inline]
+    pub fn input_section_ref(&self) -> Option<&InputSection> {
+        if self.origin_kind() == OriginKind::Section {
+            // SAFETY: input sections have stable arena addresses, and
+            // mergeable conversion leaves them in those slots.
+            Some(unsafe { &*(self.origin.raw as usize as *const InputSection) })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn fragment(&self) -> Option<FragmentRef> {
+        if self.origin_kind() == OriginKind::Fragment {
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.fragment })
+        } else {
+            None
+        }
+    }
+
+    pub fn output_chunk(&self) -> Option<ChunkId> {
+        if self.origin_kind() == OriginKind::Chunk {
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.chunk })
+        } else {
+            None
+        }
+    }
+
+    pub fn symbol_origin(&self) -> Option<SymbolId> {
+        if self.origin_kind() == OriginKind::Symbol {
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.symbol })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn clear_origin(&mut self) {
+        self.origin = Origin::none();
+        self.set_origin_kind(OriginKind::None);
+    }
+
+    #[inline]
+    pub fn set_input_section(&mut self, section: &InputSection) {
+        self.origin = Origin::section(section);
+        self.set_origin_kind(OriginKind::Section);
+    }
+
+    #[inline]
+    pub fn set_fragment(&mut self, fragment: FragmentRef) {
+        self.origin = Origin::fragment(fragment);
+        self.set_origin_kind(OriginKind::Fragment);
+    }
+
+    #[inline]
+    pub fn set_output_chunk(&mut self, chunk: ChunkId) {
+        self.origin = Origin::chunk(chunk);
+        self.set_origin_kind(OriginKind::Chunk);
+    }
+
+    #[inline]
+    pub fn set_symbol_origin(&mut self, symbol: SymbolId) {
+        self.origin = Origin::symbol(symbol);
+        self.set_origin_kind(OriginKind::Symbol);
+    }
+
+    #[inline]
+    pub(crate) fn origin_state(&self) -> OriginState {
+        OriginState {
+            payload: self.origin,
+            kind: self.origin_kind(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_origin_state(&mut self, state: OriginState) {
+        self.origin = state.payload;
+        self.set_origin_kind(state.kind);
+    }
+
+    /// The symbol's entry in the owner file's symbol table; a blank one
+    /// for a symbol no file defines.
+    #[inline]
+    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> ElfSym {
+        match self.file() {
+            Some(file) => ctx.file(file).elf_syms.at_in::<E>(self.sym_idx as usize),
+            None => ElfSym::default(),
+        }
+    }
+
+    /// Records the file's entry the symbol now refers to (see
+    /// [`Self::esym`]).
+    #[inline]
+    pub fn set_esym(&mut self, esym: &ElfSym) {
+        self.st_info = esym.st_info;
+        let state = if esym.st_shndx as u32 == SHN_UNDEF {
+            SYMBOL_UNDEFINED
+        } else if esym.st_shndx as u32 == SHN_COMMON {
+            SYMBOL_COMMON
+        } else {
+            SYMBOL_DEFINED
+        };
+        self.set_symbol_state(state);
+    }
+
+    #[inline]
+    pub fn st_type(&self) -> u32 {
+        (self.st_info & 0xf) as u32
+    }
+
+    #[inline]
+    pub fn st_bind(&self) -> u32 {
+        (self.st_info >> 4) as u32
+    }
+
+    #[inline]
+    pub fn is_undef(&self) -> bool {
+        self.symbol_state() == SYMBOL_UNDEFINED
+    }
+
+    #[inline]
+    pub fn is_common(&self) -> bool {
+        self.symbol_state() == SYMBOL_COMMON
+    }
+
+    #[inline]
+    pub fn is_undef_weak(&self) -> bool {
+        self.is_undef() && self.st_bind() == STB_WEAK
+    }
+
+    /// The symbol type, treating an IFUNC defined in a DSO as a plain
+    /// function since the resolver runs inside that DSO.
+    #[inline]
+    pub fn ty(&self) -> u32 {
+        let ty = self.st_type();
+        if ty == STT_GNU_IFUNC && matches!(self.file(), Some(FileId::Dso(_))) {
+            STT_FUNC
+        } else {
+            ty
+        }
+    }
+
+    #[inline]
+    pub fn is_ifunc(&self) -> bool {
+        self.ty() == STT_GNU_IFUNC
+    }
+
+    /// An unresolved weak symbol acts as an absolute symbol at address 0.
+    #[inline]
+    pub fn is_remaining_undef_weak(&self) -> bool {
+        !self.is_imported() && self.is_undef_weak()
+    }
+
+    #[inline]
+    pub fn is_absolute(&self) -> bool {
+        if self.is_remaining_undef_weak() {
+            return true;
+        }
+        !self.is_imported() && self.origin_kind() == OriginKind::None
+    }
+
+    #[inline]
+    pub fn is_relative(&self) -> bool {
+        !self.is_absolute()
+    }
+
+    /// Whether the symbol appears as a local symbol in the output symbol
+    /// table. A global symbol may be demoted by visibility or by a version
+    /// script; not being exported to the dynamic symbol table is not
+    /// enough.
+    #[inline]
+    pub fn is_local<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        if self.st_bind() == STB_LOCAL {
+            return true;
+        }
+        if ctx.args.relocatable {
+            return false;
+        }
+        let vis = self.visibility();
+        vis == STV_HIDDEN || vis == STV_INTERNAL || self.ver_idx as u32 == VER_NDX_LOCAL
+    }
+
+    /// An IFUNC in a position-dependent executable occupies two GOT slots:
+    /// the PLT address, used as the symbol's address, and the resolved one.
+    pub fn is_pde_ifunc<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        self.is_ifunc() && !ctx.args.pic && !E::IS_PPC64
+    }
+
+    /// Whether the PC-relative address is known at link time.
+    pub fn is_pcrel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        !self.is_imported() && !self.is_ifunc() && (self.is_relative() || !ctx.args.pic)
+    }
+
+    /// Whether the thread-pointer-relative address is known at link time.
+    pub fn is_tprel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        debug_assert_eq!(self.ty(), STT_TLS);
+        !ctx.args.shared && !self.is_imported()
+    }
+
+    /// Whether the thread-pointer-relative address is known at load time,
+    /// i.e. unless we are creating a dlopen'able DSO.
+    pub fn is_tprel_runtime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        debug_assert_eq!(self.ty(), STT_TLS);
+        !(ctx.args.shared && ctx.args.z_dlopen)
+    }
+
+    /// The symbol's address, taking PLT, copy relocations and section
+    /// fragments into account.
+    #[inline]
+    pub fn addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        self.addr_with(ctx, AddrFlags::default())
+    }
+
+    #[inline]
+    pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
+        if let Some(frag_ref) = self.fragment() {
+            let frag = ctx.fragment(frag_ref);
+            if !frag.is_alive() {
+                // A non-alloc section (typically debug info) refers to a
+                // piece of an alloc section that was garbage-collected.
+                return 0;
+            }
+            return ctx.fragment_addr(frag_ref) + self.value;
+        }
+
+        if self.has_copyrel() {
+            let chunk = if self.is_copyrel_readonly() {
+                &ctx.copyrel_relro
+            } else {
+                &ctx.copyrel
+            };
+            return chunk.hdr.shdr.sh_addr + self.value;
+        }
+
+        if E::FAMILY == crate::arch::Family::Ppc64V1 && !flags.no_opd && self.has_opd(&ctx.symbols)
+        {
+            return self.opd_addr(ctx);
+        }
+
+        if !flags.no_plt && self.has_plt(&ctx.symbols) {
+            debug_assert!(self.is_imported() || self.is_ifunc());
+            return self.plt_addr(ctx);
+        }
+
+        match self.input_section_ref() {
+            Some(isec) => {
+                if !isec.is_alive() {
+                    if let Some(leader) = isec.icf_leader() {
+                        return ctx.section(leader).addr(ctx) + self.value;
+                    }
+
+                    if isec.name(&ctx.objs[isec.file.index()]) == b".eh_frame" {
+                        // .eh_frame contents are parsed and reconstructed by
+                        // the linker, so a pointer into an input .eh_frame
+                        // isn't meaningful; but CRT files define symbols at
+                        // the very beginning and end of the section.
+                        let name = self.name();
+                        let eh_frame = &ctx.eh_frame.hdr.shdr;
+                        if name.starts_with(b"__EH_FRAME_BEGIN__")
+                            || name.starts_with(b"__EH_FRAME_LIST__")
+                            || name.starts_with(b".eh_frame_seg")
+                            || self.st_type() == STT_SECTION
+                        {
+                            return eh_frame.sh_addr;
+                        }
+                        if name.starts_with(b"__FRAME_END__")
+                            || name.starts_with(b"__EH_FRAME_LIST_END__")
+                        {
+                            return eh_frame.sh_addr + eh_frame.sh_size;
+                        }
+                        // ARM object files contain "$d" local symbols at
+                        // the beginning of data sections. Their values are
+                        // not significant for .eh_frame.
+                        if name == b"$d" || name.starts_with(b"$d.") {
+                            return eh_frame.sh_addr;
+                        }
+                        crate::fatal!(
+                            ctx,
+                            "symbol referring to .eh_frame is not supported: {} {}",
+                            self,
+                            ctx.file_display(self.file().unwrap())
+                        );
+                    }
+
+                    // A relocation refers to a local symbol in a COMDAT
+                    // section that was discarded. This violates the spec,
+                    // which allows only global symbols to refer to COMDAT
+                    // members, but .eh_frame tends to do it.
+                    return 0;
+                }
+                isec.addr(ctx) + self.value
+            }
+            // Synthetic symbols hold their final address in `value`, as do
+            // absolute ones.
+            None => self.value,
+        }
+    }
+
+    #[inline]
+    pub fn got_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.got.hdr.shdr.sh_addr + self.got_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
+    }
+
+    pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.gotplt.hdr.shdr.sh_addr
+            + crate::chunks::got::gotplt::header_size::<E>()
+            + self.plt_idx(&ctx.symbols).unwrap() as u64
+                * crate::chunks::got::gotplt::entry_size::<E>()
+    }
+
+    pub fn gottp_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.got.hdr.shdr.sh_addr
+            + self.gottp_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
+    }
+
+    pub fn tlsgd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.got.hdr.shdr.sh_addr
+            + self.tlsgd_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
+    }
+
+    pub fn tlsdesc_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.got.hdr.shdr.sh_addr
+            + self.tlsdesc_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
+    }
+
+    #[inline]
+    pub fn plt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        if let Some(idx) = self.plt_idx(&ctx.symbols) {
+            return ctx.plt.hdr.shdr.sh_addr + crate::chunks::got::plt::entry_offset::<E>(idx);
+        }
+        ctx.pltgot.hdr.shdr.sh_addr + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE
+    }
+
+    pub fn opd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        ctx.opd_addr(self.opd_idx(&ctx.symbols).unwrap())
+    }
+
+    /// The GOT slot a PLT entry should load its target from: for an IFUNC
+    /// in a position-dependent executable that is the second of its two
+    /// slots.
+    pub fn got_pltgot_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        if self.is_pde_ifunc(ctx) {
+            self.got_addr(ctx) + E::WORD_SIZE as u64
+        } else {
+            self.got_addr(ctx)
+        }
+    }
+
+    /// Finds a thunk within branch range of `p`.
+    pub fn thunk_addr<E: Arch>(&self, ctx: &Context<E>, p: u64) -> u64 {
+        let distance = E::branch_distance() as u64;
+        let addrs: &[u64] = self.aux(&ctx.symbols).map_or(&[], |a| &a.thunk_addrs);
+        let lo = p.saturating_sub(distance);
+        let i = addrs.partition_point(|&a| a < lo);
+        if let Some(&addr) = addrs.get(i) {
+            let disp = addr as i64 - p as i64;
+            if -(distance as i64) <= disp && disp < distance as i64 {
+                return addr;
+            }
+        }
+        crate::fatal!(ctx, "range extension thunk out of range: {}", self);
+    }
+
+    /// The symbol's index in the output symbol table.
+    pub fn output_sym_idx<E: Arch>(&self, ctx: &Context<E>) -> u32 {
+        let file = ctx.file(self.file().unwrap());
+        let i = file.output_sym_indices[self.sym_idx as usize];
+        debug_assert!(i >= 0);
+        if self.is_local(ctx) {
+            file.local_symtab_idx + i as u32
+        } else {
+            file.global_symtab_idx + i as u32
+        }
+    }
+
+    /// The version string of a symbol defined in a DSO.
+    pub fn version<E: Arch>(&self, ctx: &Context<E>) -> &'static [u8] {
+        if let Some(FileId::Dso(id)) = self.file() {
+            let dso = &ctx.dsos[id.index()];
+            if let Some(&ver) = dso.version_strings.get(self.ver_idx as usize) {
+                return ver;
+            }
+        }
+        b""
+    }
+
+    /// Returns the demangled name if demangling is possible.
+    pub fn demangled(&self) -> Option<String> {
+        if self.is_rust() || self.name().starts_with(b"_R") {
+            demangle_rust(self.name())
+        } else {
+            demangle_cpp(self.name())
+        }
+    }
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if demangle_enabled() {
+            if let Some(name) = self.demangled() {
+                return f.write_str(&name);
+            }
+        }
+        write!(f, "{}", self.name())
+    }
+}
+
+/// The length of the symbol name in a key, which may carry a version
+/// suffix (`foo@VER`).
+#[inline]
+pub fn name_len(key: &[u8]) -> usize {
+    crate::util::find_byte(b'@', key).unwrap_or(key.len())
+}
+
+/// A key with its hash. Recording a key already computed its hash; it is
+/// stored in the map key so that the map does not scan the string again.
+#[derive(Clone, Copy, Debug)]
+struct Key {
+    hash: u64,
+    key: &'static [u8],
+}
+
+impl PartialEq for Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for Key {}
+
+impl Hash for Key {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
+}
+
+/// A key for lookups, which needn't outlive the lookup.
+struct Query<'a> {
+    hash: u64,
+    key: &'a [u8],
+}
+
+impl Hash for Query<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
+}
+
+impl Equivalent<Key> for Query<'_> {
+    fn equivalent(&self, key: &Key) -> bool {
+        self.key == key.key
+    }
+}
+
+/// Passes a key's precomputed hash through.
+#[derive(Default)]
+struct PassThroughHasher(u64);
+
+impl Hasher for PassThroughHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("keys hash by their precomputed hash")
+    }
+
+    fn write_u64(&mut self, hash: u64) {
+        self.0 = hash;
+    }
+}
+
+type ShardMap = HashMap<Key, SymbolId, BuildHasherDefault<PassThroughHasher>>;
+
+const NUM_SHARDS: usize = 64;
+
+/// The hash of a symbol table key, which the sharded table and its bins
+/// share.
+pub fn hash_key(key: &[u8]) -> u64 {
+    xxhash_rust::xxh3::xxh3_64(key)
+}
+
+fn shard_of(hash: u64) -> usize {
+    (hash % NUM_SHARDS as u64) as usize
+}
+
+/// A key recorded for interning, with the slot that receives its symbol.
+/// A slot is an owner and an index whose meaning is up to the recorder.
+#[derive(Clone, Copy, Debug)]
+struct Pending<S> {
+    key: Key,
+    name_len: u32,
+    slot: S,
+}
+
+/// The keys one task recorded for interning, grouped by shard.
+#[derive(Debug)]
+pub struct Bins<S = (u32, u32)>(Vec<Vec<Pending<S>>>);
+
+impl<S> Default for Bins<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<S> Bins<S> {
+    pub fn new() -> Bins<S> {
+        Bins((0..NUM_SHARDS).map(|_| Vec::new()).collect())
+    }
+
+    /// Records `key`, whose symbol is named by its first `name_len` bytes.
+    #[inline]
+    pub fn record(&mut self, key: &'static [u8], name_len: usize, slot: S) {
+        self.record_hashed(key, hash_key(key), name_len, slot);
+    }
+
+    /// Records a key whose hash was computed along with the key, as the
+    /// files' keys are hashed while the files are read.
+    #[inline]
+    pub fn record_hashed(&mut self, key: &'static [u8], hash: u64, name_len: usize, slot: S) {
+        debug_assert_eq!(hash, hash_key(key));
+        self.0[shard_of(hash)].push(Pending {
+            key: Key { hash, key },
+            name_len: name_len as u32,
+            slot,
+        });
+    }
+}
+
+/// A stable slot in an input file that receives an interned symbol id.
+///
+/// Files allocate their complete symbol-id arrays before recording keys and
+/// keep them alive until `gather`, just as C++ keeps an ArenaPtr slot stable.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SymbolSlot(NonNull<SymbolId>);
+
+// SAFETY: each slot is recorded exactly once and written by the one shard
+// that owns its key. The owner file remains alive until gathering finishes.
+unsafe impl Send for SymbolSlot {}
+unsafe impl Sync for SymbolSlot {}
+
+impl SymbolSlot {
+    #[inline]
+    pub(crate) fn new(slot: &mut SymbolId) -> SymbolSlot {
+        SymbolSlot(NonNull::from(slot))
+    }
+
+    #[inline]
+    fn assign(self, id: SymbolId) {
+        // SAFETY: guaranteed by the construction and synchronization rules
+        // documented on SymbolSlot.
+        unsafe { self.0.write(id) };
+    }
+}
+
+/// A thread-safe bump allocator over the unused tail of a symbol table.
+/// C++ mold's arena lets each file allocate its local symbols while that
+/// file is being parsed; this provides the same stable, disjoint ranges in
+/// the central Rust arena.
+pub struct ParallelSymbolAllocator<'a> {
+    slots: AtomicPtr<MaybeUninit<Symbol>>,
+    first: usize,
+    next: AtomicUsize,
+    maximum: usize,
+    marker: PhantomData<&'a mut [MaybeUninit<Symbol>]>,
+}
+
+impl ParallelSymbolAllocator<'_> {
+    /// Allocates `n` consecutive symbols and passes their id and storage to
+    /// `init`.
+    ///
+    /// # Safety
+    ///
+    /// `init` must initialize every element of the slice it is given.
+    pub unsafe fn allocate(
+        &self,
+        n: usize,
+        init: impl FnOnce(SymbolId, &mut [MaybeUninit<Symbol>]),
+    ) -> SymbolId {
+        let offset = self.next.fetch_add(n, Ordering::Relaxed);
+        let end = offset.checked_add(n).expect("too many symbols");
+        assert!(end <= self.maximum);
+        let base_id = SymbolId((self.first + offset) as u32);
+        let ptr = self.slots.load(Ordering::Relaxed);
+        // SAFETY: the table reserved `maximum` slots before publishing the
+        // pointer, and the atomic bump pointer gives this call an exclusive
+        // range within them.
+        let slots = unsafe { std::slice::from_raw_parts_mut(ptr.add(offset), n) };
+        init(base_id, slots);
+        base_id
+    }
+}
+
+/// A sparsely-backed address range for symbols. Allocation is monotonic and
+/// individual symbols are not freed. Reserving the complete range up front
+/// keeps symbol addresses stable and lets the kernel back the densely filled
+/// prefix with transparent huge pages, as C++ mold's `ArenaResource` does.
+struct SymbolArena {
+    data: NonNull<Symbol>,
+    len: usize,
+    size: usize,
+}
+
+// SAFETY: initialized symbols follow their own Send and Sync bounds. Growing
+// the initialized prefix requires an exclusive borrow of the arena.
+unsafe impl Send for SymbolArena {}
+unsafe impl Sync for SymbolArena {}
+
+impl SymbolArena {
+    // C++ mold reserves 8 GiB on 64-bit hosts and a smaller range where
+    // address space is limited. The mapping is sparse, so unused pages consume
+    // neither physical memory nor page-table entries.
+    const SIZE: usize = if usize::BITS == 64 {
+        1usize << 33
+    } else {
+        1usize << 28
+    };
+
+    fn new() -> SymbolArena {
+        let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        let flags = flags | libc::MAP_NORESERVE;
+
+        // SAFETY: this creates private anonymous storage. No typed access is
+        // made until an element has been initialized below.
+        let data = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                Self::SIZE,
+                libc::PROT_READ | libc::PROT_WRITE,
+                flags,
+                -1,
+                0,
+            )
+        };
+        if data == libc::MAP_FAILED {
+            panic!(
+                "mmap of {} bytes for symbols failed: {}",
+                Self::SIZE,
+                std::io::Error::last_os_error()
+            );
+        }
+
+        // Large links fill the beginning of the arena densely. Transparent
+        // huge pages reduce address-translation overhead without populating
+        // unused pages.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        // SAFETY: the range is the fresh mapping; the advice is only a hint.
+        unsafe {
+            libc::madvise(data, Self::SIZE, libc::MADV_HUGEPAGE);
+        }
+
+        SymbolArena {
+            data: NonNull::new(data.cast()).expect("mmap returned a null address"),
+            len: 0,
+            size: Self::SIZE,
+        }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.size / std::mem::size_of::<Symbol>()
+    }
+
+    #[inline]
+    fn reserve(&self, additional: usize) {
+        let end = self.len.checked_add(additional).expect("too many symbols");
+        assert!(end <= self.capacity(), "symbol arena is full");
+    }
+
+    #[inline]
+    fn push(&mut self, symbol: Symbol) {
+        self.reserve(1);
+        // SAFETY: reserve proved this is the first uninitialized slot.
+        unsafe { self.data.as_ptr().add(self.len).write(symbol) };
+        self.len += 1;
+    }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut Symbol {
+        self.data.as_ptr()
+    }
+
+    /// # Safety
+    ///
+    /// Every element added to the initialized prefix must have been written.
+    #[inline]
+    unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(len <= self.capacity());
+        self.len = len;
+    }
+}
+
+impl Deref for SymbolArena {
+    type Target = [Symbol];
+
+    fn deref(&self) -> &[Symbol] {
+        // SAFETY: `len` covers exactly the initialized prefix.
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.len) }
+    }
+}
+
+impl DerefMut for SymbolArena {
+    fn deref_mut(&mut self) -> &mut [Symbol] {
+        // SAFETY: an exclusive arena borrow gives exclusive access to the
+        // initialized prefix.
+        unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.len) }
+    }
+}
+
+impl fmt::Debug for SymbolArena {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl Drop for SymbolArena {
+    fn drop(&mut self) {
+        // SAFETY: the prefix contains initialized symbols, and the complete
+        // address range is the mapping created in `new`.
+        unsafe {
+            std::ptr::drop_in_place(std::ptr::slice_from_raw_parts_mut(
+                self.data.as_ptr(),
+                self.len,
+            ));
+            libc::munmap(self.data.as_ptr().cast(), self.size);
+        }
+    }
+}
+
+/// Mutable access to the stable symbol-arena blocks owned by map shards.
+struct SymbolBlockPtr(*mut Symbol);
+
+// SAFETY: `SymbolTable::par_for_each_global_mut` gives each parallel task the
+// non-overlapping blocks owned by one shard while holding the arena exclusively.
+unsafe impl Sync for SymbolBlockPtr {}
+
+/// A pointer to the auxiliary arena during a parallel scatter to unique symbols.
+struct SymbolAuxPtr(*mut SymbolAux);
+
+// SAFETY: the two methods using this wrapper require distinct symbol ids, so
+// their parallel tasks access non-overlapping auxiliary records.
+unsafe impl Sync for SymbolAuxPtr {}
+
+impl SymbolAuxPtr {
+    /// Applies `f` to the record at `index`.
+    ///
+    /// # Safety
+    /// The caller must have exclusive access to this record.
+    unsafe fn with_mut<R>(&self, index: usize, f: impl FnOnce(&mut SymbolAux) -> R) -> R {
+        // SAFETY: the caller supplies a valid, exclusively owned index.
+        f(unsafe { &mut *self.0.add(index) })
+    }
+}
+
+impl SymbolBlockPtr {
+    /// Applies `f` to the symbols in non-overlapping arena ranges.
+    ///
+    /// # Safety
+    /// The ranges must be initialized and exclusively owned by this task.
+    unsafe fn for_each(&self, ranges: &[Range<u32>], f: &(impl Fn(&mut Symbol) + Sync)) {
+        for range in ranges {
+            let len = (range.end - range.start) as usize;
+            // SAFETY: guaranteed by the caller for every shard block.
+            let symbols =
+                unsafe { std::slice::from_raw_parts_mut(self.0.add(range.start as usize), len) };
+            symbols.iter_mut().for_each(&f);
+        }
+    }
+}
+
+/// The arena of all symbols, and the index of global ones by name.
+///
+/// The index is a map from strings to symbols, built in two phases. In
+/// the first phase, which may run in parallel, [`Bins::record`] records a
+/// key and a slot that needs the key's symbol. [`SymbolTable::gather`]
+/// then deduplicates the keys, finds or creates one symbol for each key,
+/// and hands its id to every recorded slot.
+///
+/// Keys whose hashes fall into different shards never interact, and each
+/// shard is processed by exactly one thread during `gather`, so unlike
+/// with a concurrent hash table, no synchronization is needed, and each
+/// key is hashed only once, when recorded.
+///
+/// [`SymbolTable::intern`] handles keys that arrive outside the two-phase
+/// pattern, one at a time.
+#[derive(Debug)]
+pub struct SymbolTable {
+    symbols: SymbolArena,
+    aux: Vec<SymbolAux>,
+    shards: Vec<ShardMap>,
+
+    /// The arena blocks of named symbols owned by each map shard. The other
+    /// symbols are files' local symbols.
+    globals: Vec<Vec<Range<u32>>>,
+}
+
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SymbolTable {
+    pub fn new() -> SymbolTable {
+        let mut table = SymbolTable {
+            symbols: SymbolArena::new(),
+            aux: Vec::new(),
+            shards: (0..NUM_SHARDS).map(|_| ShardMap::default()).collect(),
+            globals: (0..NUM_SHARDS).map(|_| Vec::new()).collect(),
+        };
+        let placeholder = table.add(Symbol::new(BStr::new(b"")));
+        debug_assert_eq!(placeholder, SymbolId::DISCARDED_COMDAT);
+        table
+    }
+
+    /// Returns the global symbol for `key`, creating it if necessary. The
+    /// key may carry a version suffix (`foo@VER`), which is not part of
+    /// the symbol's name.
+    pub fn intern(&mut self, key: &'static [u8]) -> SymbolId {
+        self.intern_with_name(key, &key[..name_len(key)])
+    }
+
+    /// Interns `key` for a symbol named `name`, a prefix of the key.
+    pub fn intern_with_name(&mut self, key: &'static [u8], name: &'static [u8]) -> SymbolId {
+        debug_assert!(key.starts_with(name));
+        let hash = hash_key(key);
+        let shard_idx = shard_of(hash);
+        let shard = &mut self.shards[shard_idx];
+        if let Some(&id) = shard.get(&Key { hash, key }) {
+            return id;
+        }
+        let id = SymbolId(self.symbols.len() as u32);
+        self.symbols.push(Symbol::new(BStr::new(name)));
+        shard.insert(Key { hash, key }, id);
+        self.note_globals(shard_idx, id.0..id.0 + 1);
+        id
+    }
+
+    /// Records that the symbols in `range` are globals owned by `shard`.
+    fn note_globals(&mut self, shard: usize, range: Range<u32>) {
+        let globals = &mut self.globals[shard];
+        match globals.last_mut() {
+            Some(last) if last.end == range.start => last.end = range.end,
+            _ => globals.push(range),
+        }
+    }
+
+    /// Makes room for `additional` more symbols, so that the table isn't
+    /// copied when it grows.
+    pub fn reserve(&mut self, additional: usize) {
+        self.symbols.reserve(additional);
+    }
+
+    /// Returns the auxiliary record for `id`, allocating it in the side
+    /// arena if this symbol has none. C++ mold likewise keeps this rarely
+    /// used state outside `Symbol` and refers to it with an arena index.
+    pub fn aux_mut(&mut self, id: SymbolId) -> &mut SymbolAux {
+        let mut index = self.symbols[id.index()].aux_idx;
+        if index == NO_AUX {
+            index = self.aux.len() as u32;
+            assert_ne!(index, NO_AUX, "too many symbol auxiliary records");
+            self.aux.push(SymbolAux::default());
+            self.symbols[id.index()].aux_idx = index;
+        }
+        &mut self.aux[index as usize]
+    }
+
+    /// Allocates auxiliary records for the sorted, unique symbol ids that
+    /// do not already have one.
+    pub fn allocate_aux(&mut self, ids: &[SymbolId]) {
+        let ids: Vec<SymbolId> = ids
+            .iter()
+            .copied()
+            .filter(|id| self.symbols[id.index()].aux_idx == NO_AUX)
+            .collect();
+        let first = self.aux.len();
+        let records: Vec<SymbolAux> = ids.par_iter().map(|_| SymbolAux::default()).collect();
+        self.aux.extend(records);
+        assert!(self.aux.len() < NO_AUX as usize);
+        for (i, id) in ids.into_iter().enumerate() {
+            self.symbols[id.index()].aux_idx = (first + i) as u32;
+        }
+    }
+
+    /// Records a range extension thunk address. Thunks are created in
+    /// address order.
+    pub fn add_thunk_addr(&mut self, id: SymbolId, addr: u64) {
+        let addrs = &mut self.aux_mut(id).thunk_addrs;
+        debug_assert!(addrs.last().is_none_or(|&last| last < addr));
+        addrs.push(addr);
+    }
+
+    pub fn lookup(&self, key: &[u8]) -> Option<SymbolId> {
+        let hash = hash_key(key);
+        self.shards[shard_of(hash)]
+            .get(&Query { hash, key })
+            .copied()
+    }
+
+    /// Interns the keys recorded in `bins` all at once and hands each slot
+    /// its symbol through `assign`.
+    pub fn gather<S: Copy + Send + Sync>(
+        &mut self,
+        bins: Vec<Bins<S>>,
+        assign: impl Fn(S, SymbolId) + Sync,
+    ) {
+        // C++ mold gives each shard stable arena blocks and constructs a new
+        // symbol as soon as its key is inserted. Reserve the backing vector
+        // once, then hand out the same 256-slot blocks from an atomic bump
+        // pointer. At most one partial block per shard is left unused.
+        const BLOCK_SIZE: usize = 256;
+        let count: usize = bins.iter().flat_map(|bin| &bin.0).map(Vec::len).sum();
+        let first = self.symbols.len();
+        self.symbols
+            .reserve(count.saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1)));
+        let capacity = self.symbols.capacity();
+        let storage = AtomicPtr::new(self.symbols.as_mut_ptr());
+        let next = AtomicUsize::new(first);
+
+        let ranges: Vec<Vec<Range<u32>>> = self
+            .shards
+            .par_iter_mut()
+            .enumerate()
+            .map(|(i, shard)| {
+                let count: usize = bins.iter().map(|bin| bin.0[i].len()).sum();
+                shard.reserve(count);
+                let symbols = storage.load(Ordering::Relaxed);
+                let mut blocks: Vec<(usize, usize)> = Vec::new();
+                for p in bins.iter().flat_map(|bin| &bin.0[i]) {
+                    let id = match shard.entry(p.key) {
+                        hashbrown::hash_map::Entry::Occupied(entry) => *entry.get(),
+                        hashbrown::hash_map::Entry::Vacant(entry) => {
+                            if blocks.last().is_none_or(|&(_, used)| used == BLOCK_SIZE) {
+                                let start = next.fetch_add(BLOCK_SIZE, Ordering::Relaxed);
+                                let end = start.checked_add(BLOCK_SIZE).expect("too many symbols");
+                                assert!(end <= capacity && end < u32::MAX as usize);
+                                blocks.push((start, 0));
+                            }
+                            let (start, used) = blocks.last_mut().unwrap();
+                            let index = *start + *used;
+                            *used += 1;
+                            let id = SymbolId(index as u32);
+                            // SAFETY: reserve keeps `symbols` stable, and the
+                            // atomic bump pointer gives this shard exclusive
+                            // ownership of the slot.
+                            unsafe {
+                                symbols.add(index).write(Symbol::new(BStr::new(
+                                    &p.key.key[..p.name_len as usize],
+                                )));
+                            }
+                            entry.insert(id);
+                            id
+                        }
+                    };
+                    assign(p.slot, id);
+                }
+
+                for &(start, used) in &blocks {
+                    for index in start + used..start + BLOCK_SIZE {
+                        // SAFETY: these are the unused slots in this shard's
+                        // exclusive block. Initializing them makes the whole
+                        // vector prefix valid while global scans skip them.
+                        unsafe {
+                            symbols.add(index).write(Symbol::new(BStr::new(b"")));
+                        }
+                    }
+                }
+                blocks
+                    .into_iter()
+                    .map(|(start, used)| start as u32..(start + used) as u32)
+                    .collect()
+            })
+            .collect();
+
+        let len = next.load(Ordering::Relaxed);
+        // SAFETY: every allocated block, including its unused tail, was
+        // initialized by its owning shard.
+        unsafe { self.symbols.set_len(len) };
+        for (shard, shard_ranges) in ranges.into_iter().enumerate() {
+            for range in shard_ranges {
+                self.note_globals(shard, range);
+            }
+        }
+    }
+
+    /// Gathers keys recorded against stable input-file symbol slots.
+    pub(crate) fn gather_symbol_slots(&mut self, bins: Vec<Bins<SymbolSlot>>) {
+        self.gather(bins, SymbolSlot::assign);
+    }
+
+    /// Adds a symbol that is not indexed by name, such as a local symbol.
+    pub fn add(&mut self, sym: Symbol) -> SymbolId {
+        let id = SymbolId(self.symbols.len() as u32);
+        self.symbols.push(sym);
+        id
+    }
+
+    /// Adds `n` symbols at once, with `init` filling in the new tail of
+    /// the table, typically from many threads at once. The first of them
+    /// gets the id returned.
+    ///
+    /// # Safety
+    ///
+    /// `init` must initialize every element of the slice it is given.
+    pub unsafe fn add_many(
+        &mut self,
+        n: usize,
+        init: impl FnOnce(&mut [MaybeUninit<Symbol>]),
+    ) -> SymbolId {
+        // SAFETY: `init` has the same obligation for the new slots and does
+        // not access the existing ones.
+        unsafe { self.add_many_with_existing(n, |_, slots| init(slots)) }
+    }
+
+    /// Adds `n` symbols while also exposing the initialized prefix. The two
+    /// slices are disjoint, so a file-parallel pass can update old symbols
+    /// and construct new ones together, as C++ mold's arena permits.
+    ///
+    /// # Safety
+    ///
+    /// `init` must initialize every element of the second slice.
+    pub unsafe fn add_many_with_existing(
+        &mut self,
+        n: usize,
+        init: impl FnOnce(&mut [Symbol], &mut [MaybeUninit<Symbol>]),
+    ) -> SymbolId {
+        let first = SymbolId(self.symbols.len() as u32);
+        self.symbols.reserve(n);
+        let ptr = self.symbols.as_mut_ptr();
+        // SAFETY: `first` is the initialized length and reserve made room for
+        // `n` further elements. The ranges do not overlap.
+        let existing = unsafe { std::slice::from_raw_parts_mut(ptr, first.index()) };
+        let slots = unsafe {
+            std::slice::from_raw_parts_mut(ptr.add(first.index()).cast::<MaybeUninit<Symbol>>(), n)
+        };
+        init(existing, slots);
+        // SAFETY: the caller promises that init initialized all n elements.
+        unsafe { self.symbols.set_len(first.index() + n) };
+        first
+    }
+
+    /// Lets parallel workers append up to `maximum` symbols without moving
+    /// the table. The final length contains exactly the ranges they allocate.
+    pub fn with_parallel_appender(
+        &mut self,
+        maximum: usize,
+        init: impl FnOnce(&ParallelSymbolAllocator<'_>),
+    ) {
+        let first = self.symbols.len();
+        let end = first.checked_add(maximum).expect("too many symbols");
+        assert!(end <= u32::MAX as usize);
+        self.symbols.reserve(maximum);
+
+        let allocator = ParallelSymbolAllocator {
+            // SAFETY: reserve made the entire tail available, even though it
+            // is outside the vector's initialized length.
+            slots: AtomicPtr::new(unsafe {
+                self.symbols
+                    .as_mut_ptr()
+                    .add(first)
+                    .cast::<MaybeUninit<Symbol>>()
+            }),
+            first,
+            next: AtomicUsize::new(0),
+            maximum,
+            marker: PhantomData,
+        };
+        init(&allocator);
+
+        let added = allocator.next.load(Ordering::Relaxed);
+        debug_assert!(added <= maximum);
+        // SAFETY: every allocated range was initialized before `init`
+        // returned, and the bump pointer leaves no gaps between ranges.
+        unsafe { self.symbols.set_len(first + added) };
+    }
+
+    pub fn len(&self) -> usize {
+        self.symbols.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
+    }
+
+    pub fn ids(&self) -> impl Iterator<Item = SymbolId> {
+        (0..self.symbols.len() as u32).map(SymbolId)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
+        self.symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (SymbolId(i as u32), s))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (SymbolId, &mut Symbol)> {
+        self.symbols
+            .iter_mut()
+            .enumerate()
+            .map(|(i, s)| (SymbolId(i as u32), s))
+    }
+
+    pub fn as_slice(&self) -> &[Symbol] {
+        &self.symbols
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [Symbol] {
+        &mut self.symbols
+    }
+
+    /// The ids of all named (global) symbols.
+    pub fn global_ids(&self) -> impl Iterator<Item = SymbolId> + '_ {
+        self.globals
+            .iter()
+            .flatten()
+            .flat_map(|range| range.clone().map(SymbolId))
+    }
+
+    /// The id ranges of the named (global) symbols.
+    pub fn global_ranges(&self) -> impl Iterator<Item = &Range<u32>> {
+        self.globals.iter().flatten()
+    }
+
+    /// Applies `f` to all named symbols in parallel, one task per map shard,
+    /// as C++ mold's `ShardedMap::parallel_for_each` does.
+    pub fn par_for_each_global_mut(&mut self, f: impl Fn(&mut Symbol) + Send + Sync) {
+        let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
+        self.globals.par_iter().for_each(|ranges| {
+            // SAFETY: The arena is exclusively borrowed, every global range
+            // belongs to exactly one shard, and shard blocks never overlap.
+            unsafe { symbols.for_each(ranges, &f) };
+        });
+    }
+
+    /// Applies `f` in parallel to symbols and their auxiliary records.
+    ///
+    /// # Safety
+    ///
+    /// `ids` must contain no duplicates, since each invocation receives mutable
+    /// access to the corresponding auxiliary record.
+    pub(crate) unsafe fn par_for_each_aux_mut(
+        &mut self,
+        ids: &[SymbolId],
+        f: impl Fn(usize, &Symbol, &mut SymbolAux) + Send + Sync,
+    ) {
+        let symbols = &self.symbols;
+        let aux = SymbolAuxPtr(self.aux.as_mut_ptr());
+        let aux_len = self.aux.len();
+        ids.par_iter().enumerate().for_each(|(i, &id)| {
+            let sym = &symbols[id.index()];
+            debug_assert_ne!(sym.aux_idx, NO_AUX);
+            debug_assert!((sym.aux_idx as usize) < aux_len);
+            // SAFETY: the caller guarantees that ids, and hence aux_idx values,
+            // are distinct, and the exclusive table borrow keeps the arena fixed.
+            unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) };
+        });
+    }
+
+    /// Applies `f` as above and sums its per-symbol results in parallel.
+    ///
+    /// # Safety
+    ///
+    /// `ids` must contain no duplicates, since each invocation receives mutable
+    /// access to the corresponding auxiliary record.
+    pub(crate) unsafe fn par_sum_aux_mut(
+        &mut self,
+        ids: &[SymbolId],
+        f: impl Fn(usize, &Symbol, &mut SymbolAux) -> u64 + Send + Sync,
+    ) -> u64 {
+        let symbols = &self.symbols;
+        let aux = SymbolAuxPtr(self.aux.as_mut_ptr());
+        let aux_len = self.aux.len();
+        ids.par_iter()
+            .enumerate()
+            .map(|(i, &id)| {
+                let sym = &symbols[id.index()];
+                debug_assert_ne!(sym.aux_idx, NO_AUX);
+                debug_assert!((sym.aux_idx as usize) < aux_len);
+                // SAFETY: the caller guarantees that ids, and hence aux_idx
+                // values, are distinct, and the exclusive table borrow keeps
+                // the arena fixed.
+                unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) }
+            })
+            .sum()
+    }
+
+    /// Finds named symbols satisfying `predicate` in deterministic shard
+    /// order, while examining all of the symbol-map blocks in parallel.
+    pub fn par_find_globals(
+        &self,
+        predicate: impl Fn(&Symbol) -> bool + Send + Sync,
+    ) -> Vec<SymbolId> {
+        self.globals
+            .par_iter()
+            .map(|ranges| {
+                ranges
+                    .iter()
+                    .flat_map(|range| {
+                        self.symbols[range.start as usize..range.end as usize]
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, sym)| {
+                                predicate(sym).then_some(SymbolId(range.start + i as u32))
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// Splits the table into two disjoint mutable views: the symbol at `id`
+    /// and everything else, for the rare cases where one symbol is updated
+    /// from another's state.
+    pub fn get2_mut(&mut self, a: SymbolId, b: SymbolId) -> (&mut Symbol, &mut Symbol) {
+        assert_ne!(a, b);
+        let (a, b) = (a.index(), b.index());
+        if a < b {
+            let (lo, hi) = self.symbols.split_at_mut(b);
+            (&mut lo[a], &mut hi[0])
+        } else {
+            let (lo, hi) = self.symbols.split_at_mut(a);
+            (&mut hi[0], &mut lo[b])
+        }
+    }
+}
+
+impl Index<SymbolId> for SymbolTable {
+    type Output = Symbol;
+
+    fn index(&self, id: SymbolId) -> &Symbol {
+        &self.symbols[id.index()]
+    }
+}
+
+impl IndexMut<SymbolId> for SymbolTable {
+    fn index_mut(&mut self, id: SymbolId) -> &mut Symbol {
+        &mut self.symbols[id.index()]
+    }
+}
+
+/// Whether a string is a valid C identifier, which decides whether a
+/// section gets `__start_`/`__stop_` symbols.
+pub fn is_c_identifier(s: &[u8]) -> bool {
+    let is_alpha = |c: u8| c == b'_' || c.is_ascii_alphabetic();
+    match s.split_first() {
+        Some((&first, rest)) => {
+            is_alpha(first) && rest.iter().all(|&c| is_alpha(c) || c.is_ascii_digit())
+        }
+        None => false,
+    }
+}

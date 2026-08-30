@@ -1,0 +1,30 @@
+//! A high-performance ELF linker.
+
+pub mod arch;
+pub mod archive;
+pub mod args;
+pub mod chunks;
+pub mod context;
+pub mod diagnostics;
+pub mod driver;
+pub mod elf;
+pub mod filetype;
+pub mod gc_sections;
+pub mod gdb_index;
+pub mod icf;
+pub mod input_files;
+pub mod input_sections;
+pub mod linker_script;
+pub mod lto;
+pub mod mapfile;
+pub mod mapped_file;
+pub mod output_file;
+pub mod passes;
+pub mod reader;
+pub mod relax;
+pub mod relocatable;
+pub mod subprocess;
+pub mod symbol;
+pub mod thunks;
+pub mod tls;
+pub mod util;

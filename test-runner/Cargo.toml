@@ -1,0 +1,10 @@
+[package]
+name = "mold-test-runner"
+version = "2.42.0"
+edition = "2021"
+description = "Runner for mold's shell test suite"
+license = "MIT"
+publish = false
+
+[dependencies]
+libc = "0.2"

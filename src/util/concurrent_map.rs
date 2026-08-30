@@ -1,0 +1,496 @@
+//! A fast concurrent hash map.
+//!
+//! Unlike ordinary hash tables, this implementation just aborts if it
+//! becomes full. So you need to give a correct estimation of the final
+//! size before using it (see [`crate::util::hyperloglog`]). We use this
+//! hash map to uniquify pieces of data in mergeable sections.
+//!
+//! We've implemented this ourselves because the performance of the
+//! concurrent hash map is critical for our linker.
+//!
+//! The map is an open-addressing table. Insertion is lock-free: a thread
+//! claims an empty bucket with a compare-and-swap on its key pointer,
+//! initializes the value, and then publishes the key; a thread that finds
+//! a claimed bucket spins until the key appears. Probing stays within a
+//! shard of the table, so the entries of a shard can be laid out
+//! independently of the others. Keys are byte strings that live for the
+//! whole link, such as string literals inside input files, hashed once by
+//! the caller.
+
+use rayon::prelude::*;
+use std::cell::UnsafeCell;
+use std::mem::MaybeUninit;
+use std::ptr;
+use std::sync::atomic::{AtomicPtr, Ordering};
+
+pub const NUM_SHARDS: usize = 64;
+
+/// `MIN_NBUCKETS` is chosen so that even the smallest map has `MAX_RETRY`
+/// buckets per shard; probing is confined to a shard, and a probe that
+/// visits `MAX_RETRY` distinct occupied slots aborts.
+const MIN_NBUCKETS: usize = 16384;
+const MAX_RETRY: usize = 256;
+
+/// The key pointer of a bucket that a thread has claimed but not yet
+/// published: -1 marks the slot as claimed until its value has been
+/// initialized.
+const CLAIMED: *mut u8 = usize::MAX as *mut u8;
+
+/// A bucket of the table. In order to avoid unnecessary cache-line false
+/// sharing, we want to make this object aligned to a reasonably large
+/// power-of-two address.
+#[repr(C, align(32))]
+struct Entry<T> {
+    key: AtomicPtr<u8>,
+    keylen: UnsafeCell<u32>,
+    value: UnsafeCell<MaybeUninit<T>>,
+}
+
+/// The index of a bucket, which identifies an entry for the life of
+/// the map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EntryId(u32);
+
+impl EntryId {
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+pub struct ConcurrentMap<T> {
+    entries: *mut Entry<T>,
+    nbuckets: usize,
+}
+
+// SAFETY: entries are shared between threads only through atomics and
+// values that are initialized before they become reachable.
+unsafe impl<T: Send + Sync> Send for ConcurrentMap<T> {}
+unsafe impl<T: Send + Sync> Sync for ConcurrentMap<T> {}
+
+impl<T> Default for ConcurrentMap<T> {
+    /// A map without buckets, to be replaced before use.
+    fn default() -> Self {
+        ConcurrentMap {
+            entries: ptr::null_mut(),
+            nbuckets: 0,
+        }
+    }
+}
+
+impl<T> ConcurrentMap<T> {
+    /// A map with room for about `nkeys` distinct keys.
+    pub fn with_capacity(nkeys: usize) -> Self {
+        let nbuckets = nkeys.next_power_of_two().max(MIN_NBUCKETS);
+        let bufsize = Self::bufsize(nbuckets);
+
+        // Allocate a zero-initialized buffer: zeroed memory is a table of
+        // empty buckets. mmap is faster than malloc + memset.
+        // SAFETY: an anonymous private mapping, checked for failure below.
+        let entries = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                bufsize,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                -1,
+                0,
+            )
+        };
+        if entries == libc::MAP_FAILED {
+            panic!(
+                "mmap of {bufsize} bytes failed: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+        // SAFETY: the range is the fresh mapping; the advice is only a hint.
+        unsafe { libc::madvise(entries, bufsize, libc::MADV_HUGEPAGE) };
+        ConcurrentMap {
+            entries: entries as *mut Entry<T>,
+            nbuckets,
+        }
+    }
+
+    fn bufsize(nbuckets: usize) -> usize {
+        std::mem::size_of::<Entry<T>>()
+            .checked_mul(nbuckets)
+            .expect("table size overflow")
+    }
+
+    pub fn nbuckets(&self) -> usize {
+        self.nbuckets
+    }
+
+    /// The number of entries, counted.
+    pub fn len(&self) -> usize {
+        (0..self.nbuckets)
+            .filter(|&idx| self.key_at(idx).is_some())
+            .count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn entry(&self, idx: usize) -> &Entry<T> {
+        debug_assert!(idx < self.nbuckets);
+        // SAFETY: idx is within the allocation.
+        unsafe { &*self.entries.add(idx) }
+    }
+
+    /// The published key of a bucket, if any.
+    fn key_at(&self, idx: usize) -> Option<&'static [u8]> {
+        let ent = self.entry(idx);
+        let key = ent.key.load(Ordering::Acquire);
+        if key.is_null() || key == CLAIMED {
+            return None;
+        }
+        // SAFETY: a published key is a live 'static slice whose length was
+        // written before the key pointer.
+        Some(unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) })
+    }
+
+    fn value_at(&self, idx: usize) -> &T {
+        // SAFETY: callers only ask for values of published entries, which
+        // were initialized before publication.
+        unsafe { (*self.entry(idx).value.get()).assume_init_ref() }
+    }
+
+    /// The probe sequence for a hash: the buckets of one shard, starting
+    /// from the hash's home bucket and wrapping around within the shard.
+    fn probe(&self, hash: u64) -> impl Iterator<Item = usize> {
+        let begin = hash as usize & (self.nbuckets - 1);
+        let mask = self.nbuckets / NUM_SHARDS - 1;
+        (0..MAX_RETRY).map(move |i| (begin & !mask) | ((begin + i) & mask))
+    }
+
+    /// Inserts `key` unless it is present, initializing the value with
+    /// `init`. Returns the entry, its value and whether it was inserted.
+    pub fn insert_with(
+        &self,
+        key: &'static [u8],
+        hash: u64,
+        init: impl FnOnce() -> T,
+    ) -> (EntryId, &T, bool) {
+        self.insert_entry(
+            key.as_ptr(),
+            hash,
+            |ptr, len| {
+                // SAFETY: published keys remain live for the link.
+                unsafe { std::slice::from_raw_parts(ptr, len as usize) == key }
+            },
+            || (key.len() as u32, init()),
+        )
+    }
+
+    /// Inserts a NUL-terminated key without storing its length at the call
+    /// site. `initialize` computes the length and value only if this call
+    /// claims a new entry.
+    ///
+    /// # Safety
+    ///
+    /// `key` must point to a NUL-terminated byte string that remains live for
+    /// the lifetime of the map. Its length must fit in u32.
+    pub unsafe fn insert_cstr_with(
+        &self,
+        key: *const u8,
+        hash: u64,
+        initialize: impl FnOnce(*const u8) -> (u32, T),
+    ) -> (EntryId, &T, bool) {
+        self.insert_entry(
+            key,
+            hash,
+            |ptr, _| {
+                // SAFETY: guaranteed for `key` by the caller and for `ptr` by
+                // the entry publication invariant.
+                unsafe { libc::strcmp(key.cast(), ptr.cast()) == 0 }
+            },
+            || initialize(key),
+        )
+    }
+
+    fn insert_entry(
+        &self,
+        key: *const u8,
+        hash: u64,
+        equals: impl Fn(*const u8, u32) -> bool,
+        initialize: impl FnOnce() -> (u32, T),
+    ) -> (EntryId, &T, bool) {
+        assert!(self.nbuckets > 0, "the map hasn't been sized");
+        let mut initialize = Some(initialize);
+
+        for idx in self.probe(hash) {
+            let ent = self.entry(idx);
+
+            // Avoid an atomic update when the slot is already occupied.
+            let mut ptr = ent.key.load(Ordering::Acquire);
+            if !ptr.is_null() && ptr != CLAIMED {
+                // SAFETY: a published pointer and length name a live key.
+                if equals(ptr, unsafe { *ent.keylen.get() }) {
+                    return (EntryId(idx as u32), self.value_at(idx), false);
+                }
+                continue;
+            }
+
+            if ptr.is_null() {
+                match ent.key.compare_exchange(
+                    ptr::null_mut(),
+                    CLAIMED,
+                    Ordering::Acquire,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => {
+                        // SAFETY: the claim gives this thread exclusive
+                        // access to the bucket until the key is published.
+                        unsafe {
+                            let (keylen, value) = initialize.take().expect("initialized once")();
+                            (*ent.value.get()).write(value);
+                            *ent.keylen.get() = keylen;
+                        }
+                        ent.key.store(key as *mut u8, Ordering::Release);
+                        return (EntryId(idx as u32), self.value_at(idx), true);
+                    }
+                    Err(current) => ptr = current,
+                }
+            }
+
+            // Wait for the thread that claimed the slot to publish its key.
+            while ptr == CLAIMED {
+                std::hint::spin_loop();
+                ptr = ent.key.load(Ordering::Acquire);
+            }
+            // SAFETY: the claiming thread published the pointer and length.
+            if equals(ptr, unsafe { *ent.keylen.get() }) {
+                return (EntryId(idx as u32), self.value_at(idx), false);
+            }
+        }
+        panic!("the concurrent map is full");
+    }
+
+    /// Prefetches the bucket where a key with the given hash would be
+    /// probed first. Useful when a caller knows the hashes of upcoming
+    /// insertions, as probes into a large table miss the cache almost
+    /// every time.
+    pub fn prefetch(&self, hash: u64) {
+        #[cfg(target_arch = "x86_64")]
+        if self.nbuckets > 0 {
+            let idx = hash as usize & (self.nbuckets - 1);
+            // SAFETY: prefetching is a hint that never faults; the address is
+            // within the table anyway.
+            unsafe {
+                use std::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
+                _mm_prefetch(self.entries.add(idx) as *const i8, _MM_HINT_T0);
+            }
+        }
+    }
+
+    /// Looks up a key.
+    pub fn get(&self, key: &[u8], hash: u64) -> Option<(EntryId, &T)> {
+        if self.nbuckets == 0 {
+            return None;
+        }
+        for idx in self.probe(hash) {
+            match self.key_at(idx) {
+                None => return None,
+                Some(existing) if existing == key => {
+                    return Some((EntryId(idx as u32), self.value_at(idx)))
+                }
+                Some(_) => {}
+            }
+        }
+        None
+    }
+
+    pub fn value(&self, id: EntryId) -> &T {
+        self.value_at(id.0 as usize)
+    }
+
+    pub fn key(&self, id: EntryId) -> &'static [u8] {
+        self.key_at(id.0 as usize).expect("an occupied bucket")
+    }
+
+    /// The entries in bucket order.
+    pub fn iter(&self) -> impl Iterator<Item = (&'static [u8], EntryId, &T)> {
+        (0..self.nbuckets).filter_map(move |idx| {
+            self.key_at(idx)
+                .map(|key| (key, EntryId(idx as u32), self.value_at(idx)))
+        })
+    }
+
+    /// Returns a list of the entries of a shard sorted in a deterministic
+    /// order.
+    ///
+    /// Linear probing fills the same set of buckets whatever the order
+    /// keys were inserted in, but which of two colliding keys got the
+    /// earlier bucket depends on it, so each run of adjacent occupied
+    /// buckets is sorted by key.
+    pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
+        if self.nbuckets == 0 {
+            return Vec::new();
+        }
+        let shard_size = self.nbuckets / NUM_SHARDS;
+        let begin = shard * shard_size;
+        let mut end = begin + shard_size;
+        let occupied = |idx: usize| self.key_at(idx).is_some();
+
+        // Since the shard is circular, we need to handle the last entries
+        // as if they were next to the first entries.
+        let mut vec: Vec<EntryId> = Vec::new();
+        while begin < end && occupied(end - 1) {
+            end -= 1;
+            vec.push(EntryId(end as u32));
+        }
+
+        let sort_run = |run: &mut [EntryId]| {
+            run.sort_by(|&a, &b| {
+                let (ka, kb) = (self.key(a), self.key(b));
+                ka.len().cmp(&kb.len()).then_with(|| ka.cmp(kb))
+            });
+        };
+
+        // Find entries contiguous in the buckets and sort them.
+        let mut last = 0;
+        let mut i = begin;
+        while i < end {
+            while i < end && occupied(i) {
+                vec.push(EntryId(i as u32));
+                i += 1;
+            }
+            sort_run(&mut vec[last..]);
+            last = vec.len();
+            while i < end && !occupied(i) {
+                i += 1;
+            }
+        }
+        vec
+    }
+
+    /// Returns all map entries in deterministic order.
+    pub fn sorted_entries_all(&self) -> Vec<EntryId>
+    where
+        T: Send + Sync,
+    {
+        (0..NUM_SHARDS)
+            .into_par_iter()
+            .map(|shard| self.sorted_entries(shard))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// Freezes the map for exclusive, mutable access to its values.
+    pub fn freeze(self) -> FrozenMap<T> {
+        FrozenMap { map: self }
+    }
+}
+
+impl<T> Drop for ConcurrentMap<T> {
+    fn drop(&mut self) {
+        if self.entries.is_null() {
+            return;
+        }
+        if std::mem::needs_drop::<T>() {
+            for idx in 0..self.nbuckets {
+                if self.key_at(idx).is_some() {
+                    // SAFETY: the value of a published entry is initialized
+                    // and dropped exactly once, here.
+                    unsafe { (*self.entry(idx).value.get()).assume_init_drop() };
+                }
+            }
+        }
+        // SAFETY: mapped in with_capacity with the same size.
+        unsafe {
+            libc::munmap(
+                self.entries as *mut libc::c_void,
+                Self::bufsize(self.nbuckets),
+            )
+        };
+    }
+}
+
+impl<T> std::fmt::Debug for ConcurrentMap<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ConcurrentMap({} entries)", self.len())
+    }
+}
+
+/// A map after all insertions, whose values can be updated from a
+/// unique reference.
+#[derive(Debug)]
+pub struct FrozenMap<T> {
+    map: ConcurrentMap<T>,
+}
+
+impl<T> Default for FrozenMap<T> {
+    fn default() -> Self {
+        FrozenMap {
+            map: ConcurrentMap::default(),
+        }
+    }
+}
+
+impl<T> FrozenMap<T> {
+    pub fn get(&self, id: EntryId) -> &T {
+        self.map.value(id)
+    }
+
+    pub fn get_mut(&mut self, id: EntryId) -> &mut T {
+        // SAFETY: the unique reference to the map makes the value's
+        // UnsafeCell exclusively ours; the entry is occupied.
+        unsafe { (*self.map.entry(id.0 as usize).value.get()).assume_init_mut() }
+    }
+
+    /// Returns the address of an occupied value for disjoint parallel updates.
+    pub fn value_mut_ptr(&self, id: EntryId) -> *mut T {
+        self.map.entry(id.0 as usize).value.get().cast()
+    }
+
+    pub fn key(&self, id: EntryId) -> &'static [u8] {
+        self.map.key(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&'static [u8], EntryId, &T)> {
+        self.map.iter()
+    }
+
+    pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
+        self.map.sorted_entries(shard)
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_and_lookup() {
+        let map: ConcurrentMap<u32> = ConcurrentMap::with_capacity(100);
+        let keys: Vec<&'static [u8]> = (0..1000)
+            .map(|i| &*Box::leak(format!("key{i}").into_bytes().into_boxed_slice()))
+            .collect();
+        let hash = |k: &[u8]| xxhash_rust::xxh3::xxh3_64(k);
+        for (i, &k) in keys.iter().enumerate() {
+            let (_, v, inserted) = map.insert_with(k, hash(k), || i as u32);
+            assert!(inserted);
+            assert_eq!(*v, i as u32);
+        }
+        for (i, &k) in keys.iter().enumerate() {
+            let (_, v, inserted) = map.insert_with(k, hash(k), || 99999);
+            assert!(!inserted);
+            assert_eq!(*v, i as u32);
+            assert_eq!(map.get(k, hash(k)).map(|(_, v)| *v), Some(i as u32));
+        }
+        assert_eq!(map.len(), 1000);
+        assert_eq!(map.iter().count(), 1000);
+        let sorted: usize = (0..NUM_SHARDS).map(|s| map.sorted_entries(s).len()).sum();
+        assert_eq!(sorted, 1000);
+    }
+}
