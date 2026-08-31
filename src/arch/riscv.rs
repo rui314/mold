@@ -401,9 +401,9 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         let file = &ctx.objs[isec.file.index()];
 
         // Scan relocations
-        isec.for_each_reloc::<Self>(ctx, |rel, _| {
+        for rel in isec.relocations::<Self>(ctx) {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
-                return;
+                continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
             if sym.is_ifunc() {
@@ -467,7 +467,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     rel.type_name::<Self>()
                 ),
             }
-        });
+        }
     }
 
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {

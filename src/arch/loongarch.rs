@@ -815,9 +815,9 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
 
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        isec.for_each_reloc::<Self>(ctx, |rel, _| {
+        for rel in isec.relocations::<Self>(ctx) {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
-                return;
+                continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
             let frag = isec.fragment(ctx, &rel);
@@ -859,7 +859,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     rel.type_name::<Self>()
                 ),
             }
-        });
+        }
     }
 
     fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, i: usize) -> u32 {

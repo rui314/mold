@@ -788,9 +788,13 @@ fn is_known_section_type<E: Arch>(shdr: &ElfShdr) -> bool {
 // materialize them in an array.
 struct CrelReader<'a> {
     data: &'a [u8],
-    nrels: usize,
+    remaining: usize,
     scale: u32,
     is_rela: bool,
+    offset: u64,
+    r_type: i64,
+    r_sym: i64,
+    addend: i64,
 }
 
 impl<'a> CrelReader<'a> {
@@ -806,49 +810,118 @@ impl<'a> CrelReader<'a> {
         }
         CrelReader {
             data,
-            nrels: (hdr >> 3) as usize,
+            remaining: (hdr >> 3) as usize,
             scale: (hdr & 0b11) as u32,
             is_rela,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.nrels
-    }
-
-    fn for_each(&self, mut f: impl FnMut(ElfRel, usize)) {
-        let mut data = self.data;
-        let nflags = if self.is_rela { 3 } else { 2 };
-        let (mut offset, mut r_type, mut r_sym, mut addend) = (0u64, 0i64, 0i64, 0i64);
-
-        for i in 0..self.nrels {
-            let flags = data[0];
-            data = &data[1..];
-
-            // The first byte combines flags with the low bits of an offset
-            // delta. A large delta continues as ULEB128 and can wrap the
-            // current offset.
-            let delta = if flags & 0x80 != 0 {
-                (read_uleb(&mut data) << (7 - nflags)) | ((flags & 0x7f) as u64 >> nflags)
-            } else {
-                (flags >> nflags) as u64
-            };
-            offset = offset.wrapping_add(delta << self.scale);
-
-            if flags & 1 != 0 {
-                r_sym += util::read_sleb(&mut data);
-            }
-            if flags & 2 != 0 {
-                r_type += util::read_sleb(&mut data);
-            }
-            if self.is_rela && flags & 4 != 0 {
-                addend += util::read_sleb(&mut data);
-            }
-
-            f(ElfRel::new(offset, r_type as u32, r_sym as u32, addend), i);
+            offset: 0,
+            r_type: 0,
+            r_sym: 0,
+            addend: 0,
         }
     }
 }
+
+impl Iterator for CrelReader<'_> {
+    type Item = ElfRel;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<ElfRel> {
+        self.remaining = self.remaining.checked_sub(1)?;
+        let nflags = if self.is_rela { 3 } else { 2 };
+        let flags = self.data[0];
+        self.data = &self.data[1..];
+
+        // The first byte combines flags with the low bits of an offset
+        // delta. A large delta continues as ULEB128 and can wrap the
+        // current offset.
+        let delta = if flags & 0x80 != 0 {
+            (read_uleb(&mut self.data) << (7 - nflags)) | ((flags & 0x7f) as u64 >> nflags)
+        } else {
+            (flags >> nflags) as u64
+        };
+        self.offset = self.offset.wrapping_add(delta << self.scale);
+
+        if flags & 1 != 0 {
+            self.r_sym += util::read_sleb(&mut self.data);
+        }
+        if flags & 2 != 0 {
+            self.r_type += util::read_sleb(&mut self.data);
+        }
+        if self.is_rela && flags & 4 != 0 {
+            self.addend += util::read_sleb(&mut self.data);
+        }
+
+        Some(ElfRel::new(
+            self.offset,
+            self.r_type as u32,
+            self.r_sym as u32,
+            self.addend,
+        ))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for CrelReader<'_> {}
+
+enum RelocationIterInner<'a, E> {
+    Ordinary(RelsIter<'a, E>),
+    Crel(CrelReader<'a>),
+}
+
+pub(crate) struct RelocationIter<'a, E> {
+    inner: RelocationIterInner<'a, E>,
+}
+
+impl<'a, E: Layout> RelocationIter<'a, E> {
+    fn ordinary(rels: Rels<'a, E>) -> Self {
+        RelocationIter {
+            inner: RelocationIterInner::Ordinary(rels.iter()),
+        }
+    }
+
+    fn crel(reader: CrelReader<'a>) -> Self {
+        RelocationIter {
+            inner: RelocationIterInner::Crel(reader),
+        }
+    }
+}
+
+impl<E: Layout> Iterator for RelocationIter<'_, E> {
+    type Item = ElfRel;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<ElfRel> {
+        match &mut self.inner {
+            RelocationIterInner::Ordinary(iter) => iter.next(),
+            RelocationIterInner::Crel(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match &self.inner {
+            RelocationIterInner::Ordinary(iter) => iter.size_hint(),
+            RelocationIterInner::Crel(iter) => iter.size_hint(),
+        }
+    }
+
+    #[inline(always)]
+    fn fold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, ElfRel) -> B,
+    {
+        match self.inner {
+            RelocationIterInner::Ordinary(iter) => iter.fold(init, f),
+            RelocationIterInner::Crel(iter) => iter.fold(init, f),
+        }
+    }
+}
+
+impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
 
 // SHT_CREL is an experimental alternative relocation table format
 // designed to reduce the size of the table. Only LLVM supports it
@@ -860,10 +933,10 @@ fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]
     // ExactArray owns a fixed-size array without value-initializing trivial
     // elements that the caller is about to overwrite.
     let mut rels = Box::<[ElfRel]>::new_uninit_slice(reader.len());
-    reader.for_each(|rel, i| {
+    for (i, rel) in reader.enumerate() {
         rels[i].write(rel);
-    });
-    // SAFETY: CrelReader::for_each visits every index from zero to len once.
+    }
+    // SAFETY: CrelReader visits every index from zero to len once.
     unsafe { rels.assume_init() }
 }
 
@@ -1029,29 +1102,25 @@ impl ObjectFile {
         Rels::new(self.input_relocation_data::<E>(relsec_idx))
     }
 
-    /// Visits relocations without materializing a deferred CREL table.
-    #[inline]
-    pub(crate) fn for_each_relocation<E: Arch>(
-        &self,
+    /// Iterates over relocations without materializing a deferred CREL table.
+    #[inline(always)]
+    pub(crate) fn relocation_iter<'a, E: Arch>(
+        &'a self,
         diag: &Diagnostics,
         relsec_idx: Option<u32>,
-        mut f: impl FnMut(ElfRel, usize),
-    ) {
+    ) -> RelocationIter<'a, E> {
         let Some(relsec_idx) = relsec_idx else {
-            return;
+            return RelocationIter::ordinary(Rels::new(&[]));
         };
         let index = relsec_idx as usize;
         if self.base.shdrs.at_in::<E>(index).sh_type == SHT_CREL
             && !self.decoded_crel.get(index).is_some_and(Option::is_some)
         {
             let data = self.input_relocation_data::<E>(relsec_idx);
-            CrelReader::new::<E>(diag, self, data).for_each(f);
-            return;
+            return RelocationIter::crel(CrelReader::new::<E>(diag, self, data));
         }
 
-        for (i, rel) in self.relocations::<E>(Some(relsec_idx)).iter().enumerate() {
-            f(rel, i);
-        }
+        RelocationIter::ordinary(self.relocations::<E>(Some(relsec_idx)))
     }
 
     #[inline(always)]

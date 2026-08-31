@@ -753,7 +753,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
-                file.for_each_relocation::<E>(diag, isec.relsec_idx(), |rel, _| {
+                for rel in file.relocation_iter::<E>(diag, isec.relsec_idx()) {
                     let esym = file.base.elf_syms.at(rel.r_sym as usize);
                     if let Some(target) = file.symbol_section(rel.r_sym as usize) {
                         relocations.push(PubnamesRelocation {
@@ -764,7 +764,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                                 .wrapping_add(isec.rel_addend::<E>(&rel) as u64),
                         });
                     }
-                });
+                }
                 pubnames.push(PubnamesInput {
                     contents: isec.contents(),
                     relocations,

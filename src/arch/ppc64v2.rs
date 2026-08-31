@@ -692,9 +692,9 @@ impl Arch for Ppc64V2 {
 
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        isec.for_each_reloc::<Self>(ctx, |rel, i| {
+        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
-                return;
+                continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
             let frag = isec.fragment(ctx, &rel);
@@ -722,7 +722,7 @@ impl Arch for Ppc64V2 {
                     rel.type_name::<Self>()
                 ),
             }
-        });
+        }
     }
 
     /// On PowerPC, all PLT calls go through range extension thunks.

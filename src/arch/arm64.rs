@@ -659,9 +659,9 @@ impl<End: Endian> Arch for Arm64Target<End> {
 
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        isec.for_each_reloc::<Self>(ctx, |rel, i| {
+        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
-                return;
+                continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
             let off = rel.r_offset as usize;
@@ -694,7 +694,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
                     rel.type_name::<Self>()
                 ),
             }
-        });
+        }
     }
 
     fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, i: usize) -> u32 {

@@ -12,7 +12,7 @@ use crate::cmdline::UnresolvedKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error::Diagnostics;
-use crate::input_files::{ObjId, ObjectFile};
+use crate::input_files::{ObjId, ObjectFile, RelocationIter};
 use crate::output_chunks::merged::{MergedSection, MergedSectionId};
 use crate::output_chunks::OutputSectionId;
 use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC};
@@ -604,13 +604,13 @@ impl InputSection {
         file.relocations::<E>(self.relsec_idx())
     }
 
-    // Visit relocations without materializing a CREL table unless another pass
-    // has already decoded it. The callback must be always-inline because this
-    // function may invoke it millions of times.
-    #[inline]
-    pub fn for_each_reloc<E: Arch>(&self, ctx: &Context<E>, f: impl FnMut(ElfRel, usize)) {
+    // Iterate over relocations without materializing a CREL table unless another
+    // pass has already decoded it. The hot path must be always-inline because
+    // this function may yield millions of entries.
+    #[inline(always)]
+    pub(crate) fn relocations<'a, E: Arch>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
         let file = &ctx.objs[self.file.index()];
-        file.for_each_relocation::<E>(&ctx.diag, self.relsec_idx(), f);
+        file.relocation_iter::<E>(&ctx.diag, self.relsec_idx())
     }
 
     #[inline]
