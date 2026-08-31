@@ -92,8 +92,6 @@ jobs:
     container: ${{ matrix.distro }}
     steps:
     - uses: actions/checkout@v6
-    - if: matrix.distro == 'alpine'
-      run: apk add --no-cache bash
     - run: ./install-test-deps.sh
     - uses: dtolnay/rust-toolchain@stable
     - run: cargo build --locked

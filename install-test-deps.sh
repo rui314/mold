@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # This script installs binary packages needed to test mold.
 # Feel free to send me a PR if your OS is not on this list.
 
@@ -11,7 +11,18 @@ case "$ID" in
 ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
   apt-get update
   apt-get install -y curl gcc g++ clang gdb
-  apt-get install -y qemu-user {gcc,g++}-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4}-linux-gnu {gcc,g++}-arm-linux-gnueabihf
+  apt-get install -y qemu-user \
+    gcc-i686-linux-gnu g++-i686-linux-gnu \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+    gcc-powerpc-linux-gnu g++-powerpc-linux-gnu \
+    gcc-powerpc64-linux-gnu g++-powerpc64-linux-gnu \
+    gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu \
+    gcc-s390x-linux-gnu g++-s390x-linux-gnu \
+    gcc-sparc64-linux-gnu g++-sparc64-linux-gnu \
+    gcc-m68k-linux-gnu g++-m68k-linux-gnu \
+    gcc-sh4-linux-gnu g++-sh4-linux-gnu \
+    gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
   ;;
 fedora | fedora-* | amzn | rhel | centos)
   dnf install -y curl gcc-c++ glibc-static libstdc++-static diffutils util-linux tar
@@ -20,7 +31,7 @@ rocky | ol)
   dnf install -y curl gcc-c++ diffutils util-linux
   ;;
 opensuse-*)
-  zypper install -y curl gcc-c++ glibc-devel-static tar diffutils util-linux gawk
+  zypper install -y bash curl gcc-c++ glibc-devel-static tar diffutils util-linux gawk
   ;;
 gentoo)
   emerge-webrsync
