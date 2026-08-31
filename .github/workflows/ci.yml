@@ -21,7 +21,11 @@ jobs:
         cargo test --locked -p mold-cli --test integration -- --list |
           tee "$RUNNER_TEMP/test-inventory.txt"
         ! grep -q '^unavailable:' "$RUNNER_TEMP/test-inventory.txt"
-    - run: cargo test --locked
+    # All workspace crates were built above. Avoid linking empty test binaries
+    # for the target crates and command.
+    - run: |
+        cargo test --locked -p mold -p mold-tests -p mold-cli \
+          --lib --test integration
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
