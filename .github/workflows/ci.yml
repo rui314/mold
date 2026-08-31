@@ -89,6 +89,9 @@ jobs:
         - ubuntu:25.04
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # Tumbleweed does not declare PATH in its container configuration.
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     container: ${{ matrix.distro }}
     steps:
     - uses: actions/checkout@v6
