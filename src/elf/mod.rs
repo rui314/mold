@@ -53,73 +53,61 @@ pub trait Layout: Copy + Default + Send + Sync + 'static {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
     type Sym: SymbolRecord<Endian = Self::Endian, Word = Self::Word>;
-    type Phdr: ProgramHeaderRecord<Endian = Self::Endian, Word = Self::Word>;
-    type Chdr: CompressionHeaderRecord<Endian = Self::Endian, Word = Self::Word>;
+    type Phdr: PhdrRecord<Endian = Self::Endian, Word = Self::Word>;
+    type Chdr: ChdrRecord<Endian = Self::Endian, Word = Self::Word>;
     type Rel: RelRecord<Endian = Self::Endian>;
-    const IS_64: bool;
-    const IS_RELA: bool;
-
+    const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
+    const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
 }
 
-macro_rules! plain_layout {
-    ($name:ident, $endian:ty, $word:ty, $sym:ty, $phdr:ty, $chdr:ty, $rel:ty, $is_64:expr) => {
-        #[derive(Clone, Copy, Debug, Default)]
-        pub struct $name;
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Elf32Le;
 
-        impl Layout for $name {
-            type Endian = $endian;
-            type Word = $word;
-            type Sym = $sym;
-            type Phdr = $phdr;
-            type Chdr = $chdr;
-            type Rel = $rel;
-            const IS_64: bool = $is_64;
-            const IS_RELA: bool = true;
-        }
-    };
+impl Layout for Elf32Le {
+    type Endian = LittleEndian;
+    type Word = Ul32;
+    type Sym = Elf32Sym<LittleEndian>;
+    type Phdr = Elf32Phdr<LittleEndian>;
+    type Chdr = Elf32Chdr<LittleEndian>;
+    type Rel = Elf32RelaLe;
 }
 
-plain_layout!(
-    Elf32Le,
-    LittleEndian,
-    Ul32,
-    Elf32Sym<LittleEndian>,
-    Elf32Phdr<LittleEndian>,
-    Elf32Chdr<LittleEndian>,
-    Elf32RelaLe,
-    false
-);
-plain_layout!(
-    Elf64Le,
-    LittleEndian,
-    Ul64,
-    Elf64Sym<LittleEndian>,
-    Elf64Phdr<LittleEndian>,
-    Elf64Chdr<LittleEndian>,
-    Elf64RelaLe,
-    true
-);
-plain_layout!(
-    Elf32Be,
-    BigEndian,
-    Ub32,
-    Elf32Sym<BigEndian>,
-    Elf32Phdr<BigEndian>,
-    Elf32Chdr<BigEndian>,
-    Elf32RelaBe,
-    false
-);
-plain_layout!(
-    Elf64Be,
-    BigEndian,
-    Ub64,
-    Elf64Sym<BigEndian>,
-    Elf64Phdr<BigEndian>,
-    Elf64Chdr<BigEndian>,
-    Elf64RelaBe,
-    true
-);
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Elf64Le;
+
+impl Layout for Elf64Le {
+    type Endian = LittleEndian;
+    type Word = Ul64;
+    type Sym = Elf64Sym<LittleEndian>;
+    type Phdr = Elf64Phdr<LittleEndian>;
+    type Chdr = Elf64Chdr<LittleEndian>;
+    type Rel = Elf64RelaLe;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Elf32Be;
+
+impl Layout for Elf32Be {
+    type Endian = BigEndian;
+    type Word = Ub32;
+    type Sym = Elf32Sym<BigEndian>;
+    type Phdr = Elf32Phdr<BigEndian>;
+    type Chdr = Elf32Chdr<BigEndian>;
+    type Rel = Elf32RelaBe;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Elf64Be;
+
+impl Layout for Elf64Be {
+    type Endian = BigEndian;
+    type Word = Ub64;
+    type Sym = Elf64Sym<BigEndian>;
+    type Phdr = Elf64Phdr<BigEndian>;
+    type Chdr = Elf64Chdr<BigEndian>;
+    type Rel = Elf64RelaBe;
+}
 
 /// Byte order of an ELF file, as a type-level marker.
 pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
@@ -403,7 +391,7 @@ const _: () = assert!(std::mem::align_of::<Elf32Phdr<LittleEndian>>() == 1);
 const _: () = assert!(std::mem::align_of::<Elf64Phdr<LittleEndian>>() == 1);
 
 /// The common interface of the two physical program-header layouts.
-pub trait ProgramHeaderRecord: FileRecord + fmt::Debug {
+pub trait PhdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
 
@@ -426,7 +414,7 @@ pub trait ProgramHeaderRecord: FileRecord + fmt::Debug {
 }
 
 #[rustfmt::skip]
-impl<E: Endian> ProgramHeaderRecord for Elf64Phdr<E> {
+impl<E: Endian> PhdrRecord for Elf64Phdr<E> {
     type Endian = E;
     type Word = U64<E>;
 
@@ -449,7 +437,7 @@ impl<E: Endian> ProgramHeaderRecord for Elf64Phdr<E> {
 }
 
 #[rustfmt::skip]
-impl<E: Endian> ProgramHeaderRecord for Elf32Phdr<E> {
+impl<E: Endian> PhdrRecord for Elf32Phdr<E> {
     type Endian = E;
     type Word = U32<E>;
 
@@ -804,6 +792,7 @@ pub unsafe trait RelRecord:
     Clone + Copy + fmt::Debug + Default + Eq + Send + Sync + 'static
 {
     type Endian: Endian;
+    const IS_RELA: bool;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self;
 
@@ -1005,6 +994,7 @@ macro_rules! impl_rela_record {
     ($name:ty, $endian:ty) => {
         unsafe impl RelRecord for $name {
             type Endian = $endian;
+            const IS_RELA: bool = true;
 
             #[inline(always)]
             fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
@@ -1063,6 +1053,7 @@ macro_rules! impl_rel_record {
     ($name:ty, $endian:ty) => {
         unsafe impl RelRecord for $name {
             type Endian = $endian;
+            const IS_RELA: bool = false;
 
             #[inline(always)]
             fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
@@ -1214,7 +1205,7 @@ const _: () = assert!(std::mem::align_of::<Elf32Chdr<LittleEndian>>() == 1);
 const _: () = assert!(std::mem::align_of::<Elf64Chdr<LittleEndian>>() == 1);
 
 /// The common interface of the two physical compression-header layouts.
-pub trait CompressionHeaderRecord: FileRecord + fmt::Debug {
+pub trait ChdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
 
@@ -1227,7 +1218,7 @@ pub trait CompressionHeaderRecord: FileRecord + fmt::Debug {
 }
 
 #[rustfmt::skip]
-impl<E: Endian> CompressionHeaderRecord for Elf64Chdr<E> {
+impl<E: Endian> ChdrRecord for Elf64Chdr<E> {
     type Endian = E;
     type Word = U64<E>;
 
@@ -1240,7 +1231,7 @@ impl<E: Endian> CompressionHeaderRecord for Elf64Chdr<E> {
 }
 
 #[rustfmt::skip]
-impl<E: Endian> CompressionHeaderRecord for Elf32Chdr<E> {
+impl<E: Endian> ChdrRecord for Elf32Chdr<E> {
     type Endian = E;
     type Word = U32<E>;
 

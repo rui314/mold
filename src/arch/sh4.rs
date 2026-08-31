@@ -83,8 +83,6 @@ impl Layout for Sh4Target<LittleEndian> {
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelaLe;
-    const IS_64: bool = false;
-    const IS_RELA: bool = true;
 }
 
 impl Layout for Sh4Target<BigEndian> {
@@ -94,8 +92,6 @@ impl Layout for Sh4Target<BigEndian> {
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
     type Rel = Elf32RelaBe;
-    const IS_64: bool = false;
-    const IS_RELA: bool = true;
 }
 
 // Even though SH-4 uses RELA-type relocations, addends are stored in

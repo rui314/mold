@@ -45,8 +45,6 @@ impl Layout for X86_64 {
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 impl Arch for X86_64 {

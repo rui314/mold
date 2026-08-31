@@ -62,8 +62,6 @@ impl Layout for Ppc32 {
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
     type Rel = Elf32RelaBe;
-    const IS_64: bool = false;
-    const IS_RELA: bool = true;
 }
 
 fn lo(x: u64) -> u64 {

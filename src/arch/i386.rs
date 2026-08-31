@@ -54,8 +54,6 @@ impl Layout for I386 {
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelLe;
-    const IS_64: bool = false;
-    const IS_RELA: bool = false;
 }
 
 impl Arch for I386 {

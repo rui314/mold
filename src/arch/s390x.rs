@@ -54,8 +54,6 @@ impl Layout for S390x {
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Elf64RelaBe;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 fn w16(loc: &mut [u8], v: u16) {

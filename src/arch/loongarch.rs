@@ -52,8 +52,6 @@ impl Layout for LoongArchTarget<true> {
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 impl Layout for LoongArchTarget<false> {
@@ -63,8 +61,6 @@ impl Layout for LoongArchTarget<false> {
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelaLe;
-    const IS_64: bool = false;
-    const IS_RELA: bool = true;
 }
 
 fn page(val: u64) -> u64 {

@@ -154,7 +154,7 @@
 //! pointer (DTP) is the base `__tls_get_addr` returns for offset 0.
 
 use crate::arch::{Arch, Family};
-use crate::elf::{ElfPhdr, ElfWord, ProgramHeaderRecord, PT_TLS};
+use crate::elf::{ElfPhdr, ElfWord, PhdrRecord, PT_TLS};
 use crate::util::{align_down, align_to};
 
 /// Returns the TP address which can be used for efficient TLV accesses in

@@ -71,8 +71,6 @@ impl Layout for Ppc64V1 {
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Elf64RelaBe;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 fn lo(x: u64) -> u64 {

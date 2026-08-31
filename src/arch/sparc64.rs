@@ -78,8 +78,6 @@ impl Layout for Sparc64 {
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Sparc64Rela;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 fn r32(loc: &[u8]) -> u32 {

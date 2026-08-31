@@ -105,8 +105,6 @@ impl Layout for Ppc64V2 {
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
-    const IS_64: bool = true;
-    const IS_RELA: bool = true;
 }
 
 fn lo(x: u64) -> u64 {
