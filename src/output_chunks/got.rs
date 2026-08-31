@@ -11,8 +11,8 @@ use crate::symbol::{AddrFlags, SymbolId};
 // as the pointer size. It is used to store runtime addresses of global
 // variables and TP-relative offsets of thread-local variables.
 #[derive(Debug)]
-pub struct GotSection {
-    pub hdr: ChunkHeader,
+pub struct GotSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub got_syms: Vec<SymbolId>,
     pub tlsgd_syms: Vec<SymbolId>,
     pub tlsdesc_syms: Vec<SymbolId>,
@@ -20,16 +20,16 @@ pub struct GotSection {
     pub tlsld_idx: Option<u32>,
 }
 
-impl GotSection {
-    pub fn new<E: Arch>() -> GotSection {
-        let mut hdr = ChunkHeader::new(".got", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
+impl<E: Arch> GotSection<E> {
+    pub fn new() -> GotSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".got", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = true;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
         // something to point to. s390x psABI define GOT[1] and GOT[2]
         // as reserved slots, so we allocate two more for them.
         let reserved = if E::FAMILY == Family::S390x { 3 } else { 1 };
-        hdr.shdr.sh_size = reserved * E::WORD_SIZE as u64;
+        hdr.shdr.sh_size.set(reserved * E::WORD_SIZE as u64);
         GotSection {
             hdr,
             got_syms: Vec::new(),
@@ -44,8 +44,14 @@ impl GotSection {
         self.tlsld_idx.is_some()
     }
 
-    pub fn tlsld_addr<E: Arch>(&self) -> u64 {
-        self.hdr.shdr.sh_addr + self.tlsld_idx.unwrap() as u64 * E::WORD_SIZE as u64
+    pub fn tlsld_addr(&self) -> u64 {
+        self.hdr.shdr.sh_addr.get() + self.tlsld_idx.unwrap() as u64 * E::WORD_SIZE as u64
+    }
+}
+
+impl<E: Arch> Default for GotSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -59,30 +65,43 @@ pub mod got {
     }
 
     pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-        let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
+        let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
         let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
         ctx.symbols.aux_mut(sym).got_idx = Some(idx);
         // An IFUNC symbol uses two GOT slots in a position-dependent
         // executable.
-        ctx.got.hdr.shdr.sh_size += if is_pde_ifunc {
+        let increment = if is_pde_ifunc {
             2 * word::<E>()
         } else {
             word::<E>()
         };
+        ctx.got
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.got.hdr.shdr.sh_size.get().wrapping_add(increment));
         ctx.got.got_syms.push(sym);
     }
 
     pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-        let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
+        let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
         ctx.symbols.aux_mut(sym).gottp_idx = Some(idx);
-        ctx.got.hdr.shdr.sh_size += word::<E>();
+        ctx.got
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.got.hdr.shdr.sh_size.get() + word::<E>());
         ctx.got.gottp_syms.push(sym);
     }
 
     pub fn add_tlsgd_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-        let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
+        let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
         ctx.symbols.aux_mut(sym).tlsgd_idx = Some(idx);
-        ctx.got.hdr.shdr.sh_size += 2 * word::<E>();
+        ctx.got
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
         ctx.got.tlsgd_syms.push(sym);
     }
 
@@ -95,16 +114,24 @@ pub mod got {
         // so that no TLSDESC relocation exist at runtime.
         debug_assert!(E::SUPPORTS_TLSDESC);
         debug_assert!(!ctx.args.is_static);
-        let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
+        let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
         ctx.symbols.aux_mut(sym).tlsdesc_idx = Some(idx);
-        ctx.got.hdr.shdr.sh_size += 2 * word::<E>();
+        ctx.got
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
         ctx.got.tlsdesc_syms.push(sym);
     }
 
     pub fn add_tlsld<E: Arch>(ctx: &mut Context<E>) {
         debug_assert!(ctx.got.tlsld_idx.is_none());
-        ctx.got.tlsld_idx = Some((ctx.got.hdr.shdr.sh_size / word::<E>()) as u32);
-        ctx.got.hdr.shdr.sh_size += 2 * word::<E>();
+        ctx.got.tlsld_idx = Some((ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32);
+        ctx.got
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
     }
 
     struct GotEntry {
@@ -336,7 +363,7 @@ pub mod got {
                 continue;
             }
             let rel = ElfRel::<E>::new(
-                ctx.got.hdr.shdr.sh_addr + ent.idx as u64 * word::<E>(),
+                ctx.got.hdr.shdr.sh_addr.get() + ent.idx as u64 * word::<E>(),
                 ent.r_type,
                 ent.sym
                     .and_then(|s| ctx.symbols[s].dynsym_idx(&ctx.symbols))
@@ -368,7 +395,7 @@ pub mod got {
         // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
         if let Some(dynamic) = &ctx.dynamic {
             if E::FAMILY == Family::S390x {
-                write(buf, 0, dynamic.hdr.shdr.sh_addr);
+                write(buf, 0, dynamic.hdr.shdr.sh_addr.get());
             }
 
             // ARM64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
@@ -376,7 +403,7 @@ pub mod got {
             //
             // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
             if E::FAMILY == Family::Arm64 && ctx.args.is_static && ctx.args.pie {
-                write(buf, 0, dynamic.hdr.shdr.sh_addr);
+                write(buf, 0, dynamic.hdr.shdr.sh_addr.get());
             }
         }
 
@@ -440,9 +467,9 @@ pub mod got {
             return;
         }
         let object = |value: u64| {
-            let mut sym = SymbolEntry::default();
-            sym.st_shndx = got.hdr.shndx as u16;
-            sym.st_value = value;
+            let mut sym = ElfSym::<E>::default();
+            sym.st_shndx_mut().set(got.hdr.shndx as u16);
+            sym.st_value_mut().set(value);
             sym.set_type(STT_OBJECT);
             sym
         };
@@ -463,7 +490,7 @@ pub mod got {
             block.push_synthetic::<E>(sym.name(), b"$tlsdesc", object(sym.tlsdesc_addr(ctx)));
         }
         if got.tlsld_idx.is_some() {
-            block.push_synthetic::<E>(b"", b"$tlsld", object(got.tlsld_addr::<E>()));
+            block.push_synthetic::<E>(b"", b"$tlsld", object(got.tlsld_addr()));
         }
     }
 }
@@ -471,21 +498,21 @@ pub mod got {
 // .got.plt is similar to .got in the sense that it is a table containing
 // pointers. The contents in .got.plt are function pointers used by .plt.
 #[derive(Debug)]
-pub struct GotPltSection {
-    pub hdr: ChunkHeader,
+pub struct GotPltSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl GotPltSection {
-    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> GotPltSection {
+impl<E: Arch> GotPltSection<E> {
+    pub fn new(args: &crate::cmdline::Args) -> GotPltSection<E> {
         let sh_type = if E::IS_PPC64 {
             SHT_NOBITS
         } else {
             SHT_PROGBITS
         };
-        let mut hdr = ChunkHeader::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
+        let mut hdr = ChunkHeader::<E>::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = args.z_now;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_size = gotplt::header_size::<E>();
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+        hdr.shdr.sh_size.set(gotplt::header_size::<E>());
         GotPltSection { hdr }
     }
 }
@@ -504,8 +531,11 @@ pub mod gotplt {
     }
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.gotplt.hdr.shdr.sh_size =
-            header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>();
+        ctx.gotplt
+            .hdr
+            .shdr
+            .sh_size
+            .set(header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>());
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -528,12 +558,12 @@ pub mod gotplt {
         write(
             buf,
             0,
-            ctx.dynamic.as_ref().map_or(0, |d| d.hdr.shdr.sh_addr),
+            ctx.dynamic.as_ref().map_or(0, |d| d.hdr.shdr.sh_addr.get()),
         );
         write(buf, 1, 0);
         write(buf, 2, 0);
         for i in 0..ctx.plt.symbols.len() {
-            write(buf, i + 3, ctx.plt.hdr.shdr.sh_addr);
+            write(buf, i + 3, ctx.plt.hdr.shdr.sh_addr.get());
         }
     }
 }
@@ -542,24 +572,33 @@ pub mod gotplt {
 // functions. They are in fact immediately branches to real function entry
 // points. .plt is used as a stub for runtime lazy symbol resolution.
 #[derive(Debug)]
-pub struct PltSection {
-    pub hdr: ChunkHeader,
+pub struct PltSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl PltSection {
-    pub fn new<E: Arch>() -> PltSection {
-        let mut hdr = ChunkHeader::new(".plt", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
+impl<E: Arch> PltSection<E> {
+    pub fn new() -> PltSection<E> {
+        let mut hdr =
+            ChunkHeader::<E>::new(".plt", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
         if E::IS_SPARC {
-            hdr.shdr.sh_flags |= SHF_WRITE as u64;
-            hdr.shdr.sh_addralign = 256;
+            hdr.shdr
+                .sh_flags
+                .set(hdr.shdr.sh_flags.get() | SHF_WRITE as u64);
+            hdr.shdr.sh_addralign.set(256);
         } else {
-            hdr.shdr.sh_addralign = 16;
+            hdr.shdr.sh_addralign.set(16);
         }
         PltSection {
             hdr,
             symbols: Vec::new(),
         }
+    }
+}
+
+impl<E: Arch> Default for PltSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -612,13 +651,13 @@ pub mod plt {
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let n = ctx.plt.symbols.len() as u64;
-        ctx.plt.hdr.shdr.sh_size = if n == 0 {
+        ctx.plt.hdr.shdr.sh_size.set(if n == 0 {
             0
         } else if E::IS_SPARC {
             E::PLT_HDR_SIZE + n * E::PLT_SIZE
         } else {
             entry_offset::<E>(n as u32)
-        };
+        });
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -651,16 +690,16 @@ pub mod plt {
             return;
         }
         let func = |addr: u64| {
-            let mut sym = SymbolEntry::default();
-            sym.st_shndx = plt.hdr.shndx as u16;
-            sym.st_value = addr;
+            let mut sym = ElfSym::<E>::default();
+            sym.st_shndx_mut().set(plt.hdr.shndx as u16);
+            sym.st_value_mut().set(addr);
             sym.set_type(STT_FUNC);
             sym
         };
         use crate::output_chunks::symtab::strtab::{ARM, DATA};
         if E::FAMILY == Family::Arm32 {
-            block.push_mapping_symbol::<E>(ARM, func(plt.hdr.shdr.sh_addr));
-            block.push_mapping_symbol::<E>(DATA, func(plt.hdr.shdr.sh_addr + 16));
+            block.push_mapping_symbol::<E>(ARM, func(plt.hdr.shdr.sh_addr.get()));
+            block.push_mapping_symbol::<E>(DATA, func(plt.hdr.shdr.sh_addr.get() + 16));
         }
         for &id in &plt.symbols {
             let sym = &ctx.symbols[id];
@@ -679,16 +718,16 @@ pub mod plt {
 // lazily for .plt is just waste of time. Therefore, in such case, we use
 // .plt.got for that symbol instead.
 #[derive(Debug)]
-pub struct PltGotSection {
-    pub hdr: ChunkHeader,
+pub struct PltGotSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl PltGotSection {
-    pub fn new() -> PltGotSection {
+impl<E: Layout> PltGotSection<E> {
+    pub fn new() -> PltGotSection<E> {
         let mut hdr =
-            ChunkHeader::new(".plt.got", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
-        hdr.shdr.sh_addralign = 16;
+            ChunkHeader::<E>::new(".plt.got", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
+        hdr.shdr.sh_addralign.set(16);
         PltGotSection {
             hdr,
             symbols: Vec::new(),
@@ -696,7 +735,7 @@ impl PltGotSection {
     }
 }
 
-impl Default for PltGotSection {
+impl<E: Layout> Default for PltGotSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -711,7 +750,11 @@ pub mod pltgot {
         let idx = ctx.pltgot.symbols.len() as u32;
         ctx.symbols.aux_mut(sym).pltgot_idx = Some(idx);
         ctx.pltgot.symbols.push(sym);
-        ctx.pltgot.hdr.shdr.sh_size = ctx.pltgot.symbols.len() as u64 * E::PLTGOT_SIZE;
+        ctx.pltgot
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.pltgot.symbols.len() as u64 * E::PLTGOT_SIZE);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -739,9 +782,9 @@ pub mod pltgot {
             return;
         }
         let func = |addr: u64| {
-            let mut sym = SymbolEntry::default();
-            sym.st_shndx = pltgot.hdr.shndx as u16;
-            sym.st_value = addr;
+            let mut sym = ElfSym::<E>::default();
+            sym.st_shndx_mut().set(pltgot.hdr.shndx as u16);
+            sym.st_value_mut().set(addr);
             sym.set_type(STT_FUNC);
             sym
         };
@@ -760,21 +803,29 @@ pub mod pltgot {
 
 // .rel.plt contains relocation information for .plt.
 #[derive(Debug)]
-pub struct RelPltSection {
-    pub hdr: ChunkHeader,
+pub struct RelPltSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl RelPltSection {
-    pub fn new<E: Arch>() -> RelPltSection {
+impl<E: Arch> RelPltSection<E> {
+    pub fn new() -> RelPltSection<E> {
         let (name, ty) = if E::IS_RELA {
             (".rela.plt", SHT_RELA)
         } else {
             (".rel.plt", SHT_REL)
         };
-        let mut hdr = ChunkHeader::new(name, ty, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfRel<E>>() as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         RelPltSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for RelPltSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -782,11 +833,14 @@ pub mod relplt {
     use super::*;
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.relplt.hdr.shdr.sh_size =
-            ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64;
-        ctx.relplt.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
+        ctx.relplt
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64);
+        ctx.relplt.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
         if !E::IS_SPARC {
-            ctx.relplt.hdr.shdr.sh_info = ctx.gotplt.hdr.shndx;
+            ctx.relplt.hdr.shdr.sh_info.set(ctx.gotplt.hdr.shndx);
         }
     }
 
@@ -816,7 +870,7 @@ pub mod relplt {
                     // carries -(call address) as the addend, making the loader store
                     // (target - call) there (see arch-sparc64.cc).
                     let call = sym.plt_addr(ctx) + 4;
-                    let ptr = ctx.plt.hdr.shdr.sh_addr
+                    let ptr = ctx.plt.hdr.shdr.sh_addr.get()
                         + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
                     ElfRel::<E>::new(
                         ptr,

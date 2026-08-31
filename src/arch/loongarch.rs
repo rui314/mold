@@ -360,8 +360,8 @@ where
             0x2880_118c, // ld.w      $t0, $t0, 4               # link map
             0x4c00_01e0, // jr        $t3
         ];
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr;
-        let plt = ctx.plt.hdr.shdr.sh_addr;
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
         write_insns(buf, if IS_64 { &INSN_64 } else { &INSN_32 });
         write_j20(buf, hi20(gotplt, plt));
         write_k12(&mut buf[8..], gotplt);
@@ -502,7 +502,7 @@ where
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels::<Self>(file);
         let contents = isec.original_contents(file);
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = ctx.got.hdr.shdr.sh_addr.get();
         let mut i = 0;
 
         while i < rels.len() {

@@ -267,6 +267,7 @@ where
                 .hdr
                 .shdr
                 .sh_offset
+                .get()
                 + isec.offset();
             for insn in buf[(base + start) as usize..(base + end) as usize].chunks_exact_mut(width)
             {
@@ -340,7 +341,8 @@ where
             .hdr
             .shdr
             .sh_addr
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr)
+            .get()
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
             .wrapping_sub(16);
         LittleEndian::write_u32(&mut buf[16..], gotplt as u32);
     }
@@ -455,7 +457,7 @@ where
             let a = isec.rel_addend::<Self>(rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
             let t = is_thumb_func(ctx, sym) as u64;
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = ctx.got.hdr.shdr.sh_addr.get();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -627,7 +629,7 @@ where
                 ),
                 R_ARM_TLS_LDM32 => write32(
                     loc,
-                    ctx.got.tlsld_addr::<Self>().wrapping_add(a).wrapping_sub(p) as u32,
+                    ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(p) as u32,
                 ),
                 R_ARM_TLS_LDO32 => write32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
                 R_ARM_TLS_IE32 => write32(

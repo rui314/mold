@@ -167,7 +167,8 @@ impl Arch for S390x {
                 .hdr
                 .shdr
                 .sh_addr
-                .wrapping_sub(ctx.plt.hdr.shdr.sh_addr)
+                .get()
+                .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
                 .wrapping_sub(24)
                 >> 1) as u32,
         );
@@ -304,7 +305,7 @@ impl Arch for S390x {
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + rel.r_offset();
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = ctx.got.hdr.shdr.sh_addr.get();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -462,10 +463,7 @@ impl Arch for S390x {
                 }
                 R_390_TLS_LDM32 | R_390_TLS_LDM64 => {
                     let val = if ctx.got.has_tlsld() {
-                        ctx.got
-                            .tlsld_addr::<Self>()
-                            .wrapping_add(a)
-                            .wrapping_sub(got)
+                        ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got)
                     } else {
                         ctx.dtp_addr.wrapping_sub(ctx.tp_addr)
                     };

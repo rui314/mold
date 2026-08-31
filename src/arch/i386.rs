@@ -85,7 +85,7 @@ impl Arch for I386 {
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr;
+        let gotplt = u64::from(ctx.gotplt.hdr.shdr.sh_addr.get());
         if ctx.args.pic {
             const INSN: [u8; 16] = [
                 0x51, // push %ecx
@@ -98,7 +98,7 @@ impl Arch for I386 {
             write_u32(
                 &mut buf[3..],
                 gotplt
-                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr)
+                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get()))
                     .wrapping_add(4) as u32,
             );
         } else {
@@ -127,7 +127,8 @@ impl Arch for I386 {
             write_u32(&mut buf[1..], reloc_offset as u32);
             write_u32(
                 &mut buf[7..],
-                sym.gotplt_addr(ctx).wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
+                sym.gotplt_addr(ctx)
+                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
             );
         } else {
             const INSN: [u8; 16] = [
@@ -151,7 +152,7 @@ impl Arch for I386 {
             write_u32(
                 &mut buf[2..],
                 sym.got_pltgot_addr(ctx)
-                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
+                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
             );
         } else {
             const INSN: [u8; 8] = [
@@ -286,7 +287,7 @@ impl Arch for I386 {
             let s = sym.addr(ctx);
             let a = isec.rel_addend::<Self>(rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
             let g = || sym.got_addr(ctx).wrapping_sub(got);
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
@@ -360,10 +361,7 @@ impl Arch for I386 {
                     if ctx.got.has_tlsld() {
                         write_u32(
                             &mut buf[off..],
-                            ctx.got
-                                .tlsld_addr::<Self>()
-                                .wrapping_add(a)
-                                .wrapping_sub(got) as u32,
+                            ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got) as u32,
                         );
                     } else {
                         let next = &rels[i];
@@ -377,7 +375,7 @@ impl Arch for I386 {
                 ),
                 R_386_SIZE32 => write_u32(
                     &mut buf[off..],
-                    sym.esym(ctx).st_size.wrapping_add(a) as u32,
+                    (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,
                 ),
                 R_386_TLS_GOTDESC => {
                     // i386 TLSDESC uses the following code sequence to materialize
@@ -475,7 +473,7 @@ impl Arch for I386 {
                 None => (sym.addr(ctx), isec.rel_addend::<Self>(&rel) as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
@@ -514,7 +512,7 @@ impl Arch for I386 {
                 },
                 R_386_SIZE32 => write_u32(
                     &mut buf[off..],
-                    sym.esym(ctx).st_size.wrapping_add(a) as u32,
+                    (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,
                 ),
                 _ => fatal!(
                     ctx,

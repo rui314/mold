@@ -12,28 +12,32 @@ use crate::util::encode_sleb;
 
 // .rel.dyn contains relocation infromation for other sections.
 #[derive(Debug)]
-pub struct RelDynSection {
-    pub hdr: ChunkHeader,
+pub struct RelDynSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub android_encoded: Vec<u8>,
     pub keep_android_size: bool,
 }
 
-impl RelDynSection {
-    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> RelDynSection {
+impl<E: Arch> RelDynSection<E> {
+    pub fn new(args: &crate::cmdline::Args) -> RelDynSection<E> {
         let name = if E::IS_RELA { ".rela.dyn" } else { ".rel.dyn" };
-        let mut hdr = ChunkHeader::new(name, 0, SHF_ALLOC as u64);
+        let mut hdr = ChunkHeader::<E>::new(name, 0, SHF_ALLOC as u64);
         if args.pack_dyn_relocs_android {
-            hdr.shdr.sh_type = if E::IS_RELA {
+            hdr.shdr.sh_type.set(if E::IS_RELA {
                 SHT_ANDROID_RELA
             } else {
                 SHT_ANDROID_REL
-            };
-            hdr.shdr.sh_entsize = 0;
-            hdr.shdr.sh_addralign = 1;
+            });
+            hdr.shdr.sh_entsize.set(0);
+            hdr.shdr.sh_addralign.set(1);
         } else {
-            hdr.shdr.sh_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
-            hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
-            hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+            hdr.shdr
+                .sh_type
+                .set(if E::IS_RELA { SHT_RELA } else { SHT_REL });
+            hdr.shdr
+                .sh_entsize
+                .set(std::mem::size_of::<ElfRel<E>>() as u64);
+            hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         }
         RelDynSection {
             hdr,
@@ -87,7 +91,7 @@ pub mod reldyn {
 
             // Do not use RELR for executable chunks, as they don't usually contain
             // base relocations.
-            if hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+            if hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
                 continue;
             }
             // --section-start can override a chunk's alignment. Conservatively use
@@ -115,7 +119,7 @@ pub mod reldyn {
             .map(|&id| ctx.chunk_header(id).relr.len() as u64 * word)
             .sum();
         if let Some(relrdyn) = &mut ctx.relrdyn {
-            relrdyn.hdr.shdr.sh_size = size;
+            relrdyn.hdr.shdr.sh_size.set(size);
         }
     }
 
@@ -144,7 +148,7 @@ pub mod reldyn {
             // as addresses move. If a shrink is followed by a growth, stop
             // shrinking and pad the encoded stream to converge.
             let encoded = encode_android::<E>(relocs);
-            let old_size = ctx.reldyn.hdr.shdr.sh_size as usize;
+            let old_size = ctx.reldyn.hdr.shdr.sh_size.get() as usize;
             let reldyn = &mut ctx.reldyn;
             if old_size != 0 && old_size < encoded.len() {
                 reldyn.keep_android_size = true;
@@ -153,12 +157,19 @@ pub mod reldyn {
             if reldyn.keep_android_size && reldyn.android_encoded.len() < old_size {
                 reldyn.android_encoded.resize(old_size, 0);
             }
-            reldyn.hdr.shdr.sh_size = reldyn.android_encoded.len() as u64;
+            reldyn
+                .hdr
+                .shdr
+                .sh_size
+                .set(reldyn.android_encoded.len() as u64);
         } else {
-            ctx.reldyn.hdr.shdr.sh_size =
-                (num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64;
+            ctx.reldyn
+                .hdr
+                .shdr
+                .sh_size
+                .set((num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64);
         }
-        ctx.reldyn.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
+        ctx.reldyn.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -252,20 +263,20 @@ pub mod reldyn {
 //
 // .relr.dyn is designed to store base relocations in a space-efficient way.
 #[derive(Debug)]
-pub struct RelrDynSection {
-    pub hdr: ChunkHeader,
+pub struct RelrDynSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl RelrDynSection {
-    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> RelrDynSection {
+impl<E: Arch> RelrDynSection<E> {
+    pub fn new(args: &crate::cmdline::Args) -> RelrDynSection<E> {
         let ty = if args.use_android_relr_tags {
             SHT_ANDROID_RELR
         } else {
             SHT_RELR
         };
-        let mut hdr = ChunkHeader::new(".relr.dyn", ty, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = E::WORD_SIZE as u64;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+        let mut hdr = ChunkHeader::<E>::new(".relr.dyn", ty, SHF_ALLOC as u64);
+        hdr.shdr.sh_entsize.set(E::WORD_SIZE as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         RelrDynSection { hdr }
     }
 }
@@ -282,7 +293,7 @@ pub mod relrdyn {
                 let v = if val & 1 != 0 {
                     val
                 } else {
-                    hdr.shdr.sh_addr + val
+                    hdr.shdr.sh_addr.get() + val
                 };
                 if E::IS_64 {
                     E::Endian::write_u64(&mut buf[i * w..], v);
@@ -421,20 +432,20 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
 // At runtime, the dynamic linker reads the information to work
 // appropriately.
 #[derive(Debug)]
-pub struct DynamicSection {
-    pub hdr: ChunkHeader,
+pub struct DynamicSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl DynamicSection {
-    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> DynamicSection {
-        let mut hdr = ChunkHeader::new(".dynamic", SHT_DYNAMIC, 0);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = ElfDyn::<E>::size() as u64;
+impl<E: Arch> DynamicSection<E> {
+    pub fn new(args: &crate::cmdline::Args) -> DynamicSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+        hdr.shdr.sh_entsize.set(ElfDyn::<E>::size() as u64);
         if args.z_rodynamic {
-            hdr.shdr.sh_flags = SHF_ALLOC as u64;
+            hdr.shdr.sh_flags.set(SHF_ALLOC as u64);
             hdr.is_relro = false;
         } else {
-            hdr.shdr.sh_flags = (SHF_ALLOC | SHF_WRITE) as u64;
+            hdr.shdr.sh_flags.set((SHF_ALLOC | SHF_WRITE) as u64);
             hdr.is_relro = true;
         }
         DynamicSection { hdr }
@@ -510,7 +521,7 @@ pub mod dynamic {
             define(DT_FILTER, dynstr.find_string(s.as_bytes()));
         }
 
-        if ctx.reldyn.hdr.shdr.sh_size != 0 {
+        if ctx.reldyn.hdr.shdr.sh_size.get() != 0 {
             if ctx.args.pack_dyn_relocs_android {
                 define(
                     if E::IS_RELA {
@@ -518,7 +529,7 @@ pub mod dynamic {
                     } else {
                         DT_ANDROID_REL
                     },
-                    ctx.reldyn.hdr.shdr.sh_addr,
+                    ctx.reldyn.hdr.shdr.sh_addr.get(),
                 );
                 define(
                     if E::IS_RELA {
@@ -526,16 +537,16 @@ pub mod dynamic {
                     } else {
                         DT_ANDROID_RELSZ
                     },
-                    ctx.reldyn.hdr.shdr.sh_size,
+                    ctx.reldyn.hdr.shdr.sh_size.get(),
                 );
             } else {
                 define(
                     if E::IS_RELA { DT_RELA } else { DT_REL },
-                    ctx.reldyn.hdr.shdr.sh_addr,
+                    ctx.reldyn.hdr.shdr.sh_addr.get(),
                 );
                 define(
                     if E::IS_RELA { DT_RELASZ } else { DT_RELSZ },
-                    ctx.reldyn.hdr.shdr.sh_size,
+                    ctx.reldyn.hdr.shdr.sh_size.get(),
                 );
                 define(
                     if E::IS_RELA { DT_RELAENT } else { DT_RELENT },
@@ -546,45 +557,45 @@ pub mod dynamic {
 
         if let Some(relrdyn) = &ctx.relrdyn {
             if ctx.args.use_android_relr_tags {
-                define(DT_ANDROID_RELR, relrdyn.hdr.shdr.sh_addr);
-                define(DT_ANDROID_RELRSZ, relrdyn.hdr.shdr.sh_size);
-                define(DT_ANDROID_RELRENT, relrdyn.hdr.shdr.sh_entsize);
+                define(DT_ANDROID_RELR, relrdyn.hdr.shdr.sh_addr.get());
+                define(DT_ANDROID_RELRSZ, relrdyn.hdr.shdr.sh_size.get());
+                define(DT_ANDROID_RELRENT, relrdyn.hdr.shdr.sh_entsize.get());
             } else {
-                define(DT_RELR, relrdyn.hdr.shdr.sh_addr);
-                define(DT_RELRSZ, relrdyn.hdr.shdr.sh_size);
-                define(DT_RELRENT, relrdyn.hdr.shdr.sh_entsize);
+                define(DT_RELR, relrdyn.hdr.shdr.sh_addr.get());
+                define(DT_RELRSZ, relrdyn.hdr.shdr.sh_size.get());
+                define(DT_RELRENT, relrdyn.hdr.shdr.sh_entsize.get());
             }
         }
 
-        if ctx.relplt.hdr.shdr.sh_size != 0 {
-            define(DT_JMPREL, ctx.relplt.hdr.shdr.sh_addr);
-            define(DT_PLTRELSZ, ctx.relplt.hdr.shdr.sh_size);
+        if ctx.relplt.hdr.shdr.sh_size.get() != 0 {
+            define(DT_JMPREL, ctx.relplt.hdr.shdr.sh_addr.get());
+            define(DT_PLTRELSZ, ctx.relplt.hdr.shdr.sh_size.get());
             define(DT_PLTREL, if E::IS_RELA { DT_RELA } else { DT_REL } as u64);
         }
 
         if E::IS_SPARC {
-            if ctx.plt.hdr.shdr.sh_size != 0 {
-                define(DT_PLTGOT, ctx.plt.hdr.shdr.sh_addr);
+            if ctx.plt.hdr.shdr.sh_size.get() != 0 {
+                define(DT_PLTGOT, ctx.plt.hdr.shdr.sh_addr.get());
             }
         } else if E::FAMILY == Family::Ppc32 {
-            if ctx.gotplt.hdr.shdr.sh_size != 0 {
+            if ctx.gotplt.hdr.shdr.sh_size.get() != 0 {
                 define(
                     DT_PLTGOT,
-                    ctx.gotplt.hdr.shdr.sh_addr
+                    ctx.gotplt.hdr.shdr.sh_addr.get()
                         + crate::output_chunks::got::gotplt::header_size::<E>(),
                 );
             }
-        } else if ctx.gotplt.hdr.shdr.sh_size != 0 {
-            define(DT_PLTGOT, ctx.gotplt.hdr.shdr.sh_addr);
+        } else if ctx.gotplt.hdr.shdr.sh_size.get() != 0 {
+            define(DT_PLTGOT, ctx.gotplt.hdr.shdr.sh_addr.get());
         }
 
-        if ctx.dynsym.hdr.shdr.sh_size != 0 {
-            define(DT_SYMTAB, ctx.dynsym.hdr.shdr.sh_addr);
-            define(DT_SYMENT, SymbolEntry::size::<E>() as u64);
+        if ctx.dynsym.hdr.shdr.sh_size.get() != 0 {
+            define(DT_SYMTAB, ctx.dynsym.hdr.shdr.sh_addr.get());
+            define(DT_SYMENT, std::mem::size_of::<ElfSym<E>>() as u64);
         }
-        if ctx.dynstr.hdr.shdr.sh_size != 0 {
-            define(DT_STRTAB, ctx.dynstr.hdr.shdr.sh_addr);
-            define(DT_STRSZ, ctx.dynstr.hdr.shdr.sh_size);
+        if ctx.dynstr.hdr.shdr.sh_size.get() != 0 {
+            define(DT_STRTAB, ctx.dynstr.hdr.shdr.sh_addr.get());
+            define(DT_STRSZ, ctx.dynstr.hdr.shdr.sh_size.get());
         }
 
         let value = |id: Option<SymbolId>| id.map_or(0, |id| ctx.symbols[id].value);
@@ -607,16 +618,16 @@ pub mod dynamic {
             define(DT_FINI_ARRAYSZ, value(ctx.syms.fini_array_end) - start);
         }
 
-        if ctx.versym.hdr.shdr.sh_size != 0 {
-            define(DT_VERSYM, ctx.versym.hdr.shdr.sh_addr);
+        if ctx.versym.hdr.shdr.sh_size.get() != 0 {
+            define(DT_VERSYM, ctx.versym.hdr.shdr.sh_addr.get());
         }
-        if ctx.verneed.hdr.shdr.sh_size != 0 {
-            define(DT_VERNEED, ctx.verneed.hdr.shdr.sh_addr);
-            define(DT_VERNEEDNUM, ctx.verneed.hdr.shdr.sh_info as u64);
+        if ctx.verneed.hdr.shdr.sh_size.get() != 0 {
+            define(DT_VERNEED, ctx.verneed.hdr.shdr.sh_addr.get());
+            define(DT_VERNEEDNUM, ctx.verneed.hdr.shdr.sh_info.get() as u64);
         }
         if let Some(verdef) = &ctx.verdef {
-            define(DT_VERDEF, verdef.hdr.shdr.sh_addr);
-            define(DT_VERDEFNUM, verdef.hdr.shdr.sh_info as u64);
+            define(DT_VERDEF, verdef.hdr.shdr.sh_addr.get());
+            define(DT_VERDEFNUM, verdef.hdr.shdr.sh_info.get() as u64);
         }
 
         if let Some(addr) = sym_addr_if_defined(ctx, ctx.syms.init) {
@@ -627,10 +638,10 @@ pub mod dynamic {
         }
 
         if let Some(hash) = &ctx.hash {
-            define(DT_HASH, hash.hdr.shdr.sh_addr);
+            define(DT_HASH, hash.hdr.shdr.sh_addr.get());
         }
         if let Some(gnu_hash) = &ctx.gnu_hash {
-            define(DT_GNU_HASH, gnu_hash.hdr.shdr.sh_addr);
+            define(DT_GNU_HASH, gnu_hash.hdr.shdr.sh_addr.get());
         }
         let has_textrel = ctx.has_textrel.load(std::sync::atomic::Ordering::Relaxed);
         if has_textrel {
@@ -695,7 +706,7 @@ pub mod dynamic {
             define(DT_RISCV_VARIANT_CC, 0);
         }
         if E::FAMILY == Family::Ppc32 {
-            define(DT_PPC_GOT, ctx.gotplt.hdr.shdr.sh_addr);
+            define(DT_PPC_GOT, ctx.gotplt.hdr.shdr.sh_addr.get());
         }
         if E::IS_PPC64 {
             // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
@@ -703,7 +714,8 @@ pub mod dynamic {
             // it's what it is.
             define(
                 DT_PPC64_GLINK,
-                ctx.plt.hdr.shdr.sh_addr + crate::output_chunks::got::plt::entry_offset::<E>(0)
+                ctx.plt.hdr.shdr.sh_addr.get()
+                    + crate::output_chunks::got::plt::entry_offset::<E>(0)
                     - 32,
             );
         }
@@ -727,8 +739,12 @@ pub mod dynamic {
         }
         let n = create_contents(ctx).len();
         let dynamic = ctx.dynamic.as_mut().unwrap();
-        dynamic.hdr.shdr.sh_size = (n * ElfDyn::<E>::size()) as u64;
-        dynamic.hdr.shdr.sh_link = ctx.dynstr.hdr.shndx;
+        dynamic
+            .hdr
+            .shdr
+            .sh_size
+            .set((n * ElfDyn::<E>::size()) as u64);
+        dynamic.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -740,7 +756,7 @@ pub mod dynamic {
             })
             .collect();
         debug_assert_eq!(
-            ctx.dynamic.as_ref().unwrap().hdr.shdr.sh_size as usize,
+            ctx.dynamic.as_ref().unwrap().hdr.shdr.sh_size.get() as usize,
             entries.len() * ElfDyn::<E>::size()
         );
         ElfDyn::<E>::write_all(&entries, buf);

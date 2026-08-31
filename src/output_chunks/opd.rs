@@ -17,15 +17,15 @@ use crate::symbol::{AddrFlags, SymbolId};
 pub const ENTRY_SIZE: u64 = 24;
 
 #[derive(Debug)]
-pub struct Ppc64OpdSection {
-    pub hdr: ChunkHeader,
+pub struct Ppc64OpdSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl Ppc64OpdSection {
-    pub fn new() -> Ppc64OpdSection {
-        let mut hdr = ChunkHeader::new(".opd", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
-        hdr.shdr.sh_addralign = 8;
+impl<E: Layout> Ppc64OpdSection<E> {
+    pub fn new() -> Ppc64OpdSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".opd", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
+        hdr.shdr.sh_addralign.set(8);
         Ppc64OpdSection {
             hdr,
             symbols: Vec::new(),
@@ -33,7 +33,7 @@ impl Ppc64OpdSection {
     }
 }
 
-impl Default for Ppc64OpdSection {
+impl<E: Layout> Default for Ppc64OpdSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -46,7 +46,7 @@ const ENTRY_POINT: AddrFlags = AddrFlags {
     no_opd: true,
 };
 
-fn section<E: Arch>(ctx: &Context<E>) -> &Ppc64OpdSection {
+fn section<E: Arch>(ctx: &Context<E>) -> &Ppc64OpdSection<E> {
     ctx.ppc64_opd
         .as_ref()
         .expect("PPC64 ELFv1 has an .opd section")
@@ -63,7 +63,10 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
         .expect("PPC64 ELFv1 has an .opd section");
     ctx.symbols.aux_mut(sym).opd_idx = Some(opd.symbols.len() as u32);
     opd.symbols.push(sym);
-    opd.hdr.shdr.sh_size += ENTRY_SIZE;
+    opd.hdr
+        .shdr
+        .sh_size
+        .set(opd.hdr.shdr.sh_size.get() + ENTRY_SIZE);
 }
 
 /// Position-independent output relocates both the entry point and the
@@ -95,7 +98,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
     let toc = toc(ctx);
     let mut j = 0;
     for (i, &id) in opd.symbols.iter().enumerate() {
-        let loc = opd.hdr.shdr.sh_addr + i as u64 * ENTRY_SIZE;
+        let loc = opd.hdr.shdr.sh_addr.get() + i as u64 * ENTRY_SIZE;
         let entry = ctx.symbols[id].addr_with(ctx, ENTRY_POINT);
         for (addr, val) in [(loc, entry), (loc + 8, toc)] {
             if !relr || addr % 8 != 0 {

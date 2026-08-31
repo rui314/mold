@@ -45,8 +45,8 @@ pub struct AbsRel {
 // OutputSection represents the usual output section that contains input
 // sections read from object files.
 #[derive(Debug)]
-pub struct OutputSection {
-    pub hdr: ChunkHeader,
+pub struct OutputSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub members: Vec<InputSectionId>,
     pub thunks: Vec<Thunk>,
     pub reloc_sec: Option<u32>,
@@ -116,10 +116,10 @@ impl OutputBuffer {
 /// Shard size for parallel processing of absolute relocations.
 pub const DYNREL_SHARD_SIZE: usize = 65536;
 
-impl OutputSection {
-    pub fn new(name: &'static BStr, sh_type: u32) -> OutputSection {
+impl<E: Layout> OutputSection<E> {
+    pub fn new(name: &'static BStr, sh_type: u32) -> OutputSection<E> {
         OutputSection {
-            hdr: ChunkHeader::with_name(name, sh_type, 0),
+            hdr: ChunkHeader::<E>::with_name(name, sh_type, 0),
             members: Vec::new(),
             thunks: Vec::new(),
             reloc_sec: None,
@@ -133,7 +133,7 @@ impl OutputSection {
 // Assign offsets to OutputSection members
 pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     let size = layout(ctx, id);
-    ctx.output_sections[id.index()].hdr.shdr.sh_size = size;
+    ctx.output_sections[id.index()].hdr.shdr.sh_size.set(size);
 }
 
 /// Assigns the members their offsets and returns the section size.
@@ -150,7 +150,7 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     // if they may need range extension thunks.
     debug_assert!(
         !E::NEEDS_THUNK
-            || osec.hdr.shdr.sh_flags & SHF_EXECINSTR as u64 == 0
+            || osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 == 0
             || ctx.args.relocatable
     );
 
@@ -219,7 +219,7 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
         let start = isec.offset() as usize;
         let next_start = members
             .get(i + 1)
-            .map_or(osec.hdr.shdr.sh_size as usize, |&next| {
+            .map_or(osec.hdr.shdr.sh_size.get() as usize, |&next| {
                 ctx.input_section(next).offset() as usize
             });
         // SAFETY: output-section member offsets are ordered and each
@@ -232,7 +232,7 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
                 // Clear trailing padding. We write trap instructions for an
                 // executable segment so that a disassembler wouldn't try to
                 // disassemble garbage as instructions.
-                if osec.hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+                if osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
                     // s390x's old CRT files use NOP slides in .init and .fini.
                     // https://sourceware.org/bugzilla/show_bug.cgi?id=31042
                     let filler: &[u8] = if E::FAMILY == Family::S390x
@@ -273,7 +273,7 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
 /// Writes the section and applies word-size absolute relocations.
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = &ctx.output_sections[id.index()];
-    if osec.hdr.shdr.sh_type == SHT_NOBITS {
+    if osec.hdr.shdr.sh_type.get() == SHT_NOBITS {
         return;
     }
     write_to(ctx, id, buf);
@@ -281,7 +281,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
     // Apply absolute relocations. An output section can have a million
     // of them, so this loop is parallel.
     let word = E::WORD_SIZE;
-    let base_addr = osec.hdr.shdr.sh_addr;
+    let base_addr = osec.hdr.shdr.sh_addr.get();
     let output = OutputBuffer::new(buf);
 
     osec.abs_rels.par_iter().for_each(|r| {
@@ -395,7 +395,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
                 let isec = ctx.input_section(r.isec);
                 let s = sym.addr(ctx);
                 let a = r.addend;
-                let mut p = osec.hdr.shdr.sh_addr + isec.offset() + r.offset;
+                let mut p = osec.hdr.shdr.sh_addr.get() + isec.offset() + r.offset;
                 if E::IS_RISCV || E::IS_LOONGARCH {
                     p -= r_delta(isec, r.offset) as u64;
                 }
@@ -494,7 +494,7 @@ pub fn scan_abs_relocations<E: Arch>(
 
     // We can sometimes avoid creating dynamic relocations in read-only
     // sections by promoting symbols to canonical PLT or copy relocations.
-    let promote = !ctx.args.pic && osec.hdr.shdr.sh_flags & SHF_WRITE as u64 == 0;
+    let promote = !ctx.args.pic && osec.hdr.shdr.sh_flags.get() & SHF_WRITE as u64 == 0;
 
     // Classify relocations and retain exact per-shard output counts. A
     // single output section such as .data.rel.ro can account for most of
@@ -586,16 +586,16 @@ pub fn populate_symtab<E: Arch>(
     let osec = &ctx.output_sections[id.index()];
     let shndx = osec.hdr.shndx;
     let func = |addr: u64| {
-        let mut sym = SymbolEntry::default();
-        sym.st_shndx = shndx as u16;
-        sym.st_value = addr;
+        let mut sym = ElfSym::<E>::default();
+        sym.st_shndx_mut().set(shndx as u16);
+        sym.st_value_mut().set(addr);
         sym.set_type(STT_FUNC);
         sym
     };
 
     for thunk in &osec.thunks {
         for (i, &sym) in thunk.symbols.iter().enumerate() {
-            let addr = osec.hdr.shdr.sh_addr + thunk.offset + thunk.offsets[i];
+            let addr = osec.hdr.shdr.sh_addr.get() + thunk.offset + thunk.offsets[i];
             let name = ctx.symbols[sym].name();
             let suffix = format!("${}", thunk.name);
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));

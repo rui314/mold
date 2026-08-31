@@ -184,7 +184,7 @@ impl Arch for Sparc64 {
     // cannot rearrange or simplify it.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
-        let plt = ctx.plt.hdr.shdr.sh_addr;
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let entry = sym.plt_addr(ctx);
 
         if idx < SPARC_NUM_SMALL_PLT {
@@ -384,7 +384,7 @@ impl Arch for Sparc64 {
 
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = ctx.got.hdr.shdr.sh_addr.get();
         let tls_get_addr =
             || ctx.symbols[ctx.syms.tls_get_addr.expect("SPARC has __tls_get_addr")].addr(ctx);
 
@@ -631,10 +631,7 @@ impl Arch for Sparc64 {
                         or32(
                             loc,
                             bits(
-                                ctx.got
-                                    .tlsld_addr::<Self>()
-                                    .wrapping_add(a)
-                                    .wrapping_sub(got),
+                                ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got),
                                 31,
                                 10,
                             ),
@@ -647,14 +644,7 @@ impl Arch for Sparc64 {
                     if ctx.got.has_tlsld() {
                         or32(
                             loc,
-                            bits(
-                                ctx.got
-                                    .tlsld_addr::<Self>()
-                                    .wrapping_add(a)
-                                    .wrapping_sub(got),
-                                9,
-                                0,
-                            ),
+                            bits(ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got), 9, 0),
                         );
                     } else {
                         or32(loc, bits(ctx.tp_addr.wrapping_sub(ctx.tls_begin), 9, 0));
@@ -694,7 +684,7 @@ impl Arch for Sparc64 {
                     loc,
                     bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000,
                 ),
-                R_SPARC_SIZE32 => w32(loc, sym.esym(ctx).st_size.wrapping_add(a)),
+                R_SPARC_SIZE32 => w32(loc, sym.esym(ctx).st_size().get().wrapping_add(a)),
                 R_SPARC_64 | R_SPARC_UA64 | R_SPARC_TLS_LDO_ADD | R_SPARC_TLS_IE_LD
                 | R_SPARC_TLS_IE_LDX | R_SPARC_TLS_IE_ADD => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),

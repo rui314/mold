@@ -154,28 +154,29 @@
 //! pointer (DTP) is the base `__tls_get_addr` returns for offset 0.
 
 use crate::arch::{Arch, Family};
-use crate::elf::{ProgramHeader, PT_TLS};
+use crate::elf::{ElfPhdr, ElfWord, ProgramHeaderRecord, PT_TLS};
 use crate::util::{align_down, align_to};
 
 /// Returns the TP address which can be used for efficient TLV accesses in
 /// the main executable. TP at runtime refers to a per-process TLS block
 /// whose address is not known at link-time. So the address returned from
 /// this function is the TP if the TLS template image were a TLS block.
-pub fn tp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
-    debug_assert_eq!(phdr.p_type, PT_TLS);
+pub fn tp_addr<E: Arch>(phdr: &ElfPhdr<E>) -> u64 {
+    debug_assert_eq!(phdr.p_type().get(), PT_TLS);
     match E::FAMILY {
         // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
         // and %a0/%a1 on s390x) refers to past the end of the TLS block for
         // historical reasons. TLVs are accessed with negative offsets from TP.
-        Family::X86_64 | Family::I386 | Family::Sparc64 | Family::S390x => {
-            align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align)
-        }
+        Family::X86_64 | Family::I386 | Family::Sparc64 | Family::S390x => align_to(
+            phdr.p_vaddr().get() + phdr.p_memsz().get(),
+            phdr.p_align().get(),
+        ),
         // On ARM and SH4, the runtime appends two words at the beginning
         // of TLV template image when copying TLVs to the TLS block, so we need
         // to offset it.
         Family::Arm64 | Family::Arm32 | Family::Sh4 => align_down(
-            phdr.p_vaddr.wrapping_sub(E::WORD_SIZE as u64 * 2),
-            phdr.p_align,
+            phdr.p_vaddr().get().wrapping_sub(E::WORD_SIZE as u64 * 2),
+            phdr.p_align().get(),
         ),
         // On PowerPC and m68k, TP is 0x7000 (28 KiB) past the beginning
         // of the TLV block to maximize the addressable range of load/store
@@ -183,19 +184,21 @@ pub fn tp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
         // (32 KiB) off because there's a small implementation-defined piece of
         // data before the initial TLV block, and the runtime wants to access
         // them efficiently too.
-        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => phdr.p_vaddr + 0x7000,
+        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => {
+            phdr.p_vaddr().get() + 0x7000
+        }
         // RISC-V and LoongArch just uses the beginning of the main executable's
         // TLV block as TP. Their load/store instructions usually take 12-bits
         // signed immediates, so the beginning of the TLS block ± 2 KiB is
         // accessible with a single load/store instruction.
-        Family::RiscV | Family::LoongArch => phdr.p_vaddr,
+        Family::RiscV | Family::LoongArch => phdr.p_vaddr().get(),
     }
 }
 
 /// Returns the address __tls_get_addr() would return if it's called
 /// with offset 0.
-pub fn dtp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
-    debug_assert_eq!(phdr.p_type, PT_TLS);
+pub fn dtp_addr<E: Arch>(phdr: &ElfPhdr<E>) -> u64 {
+    debug_assert_eq!(phdr.p_type().get(), PT_TLS);
     match E::FAMILY {
         // On PowerPC and m68k, R_DTPOFF is resolved to the address 0x8000
         // (32 KiB) past the start of the TLS block. The bias maximizes the
@@ -203,11 +206,13 @@ pub fn dtp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
         // immediates. That is, if the offset were right at the beginning of the
         // start of the TLS block, the half of addressible space (negative
         // immediates) would have been wasted.
-        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => phdr.p_vaddr + 0x8000,
+        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => {
+            phdr.p_vaddr().get() + 0x8000
+        }
         // On RISC-V, the bias is 0x800 as the load/store instructions in the
         // ISA usually have a 12-bit immediate.
-        Family::RiscV => phdr.p_vaddr + 0x800,
+        Family::RiscV => phdr.p_vaddr().get() + 0x800,
         // On other targets, DTP simply refers to the beginning of the TLS block.
-        _ => phdr.p_vaddr,
+        _ => phdr.p_vaddr().get(),
     }
 }

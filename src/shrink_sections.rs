@@ -175,7 +175,8 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
     // Recompute sizes of executable sections
     for id in ctx.chunks.clone() {
         if let ChunkId::Output(osec) = id {
-            if ctx.output_sections[osec.index()].hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+            if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0
+            {
                 output_chunks::compute_section_size(ctx, id);
             }
         }

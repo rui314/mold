@@ -19,16 +19,16 @@ use crate::util::path_filename;
 // must be resolved to a symbol with the exact same version string at
 // runtime.
 #[derive(Debug)]
-pub struct VersymSection {
-    pub hdr: ChunkHeader,
+pub struct VersymSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<u16>,
 }
 
-impl VersymSection {
-    pub fn new() -> VersymSection {
-        let mut hdr = ChunkHeader::new(".gnu.version", SHT_GNU_VERSYM, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = 2;
-        hdr.shdr.sh_addralign = 2;
+impl<E: Layout> VersymSection<E> {
+    pub fn new() -> VersymSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".gnu.version", SHT_GNU_VERSYM, SHF_ALLOC as u64);
+        hdr.shdr.sh_entsize.set(2);
+        hdr.shdr.sh_addralign.set(2);
         VersymSection {
             hdr,
             contents: Vec::new(),
@@ -36,7 +36,7 @@ impl VersymSection {
     }
 }
 
-impl Default for VersymSection {
+impl<E: Layout> Default for VersymSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -46,8 +46,12 @@ pub mod versym {
     use super::*;
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.versym.hdr.shdr.sh_size = ctx.versym.contents.len() as u64 * 2;
-        ctx.versym.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
+        ctx.versym
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.versym.contents.len() as u64 * 2);
+        ctx.versym.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -60,15 +64,15 @@ pub mod versym {
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.
 #[derive(Debug)]
-pub struct VerneedSection {
-    pub hdr: ChunkHeader,
+pub struct VerneedSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl VerneedSection {
-    pub fn new() -> VerneedSection {
-        let mut hdr = ChunkHeader::new(".gnu.version_r", SHT_GNU_VERNEED, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 4;
+impl<E: Layout> VerneedSection<E> {
+    pub fn new() -> VerneedSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".gnu.version_r", SHT_GNU_VERNEED, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(4);
         VerneedSection {
             hdr,
             contents: Vec::new(),
@@ -76,7 +80,7 @@ impl VerneedSection {
     }
 }
 
-impl Default for VerneedSection {
+impl<E: Layout> Default for VerneedSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -96,7 +100,7 @@ impl Default for VerneedSection {
 // executables built with the option failed with a more friendly "version
 // `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
 // about this dummy version name and simply ignores it.
-fn is_glibc2(dso: &crate::input_files::SharedFile) -> bool {
+fn is_glibc2<E: Layout>(dso: &crate::input_files::SharedFile<E>) -> bool {
     dso.soname.starts_with("libc.so.")
         && dso
             .version_strings
@@ -176,7 +180,7 @@ pub mod verneed {
         }
 
         // Resize .gnu.version_r to fit to its contents.
-        ctx.verneed.hdr.shdr.sh_info = builder.num_groups;
+        ctx.verneed.hdr.shdr.sh_info.set(builder.num_groups);
         ctx.verneed.contents = builder.contents;
     }
 
@@ -214,7 +218,11 @@ pub mod verneed {
             .write(&mut self.contents[pos..]);
         }
 
-        fn add_entry(&mut self, dynstr: &mut super::super::symtab::DynstrSection, verstr: &[u8]) {
+        fn add_entry(
+            &mut self,
+            dynstr: &mut super::super::symtab::DynstrSection<E>,
+            verstr: &[u8],
+        ) {
             let gp = self.group_pos.unwrap();
             let mut vn = ElfVerneed::<E>::parse(&self.contents[gp..]);
             vn.vn_cnt.set(vn.vn_cnt.get() + 1);
@@ -240,8 +248,12 @@ pub mod verneed {
     }
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.verneed.hdr.shdr.sh_size = ctx.verneed.contents.len() as u64;
-        ctx.verneed.hdr.shdr.sh_link = ctx.dynstr.hdr.shndx;
+        ctx.verneed
+            .hdr
+            .shdr
+            .sh_size
+            .set(ctx.verneed.contents.len() as u64);
+        ctx.verneed.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -253,15 +265,15 @@ pub mod verneed {
 // versions of defined symbols. This section appears only in .so files,
 // and it specifies the symbol version for each defined dynamic symbol.
 #[derive(Debug)]
-pub struct VerdefSection {
-    pub hdr: ChunkHeader,
+pub struct VerdefSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl VerdefSection {
-    pub fn new() -> VerdefSection {
-        let mut hdr = ChunkHeader::new(".gnu.version_d", SHT_GNU_VERDEF, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 4;
+impl<E: Layout> VerdefSection<E> {
+    pub fn new() -> VerdefSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".gnu.version_d", SHT_GNU_VERDEF, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(4);
         VerdefSection {
             hdr,
             contents: Vec::new(),
@@ -269,7 +281,7 @@ impl VerdefSection {
     }
 }
 
-impl Default for VerdefSection {
+impl<E: Layout> Default for VerdefSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -326,7 +338,7 @@ pub mod verdef {
         let mut count = 0u32;
 
         let mut write = |contents: &mut Vec<u8>,
-                         dynstr: &mut super::super::symtab::DynstrSection,
+                         dynstr: &mut super::super::symtab::DynstrSection<E>,
                          verstr: &[u8],
                          idx: u16,
                          flags: u16| {
@@ -381,15 +393,15 @@ pub mod verdef {
         }
 
         let verdef = ctx.verdef.as_mut().unwrap();
-        verdef.hdr.shdr.sh_info = count;
+        verdef.hdr.shdr.sh_info.set(count);
         verdef.contents = contents;
     }
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let shndx = ctx.dynstr.hdr.shndx;
         let verdef = ctx.verdef.as_mut().unwrap();
-        verdef.hdr.shdr.sh_size = verdef.contents.len() as u64;
-        verdef.hdr.shdr.sh_link = shndx;
+        verdef.hdr.shdr.sh_size.set(verdef.contents.len() as u64);
+        verdef.hdr.shdr.sh_link.set(shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

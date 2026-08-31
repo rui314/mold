@@ -617,11 +617,10 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         // Dynamic linker works better with sorted .rela.dyn section,
         // so we sort them.
         let reldyn = ctx.reldyn.hdr.shdr;
-        if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size != 0 {
-            output_chunks::dynamic::reldyn::sort(
-                &ctx,
-                &mut buf[reldyn.sh_offset as usize..(reldyn.sh_offset + reldyn.sh_size) as usize],
-            );
+        if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size.get() != 0 {
+            let start = reldyn.sh_offset.get() as usize;
+            let end = (reldyn.sh_offset.get() + reldyn.sh_size.get()) as usize;
+            output_chunks::dynamic::reldyn::sort(&ctx, &mut buf[start..end]);
         }
 
         // The final stage reads address ranges, which requires relocated debug
@@ -693,13 +692,13 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
 
 fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range {
     let hdr = ctx.chunk_header(id);
-    let size = if hdr.shdr.sh_type == SHT_NOBITS {
+    let size = if hdr.shdr.sh_type.get() == SHT_NOBITS {
         0
     } else {
-        hdr.shdr.sh_size
+        hdr.shdr.sh_size.get()
     };
     Range {
-        offset: hdr.shdr.sh_offset,
+        offset: hdr.shdr.sh_offset.get(),
         size,
     }
 }
@@ -723,7 +722,7 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut first: Vec<Task> = Vec::new();
     let mut last: Vec<Task> = Vec::new();
     let is_reloc_sec = |id: ChunkId| {
-        let ty = ctx.chunk_header(id).shdr.sh_type;
+        let ty = ctx.chunk_header(id).shdr.sh_type.get();
         matches!(
             id,
             ChunkId::Reloc(_) | ChunkId::EhFrameReloc | ChunkId::SFrameReloc

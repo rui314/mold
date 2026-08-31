@@ -71,6 +71,22 @@ pub const STT_TLS: u32 = 6;
 pub const STT_GNU_IFUNC: u32 = 10;
 pub const STT_SPARC_REGISTER: u32 = 13;
 
+/// Returns a symbol type's name for diagnostics.
+pub fn stt_to_string(st_type: u32) -> String {
+    match st_type {
+        STT_NOTYPE => "STT_NOTYPE".into(),
+        STT_OBJECT => "STT_OBJECT".into(),
+        STT_FUNC => "STT_FUNC".into(),
+        STT_SECTION => "STT_SECTION".into(),
+        STT_FILE => "STT_FILE".into(),
+        STT_COMMON => "STT_COMMON".into(),
+        STT_TLS => "STT_TLS".into(),
+        STT_GNU_IFUNC => "STT_GNU_IFUNC".into(),
+        STT_SPARC_REGISTER => "STT_SPARC_REGISTER".into(),
+        _ => format!("unknown st_type ({st_type})"),
+    }
+}
+
 pub const STB_LOCAL: u32 = 0;
 pub const STB_GLOBAL: u32 = 1;
 pub const STB_WEAK: u32 = 2;
@@ -399,6 +415,16 @@ macro_rules! define_relocations {
         }
     };
 }
+
+pub const SFRAME_MAGIC: u16 = 0xdee2;
+pub const SFRAME_F_FDE_SORTED: u8 = 0x1;
+pub const SFRAME_F_FRAME_POINTER: u8 = 0x2;
+pub const SFRAME_F_FDE_FUNC_START_PCREL: u8 = 0x4;
+
+pub const SFRAME_ABI_AARCH64_ENDIAN_BIG: u8 = 1;
+pub const SFRAME_ABI_AARCH64_ENDIAN_LITTLE: u8 = 2;
+pub const SFRAME_ABI_AMD64_ENDIAN_LITTLE: u8 = 3;
+pub const SFRAME_ABI_S390X_ENDIAN_BIG: u8 = 4;
 
 define_relocations! {
     x86_64_rel_to_string;

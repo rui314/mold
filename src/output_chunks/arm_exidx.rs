@@ -24,8 +24,8 @@ const CANTUNWIND: u32 = 1;
 const ENTRY_SIZE: usize = 8;
 
 #[derive(Debug)]
-pub struct ArmExidxSection {
-    pub hdr: ChunkHeader,
+pub struct ArmExidxSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     /// The output section holding the input `.ARM.exidx` sections.
     pub output_section: OutputSectionId,
 }
@@ -34,7 +34,7 @@ pub struct ArmExidxSection {
 pub fn create<E: Arch>(ctx: &mut Context<E>) {
     let Some(i) = ctx.chunks.iter().position(|&id| match id {
         ChunkId::Output(osec) => {
-            ctx.output_sections[osec.index()].hdr.shdr.sh_type == SHT_ARM_EXIDX
+            ctx.output_sections[osec.index()].hdr.shdr.sh_type.get() == SHT_ARM_EXIDX
         }
         _ => false,
     }) else {
@@ -44,8 +44,8 @@ pub fn create<E: Arch>(ctx: &mut Context<E>) {
         unreachable!()
     };
 
-    let mut hdr = ChunkHeader::new(".ARM.exidx", SHT_ARM_EXIDX, SHF_ALLOC as u64);
-    hdr.shdr.sh_addralign = 4;
+    let mut hdr = ChunkHeader::<E>::new(".ARM.exidx", SHT_ARM_EXIDX, SHF_ALLOC as u64);
+    hdr.shdr.sh_addralign.set(4);
     ctx.arm_exidx = Some(ArmExidxSection {
         hdr,
         output_section: osec,
@@ -62,9 +62,15 @@ pub fn create<E: Arch>(ctx: &mut Context<E>) {
 pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
     let osec = ctx.arm_exidx.as_ref().unwrap().output_section;
     output_section::compute_section_size(ctx, osec);
-    let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size;
+    let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size.get();
     // +8 for sentinel
-    ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_size = size + ENTRY_SIZE as u64;
+    ctx.arm_exidx
+        .as_mut()
+        .unwrap()
+        .hdr
+        .shdr
+        .sh_size
+        .set(size + ENTRY_SIZE as u64);
     // plus the sentinel
 }
 
@@ -73,7 +79,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     if let Some(text) = ctx.find_chunk_by_name(b".text") {
         let shndx = ctx.chunk_header(text).shndx;
-        ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_link = shndx;
+        ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_link.set(shndx);
     }
 }
 
@@ -83,10 +89,10 @@ pub fn remove_duplicate_entries<E: Arch>(ctx: &mut Context<E>) {
     // The input sections are laid out at the synthetic section's address,
     // which their PC-relative records depend on.
     let sec = ctx.arm_exidx.as_ref().unwrap();
-    let (osec, addr) = (sec.output_section, sec.hdr.shdr.sh_addr);
-    ctx.output_sections[osec.index()].hdr.shdr.sh_addr = addr;
+    let (osec, addr) = (sec.output_section, sec.hdr.shdr.sh_addr.get());
+    ctx.output_sections[osec.index()].hdr.shdr.sh_addr.set(addr);
     let size = contents(ctx).len() as u64;
-    ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_size = size;
+    ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -100,8 +106,8 @@ fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
     ctx.chunks
         .iter()
         .map(|&id| ctx.chunk_header(id).shdr)
-        .filter(|shdr| shdr.sh_flags & SHF_EXECINSTR as u64 != 0)
-        .map(|shdr| shdr.sh_addr + shdr.sh_size)
+        .filter(|shdr| shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0)
+        .map(|shdr| shdr.sh_addr.get() + shdr.sh_size.get())
         .max()
         .unwrap_or(0)
 }
@@ -118,7 +124,7 @@ fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
 fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let sec = ctx.arm_exidx.as_ref().unwrap();
     let osec = &ctx.output_sections[sec.output_section.index()];
-    let base = sec.hdr.shdr.sh_addr;
+    let base = sec.hdr.shdr.sh_addr.get();
 
     // .ARM.exidx records consists of a signed 31-bit relative address
     // and a 32-bit value. The relative address indicates the start
@@ -134,7 +140,7 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     // not in (3). So we can distinguished them just by looking at a value.
 
     // We reserve one extra slot for the sentinel
-    let num_entries = osec.hdr.shdr.sh_size as usize / ENTRY_SIZE + 1;
+    let num_entries = osec.hdr.shdr.sh_size.get() as usize / ENTRY_SIZE + 1;
     let mut buf = vec![0u8; num_entries * ENTRY_SIZE];
 
     // Write section contents to the buffer

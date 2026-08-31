@@ -267,9 +267,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             }
         }
         for (shndx, rels) in rewrites {
-            ctx.objs[i]
-                .rels_mut::<Ppc64V1>(shndx)
-                .copy_from_slice(&rels);
+            ctx.objs[i].rels_mut(shndx).copy_from_slice(&rels);
         }
         if let Some((name, rel)) = unresolved {
             fatal!(
@@ -371,7 +369,8 @@ impl Arch for Ppc64V1 {
             .hdr
             .shdr
             .sh_addr
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr)
+            .get()
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
             .wrapping_sub(8);
         or32(&mut buf[16..], higha(val));
         or32(&mut buf[20..], lo(val));
@@ -379,7 +378,7 @@ impl Arch for Ppc64V1 {
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
-        let plt0 = ctx.plt.hdr.shdr.sh_addr;
+        let plt0 = ctx.plt.hdr.shdr.sh_addr.get();
 
         // The PPC64 ELFv1 ABI requires PLT entries to be vary in size depending
         // on their indices. Unlike other targets, .got.plt is filled not by us
@@ -506,7 +505,7 @@ impl Arch for Ppc64V1 {
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         let toc = toc(ctx);
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = ctx.got.hdr.shdr.sh_addr.get();
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
             if rel.r_type() == R_NONE {
@@ -567,12 +566,8 @@ impl Arch for Ppc64V1 {
                 }
                 R_PPC64_GOT_TLSGD16_HA => w16(loc, ha(sym.tlsgd_addr(ctx).wrapping_sub(toc))),
                 R_PPC64_GOT_TLSGD16_LO => w16(loc, lo(sym.tlsgd_addr(ctx).wrapping_sub(toc))),
-                R_PPC64_GOT_TLSLD16_HA => {
-                    w16(loc, ha(ctx.got.tlsld_addr::<Self>().wrapping_sub(toc)))
-                }
-                R_PPC64_GOT_TLSLD16_LO => {
-                    w16(loc, lo(ctx.got.tlsld_addr::<Self>().wrapping_sub(toc)))
-                }
+                R_PPC64_GOT_TLSLD16_HA => w16(loc, ha(ctx.got.tlsld_addr().wrapping_sub(toc))),
+                R_PPC64_GOT_TLSLD16_LO => w16(loc, lo(ctx.got.tlsld_addr().wrapping_sub(toc))),
                 R_PPC64_DTPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.dtp_addr))),
                 R_PPC64_DTPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.dtp_addr))),
                 R_PPC64_DTPREL16_LO_DS => or16(loc, sa.wrapping_sub(ctx.dtp_addr) & 0xfffc),

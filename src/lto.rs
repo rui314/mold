@@ -320,14 +320,14 @@ impl ClaimedSymbol {
 
     /// An IR symbol as an ELF symbol; definitions are absolute, since an
     /// IR object has no sections.
-    fn to_elf_sym(&self) -> SymbolEntry {
-        let mut esym = SymbolEntry::default();
-        esym.st_size = self.size;
-        esym.st_shndx = match self.def {
+    fn to_elf_sym<E: Layout>(&self) -> ElfSym<E> {
+        let mut esym = ElfSym::<E>::default();
+        esym.st_size_mut().set(self.size);
+        esym.st_shndx_mut().set(match self.def {
             LDPK_DEF | LDPK_WEAKDEF => SHN_ABS as u16,
             LDPK_COMMON => SHN_COMMON as u16,
             _ => SHN_UNDEF as u16,
-        };
+        });
         if matches!(self.def, LDPK_WEAKDEF | LDPK_WEAKUNDEF) {
             esym.set_bind(STB_WEAK);
         }
@@ -422,7 +422,7 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     let mf = must_open_file(&ctx.diag, "", &path);
     mf.set_dependency(false);
 
-    let mut file = ObjectFile::new::<E>(&ctx.diag, mf, String::new());
+    let mut file = ObjectFile::<E>::new(&ctx.diag, mf, String::new());
     file.is_lto_output = true;
     file.base.set_reachable(true);
     file.base.priority = ctx.file_by_priority.len() as u32;
@@ -432,7 +432,7 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     //
     // The Rust port gathers and resolves the registered symbols after the
     // plugin callback returns.
-    file.register_global_symbols::<E>(&ctx.args, &mut ctx.symbol_bin());
+    file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     let id = ObjId(ctx.objs.push(Box::new(file)));
     ctx.file_by_priority.push(Some(FileId::Obj(id)));
     LDPS_OK
@@ -586,7 +586,7 @@ unsafe fn get_symbols<E: Arch>(
     // Set the symbol resolution results to psyms.
     let this = FileId::Obj(file.id());
     for (i, psym) in psyms.iter_mut().enumerate() {
-        let esym = &file.base.elf_syms.at(i + 1);
+        let esym = &file.base.elf_syms[i + 1];
         let sym = &ctx.symbols[file.base.symbols[i + 1]];
         psym.resolution = match sym.file() {
             None => LDPR_UNDEF,
@@ -845,7 +845,7 @@ pub fn read_lto_object<E: Arch>(
     ctx: &Context<E>,
     mf: &'static MappedFile,
     archive_name: String,
-) -> Option<ObjectFile> {
+) -> Option<ObjectFile<E>> {
     if ctx.args.plugin.is_empty() {
         fatal!(
             ctx,
@@ -891,11 +891,11 @@ pub fn read_lto_object<E: Arch>(
     let symbols = std::mem::take(&mut *CLAIMED_SYMBOLS.lock().unwrap());
     let mut strtab = vec![0u8];
     // Initialize esyms
-    let mut elf_syms = vec![SymbolEntry::default()];
+    let mut elf_syms = vec![ElfSym::<E>::default()];
     let mut comdat_keys = vec![None];
     for sym in &symbols {
-        let mut esym = sym.to_elf_sym();
-        esym.st_name = strtab.len() as u32;
+        let mut esym = sym.to_elf_sym::<E>();
+        esym.st_name_mut().set(strtab.len() as u32);
         strtab.extend_from_slice(&sym.name);
         strtab.push(0);
         elf_syms.push(esym);
@@ -906,10 +906,10 @@ pub fn read_lto_object<E: Arch>(
         comdat_keys.push(sym.comdat_key.as_ref().map(|key| leak_bytes(key.clone())));
     }
     // Create mold's object instance
-    Some(ObjectFile::lto_input::<E>(
+    Some(ObjectFile::<E>::lto_input(
         mf,
         archive_name,
-        SymTable::from_records(RecordLayout::of::<E>(), &elf_syms),
+        elf_syms,
         leak_bytes(strtab),
         comdat_keys,
     ))

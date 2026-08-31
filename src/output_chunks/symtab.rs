@@ -21,19 +21,19 @@ use crate::{error, fatal};
 // ELF file without breaking it. Strings that runtime accesses are stored
 // in .dynstr.
 #[derive(Debug)]
-pub struct StrtabSection {
-    pub hdr: ChunkHeader,
+pub struct StrtabSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl StrtabSection {
-    pub fn new() -> StrtabSection {
+impl<E: Layout> StrtabSection<E> {
+    pub fn new() -> StrtabSection<E> {
         StrtabSection {
-            hdr: ChunkHeader::new(".strtab", SHT_STRTAB, 0),
+            hdr: ChunkHeader::<E>::new(".strtab", SHT_STRTAB, 0),
         }
     }
 }
 
-impl Default for StrtabSection {
+impl<E: Layout> Default for StrtabSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -71,7 +71,11 @@ pub mod strtab {
             file.base.strtab_offset = offset;
             offset += file.base.strtab_size;
         }
-        ctx.strtab.hdr.shdr.sh_size = if offset == 1 { 0 } else { offset };
+        ctx.strtab
+            .hdr
+            .shdr
+            .sh_size
+            .set(if offset == 1 { 0 } else { offset });
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -86,19 +90,19 @@ pub mod strtab {
 // .strtab, .shstrtab is not needed at runtime. One can remove .shstrtab
 // and section table from an executable without breaking it.
 #[derive(Debug)]
-pub struct ShstrtabSection {
-    pub hdr: ChunkHeader,
+pub struct ShstrtabSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl ShstrtabSection {
-    pub fn new() -> ShstrtabSection {
+impl<E: Layout> ShstrtabSection<E> {
+    pub fn new() -> ShstrtabSection<E> {
         ShstrtabSection {
-            hdr: ChunkHeader::new(".shstrtab", SHT_STRTAB, 0),
+            hdr: ChunkHeader::<E>::new(".shstrtab", SHT_STRTAB, 0),
         }
     }
 }
 
-impl Default for ShstrtabSection {
+impl<E: Layout> Default for ShstrtabSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -123,17 +127,17 @@ pub mod shstrtab {
                 offset += name.len() as u64 + 1;
                 off
             });
-            ctx.chunk_header_mut(id).shdr.sh_name = off as u32;
+            ctx.chunk_header_mut(id).shdr.sh_name.set(off as u32);
         }
-        ctx.shstrtab.as_mut().unwrap().hdr.shdr.sh_size = offset;
+        ctx.shstrtab.as_mut().unwrap().hdr.shdr.sh_size.set(offset);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         buf[0] = 0;
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);
-            if hdr.shdr.sh_name != 0 {
-                write_cstr(&mut buf[hdr.shdr.sh_name as usize..], hdr.name);
+            if hdr.shdr.sh_name.get() != 0 {
+                write_cstr(&mut buf[hdr.shdr.sh_name.get() as usize..], hdr.name);
             }
         }
     }
@@ -141,30 +145,33 @@ pub mod shstrtab {
 
 // .dynstr contains strings that the runtime uses.
 #[derive(Debug)]
-pub struct DynstrSection {
-    pub hdr: ChunkHeader,
+pub struct DynstrSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     strings: HashMap<Vec<u8>, u64>,
 }
 
-impl DynstrSection {
-    pub fn new() -> DynstrSection {
+impl<E: Layout> DynstrSection<E> {
+    pub fn new() -> DynstrSection<E> {
         DynstrSection {
-            hdr: ChunkHeader::new(".dynstr", SHT_STRTAB, SHF_ALLOC as u64),
+            hdr: ChunkHeader::<E>::new(".dynstr", SHT_STRTAB, SHF_ALLOC as u64),
             strings: HashMap::new(),
         }
     }
 
     pub fn add_string(&mut self, s: &[u8]) -> u64 {
-        if self.hdr.shdr.sh_size == 0 {
+        if self.hdr.shdr.sh_size.get() == 0 {
             self.strings.insert(Vec::new(), 0);
-            self.hdr.shdr.sh_size = 1;
+            self.hdr.shdr.sh_size.set(1);
         }
         if let Some(&off) = self.strings.get(s) {
             return off;
         }
-        let off = self.hdr.shdr.sh_size;
+        let off = self.hdr.shdr.sh_size.get();
         self.strings.insert(s.to_vec(), off);
-        self.hdr.shdr.sh_size += s.len() as u64 + 1;
+        self.hdr
+            .shdr
+            .sh_size
+            .set(self.hdr.shdr.sh_size.get() + s.len() as u64 + 1);
         off
     }
 
@@ -173,7 +180,7 @@ impl DynstrSection {
     }
 }
 
-impl Default for DynstrSection {
+impl<E: Layout> Default for DynstrSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -197,16 +204,24 @@ pub mod dynstr {
 // runtime and can be stripped from an ELF file without affecting the
 // behavior of the program. Symbols in .symtab are mainly for debugging.
 #[derive(Debug)]
-pub struct SymtabSection {
-    pub hdr: ChunkHeader,
+pub struct SymtabSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl SymtabSection {
-    pub fn new<E: Arch>() -> SymtabSection {
-        let mut hdr = ChunkHeader::new(".symtab", SHT_SYMTAB, 0);
-        hdr.shdr.sh_entsize = SymbolEntry::size::<E>() as u64;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+impl<E: Arch> SymtabSection<E> {
+    pub fn new() -> SymtabSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfSym<E>>() as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         SymtabSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for SymtabSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -220,20 +235,20 @@ impl SymtabSection {
 //
 // Use of this section is exceptional. Most ELF files don't contain one.
 #[derive(Debug)]
-pub struct SymtabShndxSection {
-    pub hdr: ChunkHeader,
+pub struct SymtabShndxSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl SymtabShndxSection {
-    pub fn new() -> SymtabShndxSection {
-        let mut hdr = ChunkHeader::new(".symtab_shndx", SHT_SYMTAB_SHNDX, 0);
-        hdr.shdr.sh_entsize = 4;
-        hdr.shdr.sh_addralign = 4;
+impl<E: Layout> SymtabShndxSection<E> {
+    pub fn new() -> SymtabShndxSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".symtab_shndx", SHT_SYMTAB_SHNDX, 0);
+        hdr.shdr.sh_entsize.set(4);
+        hdr.shdr.sh_addralign.set(4);
         SymtabShndxSection { hdr }
     }
 }
 
-impl Default for SymtabShndxSection {
+impl<E: Layout> Default for SymtabShndxSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -277,13 +292,17 @@ pub mod symtab {
             nsyms += file.base.num_global_symtab;
         }
 
-        ctx.symtab.hdr.shdr.sh_info = ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx);
-        ctx.symtab.hdr.shdr.sh_link = ctx.strtab.hdr.shndx;
-        ctx.symtab.hdr.shdr.sh_size = if nsyms == 1 {
+        ctx.symtab
+            .hdr
+            .shdr
+            .sh_info
+            .set(ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx));
+        ctx.symtab.hdr.shdr.sh_link.set(ctx.strtab.hdr.shndx);
+        ctx.symtab.hdr.shdr.sh_size.set(if nsyms == 1 {
             0
         } else {
-            nsyms as u64 * SymbolEntry::size::<E>() as u64
-        };
+            nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64
+        });
     }
 
     /// Writes `.symtab`, `.strtab` and `.symtab_shndx`.
@@ -293,7 +312,7 @@ pub mod symtab {
         strtab: &mut [u8],
         mut xindex: Option<&mut [u8]>,
     ) {
-        let size = SymbolEntry::size::<E>();
+        let size = std::mem::size_of::<ElfSym<E>>();
         symtab[..size].fill(0);
         if let Some(xindex) = xindex.as_deref_mut() {
             xindex.fill(0);
@@ -305,17 +324,17 @@ pub mod symtab {
             if hdr.shndx == 0 {
                 continue;
             }
-            let mut esym = SymbolEntry::default();
-            esym.st_value = hdr.shdr.sh_addr;
+            let mut esym = ElfSym::<E>::default();
+            esym.st_value_mut().set(hdr.shdr.sh_addr.get());
             esym.set_type(STT_SECTION);
             match xindex.as_deref_mut() {
                 Some(xindex) => {
                     E::Endian::write_u32(&mut xindex[hdr.shndx as usize * 4..], hdr.shndx);
-                    esym.st_shndx = SHN_XINDEX as u16;
+                    esym.st_shndx_mut().set(SHN_XINDEX as u16);
                 }
-                None => esym.st_shndx = hdr.shndx as u16,
+                None => esym.st_shndx_mut().set(hdr.shndx as u16),
             }
-            esym.write::<E>(&mut symtab[hdr.shndx as usize * size..]);
+            esym.write(&mut symtab[hdr.shndx as usize * size..]);
         }
 
         strtab::copy_buf(ctx, strtab);
@@ -449,26 +468,26 @@ pub mod symtab {
 // size as well.
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
-    if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size != 0 {
+    if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size().get() != 0 {
         if let Some(isec) = sym.input_section_ref() {
             if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
-                let end = esym.st_value + esym.st_size;
-                return (esym.st_size as i64 + esym.st_value as i64
+                let end = esym.st_value().get() + esym.st_size().get();
+                return (esym.st_size().get() as i64 + esym.st_value().get() as i64
                     - sym.value as i64
                     - r_delta(isec, end)) as u64;
             }
         }
     }
-    esym.st_size
+    esym.st_size().get()
 }
 
 /// Builds the output symbol table entry for a symbol. The returned index
 /// is nonzero if the section index doesn't fit in `st_shndx` and must go
 /// to `.symtab_shndx`.
-pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (SymbolEntry, u32) {
-    let mut esym = SymbolEntry::default();
-    esym.st_name = st_name;
-    esym.st_size = symbol_size(ctx, sym);
+pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (ElfSym<E>, u32) {
+    let mut esym = ElfSym::<E>::default();
+    esym.st_name_mut().set(st_name);
+    esym.st_size_mut().set(symbol_size(ctx, sym));
     esym.set_type(sym.ty());
 
     let file = sym.file().expect("symbol without a file in symbol table");
@@ -520,63 +539,68 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         } else {
             ctx.copyrel.hdr.shndx
         });
-        esym.st_value = sym.addr(ctx);
+        esym.st_value_mut().set(sym.addr(ctx));
     } else if file.is_dso() || sym.is_undef() {
         // Undefined symbol in a DSO
-        esym.st_shndx = SHN_UNDEF as u16;
-        esym.st_size = 0;
+        esym.st_shndx_mut().set(SHN_UNDEF as u16);
+        esym.st_size_mut().set(0);
         if sym.is_canonical() {
-            esym.st_value = sym.plt_addr(ctx);
+            esym.st_value_mut().set(sym.plt_addr(ctx));
         }
     } else if let Some(chunk) = sym.output_chunk() {
         // Linker-synthesized symbol
         shndx = Some(ctx.chunk_header(chunk).shndx);
-        esym.st_value = sym.addr(ctx);
+        esym.st_value_mut().set(sym.addr(ctx));
     } else if let Some(frag) = sym.fragment() {
         shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
-        esym.st_value = sym.addr(ctx);
+        esym.st_value_mut().set(sym.addr(ctx));
     } else if isec.is_none() {
         if sym.is_common() {
             // Common symbol. Common symbols are converted to .bss unless we are
             // creating a relocatable output, in which case they are passed
             // through as they are. st_value of a common symbol is its alignment.
             debug_assert!(ctx.args.relocatable);
-            esym.st_shndx = SHN_COMMON as u16;
-            esym.st_value = sym.esym(ctx).st_value;
+            esym.st_shndx_mut().set(SHN_COMMON as u16);
+            esym.st_value_mut().set(sym.esym(ctx).st_value().get());
         } else {
             // Absolute symbol
-            esym.st_shndx = SHN_ABS as u16;
-            esym.st_value = sym.addr(ctx);
+            esym.st_shndx_mut().set(SHN_ABS as u16);
+            esym.st_value_mut().set(sym.addr(ctx));
         }
     } else if sym.ty() == STT_TLS {
         // TLS symbol
         shndx = Some(st_shndx_of(sym));
-        esym.st_value = sym.addr(ctx) - ctx.tls_begin;
+        esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
     } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
         // IFUNC symbol in PDE that uses two GOT slots
         shndx = Some(st_shndx_of(sym));
         esym.set_type(STT_FUNC);
         esym.set_visibility(sym.visibility());
-        esym.st_value = sym.plt_addr(ctx);
+        esym.st_value_mut().set(sym.plt_addr(ctx));
     } else if let Some(isec) = isec.filter(|isec| {
         isec.sh_flags & SHF_MERGE as u64 != 0 && isec.sh_flags & SHF_ALLOC as u64 == 0
     }) {
         // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
         let file = &ctx.objs[isec.file.index()];
         let m = file
-            .mergeable_section(file.shndx_at_in::<E>(sym.sym_idx as usize))
+            .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
             .expect("mergeable section");
-        let (frag, addend) = m.fragment(sym.esym(ctx).st_value).expect("fragment");
+        let (frag, addend) = m
+            .fragment(sym.esym(ctx).st_value().get())
+            .expect("fragment");
         let msec = &ctx.merged_sections[m.parent.index()];
         shndx = Some(msec.hdr.shndx);
         esym.set_visibility(sym.visibility());
-        esym.st_value =
-            (msec.hdr.shdr.sh_addr + msec.fragments.get(frag).offset()).wrapping_add(addend as u64);
+        esym.st_value_mut().set(
+            (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
+                .wrapping_add(addend as u64),
+        );
     } else {
         // Symbol in a regular section
         shndx = Some(st_shndx_of(sym));
         esym.set_visibility(sym.visibility());
-        esym.st_value = sym.addr_with(ctx, AddrFlags::NO_PLT);
+        esym.st_value_mut()
+            .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
     }
 
     // Symbol's st_shndx is only 16 bits wide, so we can't store a large
@@ -587,9 +611,9 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     let mut xindex = 0;
     if let Some(shndx) = shndx {
         if shndx < SHN_LORESERVE {
-            esym.st_shndx = shndx as u16;
+            esym.st_shndx_mut().set(shndx as u16);
         } else {
-            esym.st_shndx = SHN_XINDEX as u16;
+            esym.st_shndx_mut().set(SHN_XINDEX as u16);
             xindex = shndx;
         }
     }
@@ -599,23 +623,31 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
 // .dynsym contains symbols for dynamic linking. This is similar to
 // .symtab, but .dynsym contains data that the runtime uses.
 #[derive(Debug)]
-pub struct DynsymSection {
-    pub hdr: ChunkHeader,
+pub struct DynsymSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     /// Index 0 is the null symbol.
     pub symbols: Vec<Option<SymbolId>>,
     pub dynstr_offset: u64,
 }
 
-impl DynsymSection {
-    pub fn new<E: Arch>() -> DynsymSection {
-        let mut hdr = ChunkHeader::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = SymbolEntry::size::<E>() as u64;
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+impl<E: Arch> DynsymSection<E> {
+    pub fn new() -> DynsymSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfSym<E>>() as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         DynsymSection {
             hdr,
             symbols: Vec::new(),
             dynstr_offset: 0,
         }
+    }
+}
+
+impl<E: Arch> Default for DynsymSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -634,13 +666,16 @@ pub mod dynsym {
     }
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.dynsym.hdr.shdr.sh_link = ctx.dynstr.hdr.shndx;
-        ctx.dynsym.hdr.shdr.sh_size =
-            SymbolEntry::size::<E>() as u64 * ctx.dynsym.symbols.len() as u64;
+        ctx.dynsym.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
+        ctx.dynsym
+            .hdr
+            .shdr
+            .sh_size
+            .set(std::mem::size_of::<ElfSym<E>>() as u64 * ctx.dynsym.symbols.len() as u64);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        let size = SymbolEntry::size::<E>();
+        let size = std::mem::size_of::<ElfSym<E>>();
         buf[..size].fill(0);
         let mut offset = ctx.dynsym.dynstr_offset as u32;
         for &id in ctx.dynsym.symbols.iter().skip(1).flatten() {
@@ -648,7 +683,7 @@ pub mod dynsym {
             let (esym, xindex) = to_output_esym(ctx, sym, offset);
             if xindex != 0 {
                 let nshdrs = ctx.shdr.as_ref().map_or(0, |s| {
-                    s.hdr.shdr.sh_size / SectionHeader::size::<E>() as u64
+                    s.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64
                 });
                 error!(
                     ctx,
@@ -657,7 +692,7 @@ pub mod dynsym {
                 );
                 return;
             }
-            esym.write::<E>(&mut buf[sym.dynsym_idx(&ctx.symbols).unwrap() as usize * size..]);
+            esym.write(&mut buf[sym.dynsym_idx(&ctx.symbols).unwrap() as usize * size..]);
             offset += sym.name().len() as u32 + 1;
         }
     }
@@ -697,20 +732,26 @@ pub fn djb_hash(name: &[u8]) -> u32 {
 // library but from all the ELF files loaded to memory. Therefore,
 // minimizing the cost of each dynamic symbol lookup is important.
 #[derive(Debug)]
-pub struct HashSection {
-    pub hdr: ChunkHeader,
+pub struct HashSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl HashSection {
-    pub fn new<E: Arch>() -> HashSection {
-        let mut hdr = ChunkHeader::new(".hash", SHT_HASH, SHF_ALLOC as u64);
+impl<E: Arch> HashSection<E> {
+    pub fn new() -> HashSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);
         // Even though u32 should suffice as an etnry size for all targets,
         // s390x uses u64. It looks like a spec bug, but we need to follow
         // suit for the sake of binary compatibility.
         let entry = hash::entry_size::<E>() as u64;
-        hdr.shdr.sh_entsize = entry;
-        hdr.shdr.sh_addralign = entry;
+        hdr.shdr.sh_entsize.set(entry);
+        hdr.shdr.sh_addralign.set(entry);
         HashSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for HashSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -732,8 +773,8 @@ pub mod hash {
         let entry = entry_size::<E>() as u64;
         let num_slots = ctx.dynsym.symbols.len() as u64;
         let hash = ctx.hash.as_mut().unwrap();
-        hash.hdr.shdr.sh_size = entry * 2 + num_slots * entry * 2;
-        hash.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
+        hash.hdr.shdr.sh_size.set(entry * 2 + num_slots * entry * 2);
+        hash.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -775,27 +816,33 @@ pub mod hash {
 // on-disk hash table but also contains a bloom filter to quickly identify
 // whether or not a given symbol name exists in .dynsym.
 #[derive(Debug)]
-pub struct GnuHashSection {
-    pub hdr: ChunkHeader,
+pub struct GnuHashSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub num_buckets: u32,
     pub num_bloom: u32,
     pub num_exported: u32,
 }
 
-impl GnuHashSection {
+impl<E: Arch> GnuHashSection<E> {
     pub const LOAD_FACTOR: u32 = 8;
     pub const HEADER_SIZE: u64 = 16;
     pub const BLOOM_SHIFT: u32 = 26;
 
-    pub fn new<E: Arch>() -> GnuHashSection {
-        let mut hdr = ChunkHeader::new(".gnu.hash", SHT_GNU_HASH, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+    pub fn new() -> GnuHashSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".gnu.hash", SHT_GNU_HASH, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         GnuHashSection {
             hdr,
             num_buckets: 0,
             num_bloom: 1,
             num_exported: 0,
         }
+    }
+}
+
+impl<E: Arch> Default for GnuHashSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -812,11 +859,13 @@ pub mod gnu_hash {
         gh.num_bloom = ((gh.num_exported as u64 * 12) / (word * 8))
             .max(1)
             .next_power_of_two() as u32;
-        gh.hdr.shdr.sh_size = GnuHashSection::HEADER_SIZE
-            + gh.num_bloom as u64 * word // Bloom filter
-            + gh.num_buckets as u64 * 4 // Hash buckets
-            + gh.num_exported as u64 * 4; // Hash values
-        gh.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
+        gh.hdr.shdr.sh_size.set(
+            GnuHashSection::<E>::HEADER_SIZE
+                + gh.num_bloom as u64 * word // Bloom filter
+                + gh.num_buckets as u64 * 4 // Hash buckets
+                + gh.num_exported as u64 * 4, // Hash values
+        );
+        gh.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -828,7 +877,7 @@ pub mod gnu_hash {
         E::Endian::write_u32(buf, gh.num_buckets);
         E::Endian::write_u32(&mut buf[4..], first_exported as u32);
         E::Endian::write_u32(&mut buf[8..], gh.num_bloom);
-        E::Endian::write_u32(&mut buf[12..], GnuHashSection::BLOOM_SHIFT);
+        E::Endian::write_u32(&mut buf[12..], GnuHashSection::<E>::BLOOM_SHIFT);
 
         let syms: Vec<SymbolId> = ctx.dynsym.symbols[first_exported..]
             .iter()
@@ -840,7 +889,7 @@ pub mod gnu_hash {
         }
 
         // Write a bloom filter
-        let bloom_off = GnuHashSection::HEADER_SIZE as usize;
+        let bloom_off = GnuHashSection::<E>::HEADER_SIZE as usize;
         let word_bits = word * 8;
         let mut indices = Vec::with_capacity(syms.len());
         for &id in &syms {
@@ -848,7 +897,7 @@ pub mod gnu_hash {
             indices.push(h % gh.num_buckets);
             let idx = (h as usize / word_bits) % gh.num_bloom as usize;
             let bits = (1u64 << (h as usize % word_bits))
-                | (1u64 << ((h >> GnuHashSection::BLOOM_SHIFT) as usize % word_bits));
+                | (1u64 << ((h >> GnuHashSection::<E>::BLOOM_SHIFT) as usize % word_bits));
             let slot = &mut buf[bloom_off + idx * word..];
             if E::IS_64 {
                 E::Endian::write_u64(slot, E::Endian::read_u64(slot) | bits);

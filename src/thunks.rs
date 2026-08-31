@@ -58,8 +58,8 @@ impl Thunk {
         self.offsets.last().copied().unwrap_or(0)
     }
 
-    pub fn addr(&self, osec: &OutputSection) -> u64 {
-        osec.hdr.shdr.sh_addr + self.offset
+    pub fn addr<E: Layout>(&self, osec: &OutputSection<E>) -> u64 {
+        osec.hdr.shdr.sh_addr.get() + self.offset
     }
 
     /// The entry offsets of a thunk with fixed-size entries.
@@ -189,7 +189,8 @@ fn executable_sections<E: Arch>(ctx: &Context<E>) -> Vec<OutputSectionId> {
         .iter()
         .filter_map(|&id| match id {
             ChunkId::Output(osec)
-                if ctx.output_sections[osec.index()].hdr.shdr.sh_flags & SHF_EXECINSTR as u64
+                if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get()
+                    & SHF_EXECINSTR as u64
                     != 0 =>
             {
                 Some(osec)
@@ -347,7 +348,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
     }
 
     let osec = &mut ctx.output_sections[id.index()];
-    osec.hdr.shdr.sh_size = offset;
+    osec.hdr.shdr.sh_size.set(offset);
     osec.thunks = thunks;
     osec.members = members;
 }
@@ -428,7 +429,7 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
             }
         }
         let osec = &mut ctx.output_sections[id.index()];
-        osec.hdr.shdr.sh_size = offset;
+        osec.hdr.shdr.sh_size.set(offset);
         osec.thunks = thunks;
     }
 }
@@ -444,7 +445,7 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
 pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_thunk_addresses");
     let mut sections = executable_sections(ctx);
-    sections.sort_by_key(|id| ctx.output_sections[id.index()].hdr.shdr.sh_addr);
+    sections.sort_by_key(|id| ctx.output_sections[id.index()].hdr.shdr.sh_addr.get());
 
     for id in sections {
         let osec = &ctx.output_sections[id.index()];
@@ -467,7 +468,7 @@ pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
 }
 
 /// Writes a thunk's stubs into the output section buffer.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, osec: &OutputSection, thunk: &Thunk, buf: &mut [u8]) {
+pub fn copy_buf<E: Arch>(ctx: &Context<E>, osec: &OutputSection<E>, thunk: &Thunk, buf: &mut [u8]) {
     debug_assert_eq!(buf.len(), thunk.size() as usize);
     E::write_thunk(ctx, thunk, thunk.addr(osec), buf);
 }

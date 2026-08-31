@@ -219,8 +219,8 @@ where
         for (i, &v) in INSN.iter().enumerate() {
             write_insn(&mut buf[i * 4..], v);
         }
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr + 16;
-        let plt = ctx.plt.hdr.shdr.sh_addr;
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get() + 16;
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
         write_adrp(&mut buf[4..], page(gotplt).wrapping_sub(page(plt + 4)));
         or_insn(&mut buf[8..], (bits(gotplt, 11, 3) << 10) as u32);
         or_insn(&mut buf[12..], ((gotplt & 0xfff) << 10) as u32);
@@ -415,7 +415,7 @@ where
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + rel.r_offset();
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = ctx.got.hdr.shdr.sh_addr.get();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

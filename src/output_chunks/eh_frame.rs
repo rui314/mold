@@ -23,12 +23,12 @@ use crate::{error, fatal};
 /// `CieRecord *` leaders; the owner pointer is needed here because Rust keeps
 /// the file-dependent relocation and symbol tables outside the record.
 #[derive(Clone, Copy)]
-pub(crate) struct CieHandle {
-    file: NonNull<ObjectFile>,
+pub(crate) struct CieHandle<E: Layout> {
+    file: NonNull<ObjectFile<E>>,
     cie: NonNull<CieRecord>,
 }
 
-impl CieHandle {
+impl<E: Layout> CieHandle<E> {
     /// Creates a handle while object files and their CIE vectors are stable.
     ///
     /// # Safety
@@ -37,7 +37,7 @@ impl CieHandle {
     /// CIE vector must not be reallocated. Mutations through a handle must not
     /// overlap a call to [`Self::equals`] involving that handle.
     #[inline]
-    pub(crate) unsafe fn new(file: *mut ObjectFile, cie: *mut CieRecord) -> CieHandle {
+    pub(crate) unsafe fn new(file: *mut ObjectFile<E>, cie: *mut CieRecord) -> CieHandle<E> {
         CieHandle {
             file: unsafe { NonNull::new_unchecked(file) },
             cie: unsafe { NonNull::new_unchecked(cie) },
@@ -45,7 +45,7 @@ impl CieHandle {
     }
 
     #[inline]
-    pub(crate) fn equals<E: Layout>(self, other: CieHandle) -> bool {
+    pub(crate) fn equals(self, other: CieHandle<E>) -> bool {
         // SAFETY: construction guarantees that both records and owners remain
         // live, and callers compare records only while they are not mutating.
         unsafe {
@@ -59,7 +59,7 @@ impl CieHandle {
     }
 
     #[inline]
-    pub(crate) fn size<E: Layout>(self) -> usize {
+    pub(crate) fn size(self) -> usize {
         // SAFETY: the handle's owner and record remain live.
         unsafe { self.cie.as_ref().size::<E>() }
     }
@@ -95,23 +95,29 @@ impl CieHandle {
 // We parse input .eh_frame sections, merge their contents and emit the
 // merged information to .eh_frame.
 #[derive(Debug)]
-pub struct EhFrameSection {
-    pub hdr: ChunkHeader,
+pub struct EhFrameSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl EhFrameSection {
-    pub fn new<E: Arch>() -> EhFrameSection {
-        let mut hdr = ChunkHeader::new(".eh_frame", SHT_PROGBITS, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+impl<E: Arch> EhFrameSection<E> {
+    pub fn new() -> EhFrameSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".eh_frame", SHT_PROGBITS, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         EhFrameSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for EhFrameSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 /// Whether two CIEs are identical, including their relocations.
 pub fn cie_equals<E: Layout>(
-    a_file: &ObjectFile,
+    a_file: &ObjectFile<E>,
     a: &CieRecord,
-    b_file: &ObjectFile,
+    b_file: &ObjectFile<E>,
     b: &CieRecord,
 ) -> bool {
     if a.contents::<E>() != b.contents::<E>() {
@@ -146,25 +152,22 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     });
 
     // Uniquify CIEs and assign offsets to them.
-    let mut leaders: Vec<CieHandle> = Vec::new();
+    let mut leaders: Vec<CieHandle<E>> = Vec::new();
     let mut offset = 0u64;
     for file in &mut ctx.objs {
-        let file_ptr = file as *mut ObjectFile;
+        let file_ptr = file as *mut ObjectFile<E>;
         let cies = file.cies.as_mut_ptr();
         for ci in 0..file.cies.len() {
             // SAFETY: files are boxed and no CIE vector is resized during
             // layout construction, so both addresses remain stable.
             let cie = unsafe { CieHandle::new(file_ptr, cies.add(ci)) };
-            let leader = leaders
-                .iter()
-                .copied()
-                .find(|&leader| leader.equals::<E>(cie));
+            let leader = leaders.iter().copied().find(|&leader| leader.equals(cie));
             match leader {
                 Some(leader) => cie.set_output_offset(leader.output_offset()),
                 None => {
                     cie.set_output_offset(offset as u32);
                     cie.set_leader();
-                    offset += cie.size::<E>() as u64;
+                    offset += cie.size() as u64;
                     leaders.push(cie);
                 }
             }
@@ -181,13 +184,13 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // .eh_frame must end with a null word.
-    ctx.eh_frame.hdr.shdr.sh_size = offset + 4;
+    ctx.eh_frame.hdr.shdr.sh_size.set(offset + 4);
 }
 
 // Write to .eh_frame and .eh_frame_hdr.
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut [u8]>) {
-    let sh_addr = ctx.eh_frame.hdr.shdr.sh_addr;
-    let sh_size = ctx.eh_frame.hdr.shdr.sh_size;
+    let sh_addr = ctx.eh_frame.hdr.shdr.sh_addr.get();
+    let sh_size = ctx.eh_frame.hdr.shdr.sh_size.get();
 
     // Each file owns the range of its FDEs; leader CIEs are written by
     // their files too. Since CIE ranges precede all FDE ranges, both are
@@ -209,9 +212,9 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     debug_assert!(bounds.windows(2).all(|pair| pair[0] < pair[1]));
     let mut slices = split_at_offsets(buf, &bounds).into_iter();
 
-    let hdr_addr = ctx.eh_frame_hdr.as_ref().map(|h| h.hdr.shdr.sh_addr);
+    let hdr_addr = ctx.eh_frame_hdr.as_ref().map(|h| h.hdr.shdr.sh_addr.get());
 
-    let write_cie = |file: &ObjectFile, cie: &CieRecord, dst: &mut [u8]| {
+    let write_cie = |file: &ObjectFile<E>, cie: &CieRecord, dst: &mut [u8]| {
         let contents = cie.contents::<E>();
         dst[..contents.len()].copy_from_slice(contents);
         if ctx.args.relocatable {
@@ -236,13 +239,13 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     };
 
     // Gather per-file work items with their slices.
-    struct Item<'a> {
-        file: &'a ObjectFile,
+    struct Item<'a, E: Layout> {
+        file: &'a ObjectFile<E>,
         cies: Vec<(usize, &'a mut [u8])>,
         fdes: Option<&'a mut [u8]>,
         hdr_entries: Option<&'a mut [u8]>,
     }
-    let mut items: Vec<Item> = ctx
+    let mut items: Vec<Item<E>> = ctx
         .objs
         .iter()
         .map(|file| Item {
@@ -268,7 +271,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     }
     debug_assert!(slices.next().is_none());
 
-    let base = EhFrameHdrSection::HEADER_SIZE as usize;
+    let base = EhFrameHdrSection::<E>::HEADER_SIZE as usize;
     let mut hdr_table = hdr_buf.map(|buf| &mut buf[base..]);
     if let Some(table) = hdr_table.as_deref_mut() {
         let mut rest = table;
@@ -408,23 +411,23 @@ pub fn check_range<E: Arch>(
 // function by binary search. Without .eh_frame_hdr, the runtime would
 // have had to do linear search in .eh_frame.
 #[derive(Debug)]
-pub struct EhFrameHdrSection {
-    pub hdr: ChunkHeader,
+pub struct EhFrameHdrSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub num_fdes: u64,
 }
 
-impl EhFrameHdrSection {
+impl<E: Layout> EhFrameHdrSection<E> {
     pub const HEADER_SIZE: u64 = 12;
 
-    pub fn new() -> EhFrameHdrSection {
-        let mut hdr = ChunkHeader::new(".eh_frame_hdr", SHT_PROGBITS, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 4;
-        hdr.shdr.sh_size = Self::HEADER_SIZE;
+    pub fn new() -> EhFrameHdrSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".eh_frame_hdr", SHT_PROGBITS, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(4);
+        hdr.shdr.sh_size.set(Self::HEADER_SIZE);
         EhFrameHdrSection { hdr, num_fdes: 0 }
     }
 }
 
-impl Default for EhFrameHdrSection {
+impl<E: Layout> Default for EhFrameHdrSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -437,7 +440,10 @@ pub mod eh_frame_hdr {
         let num_fdes: u64 = ctx.objs.iter().map(|f| f.fdes.len() as u64).sum();
         let sec = ctx.eh_frame_hdr.as_mut().unwrap();
         sec.num_fdes = num_fdes;
-        sec.hdr.shdr.sh_size = EhFrameHdrSection::HEADER_SIZE + num_fdes * 8;
+        sec.hdr
+            .shdr
+            .sh_size
+            .set(EhFrameHdrSection::<E>::HEADER_SIZE + num_fdes * 8);
     }
 
     pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -454,7 +460,8 @@ pub mod eh_frame_hdr {
                 .hdr
                 .shdr
                 .sh_addr
-                .wrapping_sub(sec.hdr.shdr.sh_addr)
+                .get()
+                .wrapping_sub(sec.hdr.shdr.sh_addr.get())
                 .wrapping_sub(4) as u32,
         );
         E::Endian::write_u32(&mut buf[8..], sec.num_fdes as u32);
@@ -465,21 +472,29 @@ pub mod eh_frame_hdr {
 // this class only for relocatable outputs (i.e. the output is an .o file
 // as opposed to an executable or a .so file.)
 #[derive(Debug)]
-pub struct EhFrameRelocSection {
-    pub hdr: ChunkHeader,
+pub struct EhFrameRelocSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl EhFrameRelocSection {
-    pub fn new<E: Arch>() -> EhFrameRelocSection {
+impl<E: Arch> EhFrameRelocSection<E> {
+    pub fn new() -> EhFrameRelocSection<E> {
         let (name, ty) = if E::IS_RELA {
             (".rela.eh_frame", SHT_RELA)
         } else {
             (".rel.eh_frame", SHT_REL)
         };
-        let mut hdr = ChunkHeader::new(name, ty, SHF_INFO_LINK as u64);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfRel<E>>() as u64);
         EhFrameRelocSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for EhFrameRelocSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -502,9 +517,12 @@ pub mod eh_frame_reloc {
             })
             .sum();
         let sec = ctx.eh_frame_reloc.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = (count * std::mem::size_of::<ElfRel<E>>()) as u64;
-        sec.hdr.shdr.sh_link = ctx.symtab.hdr.shndx;
-        sec.hdr.shdr.sh_info = ctx.eh_frame.hdr.shndx;
+        sec.hdr
+            .shdr
+            .sh_size
+            .set((count * std::mem::size_of::<ElfRel<E>>()) as u64);
+        sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
+        sec.hdr.shdr.sh_info.set(ctx.eh_frame.hdr.shndx);
     }
 
     /// Writes the relocations; with REL and `-r`, addends are written into
@@ -514,15 +532,19 @@ pub mod eh_frame_reloc {
         let mut eh_frame_buf = eh_frame_buf;
         let mut n = 0;
 
-        let mut copy = |file: &ObjectFile,
+        let mut copy = |file: &ObjectFile<E>,
                         shndx: u32,
                         r: &ElfRel<E>,
                         offset: u64,
                         eh_frame_buf: &mut Option<&mut [u8]>| {
             let isec = file.section_at(shndx);
             let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
-            let mut rel =
-                ElfRel::<E>::new(ctx.eh_frame.hdr.shdr.sh_addr + offset, r.r_type(), 0, 0);
+            let mut rel = ElfRel::<E>::new(
+                ctx.eh_frame.hdr.shdr.sh_addr.get() + offset,
+                r.r_type(),
+                0,
+                0,
+            );
 
             if sym.st_type() == STT_SECTION {
                 // We discard section symbols in input files and re-create new

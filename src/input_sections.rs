@@ -175,36 +175,36 @@ impl InputSection {
     #[inline]
     pub fn new<E: Arch>(
         diag: &Diagnostics,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         file_id: ObjId,
         shndx: u32,
-        shdr: &SectionHeader,
+        shdr: &ElfShdr<E>,
         name: &'static BStr,
     ) -> InputSection {
         let contents: &'static [u8] =
-            if shdr.sh_type == SHT_NOBITS || (shndx as usize) >= file.num_elf_sections {
+            if shdr.sh_type.get() == SHT_NOBITS || (shndx as usize) >= file.num_elf_sections {
                 &[]
             } else {
                 file.base.section_contents_from_shdr(diag, shdr)
             };
 
-        let (sh_size, p2align) = if shdr.sh_flags & SHF_COMPRESSED as u64 != 0 {
-            let chdr = CompressionHeader::parse::<E>(contents);
-            (chdr.ch_size, to_p2align(chdr.ch_addralign))
+        let (sh_size, p2align) = if shdr.sh_flags.get() & SHF_COMPRESSED as u64 != 0 {
+            let chdr = record_from_bytes::<ElfChdr<E>>(contents);
+            (chdr.ch_size().get(), to_p2align(chdr.ch_addralign().get()))
         } else {
-            (shdr.sh_size, to_p2align(shdr.sh_addralign))
+            (shdr.sh_size.get(), to_p2align(shdr.sh_addralign.get()))
         };
 
         let mut isec = InputSection {
             file: file_id,
             shndx,
             name_offset: if (shndx as usize) < file.num_elf_sections {
-                shdr.sh_name
+                shdr.sh_name.get()
             } else {
                 0
             },
             namelen: name.len().min(u16::MAX as usize) as u16,
-            sh_flags: shdr.sh_flags,
+            sh_flags: shdr.sh_flags.get(),
             contents: contents.as_ptr() as usize,
             sh_size,
             p2align: AtomicU8::new(p2align),
@@ -225,7 +225,7 @@ impl InputSection {
         // SH-4 stores addends to sections despite being RELA, which is a
         // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
-            isec.uncompress::<E>(diag, file, name, shdr.sh_size as usize);
+            isec.uncompress::<E>(diag, file, name, shdr.sh_size.get() as usize);
         }
         isec
     }
@@ -274,22 +274,22 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn sh_type(&self, file: &ObjectFile) -> u32 {
-        self.sh_type_from(&file.base.shdrs)
-    }
-
-    #[inline]
-    pub(crate) fn sh_type_from(&self, shdrs: &ShdrTable<'_>) -> u32 {
+    pub fn sh_type<E: Layout>(&self, file: &ObjectFile<E>) -> u32 {
         if self.flags.load(Ordering::Relaxed) & IS_NOBITS != 0 {
             SHT_NOBITS
         } else {
-            shdrs.sh_type(self.shndx as usize)
+            file.shdr(self.shndx as usize).sh_type.get()
         }
     }
 
     #[inline]
     pub fn set_nobits(&self) {
         self.flags.fetch_or(IS_NOBITS, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub(crate) fn is_nobits(&self) -> bool {
+        self.flags.load(Ordering::Relaxed) & IS_NOBITS != 0
     }
 
     #[inline]
@@ -351,7 +351,7 @@ impl InputSection {
 
     /// The complete input contents, including bytes removed by relaxation.
     #[inline]
-    pub fn original_contents(&self, file: &ObjectFile) -> &'static [u8] {
+    pub fn original_contents<E: Layout>(&self, file: &ObjectFile<E>) -> &'static [u8] {
         if self.contents == 0 {
             return &[];
         }
@@ -359,7 +359,7 @@ impl InputSection {
         let size = if self.is_uncompressed() {
             self.sh_size
         } else {
-            file.base.shdrs.sh_offset_and_size(self.shndx as usize).1
+            file.shdr(self.shndx as usize).sh_size.get()
         };
         // SAFETY: as in contents; an uncompressed buffer has sh_size bytes,
         // while an ordinary input view has its ELF section header's size.
@@ -368,7 +368,7 @@ impl InputSection {
 
     /// The section name, read from the owner file's string table.
     #[inline]
-    pub fn name(&self, file: &ObjectFile) -> &'static BStr {
+    pub fn name<E: Layout>(&self, file: &ObjectFile<E>) -> &'static BStr {
         self.name_in(file.base.shstrtab, file.num_elf_sections)
     }
 
@@ -421,7 +421,7 @@ impl InputSection {
     #[inline]
     pub fn addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         let osec = self.output_section.expect("section has no output section");
-        ctx.output_sections[osec.index()].hdr.shdr.sh_addr + self.offset()
+        ctx.output_sections[osec.index()].hdr.shdr.sh_addr.get() + self.offset()
     }
 
     #[inline]
@@ -431,7 +431,7 @@ impl InputSection {
 
     /// Sort key for deterministic ordering: files are processed in
     /// command line order, sections in file order.
-    pub fn priority(&self, file: &ObjectFile) -> u64 {
+    pub fn priority<E: Layout>(&self, file: &ObjectFile<E>) -> u64 {
         ((file.base.priority as u64) << 32) | self.shndx as u64
     }
 
@@ -473,17 +473,17 @@ impl InputSection {
             return;
         }
 
-        let hdr_size = CompressionHeader::size::<E>();
+        let hdr_size = std::mem::size_of::<ElfChdr<E>>();
         if input_size < hdr_size {
             fatal!(diag, "{file}:({name}): corrupted compressed section");
         }
         // SAFETY: input_size comes from this section's validated ELF header.
         let contents =
             unsafe { std::slice::from_raw_parts(self.contents as *const u8, input_size) };
-        let chdr = CompressionHeader::parse::<E>(contents);
+        let chdr = record_from_bytes::<ElfChdr<E>>(contents);
         let data = &contents[hdr_size..];
 
-        let result = match chdr.ch_type {
+        let result = match chdr.ch_type().get() {
             ELFCOMPRESS_ZLIB => zlib_decompress(data, buf),
             ELFCOMPRESS_ZSTD => zstd_decompress(data, buf),
             ty => fatal!(
@@ -510,7 +510,7 @@ impl InputSection {
     /// FDE records describing this section. FDEs for one input section are
     /// contiguous, and the last record carries the end marker, as in C++.
     #[inline]
-    pub fn fdes<'a>(&self, file: &'a ObjectFile) -> &'a [FdeRecord] {
+    pub fn fdes<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [FdeRecord] {
         if self.fde_begin == NO_FDE {
             return &[];
         }
@@ -535,9 +535,9 @@ impl InputSection {
     }
 
     /// Formats the section as `file:(name)` for diagnostics.
-    pub fn display<'a>(&'a self, file: &'a ObjectFile) -> impl fmt::Display + 'a {
-        struct Display<'a>(&'a InputSection, &'a ObjectFile);
-        impl fmt::Display for Display<'_> {
+    pub fn display<'a, E: Layout>(&'a self, file: &'a ObjectFile<E>) -> impl fmt::Display + 'a {
+        struct Display<'a, E: Layout>(&'a InputSection, &'a ObjectFile<E>);
+        impl<E: Layout> fmt::Display for Display<'_, E> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}:({})", self.1, self.0.name(self.1))
             }
@@ -562,10 +562,10 @@ impl InputSection {
                 continue;
             }
             let esym = &sym.esym(ctx);
-            if esym.st_shndx as u32 == self.shndx
+            if esym.st_shndx().get() as u32 == self.shndx
                 && esym.st_type() == STT_FUNC
-                && esym.st_value <= offset
-                && offset < esym.st_value + esym.st_size
+                && esym.st_value().get() <= offset
+                && offset < esym.st_value().get() + esym.st_size().get()
             {
                 return Some(sym.to_string());
             }
@@ -600,8 +600,8 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
-        file.relocations::<E>(self.relsec_idx())
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+        file.relocations(self.relsec_idx())
     }
 
     // Iterate over relocations without materializing a CREL table unless another
@@ -610,7 +610,7 @@ impl InputSection {
     #[inline(always)]
     pub(crate) fn relocations<'a, E: Arch>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
         let file = &ctx.objs[self.file.index()];
-        file.relocation_iter::<E>(&ctx.diag, self.relsec_idx())
+        file.relocation_iter(&ctx.diag, self.relsec_idx())
     }
 
     #[inline]
@@ -734,7 +734,7 @@ impl InputSection {
     #[inline]
     pub fn fragment_with_file<E: Arch>(
         &self,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         rel: &ElfRel<E>,
     ) -> Option<(FragmentRef, i64)> {
         debug_assert!(!self.is_alloc());
@@ -742,16 +742,16 @@ impl InputSection {
         if sym_idx >= file.base.elf_syms.len() {
             return None;
         }
-        let st_shndx = file.base.elf_syms.st_shndx_in::<E>(sym_idx);
+        let st_shndx = file.base.elf_syms[sym_idx].st_shndx().get();
         if matches!(st_shndx as u32, SHN_UNDEF | SHN_ABS | SHN_COMMON) {
             return None;
         }
         let shndx = file.shndx_from(sym_idx, st_shndx);
         let m = file.mergeable_section(shndx)?;
-        let esym = file.base.elf_syms.at_in::<E>(sym_idx);
+        let esym = &file.base.elf_syms[sym_idx];
         let addend = self.rel_addend::<E>(rel);
         if esym.st_type() == STT_SECTION {
-            let (frag, offset) = m.fragment(esym.st_value.wrapping_add(addend as u64))?;
+            let (frag, offset) = m.fragment(esym.st_value().get().wrapping_add(addend as u64))?;
             Some((
                 FragmentRef {
                     section: m.parent,
@@ -760,7 +760,7 @@ impl InputSection {
                 offset,
             ))
         } else {
-            let (frag, offset) = m.fragment(esym.st_value)?;
+            let (frag, offset) = m.fragment(esym.st_value().get())?;
             Some((
                 FragmentRef {
                     section: m.parent,
@@ -797,7 +797,7 @@ impl InputSection {
     pub fn tombstone_with_file<E: Arch>(
         &self,
         ctx: &Context<E>,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         sym: &Symbol,
         frag: Option<FragmentRef>,
     ) -> Option<u64> {
@@ -854,7 +854,7 @@ impl InputSection {
     pub fn record_undef_error_with_file<E: Arch>(
         &self,
         ctx: &Context<E>,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         rel: &ElfRel<E>,
     ) -> bool {
         // If a relocation refers to a linker-synthesized symbol for a
@@ -880,10 +880,10 @@ impl InputSection {
         //
         // Every ELF file has an absolute local symbol as its first symbol.
         // Referring to that symbol is always valid.
-        let st_bind = file.base.elf_syms.st_bind_in::<E>(sym_idx);
-        let is_undef = file.base.elf_syms.st_shndx_in::<E>(sym_idx) as u32 == SHN_UNDEF
-            && st_bind != STB_WEAK
-            && sym.sym_idx != 0;
+        let esym = &file.base.elf_syms[sym_idx];
+        let st_bind = esym.st_bind();
+        let is_undef =
+            esym.st_shndx().get() as u32 == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx != 0;
 
         if is_undef && sym.is_undef() {
             match ctx.args.unresolved_symbols {
@@ -902,7 +902,7 @@ impl InputSection {
     fn report_discarded_comdat<E: Arch>(
         &self,
         ctx: &Context<E>,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         rel: &ElfRel<E>,
         sym: &Symbol,
     ) {
@@ -924,7 +924,7 @@ impl InputSection {
     fn record_undefined_reference<E: Arch>(
         &self,
         ctx: &Context<E>,
-        file: &ObjectFile,
+        file: &ObjectFile<E>,
         rel: &ElfRel<E>,
         sym_id: SymbolId,
     ) {
@@ -953,7 +953,7 @@ impl InputSection {
             return;
         }
         let buf = &mut buf[..self.sh_size as usize];
-        let input_size = file.base.shdrs.sh_offset_and_size(self.shndx as usize).1 as usize;
+        let input_size = file.shdr(self.shndx as usize).sh_size.get() as usize;
 
         // Copy data. In RISC-V and LoongArch object files, sections are not
         // atomic unit of copying because of relaxation. That is, some
@@ -1050,10 +1050,10 @@ pub fn r_delta(isec: &InputSection, offset: u64) -> i64 {
 /// sufficient.
 fn find_comdat_owner<E: Arch>(
     ctx: &Context<E>,
-    file: &ObjectFile,
+    file: &ObjectFile<E>,
     sym_idx: usize,
 ) -> Option<ObjId> {
-    let esym = &file.base.elf_syms.at(sym_idx);
+    let esym = &file.base.elf_syms[sym_idx];
     if esym.is_undef() || esym.is_abs() || esym.is_common() {
         return None;
     }
@@ -1230,10 +1230,10 @@ pub(crate) enum RelocationSpan {
 
 impl RelocationSpan {
     #[inline]
-    fn rels<E: Layout>(self, file: &ObjectFile) -> &[E::Rel] {
+    fn rels<E: Layout>(self, file: &ObjectFile<E>) -> &[E::Rel] {
         match self {
             RelocationSpan::Input(data) => rels_from_bytes::<E>(data),
-            RelocationSpan::SideTable(relsec_idx) => file.relocations::<E>(Some(relsec_idx)),
+            RelocationSpan::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
         }
     }
 }
@@ -1272,7 +1272,7 @@ impl CieRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
         rels_in::<E>(
             self.relocations.rels::<E>(file),
             self.rel_idx,
@@ -1337,12 +1337,12 @@ impl FdeRecord {
     }
 
     #[inline]
-    fn cie<'a>(&self, file: &'a ObjectFile) -> &'a CieRecord {
+    fn cie<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a CieRecord {
         &file.cies[self.cie_idx as usize]
     }
 
     #[inline]
-    pub fn size<E: Layout>(&self, file: &ObjectFile) -> usize {
+    pub fn size<E: Layout>(&self, file: &ObjectFile<E>) -> usize {
         self.size_with::<E>(&file.cies)
     }
 
@@ -1352,13 +1352,13 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub fn contents<E: Layout>(&self, file: &ObjectFile) -> &'static [u8] {
+    pub fn contents<E: Layout>(&self, file: &ObjectFile<E>) -> &'static [u8] {
         let start = self.input_offset as usize;
         &self.cie(file).contents[start..start + self.size::<E>(file)]
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
         rels_in::<E>(cie.relocations.rels::<E>(file), self.rel_idx, end)
@@ -1494,7 +1494,7 @@ impl MergeableSection {
         file: &dyn fmt::Display,
         section: &InputSection,
         name: &BStr,
-        parent: &MergedSection,
+        parent: &MergedSection<E>,
         sketch: &mut HyperLogLog,
     ) {
         let data = section.contents();
@@ -1505,10 +1505,10 @@ impl MergeableSection {
                 format_args!("{file}:({name})")
             );
         }
-        let entsize = parent.hdr.shdr.sh_entsize as usize;
+        let entsize = parent.hdr.shdr.sh_entsize.get() as usize;
 
         // Split sections
-        if parent.hdr.shdr.sh_flags & SHF_STRINGS as u64 != 0 {
+        if parent.hdr.shdr.sh_flags.get() & SHF_STRINGS as u64 != 0 {
             let mut pos = 0;
             while pos < data.len() {
                 self.frag_offsets.push(pos as u32);
@@ -1542,10 +1542,10 @@ impl MergeableSection {
     }
 
     /// Inserts the pieces into the parent section's fragment map.
-    pub fn resolve_contents(
+    pub fn resolve_contents<E: Layout>(
         &mut self,
         section: &InputSection,
-        parent: &crate::output_chunks::merged::MergedSection,
+        parent: &crate::output_chunks::merged::MergedSection<E>,
         gc_sections: bool,
     ) {
         let n = self.frag_offsets.len();

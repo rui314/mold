@@ -246,7 +246,7 @@ fn find_paired_reloc<E: Arch>(
     i: usize,
 ) -> usize {
     let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
-    let value = sym.esym(ctx).st_value;
+    let value = sym.esym(ctx).st_value().get();
     let candidates: Box<dyn Iterator<Item = usize>> = if value <= rels[i].r_offset() {
         Box::new((0..i).rev())
     } else {
@@ -389,7 +389,8 @@ where
             .hdr
             .shdr
             .sh_addr
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr);
+            .get()
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get());
         write_utype(buf, disp);
         write_itype(&mut buf[8..], disp);
         write_itype(&mut buf[16..], disp);
@@ -532,7 +533,7 @@ where
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + r_offset;
-            let got = ctx.got.hdr.shdr.sh_addr;
+            let got = ctx.got.hdr.shdr.sh_addr.get();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

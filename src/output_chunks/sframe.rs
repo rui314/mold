@@ -16,7 +16,7 @@ use crate::output_chunks::ChunkHeader;
 // writes SFrame Version 3.
 #[derive(Debug)]
 pub struct SFrameSection<E: Layout> {
-    pub hdr: ChunkHeader,
+    pub hdr: ChunkHeader<E>,
     pub header: SFrameHeader<E>,
     /// The live FDEs as (file, index into the file's `sframe_fdes`).
     pub fdes: Vec<(ObjId, u32)>,
@@ -24,8 +24,8 @@ pub struct SFrameSection<E: Layout> {
 
 impl<E: Layout> SFrameSection<E> {
     pub fn new() -> SFrameSection<E> {
-        let mut hdr = ChunkHeader::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 8;
+        let mut hdr = ChunkHeader::<E>::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(8);
         SFrameSection {
             hdr,
             header: SFrameHeader::<E>::default(),
@@ -92,9 +92,10 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     }
 
     let sframe = &mut ctx.sframe;
-    sframe.hdr.shdr.sh_size = (SFrameHeader::<E>::size() + fdes.len() * SFrameFdeIdx::<E>::size())
-        as u64
-        + u64::from(hdr.fre_len.get());
+    sframe.hdr.shdr.sh_size.set(
+        (SFrameHeader::<E>::size() + fdes.len() * SFrameFdeIdx::<E>::size()) as u64
+            + u64::from(hdr.fre_len.get()),
+    );
     sframe.header = hdr;
     sframe.fdes = fdes;
 }
@@ -146,7 +147,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             let func_addr = ctx.symbols[fde.sym]
                 .addr(ctx)
                 .wrapping_add(fde.addend as u64);
-            let field_addr = sframe.hdr.shdr.sh_addr + hdr_size as u64 + (i * idx_size) as u64;
+            let field_addr =
+                sframe.hdr.shdr.sh_addr.get() + hdr_size as u64 + (i * idx_size) as u64;
             func_addr.wrapping_sub(field_addr) as i64
         };
         let ent = SFrameFdeIdx::<E> {
@@ -164,16 +166,24 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 // FDE's func_start has to remain a relocation for the final link to
 // resolve. It is the .sframe counterpart of EhFrameRelocSection.
 #[derive(Debug)]
-pub struct SFrameRelocSection {
-    pub hdr: ChunkHeader,
+pub struct SFrameRelocSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl SFrameRelocSection {
-    pub fn new<E: Arch>() -> SFrameRelocSection {
-        let mut hdr = ChunkHeader::new(".rela.sframe", SHT_RELA, SHF_INFO_LINK as u64);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+impl<E: Arch> SFrameRelocSection<E> {
+    pub fn new() -> SFrameRelocSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".rela.sframe", SHT_RELA, SHF_INFO_LINK as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfRel<E>>() as u64);
         SFrameRelocSection { hdr }
+    }
+}
+
+impl<E: Arch> Default for SFrameRelocSection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -183,9 +193,12 @@ pub mod sframe_reloc {
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let n = ctx.sframe.fdes.len();
         let sec = ctx.sframe_reloc.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = (n * std::mem::size_of::<ElfRel<E>>()) as u64;
-        sec.hdr.shdr.sh_link = ctx.symtab.hdr.shndx;
-        sec.hdr.shdr.sh_info = ctx.sframe.hdr.shndx;
+        sec.hdr
+            .shdr
+            .sh_size
+            .set((n * std::mem::size_of::<ElfRel<E>>()) as u64);
+        sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
+        sec.hdr.shdr.sh_info.set(ctx.sframe.hdr.shndx);
     }
 
     // Emit one relocation per FDE for its func_start field. The entries are
@@ -199,7 +212,7 @@ pub mod sframe_reloc {
         for (i, &(fi, fi_idx)) in ctx.sframe.fdes.iter().enumerate() {
             let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
             let sym = &ctx.symbols[fde.sym];
-            let r_offset = ctx.sframe.hdr.shdr.sh_addr
+            let r_offset = ctx.sframe.hdr.shdr.sh_addr.get()
                 + SFrameHeader::<E>::size() as u64
                 + (i * SFrameFdeIdx::<E>::size()) as u64;
 

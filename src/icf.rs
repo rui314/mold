@@ -378,16 +378,16 @@ impl DigestMap {
 
 fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
-    let mut leaders: Vec<crate::output_chunks::eh_frame::CieHandle> = Vec::new();
+    let mut leaders: Vec<crate::output_chunks::eh_frame::CieHandle<E>> = Vec::new();
     for file in &mut ctx.objs {
-        let file_ptr = file as *mut ObjectFile;
+        let file_ptr = file as *mut ObjectFile<E>;
         let cies = file.cies.as_mut_ptr();
         for ci in 0..file.cies.len() {
             // SAFETY: object files are boxed and ICF does not resize their CIE
             // vectors, so leaders remain stable through this serial pass.
             let cie =
                 unsafe { crate::output_chunks::eh_frame::CieHandle::new(file_ptr, cies.add(ci)) };
-            let found = leaders.iter().position(|&leader| leader.equals::<E>(cie));
+            let found = leaders.iter().position(|&leader| leader.equals(cie));
             match found {
                 Some(idx) => cie.icf_idx(idx as u32),
                 None => {
@@ -569,7 +569,7 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
 
 #[inline]
 fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32)) {
-    let file: &ObjectFile = &ctx.objs[r.file.index()];
+    let file: &ObjectFile<E> = &ctx.objs[r.file.index()];
     let isec = file.section_at(r.shndx);
     let mut add = |sym_idx: u32| {
         let sym = &ctx.symbols[file.base.symbols[sym_idx as usize]];

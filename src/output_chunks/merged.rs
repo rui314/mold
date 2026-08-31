@@ -49,8 +49,8 @@ struct ShardLayout {
 // string literals or floating-point constants. It is created from
 // MergeableSection.
 #[derive(Debug)]
-pub struct MergedSection {
-    pub hdr: ChunkHeader,
+pub struct MergedSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 
     /// The input sections merged into this one.
     pub members: Vec<SectionRef>,
@@ -142,10 +142,10 @@ fn merged_output_name(
     name
 }
 
-impl MergedSection {
-    fn new(name: &'static BStr, flags: u64, sh_type: u32, entsize: u64) -> MergedSection {
-        let mut hdr = ChunkHeader::with_name(name, sh_type, flags);
-        hdr.shdr.sh_entsize = entsize;
+impl<E: Layout> MergedSection<E> {
+    fn new(name: &'static BStr, flags: u64, sh_type: u32, entsize: u64) -> MergedSection<E> {
+        let mut hdr = ChunkHeader::<E>::with_name(name, sh_type, flags);
+        hdr.shdr.sh_entsize.set(entsize);
         MergedSection {
             hdr,
             members: Vec::new(),
@@ -162,21 +162,22 @@ impl MergedSection {
     /// existing section, so the list is only write-locked to add one.
     pub fn get_instance(
         args: &Args,
-        sections: &RwLock<Vec<MergedSection>>,
+        sections: &RwLock<Vec<MergedSection<E>>>,
         name: &'static BStr,
-        shdr: &SectionHeader,
+        shdr: &ElfShdr<E>,
     ) -> Option<MergedSectionId> {
-        if shdr.sh_flags & SHF_MERGE as u64 == 0 {
+        let sh_flags = shdr.sh_flags.get();
+        if sh_flags & SHF_MERGE as u64 == 0 {
             return None;
         }
-        let addralign = shdr.sh_addralign.max(1);
-        let flags = shdr.sh_flags & !(SHF_GROUP as u64) & !(SHF_COMPRESSED as u64);
-        let mut entsize = shdr.sh_entsize;
+        let addralign = shdr.sh_addralign.get().max(1);
+        let flags = sh_flags & !(SHF_GROUP as u64) & !(SHF_COMPRESSED as u64);
+        let mut entsize = shdr.sh_entsize.get();
         if entsize == 0 {
-            entsize = if shdr.sh_flags & SHF_STRINGS as u64 != 0 {
+            entsize = if sh_flags & SHF_STRINGS as u64 != 0 {
                 1
             } else {
-                shdr.sh_addralign
+                shdr.sh_addralign.get()
             };
         }
         if entsize == 0 {
@@ -184,14 +185,14 @@ impl MergedSection {
         }
 
         let name = merged_output_name(args, name, flags, entsize, addralign);
-        let find = |sections: &[MergedSection]| {
+        let find = |sections: &[MergedSection<E>]| {
             sections
                 .iter()
                 .position(|s| {
                     s.hdr.name == name
-                        && s.hdr.shdr.sh_flags == flags
-                        && s.hdr.shdr.sh_type == shdr.sh_type
-                        && s.hdr.shdr.sh_entsize == entsize
+                        && s.hdr.shdr.sh_flags.get() == flags
+                        && s.hdr.shdr.sh_type.get() == shdr.sh_type.get()
+                        && s.hdr.shdr.sh_entsize.get() == entsize
                 })
                 .map(|i| MergedSectionId(i as u32))
         };
@@ -206,7 +207,7 @@ impl MergedSection {
         if let Some(id) = find(&sections) {
             return Some(id);
         }
-        sections.push(MergedSection::new(name, flags, shdr.sh_type, entsize));
+        sections.push(MergedSection::new(name, flags, shdr.sh_type.get(), entsize));
         Some(MergedSectionId(sections.len() as u32 - 1))
     }
 
@@ -234,7 +235,7 @@ impl MergedSection {
     }
 
     pub fn is_alloc(&self) -> bool {
-        self.hdr.shdr.sh_flags & SHF_ALLOC as u64 != 0
+        self.hdr.shdr.sh_flags.get() & SHF_ALLOC as u64 != 0
     }
 }
 
@@ -321,7 +322,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
         .unwrap_or(0);
 
     let msec = &mut ctx.merged_sections[id.index()];
-    msec.hdr.shdr.sh_addralign = 1 << p2align;
+    msec.hdr.shdr.sh_addralign.set(1 << p2align);
     msec.fragments = std::mem::take(&mut msec.map).freeze();
     msec.resolved = true;
 }
@@ -330,7 +331,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 /// Direct member borrows let different parent sections mutate disjoint
 /// `MergeableSection`s even when they belong to the same object file.
 pub fn resolve_sections<E: Arch>(
-    sections: &mut [MergedSection],
+    sections: &mut [MergedSection<E>],
     members: &mut [Vec<ResolveMember<'_>>],
     options: ResolveOptions<'_>,
 ) {
@@ -412,14 +413,18 @@ pub fn resolve_sections<E: Arch>(
                 .map(|member| member.mergeable.p2align)
                 .max()
                 .unwrap_or(0);
-            section.hdr.shdr.sh_addralign = 1 << p2align;
+            section.hdr.shdr.sh_addralign.set(1 << p2align);
             section.fragments = std::mem::take(&mut section.map).freeze();
             section.resolved = true;
         });
 }
 
 // Add strings to .comment
-fn add_comment_strings(msec: &MergedSection, gc_sections: bool, cmdline_args: &[String]) {
+fn add_comment_strings<E: Layout>(
+    msec: &MergedSection<E>,
+    gc_sections: bool,
+    cmdline_args: &[String],
+) {
     let add = |s: String| {
         let mut bytes = s.into_bytes();
         bytes.push(0);
@@ -448,7 +453,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) 
 
 /// Lays out one resolved merged section. Different merged sections have no
 /// shared mutable state, so callers can run this for all of them in parallel.
-pub fn layout(msec: &mut MergedSection) {
+pub fn layout<E: Layout>(msec: &mut MergedSection<E>) {
     debug_assert!(msec.resolved);
     let frags = &msec.fragments;
 
@@ -484,7 +489,7 @@ pub fn layout(msec: &mut MergedSection) {
         })
         .collect();
 
-    let addralign = msec.hdr.shdr.sh_addralign;
+    let addralign = msec.hdr.shdr.sh_addralign.get();
     let mut shard_offsets = Vec::with_capacity(NUM_SHARDS * 2 + 1);
     shard_offsets.push(0);
     for size in shards
@@ -512,7 +517,10 @@ pub fn layout(msec: &mut MergedSection) {
         }
     });
 
-    msec.hdr.shdr.sh_size = shard_offsets.last().copied().unwrap();
+    msec.hdr
+        .shdr
+        .sh_size
+        .set(shard_offsets.last().copied().unwrap());
     msec.shards = shards;
     msec.shard_offsets = shard_offsets;
 }
@@ -527,8 +535,8 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
 
     // There might be gaps between strings to satisfy alignment requirements.
     // If that's the case, we need to zero-clear them.
-    let has_gaps =
-        msec.hdr.shdr.sh_addralign > 1 && msec.hdr.shdr.sh_addralign != msec.hdr.shdr.sh_entsize;
+    let has_gaps = msec.hdr.shdr.sh_addralign.get() > 1
+        && msec.hdr.shdr.sh_addralign.get() != msec.hdr.shdr.sh_entsize.get();
     if has_gaps {
         split_at_offsets(buf, &msec.shard_offsets[..NUM_SHARDS * 2])
             .into_par_iter()
@@ -561,6 +569,6 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
 }
 
 /// The number of unique fragments, for `--stats`.
-pub fn num_fragments(msec: &MergedSection) -> usize {
+pub fn num_fragments<E: Layout>(msec: &MergedSection<E>) -> usize {
     msec.fragments.len()
 }

@@ -869,21 +869,21 @@ impl Symbol {
     /// The symbol's entry in the owner file's symbol table; a blank one
     /// for a symbol no file defines.
     #[inline]
-    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> SymbolEntry {
+    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> ElfSym<E> {
         match self.file() {
-            Some(file) => ctx.file(file).elf_syms.at_in::<E>(self.sym_idx as usize),
-            None => SymbolEntry::default(),
+            Some(file) => ctx.file(file).elf_syms[self.sym_idx as usize],
+            None => ElfSym::<E>::default(),
         }
     }
 
     /// Records the file's entry the symbol now refers to (see
     /// [`Self::esym`]).
     #[inline]
-    pub fn set_esym(&mut self, esym: &SymbolEntry) {
+    pub fn set_esym<R: SymbolRecord>(&mut self, esym: &R) {
         self.type_and_bind = (esym.st_bind() << 4 | esym.st_type()) as u8;
-        let state = if esym.st_shndx as u32 == SHN_UNDEF {
+        let state = if esym.st_shndx().get() as u32 == SHN_UNDEF {
             SYMBOL_UNDEFINED
-        } else if esym.st_shndx as u32 == SHN_COMMON {
+        } else if esym.st_shndx().get() as u32 == SHN_COMMON {
             SYMBOL_COMMON
         } else {
             SYMBOL_DEFINED
@@ -1025,7 +1025,7 @@ impl Symbol {
             } else {
                 &ctx.copyrel
             };
-            return chunk.hdr.shdr.sh_addr + self.value;
+            return chunk.hdr.shdr.sh_addr.get() + self.value;
         }
 
         if E::FAMILY == crate::arch::Family::Ppc64V1 && !flags.no_opd && self.has_opd(&ctx.symbols)
@@ -1060,18 +1060,18 @@ impl Symbol {
                             || name.starts_with(b".eh_frame_seg")
                             || self.st_type() == STT_SECTION
                         {
-                            return eh_frame.sh_addr;
+                            return eh_frame.sh_addr.get();
                         }
                         if name.starts_with(b"__FRAME_END__")
                             || name.starts_with(b"__EH_FRAME_LIST_END__")
                         {
-                            return eh_frame.sh_addr + eh_frame.sh_size;
+                            return eh_frame.sh_addr.get() + eh_frame.sh_size.get();
                         }
                         // ARM object files contain "$d" local symbol at the beginning
                         // of data sections. Their values are not significant for .eh_frame,
                         // so we just treat them as offset 0.
                         if name == b"$d" || name.starts_with(b"$d.") {
-                            return eh_frame.sh_addr;
+                            return eh_frame.sh_addr.get();
                         }
                         crate::fatal!(
                             ctx,
@@ -1098,38 +1098,40 @@ impl Symbol {
 
     #[inline]
     pub fn got_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.got.hdr.shdr.sh_addr + self.got_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
+        ctx.got.hdr.shdr.sh_addr.get()
+            + self.got_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
     pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.gotplt.hdr.shdr.sh_addr
+        ctx.gotplt.hdr.shdr.sh_addr.get()
             + crate::output_chunks::got::gotplt::header_size::<E>()
             + self.plt_idx(&ctx.symbols).unwrap() as u64
                 * crate::output_chunks::got::gotplt::entry_size::<E>()
     }
 
     pub fn gottp_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.got.hdr.shdr.sh_addr
+        ctx.got.hdr.shdr.sh_addr.get()
             + self.gottp_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
     pub fn tlsgd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.got.hdr.shdr.sh_addr
+        ctx.got.hdr.shdr.sh_addr.get()
             + self.tlsgd_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
     pub fn tlsdesc_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.got.hdr.shdr.sh_addr
+        ctx.got.hdr.shdr.sh_addr.get()
             + self.tlsdesc_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
     #[inline]
     pub fn plt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         if let Some(idx) = self.plt_idx(&ctx.symbols) {
-            return ctx.plt.hdr.shdr.sh_addr
+            return ctx.plt.hdr.shdr.sh_addr.get()
                 + crate::output_chunks::got::plt::entry_offset::<E>(idx);
         }
-        ctx.pltgot.hdr.shdr.sh_addr + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE
+        ctx.pltgot.hdr.shdr.sh_addr.get()
+            + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE
     }
 
     pub fn opd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {

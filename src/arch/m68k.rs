@@ -78,9 +78,10 @@ impl Arch for M68k {
             .hdr
             .shdr
             .sh_addr
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr);
-        w32(&mut buf[6..], gotplt as u32);
-        w32(&mut buf[14..], gotplt.wrapping_sub(4) as u32);
+            .get()
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get());
+        w32(&mut buf[6..], gotplt);
+        w32(&mut buf[14..], gotplt.wrapping_sub(4));
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -171,7 +172,7 @@ impl Arch for M68k {
 
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
             if rel.r_type() == R_NONE {
@@ -230,27 +231,15 @@ impl Arch for M68k {
                     write16(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_GD8 => write8(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got)),
-                R_68K_TLS_LDM32 => write32(
-                    buf,
-                    ctx.got
-                        .tlsld_addr::<Self>()
-                        .wrapping_add(a)
-                        .wrapping_sub(got),
-                ),
-                R_68K_TLS_LDM16 => write16(
-                    buf,
-                    ctx.got
-                        .tlsld_addr::<Self>()
-                        .wrapping_add(a)
-                        .wrapping_sub(got),
-                ),
-                R_68K_TLS_LDM8 => write8(
-                    buf,
-                    ctx.got
-                        .tlsld_addr::<Self>()
-                        .wrapping_add(a)
-                        .wrapping_sub(got),
-                ),
+                R_68K_TLS_LDM32 => {
+                    write32(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
+                }
+                R_68K_TLS_LDM16 => {
+                    write16(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
+                }
+                R_68K_TLS_LDM8 => {
+                    write8(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
+                }
                 R_68K_TLS_LDO32 => write32(buf, sa.wrapping_sub(ctx.dtp_addr)),
                 R_68K_TLS_LDO16 => write16s(buf, sa.wrapping_sub(ctx.dtp_addr)),
                 R_68K_TLS_LDO8 => write8s(buf, sa.wrapping_sub(ctx.dtp_addr)),

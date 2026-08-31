@@ -47,10 +47,10 @@ use crate::util::align_to;
 
 // Create linker-synthesized sections
 fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
-    ctx.ehdr = Some(OutputEhdr::new::<E>(0));
-    ctx.shdr = Some(OutputShdr::new::<E>());
-    ctx.eh_frame_reloc = Some(EhFrameRelocSection::new::<E>());
-    ctx.sframe_reloc = Some(SFrameRelocSection::new::<E>());
+    ctx.ehdr = Some(OutputEhdr::<E>::new(0));
+    ctx.shdr = Some(OutputShdr::<E>::new());
+    ctx.eh_frame_reloc = Some(EhFrameRelocSection::<E>::new());
+    ctx.sframe_reloc = Some(SFrameRelocSection::<E>::new());
     ctx.shstrtab = Some(ShstrtabSection::new());
     ctx.chunks.extend([
         ChunkId::Ehdr,
@@ -64,7 +64,7 @@ fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         ChunkId::Shstrtab,
     ]);
     if E::IS_X86 {
-        ctx.note_property = Some(NotePropertySection::new::<E>());
+        ctx.note_property = Some(NotePropertySection::<E>::new());
         ctx.chunks.push(ChunkId::NoteProperty);
     }
 }
@@ -81,13 +81,14 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
                 continue;
             }
             let sym =
-                file.base.symbols[file.base.shdrs.at(group.sect_idx as usize).sh_info as usize];
+                file.base.symbols[file.base.shdrs[group.sect_idx as usize].sh_info.get() as usize];
             let mut members = Vec::new();
             for j in file.comdat_members(group) {
-                let shdr = &file.base.shdrs.at(j as usize);
-                let is_reloc = shdr.sh_type == if E::IS_RELA { SHT_RELA } else { SHT_REL }
-                    || shdr.sh_type == SHT_CREL;
-                let target = if is_reloc { shdr.sh_info } else { j };
+                let shdr = &file.base.shdrs[j as usize];
+                let sh_type = shdr.sh_type.get();
+                let is_reloc =
+                    sh_type == if E::IS_RELA { SHT_RELA } else { SHT_REL } || sh_type == SHT_CREL;
+                let target = if is_reloc { shdr.sh_info.get() } else { j };
                 let Some(isec) = file.section(target as usize) else {
                     continue;
                 };
@@ -124,14 +125,14 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
         .flat_map_iter(|file| {
             let file_id = file.id();
             (file.base.first_global..file.base.elf_syms.len())
-                .filter(move |&i| file.base.elf_syms.at(i).is_undef())
+                .filter(move |&i| file.base.elf_syms[i].is_undef())
                 .map(move |i| (file_id, i))
         })
         .collect();
     for (obj_id, i) in candidates {
         let file = &ctx.objs[obj_id.index()];
         let id = file.base.symbols[i];
-        let esym = file.base.elf_syms.at(i);
+        let esym = &file.base.elf_syms[i];
         let priority = file.base.priority;
         let sym = &ctx.symbols[id];
         if let Some(owner) = sym.file() {
@@ -144,7 +145,7 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
         sym.clear_origin();
         sym.value = 0;
         sym.sym_idx = i as u32;
-        sym.set_esym(&esym);
+        sym.set_esym(esym);
     }
 }
 
@@ -154,9 +155,9 @@ fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
     let mut offset = 0;
     for id in ctx.chunks.clone() {
         let hdr = ctx.chunk_header_mut(id);
-        offset = align_to(offset, hdr.shdr.sh_addralign);
-        hdr.shdr.sh_offset = offset;
-        offset += hdr.shdr.sh_size;
+        offset = align_to(offset, hdr.shdr.sh_addralign.get());
+        hdr.shdr.sh_offset.set(offset);
+        offset += hdr.shdr.sh_size.get();
     }
     offset
 }

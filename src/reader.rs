@@ -23,9 +23,9 @@ use crate::mapped_file::{must_open_file, open_file, MappedFile};
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
-enum Loaded {
-    Obj(Vec<u32>, Box<ObjectFile>),
-    Dso(Vec<u32>, Box<SharedFile>),
+enum Loaded<E: Arch> {
+    Obj(Vec<u32>, Box<ObjectFile<E>>),
+    Dso(Vec<u32>, Box<SharedFile<E>>),
 }
 
 /// A concurrent vector implemented as one bin per Rayon worker. Writers on
@@ -88,7 +88,7 @@ fn new_object_file<E: Arch>(
     rctx: &ReaderContext,
     mf: &'static MappedFile,
     archive_name: &str,
-) -> ObjectFile {
+) -> ObjectFile<E> {
     let target = filetype::get_machine_type(&ctx.diag, &ctx.args.plugin, mf, || None);
     match target {
         None => fatal!(ctx, "{}: unknown machine type", mf.name),
@@ -102,9 +102,9 @@ fn new_object_file<E: Arch>(
         }
         _ => {}
     }
-    let mut file = ObjectFile::new::<E>(&ctx.diag, mf, archive_name.to_string());
+    let mut file = ObjectFile::<E>::new(&ctx.diag, mf, archive_name.to_string());
     file.base.as_needed = rctx.in_lib || (!archive_name.is_empty() && !rctx.whole_archive);
-    file.register_global_symbols::<E>(&ctx.args, &mut ctx.symbol_bin());
+    file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     file
 }
 
@@ -112,7 +112,7 @@ fn new_shared_file<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-) -> SharedFile {
+) -> SharedFile<E> {
     if rctx.is_static {
         fatal!(
             ctx,
@@ -133,7 +133,7 @@ fn new_shared_file<E: Arch>(
         }
         _ => {}
     }
-    let mut file = SharedFile::new::<E>(&ctx.diag, mf);
+    let mut file = SharedFile::<E>::new(&ctx.diag, mf);
     file.base.as_needed = rctx.as_needed;
     file
 }
@@ -146,13 +146,13 @@ fn new_lto_object<E: Arch>(
     rctx: &ReaderContext,
     mf: &'static MappedFile,
     archive_name: &str,
-) -> Option<ObjectFile> {
+) -> Option<ObjectFile<E>> {
     if ctx.args.ignore_ir_file.contains(&mf.identifier()) {
         return None;
     }
     let mut file = crate::lto::read_lto_object(ctx, mf, archive_name.to_string())?;
     file.base.as_needed = rctx.in_lib || (!archive_name.is_empty() && !rctx.whole_archive);
-    file.register_global_symbols::<E>(&ctx.args, &mut ctx.symbol_bin());
+    file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     Some(file)
 }
 
@@ -162,7 +162,7 @@ fn read_archive_member<E: Arch>(
     rctx: &ReaderContext,
     mf: &'static MappedFile,
     archive_name: &str,
-) -> Option<Loaded> {
+) -> Option<Loaded<E>> {
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
             let file = new_object_file(ctx, rctx, mf, archive_name);
@@ -217,7 +217,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
     }
 }
 
-fn push_loaded<E: Arch>(ctx: &mut Context<E>, loaded: Loaded) {
+fn push_loaded<E: Arch>(ctx: &mut Context<E>, loaded: Loaded<E>) {
     match loaded {
         Loaded::Obj(pos, file) => {
             let id = ObjId(ctx.objs.push(file));
@@ -451,8 +451,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
     let objs = std::mem::take(&mut ctx.objs);
     let dsos = std::mem::take(&mut ctx.dsos);
-    let mut objs: Vec<Option<Box<ObjectFile>>> = objs.into_iter().map(Some).collect();
-    let mut dsos: Vec<Option<Box<SharedFile>>> = dsos.into_iter().map(Some).collect();
+    let mut objs: Vec<Option<Box<ObjectFile<E>>>> = objs.into_iter().map(Some).collect();
+    let mut dsos: Vec<Option<Box<SharedFile<E>>>> = dsos.into_iter().map(Some).collect();
 
     // Priority 0 is reserved for the internal object file.
     ctx.file_by_priority.push(None);

@@ -720,7 +720,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 else {
                     continue;
                 };
-                let input_size = file.base.shdrs.sh_offset_and_size(shndx as usize).1 as usize;
+                let input_size = file.shdr(shndx as usize).sh_size.get() as usize;
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
@@ -745,7 +745,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 else {
                     continue;
                 };
-                let input_size = file.base.shdrs.sh_offset_and_size(shndx as usize).1 as usize;
+                let input_size = file.shdr(shndx as usize).sh_size.get() as usize;
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
@@ -753,14 +753,15 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
-                for rel in file.relocation_iter::<E>(diag, isec.relsec_idx()) {
-                    let esym = file.base.elf_syms.at(rel.r_sym() as usize);
+                for rel in file.relocation_iter(diag, isec.relsec_idx()) {
+                    let esym = &file.base.elf_syms[rel.r_sym() as usize];
                     if let Some(target) = file.symbol_section(rel.r_sym() as usize) {
                         relocations.push(PubnamesRelocation {
                             offset: rel.r_offset(),
                             target_shndx: target.shndx,
                             unit_offset: esym
-                                .st_value
+                                .st_value()
+                                .get()
                                 .wrapping_add(isec.rel_addend::<E>(&rel) as u64),
                         });
                     }
@@ -1367,7 +1368,8 @@ fn section_contents<'a, E: Arch>(ctx: &'a Context<E>, buf: &'a [u8], name: &str)
                 .as_deref()
                 .unwrap_or(&[]);
         }
-        return &buf[hdr.shdr.sh_offset as usize..(hdr.shdr.sh_offset + hdr.shdr.sh_size) as usize];
+        return &buf[hdr.shdr.sh_offset.get() as usize
+            ..(hdr.shdr.sh_offset.get() + hdr.shdr.sh_size.get()) as usize];
     }
     &[]
 }
@@ -1500,15 +1502,13 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
 
     // Update the section size and rewrite the section header
     if let Some(gdb_index) = &mut ctx.gdb_index {
-        gdb_index.hdr.shdr.sh_size = size as u64;
+        gdb_index.hdr.shdr.sh_size.set(size as u64);
     }
     if let Some(section_headers) = &ctx.shdr {
         let shdr = section_headers.hdr.shdr;
         let buf = output.buf();
-        crate::output_chunks::copy_buf(
-            ctx,
-            ChunkId::Shdr,
-            &mut buf[shdr.sh_offset as usize..(shdr.sh_offset + shdr.sh_size) as usize],
-        );
+        let start = shdr.sh_offset.get() as usize;
+        let end = (shdr.sh_offset.get() + shdr.sh_size.get()) as usize;
+        crate::output_chunks::copy_buf(ctx, ChunkId::Shdr, &mut buf[start..end]);
     }
 }

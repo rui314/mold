@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
 use crate::cmdline::Args;
-use crate::elf::SymbolEntry;
+use crate::elf::{ElfSym, ElfWord};
 use crate::error::{Diagnostics, HasDiagnostics};
 use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
@@ -104,8 +104,8 @@ pub struct Context<E: Arch> {
     /// Rayon worker plus one for callers outside the pool.
     symbol_bins: OnceLock<Vec<Mutex<Bins<SymbolSlot>>>>,
 
-    pub objs: FileList<ObjectFile>,
-    pub dsos: FileList<SharedFile>,
+    pub objs: FileList<ObjectFile<E>>,
+    pub dsos: FileList<SharedFile<E>>,
 
     // Declared after all object files so their SectionLists are dropped
     // before the arena releases its backing mapping.
@@ -132,14 +132,14 @@ pub struct Context<E: Arch> {
     pub lto_input_files: Vec<(u32, &'static MappedFile)>,
 
     pub internal_obj: Option<ObjId>,
-    pub internal_esyms: Vec<SymbolEntry>,
+    pub internal_esyms: Vec<ElfSym<E>>,
 
-    pub output_sections: Vec<OutputSection>,
-    pub merged_sections: Vec<MergedSection>,
-    pub reloc_sections: Vec<RelocSection>,
-    pub comdat_group_sections: Vec<ComdatGroupSection>,
-    pub compressed_sections: Vec<CompressedSection>,
-    pub placeholders: Vec<ChunkHeader>,
+    pub output_sections: Vec<OutputSection<E>>,
+    pub merged_sections: Vec<MergedSection<E>>,
+    pub reloc_sections: Vec<RelocSection<E>>,
+    pub comdat_group_sections: Vec<ComdatGroupSection<E>>,
+    pub compressed_sections: Vec<CompressedSection<E>>,
+    pub placeholders: Vec<ChunkHeader<E>>,
 
     /// The chunks that make up the output, in file order.
     pub chunks: Vec<ChunkId>,
@@ -147,55 +147,55 @@ pub struct Context<E: Arch> {
     // For --separate-debug-file
     pub debug_chunks: Vec<ChunkId>,
 
-    pub ehdr: Option<OutputEhdr>,
-    pub phdr: Option<OutputPhdr>,
-    pub shdr: Option<OutputShdr>,
-    pub interp: Option<InterpSection>,
-    pub got: GotSection,
-    pub gotplt: GotPltSection,
-    pub relplt: RelPltSection,
-    pub reldyn: RelDynSection,
-    pub relrdyn: Option<RelrDynSection>,
-    pub dynamic: Option<DynamicSection>,
-    pub strtab: StrtabSection,
-    pub dynstr: DynstrSection,
-    pub hash: Option<HashSection>,
-    pub gnu_hash: Option<GnuHashSection>,
-    pub gnu_debuglink: Option<GnuDebuglinkSection>,
-    pub shstrtab: Option<ShstrtabSection>,
-    pub plt: PltSection,
-    pub pltgot: PltGotSection,
-    pub symtab: SymtabSection,
-    pub symtab_shndx: Option<SymtabShndxSection>,
-    pub dynsym: DynsymSection,
-    pub eh_frame: EhFrameSection,
-    pub eh_frame_hdr: Option<EhFrameHdrSection>,
-    pub eh_frame_reloc: Option<EhFrameRelocSection>,
+    pub ehdr: Option<OutputEhdr<E>>,
+    pub phdr: Option<OutputPhdr<E>>,
+    pub shdr: Option<OutputShdr<E>>,
+    pub interp: Option<InterpSection<E>>,
+    pub got: GotSection<E>,
+    pub gotplt: GotPltSection<E>,
+    pub relplt: RelPltSection<E>,
+    pub reldyn: RelDynSection<E>,
+    pub relrdyn: Option<RelrDynSection<E>>,
+    pub dynamic: Option<DynamicSection<E>>,
+    pub strtab: StrtabSection<E>,
+    pub dynstr: DynstrSection<E>,
+    pub hash: Option<HashSection<E>>,
+    pub gnu_hash: Option<GnuHashSection<E>>,
+    pub gnu_debuglink: Option<GnuDebuglinkSection<E>>,
+    pub shstrtab: Option<ShstrtabSection<E>>,
+    pub plt: PltSection<E>,
+    pub pltgot: PltGotSection<E>,
+    pub symtab: SymtabSection<E>,
+    pub symtab_shndx: Option<SymtabShndxSection<E>>,
+    pub dynsym: DynsymSection<E>,
+    pub eh_frame: EhFrameSection<E>,
+    pub eh_frame_hdr: Option<EhFrameHdrSection<E>>,
+    pub eh_frame_reloc: Option<EhFrameRelocSection<E>>,
     pub sframe: SFrameSection<E>,
-    pub sframe_reloc: Option<SFrameRelocSection>,
-    pub copyrel: CopyrelSection,
-    pub copyrel_relro: CopyrelSection,
-    pub versym: VersymSection,
-    pub verneed: VerneedSection,
-    pub verdef: Option<VerdefSection>,
-    pub buildid: Option<BuildIdSection>,
-    pub note_package: NotePackageSection,
+    pub sframe_reloc: Option<SFrameRelocSection<E>>,
+    pub copyrel: CopyrelSection<E>,
+    pub copyrel_relro: CopyrelSection<E>,
+    pub versym: VersymSection<E>,
+    pub verneed: VerneedSection<E>,
+    pub verdef: Option<VerdefSection<E>>,
+    pub buildid: Option<BuildIdSection<E>>,
+    pub note_package: NotePackageSection<E>,
 
     // Target-specific context members
-    pub note_property: Option<NotePropertySection>,
-    pub riscv_attributes: Option<RiscvAttributesSection>,
-    pub arm_exidx: Option<crate::output_chunks::arm_exidx::ArmExidxSection>,
-    pub ppc64_save_restore: Option<crate::output_chunks::misc::Ppc64SaveRestoreSection>,
-    pub ppc64_opd: Option<crate::output_chunks::opd::Ppc64OpdSection>,
+    pub note_property: Option<NotePropertySection<E>>,
+    pub riscv_attributes: Option<RiscvAttributesSection<E>>,
+    pub arm_exidx: Option<crate::output_chunks::arm_exidx::ArmExidxSection<E>>,
+    pub ppc64_save_restore: Option<crate::output_chunks::misc::Ppc64SaveRestoreSection<E>>,
+    pub ppc64_opd: Option<crate::output_chunks::opd::Ppc64OpdSection<E>>,
     /// Whether any input uses Power10 PC-relative calls, which decides
     /// how thunks address their targets.
     pub is_power10: AtomicBool,
-    pub gdb_index: Option<GdbIndexSection>,
+    pub gdb_index: Option<GdbIndexSection<E>>,
 
     // For --gdb-index
     // shared_ptr lets the implementation type remain in gdb-index.cc.
     pub gdb_index_data: Option<crate::gdb_index::GdbIndexData>,
-    pub relro_padding: Option<RelroPaddingSection>,
+    pub relro_padding: Option<RelroPaddingSection<E>>,
     pub comment: Option<MergedSectionId>,
 
     pub needs_tlsld: AtomicBool,
@@ -240,17 +240,17 @@ impl<E: Arch> Context<E> {
         let page_size = args.page_size;
 
         Context {
-            reldyn: RelDynSection::new::<E>(&args),
-            got: GotSection::new::<E>(),
-            gotplt: GotPltSection::new::<E>(&args),
-            relplt: RelPltSection::new::<E>(),
+            reldyn: RelDynSection::<E>::new(&args),
+            got: GotSection::<E>::new(),
+            gotplt: GotPltSection::<E>::new(&args),
+            relplt: RelPltSection::<E>::new(),
             strtab: StrtabSection::new(),
             dynstr: DynstrSection::new(),
-            plt: PltSection::new::<E>(),
+            plt: PltSection::<E>::new(),
             pltgot: PltGotSection::new(),
-            symtab: SymtabSection::new::<E>(),
-            dynsym: DynsymSection::new::<E>(),
-            eh_frame: EhFrameSection::new::<E>(),
+            symtab: SymtabSection::<E>::new(),
+            dynsym: DynsymSection::<E>::new(),
+            eh_frame: EhFrameSection::<E>::new(),
             sframe: SFrameSection::<E>::new(),
             copyrel: CopyrelSection::new(false),
             copyrel_relro: CopyrelSection::new(true),
@@ -364,23 +364,23 @@ impl<E: Arch> Context<E> {
         self.symbols.intern(crate::util::leak_bytes(name.to_vec()))
     }
 
-    pub fn obj(&self, id: ObjId) -> &ObjectFile {
+    pub fn obj(&self, id: ObjId) -> &ObjectFile<E> {
         &self.objs[id.index()]
     }
 
-    pub fn dso(&self, id: DsoId) -> &SharedFile {
+    pub fn dso(&self, id: DsoId) -> &SharedFile<E> {
         &self.dsos[id.index()]
     }
 
     /// The common part of a file.
-    pub fn file(&self, id: FileId) -> &InputFile {
+    pub fn file(&self, id: FileId) -> &InputFile<E> {
         match id {
             FileId::Obj(id) => &self.objs[id.index()].base,
             FileId::Dso(id) => &self.dsos[id.index()].base,
         }
     }
 
-    pub fn file_mut(&mut self, id: FileId) -> &mut InputFile {
+    pub fn file_mut(&mut self, id: FileId) -> &mut InputFile<E> {
         match id {
             FileId::Obj(id) => &mut self.objs[id.index()].base,
             FileId::Dso(id) => &mut self.dsos[id.index()].base,
@@ -455,10 +455,10 @@ impl<E: Arch> Context<E> {
 
     pub fn fragment_addr(&self, r: FragmentRef) -> u64 {
         let msec = &self.merged_sections[r.section.index()];
-        msec.hdr.shdr.sh_addr + msec.fragments.get(r.entry).offset()
+        msec.hdr.shdr.sh_addr.get() + msec.fragments.get(r.entry).offset()
     }
 
-    pub fn output_section(&self, id: OutputSectionId) -> &OutputSection {
+    pub fn output_section(&self, id: OutputSectionId) -> &OutputSection<E> {
         &self.output_sections[id.index()]
     }
 
@@ -468,7 +468,7 @@ impl<E: Arch> Context<E> {
             .ppc64_opd
             .as_ref()
             .expect("PPC64 ELFv1 has an .opd section");
-        opd.hdr.shdr.sh_addr + idx as u64 * crate::output_chunks::opd::ENTRY_SIZE
+        opd.hdr.shdr.sh_addr.get() + idx as u64 * crate::output_chunks::opd::ENTRY_SIZE
     }
 
     /// Whether the file is the internal object holding synthesized symbols.
@@ -477,7 +477,7 @@ impl<E: Arch> Context<E> {
     }
 
     /// The header of any chunk. Panics if the chunk does not exist.
-    pub fn chunk_header(&self, id: ChunkId) -> &ChunkHeader {
+    pub fn chunk_header(&self, id: ChunkId) -> &ChunkHeader<E> {
         macro_rules! opt {
             ($e:expr) => {
                 &$e.as_ref().expect("chunk does not exist").hdr
@@ -533,7 +533,7 @@ impl<E: Arch> Context<E> {
         }
     }
 
-    pub fn chunk_header_mut(&mut self, id: ChunkId) -> &mut ChunkHeader {
+    pub fn chunk_header_mut(&mut self, id: ChunkId) -> &mut ChunkHeader<E> {
         macro_rules! opt {
             ($e:expr) => {
                 &mut $e.as_mut().expect("chunk does not exist").hdr
@@ -594,7 +594,7 @@ impl<E: Arch> Context<E> {
         self.chunks
             .iter()
             .copied()
-            .find(|&c| self.chunk_header(c).shdr.sh_type == sh_type)
+            .find(|&c| self.chunk_header(c).shdr.sh_type.get() == sh_type)
     }
 
     /// Finds the first chunk with a name.

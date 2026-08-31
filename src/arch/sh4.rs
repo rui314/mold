@@ -192,7 +192,8 @@ where
                     .hdr
                     .shdr
                     .sh_addr
-                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
+                    .get()
+                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
             );
         } else {
             const INSN: [u16; 6] = [
@@ -204,7 +205,7 @@ where
                 0xfffd, //    (illegal)
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[12..], ctx.gotplt.hdr.shdr.sh_addr as u32);
+            End::write_u32(&mut buf[12..], ctx.gotplt.hdr.shdr.sh_addr.get() as u32);
         }
     }
 
@@ -222,7 +223,7 @@ where
             Self::write_insns(buf, &INSN);
             End::write_u32(
                 &mut buf[12..],
-                gotplt.wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
+                gotplt.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
             );
         } else {
             const INSN: [u16; 6] = [
@@ -254,7 +255,7 @@ where
             Self::write_insns(buf, &INSN);
             End::write_u32(
                 &mut buf[8..],
-                got.wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
+                got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
             );
         } else {
             const INSN: [u16; 4] = [
@@ -321,7 +322,7 @@ where
 
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = ctx.got.hdr.shdr.sh_addr.get();
 
         for rel in isec.rels::<Self>(file) {
             if rel.r_type() == R_NONE {
@@ -347,11 +348,7 @@ where
                 R_SH_GOTPC => got.wrapping_add(a).wrapping_sub(p),
                 R_SH_GOTOFF => sa.wrapping_sub(got),
                 R_SH_TLS_GD_32 => sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got),
-                R_SH_TLS_LD_32 => ctx
-                    .got
-                    .tlsld_addr::<Self>()
-                    .wrapping_add(a)
-                    .wrapping_sub(got),
+                R_SH_TLS_LD_32 => ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got),
                 R_SH_TLS_LDO_32 => sa.wrapping_sub(ctx.dtp_addr),
                 R_SH_TLS_IE_32 => sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got),
                 R_SH_TLS_LE_32 => sa.wrapping_sub(ctx.tp_addr),

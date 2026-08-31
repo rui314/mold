@@ -26,28 +26,33 @@ fn is_text_file(data: &[u8]) -> bool {
 
 /// Whether an ELF relocatable object is really a GCC LTO object.
 fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
-    let Some(ehdr) = data.get(..ElfEhdr::<E>::size()).map(ElfEhdr::<E>::parse) else {
+    let Some(ehdr) = data
+        .get(..std::mem::size_of::<ElfEhdr<E>>())
+        .map(record_from_bytes::<ElfEhdr<E>>)
+    else {
         return false;
     };
     let shoff = ehdr.e_shoff.get() as usize;
-    let shdr_size = SectionHeader::size::<E>();
+    let shdr_size = std::mem::size_of::<ElfShdr<E>>();
     let Some(shdr_bytes) = data.get(shoff..shoff + ehdr.e_shnum.get() as usize * shdr_size) else {
         return false;
     };
-    let shdrs = ShdrTable::in_file(shdr_bytes, RecordLayout::of::<E>());
-    let Some(first) = shdrs.get(0) else {
+    let shdrs = records_from_bytes::<ElfShdr<E>>(shdr_bytes);
+    let Some(first) = shdrs.first() else {
         return false;
     };
 
     // e_shstrndx is a 16-bit field. If .shstrtab's section index is
     // too large, the actual number is stored to sh_link field.
     let shstrtab_idx = if u32::from(ehdr.e_shstrndx.get()) == SHN_XINDEX {
-        first.sh_link as usize
+        first.sh_link.get() as usize
     } else {
         ehdr.e_shstrndx.get() as usize
     };
     let shstrtab_offset = if has_gcc_plugin {
-        shdrs.get(shstrtab_idx).map(|shdr| shdr.sh_offset as usize)
+        shdrs
+            .get(shstrtab_idx)
+            .map(|shdr| shdr.sh_offset.get() as usize)
     } else {
         None
     };
@@ -59,36 +64,39 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
         // objects otherwise. GCC FAT LTO object can be identified by the
         // presence of `.gcc.lto_.symtab` section.
         if let Some(offset) = shstrtab_offset {
-            let name = crate::util::cstr_at(data, offset + shdrs.sh_name_in::<E>(i) as usize);
+            let name = crate::util::cstr_at(data, offset + shdrs[i].sh_name.get() as usize);
             if name.starts_with(b".gnu.lto_.symtab.") {
                 return true;
             }
         }
 
-        if shdrs.sh_type_in::<E>(i) != SHT_SYMTAB {
+        if shdrs[i].sh_type.get() != SHT_SYMTAB {
             continue;
         }
-        let shdr = shdrs.at_in::<E>(i);
+        let shdr = &shdrs[i];
 
         // GCC non-FAT LTO object contains only sections symbols followed by
         // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
         // for older GCC releases).
-        let off = shdr.sh_offset as usize;
-        let Some(bytes) = data.get(off..off + shdr.sh_size as usize) else {
+        let off = shdr.sh_offset.get() as usize;
+        let Some(bytes) = data.get(off..off + shdr.sh_size.get() as usize) else {
             return false;
         };
-        let syms = bytes
-            .chunks_exact(SymbolEntry::size::<E>())
-            .map(SymbolEntry::parse::<E>);
+        if !bytes.len().is_multiple_of(std::mem::size_of::<ElfSym<E>>()) {
+            return false;
+        }
+        let syms = records_from_bytes::<ElfSym<E>>(bytes).iter();
         let skip = |ty: u32| ty == STT_NOTYPE || ty == STT_FILE || ty == STT_SECTION;
 
         if let Some(sym) = syms.skip(1).find(|s| !skip(s.st_type())) {
-            if sym.st_shndx as u32 == SHN_COMMON {
-                let Some(strtab) = shdrs.get(shdr.sh_link as usize) else {
+            if sym.st_shndx().get() as u32 == SHN_COMMON {
+                let Some(strtab) = shdrs.get(shdr.sh_link.get() as usize) else {
                     return false;
                 };
-                let name =
-                    crate::util::cstr_at(data, strtab.sh_offset as usize + sym.st_name as usize);
+                let name = crate::util::cstr_at(
+                    data,
+                    strtab.sh_offset.get() as usize + sym.st_name().get() as usize,
+                );
                 if name.starts_with(b"__gnu_lto_") {
                     return true;
                 }

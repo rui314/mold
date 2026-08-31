@@ -1,5 +1,6 @@
 //! The passes of a link, in roughly the order the driver runs them.
 
+use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -87,12 +88,12 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         } else {
             0
         };
-        ctx.ehdr = Some(OutputEhdr::new::<E>(ehdr_flags));
+        ctx.ehdr = Some(OutputEhdr::<E>::new(ehdr_flags));
         chunks.push(ChunkId::Ehdr);
-        ctx.phdr = Some(OutputPhdr::new::<E>(phdr_flags));
+        ctx.phdr = Some(OutputPhdr::<E>::new(phdr_flags));
         chunks.push(ChunkId::Phdr);
         if ctx.args.z_sectionheader {
-            ctx.shdr = Some(OutputShdr::new::<E>());
+            ctx.shdr = Some(OutputShdr::<E>::new());
             chunks.push(ChunkId::Shdr);
         }
     }
@@ -104,7 +105,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::RelDyn);
     chunks.push(ChunkId::RelPlt);
     if ctx.args.pack_dyn_relocs_relr {
-        ctx.relrdyn = Some(RelrDynSection::new::<E>(&ctx.args));
+        ctx.relrdyn = Some(RelrDynSection::<E>::new(&ctx.args));
         chunks.push(ChunkId::RelrDyn);
     }
     chunks.push(ChunkId::Strtab);
@@ -143,11 +144,11 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::RelroPadding);
     }
     if ctx.args.hash_style_sysv {
-        ctx.hash = Some(HashSection::new::<E>());
+        ctx.hash = Some(HashSection::<E>::new());
         chunks.push(ChunkId::Hash);
     }
     if ctx.args.hash_style_gnu {
-        ctx.gnu_hash = Some(GnuHashSection::new::<E>());
+        ctx.gnu_hash = Some(GnuHashSection::<E>::new());
         chunks.push(ChunkId::GnuHash);
     }
     if !ctx.args.version_definitions.is_empty() {
@@ -155,7 +156,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::Verdef);
     }
     if ctx.args.emit_relocs {
-        ctx.eh_frame_reloc = Some(EhFrameRelocSection::new::<E>());
+        ctx.eh_frame_reloc = Some(EhFrameRelocSection::<E>::new());
         chunks.push(ChunkId::EhFrameReloc);
     }
     if !ctx.args.separate_debug_file.is_empty() {
@@ -164,7 +165,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if ctx.args.shared || !ctx.dsos.is_empty() || ctx.args.pie {
-        ctx.dynamic = Some(DynamicSection::new::<E>(&ctx.args));
+        ctx.dynamic = Some(DynamicSection::<E>::new(&ctx.args));
         chunks.push(ChunkId::Dynamic);
         // If .dynamic exists, .dynsym and .dynstr must exist as well
         // since .dynamic refers to them.
@@ -179,11 +180,9 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::NotePackage);
 
     if !ctx.args.oformat_binary {
-        let shdr = SectionHeader {
-            sh_type: SHT_PROGBITS,
-            sh_flags: (SHF_MERGE | SHF_STRINGS) as u64,
-            ..SectionHeader::default()
-        };
+        let mut shdr = ElfShdr::<E>::default();
+        shdr.sh_type.set(SHT_PROGBITS);
+        shdr.sh_flags.set((SHF_MERGE | SHF_STRINGS) as u64);
         let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
         ctx.comment = crate::output_chunks::merged::MergedSection::get_instance(
             &ctx.args,
@@ -195,7 +194,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if E::IS_X86 {
-        ctx.note_property = Some(NotePropertySection::new::<E>());
+        ctx.note_property = Some(NotePropertySection::<E>::new());
         chunks.push(ChunkId::NoteProperty);
     }
     if E::IS_RISCV {
@@ -239,7 +238,7 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
             let file = &ctx.objs[obj_id.index()];
             debug_assert!(file.base.is_reachable());
             for i in file.base.first_global..file.base.elf_syms.len() {
-                let esym = &file.base.elf_syms.at_in::<E>(i);
+                let esym = &file.base.elf_syms[i];
                 let sym = &ctx.symbols[file.base.symbols[i]];
 
                 if !esym.is_undef() && file.exclude_libs {
@@ -270,7 +269,7 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
         FileId::Dso(dso_id) => {
             let file = &ctx.dsos[dso_id.index()];
             for i in 0..file.base.elf_syms.len() {
-                let esym = &file.base.elf_syms.at_in::<E>(i);
+                let esym = &file.base.elf_syms[i];
                 let sym = &ctx.symbols[file.base.symbols[i]];
                 if sym.is_traced() {
                     crate::input_files::print_trace_symbol(&ctx.diag, file, esym, sym);
@@ -404,12 +403,12 @@ fn resolve_default_symver<E: Arch>(ctx: &mut Context<E>) {
     });
 }
 
-fn clear_symbol(sym: &mut Symbol) {
+fn clear_symbol<E: Arch>(sym: &mut Symbol) {
     sym.clear_file();
     sym.clear_origin();
     sym.value = 0;
     sym.sym_idx = u32::MAX;
-    sym.set_esym(&SymbolEntry::default());
+    sym.set_esym(&ElfSym::<E>::default());
     sym.ver_idx = VER_NDX_UNSPECIFIED as u16;
     sym.set_weak(false);
     sym.set_imported(false);
@@ -422,7 +421,7 @@ fn clear_symbol(sym: &mut Symbol) {
 fn clear_symbols<E: Arch>(ctx: &mut Context<E>) {
     ctx.symbols.par_for_each_global_mut(|sym| {
         if sym.file().is_some() {
-            clear_symbol(sym);
+            clear_symbol::<E>(sym);
         }
     });
 }
@@ -469,13 +468,13 @@ fn resolve_symbols_pass<E: Arch>(ctx: &mut Context<E>, files: &[FileId], only_re
         FileId::Obj(id) => {
             let file = &objs[id.index()];
             if !only_reachable || file.base.is_reachable() {
-                file.resolve_symbols::<E>(&resolver, id);
+                file.resolve_symbols(&resolver, id);
             }
         }
         FileId::Dso(id) => {
             let file = &dsos[id.index()];
             if !only_reachable || file.base.is_reachable() {
-                file.resolve_symbols::<E>(&resolver, id);
+                file.resolve_symbols(&resolver, id);
             }
         }
     });
@@ -493,7 +492,7 @@ fn resolve_skip_dso_symbols_pass<E: Arch>(ctx: &mut Context<E>) {
     } = ctx;
     let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
     objs.par_iter().for_each(|file| {
-        file.resolve_skip_dso_symbols::<E>(&resolver, file.id());
+        file.resolve_skip_dso_symbols(&resolver, file.id());
     });
 }
 
@@ -609,7 +608,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             work.with_local(|bins, pending| {
                 if file.base.is_reachable() {
                     if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
-                        file.read_section_metadata::<E>(diag);
+                        file.read_section_metadata(diag);
                     }
                     let priority = file.base.priority;
                     let is_lto_output = file.is_lto_output;
@@ -783,7 +782,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                     && !file.is_lto_input
                     && !file.sections_parsed
                 {
-                    file.parse_sections::<E>(
+                    file.parse_sections(
                         diag,
                         args,
                         file.id(),
@@ -858,7 +857,7 @@ pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
         for &id in &hidden {
             let sym = &mut ctx.symbols[id];
             sym.set_skip_dso(true);
-            clear_symbol(sym);
+            clear_symbol::<E>(sym);
         }
         resolve_skip_dso_symbols_pass(ctx);
 
@@ -900,7 +899,7 @@ pub fn remove_unreachable_files<E: Arch>(ctx: &mut Context<E>) {
 }
 
 /// Drops the object files `remove` selects and renumbers the rest.
-fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile) -> bool) {
+fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile<E>) -> bool) {
     ctx.objs.retain(|file| !remove(file));
 }
 
@@ -960,7 +959,7 @@ pub fn parse_eh_frame_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("parse_eh_frame_sections");
     let Context { objs, diag, .. } = ctx;
     objs.par_iter_mut()
-        .for_each(|file| file.parse_ehframe::<E>(diag));
+        .for_each(|file| file.parse_ehframe(diag));
 }
 
 pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
@@ -969,14 +968,13 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
     }
     let _t = ctx.timer("parse_sframe_sections");
     let Context { objs, diag, .. } = ctx;
-    objs.par_iter_mut()
-        .for_each(|file| file.parse_sframe::<E>(diag));
+    objs.par_iter_mut().for_each(|file| file.parse_sframe(diag));
 }
 
 /// Registers direct, stable member borrows with their merged sections for a
 /// parallel resolution phase.
-fn merged_resolve_members(
-    objs: &mut FileList<ObjectFile>,
+fn merged_resolve_members<E: Arch>(
+    objs: &mut FileList<ObjectFile<E>>,
     count: usize,
 ) -> Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> {
     let mut members: Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> =
@@ -1015,7 +1013,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         } = ctx;
         let merged = RwLock::new(std::mem::take(merged_sections));
         objs.par_iter_mut()
-            .for_each(|file| file.convert_mergeable_sections::<E>(args, &merged, diag));
+            .for_each(|file| file.convert_mergeable_sections(args, &merged, diag));
         *merged_sections = merged.into_inner().unwrap();
     }
     drop(t);
@@ -1089,14 +1087,8 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                 .zip(slices)
                 .for_each(|(file, (base_id, slots))| {
                     let id = file.id();
-                    file.reattach_section_symbols::<E>(diag, id, &editor, merged_sections);
-                    file.reattach_fragment_relocations::<E>(
-                        diag,
-                        id,
-                        merged_sections,
-                        base_id,
-                        slots,
-                    );
+                    file.reattach_section_symbols(diag, id, &editor, merged_sections);
+                    file.reattach_fragment_relocations(diag, id, merged_sections, base_id, slots);
                 });
         });
     }
@@ -1114,7 +1106,7 @@ pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
         ..
     } = ctx;
     for file in objs {
-        file.convert_common_symbols::<E>(
+        file.convert_common_symbols(
             diag,
             args,
             file.id(),
@@ -1264,9 +1256,9 @@ struct OutputSectionBuilder {
     files: Box<[UnsafeCell<OutputSectionFileMembers>]>,
 }
 
-type OutputSectionShared = (
+type OutputSectionShared<E> = (
     HashMap<OutputSectionKey, Arc<OutputSectionBuilder>>,
-    Vec<OutputSection>,
+    Vec<OutputSection<E>>,
 );
 
 // SAFETY: the file-parallel traversal gives each task a distinct slot. The
@@ -1352,10 +1344,10 @@ impl OutputSectionCaches {
 // Some sections, such as .init, .fini, .got, .dynamic, contain
 // dynamic relocations but doesn't have to be writable at runtime,
 // so they are put into a RELRO segment.
-fn is_relro(osec: &OutputSection) -> bool {
+fn is_relro<E: Layout>(osec: &OutputSection<E>) -> bool {
     let name = osec.hdr.name;
-    let ty = osec.hdr.shdr.sh_type;
-    let flags = osec.hdr.shdr.sh_flags;
+    let ty = osec.hdr.shdr.sh_type.get();
+    let flags = osec.hdr.shdr.sh_flags.get();
     name == b".toc"
         || name.ends_with(b".rel.ro")
         || name.ends_with(b".rel.ro.hot")
@@ -1376,7 +1368,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     // Make a per-thread cache of the main map to avoid lock contention.
     // It makes a noticeable difference if we have millions of input sections.
     let num_files = ctx.objs.len();
-    let shared: Mutex<OutputSectionShared> =
+    let shared: Mutex<OutputSectionShared<E>> =
         Mutex::new((HashMap::new(), std::mem::take(&mut ctx.output_sections)));
     let caches = OutputSectionCaches::new();
 
@@ -1388,22 +1380,31 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
                 let shstrtab = file.base.shstrtab;
                 let num_elf_sections = file.num_elf_sections;
                 let shdrs = &file.base.shdrs;
+                let extra_shdrs = &file.elf_sections2;
                 for (member, isec) in file
                     .sections
                     .regular_ids_mut()
                     .filter(|(_, isec)| isec.is_alive())
                 {
                     let name = isec.name_in(shstrtab, num_elf_sections);
-                    let sh_type = isec.sh_type_from(shdrs);
+                    let sh_type = if isec.is_nobits() {
+                        SHT_NOBITS
+                    } else if isec.shndx as usize >= num_elf_sections {
+                        extra_shdrs[isec.shndx as usize - num_elf_sections]
+                            .sh_type
+                            .get()
+                    } else {
+                        shdrs[isec.shndx as usize].sh_type.get()
+                    };
                     let sh_flags = isec.sh_flags
                         & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
 
                     if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
                         // COMDAT group members keep their own output sections
                         // in a relocatable output.
-                        let mut osec = OutputSection::new(name, sh_type);
-                        osec.hdr.shdr.sh_flags = sh_flags;
-                        osec.hdr.shdr.sh_addralign = 1 << isec.p2align();
+                        let mut osec = OutputSection::<E>::new(name, sh_type);
+                        osec.hdr.shdr.sh_flags.set(sh_flags);
+                        osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
                         osec.hdr.is_relro = is_relro(&osec);
                         osec.members.push(member);
                         let mut shared = shared.lock().unwrap();
@@ -1422,7 +1423,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
                             let builder = map
                                 .entry(key)
                                 .or_insert_with(|| {
-                                    sections.push(OutputSection::new(key.0, key.1));
+                                    sections.push(OutputSection::<E>::new(key.0, key.1));
                                     let id = OutputSectionId::new(sections.len() as u32 - 1);
                                     Arc::new(OutputSectionBuilder::new(id, num_files))
                                 })
@@ -1485,8 +1486,8 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     for (id, members, sh_flags, p2align) in flattened {
         let osec = &mut ctx.output_sections[id.index()];
         osec.members = members;
-        osec.hdr.shdr.sh_flags = sh_flags;
-        osec.hdr.shdr.sh_addralign = 1 << p2align;
+        osec.hdr.shdr.sh_flags.set(sh_flags);
+        osec.hdr.shdr.sh_addralign.set(1 << p2align);
         osec.hdr.is_relro = is_relro(osec);
     }
 
@@ -1503,7 +1504,11 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     // output deterministic.
     chunks.sort_by_cached_key(|&id| {
         let hdr = ctx.chunk_header(id);
-        (hdr.name.to_vec(), hdr.shdr.sh_type, hdr.shdr.sh_flags)
+        (
+            hdr.name.to_vec(),
+            hdr.shdr.sh_type.get(),
+            hdr.shdr.sh_flags.get(),
+        )
     });
     ctx.chunks.extend(chunks);
 }
@@ -1515,12 +1520,12 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     obj.base.priority = 0;
 
     // Create linker-synthesized symbols.
-    ctx.internal_esyms = vec![SymbolEntry::default()];
+    ctx.internal_esyms = vec![ElfSym::<E>::default()];
     let dummy = ctx.symbols.add(Symbol::new(BStr::new(b"")));
     obj.base.symbols.push(dummy);
     obj.base.first_global = 1;
 
-    let add = |ctx: &mut Context<E>, obj: &mut ObjectFile, name: &str| {
+    let add = |ctx: &mut Context<E>, obj: &mut ObjectFile<E>, name: &str| {
         let id = ctx.get_symbol(name.as_bytes());
         obj.base.symbols.push(id);
         // An actual value will be set to a linker-synthesized symbol by
@@ -1528,8 +1533,8 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         // value. 0xdeadbeef is a unique dummy value to make debugging easier
         // if the field is accidentally used before it gets a valid one.
         ctx.symbols[id].value = 0xdeadbeef;
-        let mut esym = SymbolEntry::default();
-        esym.st_shndx = SHN_ABS as u16;
+        let mut esym = ElfSym::<E>::default();
+        esym.st_shndx_mut().set(SHN_ABS as u16);
         esym.set_type(STT_NOTYPE);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_DEFAULT);
@@ -1547,7 +1552,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    obj.base.elf_syms = SymTable::from_records(RecordLayout::of::<E>(), &ctx.internal_esyms);
+    obj.base.elf_syms = Cow::Owned(ctx.internal_esyms.clone());
     let id = ObjId(ctx.objs.push(Box::new(obj)));
     ctx.internal_obj = Some(id);
     if ctx.file_by_priority.is_empty() {
@@ -1582,16 +1587,16 @@ fn resolve_internal_symbols<E: Arch>(ctx: &mut Context<E>) {
     let id = ctx.internal_obj.unwrap();
     let obj = &ctx.objs[id.index()];
     for i in obj.base.first_global..obj.base.elf_syms.len() {
-        let esym = obj.base.elf_syms.at_in::<E>(i);
+        let esym = &obj.base.elf_syms[i];
         let sym_id = obj.base.symbols[i];
-        let rank = symbol_resolution_rank(&esym, false, false, 0);
+        let rank = symbol_resolution_rank(esym, false, false, 0);
         if rank < current_rank(ctx, &ctx.symbols[sym_id]) {
             let sym = &mut ctx.symbols[sym_id];
             sym.set_file(FileId::Obj(id));
             sym.clear_origin();
-            sym.value = esym.st_value;
+            sym.value = esym.st_value().get();
             sym.sym_idx = i as u32;
-            sym.set_esym(&esym);
+            sym.set_esym(esym);
             sym.ver_idx = ctx.default_version;
             sym.set_weak(esym.is_weak());
             sym.set_versioned_default(false);
@@ -1603,8 +1608,8 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     let obj_id = ctx.internal_obj.unwrap();
 
     fn add<E: Arch>(ctx: &mut Context<E>, name: &str, ty: u32) -> SymbolId {
-        let mut esym = SymbolEntry::default();
-        esym.st_shndx = SHN_ABS as u16;
+        let mut esym = ElfSym::<E>::default();
+        esym.st_shndx_mut().set(SHN_ABS as u16);
         esym.set_type(ty);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_HIDDEN);
@@ -1716,8 +1721,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    ctx.objs[obj_id.index()].base.elf_syms =
-        SymTable::from_records(RecordLayout::of::<E>(), &ctx.internal_esyms);
+    ctx.objs[obj_id.index()].base.elf_syms = Cow::Owned(ctx.internal_esyms.clone());
     resolve_internal_symbols(ctx);
 
     // Make all synthetic symbols relative ones by associating them to
@@ -1743,15 +1747,14 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
                 }
                 let sym2_esym = ctx.symbols[sym2].esym(ctx);
                 let obj = &mut ctx.objs[obj_id.index()];
-                let mut esym = obj.base.elf_syms.at_in::<E>(i + 1);
+                let esym = &mut obj.base.elf_syms.to_mut()[i + 1];
                 esym.set_type(sym2_esym.st_type());
                 if E::FAMILY == Family::Ppc64V2 {
                     esym.set_ppc64_local_entry(sym2_esym.ppc64_local_entry());
                 }
-                obj.base.elf_syms.set_in::<E>(i + 1, esym);
-                ctx.internal_esyms[i + 1] = esym;
+                ctx.internal_esyms[i + 1] = *esym;
                 if ctx.symbols[sym1].file() == Some(FileId::Obj(obj_id)) {
-                    ctx.symbols[sym1].set_esym(&esym);
+                    ctx.symbols[sym1].set_esym(esym);
                 }
                 if ctx.symbols[sym2].is_absolute() {
                     ctx.symbols[sym1].clear_origin();
@@ -1772,14 +1775,14 @@ pub fn apply_section_align<E: Arch>(ctx: &mut Context<E>) {
             .section_align
             .get(&*String::from_utf8_lossy(osec.hdr.name))
         {
-            osec.hdr.shdr.sh_addralign = align;
+            osec.hdr.shdr.sh_addralign.set(align);
         }
     }
 }
 
 pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
     let warning = ctx.args.z_cet_report == CetReportKind::Warning;
-    let has_feature = |file: &ObjectFile, feature: u32| {
+    let has_feature = |file: &ObjectFile<E>, feature: u32| {
         file.gnu_properties
             .get(&GNU_PROPERTY_X86_FEATURE_1_AND)
             .is_some_and(|v| v & feature != 0)
@@ -1823,8 +1826,8 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
          # compile source files with the -ffunction-sections compiler flag."
     );
 
-    let println = |src: &dyn std::fmt::Display, sym: &Symbol, esym: &SymbolEntry| {
-        let kind = if esym.is_weak() { 'w' } else { 'u' };
+    let println = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
+        let kind = if is_weak { 'w' } else { 'u' };
         match sym.input_section() {
             Some(sec) => out!(ctx, "{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
             None => out!(
@@ -1842,7 +1845,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
                 if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
                     continue;
                 }
-                let esym = &file.base.elf_syms.at_in::<E>(r.r_sym() as usize);
+                let esym = &file.base.elf_syms[r.r_sym() as usize];
                 let id = file.base.symbols[r.r_sym() as usize];
                 let sym = &ctx.symbols[id];
                 if esym.is_undef()
@@ -1850,18 +1853,18 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
                     && sym.file() != Some(FileId::Obj(file.id()))
                     && visited.insert(id)
                 {
-                    println(&isec.display(file), sym, esym);
+                    println(&isec.display(file), sym, esym.is_weak());
                 }
             }
         }
     }
     for file in &ctx.dsos {
         for i in 0..file.base.elf_syms.len() {
-            let esym = &file.base.elf_syms.at_in::<E>(i);
+            let esym = &file.base.elf_syms[i];
             let sym = &ctx.symbols[file.base.symbols[i]];
             if esym.is_undef() && sym.file().is_some() && sym.file() != Some(FileId::Dso(file.id()))
             {
-                println(file, sym, esym);
+                println(file, sym, esym.is_weak());
             }
         }
     }
@@ -1941,7 +1944,7 @@ pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
         }
         let file_id = FileId::Obj(file.id());
         for i in file.base.first_global..file.base.elf_syms.len() {
-            let esym = &file.base.elf_syms.at_in::<E>(i);
+            let esym = &file.base.elf_syms[i];
             let sym = &ctx.symbols[file.base.symbols[i]];
 
             // Skip if our symbol is undef or weak
@@ -2020,7 +2023,7 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
                     ctx,
                     "duplicate symbol: {file}: {}: {}",
                     ctx.file_display(sym2.file().unwrap()),
-                    crate::util::display(file.base.symbol_name_in::<E>(sym.sym_idx as usize))
+                    crate::util::display(file.base.symbol_name_in(sym.sym_idx as usize))
                 );
             }
         }
@@ -2090,7 +2093,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     // for the program, because if there's a missing .so, an undefined
     // symbol might be defined by that library.
     let complete = ctx.dsos.iter().all(|dso| {
-        dso.dt_needed::<E>(&ctx.diag)
+        dso.dt_needed(&ctx.diag)
             .iter()
             .all(|needed| ctx.dso_sonames.contains(&*String::from_utf8_lossy(needed)))
     });
@@ -2099,7 +2102,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
         ctx.dsos.par_iter().for_each(|file| {
             // Check if all undefined symbols have been resolved.
             for i in 0..file.base.elf_syms.len() {
-                let esym = &file.base.elf_syms.at_in::<E>(i);
+                let esym = &file.base.elf_syms[i];
                 let id = file.base.symbols[i];
                 let sym = &ctx.symbols[id];
                 // Dynamic symbol table for SPARC contains bogus entries which
@@ -2156,23 +2159,20 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
         STT_COMMON => STT_OBJECT,
         ty => ty,
     };
-    let check = |file: &dyn std::fmt::Display,
-                 file_id: FileId,
-                 sym: &Symbol,
-                 esym2: &SymbolEntry| {
+    let check = |file: &dyn std::fmt::Display, file_id: FileId, sym: &Symbol, st_type2: u32| {
         let esym1 = &sym.esym(ctx);
         if let Some(owner) = sym.file() {
             if owner != file_id
                 && esym1.st_type() != STT_NOTYPE
-                && esym2.st_type() != STT_NOTYPE
-                && canonicalize(esym1.st_type()) != canonicalize(esym2.st_type())
+                && st_type2 != STT_NOTYPE
+                && canonicalize(esym1.st_type()) != canonicalize(st_type2)
             {
                 warn!(
                     ctx,
                     "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
                     ctx.file_display(owner),
                     stt_to_string(esym1.st_type()),
-                    stt_to_string(esym2.st_type())
+                    stt_to_string(st_type2)
                 );
             }
         }
@@ -2183,7 +2183,7 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
         for i in file.base.first_global..file.base.elf_syms.len() {
             let sym = &ctx.symbols[file.base.symbols[i]];
             if sym.file().is_some() && sym.file() != Some(id) {
-                check(file, id, sym, &file.base.elf_syms.at_in::<E>(i));
+                check(file, id, sym, file.base.elf_syms[i].st_type());
             }
         }
     });
@@ -2192,13 +2192,13 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
         for i in 0..file.base.elf_syms.len() {
             let sym = &ctx.symbols[file.base.symbols[i]];
             if sym.file().is_some() && sym.file() != Some(id) {
-                check(file, id, sym, &file.base.elf_syms.at_in::<E>(i));
+                check(file, id, sym, file.base.elf_syms[i].st_type());
             }
             let id2 = file.symbols2[i];
             if id2 != SymbolId::NONE {
                 let sym = &ctx.symbols[id2];
                 if sym.file().is_some() && sym.file() != Some(id) {
-                    check(file, id, sym, &file.base.elf_syms.at_in::<E>(i));
+                    check(file, id, sym, file.base.elf_syms[i].st_type());
                 }
             }
         }
@@ -2321,7 +2321,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
             let osec = &ctx.output_sections[id.index()];
             !osec.hdr.is_alloc()
                 && osec.hdr.name.starts_with(b".debug_")
-                && (osec.hdr.shdr.sh_size >= u32::MAX as u64 || is_in_test)
+                && (osec.hdr.shdr.sh_size.get() >= u32::MAX as u64 || is_in_test)
         })
         .collect();
     let vec2: Vec<crate::output_chunks::merged::MergedSectionId> = (0..ctx.merged_sections.len())
@@ -2330,7 +2330,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
             let msec = &ctx.merged_sections[id.index()];
             !msec.is_alloc()
                 && msec.hdr.name.starts_with(b".debug_")
-                && (msec.hdr.shdr.sh_size >= u32::MAX as u64 || is_in_test)
+                && (msec.hdr.shdr.sh_size.get() >= u32::MAX as u64 || is_in_test)
         })
         .collect();
     if vec1.is_empty() && vec2.is_empty() {
@@ -2341,7 +2341,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     {
         let Context { objs, diag, .. } = ctx;
         objs.par_iter_mut().for_each(|file| {
-            file.is_dwarf32 = !file.debug_info_sections.is_empty() && file.is_dwarf32::<E>(diag);
+            file.is_dwarf32 = !file.debug_info_sections.is_empty() && file.is_dwarf32(diag);
         });
     }
 
@@ -2444,7 +2444,7 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
             file.section_mut(section_ref.shndx as usize)
                 .unwrap()
                 .set_contents(leak_bytes(contents));
-            file.rels_mut::<E>(section_ref.shndx).copy_from_slice(&rels);
+            file.rels_mut(section_ref.shndx).copy_from_slice(&rels);
         }
     }
 }
@@ -2477,7 +2477,7 @@ fn shuffle(vec: &mut [InputSectionId], mut seed: u64) {
 
 pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("shuffle_sections");
-    let is_eligible = |osec: &OutputSection| {
+    let is_eligible = |osec: &OutputSection<E>| {
         let name = osec.hdr.name;
         osec.hdr.is_alloc()
             && name != b".init"
@@ -2510,7 +2510,7 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
         .map(crate::input_files::SharedFile::id)
         .collect();
     for id in dso_ids {
-        let audit = ctx.dsos[id.index()].dt_audit::<E>(&ctx.diag);
+        let audit = ctx.dsos[id.index()].dt_audit(&ctx.diag);
         if !audit.is_empty() {
             if !ctx.args.depaudit.is_empty() {
                 ctx.args.depaudit.push(':');
@@ -2545,7 +2545,8 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
         ChunkId::Output(osec) => {
             E::NEEDS_THUNK
                 && !ctx.args.relocatable
-                && ctx.output_sections[osec.index()].hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0
+                && ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64
+                    != 0
         }
         _ => false,
     };
@@ -2593,7 +2594,7 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
             .collect()
     };
     for (osec, size) in sizes {
-        ctx.output_sections[osec.index()].hdr.shdr.sh_size = size;
+        ctx.output_sections[osec.index()].hdr.shdr.sh_size.set(size);
     }
 
     // Every merged section now owns all the mutable state needed for its
@@ -2635,7 +2636,7 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
                 (file.base.first_global..file.base.elf_syms.len())
                     .filter(move |&i| {
                         !internal
-                            && file.base.elf_syms.at_in::<E>(i).is_undef()
+                            && file.base.elf_syms[i].is_undef()
                             && ctx_ref.symbols[file.base.symbols[i]].file().is_none()
                     })
                     .map(move |i| (file_id, i))
@@ -2645,7 +2646,7 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     for (obj_id, i) in candidates {
         let file = &ctx.objs[obj_id.index()];
-        let esym = file.base.elf_syms.at_in::<E>(i);
+        let esym = file.base.elf_syms[i];
         let id = file.base.symbols[i];
         let priority = file.base.priority;
         let file_id = FileId::Obj(obj_id);
@@ -2875,9 +2876,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         if flags & NEEDS_CANONICAL != 0 && ty != STT_FUNC {
             let relro = ctx.args.z_relro
                 && match ctx.symbols[id].file() {
-                    Some(FileId::Dso(dso)) => {
-                        ctx.dsos[dso.index()].is_readonly::<E>(&ctx.symbols[id])
-                    }
+                    Some(FileId::Dso(dso)) => ctx.dsos[dso.index()].is_readonly(&ctx.symbols[id]),
                     _ => false,
                 };
             misc::copyrel::add_symbol(ctx, relro, id);
@@ -2904,7 +2903,7 @@ pub fn compute_imported_symbol_weakness<E: Arch>(ctx: &mut Context<E>) {
         .par_iter()
         .flat_map_iter(|file| {
             (file.base.first_global..file.base.elf_syms.len()).filter_map(|i| {
-                let esym = &file.base.elf_syms.at_in::<E>(i);
+                let esym = &file.base.elf_syms[i];
                 let id = file.base.symbols[i];
                 (esym.is_undef()
                     && !esym.is_weak()
@@ -2962,7 +2961,7 @@ pub fn create_reloc_sections<E: Arch>(ctx: &mut Context<E>) {
         .iter()
         .filter_map(|c| c.as_output_section())
         .collect();
-    let secs: Vec<misc::RelocSection> = {
+    let secs: Vec<misc::RelocSection<E>> = {
         let ctx_ref: &Context<E> = ctx;
         ids.par_iter()
             .map(|&id| misc::reloc::new(ctx_ref, id))
@@ -2997,7 +2996,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
 
         // Count the number of exported symbols to compute the size of .gnu.hash.
         let num_exported = exported.len() as u32;
-        let num_buckets = num_exported / GnuHashSection::LOAD_FACTOR + 1;
+        let num_buckets = num_exported / GnuHashSection::<E>::LOAD_FACTOR + 1;
         let symbols = &mut ctx.symbols;
         // SAFETY: .dynsym contains each symbol at most once, and exported is a
         // subset of it. Every dynamic symbol already has an auxiliary record.
@@ -3020,7 +3019,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     syms = locals.into_iter().chain(globals).collect();
 
     // Compute .dynstr size
-    ctx.dynsym.dynstr_offset = ctx.dynstr.hdr.shdr.sh_size;
+    ctx.dynsym.dynstr_offset = ctx.dynstr.hdr.shdr.sh_size.get();
     // SAFETY: .dynsym contains each symbol at most once. Every dynamic symbol
     // already has an auxiliary record.
     let size = unsafe {
@@ -3029,13 +3028,17 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
             sym.name().len() as u64 + 1
         })
     };
-    ctx.dynstr.hdr.shdr.sh_size += size;
+    ctx.dynstr
+        .hdr
+        .shdr
+        .sh_size
+        .set(ctx.dynstr.hdr.shdr.sh_size.get() + size);
     ctx.dynsym.symbols = std::iter::once(None)
         .chain(syms.into_iter().map(Some))
         .collect();
 
     // ELF's symbol table sh_info holds the offset of the first global symbol.
-    ctx.dynsym.hdr.shdr.sh_info = num_locals as u32 + 1;
+    ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
 }
 
 pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
@@ -3199,7 +3202,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             if ctx.symbols[id].file() != Some(file_id) {
                 continue;
             }
-            let name = file.base.symbol_name_in::<E>(i);
+            let name = file.base.symbol_name_in(i);
             let at = crate::util::find_byte(b'@', name).unwrap();
             let mut ver = &name[at + 1..];
             let mut is_default = false;
@@ -3591,8 +3594,8 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
 fn sort_output_sections_regular<E: Arch>(ctx: &mut Context<E>) {
     let rank1 = |ctx: &Context<E>, id: ChunkId| -> i64 {
         let hdr = ctx.chunk_header(id);
-        let ty = hdr.shdr.sh_type;
-        let flags = hdr.shdr.sh_flags;
+        let ty = hdr.shdr.sh_type.get();
+        let flags = hdr.shdr.sh_flags.get();
         match id {
             ChunkId::Ehdr => return 0,
             ChunkId::Phdr => return 1,
@@ -3627,8 +3630,8 @@ fn sort_output_sections_regular<E: Arch>(ctx: &mut Context<E>) {
     // Ties are broken by additional rules
     let rank2 = |ctx: &Context<E>, id: ChunkId| -> i64 {
         let hdr = ctx.chunk_header(id);
-        if hdr.shdr.sh_type == SHT_NOTE {
-            return -(hdr.shdr.sh_addralign as i64);
+        if hdr.shdr.sh_type.get() == SHT_NOTE {
+            return -(hdr.shdr.sh_addralign.get() as i64);
         }
         match id {
             ChunkId::Got => 2,
@@ -3650,11 +3653,11 @@ fn sort_output_sections_regular<E: Arch>(ctx: &mut Context<E>) {
 
 fn section_order_group<E: Arch>(ctx: &Context<E>, id: ChunkId) -> &'static str {
     let hdr = ctx.chunk_header(id);
-    if hdr.shdr.sh_type == SHT_NOBITS {
+    if hdr.shdr.sh_type.get() == SHT_NOBITS {
         "BSS"
-    } else if hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+    } else if hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
         "TEXT"
-    } else if hdr.shdr.sh_flags & SHF_WRITE as u64 != 0 {
+    } else if hdr.shdr.sh_flags.get() & SHF_WRITE as u64 != 0 {
         "DATA"
     } else {
         "RODATA"
@@ -3666,7 +3669,7 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
     let rank =
         |ctx: &Context<E>, id: ChunkId| -> i64 {
             let hdr = ctx.chunk_header(id);
-            let flags = hdr.shdr.sh_flags;
+            let flags = hdr.shdr.sh_flags.get();
             match id {
                 ChunkId::Ehdr if flags & SHF_ALLOC as u64 == 0 => return -2,
                 ChunkId::Phdr if flags & SHF_ALLOC as u64 == 0 => return -1,
@@ -3719,8 +3722,8 @@ fn tls_segment_alignment<E: Arch>(ctx: &Context<E>) -> u64 {
     ctx.chunks
         .iter()
         .map(|&id| ctx.chunk_header(id))
-        .filter(|h| h.shdr.sh_flags & SHF_TLS as u64 != 0)
-        .map(|h| h.shdr.sh_addralign)
+        .filter(|h| h.shdr.sh_flags.get() & SHF_TLS as u64 != 0)
+        .map(|h| h.shdr.sh_addralign.get())
         .max()
         .unwrap_or(1)
         .max(1)
@@ -3765,11 +3768,12 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
             flags
         }
     };
-    let is_tls =
-        |ctx: &Context<E>, id: ChunkId| ctx.chunk_header(id).shdr.sh_flags & SHF_TLS as u64 != 0;
+    let is_tls = |ctx: &Context<E>, id: ChunkId| {
+        ctx.chunk_header(id).shdr.sh_flags.get() & SHF_TLS as u64 != 0
+    };
     let is_tbss = |ctx: &Context<E>, id: ChunkId| {
         let shdr = &ctx.chunk_header(id).shdr;
-        shdr.sh_flags & SHF_TLS as u64 != 0 && shdr.sh_type == SHT_NOBITS
+        shdr.sh_flags.get() & SHF_TLS as u64 != 0 && shdr.sh_type.get() == SHT_NOBITS
     };
 
     // Assign virtual addresses
@@ -3792,8 +3796,8 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         // So we add a dummy section.
         if id == ChunkId::RelroPadding {
             let hdr = ctx.chunk_header_mut(id);
-            hdr.shdr.sh_addr = addr;
-            hdr.shdr.sh_size = align_to(addr, page_size) - addr;
+            hdr.shdr.sh_addr.set(addr);
+            hdr.shdr.sh_size.set(align_to(addr, page_size) - addr);
             addr += page_size;
             i += 1;
             continue;
@@ -3804,8 +3808,8 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         if let Some(&start) = ctx.args.section_start.get(&name) {
             addr = start;
             let hdr = ctx.chunk_header_mut(id);
-            hdr.shdr.sh_addr = addr;
-            addr += hdr.shdr.sh_size;
+            hdr.shdr.sh_addr.set(addr);
+            addr += hdr.shdr.sh_size.get();
             i += 1;
             continue;
         }
@@ -3854,9 +3858,9 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
             let mut addr2 = addr;
             loop {
                 let hdr = ctx.chunk_header_mut(chunks[i]);
-                addr2 = align_to(addr2, hdr.shdr.sh_addralign);
-                hdr.shdr.sh_addr = addr2;
-                addr2 += hdr.shdr.sh_size;
+                addr2 = align_to(addr2, hdr.shdr.sh_addralign.get());
+                hdr.shdr.sh_addr.set(addr2);
+                addr2 += hdr.shdr.sh_size.get();
                 if i + 2 == chunks.len() || !is_tbss(ctx, chunks[i + 1]) {
                     break;
                 }
@@ -3867,9 +3871,9 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         }
 
         let hdr = ctx.chunk_header_mut(id);
-        addr = align_to(addr, hdr.shdr.sh_addralign);
-        hdr.shdr.sh_addr = addr;
-        addr += hdr.shdr.sh_size;
+        addr = align_to(addr, hdr.shdr.sh_addralign.get());
+        hdr.shdr.sh_addr.set(addr);
+        addr += hdr.shdr.sh_size.get();
         i += 1;
     }
 }
@@ -3910,9 +3914,9 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
                         }
                     }
                     let hdr = ctx.chunk_header_mut(vec[i]);
-                    addr = align_to(addr, hdr.shdr.sh_addralign);
-                    hdr.shdr.sh_addr = addr;
-                    addr += hdr.shdr.sh_size;
+                    addr = align_to(addr, hdr.shdr.sh_addralign.get());
+                    hdr.shdr.sh_addr.set(addr);
+                    addr += hdr.shdr.sh_size.get();
                     i += 1;
                 }
             }
@@ -3954,67 +3958,72 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
 
     while i < chunks.len() {
         let first = ctx.chunk_header(chunks[i]).shdr;
-        if first.sh_flags & SHF_ALLOC as u64 == 0 {
-            fileoff = align_to(fileoff, first.sh_addralign);
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset = fileoff;
-            fileoff += first.sh_size;
+        if first.sh_flags.get() & SHF_ALLOC as u64 == 0 {
+            fileoff = align_to(fileoff, first.sh_addralign.get());
+            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
+            fileoff += first.sh_size.get();
             i += 1;
             continue;
         }
-        if first.sh_type == SHT_NOBITS {
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset = fileoff;
+        if first.sh_type.get() == SHT_NOBITS {
+            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
             i += 1;
             continue;
         }
 
-        if first.sh_addralign > page_size {
-            fileoff = align_to(fileoff, first.sh_addralign);
+        if first.sh_addralign.get() > page_size {
+            fileoff = align_to(fileoff, first.sh_addralign.get());
         } else {
-            fileoff = align_with_skew(fileoff, page_size, first.sh_addr);
+            fileoff = align_with_skew(fileoff, page_size, first.sh_addr.get());
         }
 
         // Assign ALLOC sections contiguous file offsets as long as they
         // are contiguous in memory.
         loop {
             let shdr = ctx.chunk_header(chunks[i]).shdr;
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset = fileoff + shdr.sh_addr - first.sh_addr;
+            ctx.chunk_header_mut(chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff + shdr.sh_addr.get() - first.sh_addr.get());
             i += 1;
             if i >= chunks.len() {
                 break;
             }
             let next = ctx.chunk_header(chunks[i]).shdr;
-            if next.sh_flags & SHF_ALLOC as u64 == 0 || next.sh_type == SHT_NOBITS {
+            if next.sh_flags.get() & SHF_ALLOC as u64 == 0 || next.sh_type.get() == SHT_NOBITS {
                 break;
             }
             // If --start-section is given, addresses may not increase
             // monotonically.
-            if next.sh_addr < first.sh_addr {
+            if next.sh_addr.get() < first.sh_addr.get() {
                 break;
             }
             let prev = ctx.chunk_header(chunks[i - 1]).shdr;
             // This section requires larger alignment, we need to adjust the
             // offset to ensure offset % align == vaddr % align.
-            if next.sh_addralign > page_size && next.sh_addralign > prev.sh_addralign {
+            if next.sh_addralign.get() > page_size
+                && next.sh_addralign.get() > prev.sh_addralign.get()
+            {
                 break;
             }
             // If --start-section is given, there may be a large gap between
             // sections. We don't want to allocate a disk space for a gap if
             // exists.
-            let gap = next.sh_addr - prev.sh_addr - prev.sh_size;
+            let gap = next.sh_addr.get() - prev.sh_addr.get() - prev.sh_size.get();
             if gap >= page_size {
                 break;
             }
         }
 
         let last = ctx.chunk_header(chunks[i - 1]).shdr;
-        fileoff = last.sh_offset + last.sh_size;
+        fileoff = last.sh_offset.get() + last.sh_size.get();
 
         while i < chunks.len() {
             let shdr = ctx.chunk_header(chunks[i]).shdr;
-            if shdr.sh_flags & SHF_ALLOC as u64 == 0 || shdr.sh_type != SHT_NOBITS {
+            if shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 || shdr.sh_type.get() != SHT_NOBITS {
                 break;
             }
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset = fileoff;
+            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
             i += 1;
         }
     }
@@ -4050,7 +4059,7 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
             matches!(
                 id,
                 ChunkId::Output(_) | ChunkId::GdbIndex | ChunkId::Placeholder(_)
-            ) || ctx.chunk_header(id).shdr.sh_size != 0
+            ) || ctx.chunk_header(id).shdr.sh_size.get() != 0
         })
         .collect();
 
@@ -4068,13 +4077,16 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
         let mut sec = SymtabShndxSection::new();
         sec.hdr.shndx = shndx;
         shndx += 1;
-        sec.hdr.shdr.sh_link = ctx.symtab.hdr.shndx;
+        sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
         ctx.symtab_shndx = Some(sec);
         ctx.chunks.push(ChunkId::SymtabShndx);
     }
 
     if let Some(shdr) = &mut ctx.shdr {
-        shdr.hdr.shdr.sh_size = shndx as u64 * SectionHeader::size::<E>() as u64;
+        shdr.hdr
+            .shdr
+            .sh_size
+            .set(shndx as u64 * ElfShdr::<E>::size() as u64);
     }
 
     // Some types of section header refer to other section by index.
@@ -4084,8 +4096,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
-        let n = ctx.symtab.hdr.shdr.sh_size / SymbolEntry::size::<E>() as u64;
-        symtab_shndx.hdr.shdr.sh_size = n * 4;
+        let n = ctx.symtab.hdr.shdr.sh_size.get() / std::mem::size_of::<ElfSym<E>>() as u64;
+        symtab_shndx.hdr.shdr.sh_size.set(n * 4);
     }
 }
 
@@ -4100,9 +4112,9 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         }
 
         if ctx.args.pack_dyn_relocs_android {
-            let before = ctx.reldyn.hdr.shdr.sh_size;
+            let before = ctx.reldyn.hdr.shdr.sh_size.get();
             crate::output_chunks::dynamic::reldyn::update_shdr(ctx);
-            if before != ctx.reldyn.hdr.shdr.sh_size {
+            if before != ctx.reldyn.hdr.shdr.sh_size.get() {
                 continue;
             }
         }
@@ -4112,9 +4124,9 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         // of the program header, so repeat it until converge.
         let fileoff = set_file_offsets(ctx);
         if ctx.phdr.is_some() {
-            let before = ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size;
+            let before = ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size.get();
             output_chunks::update_phdr(ctx);
-            if before < ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size {
+            if before < ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size.get() {
                 continue;
             }
         }
@@ -4136,8 +4148,11 @@ fn num_irelative_relocs<E: Arch>(ctx: &Context<E>) -> u64 {
 fn to_paddr<E: Arch>(ctx: &Context<E>, vaddr: u64) -> u64 {
     if let Some(phdr) = &ctx.phdr {
         for p in &phdr.phdrs {
-            if p.p_type == PT_LOAD && p.p_vaddr <= vaddr && vaddr < p.p_vaddr + p.p_memsz {
-                return p.p_paddr + (vaddr - p.p_vaddr);
+            if p.p_type().get() == PT_LOAD
+                && p.p_vaddr().get() <= vaddr
+                && vaddr < p.p_vaddr().get() + p.p_memsz().get()
+            {
+                return p.p_paddr().get() + (vaddr - p.p_vaddr().get());
             }
         }
     }
@@ -4152,7 +4167,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         bias: i64,
     ) {
         if let (Some(sym), Some(chunk)) = (sym, chunk) {
-            let addr = ctx.chunk_header(chunk).shdr.sh_addr;
+            let addr = ctx.chunk_header(chunk).shdr.sh_addr.get();
             let s = &mut ctx.symbols[sym];
             s.set_output_chunk(chunk);
             s.value = addr.wrapping_add(bias as u64);
@@ -4168,7 +4183,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
             let shdr = ctx.chunk_header(chunk).shdr;
             let s = &mut ctx.symbols[sym];
             s.set_output_chunk(chunk);
-            s.value = (shdr.sh_addr + shdr.sh_size).wrapping_add(bias as u64);
+            s.value = (shdr.sh_addr.get() + shdr.sh_size.get()).wrapping_add(bias as u64);
         }
     }
 
@@ -4193,7 +4208,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     if let Some(ehdr) = &ctx.ehdr {
         if ehdr.hdr.is_alloc() {
-            let addr = ehdr.hdr.shdr.sh_addr;
+            let addr = ehdr.hdr.shdr.sh_addr.get();
             for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
                 if let (Some(sym), Some(first)) = (sym, first) {
                     let s = &mut ctx.symbols[sym];
@@ -4205,7 +4220,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let (Some(sym), Some(first)) = (ctx.syms.dso_handle, first) {
-        let addr = ctx.chunk_header(first).shdr.sh_addr;
+        let addr = ctx.chunk_header(first).shdr.sh_addr.get();
         let s = &mut ctx.symbols[sym];
         s.set_output_chunk(first);
         s.value = addr;
@@ -4232,7 +4247,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // __{init,fini}_array_{start,end}
     for &chunk in &sections {
-        match ctx.chunk_header(chunk).shdr.sh_type {
+        match ctx.chunk_header(chunk).shdr.sh_type.get() {
             SHT_INIT_ARRAY => {
                 start(ctx, ctx.syms.init_array_start, Some(chunk), 0);
                 stop(ctx, ctx.syms.init_array_end, Some(chunk), 0);
@@ -4252,15 +4267,15 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // _end, _etext, _edata and the like
     for &chunk in &sections {
         let shdr = ctx.chunk_header(chunk).shdr;
-        if shdr.sh_flags & SHF_ALLOC as u64 != 0 {
+        if shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
             stop(ctx, ctx.syms.end_, Some(chunk), 0);
             stop(ctx, ctx.syms.end, Some(chunk), 0);
         }
-        if shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+        if shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
             stop(ctx, ctx.syms.etext_, Some(chunk), 0);
             stop(ctx, ctx.syms.etext, Some(chunk), 0);
         }
-        if shdr.sh_type != SHT_NOBITS && shdr.sh_flags & SHF_ALLOC as u64 != 0 {
+        if shdr.sh_type.get() != SHT_NOBITS && shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
             stop(ctx, ctx.syms.edata_, Some(chunk), 0);
             stop(ctx, ctx.syms.edata, Some(chunk), 0);
         }
@@ -4351,13 +4366,13 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
             if ctx.args.physical_image_base.is_some() {
                 let shdr = ctx.chunk_header(chunk).shdr;
-                let paddr = to_paddr(ctx, shdr.sh_addr);
+                let paddr = to_paddr(ctx, shdr.sh_addr.get());
                 let x = ctx.get_symbol(format!("__phys_start_{name}").as_bytes());
                 ctx.symbols[x].set_output_chunk(chunk);
                 ctx.symbols[x].value = paddr;
                 let y = ctx.get_symbol(format!("__phys_stop_{name}").as_bytes());
                 ctx.symbols[y].set_output_chunk(chunk);
-                ctx.symbols[y].value = paddr + shdr.sh_size;
+                ctx.symbols[y].value = paddr + shdr.sh_size.get();
             }
         }
     }
@@ -4407,11 +4422,11 @@ pub fn compress_debug_sections<E: Arch>(ctx: &mut Context<E>) {
         .enumerate()
         .filter(|&(_, &id)| {
             let hdr = ctx.chunk_header(id);
-            !hdr.is_alloc() && hdr.shdr.sh_size != 0 && hdr.name.starts_with(b".debug_")
+            !hdr.is_alloc() && hdr.shdr.sh_size.get() != 0 && hdr.name.starts_with(b".debug_")
         })
         .map(|(i, &id)| (i, id))
         .collect();
-    let compressed: Vec<misc::CompressedSection> = {
+    let compressed: Vec<misc::CompressedSection<E>> = {
         let ctx_ref: &Context<E> = ctx;
         targets
             .par_iter()
@@ -4469,10 +4484,9 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
     };
     ctx.buildid.as_mut().unwrap().contents = contents;
     let hdr = ctx.buildid.as_ref().unwrap().hdr.shdr;
-    misc::build_id::copy_buf(
-        ctx,
-        &mut buf[hdr.sh_offset as usize..(hdr.sh_offset + hdr.sh_size) as usize],
-    );
+    let start = hdr.sh_offset.get() as usize;
+    let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
+    misc::build_id::copy_buf(ctx, &mut buf[start..end]);
 }
 
 // A .gnu_debuglink section contains a filename and a CRC32 checksum of a
@@ -4505,10 +4519,9 @@ pub fn write_gnu_debuglink<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8]) {
     };
     ctx.gnu_debuglink.as_mut().unwrap().crc32 = crc;
     let hdr = ctx.gnu_debuglink.as_ref().unwrap().hdr.shdr;
-    misc::gnu_debuglink::copy_buf(
-        ctx,
-        &mut buf[hdr.sh_offset as usize..(hdr.sh_offset + hdr.sh_size) as usize],
-    );
+    let start = hdr.sh_offset.get() as usize;
+    let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
+    misc::gnu_debuglink::copy_buf(ctx, &mut buf[start..end]);
 }
 
 // Compute a CRC for given data in parallel
@@ -4574,16 +4587,15 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         let id = ctx.chunks[i];
         if id.is_header()
             || id == ChunkId::Shstrtab
-            || ctx.chunk_header(id).shdr.sh_type == SHT_NOTE
+            || ctx.chunk_header(id).shdr.sh_type.get() == SHT_NOTE
         {
             continue;
         }
         let hdr = ctx.chunk_header(id);
-        let mut placeholder = ChunkHeader::with_name(hdr.name, SHT_NOBITS, hdr.shdr.sh_flags);
-        placeholder.shdr = SectionHeader {
-            sh_type: SHT_NOBITS,
-            ..hdr.shdr
-        };
+        let mut placeholder =
+            ChunkHeader::<E>::with_name(hdr.name, SHT_NOBITS, hdr.shdr.sh_flags.get());
+        placeholder.shdr = hdr.shdr;
+        placeholder.shdr.sh_type.set(SHT_NOBITS);
         placeholder.shndx = hdr.shndx;
         ctx.placeholders.push(placeholder);
         ctx.chunks[i] = ChunkId::Placeholder(ctx.placeholders.len() as u32 - 1);
@@ -4608,16 +4620,16 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     let mut fileoff = 0;
     for id in ctx.chunks.clone() {
         let shdr = &mut ctx.chunk_header_mut(id).shdr;
-        if shdr.sh_type == SHT_NOBITS {
-            shdr.sh_offset = fileoff;
-        } else if shdr.sh_flags & SHF_ALLOC as u64 != 0 {
-            fileoff = align_with_skew(fileoff, page_size, shdr.sh_addr);
-            shdr.sh_offset = fileoff;
-            fileoff += shdr.sh_size;
+        if shdr.sh_type.get() == SHT_NOBITS {
+            shdr.sh_offset.set(fileoff);
+        } else if shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
+            fileoff = align_with_skew(fileoff, page_size, shdr.sh_addr.get());
+            shdr.sh_offset.set(fileoff);
+            fileoff += shdr.sh_size.get();
         } else {
-            fileoff = align_to(fileoff, shdr.sh_addralign);
-            shdr.sh_offset = fileoff;
-            fileoff += shdr.sh_size;
+            fileoff = align_to(fileoff, shdr.sh_addralign.get());
+            shdr.sh_offset.set(fileoff);
+            fileoff += shdr.sh_size.get();
         }
     }
 
@@ -4626,8 +4638,11 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     if let Some(n) = ctx.phdr.as_ref().map(|p| p.phdrs.len()) {
         output_chunks::update_phdr(ctx);
         let phdr = ctx.phdr.as_mut().unwrap();
-        phdr.phdrs.resize(n, ProgramHeader::default());
-        phdr.hdr.shdr.sh_size = (n * ProgramHeader::size::<E>()) as u64;
+        phdr.phdrs.resize(n, ElfPhdr::<E>::default());
+        phdr.hdr
+            .shdr
+            .sh_size
+            .set((n * std::mem::size_of::<ElfPhdr<E>>()) as u64);
     }
 
     // Write to a separate debug file

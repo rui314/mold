@@ -184,10 +184,11 @@ impl Arch for Ppc32 {
             .hdr
             .shdr
             .sh_addr
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr)
+            .get()
+            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
             .wrapping_add(4);
-        or32(&mut buf[16..], higha(offset));
-        or32(&mut buf[20..], lo(offset));
+        or32(&mut buf[16..], higha(u64::from(offset)));
+        or32(&mut buf[20..], lo(u64::from(offset)));
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -262,7 +263,7 @@ impl Arch for Ppc32 {
 
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        let got = ctx.got.hdr.shdr.sh_addr;
+        let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let got2 = file
             .got2
             .map_or(0, |shndx| file.section_at(shndx).addr(ctx));
@@ -326,7 +327,7 @@ impl Arch for Ppc32 {
                 R_PPC_DTPREL16_HI => w16(loc, hi(sa.wrapping_sub(ctx.dtp_addr))),
                 R_PPC_DTPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.dtp_addr))),
                 R_PPC_GOT_TLSGD16 => w16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got)),
-                R_PPC_GOT_TLSLD16 => w16(loc, ctx.got.tlsld_addr::<Self>().wrapping_sub(got)),
+                R_PPC_GOT_TLSLD16 => w16(loc, ctx.got.tlsld_addr().wrapping_sub(got)),
                 R_PPC_GOT_TPREL16 => w16(loc, sym.gottp_addr(ctx).wrapping_sub(got)),
                 R_PPC_ADDR32 | R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD
                 | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}

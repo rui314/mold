@@ -15,7 +15,7 @@ use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, SymbolId};
 
-fn should_keep<E: Arch>(file: &ObjectFile, isec: &InputSection) -> bool {
+fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection) -> bool {
     let ty = isec.sh_type(file);
     let flags = isec.sh_flags as u32;
     let name: &[u8] = isec.name(file);

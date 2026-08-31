@@ -45,9 +45,9 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
         let hdr = ctx.chunk_header(id);
         out.push_str(&format!(
             "{:>18}{:>11}{:>6} {}\n",
-            format!("{:#x}", hdr.shdr.sh_addr),
-            hdr.shdr.sh_size,
-            hdr.shdr.sh_addralign,
+            format!("{:#x}", hdr.shdr.sh_addr.get()),
+            hdr.shdr.sh_size.get(),
+            hdr.shdr.sh_addralign.get(),
             hdr.name
         ));
 
@@ -62,7 +62,7 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
                 let isec = ctx.input_section(member);
                 let r = isec.section_ref();
                 let addr = if osec.hdr.is_alloc() {
-                    osec.hdr.shdr.sh_addr + isec.offset()
+                    osec.hdr.shdr.sh_addr.get() + isec.offset()
                 } else {
                     0
                 };

@@ -22,19 +22,19 @@ use crate::util::{path_filename, write_cstr};
 // the specified path with the executable pathname as an argument,
 // allowing the dynamic linker to run the program.
 #[derive(Debug)]
-pub struct InterpSection {
-    pub hdr: ChunkHeader,
+pub struct InterpSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl InterpSection {
-    pub fn new() -> InterpSection {
+impl<E: Layout> InterpSection<E> {
+    pub fn new() -> InterpSection<E> {
         InterpSection {
-            hdr: ChunkHeader::new(".interp", SHT_PROGBITS, SHF_ALLOC as u64),
+            hdr: ChunkHeader::<E>::new(".interp", SHT_PROGBITS, SHF_ALLOC as u64),
         }
     }
 }
 
-impl Default for InterpSection {
+impl<E: Layout> Default for InterpSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -45,7 +45,7 @@ pub mod interp {
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let size = ctx.args.dynamic_linker.len() as u64 + 1;
-        ctx.interp.as_mut().unwrap().hdr.shdr.sh_size = size;
+        ctx.interp.as_mut().unwrap().hdr.shdr.sh_size.set(size);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -56,19 +56,19 @@ pub mod interp {
 // .copyrel and .copyrel.rel.ro represent memory regions to which the
 // runtime copies symbols from other ELF files for copy relocations.
 #[derive(Debug)]
-pub struct CopyrelSection {
-    pub hdr: ChunkHeader,
+pub struct CopyrelSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl CopyrelSection {
-    pub fn new(is_relro: bool) -> CopyrelSection {
+impl<E: Layout> CopyrelSection<E> {
+    pub fn new(is_relro: bool) -> CopyrelSection<E> {
         let name = if is_relro {
             ".copyrel.rel.ro"
         } else {
             ".copyrel"
         };
-        let mut hdr = ChunkHeader::new(name, SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);
+        let mut hdr = ChunkHeader::<E>::new(name, SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = is_relro;
         CopyrelSection {
             hdr,
@@ -112,7 +112,7 @@ pub mod copyrel {
         }
 
         let alignment = dso.alignment(sym);
-        let size = sym.esym(ctx).st_size;
+        let size = sym.esym(ctx).st_size().get();
         // We need to create dynamic symbols not only for this particular symbol
         // but also for its aliases (i.e. other symbols at the same address)
         // becasue otherwise the aliases are broken apart at runtime.
@@ -127,9 +127,12 @@ pub mod copyrel {
             &mut ctx.copyrel
         };
         sec.symbols.push(id);
-        let offset = align_to(sec.hdr.shdr.sh_size, alignment);
-        sec.hdr.shdr.sh_size = offset + size;
-        sec.hdr.shdr.sh_addralign = sec.hdr.shdr.sh_addralign.max(alignment);
+        let offset = align_to(sec.hdr.shdr.sh_size.get(), alignment);
+        sec.hdr.shdr.sh_size.set(offset + size);
+        sec.hdr
+            .shdr
+            .sh_addralign
+            .set(sec.hdr.shdr.sh_addralign.get().max(alignment));
 
         for alias in aliases {
             ctx.symbols.aux_mut(alias);
@@ -143,7 +146,7 @@ pub mod copyrel {
         }
     }
 
-    pub fn write_dynrels<E: Arch>(ctx: &Context<E>, sec: &CopyrelSection, out: &mut [E::Rel]) {
+    pub fn write_dynrels<E: Arch>(ctx: &Context<E>, sec: &CopyrelSection<E>, out: &mut [E::Rel]) {
         for (i, &id) in sec.symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
             out[i] = ElfRel::<E>::new(
@@ -161,16 +164,16 @@ pub mod copyrel {
 // contents of the section is usually a cryptogrpahic hash of the output
 // file itself to guarantee uniqueness of build-id.
 #[derive(Debug)]
-pub struct BuildIdSection {
-    pub hdr: ChunkHeader,
+pub struct BuildIdSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl BuildIdSection {
-    pub fn new() -> BuildIdSection {
-        let mut hdr = ChunkHeader::new(".note.gnu.build-id", SHT_NOTE, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 4;
-        hdr.shdr.sh_size = 1;
+impl<E: Layout> BuildIdSection<E> {
+    pub fn new() -> BuildIdSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".note.gnu.build-id", SHT_NOTE, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(4);
+        hdr.shdr.sh_size.set(1);
         BuildIdSection {
             hdr,
             contents: Vec::new(),
@@ -178,7 +181,7 @@ impl BuildIdSection {
     }
 }
 
-impl Default for BuildIdSection {
+impl<E: Layout> Default for BuildIdSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -189,7 +192,7 @@ pub mod build_id {
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let size = ctx.args.build_id.size() as u64 + 16; // +16 for the header
-        ctx.buildid.as_mut().unwrap().hdr.shdr.sh_size = size;
+        ctx.buildid.as_mut().unwrap().hdr.shdr.sh_size.set(size);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -208,19 +211,19 @@ pub mod build_id {
 // embed package metadata into each ELF file so that it is easy to find
 // the origin of an ELF file without any additional information.
 #[derive(Debug)]
-pub struct NotePackageSection {
-    pub hdr: ChunkHeader,
+pub struct NotePackageSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl NotePackageSection {
-    pub fn new() -> NotePackageSection {
-        let mut hdr = ChunkHeader::new(".note.package", SHT_NOTE, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = 4;
+impl<E: Layout> NotePackageSection<E> {
+    pub fn new() -> NotePackageSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".note.package", SHT_NOTE, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(4);
         NotePackageSection { hdr }
     }
 }
 
-impl Default for NotePackageSection {
+impl<E: Layout> Default for NotePackageSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -232,15 +235,21 @@ pub mod note_package {
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         if !ctx.args.package_metadata.is_empty() {
             // +17 is for the header and the NUL terminator
-            ctx.note_package.hdr.shdr.sh_size =
-                align_to(ctx.args.package_metadata.len() as u64 + 17, 4);
+            ctx.note_package
+                .hdr
+                .shdr
+                .sh_size
+                .set(align_to(ctx.args.package_metadata.len() as u64 + 17, 4));
         }
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         buf.fill(0);
         E::Endian::write_u32(buf, 4); // Name size
-        E::Endian::write_u32(&mut buf[4..], ctx.note_package.hdr.shdr.sh_size as u32 - 16); // Content size
+        E::Endian::write_u32(
+            &mut buf[4..],
+            ctx.note_package.hdr.shdr.sh_size.get() as u32 - 16,
+        ); // Content size
         E::Endian::write_u32(&mut buf[8..], NT_FDO_PACKAGING_METADATA);
         buf[12..16].copy_from_slice(b"FDO\0");
         write_cstr(&mut buf[16..], ctx.args.package_metadata.as_bytes()); // Content
@@ -250,19 +259,25 @@ pub mod note_package {
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.
 #[derive(Debug)]
-pub struct NotePropertySection {
-    pub hdr: ChunkHeader,
+pub struct NotePropertySection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<(u32, u32)>,
 }
 
-impl NotePropertySection {
-    pub fn new<E: Arch>() -> NotePropertySection {
-        let mut hdr = ChunkHeader::new(".note.gnu.property", SHT_NOTE, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
+impl<E: Arch> NotePropertySection<E> {
+    pub fn new() -> NotePropertySection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".note.gnu.property", SHT_NOTE, SHF_ALLOC as u64);
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         NotePropertySection {
             hdr,
             contents: Vec::new(),
         }
+    }
+}
+
+impl<E: Arch> Default for NotePropertySection<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -280,7 +295,7 @@ pub mod note_property {
     // Merges input files' .note.gnu.property values.
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         // Obtain the list of keys
-        let files: Vec<&crate::input_files::ObjectFile> = ctx
+        let files: Vec<&crate::input_files::ObjectFile<E>> = ctx
             .objs
             .iter()
             .filter(|file| !ctx.is_internal(file.id()))
@@ -289,7 +304,7 @@ pub mod note_property {
             .iter()
             .flat_map(|f| f.gnu_properties.keys().copied())
             .collect();
-        let value = |f: &crate::input_files::ObjectFile, key: u32| {
+        let value = |f: &crate::input_files::ObjectFile<E>, key: u32| {
             f.gnu_properties.get(&key).copied().unwrap_or(0)
         };
 
@@ -331,11 +346,11 @@ pub mod note_property {
         // Serialize the map
         let contents: Vec<(u32, u32)> = map.into_iter().filter(|&(_, v)| v != 0).collect();
         let sec = ctx.note_property.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = if contents.is_empty() {
+        sec.hdr.shdr.sh_size.set(if contents.is_empty() {
             0
         } else {
             (16 + contents.len() * entry_size::<E>()) as u64
-        };
+        });
         sec.contents = contents;
     }
 
@@ -343,7 +358,7 @@ pub mod note_property {
         let sec = ctx.note_property.as_ref().unwrap();
         buf.fill(0);
         E::Endian::write_u32(buf, 4); // Name size
-        E::Endian::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size as u32 - 16); // Content size
+        E::Endian::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size.get() as u32 - 16); // Content size
         E::Endian::write_u32(&mut buf[8..], NT_GNU_PROPERTY_TYPE_0);
         buf[12..16].copy_from_slice(b"GNU\0");
         for (i, &(ty, val)) in sec.contents.iter().enumerate() {
@@ -359,16 +374,16 @@ pub mod note_property {
 // separate debug info file. gdb can read the section to read debug info
 // from an external file.
 #[derive(Debug)]
-pub struct GnuDebuglinkSection {
-    pub hdr: ChunkHeader,
+pub struct GnuDebuglinkSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub filename: String,
     pub crc32: u32,
 }
 
-impl GnuDebuglinkSection {
-    pub fn new() -> GnuDebuglinkSection {
-        let mut hdr = ChunkHeader::new(".gnu_debuglink", SHT_PROGBITS, 0);
-        hdr.shdr.sh_addralign = 4;
+impl<E: Layout> GnuDebuglinkSection<E> {
+    pub fn new() -> GnuDebuglinkSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".gnu_debuglink", SHT_PROGBITS, 0);
+        hdr.shdr.sh_addralign.set(4);
         GnuDebuglinkSection {
             hdr,
             filename: String::new(),
@@ -377,7 +392,7 @@ impl GnuDebuglinkSection {
     }
 }
 
-impl Default for GnuDebuglinkSection {
+impl<E: Layout> Default for GnuDebuglinkSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -389,7 +404,10 @@ pub mod gnu_debuglink {
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let filename = path_filename(&ctx.args.separate_debug_file);
         let sec = ctx.gnu_debuglink.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = align_to(filename.len() as u64 + 1, 4) + 4;
+        sec.hdr
+            .shdr
+            .sh_size
+            .set(align_to(filename.len() as u64 + 1, 4) + 4);
         sec.filename = filename;
     }
 
@@ -406,21 +424,21 @@ pub mod gnu_debuglink {
 // a page boundary. We append this section at end of a segment so that
 // the segment always ends at a page boundary.
 #[derive(Debug)]
-pub struct RelroPaddingSection {
-    pub hdr: ChunkHeader,
+pub struct RelroPaddingSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl RelroPaddingSection {
-    pub fn new() -> RelroPaddingSection {
+impl<E: Layout> RelroPaddingSection<E> {
+    pub fn new() -> RelroPaddingSection<E> {
         let mut hdr =
-            ChunkHeader::new(".relro_padding", SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);
+            ChunkHeader::<E>::new(".relro_padding", SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = true;
-        hdr.shdr.sh_size = 1;
+        hdr.shdr.sh_size.set(1);
         RelroPaddingSection { hdr }
     }
 }
 
-impl Default for RelroPaddingSection {
+impl<E: Layout> Default for RelroPaddingSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -430,9 +448,9 @@ impl Default for RelroPaddingSection {
 // overall size of an ELF file. CompressedSection represents a compressed
 // section.
 #[derive(Debug)]
-pub struct CompressedSection {
-    pub hdr: ChunkHeader,
-    pub chdr: CompressionHeader,
+pub struct CompressedSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
+    pub chdr: ElfChdr<E>,
     pub compressor: Compressor,
     /// Kept for --gdb-index, which reads the uncompressed contents.
     pub uncompressed_data: Option<Vec<u8>>,
@@ -448,7 +466,7 @@ impl std::fmt::Debug for Compressor {
 pub mod compressed {
     use super::*;
 
-    pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection {
+    pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
         let hdr = ctx.chunk_header(original);
 
         // The C++ implementation avoids zero-initializing this scratch buffer:
@@ -456,7 +474,7 @@ pub mod compressed {
         // Allocate a temporary buffer to write uncompressed contents. Note
         // that we use u8[] instead of std::vector<u8> to avoid the cost of
         // zero-initialization, as sh_size can be very large.
-        let mut buf = vec![0u8; hdr.shdr.sh_size as usize];
+        let mut buf = vec![0u8; hdr.shdr.sh_size.get() as usize];
 
         // Write uncompressed contents and then compress them
         output_chunks::write_to(ctx, original, &mut buf);
@@ -469,23 +487,27 @@ pub mod compressed {
         };
 
         // Compute header field values
-        let chdr = CompressionHeader {
-            ch_type: ctx.args.compress_debug_sections,
-            ch_size: hdr.shdr.sh_size,
-            ch_addralign: hdr.shdr.sh_addralign,
-        };
-        let mut new_hdr = ChunkHeader::with_name(
+        let mut chdr = ElfChdr::<E>::default();
+        chdr.ch_type_mut().set(ctx.args.compress_debug_sections);
+        chdr.ch_size_mut().set(hdr.shdr.sh_size.get());
+        chdr.ch_addralign_mut().set(hdr.shdr.sh_addralign.get());
+        let mut new_hdr = ChunkHeader::<E>::with_name(
             hdr.name,
-            hdr.shdr.sh_type,
-            hdr.shdr.sh_flags | SHF_COMPRESSED as u64,
+            hdr.shdr.sh_type.get(),
+            hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64,
         );
         new_hdr.shndx = hdr.shndx;
         new_hdr.is_compressed = true;
         new_hdr.shdr = hdr.shdr;
-        new_hdr.shdr.sh_flags |= SHF_COMPRESSED as u64;
-        new_hdr.shdr.sh_addralign = 1;
-        new_hdr.shdr.sh_size =
-            (CompressionHeader::size::<E>() + compressor.compressed_size()) as u64;
+        new_hdr
+            .shdr
+            .sh_flags
+            .set(new_hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64);
+        new_hdr.shdr.sh_addralign.set(1);
+        new_hdr
+            .shdr
+            .sh_size
+            .set((std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64);
 
         // We can discard the uncompressed contents unless --gdb-index is given
         CompressedSection {
@@ -499,17 +521,17 @@ pub mod compressed {
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
         let sec = &ctx.compressed_sections[i as usize];
-        sec.chdr.write::<E>(buf);
+        sec.chdr.write(buf);
         sec.compressor
-            .write_to(&mut buf[CompressionHeader::size::<E>()..]);
+            .write_to(&mut buf[std::mem::size_of::<ElfChdr<E>>()..]);
     }
 }
 
 // RelocSection represents a relocation table for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
 #[derive(Debug)]
-pub struct RelocSection {
-    pub hdr: ChunkHeader,
+pub struct RelocSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub output_section: OutputSectionId,
     /// The index of the first relocation of each member.
     offsets: Vec<u64>,
@@ -518,7 +540,7 @@ pub struct RelocSection {
 pub mod reloc {
     use super::*;
 
-    pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection {
+    pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
         let osec = &ctx.output_sections[osec_id.index()];
         let name = format!(
             "{}{}",
@@ -526,13 +548,15 @@ pub mod reloc {
             osec.hdr.name
         );
         let name = BStr::new(crate::util::leak_bytes(name.into_bytes()));
-        let mut hdr = ChunkHeader::with_name(
+        let mut hdr = ChunkHeader::<E>::with_name(
             name,
             if E::IS_RELA { SHT_RELA } else { SHT_REL },
             SHF_INFO_LINK as u64,
         );
-        hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+        hdr.shdr
+            .sh_entsize
+            .set(std::mem::size_of::<ElfRel<E>>() as u64);
 
         // Compute an offset for each input section
         let mut offsets = Vec::with_capacity(osec.members.len());
@@ -543,7 +567,9 @@ pub mod reloc {
             let file = &ctx.objs[isec.file.index()];
             sum += isec.rels::<E>(file).len() as u64;
         }
-        hdr.shdr.sh_size = sum * std::mem::size_of::<ElfRel<E>>() as u64;
+        hdr.shdr
+            .sh_size
+            .set(sum * std::mem::size_of::<ElfRel<E>>() as u64);
         RelocSection {
             hdr,
             output_section: osec_id,
@@ -556,8 +582,8 @@ pub mod reloc {
         let osec = ctx.reloc_sections[i as usize].output_section;
         let osec_shndx = ctx.output_sections[osec.index()].hdr.shndx;
         let sec = &mut ctx.reloc_sections[i as usize];
-        sec.hdr.shdr.sh_link = symtab_shndx;
-        sec.hdr.shdr.sh_info = osec_shndx;
+        sec.hdr.shdr.sh_link.set(symtab_shndx);
+        sec.hdr.shdr.sh_info.set(osec_shndx);
     }
 
     // Translates an input relocation's symbol reference into the {r_sym, addend}
@@ -629,7 +655,7 @@ pub mod reloc {
             let base = sec.offsets[mi] as usize;
             for (j, rel) in isec.rels::<E>(file).iter().enumerate() {
                 let (symidx, addend) = symidx_addend(ctx, isec, rel);
-                let mut r_offset = osec.hdr.shdr.sh_addr + isec.offset() + rel.r_offset();
+                let mut r_offset = osec.hdr.shdr.sh_addr.get() + isec.offset() + rel.r_offset();
                 if E::IS_RISCV || E::IS_LOONGARCH {
                     // On RISC-V and LoongArch, relaxation may have deleted instructions,
                     // shifting this relocation's offset.
@@ -662,18 +688,18 @@ pub mod reloc {
 // ComdatGroupSection represents a comdat group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
 #[derive(Debug)]
-pub struct ComdatGroupSection {
-    pub hdr: ChunkHeader,
+pub struct ComdatGroupSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub sym: SymbolId,
     pub members: Vec<ChunkId>,
 }
 
-impl ComdatGroupSection {
-    pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> ComdatGroupSection {
-        let mut hdr = ChunkHeader::new(".group", SHT_GROUP, 0);
-        hdr.shdr.sh_entsize = 4;
-        hdr.shdr.sh_addralign = 4;
-        hdr.shdr.sh_size = (members.len() * 4 + 4) as u64;
+impl<E: Layout> ComdatGroupSection<E> {
+    pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> ComdatGroupSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(".group", SHT_GROUP, 0);
+        hdr.shdr.sh_entsize.set(4);
+        hdr.shdr.sh_addralign.set(4);
+        hdr.shdr.sh_size.set((members.len() * 4 + 4) as u64);
         ComdatGroupSection { hdr, sym, members }
     }
 }
@@ -693,8 +719,8 @@ pub mod comdat_group {
         };
         let symtab_shndx = ctx.symtab.hdr.shndx;
         let sec = &mut ctx.comdat_group_sections[i as usize];
-        sec.hdr.shdr.sh_link = symtab_shndx;
-        sec.hdr.shdr.sh_info = sh_info;
+        sec.hdr.shdr.sh_link.set(symtab_shndx);
+        sec.hdr.shdr.sh_info.set(sh_info);
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
@@ -716,21 +742,21 @@ pub fn for_each_output_section<E: Arch>(ctx: &Context<E>, f: impl Fn(OutputSecti
 /// `.riscv.attributes` describes the ISA the output requires, merged
 /// from the input files' attributes.
 #[derive(Debug)]
-pub struct RiscvAttributesSection {
-    pub hdr: ChunkHeader,
+pub struct RiscvAttributesSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl RiscvAttributesSection {
-    pub fn new() -> RiscvAttributesSection {
+impl<E: Layout> RiscvAttributesSection<E> {
+    pub fn new() -> RiscvAttributesSection<E> {
         RiscvAttributesSection {
-            hdr: ChunkHeader::new(".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0),
+            hdr: ChunkHeader::<E>::new(".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0),
             contents: Vec::new(),
         }
     }
 }
 
-impl Default for RiscvAttributesSection {
+impl<E: Layout> Default for RiscvAttributesSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -745,7 +771,7 @@ pub mod riscv_attributes {
         }
         let contents = crate::arch::riscv::attributes_contents(ctx);
         let sec = ctx.riscv_attributes.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = contents.len() as u64;
+        sec.hdr.shdr.sh_size.set(contents.len() as u64);
         sec.contents = contents;
     }
 
@@ -758,24 +784,26 @@ pub mod riscv_attributes {
 /// `.save_restore_regs`, the register save and restore routines that GCC
 /// expects the linker to provide on PowerPC64 ELFv2.
 #[derive(Debug)]
-pub struct Ppc64SaveRestoreSection {
-    pub hdr: ChunkHeader,
+pub struct Ppc64SaveRestoreSection<E: Layout> {
+    pub hdr: ChunkHeader<E>,
 }
 
-impl Ppc64SaveRestoreSection {
-    pub fn new() -> Ppc64SaveRestoreSection {
-        let mut hdr = ChunkHeader::new(
+impl<E: Layout> Ppc64SaveRestoreSection<E> {
+    pub fn new() -> Ppc64SaveRestoreSection<E> {
+        let mut hdr = ChunkHeader::<E>::new(
             ".save_restore_regs",
             SHT_PROGBITS,
             (SHF_ALLOC | SHF_EXECINSTR) as u64,
         );
-        hdr.shdr.sh_addralign = 16;
-        hdr.shdr.sh_size = (crate::arch::ppc64v2::SAVE_RESTORE_INSNS.len() * 4) as u64;
+        hdr.shdr.sh_addralign.set(16);
+        hdr.shdr
+            .sh_size
+            .set((crate::arch::ppc64v2::SAVE_RESTORE_INSNS.len() * 4) as u64);
         Ppc64SaveRestoreSection { hdr }
     }
 }
 
-impl Default for Ppc64SaveRestoreSection {
+impl<E: Layout> Default for Ppc64SaveRestoreSection<E> {
     fn default() -> Self {
         Self::new()
     }
