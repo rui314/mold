@@ -340,12 +340,12 @@ where
             .get()
             .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
             .wrapping_sub(16);
-        LittleEndian::write_u32(&mut buf[16..], gotplt as u32);
+        End::write_u32(&mut buf[16..], gotplt as u32);
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         write_code(buf, &PLT_ENTRY);
-        LittleEndian::write_u32(
+        End::write_u32(
             &mut buf[12..],
             sym.gotplt_addr(ctx)
                 .wrapping_sub(sym.plt_addr(ctx))
@@ -355,7 +355,7 @@ where
 
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         write_code(buf, &PLT_ENTRY);
-        LittleEndian::write_u32(
+        End::write_u32(
             &mut buf[12..],
             sym.got_pltgot_addr(ctx)
                 .wrapping_sub(sym.plt_addr(ctx))
@@ -794,7 +794,7 @@ where
             let p = addr + thunk.offsets[i];
             let entry = &mut buf[thunk.offsets[i] as usize..];
             entry[..16].copy_from_slice(&ENTRY);
-            LittleEndian::write_u32(&mut entry[12..], s.wrapping_sub(p).wrapping_sub(16) as u32);
+            End::write_u32(&mut entry[12..], s.wrapping_sub(p).wrapping_sub(16) as u32);
         }
     }
 
