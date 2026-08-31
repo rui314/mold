@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy)]
 struct TargetSpec {

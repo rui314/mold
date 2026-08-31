@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # This script installs binary packages needed to test mold.
 # Feel free to send me a PR if your OS is not on this list.
 
@@ -11,6 +11,7 @@ case "$ID" in
 ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
   apt-get update
   apt-get install -y gcc g++ clang gdb
+  apt-get install -y qemu-user {gcc,g++}-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4}-linux-gnu {gcc,g++}-arm-linux-gnueabihf
   ;;
 fedora | fedora-* | amzn | rhel | centos)
   dnf install -y gcc-c++ glibc-static libstdc++-static diffutils util-linux tar
