@@ -563,7 +563,7 @@ fn log_says_skipped(path: &Path) -> bool {
 }
 
 fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
-    let outcome = match File::create(&job.log) {
+    let mut outcome = match File::create(&job.log) {
         Err(err) => {
             eprintln!("{}: cannot create {}: {err}", job.name, job.log.display());
             Outcome::Fail
@@ -651,6 +651,23 @@ fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
             }
         }
     };
+
+    // Keep failed test directories for diagnosis, but do not retain the
+    // successful tests' potentially large temporary files.
+    if matches!(outcome, Outcome::Pass | Outcome::Skip) {
+        let dir = root
+            .join("out/test")
+            .join(&job.target.label)
+            .join(&job.name);
+        match fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => {
+                eprintln!("{}: cannot remove {}: {err}", job.name, dir.display());
+                outcome = Outcome::Fail;
+            }
+        }
+    }
 
     if let Err(err) = fs::write(&job.status_file, format!("{}\n", outcome.status())) {
         eprintln!(
