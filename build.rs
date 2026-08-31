@@ -17,13 +17,16 @@ fn main() {
 
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let sanitizer = std::env::var("CARGO_CFG_SANITIZE")
+        .ok()
+        .map(|value| format!("-fsanitize={value}"));
 
     let object = out_dir.join("lto-message.o");
-    let status = Command::new(&cc)
-        .args(["-c", "-O2", "-fPIC", "-o"])
-        .arg(&object)
-        .arg("c/lto-message.c")
-        .status();
+    let mut command = Command::new(&cc);
+    command.args(["-c", "-O2", "-fPIC", "-o"]);
+    command.arg(&object).arg("c/lto-message.c");
+    command.args(&sanitizer);
+    let status = command.status();
     if !matches!(status, Ok(s) if s.success()) {
         panic!("could not compile c/lto-message.c with {cc}");
     }
@@ -39,15 +42,19 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=ltomessage");
 
-    // OUT_DIR is <target>/<profile>/build/<pkg>-<hash>/out.
-    let profile_dir = out_dir.ancestors().nth(3).unwrap().to_path_buf();
+    // Cargo uses different build directory layouts with and without
+    // -Zbuild-std, so find the profile directory by name.
+    let profile = std::env::var("PROFILE").unwrap();
+    let profile_dir = out_dir
+        .ancestors()
+        .find(|path| path.file_name().and_then(|name| name.to_str()) == Some(profile.as_str()))
+        .unwrap();
     let wrapper = profile_dir.join("mold-wrapper.so");
-    let status = Command::new(&cc)
-        .args(["-shared", "-fPIC", "-O2", "-o"])
-        .arg(&wrapper)
-        .arg("c/mold-wrapper.c")
-        .arg("-ldl")
-        .status();
+    let mut command = Command::new(&cc);
+    command.args(["-shared", "-fPIC", "-O2", "-o"]);
+    command.arg(&wrapper).arg("c/mold-wrapper.c").arg("-ldl");
+    command.args(&sanitizer);
+    let status = command.status();
     if !matches!(status, Ok(s) if s.success()) {
         println!("cargo:warning=could not build mold-wrapper.so; `mold -run` will not work");
     }

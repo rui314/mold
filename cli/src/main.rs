@@ -11,6 +11,7 @@ use mold::error::Diagnostics;
 // it in this file.
 //
 // Rust selects the allocator in this executable for the same one-place rule.
+#[cfg(not(feature = "system-allocator"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
