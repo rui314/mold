@@ -264,6 +264,7 @@ dependencies = [
  "mold-target-sh4be",
  "mold-target-sparc64",
  "mold-target-x86_64",
+ "mold-tests",
 ]
 
 [[package]]
@@ -411,7 +412,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mold-test-runner"
+name = "mold-tests"
 version = "2.42.0"
 dependencies = [
  "libc",

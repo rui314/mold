@@ -92,7 +92,9 @@ impl Arch for I386 {
             buf[..16].copy_from_slice(&INSN);
             write_u32(
                 &mut buf[3..],
-                (gotplt - ctx.got.hdr.shdr.sh_addr + 4) as u32,
+                gotplt
+                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr)
+                    .wrapping_add(4) as u32,
             );
         } else {
             const INSN: [u8; 16] = [
@@ -120,7 +122,7 @@ impl Arch for I386 {
             write_u32(&mut buf[1..], reloc_offset as u32);
             write_u32(
                 &mut buf[7..],
-                (sym.gotplt_addr(ctx) - ctx.got.hdr.shdr.sh_addr) as u32,
+                sym.gotplt_addr(ctx).wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
             );
         } else {
             const INSN: [u8; 16] = [
@@ -143,7 +145,8 @@ impl Arch for I386 {
             buf[..8].copy_from_slice(&INSN);
             write_u32(
                 &mut buf[2..],
-                (sym.got_pltgot_addr(ctx) - ctx.got.hdr.shdr.sh_addr) as u32,
+                sym.got_pltgot_addr(ctx)
+                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr) as u32,
             );
         } else {
             const INSN: [u8; 8] = [

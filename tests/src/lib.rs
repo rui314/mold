@@ -1,7 +1,7 @@
-//! Runs mold's upstream shell tests in parallel.
+//! Runs mold's shell tests in parallel for Cargo's test harness.
 //!
 //! The tests themselves deliberately remain shell scripts so that this port
-//! exercises exactly the same inputs and toolchains as C++ mold. This binary
+//! exercises exactly the same inputs and toolchains as C++ mold. The runner
 //! owns test discovery, target selection, scheduling, timeouts and reporting.
 
 use std::collections::BTreeMap;
@@ -10,7 +10,7 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -221,8 +221,9 @@ impl Counts {
 
 fn usage() -> ! {
     eprintln!(
-        "Usage: run-tests.sh [-j N] [--native | --all | --triple TRIPLE] \
-         [--cpu CPU] [--timeout SECONDS] [--list] [pattern ...]"
+        "Usage: cargo test [pattern] [-- [--test-threads N] \
+         [--native | --all | --triple TRIPLE] [--cpu CPU] \
+         [--timeout SECONDS] [--list]]"
     );
     std::process::exit(2);
 }
@@ -236,7 +237,7 @@ fn parse_usize(value: Option<String>) -> usize {
 
 fn parse_options() -> Options {
     let mut jobs = thread::available_parallelism().map_or(1, usize::from);
-    let mut mode = Mode::Native;
+    let mut mode = Mode::All;
     let mut mode_was_set = false;
     let mut triple = None;
     let mut cpu = None;
@@ -247,7 +248,7 @@ fn parse_options() -> Options {
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "-j" | "--jobs" => jobs = parse_usize(args.next()),
+            "-j" | "--jobs" | "--test-threads" => jobs = parse_usize(args.next()),
             "--native" => {
                 mode = Mode::Native;
                 mode_was_set = true;
@@ -274,9 +275,13 @@ fn parse_options() -> Options {
             }
             "--timeout" => timeout = Duration::from_secs(parse_usize(args.next()) as u64),
             "--list" => list = true,
+            "--nocapture" | "--show-output" => {}
             "-h" | "--help" => usage(),
             _ if arg.starts_with("-j") && arg.len() > 2 => {
                 jobs = parse_usize(Some(arg[2..].to_owned()))
+            }
+            _ if arg.starts_with("--test-threads=") => {
+                jobs = parse_usize(arg.split_once('=').map(|(_, value)| value.to_owned()))
             }
             _ if arg.starts_with('-') => usage(),
             _ => patterns.push(arg),
@@ -468,18 +473,69 @@ fn clear_results(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn replace_file_link(source: &Path, destination: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_dir() => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} is a directory", destination.display()),
+            ));
+        }
+        Ok(_) => fs::remove_file(destination)?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err),
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, destination)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::copy(source, destination).map(|_| ())
+    }
+}
+
+fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
+    let mold = mold.canonicalize()?;
+    let profile_dir = mold.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} has no parent directory", mold.display()),
+        )
+    })?;
+    let wrapper = profile_dir.join("mold-wrapper.so");
+    if !wrapper.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("{} does not exist", wrapper.display()),
+        ));
+    }
+
+    // C++ mold runs its tests from the build directory, which contains mold,
+    // ld and mold-wrapper.so. Give Cargo's test binary the same layout without
+    // writing generated files into the source tree.
+    let work_dir = profile_dir.join("mold-test");
+    fs::create_dir_all(&work_dir)?;
+    replace_file_link(&mold, &work_dir.join("mold"))?;
+    replace_file_link(&mold, &work_dir.join("ld"))?;
+    replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
+    Ok(work_dir)
+}
+
 fn make_jobs(
-    root: &Path,
+    cases_dir: &Path,
+    work_dir: &Path,
     targets: Vec<Target>,
     patterns: &[String],
     clean: bool,
 ) -> io::Result<Vec<TestJob>> {
-    let scripts = discover_scripts(&root.join("test"))?;
+    let scripts = discover_scripts(cases_dir)?;
     let mut jobs = Vec::new();
 
     for target in targets {
         let target = Arc::new(target);
-        let result_dir = root.join("out/test/results").join(&target.label);
+        let result_dir = work_dir.join("out/test/results").join(&target.label);
         if clean {
             clear_results(&result_dir)?;
         }
@@ -711,18 +767,28 @@ fn print_summary(results: &[TestResult]) -> bool {
     total.fail == 0
 }
 
-fn main() {
+pub fn run(cases_dir: &Path, mold: &Path) -> ExitCode {
     let options = parse_options();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let work_dir = prepare_work_dir(mold).unwrap_or_else(|err| {
+        eprintln!("mold-tests: {err}");
+        std::process::exit(1);
+    });
     let (targets, unavailable) = selected_targets(&options);
-    let jobs = make_jobs(root, targets, &options.patterns, !options.list).unwrap_or_else(|err| {
-        eprintln!("mold-test-runner: {err}");
+    let jobs = make_jobs(
+        cases_dir,
+        &work_dir,
+        targets,
+        &options.patterns,
+        !options.list,
+    )
+    .unwrap_or_else(|err| {
+        eprintln!("mold-tests: {err}");
         std::process::exit(1);
     });
 
     if options.list {
         print_inventory(&jobs, &unavailable);
-        return;
+        return ExitCode::SUCCESS;
     }
     if options.mode == Mode::All && !unavailable.is_empty() {
         let targets = unavailable
@@ -733,9 +799,11 @@ fn main() {
         eprintln!("skipping targets without both compiler and QEMU: {targets}");
     }
 
-    let results = run_jobs(root, jobs, &options);
-    if !print_summary(&results) {
-        std::process::exit(1);
+    let results = run_jobs(&work_dir, jobs, &options);
+    if print_summary(&results) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 

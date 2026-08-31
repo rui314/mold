@@ -1016,7 +1016,7 @@ impl Symbol {
                 // debug info section refers a string constant in .rodata.
                 return 0;
             }
-            return ctx.fragment_addr(frag_ref) + self.value;
+            return ctx.fragment_addr(frag_ref).wrapping_add(self.value);
         }
 
         if self.has_copyrel() {
@@ -1088,7 +1088,7 @@ impl Symbol {
                     // relocations.
                     return 0;
                 }
-                isec.addr(ctx) + self.value
+                isec.addr(ctx).wrapping_add(self.value)
             }
             // Synthetic symbols hold their final address in `value`, as do
             // absolute ones.

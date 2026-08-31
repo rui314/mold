@@ -9,6 +9,11 @@ license = "MIT"
 name = "mold"
 path = "src/main.rs"
 
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = false
+
 [dependencies]
 mold-mimalloc = { path = "../mimalloc" }
 mold = { path = ".." }
@@ -32,6 +37,9 @@ mold-target-sh4 = { path = "../targets/sh4", optional = true }
 mold-target-sh4be = { path = "../targets/sh4be", optional = true }
 mold-target-loongarch64 = { path = "../targets/loongarch64", optional = true }
 mold-target-loongarch32 = { path = "../targets/loongarch32", optional = true }
+
+[dev-dependencies]
+mold-tests = { path = "../tests" }
 
 # One feature per target. All are built by default; a build for one
 # target alone (`--no-default-features --features x86_64`) is much faster.

@@ -31,19 +31,24 @@ cargo build --release -p mold-cli --no-default-features --features x86_64
 
 ## Testing
 
-The tests are mold's own shell scripts, copied unchanged into `test/`.
-`run-tests.sh` runs them in parallel and prints a summary:
+The tests are mold's own shell scripts, copied unchanged into `tests/cases/`.
+`cargo test` runs the Rust unit tests and the complete available shell-test
+matrix in parallel:
 
 ```
-./run-tests.sh                       # the host's tests
-./run-tests.sh -j 8 tls-             # only tests matching a pattern
-TRIPLE=aarch64-linux-gnu ./run-tests.sh   # another target, with a cross
-                                          # compiler and qemu-user
+cargo test
+cargo test tls-
+cargo test -- --test-threads 8
+cargo test -p mold-cli --test integration -- --native
+cargo test -p mold-cli --test integration -- \
+  --triple aarch64-linux-gnu
 ```
 
-Logs go to `out/test/results/<machine>/`. As in mold's CMake setup, a
-target runs the generic tests plus the ones prefixed with its
-architecture; tests whose prerequisites are missing skip themselves.
+The last two forms select only the native target or one cross target. Logs go
+to `target/debug/mold-test/out/test/results/<machine>/` (or the corresponding
+Cargo profile directory). As in mold's CMake setup, a target runs the generic
+tests plus the ones prefixed with its architecture; tests whose prerequisites
+are missing skip themselves.
 
 ## Targets
 

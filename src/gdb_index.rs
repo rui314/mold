@@ -509,10 +509,10 @@ fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64
         if start == 0 && end == 0 {
             return vec;
         }
-        if start == (1u64 << (8 * E::WORD_SIZE as u32)).wrapping_sub(1) {
+        if start == u64::MAX >> (64 - 8 * E::WORD_SIZE as u32) {
             base = end;
         } else {
-            vec.push((start + base, end + base));
+            vec.push((start.wrapping_add(base), end.wrapping_add(base)));
         }
     }
 }

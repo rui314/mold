@@ -1,8 +1,8 @@
 [package]
-name = "mold-test-runner"
+name = "mold-tests"
 version = "2.42.0"
 edition = "2021"
-description = "Runner for mold's shell test suite"
+description = "Test support for mold's shell test suite"
 license = "MIT"
 publish = false
 

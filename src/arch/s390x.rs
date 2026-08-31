@@ -97,7 +97,7 @@ fn relaxes_gotent(ctx: &Context<S390x>, isec: &InputSection, rel: &ElfRel, sym: 
     let val = sym
         .addr(ctx)
         .wrapping_add(rel.r_addend as u64)
-        .wrapping_sub(isec.addr(ctx) + rel.r_offset) as i64;
+        .wrapping_sub(isec.addr(ctx).wrapping_add(rel.r_offset)) as i64;
     op & 0xff0f == 0xc408 && rel.r_addend == 2 && val & 1 == 0 && is_int(val, 33)
 }
 

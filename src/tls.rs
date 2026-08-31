@@ -174,9 +174,10 @@ pub fn tp_addr<E: Arch>(phdr: &ElfPhdr) -> u64 {
         // On ARM and SH4, the runtime appends two words at the beginning
         // of TLV template image when copying TLVs to the TLS block, so we need
         // to offset it.
-        Family::Arm64 | Family::Arm32 | Family::Sh4 => {
-            align_down(phdr.p_vaddr - E::WORD_SIZE as u64 * 2, phdr.p_align)
-        }
+        Family::Arm64 | Family::Arm32 | Family::Sh4 => align_down(
+            phdr.p_vaddr.wrapping_sub(E::WORD_SIZE as u64 * 2),
+            phdr.p_align,
+        ),
         // On PowerPC and m68k, TP is 0x7000 (28 KiB) past the beginning
         // of the TLV block to maximize the addressable range of load/store
         // instructions with 16-bits signed immediates. It's not exactly 0x8000
