@@ -60,7 +60,7 @@ fn preallocate(file: &File, size: u64) {
     // descriptor; the statfs buffer is fully written before it is read.
     unsafe {
         let mut fs: libc::statfs = std::mem::zeroed();
-        if libc::fstatfs(file.as_raw_fd(), &mut fs) == 0 && fs.f_type != libc::TMPFS_MAGIC {
+        if libc::fstatfs(file.as_raw_fd(), &mut fs) != 0 || fs.f_type != libc::TMPFS_MAGIC as _ {
             libc::fallocate(file.as_raw_fd(), 0, 0, size as libc::off_t);
         }
     }
