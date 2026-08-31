@@ -1106,8 +1106,7 @@ where
                     //  sw   t0, %tprel_lo(foo)(tp)
                     //
                     // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-                    let val = sym
-                        .addr(ctx)
+                    let val = sym.addr(ctx)
                         .wrapping_add(r.r_addend() as u64)
                         .wrapping_sub(ctx.tp_addr) as i64;
                     if is_int(val, 12) {
