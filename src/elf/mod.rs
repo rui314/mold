@@ -42,13 +42,11 @@ use std::marker::PhantomData;
 
 pub use consts::*;
 
-use crate::arch::Arch;
+use crate::arch::{Arch, I386, X86_64};
 
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
-/// relocation record format. Targets implement this through [`Arch`], and
-/// a few plain layouts exist for peeking into files before the target is
-/// known.
+/// relocation record format. Targets implement this through [`Arch`].
 pub trait Layout: Copy + Default + Send + Sync + 'static {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
@@ -59,54 +57,6 @@ pub trait Layout: Copy + Default + Send + Sync + 'static {
     const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Elf32Le;
-
-impl Layout for Elf32Le {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = Elf32RelaLe;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Elf64Le;
-
-impl Layout for Elf64Le {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Elf32Be;
-
-impl Layout for Elf32Be {
-    type Endian = BigEndian;
-    type Word = Ub32;
-    type Sym = Elf32Sym<BigEndian>;
-    type Phdr = Elf32Phdr<BigEndian>;
-    type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelaBe;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Elf64Be;
-
-impl Layout for Elf64Be {
-    type Endian = BigEndian;
-    type Word = Ub64;
-    type Sym = Elf64Sym<BigEndian>;
-    type Phdr = Elf64Phdr<BigEndian>;
-    type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = Elf64RelaBe;
 }
 
 /// Byte order of an ELF file, as a type-level marker.
@@ -207,33 +157,6 @@ impl Endian for BigEndian {
     const IS_LITTLE: bool = false;
 }
 
-/// A record with a target-dependent on-disk encoding.
-pub trait Record: Sized {
-    /// The encoded size in bytes.
-    fn size<E: Layout>() -> usize;
-
-    /// Decodes a record from the beginning of `bytes`.
-    fn parse<E: Layout>(bytes: &[u8]) -> Self;
-
-    /// Encodes the record to the beginning of `buf`.
-    fn write<E: Layout>(&self, buf: &mut [u8]);
-
-    /// Decodes a contiguous table of records.
-    fn parse_all<E: Layout>(bytes: &[u8]) -> Vec<Self> {
-        bytes
-            .chunks_exact(Self::size::<E>())
-            .map(Self::parse::<E>)
-            .collect()
-    }
-
-    /// Encodes a slice of records back to back.
-    fn write_all<E: Layout>(records: &[Self], buf: &mut [u8]) {
-        for (record, slot) in records.iter().zip(buf.chunks_exact_mut(Self::size::<E>())) {
-            record.write::<E>(slot);
-        }
-    }
-}
-
 /// A record stored in its target-dependent file representation.
 ///
 /// # Safety
@@ -322,10 +245,10 @@ pub struct ElfEhdr<E: Layout> {
 // not insert padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfEhdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfEhdr<Elf32Le>>() == 52);
-const _: () = assert!(std::mem::size_of::<ElfEhdr<Elf64Le>>() == 64);
-const _: () = assert!(std::mem::align_of::<ElfEhdr<Elf32Le>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfEhdr<Elf64Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<ElfEhdr<I386>>() == 52);
+const _: () = assert!(std::mem::size_of::<ElfEhdr<X86_64>>() == 64);
+const _: () = assert!(std::mem::align_of::<ElfEhdr<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfEhdr<X86_64>>() == 1);
 
 /// A section header.
 #[repr(C)]
@@ -347,10 +270,10 @@ pub struct ElfShdr<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfShdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfShdr<Elf32Le>>() == 40);
-const _: () = assert!(std::mem::size_of::<ElfShdr<Elf64Le>>() == 64);
-const _: () = assert!(std::mem::align_of::<ElfShdr<Elf32Le>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfShdr<Elf64Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<ElfShdr<I386>>() == 40);
+const _: () = assert!(std::mem::size_of::<ElfShdr<X86_64>>() == 64);
+const _: () = assert!(std::mem::align_of::<ElfShdr<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfShdr<X86_64>>() == 1);
 
 /// A program header.
 #[repr(C)]
@@ -1170,10 +1093,10 @@ pub struct ElfDyn<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfDyn<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfDyn<Elf32Le>>() == 8);
-const _: () = assert!(std::mem::size_of::<ElfDyn<Elf64Le>>() == 16);
-const _: () = assert!(std::mem::align_of::<ElfDyn<Elf32Le>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfDyn<Elf64Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<ElfDyn<I386>>() == 8);
+const _: () = assert!(std::mem::size_of::<ElfDyn<X86_64>>() == 16);
+const _: () = assert!(std::mem::align_of::<ElfDyn<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfDyn<X86_64>>() == 1);
 
 /// The header of a compressed section.
 #[repr(C)]
@@ -1258,8 +1181,8 @@ pub struct ElfNhdr<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfNhdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfNhdr<Elf32Le>>() == 12);
-const _: () = assert!(std::mem::align_of::<ElfNhdr<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<ElfNhdr<I386>>() == 12);
+const _: () = assert!(std::mem::align_of::<ElfNhdr<I386>>() == 1);
 
 /// A `.gnu.version_r` file entry.
 #[repr(C)]
@@ -1276,7 +1199,7 @@ pub struct ElfVerneed<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfVerneed<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerneed<Elf32Le>>() == 16);
+const _: () = assert!(std::mem::size_of::<ElfVerneed<I386>>() == 16);
 
 /// A `.gnu.version_r` version entry.
 #[repr(C)]
@@ -1293,7 +1216,7 @@ pub struct ElfVernaux<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfVernaux<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVernaux<Elf32Le>>() == 16);
+const _: () = assert!(std::mem::size_of::<ElfVernaux<I386>>() == 16);
 
 /// A `.gnu.version_d` definition entry.
 #[repr(C)]
@@ -1312,7 +1235,7 @@ pub struct ElfVerdef<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfVerdef<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerdef<Elf32Le>>() == 20);
+const _: () = assert!(std::mem::size_of::<ElfVerdef<I386>>() == 20);
 
 /// A `.gnu.version_d` name entry.
 #[repr(C)]
@@ -1326,7 +1249,7 @@ pub struct ElfVerdaux<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for ElfVerdaux<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerdaux<Elf32Le>>() == 8);
+const _: () = assert!(std::mem::size_of::<ElfVerdaux<I386>>() == 8);
 
 /// SFrame is a simple unwind information format used as a lightweight
 /// alternative to .eh_frame. A .sframe section consists of a header, an
@@ -1355,8 +1278,8 @@ pub struct SFrameHeader<E: Layout> {
 // not insert padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for SFrameHeader<E> {}
 
-const _: () = assert!(std::mem::size_of::<SFrameHeader<Elf32Le>>() == 28);
-const _: () = assert!(std::mem::align_of::<SFrameHeader<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<SFrameHeader<I386>>() == 28);
+const _: () = assert!(std::mem::align_of::<SFrameHeader<I386>>() == 1);
 
 /// The index part of an SFrame Version 3 FDE. The func_start_offset field
 /// is PC-relative (relative to its own address) when the section flag
@@ -1373,5 +1296,5 @@ pub struct SFrameFdeIdx<E: Layout> {
 // padding between fields with alignment one.
 unsafe impl<E: Layout> FileRecord for SFrameFdeIdx<E> {}
 
-const _: () = assert!(std::mem::size_of::<SFrameFdeIdx<Elf32Le>>() == 16);
-const _: () = assert!(std::mem::align_of::<SFrameFdeIdx<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::size_of::<SFrameFdeIdx<I386>>() == 16);
+const _: () = assert!(std::mem::align_of::<SFrameFdeIdx<I386>>() == 1);

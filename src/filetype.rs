@@ -130,10 +130,10 @@ pub fn get_file_type(plugin: &str, mf: &MappedFile) -> FileType {
 
         if e_type == ET_REL {
             let is_lto = match (is_le, is_32) {
-                (true, true) => is_gcc_lto_obj::<Elf32Le>(data, has_gcc_plugin),
-                (true, false) => is_gcc_lto_obj::<Elf64Le>(data, has_gcc_plugin),
-                (false, true) => is_gcc_lto_obj::<Elf32Be>(data, has_gcc_plugin),
-                (false, false) => is_gcc_lto_obj::<Elf64Be>(data, has_gcc_plugin),
+                (true, true) => is_gcc_lto_obj::<arch::I386>(data, has_gcc_plugin),
+                (true, false) => is_gcc_lto_obj::<arch::X86_64>(data, has_gcc_plugin),
+                (false, true) => is_gcc_lto_obj::<arch::M68k>(data, has_gcc_plugin),
+                (false, false) => is_gcc_lto_obj::<arch::Sparc64>(data, has_gcc_plugin),
             };
             return if is_lto {
                 FileType::GccLtoObj
