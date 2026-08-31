@@ -292,6 +292,94 @@ pub const EF_LOONGARCH_ABI_MODIFIER_MASK: u32 = 0x7;
 pub const EF_LOONGARCH_OBJABI_V1: u32 = 0x40;
 pub const EF_LOONGARCH_OBJABI_MASK: u32 = 0xC0;
 
+// DWARF data types
+pub const DW_EH_PE_absptr: u32 = 0;
+pub const DW_EH_PE_omit: u32 = 0xff;
+pub const DW_EH_PE_uleb128: u32 = 0x01;
+pub const DW_EH_PE_udata2: u32 = 0x02;
+pub const DW_EH_PE_udata4: u32 = 0x03;
+pub const DW_EH_PE_udata8: u32 = 0x04;
+pub const DW_EH_PE_signed: u32 = 0x08;
+pub const DW_EH_PE_sleb128: u32 = 0x09;
+pub const DW_EH_PE_sdata2: u32 = 0x0a;
+pub const DW_EH_PE_sdata4: u32 = 0x0b;
+pub const DW_EH_PE_sdata8: u32 = 0x0c;
+pub const DW_EH_PE_pcrel: u32 = 0x10;
+pub const DW_EH_PE_textrel: u32 = 0x20;
+pub const DW_EH_PE_datarel: u32 = 0x30;
+pub const DW_EH_PE_funcrel: u32 = 0x40;
+pub const DW_EH_PE_aligned: u32 = 0x50;
+
+pub const DW_AT_low_pc: u32 = 0x11;
+pub const DW_AT_high_pc: u32 = 0x12;
+pub const DW_AT_producer: u32 = 0x25;
+pub const DW_AT_ranges: u32 = 0x55;
+pub const DW_AT_addr_base: u32 = 0x73;
+pub const DW_AT_rnglists_base: u32 = 0x74;
+
+pub const DW_TAG_compile_unit: u32 = 0x11;
+pub const DW_TAG_skeleton_unit: u32 = 0x4a;
+
+pub const DW_UT_compile: u32 = 0x01;
+pub const DW_UT_type: u32 = 0x02;
+pub const DW_UT_partial: u32 = 0x03;
+pub const DW_UT_skeleton: u32 = 0x04;
+pub const DW_UT_split_compile: u32 = 0x05;
+pub const DW_UT_split_type: u32 = 0x06;
+
+pub const DW_FORM_addr: u32 = 0x01;
+pub const DW_FORM_block2: u32 = 0x03;
+pub const DW_FORM_block4: u32 = 0x04;
+pub const DW_FORM_data2: u32 = 0x05;
+pub const DW_FORM_data4: u32 = 0x06;
+pub const DW_FORM_data8: u32 = 0x07;
+pub const DW_FORM_string: u32 = 0x08;
+pub const DW_FORM_block: u32 = 0x09;
+pub const DW_FORM_block1: u32 = 0x0a;
+pub const DW_FORM_data1: u32 = 0x0b;
+pub const DW_FORM_flag: u32 = 0x0c;
+pub const DW_FORM_sdata: u32 = 0x0d;
+pub const DW_FORM_strp: u32 = 0x0e;
+pub const DW_FORM_udata: u32 = 0x0f;
+pub const DW_FORM_ref_addr: u32 = 0x10;
+pub const DW_FORM_ref1: u32 = 0x11;
+pub const DW_FORM_ref2: u32 = 0x12;
+pub const DW_FORM_ref4: u32 = 0x13;
+pub const DW_FORM_ref8: u32 = 0x14;
+pub const DW_FORM_ref_udata: u32 = 0x15;
+pub const DW_FORM_indirect: u32 = 0x16;
+pub const DW_FORM_sec_offset: u32 = 0x17;
+pub const DW_FORM_exprloc: u32 = 0x18;
+pub const DW_FORM_flag_present: u32 = 0x19;
+pub const DW_FORM_strx: u32 = 0x1a;
+pub const DW_FORM_addrx: u32 = 0x1b;
+pub const DW_FORM_ref_sup4: u32 = 0x1c;
+pub const DW_FORM_strp_sup: u32 = 0x1d;
+pub const DW_FORM_data16: u32 = 0x1e;
+pub const DW_FORM_line_strp: u32 = 0x1f;
+pub const DW_FORM_ref_sig8: u32 = 0x20;
+pub const DW_FORM_implicit_const: u32 = 0x21;
+pub const DW_FORM_loclistx: u32 = 0x22;
+pub const DW_FORM_rnglistx: u32 = 0x23;
+pub const DW_FORM_ref_sup8: u32 = 0x24;
+pub const DW_FORM_strx1: u32 = 0x25;
+pub const DW_FORM_strx2: u32 = 0x26;
+pub const DW_FORM_strx3: u32 = 0x27;
+pub const DW_FORM_strx4: u32 = 0x28;
+pub const DW_FORM_addrx1: u32 = 0x29;
+pub const DW_FORM_addrx2: u32 = 0x2a;
+pub const DW_FORM_addrx3: u32 = 0x2b;
+pub const DW_FORM_addrx4: u32 = 0x2c;
+
+pub const DW_RLE_end_of_list: u32 = 0x00;
+pub const DW_RLE_base_addressx: u32 = 0x01;
+pub const DW_RLE_startx_endx: u32 = 0x02;
+pub const DW_RLE_startx_length: u32 = 0x03;
+pub const DW_RLE_offset_pair: u32 = 0x04;
+pub const DW_RLE_base_address: u32 = 0x05;
+pub const DW_RLE_start_end: u32 = 0x06;
+pub const DW_RLE_start_length: u32 = 0x07;
+
 // Relocation types
 pub const R_NONE: u32 = 0;
 
@@ -1285,91 +1373,3 @@ define_relocations! {
     R_LARCH_TLS_GD_PCREL20_S2 = 125;
     R_LARCH_TLS_DESC_PCREL20_S2 = 126;
 }
-
-// DWARF data types
-pub const DW_EH_PE_absptr: u32 = 0;
-pub const DW_EH_PE_omit: u32 = 0xff;
-pub const DW_EH_PE_uleb128: u32 = 0x01;
-pub const DW_EH_PE_udata2: u32 = 0x02;
-pub const DW_EH_PE_udata4: u32 = 0x03;
-pub const DW_EH_PE_udata8: u32 = 0x04;
-pub const DW_EH_PE_signed: u32 = 0x08;
-pub const DW_EH_PE_sleb128: u32 = 0x09;
-pub const DW_EH_PE_sdata2: u32 = 0x0a;
-pub const DW_EH_PE_sdata4: u32 = 0x0b;
-pub const DW_EH_PE_sdata8: u32 = 0x0c;
-pub const DW_EH_PE_pcrel: u32 = 0x10;
-pub const DW_EH_PE_textrel: u32 = 0x20;
-pub const DW_EH_PE_datarel: u32 = 0x30;
-pub const DW_EH_PE_funcrel: u32 = 0x40;
-pub const DW_EH_PE_aligned: u32 = 0x50;
-
-pub const DW_AT_low_pc: u32 = 0x11;
-pub const DW_AT_high_pc: u32 = 0x12;
-pub const DW_AT_producer: u32 = 0x25;
-pub const DW_AT_ranges: u32 = 0x55;
-pub const DW_AT_addr_base: u32 = 0x73;
-pub const DW_AT_rnglists_base: u32 = 0x74;
-
-pub const DW_TAG_compile_unit: u32 = 0x11;
-pub const DW_TAG_skeleton_unit: u32 = 0x4a;
-
-pub const DW_UT_compile: u32 = 0x01;
-pub const DW_UT_type: u32 = 0x02;
-pub const DW_UT_partial: u32 = 0x03;
-pub const DW_UT_skeleton: u32 = 0x04;
-pub const DW_UT_split_compile: u32 = 0x05;
-pub const DW_UT_split_type: u32 = 0x06;
-
-pub const DW_FORM_addr: u32 = 0x01;
-pub const DW_FORM_block2: u32 = 0x03;
-pub const DW_FORM_block4: u32 = 0x04;
-pub const DW_FORM_data2: u32 = 0x05;
-pub const DW_FORM_data4: u32 = 0x06;
-pub const DW_FORM_data8: u32 = 0x07;
-pub const DW_FORM_string: u32 = 0x08;
-pub const DW_FORM_block: u32 = 0x09;
-pub const DW_FORM_block1: u32 = 0x0a;
-pub const DW_FORM_data1: u32 = 0x0b;
-pub const DW_FORM_flag: u32 = 0x0c;
-pub const DW_FORM_sdata: u32 = 0x0d;
-pub const DW_FORM_strp: u32 = 0x0e;
-pub const DW_FORM_udata: u32 = 0x0f;
-pub const DW_FORM_ref_addr: u32 = 0x10;
-pub const DW_FORM_ref1: u32 = 0x11;
-pub const DW_FORM_ref2: u32 = 0x12;
-pub const DW_FORM_ref4: u32 = 0x13;
-pub const DW_FORM_ref8: u32 = 0x14;
-pub const DW_FORM_ref_udata: u32 = 0x15;
-pub const DW_FORM_indirect: u32 = 0x16;
-pub const DW_FORM_sec_offset: u32 = 0x17;
-pub const DW_FORM_exprloc: u32 = 0x18;
-pub const DW_FORM_flag_present: u32 = 0x19;
-pub const DW_FORM_strx: u32 = 0x1a;
-pub const DW_FORM_addrx: u32 = 0x1b;
-pub const DW_FORM_ref_sup4: u32 = 0x1c;
-pub const DW_FORM_strp_sup: u32 = 0x1d;
-pub const DW_FORM_data16: u32 = 0x1e;
-pub const DW_FORM_line_strp: u32 = 0x1f;
-pub const DW_FORM_ref_sig8: u32 = 0x20;
-pub const DW_FORM_implicit_const: u32 = 0x21;
-pub const DW_FORM_loclistx: u32 = 0x22;
-pub const DW_FORM_rnglistx: u32 = 0x23;
-pub const DW_FORM_ref_sup8: u32 = 0x24;
-pub const DW_FORM_strx1: u32 = 0x25;
-pub const DW_FORM_strx2: u32 = 0x26;
-pub const DW_FORM_strx3: u32 = 0x27;
-pub const DW_FORM_strx4: u32 = 0x28;
-pub const DW_FORM_addrx1: u32 = 0x29;
-pub const DW_FORM_addrx2: u32 = 0x2a;
-pub const DW_FORM_addrx3: u32 = 0x2b;
-pub const DW_FORM_addrx4: u32 = 0x2c;
-
-pub const DW_RLE_end_of_list: u32 = 0x00;
-pub const DW_RLE_base_addressx: u32 = 0x01;
-pub const DW_RLE_startx_endx: u32 = 0x02;
-pub const DW_RLE_startx_length: u32 = 0x03;
-pub const DW_RLE_offset_pair: u32 = 0x04;
-pub const DW_RLE_base_address: u32 = 0x05;
-pub const DW_RLE_start_end: u32 = 0x06;
-pub const DW_RLE_start_length: u32 = 0x07;
