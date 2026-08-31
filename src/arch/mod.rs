@@ -182,22 +182,15 @@ pub trait Arch: Layout {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection);
 
     /// Applies relocations to a copy of an allocated section's contents.
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]);
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    );
 
     /// Applies relocations to a copy of a non-allocated section's contents.
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]);
-
-    /// The type the `i`th relocation of a section has in the output for
-    /// `--emit-relocs`. A relaxation that rewrote an instruction may
-    /// change it.
-    fn emitted_rel_type(
-        _ctx: &Context<Self>,
-        _isec: &InputSection,
-        rel: &Self::Rel,
-        _i: usize,
-    ) -> u32 {
-        rel.r_type()
-    }
 
     /// Whether a call must go through a thunk however close its target
     /// is: a processor mode switch on ARM32, or TOC setup on PowerPC.
@@ -399,20 +392,4 @@ pub fn emulation_to_target(emulation: &str) -> Option<&'static str> {
         "elf32loongarch" => "loongarch32",
         _ => return None,
     })
-}
-
-/// The relocation type to emit for `--emit-relocs`, accounting for
-/// relaxations that changed the relocation's meaning. Relocatable output
-/// applies no relaxation, so its relocations pass through unchanged.
-pub fn emitted_rel_type<E: Arch>(
-    ctx: &Context<E>,
-    isec: &InputSection,
-    rel: &E::Rel,
-    i: usize,
-) -> u32 {
-    if ctx.args.relocatable {
-        rel.r_type()
-    } else {
-        E::emitted_rel_type(ctx, isec, rel, i)
-    }
 }

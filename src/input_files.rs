@@ -4,6 +4,7 @@
 #![allow(non_upper_case_globals)]
 
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
@@ -647,6 +648,61 @@ pub struct RiscvAttributes {
     pub unaligned_access: bool,
 }
 
+/// An ordinary relocation table decoded from CREL.
+///
+/// Allocated input sections rewrite relocation types while their output bytes
+/// are copied. Each relocation section belongs to exactly one input section,
+/// so those writes are disjoint even though the files themselves are shared
+/// by the parallel copy tasks.
+struct DecodedRelocations<R> {
+    records: UnsafeCell<Box<[R]>>,
+}
+
+impl<R> DecodedRelocations<R> {
+    fn new(records: Box<[R]>) -> DecodedRelocations<R> {
+        DecodedRelocations {
+            records: UnsafeCell::new(records),
+        }
+    }
+
+    fn as_slice(&self) -> &[R] {
+        // SAFETY: mutable access is restricted to exclusive linker phases and
+        // disjoint relocation sections.
+        unsafe { (&*self.records.get()).as_ref() }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [R] {
+        self.records.get_mut().as_mut()
+    }
+
+    /// Gives `f` mutable access through a shared file reference.
+    ///
+    /// # Safety
+    ///
+    /// The caller must exclusively own this relocation table until `f`
+    /// returns.
+    unsafe fn with_mut_slice(&self, f: impl FnOnce(&mut [R])) {
+        // SAFETY: the caller upholds the exclusive-access requirement.
+        f(unsafe { (&mut *self.records.get()).as_mut() });
+    }
+
+    fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+}
+
+impl<R: fmt::Debug> fmt::Debug for DecodedRelocations<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DecodedRelocations")
+            .field(&self.as_slice())
+            .finish()
+    }
+}
+
+// SAFETY: mutable access is permitted only for disjoint relocation tables
+// owned by separate copy tasks, as documented by with_mut_slice().
+unsafe impl<R: Send + Sync> Sync for DecodedRelocations<R> {}
+
 // ObjectFile represents an input .o file.
 #[derive(Debug)]
 pub struct ObjectFile<E: Layout> {
@@ -662,7 +718,7 @@ pub struct ObjectFile<E: Layout> {
 
     /// CREL relocation tables decoded into ordinary records, indexed by
     /// relocation section. Records remain in the target's file layout.
-    decoded_crel: Vec<Option<Box<[u8]>>>,
+    decoded_crel: Vec<Option<DecodedRelocations<ElfRel<E>>>>,
 
     /// The number of section headers in the file.
     pub num_elf_sections: usize,
@@ -762,7 +818,7 @@ impl<E: Layout> ObjectFile<E> {
             return &[];
         };
         if let Some(Some(rels)) = self.decoded_crel.get(relsec_idx as usize) {
-            return rels_from_bytes::<E>(rels);
+            return rels.as_slice();
         }
 
         rels_from_bytes::<E>(self.input_relocation_data(relsec_idx))
@@ -976,7 +1032,11 @@ impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
 // at the moment.
 //
 // This function converts a CREL relocation table to a regular one.
-fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]) -> Box<[u8]> {
+fn decode_crel<E: Arch>(
+    diag: &Diagnostics,
+    file: &dyn fmt::Display,
+    data: &[u8],
+) -> Box<[ElfRel<E>]> {
     let reader = CrelReader::<E>::new(diag, file, data);
     // Own a fixed-size array without value-initializing trivial elements
     // that the caller is about to overwrite.
@@ -985,12 +1045,7 @@ fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]
         rels[i].write(rel);
     }
     // SAFETY: CrelReader visits every index from zero to len once.
-    let rels = unsafe { rels.assume_init() };
-    let len = std::mem::size_of_val(&*rels);
-    let ptr = Box::into_raw(rels) as *mut ElfRel<E>;
-    // SAFETY: RelRecord requires alignment one and no drop glue. Therefore
-    // `[ElfRel<E>]` and a byte slice of the same size have identical layouts.
-    unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr.cast::<u8>(), len)) }
+    unsafe { rels.assume_init() }
 }
 
 impl<E: Arch> ObjectFile<E> {
@@ -1184,7 +1239,7 @@ impl<E: Arch> ObjectFile<E> {
         };
         let index = relsec_idx as usize;
         if self.decoded_crel.get(index).is_some_and(Option::is_some) {
-            return rels_from_bytes_mut::<E>(self.decoded_crel[index].as_deref_mut().unwrap());
+            return self.decoded_crel[index].as_mut().unwrap().as_mut_slice();
         }
 
         let shdr = &self.base.shdrs[index];
@@ -1201,12 +1256,48 @@ impl<E: Arch> ObjectFile<E> {
         rels_from_bytes_mut::<E>(unsafe { &mut *data })
     }
 
-    fn set_decoded_crel(&mut self, index: usize, rels: Box<[u8]>) {
+    /// Gives `f` mutable access to a relocation table during the copy phase.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no other task accesses this relocation
+    /// table until `f` returns. Each relocation section is attached to one
+    /// input section, so copying each input section exactly once satisfies
+    /// that requirement.
+    pub(crate) unsafe fn with_relocations_mut(
+        &self,
+        relsec_idx: Option<u32>,
+        f: impl FnOnce(&mut [E::Rel]),
+    ) {
+        let Some(relsec_idx) = relsec_idx else {
+            f(&mut []);
+            return;
+        };
+        let index = relsec_idx as usize;
+        if let Some(Some(rels)) = self.decoded_crel.get(index) {
+            // SAFETY: the caller exclusively owns this relocation table.
+            unsafe { rels.with_mut_slice(f) };
+            return;
+        }
+
+        let shdr = &self.base.shdrs[index];
+        let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
+        let mf = self
+            .base
+            .mf
+            .expect("input relocations without a mapped file");
+        // SAFETY: the caller exclusively owns this checked relocation range.
+        let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
+        // SAFETY: the exclusive access lasts until f returns.
+        f(rels_from_bytes_mut::<E>(unsafe { &mut *data }));
+    }
+
+    fn set_decoded_crel(&mut self, index: usize, rels: Box<[E::Rel]>) {
         if self.decoded_crel.len() <= index {
             self.decoded_crel.resize_with(index + 1, || None);
         }
         debug_assert!(self.decoded_crel[index].is_none());
-        self.decoded_crel[index] = Some(rels);
+        self.decoded_crel[index] = Some(DecodedRelocations::new(rels));
     }
 
     #[inline]
@@ -1655,8 +1746,7 @@ impl<E: Arch> ObjectFile<E> {
 
                         // Count the relocations just decoded while they are in cache.
                         if target_is_alloc {
-                            self.num_frag_syms +=
-                                self.count_frag_syms(rels_from_bytes::<E>(&decoded));
+                            self.num_frag_syms += self.count_frag_syms(&decoded);
                         }
                         self.set_decoded_crel(i, decoded);
                     }
@@ -2431,8 +2521,8 @@ impl<E: Arch> ObjectFile<E> {
             // the side table.
             let relsec_idx = relsec_idx as usize;
             let mut decoded = self.decoded_crel.get_mut(relsec_idx).and_then(Option::take);
-            let rels = match decoded.as_deref_mut() {
-                Some(data) => rels_from_bytes_mut::<E>(data),
+            let rels = match decoded.as_mut() {
+                Some(data) => data.as_mut_slice(),
                 None => {
                     let shdr = &self.base.shdrs[relsec_idx];
                     let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());

@@ -227,8 +227,12 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
 //
 // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
 // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
-fn is_relaxable_got_load<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) -> bool {
-    let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
+fn is_relaxable_got_load<E: Arch>(
+    ctx: &Context<E>,
+    isec: &InputSection,
+    rels: &[E::Rel],
+    i: usize,
+) -> bool {
     let file = &ctx.objs[isec.file.index()];
     let sym = &ctx.symbols[file.base.symbols[rels[i].r_sym() as usize]];
     let contents = isec.original_contents(file);
@@ -494,15 +498,20 @@ where
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
         let contents = isec.original_contents(file);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels[i];
+            let rel_idx = i;
+            let rel = rels[rel_idx];
             i += 1;
             if is_marker(rel.r_type()) {
                 continue;
@@ -512,7 +521,7 @@ where
                 continue;
             }
 
-            let (removed, delta) = isec.removed_at(rel);
+            let (removed, delta) = isec.removed_at(&rel);
             let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
@@ -544,7 +553,7 @@ where
             };
             let got_entry = || got.wrapping_add(g()).wrapping_add(a);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
             let check_branch = |val: i64, lo: i64, hi: i64| {
                 check(val, lo, hi);
                 if val & 0b11 != 0 {
@@ -600,6 +609,10 @@ where
                         // the low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_NONE);
+                            rels[rel_idx + 2].set_r_type(R_LARCH_PCREL20_S2);
+                        }
                         i += 3;
                     }
                 }
@@ -618,8 +631,8 @@ where
                         //
                         // pcalau12i $t0, 0
                         // addi.d    $t0, $t0, 0
-                        if is_relaxable_got_load(ctx, isec, i - 1)
-                            && is_int(compute_distance(ctx, sym, isec, rel), 32)
+                        if is_relaxable_got_load(ctx, isec, rels, rel_idx)
+                            && is_int(compute_distance(ctx, sym, isec, &rel), 32)
                         {
                             let reg = rd(insn(loc));
                             set_insn(&mut loc[4..], 0x02c0_0000 | (reg << 5) | reg); // addi.d
@@ -634,6 +647,10 @@ where
                         // low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_NONE);
+                            rels[rel_idx + 2].set_r_type(R_LARCH_PCREL20_S2);
+                        }
                         i += 3;
                     }
                 }
@@ -704,6 +721,9 @@ where
                             },
                         );
                         write_d10k16(loc, pcrel >> 2);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_LARCH_B26);
+                        }
                     }
                 }
                 R_LARCH_ADD_ULEB128 => add_uleb(loc, sa, false),
@@ -754,15 +774,24 @@ where
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         write_j20(loc, hi20(sym.tlsdesc_addr(ctx).wrapping_add(a), p));
                     }
+                    if (!sym.has_tlsdesc(&ctx.symbols) || removed != 0) && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
                 }
                 R_LARCH_TLS_DESC_PC_LO12 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         let dist = sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p) as i64;
                         if is_int(dist, 22) {
                             write_pcaddi(loc, (dist >> 2) as u64);
+                            if ctx.args.emit_relocs {
+                                rels[rel_idx].set_r_type(R_LARCH_TLS_DESC_PCREL20_S2);
+                            }
                         } else {
                             write_k12(loc, sym.tlsdesc_addr(ctx).wrapping_add(a));
                         }
+                    }
+                    if !sym.has_tlsdesc(&ctx.symbols) && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
                 R_LARCH_TLS_DESC_LD => {
@@ -772,12 +801,21 @@ where
                         // Do nothing (TLSDESC kept)
                     } else if removed == 4 {
                         // Small TP offset: the instruction was deleted.
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_NONE);
+                        }
                     } else if sym.has_gottp(&ctx.symbols) {
                         set_insn(loc, 0x1a00_0004); // pcalau12i $a0, 0
                         write_j20(loc, hi20(sym.gottp_addr(ctx).wrapping_add(a), p));
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_LARCH_TLS_IE_PC_HI20);
+                        }
                     } else {
                         set_insn(loc, 0x1400_0004); // lu12i.w $a0, 0
                         write_j20(loc, sa.wrapping_add(0x800).wrapping_sub(ctx.tp_addr) >> 12);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_LARCH_TLS_LE_HI20);
+                        }
                     }
                 }
                 R_LARCH_TLS_DESC_CALL => {
@@ -790,6 +828,9 @@ where
                         // ld.w $a0, $a0, 0
                         set_insn(loc, if IS_64 { 0x28c0_0084 } else { 0x2880_0084 }); // ld.[dw] $a0, $a0, 0
                         write_k12(loc, sym.gottp_addr(ctx).wrapping_add(a));
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_LARCH_TLS_IE_PC_LO12);
+                        }
                     } else {
                         let val = sa.wrapping_sub(ctx.tp_addr) as i64;
                         set_insn(
@@ -801,6 +842,9 @@ where
                             },
                         ); // ori $a0, $zero, 0 / addi.w $a0, $a0, 0
                         write_k12(loc, val as u64);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_LARCH_TLS_LE_LO12);
+                        }
                     }
                 }
                 // lu12i.w + add.d + addi.d => addi.d when the variable is within 2 KiB
@@ -808,6 +852,8 @@ where
                 R_LARCH_TLS_LE_HI20_R => {
                     if removed == 0 {
                         write_j20(loc, sa.wrapping_add(0x800).wrapping_sub(ctx.tp_addr) >> 12);
+                    } else if ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
                 R_LARCH_TLS_LE_LO12_R => {
@@ -819,10 +865,14 @@ where
                         set_rj(loc, 2); // $tp
                     }
                 }
-                R_LARCH_TLS_LE_ADD_R | R_LARCH_64 => {
+                R_LARCH_TLS_LE_ADD_R => {
                     // add.d that materializes TP + offset; removed together with the
                     // lu12i.w when the variable is within 2 KiB of TP.
+                    if removed != 0 && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
                 }
+                R_LARCH_64 => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }
@@ -874,76 +924,6 @@ where
                     rel.type_name::<Self>()
                 ),
             }
-        }
-    }
-
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        i: usize,
-    ) -> u32 {
-        if !isec.is_alloc() {
-            return rel.r_type();
-        }
-        let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
-        let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-        let (removed, delta) = isec.removed_at(rel);
-
-        // The low half of a pair whose high half folded into a pcaddi.
-        let folded_into_pcaddi = || {
-            i >= 2
-                && matches!(
-                    rels[i - 2].r_type(),
-                    R_LARCH_PCALA_HI20 | R_LARCH_GOT_PC_HI20
-                )
-                && rels[i - 2].r_offset() + 4 == rel.r_offset()
-                && isec.removed_at(&rels[i - 2]).0 != 0
-        };
-
-        match rel.r_type() {
-            R_LARCH_PCALA_HI20 | R_LARCH_GOT_PC_HI20 if removed != 0 => R_NONE,
-            R_LARCH_PCALA_LO12 | R_LARCH_GOT_PC_LO12 if folded_into_pcaddi() => R_LARCH_PCREL20_S2,
-            R_LARCH_CALL36 if removed != 0 => R_LARCH_B26,
-            // pcalau12i + addi.d => pcaddi when TLSDESC is kept; both deleted when it
-            // is relaxed to IE/LE. Either way the high part loses its relocation.
-            // The folded pcaddi's relocation is emitted from the LO12 slot below.
-            R_LARCH_TLS_DESC_PC_HI20 if !sym.has_tlsdesc(&ctx.symbols) || removed != 0 => R_NONE,
-            R_LARCH_TLS_DESC_PC_LO12 => {
-                if !sym.has_tlsdesc(&ctx.symbols) {
-                    R_NONE
-                } else {
-                    let p = isec.addr(ctx) + rel.r_offset() - delta as u64;
-                    let dist = sym
-                        .tlsdesc_addr(ctx)
-                        .wrapping_add(rel.r_addend() as u64)
-                        .wrapping_sub(p) as i64;
-                    if removed == 0 && is_int(dist, 22) {
-                        R_LARCH_TLS_DESC_PCREL20_S2
-                    } else {
-                        rel.r_type()
-                    }
-                }
-            }
-            R_LARCH_TLS_DESC_LD if !sym.has_tlsdesc(&ctx.symbols) => {
-                if removed == 4 {
-                    R_NONE
-                } else if sym.has_gottp(&ctx.symbols) {
-                    R_LARCH_TLS_IE_PC_HI20
-                } else {
-                    R_LARCH_TLS_LE_HI20
-                }
-            }
-            R_LARCH_TLS_DESC_CALL if !sym.has_tlsdesc(&ctx.symbols) => {
-                if sym.has_gottp(&ctx.symbols) {
-                    R_LARCH_TLS_IE_PC_LO12
-                } else {
-                    R_LARCH_TLS_LE_LO12
-                }
-            }
-            R_LARCH_TLS_LE_HI20_R | R_LARCH_TLS_LE_ADD_R if removed != 0 => R_NONE,
-            _ => rel.r_type(),
         }
     }
 
@@ -1097,7 +1077,7 @@ where
                 //
                 // pcaddi    $t0, <offset>
                 R_LARCH_GOT_PC_HI20 => {
-                    if is_relaxable_got_load(ctx, isec, i) {
+                    if is_relaxable_got_load(ctx, isec, rels, i) {
                         let dist = compute_distance(ctx, sym, isec, r);
                         if is_int(dist, 22) && dist & 3 == 0 {
                             remove(4);

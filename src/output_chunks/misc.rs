@@ -671,8 +671,7 @@ pub mod reloc {
                 } else {
                     addend
                 };
-                let r_type = crate::arch::emitted_rel_type::<E>(ctx, isec, rel, j);
-                out[base + j] = ElfRel::<E>::new(r_offset, r_type, symidx, out_addend);
+                out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
 
                 if ctx.args.relocatable {
                     if let Some(osec_buf) = osec_buf.as_deref_mut() {

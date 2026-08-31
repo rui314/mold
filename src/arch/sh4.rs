@@ -316,11 +316,16 @@ where
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
         let got = ctx.got.hdr.shdr.sh_addr.get();
 
-        for rel in isec.rels::<Self>(file) {
+        for rel in rels {
             if rel.r_type() == R_NONE {
                 continue;
             }

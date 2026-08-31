@@ -435,11 +435,16 @@ where
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
         let osec = &ctx.output_sections[isec.output_section.expect("output section").index()];
 
-        for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
+        for (i, rel) in rels.iter().enumerate() {
             if rel.r_type() == R_NONE || rel.r_type() == R_ARM_V4BX {
                 continue;
             }

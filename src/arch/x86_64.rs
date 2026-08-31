@@ -305,13 +305,18 @@ impl Arch for X86_64 {
     // Apply relocations to SHF_ALLOC sections (i.e. sections that are
     // mapped to memory at runtime) based on the result of
     // scan_relocations().
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels[i];
+            let rel_idx = i;
+            let rel = rels[rel_idx];
             i += 1;
             if rel.r_type() == R_NONE {
                 continue;
@@ -332,7 +337,7 @@ impl Arch for X86_64 {
                 0
             };
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 32);
                 write_u32(&mut buf[off..], val as u32);
@@ -397,11 +402,14 @@ impl Arch for X86_64 {
                     // relaxations.
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     if sym.is_pcrel_linktime_const(ctx) && is_int(v as i64, 32) {
-                        let insn = relax_gotpcrelx(&buf[..off], rel);
+                        let insn = relax_gotpcrelx(&buf[..off], &rel);
                         if insn != 0 {
                             buf[off - 2] = (insn >> 8) as u8;
                             buf[off - 1] = insn as u8;
                             write_u32(&mut buf[off..], v as u32);
+                            if ctx.args.emit_relocs {
+                                rels[rel_idx].set_r_type(R_X86_64_PC32);
+                            }
                             continue;
                         }
                     }
@@ -445,7 +453,7 @@ impl Arch for X86_64 {
                     if sym.has_gottp(&ctx.symbols) {
                         write32s(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else {
-                        let insn = relax_gottpoff(&buf[..off], rel);
+                        let insn = relax_gottpoff(&buf[..off], &rel);
                         buf[off - 3] = (insn >> 16) as u8;
                         buf[off - 2] = (insn >> 8) as u8;
                         buf[off - 1] = insn as u8;
@@ -487,7 +495,7 @@ impl Arch for X86_64 {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         write32s(buf, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else if sym.has_gottp(&ctx.symbols) {
-                        let insn = relax_tlsdesc_to_ie(&buf[..off], rel);
+                        let insn = relax_tlsdesc_to_ie(&buf[..off], &rel);
                         if insn == 0 {
                             fatal!(
                                 ctx,
@@ -501,7 +509,7 @@ impl Arch for X86_64 {
                         buf[off - 1] = insn as u8;
                         write32s(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else {
-                        let insn = relax_tlsdesc_to_le(&buf[..off], rel);
+                        let insn = relax_tlsdesc_to_le(&buf[..off], &rel);
                         if insn == 0 {
                             fatal!(
                                 ctx,
@@ -623,32 +631,6 @@ impl Arch for X86_64 {
                 ),
             }
         }
-    }
-
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        _i: usize,
-    ) -> u32 {
-        if matches!(
-            rel.r_type(),
-            R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX | R_X86_64_CODE_4_GOTPCRELX
-        ) && isec.is_alloc()
-        {
-            let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let s = sym.addr(ctx);
-            let p = isec.addr(ctx) + rel.r_offset();
-            let v = s.wrapping_add(rel.r_addend() as u64).wrapping_sub(p);
-            if sym.is_pcrel_linktime_const(ctx)
-                && is_int(v as i64, 32)
-                && relax_gotpcrelx(loc_before(isec, rel), rel) != 0
-            {
-                return R_X86_64_PC32;
-            }
-        }
-        rel.r_type()
     }
 }
 

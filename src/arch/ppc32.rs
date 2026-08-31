@@ -259,14 +259,19 @@ impl Arch for Ppc32 {
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let got2 = file
             .got2
             .map_or(0, |shndx| file.section_at(shndx).addr(ctx));
 
-        for rel in isec.rels::<Self>(file) {
+        for rel in rels {
             if rel.r_type() == R_NONE {
                 continue;
             }

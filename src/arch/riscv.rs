@@ -234,10 +234,10 @@ fn is_hi20(r_type: u32) -> bool {
 fn find_paired_reloc<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection,
+    rels: &[E::Rel],
     sym: &Symbol,
     i: usize,
 ) -> usize {
-    let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
     let value = sym.esym(ctx).st_value().get();
     let candidates: Box<dyn Iterator<Item = usize>> = if value <= rels[i].r_offset() {
         Box::new((0..i).rev())
@@ -264,8 +264,12 @@ fn find_paired_reloc<E: Arch>(
 // .L0
 //   auipc t0, 0      # R_RISCV_GOT_HI20(foo),     R_RISCV_RELAX
 //   ld    t0, 0(t0)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
-fn is_got_load_pair<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) -> bool {
-    let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
+fn is_got_load_pair<E: Arch>(
+    ctx: &Context<E>,
+    isec: &InputSection,
+    rels: &[E::Rel],
+    i: usize,
+) -> bool {
     let file = &ctx.objs[isec.file.index()];
     let contents = isec.original_contents(file);
     i + 3 < rels.len()
@@ -503,14 +507,19 @@ where
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
         let contents = isec.original_contents(file);
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels[i];
+            let rel_idx = i;
+            let rel = rels[rel_idx];
             i += 1;
             if rel.r_type() == R_NONE || rel.r_type() == R_RISCV_RELAX {
                 continue;
@@ -520,7 +529,7 @@ where
                 continue;
             }
 
-            let (removed, delta) = isec.removed_at(rel);
+            let (removed, delta) = isec.removed_at(&rel);
             let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
@@ -530,7 +539,7 @@ where
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
             let utype = |loc: &mut [u8], val: u64| {
                 check(val as i64, -(1i64 << 31) - 0x800, (1i64 << 31) - 0x800);
                 write_utype(loc, val);
@@ -560,15 +569,24 @@ where
                         // auipc + jalr -> jal
                         write32(loc, (rd << 7) | 0b1101111);
                         write_jtype(loc, pcrel);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_RISCV_JAL);
+                        }
                     } else if removed == 6 && rd == 0 {
                         // auipc + jalr -> c.j
                         write16(loc, 0b101_00000000000_01);
                         write_cjtype(loc, pcrel);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_RISCV_RVC_JUMP);
+                        }
                     } else if removed == 6 && rd == 1 {
                         // auipc + jalr -> c.jal
                         debug_assert!(!IS_64);
                         write16(loc, 0b001_00000000000_01);
                         write_cjtype(loc, pcrel);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_RISCV_RVC_JUMP);
+                        }
                     } else {
                         debug_assert_eq!(removed, 0);
                         if !sym.is_remaining_undef_weak() {
@@ -591,17 +609,25 @@ where
 
                         // The value is materialized directly, so neither this nor the paired
                         // PCREL_LO12 (the load) needs a relocation anymore.
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_NONE);
+                            rels[rel_idx + 2].set_r_type(R_NONE);
+                        }
                         i += 3;
                     } else if removed == 4 {
                         // addi <rd>, zero, val
                         write32(loc, 0b0010011 | (rd << 7));
                         write_itype(loc, s);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_NONE);
+                            rels[rel_idx + 2].set_r_type(R_NONE);
+                        }
                         i += 3;
                     } else {
                         debug_assert_eq!(removed, 0);
                         if ctx.args.relax
                             && sym.is_pcrel_linktime_const(ctx)
-                            && is_got_load_pair(ctx, isec, i - 1)
+                            && is_got_load_pair(ctx, isec, rels, rel_idx)
                             && is_int(pcrel as i64, 32)
                         {
                             // auipc <rd>, %hi20(val)
@@ -624,8 +650,8 @@ where
                 }
                 R_RISCV_PCREL_HI20 => utype(loc, pcrel),
                 R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => {
-                    let j = find_paired_reloc(ctx, isec, sym, i - 1);
-                    let rel2 = &rels[j];
+                    let j = find_paired_reloc(ctx, isec, rels, sym, rel_idx);
+                    let rel2 = rels[j];
                     let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
                     let write = if rel.r_type() == R_RISCV_PCREL_LO12_I {
                         write_itype
@@ -663,6 +689,9 @@ where
                     } else if removed == 0 {
                         utype(loc, sa);
                     }
+                    if removed != 0 && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
                 }
                 R_RISCV_LO12_I | R_RISCV_LO12_S => {
                     if rel.r_type() == R_RISCV_LO12_I {
@@ -683,12 +712,18 @@ where
                     // lui + add => deleted; the variable is accessed relative to tp directly.
                     if removed == 0 {
                         utype(loc, sa.wrapping_sub(ctx.tp_addr));
+                    } else if ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
                 R_RISCV_TPREL_ADD => {
                     // This relocation just annotates an ADD instruction that can be
                     // removed when a TPREL is relaxed. No value is needed to be
                     // written.
+                    debug_assert!(removed == 0 || removed == 4);
+                    if removed != 0 && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
                 }
                 R_RISCV_TPREL_LO12_I | R_RISCV_TPREL_LO12_S => {
                     let val = sa.wrapping_sub(ctx.tp_addr);
@@ -744,15 +779,20 @@ where
                 R_RISCV_TLSDESC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         utype(loc, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
+                    } else if !sym.has_tlsdesc(&ctx.symbols) && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
                 R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 | R_RISCV_TLSDESC_CALL => {
+                    let j = find_paired_reloc(ctx, isec, rels, sym, rel_idx);
+                    let rel2 = rels[j];
+                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
+                    if !sym2.has_tlsdesc(&ctx.symbols) && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
                     if removed == 4 {
                         continue;
                     }
-                    let j = find_paired_reloc(ctx, isec, sym, i - 1);
-                    let rel2 = &rels[j];
-                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
                     let a2 = rel2.r_addend() as u64;
                     let p2 =
                         isec.addr(ctx) + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
@@ -924,51 +964,6 @@ where
         }
     }
 
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        i: usize,
-    ) -> u32 {
-        if !isec.is_alloc() {
-            return rel.r_type();
-        }
-        let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
-        let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-        let (removed, _) = isec.removed_at(rel);
-
-        match rel.r_type() {
-            R_RISCV_CALL | R_RISCV_CALL_PLT if removed == 4 => R_RISCV_JAL,
-            R_RISCV_CALL | R_RISCV_CALL_PLT if removed == 6 => R_RISCV_RVC_JUMP,
-            R_RISCV_GOT_HI20 | R_RISCV_HI20 | R_RISCV_TPREL_HI20 | R_RISCV_TPREL_ADD
-                if removed != 0 =>
-            {
-                R_NONE
-            }
-            R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => {
-                // The load of a materialized GOT value is gone with it.
-                let j = find_paired_reloc(ctx, isec, sym, i);
-                if rels[j].r_type() == R_RISCV_GOT_HI20 && isec.removed_at(&rels[j]).0 != 0 {
-                    R_NONE
-                } else {
-                    rel.r_type()
-                }
-            }
-            R_RISCV_TLSDESC_HI20 if !sym.has_tlsdesc(&ctx.symbols) => R_NONE,
-            R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 | R_RISCV_TLSDESC_CALL => {
-                let j = find_paired_reloc(ctx, isec, sym, i);
-                let sym2 = &ctx.symbols[file.base.symbols[rels[j].r_sym() as usize]];
-                if sym2.has_tlsdesc(&ctx.symbols) {
-                    rel.r_type()
-                } else {
-                    R_NONE
-                }
-            }
-            _ => rel.r_type(),
-        }
-    }
-
     // Scan relocations to shrink a given section.
     fn shrink_section(ctx: &Context<Self>, isec: &InputSection) -> Vec<RelocDelta> {
         let file = &ctx.objs[isec.file.index()];
@@ -1060,7 +1055,7 @@ where
                     // GOT. If the loaded value is a link-time constant, we can rewrite
                     // the instructions to directly materialize the value, eliminating a
                     // memory load.
-                    if sym.is_absolute() && is_got_load_pair(ctx, isec, i) {
+                    if sym.is_absolute() && is_got_load_pair(ctx, isec, rels, i) {
                         let val = sym.addr(ctx).wrapping_add(r.r_addend() as u64) as i64;
                         if use_rvc && is_int(val, 6) && rd(&contents[r.r_offset() as usize..]) != 0
                         {
@@ -1106,7 +1101,8 @@ where
                     //  sw   t0, %tprel_lo(foo)(tp)
                     //
                     // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-                    let val = sym.addr(ctx)
+                    let val = sym
+                        .addr(ctx)
                         .wrapping_add(r.r_addend() as u64)
                         .wrapping_sub(ctx.tp_addr) as i64;
                     if is_int(val, 12) {
@@ -1119,7 +1115,7 @@ where
                     }
                 }
                 R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 => {
-                    let j = find_paired_reloc(ctx, isec, sym, i);
+                    let j = find_paired_reloc(ctx, isec, rels, sym, i);
                     let rel2 = &rels[j];
                     let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
                     if r.r_type() == R_RISCV_TLSDESC_LOAD_LO12 {

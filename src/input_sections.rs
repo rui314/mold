@@ -984,7 +984,14 @@ impl InputSection {
         // Apply relocations
         if !ctx.args.relocatable {
             if self.is_alloc() {
-                E::apply_reloc_alloc(ctx, self, buf);
+                // SAFETY: output-section members are disjoint and each input
+                // section is copied exactly once. Relocation-output tasks run
+                // only after all of these copy tasks have completed.
+                unsafe {
+                    file.with_relocations_mut(self.relsec_idx(), |rels| {
+                        E::apply_reloc_alloc(ctx, self, rels, buf)
+                    });
+                }
             } else {
                 E::apply_reloc_nonalloc(ctx, self, buf);
             }

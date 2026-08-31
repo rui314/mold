@@ -288,9 +288,15 @@ impl Arch for S390x {
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
+        for (i, rel_mut) in rels.iter_mut().enumerate() {
+            let rel = *rel_mut;
             if rel.r_type() == R_NONE {
                 continue;
             }
@@ -414,10 +420,13 @@ impl Arch for S390x {
                     // If we can relax a GOT-loading LGRL to an address-materializing
                     // LARL, do that. The format of LGRL is 0xc 0x4 <reg> 0x8 followed
                     // by a 32-bit offset. LARL is 0xc 0x0 <reg> 0x0.
-                    if relaxes_gotent(ctx, isec, rel, sym) {
+                    if relaxes_gotent(ctx, isec, &rel, sym) {
                         let op = r16(&buf[off - 2..]);
                         w16(&mut buf[off - 2..], 0xc000 | (op & 0x00f0));
                         w32(&mut buf[off..], (pcrel >> 1) as u32);
+                        if ctx.args.emit_relocs {
+                            rel_mut.set_r_type(R_390_PC32DBL);
+                        }
                     } else {
                         let val = got.wrapping_add(g()).wrapping_add(a).wrapping_sub(p);
                         check_dbl(val as i64, -(1 << 32), 1 << 32);
@@ -522,21 +531,5 @@ impl Arch for S390x {
                 ),
             }
         }
-    }
-
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        _i: usize,
-    ) -> u32 {
-        if rel.r_type() == R_390_GOTENT && isec.is_alloc() {
-            let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            if relaxes_gotent(ctx, isec, rel, sym) {
-                return R_390_PC32DBL;
-            }
-        }
-        rel.r_type()
     }
 }

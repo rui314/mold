@@ -125,8 +125,12 @@ where
 {
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
     /// which the psABI allows when the target is within ±1 MiB.
-    fn relaxes_adrp_add(ctx: &Context<Self>, isec: &InputSection, i: usize) -> bool {
-        let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
+    fn relaxes_adrp_add(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &[ElfRel<Self>],
+        i: usize,
+    ) -> bool {
         let rel = &rels[i];
         if !matches!(
             rel.r_type(),
@@ -391,13 +395,17 @@ where
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels[i];
+            let rel = rels[i];
             i += 1;
             if rel.r_type() == R_NONE {
                 continue;
@@ -477,6 +485,10 @@ where
                             &mut loc[4..],
                             0x9100_0000 | (reg << 5) | reg | (bits(sa, 11, 0) << 10) as u32,
                         );
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_AARCH64_ADR_PREL_PG_HI21);
+                            rels[i].set_r_type(R_AARCH64_ADD_ABS_LO12_NC);
+                        }
                         i += 1;
                     }
                 }
@@ -485,11 +497,15 @@ where
                     // :lo12: foo` instruction pair to materialize a PC-relative address
                     // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
                     // if foo is in PC ± 1 MiB.
-                    if Self::relaxes_adrp_add(ctx, isec, i - 1) {
+                    if Self::relaxes_adrp_add(ctx, isec, rels, i - 1) {
                         let reg = bits(insn(loc) as u64, 4, 0) as u32;
                         write_insn(loc, NOP);
                         write_insn(&mut loc[4..], 0x1000_0000 | reg);
                         write_adr(&mut loc[4..], pcrel.wrapping_sub(4));
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_NONE);
+                            rels[i].set_r_type(R_AARCH64_ADR_PREL_LO21);
+                        }
                         i += 1;
                     } else {
                         let val = page(sa).wrapping_sub(page(p));
@@ -627,6 +643,9 @@ where
                         write_adrp(loc, val);
                     } else {
                         write_insn(loc, NOP);
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_NONE);
+                        }
                     }
                 }
                 R_AARCH64_TLSDESC_LD64_LO12 => {
@@ -637,6 +656,9 @@ where
                         );
                     } else {
                         write_insn(loc, NOP);
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_NONE);
+                        }
                     }
                 }
                 R_AARCH64_TLSDESC_ADD_LO12 => {
@@ -651,9 +673,15 @@ where
                             loc,
                             page(sym.gottp_addr(ctx).wrapping_add(a)).wrapping_sub(page(p)),
                         );
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21);
+                        }
                     } else {
                         write_insn(loc, 0xd2a0_0000 | (bits(tprel, 32, 16) << 5) as u32);
                         // movz x0, 0, lsl #16
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_AARCH64_TLSLE_MOVW_TPREL_G1);
+                        }
                     }
                 }
                 R_AARCH64_TLSDESC_CALL => {
@@ -665,9 +693,15 @@ where
                             0xf940_0000
                                 | (bits(sym.gottp_addr(ctx).wrapping_add(a), 11, 3) << 10) as u32,
                         ); // ldr x0, [x0, 0]
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC);
+                        }
                     } else {
                         write_insn(loc, 0xf280_0000 | (bits(tprel, 15, 0) << 5) as u32);
                         // movk x0, 0
+                        if ctx.args.emit_relocs {
+                            rels[i - 1].set_r_type(R_AARCH64_TLSLE_MOVW_TPREL_G0_NC);
+                        }
                     }
                 }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
@@ -712,59 +746,6 @@ where
                     rel.type_name::<Self>()
                 ),
             }
-        }
-    }
-
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        i: usize,
-    ) -> u32 {
-        if !isec.is_alloc() {
-            return rel.r_type();
-        }
-        let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
-        let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-        let follows_relaxed_got_load = || {
-            i > 0
-                && rels[i - 1].r_type() == R_AARCH64_ADR_GOT_PAGE
-                && rels[i - 1].r_sym() == rel.r_sym()
-                && !sym.has_got(&ctx.symbols)
-        };
-
-        match rel.r_type() {
-            R_AARCH64_ADR_GOT_PAGE if !sym.has_got(&ctx.symbols) => R_AARCH64_ADR_PREL_PG_HI21,
-            R_AARCH64_LD64_GOT_LO12_NC if follows_relaxed_got_load() => R_AARCH64_ADD_ABS_LO12_NC,
-            R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC
-                if Self::relaxes_adrp_add(ctx, isec, i) =>
-            {
-                R_NONE
-            }
-            R_AARCH64_ADD_ABS_LO12_NC if i > 0 && Self::relaxes_adrp_add(ctx, isec, i - 1) => {
-                R_AARCH64_ADR_PREL_LO21
-            }
-            R_AARCH64_TLSDESC_ADR_PAGE21 | R_AARCH64_TLSDESC_LD64_LO12
-                if !sym.has_tlsdesc(&ctx.symbols) =>
-            {
-                R_NONE
-            }
-            R_AARCH64_TLSDESC_ADD_LO12 if !sym.has_tlsdesc(&ctx.symbols) => {
-                if sym.has_gottp(&ctx.symbols) {
-                    R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21
-                } else {
-                    R_AARCH64_TLSLE_MOVW_TPREL_G1
-                }
-            }
-            R_AARCH64_TLSDESC_CALL if !sym.has_tlsdesc(&ctx.symbols) => {
-                if sym.has_gottp(&ctx.symbols) {
-                    R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC
-                } else {
-                    R_AARCH64_TLSLE_MOVW_TPREL_G0_NC
-                }
-            }
-            _ => rel.r_type(),
         }
     }
 

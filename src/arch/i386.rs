@@ -265,13 +265,18 @@ impl Arch for I386 {
         }
     }
 
-    fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rels: &mut [Self::Rel],
+        buf: &mut [u8],
+    ) {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels[i];
+            let rel_idx = i;
+            let rel = rels[rel_idx];
             i += 1;
             if rel.r_type() == R_NONE {
                 continue;
@@ -283,12 +288,12 @@ impl Arch for I386 {
 
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = isec.rel_addend::<Self>(rel) as u64;
+            let a = isec.rel_addend::<Self>(&rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
             let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
             let g = || sym.got_addr(ctx).wrapping_sub(got);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
 
             match rel.r_type() {
                 R_386_8 => {
@@ -324,6 +329,9 @@ impl Arch for I386 {
                         buf[off - 2] = (insn >> 8) as u8;
                         buf[off - 1] = insn as u8;
                         write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32);
+                        if ctx.args.emit_relocs {
+                            rels[rel_idx].set_r_type(R_386_GOTOFF);
+                        }
                     }
                 }
                 R_386_GOTOFF => {
@@ -520,22 +528,6 @@ impl Arch for I386 {
                 ),
             }
         }
-    }
-
-    fn emitted_rel_type(
-        ctx: &Context<Self>,
-        isec: &InputSection,
-        rel: &Self::Rel,
-        _i: usize,
-    ) -> u32 {
-        if rel.r_type() == R_386_GOT32X && isec.is_alloc() {
-            let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            if !sym.has_got(&ctx.symbols) {
-                return R_386_GOTOFF;
-            }
-        }
-        rel.r_type()
     }
 
     fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
