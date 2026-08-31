@@ -23,6 +23,7 @@ opensuse-*)
   zypper install -y curl gcc-c++ glibc-devel-static tar diffutils util-linux gawk
   ;;
 gentoo)
+  emerge-webrsync
   FEATURES='getbinpkg binpkg-request-signature' emerge net-misc/curl
   ;;
 arch | archarm | artix | endeavouros | manjaro | cachyos)
