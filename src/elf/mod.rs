@@ -36,13 +36,11 @@
 //! isn't at hand.
 
 mod consts;
-mod relnames;
 
 use std::fmt;
 use std::marker::PhantomData;
 
 pub use consts::*;
-pub use relnames::*;
 
 use crate::arch::Arch;
 
