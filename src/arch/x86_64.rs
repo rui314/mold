@@ -40,6 +40,7 @@ pub struct X86_64;
 
 impl Layout for X86_64 {
     type Endian = LittleEndian;
+    type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
 }
@@ -157,13 +158,13 @@ impl Arch for X86_64 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_X86_64_32 => {
                 check(val as i64, 0, 1 << 32);
@@ -192,20 +193,20 @@ impl Arch for X86_64 {
 
         // Scan relocations
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE || isec.record_undef_error_with_file(ctx, file, rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error_with_file(ctx, file, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let loc = &isec.contents()[rel.r_offset as usize..];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let loc = &isec.contents()[rel.r_offset() as usize..];
 
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            if rel.r_type == R_X86_64_TLSGD || rel.r_type == R_X86_64_TLSLD {
-                let next = rels.get(i).map(|r| r.r_type);
+            if rel.r_type() == R_X86_64_TLSGD || rel.r_type() == R_X86_64_TLSLD {
+                let next = rels.get(i).map(|r| r.r_type());
                 let ok = matches!(
                     next,
                     Some(
@@ -226,7 +227,7 @@ impl Arch for X86_64 {
                 }
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_X86_64_8 | R_X86_64_16 | R_X86_64_32 | R_X86_64_32S => {
                     scan_absrel(ctx, isec, sym, rel)
                 }
@@ -308,20 +309,20 @@ impl Arch for X86_64 {
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let got_base = ctx.gotplt.hdr.shdr.sh_addr;
             let g = if sym.has_got(&ctx.symbols) {
                 sym.got_addr(ctx).wrapping_sub(got_base)
@@ -339,7 +340,7 @@ impl Arch for X86_64 {
                 write_u32(&mut buf[off..], val as u32);
             };
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_X86_64_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
                     buf[off] = s.wrapping_add(a) as u8;
@@ -411,11 +412,11 @@ impl Arch for X86_64 {
                     if sym.has_tlsgd(&ctx.symbols) {
                         write32s(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else if sym.has_gottp(&ctx.symbols) {
-                        let next = &rels.at(i);
+                        let next = &rels[i];
                         i += 1;
                         relax_gd_to_ie(buf, off, next, sym.gottp_addr(ctx).wrapping_sub(p));
                     } else {
-                        let next = &rels.at(i);
+                        let next = &rels[i];
                         i += 1;
                         relax_gd_to_le(buf, off, next, s.wrapping_sub(ctx.tp_addr));
                     }
@@ -427,7 +428,7 @@ impl Arch for X86_64 {
                             ctx.got.tlsld_addr::<Self>().wrapping_add(a).wrapping_sub(p),
                         );
                     } else {
-                        let next = &rels.at(i);
+                        let next = &rels[i];
                         i += 1;
                         relax_ld_to_le(buf, off, next, ctx.tp_addr.wrapping_sub(ctx.tls_begin));
                     }
@@ -547,15 +548,15 @@ impl Arch for X86_64 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error_with_file(ctx, file, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error_with_file(ctx, file, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let off = rel.r_offset as usize;
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let off = rel.r_offset() as usize;
             let frag = isec.fragment_with_file::<Self>(file, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
 
@@ -569,7 +570,7 @@ impl Arch for X86_64 {
                 write_u32(&mut buf[off..], val as u32);
             };
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_X86_64_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
                     buf[off] = s.wrapping_add(a) as u8;
@@ -619,17 +620,22 @@ impl Arch for X86_64 {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, _i: usize) -> u32 {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        _i: usize,
+    ) -> u32 {
         if matches!(
-            rel.r_type,
+            rel.r_type(),
             R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX | R_X86_64_CODE_4_GOTPCRELX
         ) && isec.is_alloc()
         {
             let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let s = sym.addr(ctx);
-            let p = isec.addr(ctx) + rel.r_offset;
-            let v = s.wrapping_add(rel.r_addend as u64).wrapping_sub(p);
+            let p = isec.addr(ctx) + rel.r_offset();
+            let v = s.wrapping_add(rel.r_addend() as u64).wrapping_sub(p);
             if sym.is_pcrel_linktime_const(ctx)
                 && is_int(v as i64, 32)
                 && relax_gotpcrelx(loc_before(isec, rel), rel) != 0
@@ -637,7 +643,7 @@ impl Arch for X86_64 {
                 return R_X86_64_PC32;
             }
         }
-        rel.r_type
+        rel.r_type()
     }
 }
 
@@ -654,8 +660,8 @@ fn write_u64(buf: &mut [u8], v: u64) {
 }
 
 /// The bytes of a section preceding a relocated location.
-fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel) -> &'a [u8] {
-    &isec.contents()[..rel.r_offset as usize]
+fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel<X86_64>) -> &'a [u8] {
+    &isec.contents()[..rel.r_offset() as usize]
 }
 
 fn last2(loc: &[u8]) -> u32 {
@@ -671,8 +677,8 @@ fn last3(loc: &[u8]) -> u32 {
 /// The instruction to substitute when a GOT load can become a direct
 /// reference, or 0 if the instruction isn't relaxable. `loc` is the code
 /// up to the relocated operand.
-fn relax_gotpcrelx(loc: &[u8], rel: &ElfRel) -> u32 {
-    if rel.r_type == R_X86_64_GOTPCRELX {
+fn relax_gotpcrelx(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
+    if rel.r_type() == R_X86_64_GOTPCRELX {
         if loc.len() < 2 {
             return 0;
         }
@@ -706,12 +712,12 @@ fn relax_gotpcrelx(loc: &[u8], rel: &ElfRel) -> u32 {
     }
 }
 
-fn relax_gottpoff(loc: &[u8], rel: &ElfRel) -> u32 {
+fn relax_gottpoff(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
     if loc.len() < 3 {
         return 0;
     }
     let insn = last3(loc);
-    if rel.r_type == R_X86_64_GOTTPOFF {
+    if rel.r_type() == R_X86_64_GOTTPOFF {
         match insn {
             0x488b05 => 0x48c7c0, // mov 0(%rip), %rax -> mov $0, %rax
             0x488b0d => 0x48c7c1, // mov 0(%rip), %rcx -> mov $0, %rcx
@@ -732,7 +738,7 @@ fn relax_gottpoff(loc: &[u8], rel: &ElfRel) -> u32 {
             _ => 0,
         }
     } else {
-        debug_assert_eq!(rel.r_type, R_X86_64_CODE_4_GOTTPOFF);
+        debug_assert_eq!(rel.r_type(), R_X86_64_CODE_4_GOTTPOFF);
         match insn {
             0x488b05 => 0x18c7c0, // mov 0(%rip), %r16 -> mov $0, %r16
             0x488b0d => 0x18c7c1, // mov 0(%rip), %r17 -> mov $0, %r17
@@ -755,7 +761,7 @@ fn relax_gottpoff(loc: &[u8], rel: &ElfRel) -> u32 {
     }
 }
 
-fn relax_tlsdesc_to_ie(loc: &[u8], rel: &ElfRel) -> u32 {
+fn relax_tlsdesc_to_ie(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
     if loc.len() < 3 {
         return 0;
     }
@@ -797,12 +803,12 @@ fn relax_tlsdesc_to_ie(loc: &[u8], rel: &ElfRel) -> u32 {
     }
 }
 
-fn relax_tlsdesc_to_le(loc: &[u8], rel: &ElfRel) -> u32 {
+fn relax_tlsdesc_to_le(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
     if loc.len() < 3 {
         return 0;
     }
     let insn = last3(loc);
-    if rel.r_type == R_X86_64_GOTPC32_TLSDESC {
+    if rel.r_type() == R_X86_64_GOTPC32_TLSDESC {
         match insn {
             0x488d05 => 0x48c7c0, // lea 0(%rip), %rax -> mov $0, %rax
             0x488d0d => 0x48c7c1, // lea 0(%rip), %rcx -> mov $0, %rcx
@@ -848,8 +854,8 @@ fn relax_tlsdesc_to_le(loc: &[u8], rel: &ElfRel) -> u32 {
 // Rewrite a function call to __tls_get_addr to a cheaper instruction
 // sequence. We can do this when we know the thread-local variable's TP-
 // relative address at link-time.
-fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
-    match rel.r_type {
+fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
+    match rel.r_type() {
         R_X86_64_PLT32 | R_X86_64_PC32 | R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX => {
             // The original instructions are the following:
             //
@@ -886,8 +892,8 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
     }
 }
 
-fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
-    match rel.r_type {
+fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
+    match rel.r_type() {
         R_X86_64_PLT32 | R_X86_64_PC32 | R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX => {
             const INSN: [u8; 16] = [
                 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
@@ -913,8 +919,8 @@ fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
 // sequence. The difference from relax_gd_to_le is that we are materializing
 // the address of the beginning of TLS block instead of an address of a
 // particular thread-local variable.
-fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
-    match rel.r_type {
+fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u64) {
+    match rel.r_type() {
         R_X86_64_PLT32 | R_X86_64_PC32 => {
             // The original instructions are the following:
             //
@@ -1047,10 +1053,10 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
                 if rel.is_func_call::<X86_64>() {
                     continue;
                 }
-                let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
                 let target = sym.input_section_ref();
                 if sym.st_type() == STT_SECTION {
-                    write_back(target, rel.r_addend);
+                    write_back(target, rel.r_addend());
                 } else {
                     write_back(target, sym.value as i64);
                 }

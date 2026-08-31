@@ -76,8 +76,16 @@ pub struct Sh4Target<End>(PhantomData<End>);
 pub type Sh4 = Sh4Target<LittleEndian>;
 pub type Sh4Be = Sh4Target<BigEndian>;
 
-impl<End: Endian> Layout for Sh4Target<End> {
-    type Endian = End;
+impl Layout for Sh4Target<LittleEndian> {
+    type Endian = LittleEndian;
+    type Rel = Elf32RelaLe;
+    const IS_64: bool = false;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for Sh4Target<BigEndian> {
+    type Endian = BigEndian;
+    type Rel = Elf32RelaBe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;
 }
@@ -114,7 +122,10 @@ impl<End: Endian> Sh4Target<End> {
     }
 }
 
-impl<End: Endian> Arch for Sh4Target<End> {
+impl<End: Endian> Arch for Sh4Target<End>
+where
+    Self: Layout<Endian = End>,
+{
     const NAME: &'static str = if End::IS_LITTLE { "sh4" } else { "sh4be" };
     const FAMILY: Family = Family::Sh4;
     const PAGE_SIZE: u64 = 4096;
@@ -142,16 +153,16 @@ impl<End: Endian> Arch for Sh4Target<End> {
         sh4_rel_to_string(r_type)
     }
 
-    fn get_addend(loc: &[u8], rel: &ElfRel) -> i64 {
-        if addend_in_place(rel.r_type) {
+    fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
+        if addend_in_place(rel.r_type()) {
             End::read_u32(loc) as i32 as i64
         } else {
             0
         }
     }
 
-    fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel) {
-        if addend_in_place(rel.r_type) {
+    fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
+        if addend_in_place(rel.r_type()) {
             End::write_u32(loc, val as u32);
         }
     }
@@ -219,7 +230,7 @@ impl<End: Endian> Arch for Sh4Target<End> {
         }
         End::write_u32(
             &mut buf[16..],
-            sym.plt_idx(&ctx.symbols).unwrap() * ElfRel::size::<Self>() as u32,
+            sym.plt_idx(&ctx.symbols).unwrap() * std::mem::size_of::<ElfRel<Self>>() as u32,
         );
     }
 
@@ -252,12 +263,12 @@ impl<End: Endian> Arch for Sh4Target<End> {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_SH_DIR32 => End::write_u32(loc, val as u32),
             R_SH_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
@@ -269,15 +280,15 @@ impl<End: Endian> Arch for Sh4Target<End> {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 error!(ctx, "{sym}: GNU ifunc symbol is not supported on sh4");
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_SH_REL32 => scan_pcrel(ctx, isec, sym, &rel),
                 R_SH_GOT32 => sym.add_flags(NEEDS_GOT),
                 R_SH_PLT32 => {
@@ -305,22 +316,22 @@ impl<End: Endian> Arch for Sh4Target<End> {
         let got = ctx.got.hdr.shdr.sh_addr;
 
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
             let s = sym.addr(ctx);
-            let a = isec.rel_addend::<Self>(&rel) as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = isec.rel_addend::<Self>(rel) as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            let val = match rel.r_type {
+            let val = match rel.r_type() {
                 // Handled as an absolute relocation by the output section.
                 R_SH_DIR32 => continue,
                 R_SH_REL32 | R_SH_PLT32 => sa.wrapping_sub(p),
@@ -345,20 +356,20 @@ impl<End: Endian> Arch for Sh4Target<End> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let frag = isec.fragment(ctx, &rel);
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), isec.rel_addend::<Self>(&rel) as u64),
+                None => (sym.addr(ctx), isec.rel_addend::<Self>(rel) as u64),
             };
             let sa = s.wrapping_add(a);
             let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_SH_DIR32 => End::write_u32(loc, tombstone.unwrap_or(sa) as u32),
                 R_SH_TLS_LDO_32 => End::write_u32(
                     loc,

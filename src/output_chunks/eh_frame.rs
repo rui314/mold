@@ -121,10 +121,11 @@ pub fn cie_equals<E: Layout>(
     let y = b.rels::<E>(b_file);
     x.len() == y.len()
         && x.iter().zip(y).all(|(rx, ry)| {
-            rx.r_offset - a.input_offset as u64 == ry.r_offset - b.input_offset as u64
-                && rx.r_type == ry.r_type
-                && a_file.base.symbols[rx.r_sym as usize] == b_file.base.symbols[ry.r_sym as usize]
-                && rx.r_addend == ry.r_addend
+            rx.r_offset() - a.input_offset as u64 == ry.r_offset() - b.input_offset as u64
+                && rx.r_type() == ry.r_type()
+                && a_file.base.symbols[rx.r_sym() as usize]
+                    == b_file.base.symbols[ry.r_sym() as usize]
+                && rx.r_addend() == ry.r_addend()
         })
 }
 
@@ -217,16 +218,16 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             return;
         }
         for rel in cie.rels::<E>(file) {
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let loc = (rel.r_offset - cie.input_offset as u64) as usize;
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let loc = (rel.r_offset() - cie.input_offset as u64) as usize;
             let val = sym
                 .addr(ctx)
-                .wrapping_add(file.section_at(cie.section).rel_addend::<E>(&rel) as u64);
+                .wrapping_add(file.section_at(cie.section).rel_addend::<E>(rel) as u64);
             let p = sh_addr + cie.output_offset as u64 + loc as u64;
             E::apply_eh_reloc(
                 ctx,
                 file.section_at(cie.section),
-                &rel,
+                rel,
                 &mut dst[loc..],
                 p,
                 val,
@@ -314,16 +315,16 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             // FDEs that have no relocations.
             let mut func_addr = 0u64;
             for (j, rel) in rels.iter().enumerate() {
-                let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-                let loc = (rel.r_offset - fde.input_offset as u64) as usize;
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                let loc = (rel.r_offset() - fde.input_offset as u64) as usize;
                 let val = sym
                     .addr(ctx)
-                    .wrapping_add(file.section_at(cie.section).rel_addend::<E>(&rel) as u64);
+                    .wrapping_add(file.section_at(cie.section).rel_addend::<E>(rel) as u64);
                 let p = sh_addr + offset + loc as u64;
                 E::apply_eh_reloc(
                     ctx,
                     file.section_at(cie.section),
-                    &rel,
+                    rel,
                     &mut dst[loc..],
                     p,
                     val,
@@ -357,7 +358,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             } else {
                 // The table entries are 32-bit offsets from .eh_frame_hdr.
                 if !is_int(func_addr.wrapping_sub(origin) as i64, 32) {
-                    let sym = &ctx.symbols[file.base.symbols[rels.at(0).r_sym as usize]];
+                    let sym = &ctx.symbols[file.base.symbols[rels[0].r_sym() as usize]];
                     error!(ctx, "{file}: {sym}: address out of range of .eh_frame_hdr");
                 }
                 E::Endian::write_i32(entry, func_addr.wrapping_sub(origin) as i32);
@@ -384,14 +385,14 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
 pub fn check_range<E: Arch>(
     ctx: &Context<E>,
     isec: &crate::input_sections::InputSection,
-    rel: &ElfRel,
+    rel: &ElfRel<E>,
     val: i64,
     lo: i64,
     hi: i64,
 ) {
     if val < lo || hi <= val {
         let file = &ctx.objs[isec.file.index()];
-        let sym: &Symbol = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym: &Symbol = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             ctx,
             "{}: relocation {} against {sym} out of range: {val} is not in [{lo}, {hi})",
@@ -477,7 +478,7 @@ impl EhFrameRelocSection {
         };
         let mut hdr = ChunkHeader::new(name, ty, SHF_INFO_LINK as u64);
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
+        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
         EhFrameRelocSection { hdr }
     }
 }
@@ -501,7 +502,7 @@ pub mod eh_frame_reloc {
             })
             .sum();
         let sec = ctx.eh_frame_reloc.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = (count * ElfRel::size::<E>()) as u64;
+        sec.hdr.shdr.sh_size = (count * std::mem::size_of::<ElfRel<E>>()) as u64;
         sec.hdr.shdr.sh_link = ctx.symtab.hdr.shndx;
         sec.hdr.shdr.sh_info = ctx.eh_frame.hdr.shndx;
     }
@@ -509,45 +510,41 @@ pub mod eh_frame_reloc {
     /// Writes the relocations; with REL and `-r`, addends are written into
     /// `.eh_frame` itself, which is passed as `eh_frame_buf`.
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
-        let size = ElfRel::size::<E>();
+        let out = rels_from_bytes_mut::<E>(buf);
         let mut eh_frame_buf = eh_frame_buf;
         let mut n = 0;
 
         let mut copy = |file: &ObjectFile,
                         shndx: u32,
-                        r: &ElfRel,
+                        r: &ElfRel<E>,
                         offset: u64,
                         eh_frame_buf: &mut Option<&mut [u8]>| {
             let isec = file.section_at(shndx);
-            let sym = &ctx.symbols[file.base.symbols[r.r_sym as usize]];
-            let mut out = ElfRel {
-                r_offset: ctx.eh_frame.hdr.shdr.sh_addr + offset,
-                r_type: r.r_type,
-                r_sym: 0,
-                r_addend: 0,
-            };
+            let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
+            let mut rel =
+                ElfRel::<E>::new(ctx.eh_frame.hdr.shdr.sh_addr + offset, r.r_type(), 0, 0);
 
             if sym.st_type() == STT_SECTION {
                 // We discard section symbols in input files and re-create new
                 // ones for each output section. So we need to adjust relocations'
                 // addends if they refer a section symbol.
                 let target = sym.input_section_ref().unwrap();
-                out.r_sym = ctx.output_section(target.output_section.unwrap()).hdr.shndx;
+                rel.set_r_sym(ctx.output_section(target.output_section.unwrap()).hdr.shndx);
                 let addend = isec.rel_addend::<E>(r) + target.offset() as i64;
                 if E::IS_RELA {
-                    out.r_addend = addend;
+                    rel.set_r_addend(addend);
                 } else if ctx.args.relocatable {
                     if let Some(eh) = eh_frame_buf {
                         E::write_addend(&mut eh[offset as usize..], addend, r);
                     }
                 }
             } else {
-                out.r_sym = sym.output_sym_idx(ctx);
+                rel.set_r_sym(sym.output_sym_idx(ctx));
                 if E::IS_RELA {
-                    out.r_addend = isec.rel_addend::<E>(r);
+                    rel.set_r_addend(isec.rel_addend::<E>(r));
                 }
             }
-            out.write::<E>(&mut buf[n * size..]);
+            out[n] = rel;
             n += 1;
         };
 
@@ -556,8 +553,8 @@ pub mod eh_frame_reloc {
                 if cie.is_leader {
                     for rel in cie.rels::<E>(file) {
                         let offset =
-                            cie.output_offset as u64 + rel.r_offset - cie.input_offset as u64;
-                        copy(file, cie.section, &rel, offset, &mut eh_frame_buf);
+                            cie.output_offset as u64 + rel.r_offset() - cie.input_offset as u64;
+                        copy(file, cie.section, rel, offset, &mut eh_frame_buf);
                     }
                 }
             }
@@ -565,8 +562,8 @@ pub mod eh_frame_reloc {
                 let cie = &file.cies[fde.cie_idx as usize];
                 let base = file.fde_offset + fde.output_offset as u64;
                 for rel in fde.rels::<E>(file) {
-                    let offset = base + rel.r_offset - fde.input_offset as u64;
-                    copy(file, cie.section, &rel, offset, &mut eh_frame_buf);
+                    let offset = base + rel.r_offset() - fde.input_offset as u64;
+                    copy(file, cie.section, rel, offset, &mut eh_frame_buf);
                 }
             }
         }
@@ -574,7 +571,7 @@ pub mod eh_frame_reloc {
 }
 
 /// Fatal error for `.eh_frame` contents that can't be handled.
-pub fn unsupported<E: Arch>(ctx: &Context<E>, rel: &ElfRel) -> ! {
+pub fn unsupported<E: Arch>(ctx: &Context<E>, rel: &ElfRel<E>) -> ! {
     fatal!(
         ctx,
         "unsupported relocation in .eh_frame: {}",

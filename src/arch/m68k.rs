@@ -29,6 +29,7 @@ pub struct M68k;
 
 impl Layout for M68k {
     type Endian = BigEndian;
+    type Rel = Elf32RelaBe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;
 }
@@ -86,7 +87,7 @@ impl Arch for M68k {
         buf[..14].copy_from_slice(&INSN);
         w32(
             &mut buf[2..],
-            sym.plt_idx(&ctx.symbols).unwrap() * ElfRel::size::<Self>() as u32,
+            sym.plt_idx(&ctx.symbols).unwrap() * std::mem::size_of::<ElfRel<Self>>() as u32,
         );
         w32(
             &mut buf[10..],
@@ -110,12 +111,12 @@ impl Arch for M68k {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_68K_32 => w32(loc, val as u32),
             R_68K_PC32 => w32(loc, val.wrapping_sub(p) as u32),
@@ -127,15 +128,15 @@ impl Arch for M68k {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 error!(ctx, "{sym}: GNU ifunc symbol is not supported on m68k");
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_68K_16 | R_68K_8 => scan_absrel(ctx, isec, sym, &rel),
                 R_68K_PC32 | R_68K_PC16 | R_68K_PC8 => scan_pcrel(ctx, isec, sym, &rel),
                 R_68K_GOTPCREL32 | R_68K_GOTPCREL16 | R_68K_GOTPCREL8 | R_68K_GOTOFF32
@@ -169,18 +170,18 @@ impl Arch for M68k {
         let got = ctx.got.hdr.shdr.sh_addr;
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
@@ -204,7 +205,7 @@ impl Arch for M68k {
                 buf[off] = val as u8;
             };
 
-            match rel.r_type {
+            match rel.r_type() {
                 // Handled as an absolute relocation by the output section.
                 R_68K_32 => {}
                 R_68K_16 => write16(buf, sa),
@@ -267,20 +268,20 @@ impl Arch for M68k {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let frag = isec.fragment(ctx, &rel);
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
             let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_68K_32 => w32(loc, tombstone.unwrap_or(sa) as u32),
                 R_68K_TLS_LDO32 => w32(
                     loc,

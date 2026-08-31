@@ -754,10 +754,10 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
                 for rel in file.relocation_iter::<E>(diag, isec.relsec_idx()) {
-                    let esym = file.base.elf_syms.at(rel.r_sym as usize);
-                    if let Some(target) = file.symbol_section(rel.r_sym as usize) {
+                    let esym = file.base.elf_syms.at(rel.r_sym() as usize);
+                    if let Some(target) = file.symbol_section(rel.r_sym() as usize) {
                         relocations.push(PubnamesRelocation {
-                            offset: rel.r_offset,
+                            offset: rel.r_offset(),
                             target_shndx: target.shndx,
                             unit_offset: esym
                                 .st_value

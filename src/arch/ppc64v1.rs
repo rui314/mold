@@ -66,6 +66,7 @@ pub struct Ppc64V1;
 
 impl Layout for Ppc64V1 {
     type Endian = BigEndian;
+    type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
 }
@@ -187,11 +188,11 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         ctx.objs[i].kill_section(opd.shndx as usize);
 
         let local_symbols = ctx.objs[i].base.symbols.clone();
-        let rels_at: HashMap<u64, ElfRel> = ctx.objs[i]
+        let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = ctx.objs[i]
             .section_at(opd.shndx)
             .rels::<Ppc64V1>(&ctx.objs[i])
             .iter()
-            .map(|r| (r.r_offset, r))
+            .map(|r| (r.r_offset(), *r))
             .collect();
 
         // Move symbols from .opd to .text.
@@ -212,7 +213,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                     sym.value
                 );
             };
-            let target = &ctx.symbols[local_symbols[rel.r_sym as usize]];
+            let target = &ctx.symbols[local_symbols[rel.r_sym() as usize]];
             if target.ty() != STT_SECTION {
                 fatal!(
                     ctx,
@@ -224,7 +225,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             descriptors.push((sym.value, idx as u32));
             let sym = &mut ctx.symbols[id];
             sym.set_origin_state(origin);
-            sym.value = rel.r_addend as u64;
+            sym.value = rel.r_addend() as u64;
         }
         // Sort symbols so that get_opd_sym_at() can do binary search.
         descriptors.sort_by_key(|&(offset, _)| offset);
@@ -240,18 +241,18 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             .input_sections()
             .filter(|s| s.is_alive() && s.shndx != opd.shndx)
         {
-            let mut rels: Vec<ElfRel> = isec.rels::<Ppc64V1>(&ctx.objs[i]).iter().collect();
+            let mut rels = isec.rels::<Ppc64V1>(&ctx.objs[i]).to_vec();
             let mut redirected = false;
             for rel in &mut rels {
-                if !refers_to_opd[rel.r_sym as usize] {
+                if !refers_to_opd[rel.r_sym() as usize] {
                     continue;
                 }
                 match descriptors
-                    .binary_search_by_key(&(rel.r_addend as u64), |&(offset, _)| offset)
+                    .binary_search_by_key(&(rel.r_addend() as u64), |&(offset, _)| offset)
                 {
                     Ok(n) => {
-                        rel.r_sym = descriptors[n].1;
-                        rel.r_addend = 0;
+                        rel.set_r_sym(descriptors[n].1);
+                        rel.set_r_addend(0);
                         redirected = true;
                     }
                     Err(_) => unresolved = unresolved.or(Some((isec.name(&ctx.objs[i]), *rel))),
@@ -262,7 +263,9 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             }
         }
         for (shndx, rels) in rewrites {
-            ctx.objs[i].rels_mut::<Ppc64V1>(shndx).set_all(&rels);
+            ctx.objs[i]
+                .rels_mut::<Ppc64V1>(shndx)
+                .copy_from_slice(&rels);
         }
         if let Some((name, rel)) = unresolved {
             fatal!(
@@ -270,7 +273,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                 "{}:({name}): cannot find a symbol in .opd for {} at offset {:#x}",
                 ctx.objs[i],
                 rel.type_name::<Ppc64V1>(),
-                rel.r_addend
+                rel.r_addend()
             );
         }
     }
@@ -405,12 +408,12 @@ impl Arch for Ppc64V1 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_PPC64_ADDR64 => w64(loc, val),
             R_PPC64_REL32 => {
@@ -435,21 +438,21 @@ impl Arch for Ppc64V1 {
 
         // Scan relocations
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT | NEEDS_PPC_OPD);
             }
 
             // Any relocation except R_PPC64_REL24 is considered as an
             // address-taking relocation.
-            if rel.r_type != R_PPC64_REL24 && sym.ty() == STT_FUNC {
+            if rel.r_type() != R_PPC64_REL24 && sym.ty() == STT_FUNC {
                 sym.add_flags(NEEDS_PPC_OPD);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_GOT_TPREL16_HA => sym.add_flags(NEEDS_GOTTP),
                 R_PPC64_REL24 => {
                     if sym.is_imported() {
@@ -460,7 +463,7 @@ impl Arch for Ppc64V1 {
                 R_PPC64_GOT_TLSGD16_HA => sym.add_flags(NEEDS_TLSGD),
                 R_PPC64_GOT_TLSLD16_HA => ctx.needs_tlsld.store(true, Ordering::Relaxed),
                 R_PPC64_TPREL16_HA | R_PPC64_TPREL16_LO | R_PPC64_TPREL16_LO_DS => {
-                    check_tlsle(ctx, isec, sym, &rel)
+                    check_tlsle(ctx, isec, sym, rel)
                 }
                 R_PPC64_ADDR64
                 | R_PPC64_TOC
@@ -502,23 +505,23 @@ impl Arch for Ppc64V1 {
         let got = ctx.got.hdr.shdr.sh_addr;
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_TOC => {}
                 R_PPC64_TOC16_HA => w16(loc, ha(sa.wrapping_sub(toc))),
                 R_PPC64_TOC16_LO => w16(loc, lo(sa.wrapping_sub(toc))),
@@ -582,19 +585,19 @@ impl Arch for Ppc64V1 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_ADDR64 => w64(
                     loc,
                     isec.tombstone(ctx, sym, frag.map(|(f, _)| f)).unwrap_or(sa),
@@ -614,7 +617,7 @@ impl Arch for Ppc64V1 {
         }
     }
 
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &Self::Rel) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 

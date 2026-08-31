@@ -18,7 +18,6 @@ pub mod sframe;
 pub mod symtab;
 pub mod version;
 
-use std::marker::PhantomData;
 use std::num::NonZeroU32;
 
 use bstr::BStr;
@@ -746,85 +745,8 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
     }
 }
 
-/// Storage for a chunk's dynamic relocations. Native records are used by
-/// Android packing and when the target's records have the host layout;
-/// other targets are encoded directly into their output bytes.
-pub enum DynRelBuffer<'a, E: Arch> {
-    Native(&'a mut [ElfRel]),
-    Encoded(&'a mut [u8], PhantomData<E>),
-}
-
-impl<'a, E: Arch> DynRelBuffer<'a, E> {
-    pub fn native(rels: &'a mut [ElfRel]) -> Self {
-        DynRelBuffer::Native(rels)
-    }
-
-    pub fn output(buf: &'a mut [u8]) -> Self {
-        debug_assert!(buf.len().is_multiple_of(ElfRel::size::<E>()));
-
-        if E::IS_64
-            && E::IS_RELA
-            && E::Endian::IS_NATIVE
-            && buf.as_ptr().align_offset(std::mem::align_of::<ElfRel>()) == 0
-        {
-            let len = buf.len() / std::mem::size_of::<ElfRel>();
-            // SAFETY: ElfRel has the native ELF64 Rela field layout when the
-            // target and host have the same byte order, the output section is
-            // suitably aligned, every bit pattern is valid for its integer
-            // fields, and `buf` is borrowed exclusively for the returned
-            // slice's lifetime.
-            let rels =
-                unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast::<ElfRel>(), len) };
-            return DynRelBuffer::Native(rels);
-        }
-
-        DynRelBuffer::Encoded(buf, PhantomData)
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        match self {
-            DynRelBuffer::Native(rels) => rels.len(),
-            DynRelBuffer::Encoded(buf, _) => buf.len() / ElfRel::size::<E>(),
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    #[inline]
-    pub fn write(&mut self, i: usize, rel: ElfRel) {
-        match self {
-            DynRelBuffer::Native(rels) => rels[i] = rel,
-            DynRelBuffer::Encoded(buf, _) => {
-                let size = ElfRel::size::<E>();
-                rel.write::<E>(&mut buf[i * size..(i + 1) * size]);
-            }
-        }
-    }
-
-    pub fn split_at_offsets(self, offsets: &[u64]) -> Vec<Self> {
-        match self {
-            DynRelBuffer::Native(rels) => crate::output_file::split_at_offsets(rels, offsets)
-                .into_iter()
-                .map(DynRelBuffer::Native)
-                .collect(),
-            DynRelBuffer::Encoded(buf, _) => {
-                let size = ElfRel::size::<E>() as u64;
-                let offsets: Vec<u64> = offsets.iter().map(|&offset| offset * size).collect();
-                crate::output_file::split_at_offsets(buf, &offsets)
-                    .into_iter()
-                    .map(|buf| DynRelBuffer::Encoded(buf, PhantomData))
-                    .collect()
-            }
-        }
-    }
-}
-
 /// Writes a chunk's dynamic relocations to its assigned output slots.
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: DynRelBuffer<'_, E>) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: &mut [E::Rel]) {
     match id {
         ChunkId::Output(id) => output_section::write_dynrels(ctx, id, out),
         ChunkId::Got => got::got::write_dynrels(ctx, out),

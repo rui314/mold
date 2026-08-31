@@ -100,6 +100,7 @@ pub struct Ppc64V2;
 
 impl Layout for Ppc64V2 {
     type Endian = LittleEndian;
+    type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
 }
@@ -461,12 +462,12 @@ impl Arch for Ppc64V2 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_PPC64_ADDR64 => w64(loc, val),
             R_PPC64_REL32 => {
@@ -490,15 +491,15 @@ impl Arch for Ppc64V2 {
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_GOT_TPREL16_HA | R_PPC64_GOT_TPREL_PCREL34 => sym.add_flags(NEEDS_GOTTP),
                 R_PPC64_REL24 => {
                     if sym.is_imported() {
@@ -523,7 +524,7 @@ impl Arch for Ppc64V2 {
                 R_PPC64_GOT_TLSLD16_HA | R_PPC64_GOT_TLSLD_PCREL34 => {
                     ctx.needs_tlsld.store(true, Ordering::Relaxed)
                 }
-                R_PPC64_TPREL16_HA | R_PPC64_TPREL34 => check_tlsle(ctx, isec, sym, &rel),
+                R_PPC64_TPREL16_HA | R_PPC64_TPREL34 => check_tlsle(ctx, isec, sym, rel),
                 R_PPC64_ADDR64
                 | R_PPC64_REL14
                 | R_PPC64_REL32
@@ -571,18 +572,18 @@ impl Arch for Ppc64V2 {
         let got = ctx.got.hdr.shdr.sh_addr;
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -594,7 +595,7 @@ impl Arch for Ppc64V2 {
             let r2save_thunk = || sym.thunk_addr(ctx, p);
             let no_r2save_thunk = || sym.thunk_addr(ctx, p) + 8;
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_TOC16_HA => w16(loc, ha(sa.wrapping_sub(toc))),
                 R_PPC64_TOC16_LO => w16(loc, lo(sa.wrapping_sub(toc))),
                 R_PPC64_TOC16_DS => {
@@ -693,19 +694,19 @@ impl Arch for Ppc64V2 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC64_ADDR64 => match isec.tombstone(ctx, sym, frag.map(|(f, _)| f)) {
                     Some(v) => w64(loc, v),
                     None => w64(loc, sa),
@@ -731,10 +732,10 @@ impl Arch for Ppc64V2 {
     /// Functions compiled for Power9 or earlier assume that r2 points to
     /// GOT+0x8000, while those for Power10 uses r2 as a scratch register.
     /// We need a thunk to recompute r2 for interworking.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &Self::Rel) -> bool {
         sym.has_plt(&ctx.symbols)
-            || (rel.r_type == R_PPC64_REL24 && !sym.esym(ctx).ppc64_preserves_r2())
-            || (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym(ctx).ppc64_uses_toc())
+            || (rel.r_type() == R_PPC64_REL24 && !sym.esym(ctx).ppc64_preserves_r2())
+            || (rel.r_type() == R_PPC64_REL24_NOTOC && sym.esym(ctx).ppc64_uses_toc())
     }
 
     fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, addr: u64, buf: &mut [u8]) {

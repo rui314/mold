@@ -120,7 +120,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
             // We just keep all CIEs and everything that are referenced by them.
             for cie in &file.cies {
                 for rel in cie.rels::<E>(file) {
-                    enqueue_symbol(file.base.symbols[rel.r_sym as usize], &mut roots);
+                    enqueue_symbol(file.base.symbols[rel.r_sym() as usize], &mut roots);
                 }
             }
             roots
@@ -165,7 +165,7 @@ fn visit_section<'scope, E: Arch>(
     for fde in isec.fdes(file) {
         for rel in fde.rels::<E>(file).iter().skip(1) {
             if let Some(target) =
-                ctx.symbols[file.base.symbols[rel.r_sym as usize]].input_section_ref()
+                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref()
             {
                 mark(target);
             }
@@ -173,7 +173,7 @@ fn visit_section<'scope, E: Arch>(
     }
 
     for rel in isec.rels::<E>(file) {
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         if let Some(FileId::Dso(dso)) = sym.file() {
             ctx.dsos[dso.index()].base.set_reachable(true);
             continue;

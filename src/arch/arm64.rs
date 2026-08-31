@@ -39,8 +39,16 @@ pub struct Arm64Target<End>(PhantomData<End>);
 pub type Arm64 = Arm64Target<LittleEndian>;
 pub type Arm64Be = Arm64Target<BigEndian>;
 
-impl<End: Endian> Layout for Arm64Target<End> {
-    type Endian = End;
+impl Layout for Arm64Target<LittleEndian> {
+    type Endian = LittleEndian;
+    type Rel = Elf64RelaLe;
+    const IS_64: bool = true;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for Arm64Target<BigEndian> {
+    type Endian = BigEndian;
+    type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
 }
@@ -107,14 +115,17 @@ fn is_add(loc: &[u8]) -> bool {
 
 const NOP: u32 = 0xd503_201f;
 
-impl<End: Endian> Arm64Target<End> {
+impl<End: Endian> Arm64Target<End>
+where
+    Self: Layout<Endian = End>,
+{
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
     /// which the psABI allows when the target is within ±1 MiB.
     fn relaxes_adrp_add(ctx: &Context<Self>, isec: &InputSection, i: usize) -> bool {
         let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
-        let rel = &rels.at(i);
+        let rel = &rels[i];
         if !matches!(
-            rel.r_type,
+            rel.r_type(),
             R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC
         ) || !ctx.args.relax
         {
@@ -124,30 +135,33 @@ impl<End: Endian> Arm64Target<End> {
             return false;
         };
         let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         if !sym.is_pcrel_linktime_const(ctx) {
             return false;
         }
         let s = sym.addr(ctx);
-        let p = isec.addr(ctx) + rel.r_offset;
+        let p = isec.addr(ctx) + rel.r_offset();
         let val = s
-            .wrapping_add(rel.r_addend as u64)
+            .wrapping_add(rel.r_addend() as u64)
             .wrapping_sub(p)
             .wrapping_sub(4) as i64;
-        let off = rel.r_offset as usize;
+        let off = rel.r_offset() as usize;
         let loc = &isec.contents()[off..];
         is_int(val, 21)
-            && rel2.r_type == R_AARCH64_ADD_ABS_LO12_NC
-            && rel2.r_sym == rel.r_sym
-            && rel2.r_offset == rel.r_offset + 4
-            && rel2.r_addend == rel.r_addend
+            && rel2.r_type() == R_AARCH64_ADD_ABS_LO12_NC
+            && rel2.r_sym() == rel.r_sym()
+            && rel2.r_offset() == rel.r_offset() + 4
+            && rel2.r_addend() == rel.r_addend()
             && is_adrp(loc)
             && is_add(&loc[4..])
             && bits(insn(loc) as u64, 4, 0) == bits(insn(&loc[4..]) as u64, 4, 0)
     }
 }
 
-impl<End: Endian> Arch for Arm64Target<End> {
+impl<End: Endian> Arch for Arm64Target<End>
+where
+    Self: Layout<Endian = End>,
+{
     const NAME: &'static str = if End::IS_LITTLE { "arm64" } else { "arm64be" };
     const FAMILY: Family = Family::Arm64;
     const PAGE_SIZE: u64 = 65536;
@@ -240,13 +254,13 @@ impl<End: Endian> Arch for Arm64Target<End> {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_AARCH64_ABS64 => End::write_u64(loc, val),
             R_AARCH64_PREL32 => {
@@ -266,19 +280,19 @@ impl<End: Endian> Arch for Arm64Target<End> {
 
         // Scan relocations
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let loc = &isec.contents()[rel.r_offset as usize..];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let loc = &isec.contents()[rel.r_offset() as usize..];
 
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_AARCH64_MOVW_UABS_G3 => scan_absrel(ctx, isec, sym, rel),
                 R_AARCH64_ADR_GOT_PAGE => {
                     // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
@@ -289,11 +303,11 @@ impl<End: Endian> Arch for Arm64Target<End> {
                         && sym.is_pcrel_linktime_const(ctx)
                         && rels.get(i).is_some_and(|rel2| {
                             // ADRP+LDR must be consecutive and use the same register to relax.
-                            rel2.r_type == R_AARCH64_LD64_GOT_LO12_NC
-                                && rel2.r_offset == rel.r_offset + 4
-                                && rel2.r_sym == rel.r_sym
-                                && rel.r_addend == 0
-                                && rel2.r_addend == 0
+                            rel2.r_type() == R_AARCH64_LD64_GOT_LO12_NC
+                                && rel2.r_offset() == rel.r_offset() + 4
+                                && rel2.r_sym() == rel.r_sym()
+                                && rel.r_addend() == 0
+                                && rel2.r_addend() == 0
                                 && is_adrp(loc)
                                 && is_ldr(&loc[4..])
                                 && {
@@ -379,20 +393,20 @@ impl<End: Endian> Arch for Arm64Target<End> {
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let got = ctx.got.hdr.shdr.sh_addr;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
@@ -402,7 +416,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
             let loc = &mut buf[off..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 // Handled as an absolute relocation by the output section.
                 R_AARCH64_ABS64 => {}
                 R_AARCH64_LDST8_ABS_LO12_NC | R_AARCH64_ADD_ABS_LO12_NC => {
@@ -475,7 +489,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
                         i += 1;
                     } else {
                         let val = page(sa).wrapping_sub(page(p));
-                        if rel.r_type == R_AARCH64_ADR_PREL_PG_HI21 {
+                        if rel.r_type() == R_AARCH64_ADR_PREL_PG_HI21 {
                             check(val as i64, -(1 << 32), 1 << 32);
                         }
                         write_adrp(loc, val);
@@ -660,21 +674,21 @@ impl<End: Endian> Arch for Arm64Target<End> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let off = rel.r_offset as usize;
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let off = rel.r_offset() as usize;
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
             let loc = &mut buf[off..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_AARCH64_ABS64 => match isec.tombstone(ctx, sym, frag_ref) {
                     Some(v) => End::write_u64(loc, v),
                     None => End::write_u64(loc, s.wrapping_add(a)),
@@ -697,21 +711,26 @@ impl<End: Endian> Arch for Arm64Target<End> {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, i: usize) -> u32 {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        i: usize,
+    ) -> u32 {
         if !isec.is_alloc() {
-            return rel.r_type;
+            return rel.r_type();
         }
         let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
         let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         let follows_relaxed_got_load = || {
             i > 0
-                && rels.at(i - 1).r_type == R_AARCH64_ADR_GOT_PAGE
-                && rels.at(i - 1).r_sym == rel.r_sym
+                && rels[i - 1].r_type() == R_AARCH64_ADR_GOT_PAGE
+                && rels[i - 1].r_sym() == rel.r_sym()
                 && !sym.has_got(&ctx.symbols)
         };
 
-        match rel.r_type {
+        match rel.r_type() {
             R_AARCH64_ADR_GOT_PAGE if !sym.has_got(&ctx.symbols) => R_AARCH64_ADR_PREL_PG_HI21,
             R_AARCH64_LD64_GOT_LO12_NC if follows_relaxed_got_load() => R_AARCH64_ADD_ABS_LO12_NC,
             R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC
@@ -741,7 +760,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
                     R_AARCH64_TLSLE_MOVW_TPREL_G0_NC
                 }
             }
-            _ => rel.r_type,
+            _ => rel.r_type(),
         }
     }
 

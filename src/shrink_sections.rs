@@ -89,7 +89,7 @@ pub fn compute_distance<E: Arch>(
     ctx: &Context<E>,
     sym: &Symbol,
     isec: &InputSection,
-    rel: &ElfRel,
+    rel: &ElfRel<E>,
 ) -> i64 {
     // We handle absolute symbols as if they were infinitely far away
     // because `shrink_section` may increase a distance between a branch
@@ -100,8 +100,8 @@ pub fn compute_distance<E: Arch>(
     }
     // Compute a distance between the relocated place and the symbol.
     let s = sym.addr(ctx) as i64;
-    let p = (isec.addr(ctx) + rel.r_offset) as i64;
-    s.wrapping_add(rel.r_addend).wrapping_sub(p)
+    let p = (isec.addr(ctx) + rel.r_offset()) as i64;
+    s.wrapping_add(rel.r_addend()).wrapping_sub(p)
 }
 
 /// Find all relaxable relocations and record how many bytes we can save

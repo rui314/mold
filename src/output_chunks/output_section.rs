@@ -10,7 +10,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::input_sections::{r_delta, InputSectionId};
-use crate::output_chunks::{ChunkHeader, DynRelBuffer, OutputSectionId};
+use crate::output_chunks::{ChunkHeader, OutputSectionId};
 use crate::symbol::{AddrFlags, SymbolId, NEEDS_CANONICAL};
 use crate::thunks::Thunk;
 use crate::util::align_to;
@@ -365,7 +365,7 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u
     offsets
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: DynRelBuffer<'_, E>) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [E::Rel]) {
     let osec = &ctx.output_sections[id.index()];
     // A single output section such as .data.rel.ro can account for
     // most of an output's dynamic relocations, so we process its
@@ -383,12 +383,12 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: DynRel
     let count = offsets.last().copied().unwrap_or(0) as usize;
     debug_assert_eq!(count as u64, osec.hdr.num_dynrels - osec.hdr.num_relrs);
     debug_assert_eq!(out.len(), count);
-    let slices = out.split_at_offsets(&offsets[..nshards]);
+    let slices = crate::output_file::split_at_offsets(out, &offsets[..nshards]);
 
     osec.abs_rels
         .par_chunks(DYNREL_SHARD_SIZE)
         .zip(slices.into_par_iter())
-        .for_each(|(rels, mut slots)| {
+        .for_each(|(rels, slots)| {
             let mut i = 0;
             for r in rels {
                 let sym = &ctx.symbols[r.sym];
@@ -401,7 +401,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: DynRel
                 }
                 let rel = match r.kind {
                     AbsRelKind::None | AbsRelKind::Relr => None,
-                    AbsRelKind::BaseRel => Some(ElfRel::new(
+                    AbsRelKind::BaseRel => Some(ElfRel::<E>::new(
                         p,
                         E::R_RELATIVE,
                         0,
@@ -409,9 +409,9 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: DynRel
                     )),
                     AbsRelKind::IFunc => E::R_IRELATIVE.map(|r_type| {
                         let val = sym.addr_with(ctx, AddrFlags::NO_PLT).wrapping_add(a as u64);
-                        ElfRel::new(p, r_type, 0, val as i64)
+                        ElfRel::<E>::new(p, r_type, 0, val as i64)
                     }),
-                    AbsRelKind::DynRel => Some(ElfRel::new(
+                    AbsRelKind::DynRel => Some(ElfRel::<E>::new(
                         p,
                         E::R_ABS,
                         sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
@@ -419,7 +419,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: DynRel
                     )),
                 };
                 if let Some(rel) = rel {
-                    slots.write(i, rel);
+                    slots[i] = rel;
                     i += 1;
                 }
             }
@@ -449,15 +449,15 @@ fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRe
     AbsRelKind::DynRel
 }
 
-fn is_absrel<E: Arch>(r: &ElfRel) -> bool {
+fn is_absrel<E: Arch>(r: &ElfRel<E>) -> bool {
     match E::FAMILY {
         // On ARM32, R_ARM_TARGET1 is typically used for entries in .init_array
         // and is interpreted as either ABS32 or REL32 depending on the target.
         // All targets we support handle it as if it were a ABS32.
-        Family::Arm32 => r.r_type == R_ARM_ABS32 || r.r_type == R_ARM_TARGET1,
+        Family::Arm32 => r.r_type() == R_ARM_ABS32 || r.r_type() == R_ARM_TARGET1,
         // SPARC64 defines two separate relocations for aligned and unaligned words.
-        Family::Sparc64 => r.r_type == R_SPARC_64 || r.r_type == R_SPARC_UA64,
-        _ => r.r_type == E::R_ABS,
+        Family::Sparc64 => r.r_type() == R_SPARC_64 || r.r_type() == R_SPARC_UA64,
+        _ => r.r_type() == E::R_ABS,
     }
 }
 
@@ -484,9 +484,9 @@ pub fn scan_abs_relocations<E: Arch>(
                 .filter(|r| is_absrel::<E>(r))
                 .map(move |r| AbsRel {
                     isec: m,
-                    offset: r.r_offset,
-                    sym: file.base.symbols[r.r_sym as usize],
-                    addend: isec.rel_addend::<E>(&r),
+                    offset: r.r_offset(),
+                    sym: file.base.symbols[r.r_sym() as usize],
+                    addend: isec.rel_addend::<E>(r),
                     kind: AbsRelKind::None,
                 })
         })

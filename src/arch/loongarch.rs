@@ -45,9 +45,17 @@ pub struct LoongArchTarget<const IS_64: bool>(PhantomData<()>);
 pub type LoongArch64 = LoongArchTarget<true>;
 pub type LoongArch32 = LoongArchTarget<false>;
 
-impl<const IS_64: bool> Layout for LoongArchTarget<IS_64> {
+impl Layout for LoongArchTarget<true> {
     type Endian = LittleEndian;
-    const IS_64: bool = IS_64;
+    type Rel = Elf64RelaLe;
+    const IS_64: bool = true;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for LoongArchTarget<false> {
+    type Endian = LittleEndian;
+    type Rel = Elf32RelaLe;
+    const IS_64: bool = false;
     const IS_RELA: bool = true;
 }
 
@@ -218,21 +226,21 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
 fn is_relaxable_got_load<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) -> bool {
     let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
     let file = &ctx.objs[isec.file.index()];
-    let sym = &ctx.symbols[file.base.symbols[rels.at(i).r_sym as usize]];
+    let sym = &ctx.symbols[file.base.symbols[rels[i].r_sym() as usize]];
     let contents = isec.original_contents(file);
 
     if !ctx.args.relax
         || !sym.is_pcrel_linktime_const(ctx)
         || i + 3 >= rels.len()
-        || rels.at(i + 1).r_type != R_LARCH_RELAX
-        || rels.at(i + 2).r_type != R_LARCH_GOT_PC_LO12
-        || rels.at(i + 2).r_offset != rels.at(i).r_offset + 4
-        || rels.at(i + 3).r_type != R_LARCH_RELAX
+        || rels[i + 1].r_type() != R_LARCH_RELAX
+        || rels[i + 2].r_type() != R_LARCH_GOT_PC_LO12
+        || rels[i + 2].r_offset() != rels[i].r_offset() + 4
+        || rels[i + 3].r_type() != R_LARCH_RELAX
     {
         return false;
     }
-    let insn1 = insn(&contents[rels.at(i).r_offset as usize..]);
-    let insn2 = insn(&contents[rels.at(i).r_offset as usize + 4..]);
+    let insn1 = insn(&contents[rels[i].r_offset() as usize..]);
+    let insn2 = insn(&contents[rels[i].r_offset() as usize + 4..]);
     let is_ld_d = insn2 & 0xffc0_0000 == 0x28c0_0000;
     rd(insn1) == rd(insn2) && rd(insn2) == rj(insn2) && is_ld_d
 }
@@ -274,7 +282,10 @@ impl<const IS_64: bool> LoongArchTarget<IS_64> {
     }
 }
 
-impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
+impl<const IS_64: bool> Arch for LoongArchTarget<IS_64>
+where
+    Self: Layout<Endian = LittleEndian>,
+{
     const NAME: &'static str = if IS_64 { "loongarch64" } else { "loongarch32" };
     const FAMILY: Family = Family::LoongArch;
     const PAGE_SIZE: u64 = 65536;
@@ -360,12 +371,12 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_LARCH_ADD6 => add_bits(loc, 6, val, false),
             R_LARCH_ADD8 => add_bits(loc, 8, val, false),
@@ -398,18 +409,18 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
         for rel in isec.rels::<Self>(file) {
-            if is_marker(rel.r_type) || isec.record_undef_error(ctx, &rel) {
+            if is_marker(rel.r_type()) || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_LARCH_32 => {
                     if IS_64 {
-                        scan_absrel(ctx, isec, sym, &rel);
+                        scan_absrel(ctx, isec, sym, rel);
                     }
                 }
                 R_LARCH_B26 | R_LARCH_PCALA_HI20 | R_LARCH_CALL36 => {
@@ -423,13 +434,13 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 | R_LARCH_TLS_LD_PC_HI20
                 | R_LARCH_TLS_GD_HI20
                 | R_LARCH_TLS_LD_HI20 => sym.add_flags(NEEDS_TLSGD),
-                R_LARCH_32_PCREL | R_LARCH_64_PCREL => scan_pcrel(ctx, isec, sym, &rel),
+                R_LARCH_32_PCREL | R_LARCH_64_PCREL => scan_pcrel(ctx, isec, sym, rel),
                 R_LARCH_TLS_LE_HI20
                 | R_LARCH_TLS_LE_LO12
                 | R_LARCH_TLS_LE64_LO20
                 | R_LARCH_TLS_LE64_HI12
                 | R_LARCH_TLS_LE_HI20_R
-                | R_LARCH_TLS_LE_LO12_R => check_tlsle(ctx, isec, sym, &rel),
+                | R_LARCH_TLS_LE_LO12_R => check_tlsle(ctx, isec, sym, rel),
                 R_LARCH_TLS_DESC_CALL => scan_tlsdesc(ctx, sym),
                 R_LARCH_64
                 | R_LARCH_B16
@@ -487,20 +498,20 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if is_marker(rel.r_type) {
+            if is_marker(rel.r_type()) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
             let (removed, delta) = isec.removed_at(rel);
-            let r_offset = rel.r_offset - delta as u64;
+            let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
+            let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + r_offset;
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -543,7 +554,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             };
             let loc = &mut buf[r_offset as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_LARCH_32 => {
                     debug_assert!(IS_64);
                     LittleEndian::write_u32(loc, sa as u32);
@@ -679,7 +690,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     } else {
                         // Rewrite PCADDU18I + JIRL to B or BL
                         debug_assert_eq!(removed, 4);
-                        let jirl = insn(&contents[rel.r_offset as usize + 4..]);
+                        let jirl = insn(&contents[rel.r_offset() as usize + 4..]);
                         set_insn(
                             loc,
                             if rd(jirl) == 0 {
@@ -816,20 +827,20 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
             let tombstone = || isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_LARCH_32 => LittleEndian::write_u32(loc, sa as u32),
                 R_LARCH_64 => LittleEndian::write_u64(loc, tombstone().unwrap_or(sa)),
                 R_LARCH_ADD6 => add_bits(loc, 6, sa, false),
@@ -862,27 +873,32 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, i: usize) -> u32 {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        i: usize,
+    ) -> u32 {
         if !isec.is_alloc() {
-            return rel.r_type;
+            return rel.r_type();
         }
         let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
         let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         let (removed, delta) = isec.removed_at(rel);
 
         // The low half of a pair whose high half folded into a pcaddi.
         let folded_into_pcaddi = || {
             i >= 2
                 && matches!(
-                    rels.at(i - 2).r_type,
+                    rels[i - 2].r_type(),
                     R_LARCH_PCALA_HI20 | R_LARCH_GOT_PC_HI20
                 )
-                && rels.at(i - 2).r_offset + 4 == rel.r_offset
-                && isec.removed_at(&rels.at(i - 2)).0 != 0
+                && rels[i - 2].r_offset() + 4 == rel.r_offset()
+                && isec.removed_at(&rels[i - 2]).0 != 0
         };
 
-        match rel.r_type {
+        match rel.r_type() {
             R_LARCH_PCALA_HI20 | R_LARCH_GOT_PC_HI20 if removed != 0 => R_NONE,
             R_LARCH_PCALA_LO12 | R_LARCH_GOT_PC_LO12 if folded_into_pcaddi() => R_LARCH_PCREL20_S2,
             R_LARCH_CALL36 if removed != 0 => R_LARCH_B26,
@@ -894,15 +910,15 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 if !sym.has_tlsdesc(&ctx.symbols) {
                     R_NONE
                 } else {
-                    let p = isec.addr(ctx) + rel.r_offset - delta as u64;
+                    let p = isec.addr(ctx) + rel.r_offset() - delta as u64;
                     let dist = sym
                         .tlsdesc_addr(ctx)
-                        .wrapping_add(rel.r_addend as u64)
+                        .wrapping_add(rel.r_addend() as u64)
                         .wrapping_sub(p) as i64;
                     if removed == 0 && is_int(dist, 22) {
                         R_LARCH_TLS_DESC_PCREL20_S2
                     } else {
-                        rel.r_type
+                        rel.r_type()
                     }
                 }
             }
@@ -923,7 +939,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 }
             }
             R_LARCH_TLS_LE_HI20_R | R_LARCH_TLS_LE_ADD_R if removed != 0 => R_NONE,
-            _ => rel.r_type,
+            _ => rel.r_type(),
         }
     }
 
@@ -935,40 +951,40 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
         let mut delta: i64 = 0;
 
         // Records that `d` bytes go away at relocation `r`.
-        fn record(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &ElfRel, d: i64) {
+        fn record<R: RelRecord>(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &R, d: i64) {
             *delta += d;
             deltas.push(RelocDelta {
-                offset: r.r_offset,
+                offset: r.r_offset(),
                 delta: *delta,
             });
         }
 
         for i in 0..rels.len() {
-            let r = &rels.at(i);
-            let sym = &ctx.symbols[file.base.symbols[r.r_sym as usize]];
+            let r = &rels[i];
+            let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
 
             // A R_LARCH_ALIGN relocation refers to the beginning of a nop
             // sequence. We need to remove some or all of them so that the
             // instruction that immediately follows that is aligned to a specified
             // boundary. To allow that, a R_LARCH_ALIGN relocation that requests
             // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
-            if r.r_type == R_LARCH_ALIGN {
+            if r.r_type() == R_LARCH_ALIGN {
                 // The actual rule for storing the alignment size is a bit weird.
                 // In particular, the most significant 56 bits of r_addend is
                 // sometimes used to store the upper limit of the alignment,
                 // allowing the instruction that follows nops _not_ to be aligned at
                 // all. I think that's a spec bug, so we don't want to support that.
-                let alignment = if r.r_sym != 0 {
-                    if r.r_addend >> 8 != 0 {
+                let alignment = if r.r_sym() != 0 {
+                    if r.r_addend() >> 8 != 0 {
                         fatal!(
                             ctx,
                             "{}: ternary R_LARCH_ALIGN is not supported: {i}",
                             isec.display(file)
                         );
                     }
-                    1u64 << r.r_addend
+                    1u64 << r.r_addend()
                 } else {
-                    let alignment = r.r_addend as u64 + 4;
+                    let alignment = r.r_addend() as u64 + 4;
                     if !alignment.is_power_of_two() {
                         fatal!(
                             ctx,
@@ -978,7 +994,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     }
                     alignment
                 };
-                let p = isec.addr(ctx) + r.r_offset - delta as u64;
+                let p = isec.addr(ctx) + r.r_offset() - delta as u64;
                 let desired = align_to(p, alignment);
                 let actual = p + alignment - 4;
                 if desired != actual {
@@ -988,7 +1004,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             }
 
             // Handling other relocations is optional.
-            if !ctx.args.relax || i + 1 == rels.len() || rels.at(i + 1).r_type != R_LARCH_RELAX {
+            if !ctx.args.relax || i + 1 == rels.len() || rels[i + 1].r_type() != R_LARCH_RELAX {
                 continue;
             }
 
@@ -1000,7 +1016,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
 
             let mut remove = |d: i64| record(&mut deltas, &mut delta, r, d);
 
-            match r.r_type {
+            match r.r_type() {
                 // LoongArch uses the following three instructions to access
                 // TP ± 2 GiB.
                 //
@@ -1015,7 +1031,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 R_LARCH_TLS_LE_HI20_R | R_LARCH_TLS_LE_ADD_R => {
                     let val = sym
                         .addr(ctx)
-                        .wrapping_add(r.r_addend as u64)
+                        .wrapping_add(r.r_addend() as u64)
                         .wrapping_sub(ctx.tp_addr) as i64;
                     if is_int(val, 12) {
                         remove(4);
@@ -1033,13 +1049,13 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 // pcaddi    $t0, <offset>
                 R_LARCH_PCALA_HI20 => {
                     if i + 3 < rels.len()
-                        && rels.at(i + 2).r_type == R_LARCH_PCALA_LO12
-                        && rels.at(i + 2).r_offset == r.r_offset + 4
-                        && rels.at(i + 3).r_type == R_LARCH_RELAX
+                        && rels[i + 2].r_type() == R_LARCH_PCALA_LO12
+                        && rels[i + 2].r_offset() == r.r_offset() + 4
+                        && rels[i + 3].r_type() == R_LARCH_RELAX
                     {
                         let dist = compute_distance(ctx, sym, isec, r);
-                        let insn1 = insn(&contents[r.r_offset as usize..]);
-                        let insn2 = insn(&contents[r.r_offset as usize + 4..]);
+                        let insn1 = insn(&contents[r.r_offset() as usize..]);
+                        let insn2 = insn(&contents[r.r_offset() as usize + 4..]);
                         let is_addi_d = insn2 & 0xffc0_0000 == 0x02c0_0000;
                         if dist & 0b11 == 0
                             && is_int(dist, 22)
@@ -1061,7 +1077,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 // Note that $zero is $r0 and $ra is $r1.
                 R_LARCH_CALL36 => {
                     let dist = compute_distance(ctx, sym, isec, r);
-                    let jirl = insn(&contents[r.r_offset as usize + 4..]);
+                    let jirl = insn(&contents[r.r_offset() as usize + 4..]);
                     if is_int(dist, 28) && (rd(jirl) == 0 || rd(jirl) == 1) {
                         remove(4);
                     }
@@ -1086,10 +1102,10 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 }
                 R_LARCH_TLS_DESC_PC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) {
-                        let p = isec.addr(ctx) + r.r_offset;
+                        let p = isec.addr(ctx) + r.r_offset();
                         let dist = sym
                             .tlsdesc_addr(ctx)
-                            .wrapping_add(r.r_addend as u64)
+                            .wrapping_add(r.r_addend() as u64)
                             .wrapping_sub(p) as i64;
                         if is_int(dist, 22) {
                             remove(4);
@@ -1108,7 +1124,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 {
                     let val = sym
                         .addr(ctx)
-                        .wrapping_add(r.r_addend as u64)
+                        .wrapping_add(r.r_addend() as u64)
                         .wrapping_sub(ctx.tp_addr) as i64;
                     if (0..0x1000).contains(&val) {
                         remove(4);

@@ -1843,11 +1843,11 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
         for isec in file.input_sections() {
             let mut visited: HashSet<SymbolId> = HashSet::new();
             for r in isec.rels::<E>(file) {
-                if r.r_type == R_NONE || file.base.elf_syms.len() <= r.r_sym as usize {
+                if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
                     continue;
                 }
-                let esym = &file.base.elf_syms.at_in::<E>(r.r_sym as usize);
-                let id = file.base.symbols[r.r_sym as usize];
+                let esym = &file.base.elf_syms.at_in::<E>(r.r_sym() as usize);
+                let id = file.base.symbols[r.r_sym() as usize];
                 let sym = &ctx.symbols[id];
                 if esym.is_undef()
                     && sym.file().is_some()
@@ -2436,16 +2436,16 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
                 }
             }
             let size = isec.sh_size;
-            let mut rels: Vec<ElfRel> = isec.rels::<E>(file).iter().collect();
+            let mut rels = isec.rels::<E>(file).to_vec();
             for r in &mut rels {
-                r.r_offset = size - r.r_offset - word as u64;
+                r.set_r_offset(size - r.r_offset() - word as u64);
             }
-            rels.sort_by_key(|r| r.r_offset);
+            rels.sort_by_key(|r| r.r_offset());
             let file = &mut ctx.objs[section_ref.file.index()];
             file.section_mut(section_ref.shndx as usize)
                 .unwrap()
                 .set_contents(leak_bytes(contents));
-            file.rels_mut::<E>(section_ref.shndx).set_all(&rels);
+            file.rels_mut::<E>(section_ref.shndx).copy_from_slice(&rels);
         }
     }
 }
@@ -3504,7 +3504,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             }
             for r in isec.rels::<E>(file) {
                 if !r.is_func_call::<E>() {
-                    let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym as usize]];
+                    let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
                     if let Some(dst) = sym.input_section_ref() {
                         if dst.sh_flags & SHF_EXECINSTR as u64 != 0 {
                             dst.set_address_taken();
@@ -4217,7 +4217,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // such executable lacks the .dynamic section and thus there's no way
     // to find ifunc relocations other than these symbols.
     if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
-        let n = num_irelative_relocs(ctx) as i64 * ElfRel::size::<E>() as i64;
+        let n = num_irelative_relocs(ctx) as i64 * std::mem::size_of::<ElfRel<E>>() as i64;
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
         stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
     } else {

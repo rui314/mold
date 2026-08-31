@@ -11,7 +11,7 @@
 use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
-use crate::output_chunks::{ChunkHeader, DynRelBuffer};
+use crate::output_chunks::ChunkHeader;
 use crate::symbol::{AddrFlags, SymbolId};
 
 pub const ENTRY_SIZE: u64 = 24;
@@ -85,7 +85,7 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, mut out: DynRelBuffer<'_, E>) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
     if !ctx.args.pic {
         debug_assert!(out.is_empty());
         return;
@@ -99,7 +99,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, mut out: DynRelBuffer<'_, E>) {
         let entry = ctx.symbols[id].addr_with(ctx, ENTRY_POINT);
         for (addr, val) in [(loc, entry), (loc + 8, toc)] {
             if !relr || addr % 8 != 0 {
-                out.write(j, ElfRel::new(addr, E::R_RELATIVE, 0, val as i64));
+                out[j] = ElfRel::<E>::new(addr, E::R_RELATIVE, 0, val as i64);
                 j += 1;
             }
         }

@@ -64,8 +64,16 @@ pub struct Arm32Target<End>(PhantomData<End>);
 pub type Arm32 = Arm32Target<LittleEndian>;
 pub type Arm32Be = Arm32Target<BigEndian>;
 
-impl<End: Endian> Layout for Arm32Target<End> {
-    type Endian = End;
+impl Layout for Arm32Target<LittleEndian> {
+    type Endian = LittleEndian;
+    type Rel = Elf32RelLe;
+    const IS_64: bool = false;
+    const IS_RELA: bool = false;
+}
+
+impl Layout for Arm32Target<BigEndian> {
+    type Endian = BigEndian;
+    type Rel = Elf32RelBe;
     const IS_64: bool = false;
     const IS_RELA: bool = false;
 }
@@ -216,7 +224,10 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<Option<usize>> {
 //
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
-pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [u8]) {
+pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [u8])
+where
+    Arm32Target<End>: Layout<Endian = End>,
+{
     for file in &ctx.objs {
         // Collect mapping symbols
         let mut marks: Vec<(SectionRef, u64, Option<usize>)> = file
@@ -257,7 +268,10 @@ pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [
     }
 }
 
-impl<End: Endian> Arch for Arm32Target<End> {
+impl<End: Endian> Arch for Arm32Target<End>
+where
+    Self: Layout<Endian = End>,
+{
     const NAME: &'static str = if End::IS_LITTLE { "arm32" } else { "arm32be" };
     const FAMILY: Family = Family::Arm32;
     const PAGE_SIZE: u64 = 65536;
@@ -346,12 +360,12 @@ impl<End: Endian> Arch for Arm32Target<End> {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_ARM_ABS32 => End::write_u32(loc, val as u32),
             R_ARM_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
@@ -364,15 +378,15 @@ impl<End: Endian> Arch for Arm32Target<End> {
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_ARM_MOVW_ABS_NC | R_ARM_THM_MOVW_ABS_NC => scan_absrel(ctx, isec, sym, &rel),
                 R_ARM_THM_CALL | R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 | R_ARM_THM_JUMP24 => {
                     if sym.is_imported() {
@@ -420,18 +434,18 @@ impl<End: Endian> Arch for Arm32Target<End> {
         let osec = &ctx.output_sections[isec.output_section.expect("output section").index()];
 
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
-            if rel.r_type == R_NONE || rel.r_type == R_ARM_V4BX {
+            if rel.r_type() == R_NONE || rel.r_type() == R_ARM_V4BX {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = isec.rel_addend::<Self>(&rel) as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = isec.rel_addend::<Self>(rel) as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let t = is_thumb_func(ctx, sym) as u64;
             let got = ctx.got.hdr.shdr.sh_addr;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
@@ -460,7 +474,7 @@ impl<End: Endian> Arch for Arm32Target<End> {
             let write32 = |loc: &mut [u8], v: u32| End::write_u32(loc, v);
             let write16 = |loc: &mut [u8], v: u16| End::write_u16(loc, v);
 
-            match rel.r_type {
+            match rel.r_type() {
                 // Handled as absolute relocations by the output section.
                 R_ARM_ABS32 | R_ARM_TARGET1 => {}
                 R_ARM_REL32 => write32(loc, pcrel as u32),
@@ -703,19 +717,19 @@ impl<End: Endian> Arch for Arm32Target<End> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let frag = isec.fragment(ctx, &rel);
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), isec.rel_addend::<Self>(&rel) as u64),
+                None => (sym.addr(ctx), isec.rel_addend::<Self>(rel) as u64),
             };
             let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_ARM_ABS32 => End::write_u32(loc, tombstone.unwrap_or(s.wrapping_add(a)) as u32),
                 R_ARM_TLS_LDO32 => End::write_u32(
                     loc,
@@ -734,8 +748,8 @@ impl<End: Endian> Arch for Arm32Target<End> {
     /// Thumb and ARM B instructions cannot be converted to BX, so we
     /// always have to make them jump to a thunk to switch processor mode
     /// even if their destinations are reachable.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel) -> bool {
-        match rel.r_type {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &Self::Rel) -> bool {
+        match rel.r_type() {
             R_ARM_JUMP24 | R_ARM_PLT32 => is_thumb_func(ctx, sym),
             R_ARM_THM_JUMP24 => is_arm_func(ctx, sym),
             _ => false,
@@ -779,9 +793,9 @@ impl<End: Endian> Arch for Arm32Target<End> {
         }
     }
 
-    fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel) {
+    fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
         let v = val as u64;
-        match rel.r_type {
+        match rel.r_type() {
             R_ARM_NONE => {}
             R_ARM_ABS32 | R_ARM_REL32 | R_ARM_BASE_PREL | R_ARM_GOTOFF32 | R_ARM_GOT_PREL
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
@@ -814,10 +828,10 @@ impl<End: Endian> Arch for Arm32Target<End> {
         }
     }
 
-    fn get_addend(loc: &[u8], rel: &ElfRel) -> i64 {
+    fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
         let arm = || End::read_u32(loc) as u64;
         let thm = |i: usize| End::read_u16(&loc[i * 2..]) as u64;
-        match rel.r_type {
+        match rel.r_type() {
             R_ARM_ABS32 | R_ARM_REL32 | R_ARM_BASE_PREL | R_ARM_GOTOFF32 | R_ARM_GOT_PREL
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1

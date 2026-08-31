@@ -4,7 +4,7 @@ use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
-use crate::output_chunks::{ChunkHeader, DynRelBuffer};
+use crate::output_chunks::ChunkHeader;
 use crate::symbol::{AddrFlags, SymbolId};
 
 // .got is a linker-synthesized constant pool whose entry size is the same
@@ -329,13 +329,13 @@ pub mod got {
             .collect()
     }
 
-    pub fn write_dynrels<E: Arch>(ctx: &Context<E>, mut out: DynRelBuffer<'_, E>) {
+    pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
         let mut i = 0;
         for ent in got_entries(ctx) {
             if ent.r_type == R_NONE {
                 continue;
             }
-            let rel = ElfRel::new(
+            let rel = ElfRel::<E>::new(
                 ctx.got.hdr.shdr.sh_addr + ent.idx as u64 * word::<E>(),
                 ent.r_type,
                 ent.sym
@@ -343,9 +343,10 @@ pub mod got {
                     .unwrap_or(0),
                 ent.val as i64,
             );
-            let is_relr = rel.r_type == E::R_RELATIVE && rel.r_offset.is_multiple_of(word::<E>());
+            let is_relr =
+                rel.r_type() == E::R_RELATIVE && rel.r_offset().is_multiple_of(word::<E>());
             if !ctx.args.pack_dyn_relocs_relr || ctx.got.hdr.num_relrs == 0 || !is_relr {
-                out.write(i, rel);
+                out[i] = rel;
                 i += 1;
             }
         }
@@ -768,7 +769,7 @@ impl RelPltSection {
             (".rel.plt", SHT_REL)
         };
         let mut hdr = ChunkHeader::new(name, ty, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
+        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         RelPltSection { hdr }
     }
@@ -778,7 +779,8 @@ pub mod relplt {
     use super::*;
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        ctx.relplt.hdr.shdr.sh_size = ctx.plt.symbols.len() as u64 * ElfRel::size::<E>() as u64;
+        ctx.relplt.hdr.shdr.sh_size =
+            ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64;
         ctx.relplt.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
         if !E::IS_SPARC {
             ctx.relplt.hdr.shdr.sh_info = ctx.gotplt.hdr.shndx;
@@ -786,7 +788,8 @@ pub mod relplt {
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        let size = ElfRel::size::<E>();
+        let out = rels_from_bytes_mut::<E>(buf);
+        debug_assert_eq!(out.len(), ctx.plt.symbols.len());
         for (i, &id) in ctx.plt.symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
             let rel = if E::IS_SPARC {
@@ -798,7 +801,7 @@ pub mod relplt {
                 // point of view, though.
                 let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
                 if idx < plt::SPARC_NUM_SMALL_PLT {
-                    ElfRel::new(
+                    ElfRel::<E>::new(
                         sym.plt_addr(ctx),
                         E::R_JUMP_SLOT,
                         sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
@@ -812,7 +815,7 @@ pub mod relplt {
                     let call = sym.plt_addr(ctx) + 4;
                     let ptr = ctx.plt.hdr.shdr.sh_addr
                         + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
-                    ElfRel::new(
+                    ElfRel::<E>::new(
                         ptr,
                         E::R_JUMP_SLOT,
                         sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
@@ -820,14 +823,14 @@ pub mod relplt {
                     )
                 }
             } else {
-                ElfRel::new(
+                ElfRel::<E>::new(
                     sym.gotplt_addr(ctx),
                     E::R_JUMP_SLOT,
                     sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
                     0,
                 )
             };
-            rel.write::<E>(&mut buf[i * size..]);
+            out[i] = rel;
         }
     }
 }

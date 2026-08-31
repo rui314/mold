@@ -140,7 +140,7 @@ impl ThunkSymbolBins {
 fn requires_thunk<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection,
-    rel: &ElfRel,
+    rel: &ElfRel<E>,
     sym: &Symbol,
     first_pass: bool,
 ) -> bool {
@@ -178,7 +178,7 @@ fn requires_thunk<E: Arch>(
     // and check if they are within reach.
     let s = sym.addr_with(ctx, AddrFlags::NO_OPD) as i64;
     let a = isec.rel_addend::<E>(rel);
-    let p = (isec.addr(ctx) + rel.r_offset) as i64;
+    let p = (isec.addr(ctx) + rel.r_offset()) as i64;
     let val = s.wrapping_add(a).wrapping_sub(p);
     val < -E::branch_distance() || E::branch_distance() <= val
 }
@@ -302,9 +302,9 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
                     if !rel.is_func_call::<E>() {
                         continue;
                     }
-                    let id = file.base.symbols[rel.r_sym as usize];
+                    let id = file.base.symbols[rel.r_sym() as usize];
                     let sym = &ctx.symbols[id];
-                    if requires_thunk(ctx, isec, &rel, sym, true) && sym.mark() {
+                    if requires_thunk(ctx, isec, rel, sym, true) && sym.mark() {
                         symbol_bins.push(id);
                     }
                 }
@@ -384,8 +384,8 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
                         if !rel.is_func_call::<E>() {
                             continue;
                         }
-                        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-                        if !sym.is_marked() && requires_thunk(ctx, isec, &rel, sym, false) {
+                        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                        if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
                             sym.mark();
                         }
                     }

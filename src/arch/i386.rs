@@ -49,6 +49,7 @@ pub struct I386;
 
 impl Layout for I386 {
     type Endian = LittleEndian;
+    type Rel = Elf32RelLe;
     const IS_64: bool = false;
     const IS_RELA: bool = false;
 }
@@ -111,7 +112,7 @@ impl Arch for I386 {
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let reloc_offset =
-            sym.plt_idx(&ctx.symbols).unwrap() as u64 * ElfRel::size::<Self>() as u64;
+            sym.plt_idx(&ctx.symbols).unwrap() as u64 * std::mem::size_of::<ElfRel<Self>>() as u64;
         if ctx.args.pic {
             const INSN: [u8; 16] = [
                 0xb9, 0, 0, 0, 0, // mov $reloc_offset, %ecx
@@ -161,12 +162,12 @@ impl Arch for I386 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_386_32 => write_u32(loc, val as u32),
             R_386_PC32 => write_u32(loc, val.wrapping_sub(p) as u32),
@@ -182,19 +183,19 @@ impl Arch for I386 {
 
         // Scan relocations
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
 
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            if rel.r_type == R_386_TLS_GD || rel.r_type == R_386_TLS_LDM {
-                let next = rels.get(i).map(|r| r.r_type);
+            if rel.r_type() == R_386_TLS_GD || rel.r_type() == R_386_TLS_LDM {
+                let next = rels.get(i).map(|r| r.r_type());
                 if !matches!(
                     next,
                     Some(R_386_PLT32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X)
@@ -208,7 +209,7 @@ impl Arch for I386 {
                 }
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_386_8 | R_386_16 => scan_absrel(ctx, isec, sym, rel),
                 R_386_PC8 | R_386_PC16 | R_386_PC32 => scan_pcrel(ctx, isec, sym, rel),
                 R_386_GOT32 | R_386_GOTPC => sym.add_flags(NEEDS_GOT),
@@ -267,26 +268,26 @@ impl Arch for I386 {
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = isec.rel_addend::<Self>(rel) as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let p = isec.addr(ctx) + rel.r_offset();
             let got = ctx.got.hdr.shdr.sh_addr;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_386_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
                     buf[off] = s.wrapping_add(a) as u8;
@@ -346,7 +347,7 @@ impl Arch for I386 {
                             sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                         );
                     } else {
-                        let next = &rels.at(i);
+                        let next = &rels[i];
                         i += 1;
                         relax_gd_to_le(buf, off, next, s.wrapping_sub(ctx.tp_addr));
                     }
@@ -361,7 +362,7 @@ impl Arch for I386 {
                                 .wrapping_sub(got) as u32,
                         );
                     } else {
-                        let next = &rels.at(i);
+                        let next = &rels[i];
                         i += 1;
                         relax_ld_to_le(buf, off, next, ctx.tp_addr.wrapping_sub(ctx.tls_begin));
                     }
@@ -459,11 +460,11 @@ impl Arch for I386 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let off = rel.r_offset as usize;
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let off = rel.r_offset() as usize;
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
@@ -474,7 +475,7 @@ impl Arch for I386 {
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_386_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
                     buf[off] = s.wrapping_add(a) as u8;
@@ -521,19 +522,24 @@ impl Arch for I386 {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, _i: usize) -> u32 {
-        if rel.r_type == R_386_GOT32X && isec.is_alloc() {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        _i: usize,
+    ) -> u32 {
+        if rel.r_type() == R_386_GOT32X && isec.is_alloc() {
             let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if !sym.has_got(&ctx.symbols) {
                 return R_386_GOTOFF;
             }
         }
-        rel.r_type
+        rel.r_type()
     }
 
-    fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel) {
-        match rel.r_type {
+    fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
+        match rel.r_type() {
             R_386_NONE => {}
             R_386_8 | R_386_PC8 => loc[0] = val as u8,
             R_386_16 | R_386_PC16 => write_u16(loc, val as u16),
@@ -546,8 +552,8 @@ impl Arch for I386 {
         }
     }
 
-    fn get_addend(loc: &[u8], rel: &ElfRel) -> i64 {
-        match rel.r_type {
+    fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
+        match rel.r_type() {
             R_386_8 | R_386_PC8 => loc[0] as i8 as i64,
             R_386_16 | R_386_PC16 => i16::from_le_bytes([loc[0], loc[1]]) as i64,
             R_386_32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X | R_386_PLT32 | R_386_GOTOFF
@@ -569,8 +575,8 @@ fn write_u32(buf: &mut [u8], v: u32) {
 }
 
 /// The bytes of a section preceding a relocated location.
-fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel) -> &'a [u8] {
-    &isec.contents()[..rel.r_offset as usize]
+fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel<I386>) -> &'a [u8] {
+    &isec.contents()[..rel.r_offset() as usize]
 }
 
 /// The last two bytes before a relocated location, as an opcode.
@@ -590,12 +596,12 @@ fn relax_got32x(loc: &[u8]) -> u32 {
 }
 
 // Relax GD to LE
-fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
+fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<I386>, val: u64) {
     const INSN: [u8; 12] = [
         0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
         0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
     ];
-    match rel.r_type {
+    match rel.r_type() {
         R_386_PLT32 | R_386_PC32 => {
             buf[off - 3..off + 9].copy_from_slice(&INSN);
             write_u32(&mut buf[off + 5..], val as u32);
@@ -609,8 +615,8 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
 }
 
 // Relax LD to LE
-fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
-    match rel.r_type {
+fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<I386>, tls_size: u64) {
+    match rel.r_type() {
         R_386_PLT32 | R_386_PC32 => {
             const INSN: [u8; 11] = [
                 0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax

@@ -526,11 +526,11 @@ impl InputSection {
 
     /// The addend of a relocation against this section.
     #[inline]
-    pub fn rel_addend<E: Arch>(&self, rel: &ElfRel) -> i64 {
+    pub fn rel_addend<E: Arch>(&self, rel: &ElfRel<E>) -> i64 {
         if E::IS_RELA && E::FAMILY != Family::Sh4 {
-            rel.r_addend
+            rel.r_addend()
         } else {
-            E::get_addend(&self.contents()[rel.r_offset as usize..], rel)
+            E::get_addend(&self.contents()[rel.r_offset() as usize..], rel)
         }
     }
 
@@ -547,10 +547,10 @@ impl InputSection {
 
     /// Whether a relocation can be encoded in the RELR format.
     #[inline]
-    pub fn is_relr_reloc<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel) -> bool {
+    pub fn is_relr_reloc<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
         ctx.args.pack_dyn_relocs_relr
             && (1u64 << self.p2align()).is_multiple_of(E::WORD_SIZE as u64)
-            && rel.r_offset.is_multiple_of(E::WORD_SIZE as u64)
+            && rel.r_offset().is_multiple_of(E::WORD_SIZE as u64)
     }
 
     /// Get the name of a function containin a given offset.
@@ -600,7 +600,7 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> Rels<'a, E> {
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
         file.relocations::<E>(self.relsec_idx())
     }
 
@@ -706,8 +706,8 @@ impl InputSection {
         hi: i64,
     ) {
         let file = &ctx.objs[self.file.index()];
-        let rel = self.rels::<E>(file).at(rel_idx);
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let rel = self.rels::<E>(file)[rel_idx];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             ctx,
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",
@@ -720,7 +720,11 @@ impl InputSection {
     /// For a relocation in a non-allocated section, finds the section
     /// fragment it refers to, if it refers to a mergeable section.
     #[inline]
-    pub fn fragment<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel) -> Option<(FragmentRef, i64)> {
+    pub fn fragment<E: Arch>(
+        &self,
+        ctx: &Context<E>,
+        rel: &ElfRel<E>,
+    ) -> Option<(FragmentRef, i64)> {
         debug_assert!(!self.is_alloc());
         let file = &ctx.objs[self.file.index()];
         self.fragment_with_file::<E>(file, rel)
@@ -731,10 +735,10 @@ impl InputSection {
     pub fn fragment_with_file<E: Arch>(
         &self,
         file: &ObjectFile,
-        rel: &ElfRel,
+        rel: &ElfRel<E>,
     ) -> Option<(FragmentRef, i64)> {
         debug_assert!(!self.is_alloc());
-        let sym_idx = rel.r_sym as usize;
+        let sym_idx = rel.r_sym() as usize;
         if sym_idx >= file.base.elf_syms.len() {
             return None;
         }
@@ -839,7 +843,7 @@ impl InputSection {
     /// Test if the symbol a given relocation refers to has already been resolved.
     /// If not, record that error and returns true.
     #[inline(always)]
-    pub fn record_undef_error<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel) -> bool {
+    pub fn record_undef_error<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
         let file = &ctx.objs[self.file.index()];
         self.record_undef_error_with_file(ctx, file, rel)
     }
@@ -851,11 +855,11 @@ impl InputSection {
         &self,
         ctx: &Context<E>,
         file: &ObjectFile,
-        rel: &ElfRel,
+        rel: &ElfRel<E>,
     ) -> bool {
         // If a relocation refers to a linker-synthesized symbol for a
         // section fragment, it's always been resolved.
-        let sym_idx = rel.r_sym as usize;
+        let sym_idx = rel.r_sym() as usize;
         if sym_idx >= file.base.elf_syms.len() {
             return false;
         }
@@ -899,7 +903,7 @@ impl InputSection {
         &self,
         ctx: &Context<E>,
         file: &ObjectFile,
-        rel: &ElfRel,
+        rel: &ElfRel<E>,
         sym: &Symbol,
     ) {
         let mut msg = format!(
@@ -907,7 +911,7 @@ impl InputSection {
             self.display(file),
             sym
         );
-        if let Some(owner) = find_comdat_owner(ctx, file, rel.r_sym as usize) {
+        if let Some(owner) = find_comdat_owner(ctx, file, rel.r_sym() as usize) {
             msg += &format!(
                 "\n>>> prevailing definition is in {}",
                 ctx.objs[owner.index()]
@@ -921,7 +925,7 @@ impl InputSection {
         &self,
         ctx: &Context<E>,
         file: &ObjectFile,
-        rel: &ElfRel,
+        rel: &ElfRel<E>,
         sym_id: SymbolId,
     ) {
         let mut msg = String::new();
@@ -930,7 +934,7 @@ impl InputSection {
             None => msg += &format!(">>> referenced by {}\n", self.display(file)),
         }
         msg += &format!(">>>               {file}");
-        if let Some(func) = self.func_name(ctx, rel.r_offset) {
+        if let Some(func) = self.func_name(ctx, rel.r_offset()) {
             msg += &format!(":({func})");
         }
         msg.push('\n');
@@ -1008,10 +1012,10 @@ impl InputSection {
     /// The number of bytes relaxation removed at the location of
     /// relocation `rel`, and the number removed before it.
     #[inline]
-    pub fn removed_at(&self, rel: &ElfRel) -> (i64, i64) {
+    pub fn removed_at<R: RelRecord>(&self, rel: &R) -> (i64, i64) {
         let deltas = self.r_deltas();
-        let k = deltas.partition_point(|d| d.offset < rel.r_offset);
-        let removed = if deltas.get(k).is_some_and(|d| d.offset == rel.r_offset) {
+        let k = deltas.partition_point(|d| d.offset < rel.r_offset());
+        let removed = if deltas.get(k).is_some_and(|d| d.offset == rel.r_offset()) {
             removed_bytes(deltas, k)
         } else {
             0
@@ -1086,7 +1090,7 @@ fn do_action<E: Arch>(
     action: Action,
     isec: &InputSection,
     sym: &Symbol,
-    rel: &ElfRel,
+    rel: &ElfRel<E>,
 ) {
     match action {
         Action::None => {}
@@ -1095,7 +1099,7 @@ fn do_action<E: Arch>(
             "{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
             rel.type_name::<E>(),
-            rel.r_offset,
+            rel.r_offset(),
             sym
         ),
         Action::Canonical => sym.add_flags(NEEDS_CANONICAL),
@@ -1131,7 +1135,7 @@ fn sym_type(sym: &Symbol) -> usize {
 /// This is for PC-relative relocations (e.g. R_X86_64_PC32).
 /// We cannot promote them to dynamic relocations because the dynamic
 /// linker generally does not support PC-relative relocations.
-pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel) {
+pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
         // Absolute  Local  Imported data  Imported code
@@ -1147,7 +1151,7 @@ pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, 
 /// generally does not support dynamic relocations smaller than the
 /// pointer size, we need to report an error if a relocation cannot be
 /// resolved at link-time.
-pub fn scan_absrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel) {
+pub fn scan_absrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
         // Absolute  Local  Imported data  Imported code
@@ -1179,7 +1183,7 @@ pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
     }
 }
 
-pub fn check_tlsle<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel) {
+pub fn check_tlsle<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
     if ctx.args.shared {
         error!(
             ctx,
@@ -1226,9 +1230,9 @@ pub(crate) enum RelocationSpan {
 
 impl RelocationSpan {
     #[inline]
-    fn rels<'a, E: Layout>(self, file: &'a ObjectFile) -> Rels<'a, E> {
+    fn rels<E: Layout>(self, file: &ObjectFile) -> &[E::Rel] {
         match self {
-            RelocationSpan::Input(data) => Rels::new(data),
+            RelocationSpan::Input(data) => rels_from_bytes::<E>(data),
             RelocationSpan::SideTable(relsec_idx) => file.relocations::<E>(Some(relsec_idx)),
         }
     }
@@ -1268,8 +1272,8 @@ impl CieRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> Rels<'a, E> {
-        rels_in(
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
+        rels_in::<E>(
             self.relocations.rels::<E>(file),
             self.rel_idx,
             self.input_offset as usize + self.size::<E>(),
@@ -1287,14 +1291,14 @@ fn record_size<E: Layout>(contents: &[u8], offset: u32) -> usize {
 /// The relocations of a `.eh_frame` record: those from index `begin`
 /// that apply before `end`.
 #[inline]
-fn rels_in<E: Layout>(rels: Rels<'_, E>, begin: u32, end: usize) -> Rels<'_, E> {
+fn rels_in<E: Layout>(rels: &[E::Rel], begin: u32, end: usize) -> &[E::Rel] {
     let begin = begin as usize;
-    let rest = rels.slice(begin..rels.len());
+    let rest = &rels[begin..];
     let count = rest
         .iter()
-        .take_while(|r| (r.r_offset as usize) < end)
+        .take_while(|r| (r.r_offset() as usize) < end)
         .count();
-    rels.slice(begin..begin + count)
+    &rels[begin..begin + count]
 }
 
 /// An FDE record in an input `.eh_frame` section.
@@ -1354,10 +1358,10 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> Rels<'a, E> {
+    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile) -> &'a [E::Rel] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
-        rels_in(cie.relocations.rels::<E>(file), self.rel_idx, end)
+        rels_in::<E>(cie.relocations.rels::<E>(file), self.rel_idx, end)
     }
 }
 

@@ -49,6 +49,7 @@ pub struct S390x;
 
 impl Layout for S390x {
     type Endian = BigEndian;
+    type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
 }
@@ -89,16 +90,21 @@ fn write_mid20(loc: &mut [u8], val: u64) {
 
 /// Whether the GOT-loading LGRL at `loc` (opcode 0xc4?8, preceded by
 /// the relocated operand) can become an address-materializing LARL.
-fn relaxes_gotent(ctx: &Context<S390x>, isec: &InputSection, rel: &ElfRel, sym: &Symbol) -> bool {
-    if !ctx.args.relax || !sym.is_pcrel_linktime_const(ctx) || rel.r_offset < 2 {
+fn relaxes_gotent(
+    ctx: &Context<S390x>,
+    isec: &InputSection,
+    rel: &ElfRel<S390x>,
+    sym: &Symbol,
+) -> bool {
+    if !ctx.args.relax || !sym.is_pcrel_linktime_const(ctx) || rel.r_offset() < 2 {
         return false;
     }
-    let op = r16(&isec.contents()[rel.r_offset as usize - 2..]);
+    let op = r16(&isec.contents()[rel.r_offset() as usize - 2..]);
     let val = sym
         .addr(ctx)
-        .wrapping_add(rel.r_addend as u64)
-        .wrapping_sub(isec.addr(ctx).wrapping_add(rel.r_offset)) as i64;
-    op & 0xff0f == 0xc408 && rel.r_addend == 2 && val & 1 == 0 && is_int(val, 33)
+        .wrapping_add(rel.r_addend() as u64)
+        .wrapping_sub(isec.addr(ctx).wrapping_add(rel.r_offset())) as i64;
+    op & 0xff0f == 0xc408 && rel.r_addend() == 2 && val & 1 == 0 && is_int(val, 33)
 }
 
 impl Arch for S390x {
@@ -194,13 +200,13 @@ impl Arch for S390x {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_390_PC32 => {
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
@@ -216,26 +222,26 @@ impl Arch for S390x {
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_390_8 | R_390_12 | R_390_16 | R_390_20 | R_390_32 => {
-                    scan_absrel(ctx, isec, sym, &rel)
+                    scan_absrel(ctx, isec, sym, rel)
                 }
                 R_390_PC12DBL | R_390_PC16 | R_390_PC16DBL | R_390_PC24DBL | R_390_PC32
-                | R_390_PC32DBL | R_390_PC64 => scan_pcrel(ctx, isec, sym, &rel),
+                | R_390_PC32DBL | R_390_PC64 => scan_pcrel(ctx, isec, sym, rel),
                 R_390_GOT12 | R_390_GOT16 | R_390_GOT20 | R_390_GOT32 | R_390_GOT64
                 | R_390_GOTOFF16 | R_390_GOTOFF32 | R_390_GOTOFF64 | R_390_GOTPLT12
                 | R_390_GOTPLT16 | R_390_GOTPLT20 | R_390_GOTPLT32 | R_390_GOTPLT64
                 | R_390_GOTPC | R_390_GOTPCDBL => sym.add_flags(NEEDS_GOT),
                 R_390_GOTENT => {
-                    if !relaxes_gotent(ctx, isec, &rel, sym) {
+                    if !relaxes_gotent(ctx, isec, rel, sym) {
                         sym.add_flags(NEEDS_GOT);
                     }
                 }
@@ -266,7 +272,7 @@ impl Arch for S390x {
                             .store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
-                R_390_TLS_LE32 | R_390_TLS_LE64 => check_tlsle(ctx, isec, sym, &rel),
+                R_390_TLS_LE32 | R_390_TLS_LE64 => check_tlsle(ctx, isec, sym, rel),
                 R_390_64 | R_390_TLS_LDO32 | R_390_TLS_LDO64 | R_390_TLS_GDCALL
                 | R_390_TLS_LDCALL => {}
                 _ => error!(
@@ -282,18 +288,18 @@ impl Arch for S390x {
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate() {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let got = ctx.got.hdr.shdr.sh_addr;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
@@ -313,7 +319,7 @@ impl Arch for S390x {
                 }
             };
 
-            match rel.r_type {
+            match rel.r_type() {
                 // Handled as an absolute relocation by the output section.
                 R_390_64 => {}
                 R_390_8 => {
@@ -405,7 +411,7 @@ impl Arch for S390x {
                     // If we can relax a GOT-loading LGRL to an address-materializing
                     // LARL, do that. The format of LGRL is 0xc 0x4 <reg> 0x8 followed
                     // by a 32-bit offset. LARL is 0xc 0x0 <reg> 0x0.
-                    if relaxes_gotent(ctx, isec, &rel, sym) {
+                    if relaxes_gotent(ctx, isec, rel, sym) {
                         let op = r16(&buf[off - 2..]);
                         w16(&mut buf[off - 2..], 0xc000 | (op & 0x00f0));
                         w32(&mut buf[off..], (pcrel >> 1) as u32);
@@ -433,7 +439,7 @@ impl Arch for S390x {
                     } else {
                         sa.wrapping_sub(ctx.tp_addr)
                     };
-                    if rel.r_type == R_390_TLS_GD32 {
+                    if rel.r_type() == R_390_TLS_GD32 {
                         w32(&mut buf[off..], val as u32);
                     } else {
                         w64(&mut buf[off..], val);
@@ -459,7 +465,7 @@ impl Arch for S390x {
                     } else {
                         ctx.dtp_addr.wrapping_sub(ctx.tp_addr)
                     };
-                    if rel.r_type == R_390_TLS_LDM32 {
+                    if rel.r_type() == R_390_TLS_LDM32 {
                         w32(&mut buf[off..], val as u32);
                     } else {
                         w64(&mut buf[off..], val);
@@ -481,21 +487,21 @@ impl Arch for S390x {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let off = rel.r_offset as usize;
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let off = rel.r_offset() as usize;
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
             let sa = s.wrapping_add(a);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_390_32 => {
                     check(sa as i64, 0, 1 << 32);
                     w32(&mut buf[off..], sa as u32);
@@ -518,14 +524,19 @@ impl Arch for S390x {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, _i: usize) -> u32 {
-        if rel.r_type == R_390_GOTENT && isec.is_alloc() {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        _i: usize,
+    ) -> u32 {
+        if rel.r_type() == R_390_GOTENT && isec.is_alloc() {
             let file = &ctx.objs[isec.file.index()];
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if relaxes_gotent(ctx, isec, rel, sym) {
                 return R_390_PC32DBL;
             }
         }
-        rel.r_type
+        rel.r_type()
     }
 }

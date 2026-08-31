@@ -11,7 +11,7 @@ use crate::elf::*;
 use crate::error;
 use crate::input_files::FileId;
 use crate::input_sections::{r_delta, InputSection};
-use crate::output_chunks::{self, ChunkHeader, ChunkId, DynRelBuffer, OutputSectionId};
+use crate::output_chunks::{self, ChunkHeader, ChunkId, OutputSectionId};
 use crate::symbol::SymbolId;
 use crate::util::align_to;
 use crate::util::compress::Compressor;
@@ -143,21 +143,14 @@ pub mod copyrel {
         }
     }
 
-    pub fn write_dynrels<E: Arch>(
-        ctx: &Context<E>,
-        sec: &CopyrelSection,
-        mut out: DynRelBuffer<'_, E>,
-    ) {
+    pub fn write_dynrels<E: Arch>(ctx: &Context<E>, sec: &CopyrelSection, out: &mut [E::Rel]) {
         for (i, &id) in sec.symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
-            out.write(
-                i,
-                ElfRel::new(
-                    sym.addr(ctx),
-                    E::R_COPY,
-                    sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
-                    0,
-                ),
+            out[i] = ElfRel::<E>::new(
+                sym.addr(ctx),
+                E::R_COPY,
+                sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
+                0,
             );
         }
         debug_assert_eq!(sec.symbols.len(), out.len());
@@ -537,7 +530,7 @@ pub mod reloc {
             SHF_INFO_LINK as u64,
         );
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
+        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
 
         // Compute an offset for each input section
         let mut offsets = Vec::with_capacity(osec.members.len());
@@ -548,7 +541,7 @@ pub mod reloc {
             let file = &ctx.objs[isec.file.index()];
             sum += isec.rels::<E>(file).len() as u64;
         }
-        hdr.shdr.sh_size = sum * ElfRel::size::<E>() as u64;
+        hdr.shdr.sh_size = sum * std::mem::size_of::<ElfRel<E>>() as u64;
         RelocSection {
             hdr,
             output_section: osec_id,
@@ -568,9 +561,13 @@ pub mod reloc {
     // Translates an input relocation's symbol reference into the {r_sym, addend}
     // pair that is valid in the output file. The returned r_sym is either an output
     // section index (for section-relative relocs) or an output symbol table index.
-    fn symidx_addend<E: Arch>(ctx: &Context<E>, isec: &InputSection, rel: &ElfRel) -> (u32, i64) {
+    fn symidx_addend<E: Arch>(
+        ctx: &Context<E>,
+        isec: &InputSection,
+        rel: &ElfRel<E>,
+    ) -> (u32, i64) {
         let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
 
         if !isec.is_alloc() {
             if let Some((frag, addend)) = isec.fragment(ctx, rel) {
@@ -621,7 +618,7 @@ pub mod reloc {
     ) {
         let sec = &ctx.reloc_sections[i as usize];
         let osec = &ctx.output_sections[sec.output_section.index()];
-        let size = ElfRel::size::<E>();
+        let out = rels_from_bytes_mut::<E>(buf);
         let mut osec_buf = osec_buf;
 
         for (mi, &m) in osec.members.iter().enumerate() {
@@ -629,12 +626,12 @@ pub mod reloc {
             let file = &ctx.objs[isec.file.index()];
             let base = sec.offsets[mi] as usize;
             for (j, rel) in isec.rels::<E>(file).iter().enumerate() {
-                let (symidx, addend) = symidx_addend(ctx, isec, &rel);
-                let mut r_offset = osec.hdr.shdr.sh_addr + isec.offset() + rel.r_offset;
+                let (symidx, addend) = symidx_addend(ctx, isec, rel);
+                let mut r_offset = osec.hdr.shdr.sh_addr + isec.offset() + rel.r_offset();
                 if E::IS_RISCV || E::IS_LOONGARCH {
                     // On RISC-V and LoongArch, relaxation may have deleted instructions,
                     // shifting this relocation's offset.
-                    r_offset -= r_delta(isec, rel.r_offset) as u64;
+                    r_offset -= r_delta(isec, rel.r_offset()) as u64;
                 }
 
                 // SH4 object files store addends in the relocated places rather
@@ -646,14 +643,13 @@ pub mod reloc {
                 } else {
                     addend
                 };
-                let r_type = crate::arch::emitted_rel_type::<E>(ctx, isec, &rel, j);
-                ElfRel::new(r_offset, r_type, symidx, out_addend)
-                    .write::<E>(&mut buf[(base + j) * size..]);
+                let r_type = crate::arch::emitted_rel_type::<E>(ctx, isec, rel, j);
+                out[base + j] = ElfRel::<E>::new(r_offset, r_type, symidx, out_addend);
 
                 if ctx.args.relocatable {
                     if let Some(osec_buf) = osec_buf.as_deref_mut() {
-                        let loc = (isec.offset() + rel.r_offset) as usize;
-                        E::write_addend(&mut osec_buf[loc..], addend, &rel);
+                        let loc = (isec.offset() + rel.r_offset()) as usize;
+                        E::write_addend(&mut osec_buf[loc..], addend, rel);
                     }
                 }
             }

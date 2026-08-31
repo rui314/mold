@@ -35,7 +35,7 @@ pub use sparc64::Sparc64;
 pub use x86_64::X86_64;
 
 use crate::context::Context;
-use crate::elf::{ElfRel, Endian, Layout};
+use crate::elf::{Endian, Layout, RelRecord};
 use crate::input_sections::{InputSection, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
@@ -171,7 +171,7 @@ pub trait Arch: Layout {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -193,15 +193,15 @@ pub trait Arch: Layout {
     fn emitted_rel_type(
         _ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         _i: usize,
     ) -> u32 {
-        rel.r_type
+        rel.r_type()
     }
 
     /// Whether a call must go through a thunk however close its target
     /// is: a processor mode switch on ARM32, or TOC setup on PowerPC.
-    fn always_needs_thunk(_ctx: &Context<Self>, _sym: &Symbol, _rel: &ElfRel) -> bool {
+    fn always_needs_thunk(_ctx: &Context<Self>, _sym: &Symbol, _rel: &Self::Rel) -> bool {
         false
     }
 
@@ -232,12 +232,12 @@ pub trait Arch: Layout {
 
     /// Writes an addend into a relocated location, for REL-type targets
     /// producing relocatable output.
-    fn write_addend(_loc: &mut [u8], _val: i64, _rel: &ElfRel) {}
+    fn write_addend(_loc: &mut [u8], _val: i64, _rel: &Self::Rel) {}
 
     /// The addend of a relocation. REL-type targets store it in the
     /// relocated location, given as `loc`.
-    fn get_addend(_loc: &[u8], rel: &ElfRel) -> i64 {
-        rel.r_addend
+    fn get_addend(_loc: &[u8], rel: &Self::Rel) -> i64 {
+        rel.r_addend()
     }
 }
 
@@ -407,11 +407,11 @@ pub fn emulation_to_target(emulation: &str) -> Option<&'static str> {
 pub fn emitted_rel_type<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection,
-    rel: &ElfRel,
+    rel: &E::Rel,
     i: usize,
 ) -> u32 {
     if ctx.args.relocatable {
-        rel.r_type
+        rel.r_type()
     } else {
         E::emitted_rel_type(ctx, isec, rel, i)
     }

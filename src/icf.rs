@@ -476,19 +476,19 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
         let rels = fde.rels::<E>(file);
         h.update(&rels.len().to_ne_bytes());
         for rel in rels.iter().skip(1) {
-            let id = file.base.symbols[rel.r_sym as usize];
+            let id = file.base.symbols[rel.r_sym() as usize];
             hash_symbol(&mut h, id, &ctx.symbols[id]);
-            hash_u32(&mut h, rel.r_type);
-            hash_u64(&mut h, rel.r_offset - fde.input_offset as u64);
-            hash_i64(&mut h, file.section_at(cie.section).rel_addend::<E>(&rel));
+            hash_u32(&mut h, rel.r_type());
+            hash_u64(&mut h, rel.r_offset() - fde.input_offset as u64);
+            hash_i64(&mut h, file.section_at(cie.section).rel_addend::<E>(rel));
         }
     }
 
     for rel in isec.rels::<E>(file) {
-        hash_u64(&mut h, rel.r_offset);
-        hash_u32(&mut h, rel.r_type);
-        hash_i64(&mut h, isec.rel_addend::<E>(&rel));
-        let id = file.base.symbols[rel.r_sym as usize];
+        hash_u64(&mut h, rel.r_offset());
+        hash_u32(&mut h, rel.r_type());
+        hash_i64(&mut h, isec.rel_addend::<E>(rel));
+        let id = file.base.symbols[rel.r_sym() as usize];
         hash_symbol(&mut h, id, &ctx.symbols[id]);
     }
     h.finish()
@@ -579,11 +579,11 @@ fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32
     };
     for fde in isec.fdes(file) {
         for rel in fde.rels::<E>(file).iter().skip(1) {
-            add(rel.r_sym);
+            add(rel.r_sym());
         }
     }
     for rel in isec.rels::<E>(file) {
-        add(rel.r_sym);
+        add(rel.r_sym());
     }
 }
 

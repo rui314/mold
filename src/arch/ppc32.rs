@@ -57,6 +57,7 @@ pub struct Ppc32;
 
 impl Layout for Ppc32 {
     type Endian = BigEndian;
+    type Rel = Elf32RelaBe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;
 }
@@ -196,12 +197,12 @@ impl Arch for Ppc32 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         _isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_PPC_ADDR32 => w32(loc, val),
             R_PPC_REL32 => w32(loc, val.wrapping_sub(p)),
@@ -214,15 +215,15 @@ impl Arch for Ppc32 {
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC_ADDR14 | R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO | R_PPC_ADDR16_HI
                 | R_PPC_ADDR16_HA | R_PPC_ADDR24 | R_PPC_ADDR30 => {
                     scan_absrel(ctx, isec, sym, &rel)
@@ -263,25 +264,25 @@ impl Arch for Ppc32 {
             .map_or(0, |shndx| file.section_at(shndx).addr(ctx));
 
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
             // PLT16/PLT32 relocations are relative to the file's .got2.
             let plt = || sym.got_addr(ctx).wrapping_sub(a).wrapping_sub(got2);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC_ADDR14 => or32(loc, bits(sa, 15, 2) << 2),
                 R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO => w16(loc, lo(sa)),
                 R_PPC_ADDR16_HI => w16(loc, hi(sa)),
@@ -333,20 +334,20 @@ impl Arch for Ppc32 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let frag = isec.fragment(ctx, &rel);
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
             let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_PPC_ADDR32 => w32(loc, tombstone.unwrap_or(sa)),
                 R_PPC_DTPREL32 => w32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr))),
                 _ => fatal!(
@@ -360,7 +361,7 @@ impl Arch for Ppc32 {
     }
 
     /// On PowerPC, all PLT calls go through range extension thunks.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &Self::Rel) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 

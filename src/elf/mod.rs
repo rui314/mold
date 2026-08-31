@@ -25,15 +25,15 @@
 //!
 //! ELF file format definitions.
 //!
-//! Records are decoded into the host-native structs defined here as they
-//! are used: the on-disk encoding differs in byte order and word size
-//! between targets, and decoding on access keeps the rest of the linker
-//! free of both concerns while the big tables — section headers, symbols
-//! and relocations — stay in the input files rather than being copied.
-//! Encoding and decoding are driven by an [`Arch`](crate::arch::Arch),
-//! whose associated [`Endian`] and `IS_64` constant select the layout at
-//! compile time, or by a [`RecordLayout`] value where the target type
-//! isn't at hand.
+//! Most records are decoded into the host-native structs defined here as
+//! they are used. Relocations instead use their target-dependent file
+//! representation directly, with byte-backed integer fields handling
+//! byte order and unaligned access. Thus the big tables — section headers,
+//! symbols and relocations — stay in the input files rather than being
+//! copied. Encoding and decoding are driven by an
+//! [`Arch`](crate::arch::Arch), whose associated [`Endian`], relocation
+//! type and `IS_64` constant select the layout at compile time, or by a
+//! [`RecordLayout`] value where the target type isn't at hand.
 
 mod consts;
 
@@ -51,6 +51,7 @@ use crate::arch::Arch;
 /// known.
 pub trait Layout: Copy + Send + Sync + 'static {
     type Endian: Endian;
+    type Rel: RelRecord<Endian = Self::Endian>;
     const IS_64: bool;
     const IS_RELA: bool;
 
@@ -58,25 +59,26 @@ pub trait Layout: Copy + Send + Sync + 'static {
 }
 
 macro_rules! plain_layout {
-    ($name:ident, $endian:ty, $is_64:expr) => {
+    ($name:ident, $endian:ty, $rel:ty, $is_64:expr) => {
         #[derive(Clone, Copy, Debug, Default)]
         pub struct $name;
 
         impl Layout for $name {
             type Endian = $endian;
+            type Rel = $rel;
             const IS_64: bool = $is_64;
             const IS_RELA: bool = true;
         }
     };
 }
 
-plain_layout!(Elf32Le, LittleEndian, false);
-plain_layout!(Elf64Le, LittleEndian, true);
-plain_layout!(Elf32Be, BigEndian, false);
-plain_layout!(Elf64Be, BigEndian, true);
+plain_layout!(Elf32Le, LittleEndian, Elf32RelaLe, false);
+plain_layout!(Elf64Le, LittleEndian, Elf64RelaLe, true);
+plain_layout!(Elf32Be, BigEndian, Elf32RelaBe, false);
+plain_layout!(Elf64Be, BigEndian, Elf64RelaBe, true);
 
 /// Byte order of an ELF file, as a type-level marker.
-pub trait Endian: Copy + Default + Send + Sync + fmt::Debug + 'static {
+pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
     const IS_LITTLE: bool;
     const IS_NATIVE: bool = Self::IS_LITTLE == cfg!(target_endian = "little");
 
@@ -151,10 +153,10 @@ pub trait Endian: Copy + Default + Send + Sync + fmt::Debug + 'static {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LittleEndian;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BigEndian;
 
 impl Endian for LittleEndian {
@@ -656,391 +658,453 @@ impl Record for ElfSym {
 
 const _: () = assert!(std::mem::size_of::<ElfSym>() == 24);
 
-/// Depending on the target, ElfRel may or may not contain r_addend member.
-/// The relocation record containing r_addend is called RELA, and that
-/// without r_addend is called REL.
-///
-/// If REL, relocation addends are stored as parts of section contents.
-/// That means we add a computed value to an existing value when writing a
-/// relocated value if REL. If RELA, we just overwrite an existing value
-/// with a newly computed value.
-///
-/// We don't want to have too many `if (REL)`s and `if (RELA)`s in our
-/// codebase, so ElfRel always takes r_addend as a constructor argument.
-/// If it's REL, the argument will simply be ignored.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfRel {
-    pub r_offset: u64,
-    // Match the two halves of ELF64 r_info in the host's byte order, so a
-    // same-endian target can use the native record layout on any host.
-    #[cfg(target_endian = "big")]
-    pub r_sym: u32,
-    pub r_type: u32,
-    #[cfg(target_endian = "little")]
-    pub r_sym: u32,
-    pub r_addend: i64,
+macro_rules! endian_integer {
+    ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub struct $name<E: Endian> {
+            bytes: [u8; $size],
+            endian: PhantomData<E>,
+        }
+
+        impl<E: Endian> $name<E> {
+            #[inline(always)]
+            pub fn new(value: $int) -> Self {
+                let mut result = Self::default();
+                result.set(value);
+                result
+            }
+
+            #[inline(always)]
+            pub fn get(&self) -> $int {
+                E::$read(&self.bytes)
+            }
+
+            #[inline(always)]
+            pub fn set(&mut self, value: $int) {
+                E::$write(&mut self.bytes, value);
+            }
+        }
+    };
 }
 
-impl ElfRel {
-    pub fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
-        ElfRel {
-            r_offset,
-            r_type,
-            r_sym,
-            r_addend,
+endian_integer!(U16, u16, 2, read_u16, write_u16);
+endian_integer!(U32, u32, 4, read_u32, write_u32);
+endian_integer!(U64, u64, 8, read_u64, write_u64);
+endian_integer!(I32, i32, 4, read_i32, write_i32);
+endian_integer!(I64, i64, 8, read_i64, write_i64);
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct U24<E: Endian> {
+    bytes: [u8; 3],
+    endian: PhantomData<E>,
+}
+
+impl<E: Endian> U24<E> {
+    #[inline(always)]
+    pub fn new(value: u32) -> Self {
+        let mut result = Self::default();
+        result.set(value);
+        result
+    }
+
+    #[inline(always)]
+    pub fn get(&self) -> u32 {
+        if E::IS_LITTLE {
+            u32::from_le_bytes([self.bytes[0], self.bytes[1], self.bytes[2], 0])
+        } else {
+            u32::from_be_bytes([0, self.bytes[0], self.bytes[1], self.bytes[2]])
         }
     }
+
+    #[inline(always)]
+    pub fn set(&mut self, value: u32) {
+        let bytes = if E::IS_LITTLE {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        };
+        if E::IS_LITTLE {
+            self.bytes.copy_from_slice(&bytes[..3]);
+        } else {
+            self.bytes.copy_from_slice(&bytes[1..]);
+        }
+    }
+}
+
+/// An ELF relocation record in its target-dependent file representation.
+///
+/// # Safety
+///
+/// Implementations must have alignment one, contain no padding or references,
+/// and accept every bit pattern. These requirements let relocation sections in
+/// possibly unaligned archive members be viewed as slices of records.
+pub unsafe trait RelRecord:
+    Clone + Copy + fmt::Debug + Default + Eq + Send + Sync + 'static
+{
+    type Endian: Endian;
+
+    fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self;
+
+    fn r_offset(&self) -> u64;
+    fn set_r_offset(&mut self, value: u64);
+    fn r_type(&self) -> u32;
+    fn set_r_type(&mut self, value: u32);
+    /// Returns the symbol index without decoding the other relocation fields.
+    fn r_sym(&self) -> u32;
+    fn set_r_sym(&mut self, value: u32);
+    fn r_addend(&self) -> i64;
+    fn set_r_addend(&mut self, value: i64);
 
     /// Returns true if a given relocation is of type used for direct
     /// function call.
     #[inline(always)]
-    pub fn is_func_call<E: Arch>(&self) -> bool {
-        E::R_FUNCALL.contains(&self.r_type)
+    fn is_func_call<E: Arch>(&self) -> bool {
+        E::R_FUNCALL.contains(&self.r_type())
     }
 
     /// Formats the relocation type name for the given target.
-    pub fn type_name<E: Arch>(&self) -> String {
-        E::rel_to_string(self.r_type)
+    fn type_name<E: Arch>(&self) -> String {
+        E::rel_to_string(self.r_type())
     }
 }
 
-const _: () = assert!(std::mem::size_of::<ElfRel>() == 24);
+// Depending on the target, ElfRel may or may not contain r_addend member.
+// The relocation record containing r_addend is called RELA, and that
+// without r_addend is called REL.
+//
+// If REL, relocation addends are stored as parts of section contents.
+// That means we add a computed value to an existing value when writing a
+// relocated value if REL. If RELA, we just overwrite an existing value
+// with a newly computed value.
+//
+// We don't want to have too many `if (REL)`s and `if (RELA)`s in our
+// codebase, so ElfRel always takes r_addend as a constructor argument.
+// If it's REL, the argument will simply be ignored.
 
-impl Record for ElfRel {
-    fn size<E: Layout>() -> usize {
-        match (E::IS_64, E::IS_RELA) {
-            (true, true) => 24,
-            (true, false) => 16,
-            (false, true) => 12,
-            (false, false) => 8,
-        }
+pub(crate) type Ul24 = U24<LittleEndian>;
+pub(crate) type Ul32 = U32<LittleEndian>;
+pub(crate) type Ul64 = U64<LittleEndian>;
+pub(crate) type Il32 = I32<LittleEndian>;
+pub(crate) type Il64 = I64<LittleEndian>;
+
+pub(crate) type Ub24 = U24<BigEndian>;
+pub(crate) type Ub32 = U32<BigEndian>;
+pub(crate) type Ub64 = U64<BigEndian>;
+pub(crate) type Ib32 = I32<BigEndian>;
+pub(crate) type Ib64 = I64<BigEndian>;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf64RelaLe {
+    r_offset: Ul64,
+    r_type: Ul32,
+    r_sym: Ul32,
+    r_addend: Il64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf64RelaBe {
+    r_offset: Ub64,
+    r_sym: Ub32,
+    r_type: Ub32,
+    r_addend: Ib64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32RelaLe {
+    r_offset: Ul32,
+    r_type: u8,
+    r_sym: Ul24,
+    r_addend: Il32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32RelaBe {
+    r_offset: Ub32,
+    r_sym: Ub24,
+    r_type: u8,
+    r_addend: Ib32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf64RelLe {
+    r_offset: Ul64,
+    r_type: Ul32,
+    r_sym: Ul32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf64RelBe {
+    r_offset: Ub64,
+    r_sym: Ub32,
+    r_type: Ub32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32RelLe {
+    r_offset: Ul32,
+    r_type: u8,
+    r_sym: Ul24,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32RelBe {
+    r_offset: Ub32,
+    r_sym: Ub24,
+    r_type: u8,
+}
+
+//
+// Target-specific ELF data types
+//
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sparc64Rela {
+    r_offset: Ub64,
+    r_sym: Ub32,
+    // SPARC keeps a second addend in the upper bits of the type field;
+    // its backend separates the two.
+    pub(crate) r_type_data: Ub24, // SPARC-specific: used for R_SPARC_OLO10
+    /// The relocation type proper, without the second addend.
+    r_type: u8,
+    r_addend: Ib64,
+}
+
+trait UnsignedField {
+    fn get_u64(&self) -> u64;
+    fn set_u64(&mut self, value: u64);
+}
+
+impl UnsignedField for u8 {
+    #[inline(always)]
+    fn get_u64(&self) -> u64 {
+        u64::from(*self)
     }
 
-    #[inline]
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::IS_RELA && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfRel has the native ELF64 Rela field layout when the
-            // target and host have the same byte order, `bytes` contains a
-            // complete record, and an unaligned read accepts its alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfRel>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        let (r_offset, r_type, r_sym) = if E::IS_64 {
-            // SPARC keeps a second addend in the upper bits of the type
-            // field; its backend separates the two.
-            let info = r.u64(8);
-            (r.u64(0), info as u32, (info >> 32) as u32)
-        } else {
-            let info = r.u32(4);
-            (r.u32(0) as u64, info & 0xff, info >> 8)
-        };
-        let r_addend = if E::IS_RELA {
-            if E::IS_64 {
-                r.u64(16) as i64
-            } else {
-                r.u32(8) as i32 as i64
-            }
-        } else {
-            0
-        };
-        ElfRel {
-            r_offset,
-            r_type,
-            r_sym,
-            r_addend,
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        if E::IS_64 {
-            w.u64(0, self.r_offset);
-            w.u64(8, ((self.r_sym as u64) << 32) | self.r_type as u64);
-            if E::IS_RELA {
-                w.u64(16, self.r_addend as u64);
-            }
-        } else {
-            w.u32(0, self.r_offset as u32);
-            w.u32(4, (self.r_sym << 8) | (self.r_type & 0xff));
-            if E::IS_RELA {
-                w.u32(8, self.r_addend as u32);
-            }
-        }
+    #[inline(always)]
+    fn set_u64(&mut self, value: u64) {
+        *self = value as u8;
     }
 }
+
+macro_rules! impl_unsigned_field {
+    ($name:ident) => {
+        impl<E: Endian> UnsignedField for $name<E> {
+            #[inline(always)]
+            fn get_u64(&self) -> u64 {
+                u64::from(self.get())
+            }
+
+            #[inline(always)]
+            fn set_u64(&mut self, value: u64) {
+                self.set(value as _);
+            }
+        }
+    };
+}
+
+impl_unsigned_field!(U24);
+impl_unsigned_field!(U32);
+impl_unsigned_field!(U64);
+
+trait SignedField {
+    fn get_i64(&self) -> i64;
+    fn set_i64(&mut self, value: i64);
+}
+
+macro_rules! impl_signed_field {
+    ($name:ident) => {
+        impl<E: Endian> SignedField for $name<E> {
+            #[inline(always)]
+            fn get_i64(&self) -> i64 {
+                i64::from(self.get())
+            }
+
+            #[inline(always)]
+            fn set_i64(&mut self, value: i64) {
+                self.set(value as _);
+            }
+        }
+    };
+}
+
+impl_signed_field!(I32);
+impl_signed_field!(I64);
+
+macro_rules! impl_rela_record {
+    ($name:ty, $endian:ty) => {
+        unsafe impl RelRecord for $name {
+            type Endian = $endian;
+
+            #[inline(always)]
+            fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
+                let mut rel = Self::default();
+                rel.set_r_offset(r_offset);
+                rel.set_r_type(r_type);
+                rel.set_r_sym(r_sym);
+                rel.set_r_addend(r_addend);
+                rel
+            }
+
+            #[inline(always)]
+            fn r_offset(&self) -> u64 {
+                self.r_offset.get_u64()
+            }
+
+            #[inline(always)]
+            fn set_r_offset(&mut self, value: u64) {
+                self.r_offset.set_u64(value);
+            }
+
+            #[inline(always)]
+            fn r_type(&self) -> u32 {
+                self.r_type.get_u64() as u32
+            }
+
+            #[inline(always)]
+            fn set_r_type(&mut self, value: u32) {
+                self.r_type.set_u64(u64::from(value));
+            }
+
+            #[inline(always)]
+            fn r_sym(&self) -> u32 {
+                self.r_sym.get_u64() as u32
+            }
+
+            #[inline(always)]
+            fn set_r_sym(&mut self, value: u32) {
+                self.r_sym.set_u64(u64::from(value));
+            }
+
+            #[inline(always)]
+            fn r_addend(&self) -> i64 {
+                self.r_addend.get_i64()
+            }
+
+            #[inline(always)]
+            fn set_r_addend(&mut self, value: i64) {
+                self.r_addend.set_i64(value);
+            }
+        }
+    };
+}
+
+macro_rules! impl_rel_record {
+    ($name:ty, $endian:ty) => {
+        unsafe impl RelRecord for $name {
+            type Endian = $endian;
+
+            #[inline(always)]
+            fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
+                let mut rel = Self::default();
+                rel.set_r_offset(r_offset);
+                rel.set_r_type(r_type);
+                rel.set_r_sym(r_sym);
+                rel
+            }
+
+            #[inline(always)]
+            fn r_offset(&self) -> u64 {
+                self.r_offset.get_u64()
+            }
+
+            #[inline(always)]
+            fn set_r_offset(&mut self, value: u64) {
+                self.r_offset.set_u64(value);
+            }
+
+            #[inline(always)]
+            fn r_type(&self) -> u32 {
+                self.r_type.get_u64() as u32
+            }
+
+            #[inline(always)]
+            fn set_r_type(&mut self, value: u32) {
+                self.r_type.set_u64(u64::from(value));
+            }
+
+            #[inline(always)]
+            fn r_sym(&self) -> u32 {
+                self.r_sym.get_u64() as u32
+            }
+
+            #[inline(always)]
+            fn set_r_sym(&mut self, value: u32) {
+                self.r_sym.set_u64(u64::from(value));
+            }
+
+            #[inline(always)]
+            fn r_addend(&self) -> i64 {
+                0
+            }
+
+            #[inline(always)]
+            fn set_r_addend(&mut self, _value: i64) {}
+        }
+    };
+}
+
+impl_rela_record!(Elf64RelaLe, LittleEndian);
+impl_rela_record!(Elf64RelaBe, BigEndian);
+impl_rela_record!(Elf32RelaLe, LittleEndian);
+impl_rela_record!(Elf32RelaBe, BigEndian);
+impl_rel_record!(Elf64RelLe, LittleEndian);
+impl_rel_record!(Elf64RelBe, BigEndian);
+impl_rel_record!(Elf32RelLe, LittleEndian);
+impl_rel_record!(Elf32RelBe, BigEndian);
+impl_rela_record!(Sparc64Rela, BigEndian);
+
+pub type ElfRel<E> = <E as Layout>::Rel;
+
+const _: () = assert!(std::mem::size_of::<Elf64RelaLe>() == 24);
+const _: () = assert!(std::mem::size_of::<Elf64RelaBe>() == 24);
+const _: () = assert!(std::mem::size_of::<Elf32RelaLe>() == 12);
+const _: () = assert!(std::mem::size_of::<Elf32RelaBe>() == 12);
+const _: () = assert!(std::mem::size_of::<Elf64RelLe>() == 16);
+const _: () = assert!(std::mem::size_of::<Elf64RelBe>() == 16);
+const _: () = assert!(std::mem::size_of::<Elf32RelLe>() == 8);
+const _: () = assert!(std::mem::size_of::<Elf32RelBe>() == 8);
+const _: () = assert!(std::mem::size_of::<Sparc64Rela>() == 24);
+const _: () = assert!(std::mem::align_of::<Elf64RelaLe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64RelaBe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf32RelaLe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf32RelaBe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64RelLe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64RelBe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf32RelLe>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf32RelBe>() == 1);
+const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
 
 /// Relocation records as they are laid out in a file, read as they are
 /// used rather than copied out. Input files hold tens of millions of
 /// relocations, which most passes go through once.
-#[derive(Clone, Copy)]
-enum RelocationData<'a> {
-    Encoded(&'a [u8]),
-    Decoded(&'a [ElfRel]),
+pub(crate) fn rels_from_bytes<E: Layout>(data: &[u8]) -> &[E::Rel] {
+    let size = std::mem::size_of::<E::Rel>();
+    assert_eq!(std::mem::align_of::<E::Rel>(), 1);
+    assert!(data.len().is_multiple_of(size));
+    // SAFETY: RelRecord requires alignment one and every bit pattern to be
+    // valid. The resulting slice covers exactly `data`.
+    unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
 }
 
-#[derive(Clone, Copy)]
-pub struct Rels<'a, E> {
-    data: RelocationData<'a>,
-    layout: PhantomData<E>,
-}
-
-impl<'a, E: Layout> Rels<'a, E> {
-    pub fn new(data: &'a [u8]) -> Self {
-        debug_assert!(data.len().is_multiple_of(ElfRel::size::<E>()));
-        Rels {
-            data: RelocationData::Encoded(data),
-            layout: PhantomData,
-        }
-    }
-
-    pub fn decoded(data: &'a [ElfRel]) -> Self {
-        Rels {
-            data: RelocationData::Decoded(data),
-            layout: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        match self.data {
-            RelocationData::Encoded(data) => data.len() / ElfRel::size::<E>(),
-            RelocationData::Decoded(data) => data.len(),
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    #[inline]
-    pub fn at(&self, i: usize) -> ElfRel {
-        match self.data {
-            RelocationData::Encoded(data) => {
-                let size = ElfRel::size::<E>();
-                ElfRel::parse::<E>(&data[i * size..(i + 1) * size])
-            }
-            RelocationData::Decoded(data) => data[i],
-        }
-    }
-
-    /// The record at index `i`, if there is one.
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<ElfRel> {
-        (i < self.len()).then(|| self.at(i))
-    }
-
-    pub fn last(&self) -> Option<ElfRel> {
-        self.len().checked_sub(1).map(|i| self.at(i))
-    }
-
-    /// The symbol index of record `i` alone, for loops that decode only
-    /// the records referring to symbols of interest.
-    #[inline]
-    pub fn r_sym(&self, i: usize) -> u32 {
-        match self.data {
-            RelocationData::Encoded(data) => {
-                let bytes = &data[i * ElfRel::size::<E>()..];
-                if E::IS_64 {
-                    (E::Endian::read_u64(&bytes[8..]) >> 32) as u32
-                } else {
-                    E::Endian::read_u32(&bytes[4..]) >> 8
-                }
-            }
-            RelocationData::Decoded(data) => data[i].r_sym,
-        }
-    }
-
-    /// Iterates over symbol indices without decoding the other relocation
-    /// fields.
-    #[inline]
-    pub fn sym_indices(&self) -> impl DoubleEndedIterator<Item = u32> + ExactSizeIterator + '_ {
-        (0..self.len()).map(|i| self.r_sym(i))
-    }
-
-    pub fn slice(&self, range: std::ops::Range<usize>) -> Rels<'a, E> {
-        match self.data {
-            RelocationData::Encoded(data) => {
-                let size = ElfRel::size::<E>();
-                Rels::new(&data[range.start * size..range.end * size])
-            }
-            RelocationData::Decoded(data) => Rels::decoded(&data[range]),
-        }
-    }
-
-    pub fn iter(&self) -> RelsIter<'a, E> {
-        let rels = *self;
-        RelsIter {
-            range: 0..rels.len(),
-            rels,
-        }
-    }
-
-    /// The index of the first record for which `pred` is false, the
-    /// records being partitioned by it.
-    pub fn partition_point(&self, pred: impl Fn(&ElfRel) -> bool) -> usize {
-        let (mut lo, mut hi) = (0, self.len());
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if pred(&self.at(mid)) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        lo
-    }
-}
-
-pub struct RelsIter<'a, E> {
-    rels: Rels<'a, E>,
-    range: std::ops::Range<usize>,
-}
-
-impl<E: Layout> Iterator for RelsIter<'_, E> {
-    type Item = ElfRel;
-
-    #[inline]
-    fn next(&mut self) -> Option<ElfRel> {
-        self.range.next().map(|i| self.rels.at(i))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range.size_hint()
-    }
-}
-
-impl<E: Layout> DoubleEndedIterator for RelsIter<'_, E> {
-    #[inline]
-    fn next_back(&mut self) -> Option<ElfRel> {
-        self.range.next_back().map(|i| self.rels.at(i))
-    }
-}
-
-impl<E: Layout> ExactSizeIterator for RelsIter<'_, E> {}
-
-impl<'a, E: Layout> IntoIterator for Rels<'a, E> {
-    type Item = ElfRel;
-    type IntoIter = RelsIter<'a, E>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        RelsIter {
-            range: 0..self.len(),
-            rels: self,
-        }
-    }
-}
-
-/// Mutable access to relocation records stored in the file's layout.
-enum MutableRelocationData<'a> {
-    Encoded(&'a mut [u8]),
-    Decoded(&'a mut [ElfRel]),
-}
-
-pub struct RelsMut<'a, E> {
-    data: MutableRelocationData<'a>,
-    layout: PhantomData<E>,
-}
-
-impl<'a, E: Layout> RelsMut<'a, E> {
-    pub fn new(data: &'a mut [u8]) -> Self {
-        debug_assert!(data.len().is_multiple_of(ElfRel::size::<E>()));
-        RelsMut {
-            data: MutableRelocationData::Encoded(data),
-            layout: PhantomData,
-        }
-    }
-
-    pub fn decoded(data: &'a mut [ElfRel]) -> Self {
-        RelsMut {
-            data: MutableRelocationData::Decoded(data),
-            layout: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        match &self.data {
-            MutableRelocationData::Encoded(data) => data.len() / ElfRel::size::<E>(),
-            MutableRelocationData::Decoded(data) => data.len(),
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    #[inline]
-    pub fn at(&self, i: usize) -> ElfRel {
-        match &self.data {
-            MutableRelocationData::Encoded(data) => {
-                let size = ElfRel::size::<E>();
-                ElfRel::parse::<E>(&data[i * size..(i + 1) * size])
-            }
-            MutableRelocationData::Decoded(data) => data[i],
-        }
-    }
-
-    /// The symbol index of record `i` alone, for loops that decode only
-    /// the records referring to symbols of interest.
-    #[inline]
-    pub fn r_sym(&self, i: usize) -> u32 {
-        match &self.data {
-            MutableRelocationData::Encoded(data) => {
-                let bytes = &data[i * ElfRel::size::<E>()..];
-                if E::IS_64 {
-                    (E::Endian::read_u64(&bytes[8..]) >> 32) as u32
-                } else {
-                    E::Endian::read_u32(&bytes[4..]) >> 8
-                }
-            }
-            MutableRelocationData::Decoded(data) => data[i].r_sym,
-        }
-    }
-
-    /// Redirects record `i` without decoding and rewriting its other fields.
-    #[inline]
-    pub fn set_r_sym(&mut self, i: usize, r_sym: u32) {
-        match &mut self.data {
-            MutableRelocationData::Encoded(data) => {
-                let bytes = &mut data[i * ElfRel::size::<E>()..];
-                if E::IS_64 {
-                    let r_info = E::Endian::read_u64(&bytes[8..]);
-                    E::Endian::write_u64(
-                        &mut bytes[8..],
-                        (u64::from(r_sym) << 32) | (r_info as u32 as u64),
-                    );
-                } else {
-                    let r_info = E::Endian::read_u32(&bytes[4..]);
-                    E::Endian::write_u32(&mut bytes[4..], (r_sym << 8) | (r_info & 0xff));
-                }
-            }
-            MutableRelocationData::Decoded(data) => data[i].r_sym = r_sym,
-        }
-    }
-
-    pub fn set(&mut self, i: usize, rel: ElfRel) {
-        match &mut self.data {
-            MutableRelocationData::Encoded(data) => {
-                let size = ElfRel::size::<E>();
-                rel.write::<E>(&mut data[i * size..(i + 1) * size]);
-            }
-            MutableRelocationData::Decoded(data) => data[i] = rel,
-        }
-    }
-
-    /// Replaces the records by `rels`, which has the same length.
-    pub fn set_all(&mut self, rels: &[ElfRel]) {
-        debug_assert_eq!(rels.len(), self.len());
-        match &mut self.data {
-            MutableRelocationData::Encoded(data) => ElfRel::write_all::<E>(rels, data),
-            MutableRelocationData::Decoded(data) => data.copy_from_slice(rels),
-        }
-    }
+/// Mutably views relocation records in their target-dependent file representation.
+pub(crate) fn rels_from_bytes_mut<E: Layout>(data: &mut [u8]) -> &mut [E::Rel] {
+    let size = std::mem::size_of::<E::Rel>();
+    assert_eq!(std::mem::align_of::<E::Rel>(), 1);
+    assert!(data.len().is_multiple_of(size));
+    // SAFETY: RelRecord requires alignment one and every bit pattern to be
+    // valid. `data` is exclusively borrowed for the returned slice.
+    unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
 }
 
 /// The layout of a file's records — word size and byte order — as a

@@ -32,7 +32,7 @@ impl RelDynSection {
             hdr.shdr.sh_addralign = 1;
         } else {
             hdr.shdr.sh_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
-            hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
+            hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
             hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         }
         RelDynSection {
@@ -47,7 +47,7 @@ pub mod reldyn {
     use super::*;
 
     /// Gathers the dynamic relocations of all chunks.
-    pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel> {
+    pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
         let count: usize = ctx
             .chunks
             .iter()
@@ -56,14 +56,14 @@ pub mod reldyn {
                 (hdr.num_dynrels - hdr.num_relrs) as usize
             })
             .sum();
-        let mut out = vec![ElfRel::default(); count];
+        let mut out = vec![ElfRel::<E>::default(); count];
         let mut rest = out.as_mut_slice();
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);
             let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
             if count != 0 {
                 let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count);
-                output_chunks::write_dynrels(ctx, id, output_chunks::DynRelBuffer::native(slots));
+                output_chunks::write_dynrels(ctx, id, slots);
                 rest = tail;
             }
         }
@@ -155,7 +155,8 @@ pub mod reldyn {
             }
             reldyn.hdr.shdr.sh_size = reldyn.android_encoded.len() as u64;
         } else {
-            ctx.reldyn.hdr.shdr.sh_size = (num_relocs - num_relrs) * ElfRel::size::<E>() as u64;
+            ctx.reldyn.hdr.shdr.sh_size =
+                (num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64;
         }
         ctx.reldyn.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
     }
@@ -164,18 +165,14 @@ pub mod reldyn {
         if ctx.args.pack_dyn_relocs_android {
             buf[..ctx.reldyn.android_encoded.len()].copy_from_slice(&ctx.reldyn.android_encoded);
         } else {
-            let size = ElfRel::size::<E>();
+            let size = std::mem::size_of::<ElfRel<E>>();
             let mut rest = buf;
             for &id in &ctx.chunks {
                 let hdr = ctx.chunk_header(id);
                 let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
                 if count != 0 {
                     let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count * size);
-                    output_chunks::write_dynrels(
-                        ctx,
-                        id,
-                        output_chunks::DynRelBuffer::output(slots),
-                    );
+                    output_chunks::write_dynrels(ctx, id, rels_from_bytes_mut::<E>(slots));
                     rest = tail;
                 }
             }
@@ -216,16 +213,8 @@ pub mod reldyn {
                 1
             }
         };
-        match output_chunks::DynRelBuffer::<E>::output(buf) {
-            output_chunks::DynRelBuffer::Native(relocs) => {
-                relocs.par_sort_by_key(|r| (rank(r.r_type), r.r_sym, r.r_offset));
-            }
-            output_chunks::DynRelBuffer::Encoded(buf, _) => {
-                let mut relocs = ElfRel::parse_all::<E>(buf);
-                relocs.par_sort_by_key(|r| (rank(r.r_type), r.r_sym, r.r_offset));
-                ElfRel::write_all::<E>(&relocs, buf);
-            }
-        }
+        let relocs = rels_from_bytes_mut::<E>(buf);
+        relocs.par_sort_by_key(|r| (rank(r.r_type()), r.r_sym(), r.r_offset()));
     }
 }
 
@@ -358,16 +347,16 @@ pub fn encode_relr<E: Arch>(offsets: &[u64]) -> Vec<u64> {
 // factored out so each per-relocation entry is just the differing fields.
 //
 // See bionic's linker/linker_relocs.cpp for the decoder.
-pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
+pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
     const GROUPED_BY_INFO: i64 = 1;
     const GROUPED_BY_OFFSET_DELTA: i64 = 2;
     const GROUP_HAS_ADDEND: i64 = 8;
 
-    let r_info = |r: &ElfRel| -> i64 {
+    let r_info = |r: &ElfRel<E>| -> i64 {
         if E::IS_64 {
-            (((r.r_sym as u64) << 32) | r.r_type as u64) as i64
+            (((r.r_sym() as u64) << 32) | r.r_type() as u64) as i64
         } else {
-            (((r.r_sym as u64) << 8) | (r.r_type & 0xff) as u64) as i64
+            (((r.r_sym() as u64) << 8) | (r.r_type() & 0xff) as u64) as i64
         }
     };
 
@@ -384,13 +373,13 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
     // R_RELATIVE, ~90% of dynrels in a real Android binary) land in one
     // contiguous block. That collapses dozens of type-broken groups into
     // a few large info-grouped runs.
-    rels.sort_by_key(|r| (r.r_type, r.r_sym, r.r_offset));
+    rels.sort_by_key(|r| (r.r_type(), r.r_sym(), r.r_offset()));
 
     let mut prev_offset = 0i64;
     let mut prev_addend = 0i64;
     let mut i = 0;
     while i < rels.len() {
-        let offset_delta = rels[i].r_offset as i64 - prev_offset;
+        let offset_delta = rels[i].r_offset() as i64 - prev_offset;
         let cur_info = r_info(&rels[i]);
 
         // Greedily extend the group while consecutive relocations share the
@@ -398,7 +387,7 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
         let mut j = i + 1;
         while j < rels.len()
             && r_info(&rels[j]) == cur_info
-            && rels[j].r_offset as i64 - rels[j - 1].r_offset as i64 == offset_delta
+            && rels[j].r_offset() as i64 - rels[j - 1].r_offset() as i64 == offset_delta
         {
             j += 1;
         }
@@ -418,11 +407,11 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
 
         if E::IS_RELA {
             for r in &rels[i..j] {
-                encode_sleb(&mut buf, r.r_addend - prev_addend);
-                prev_addend = r.r_addend;
+                encode_sleb(&mut buf, r.r_addend() - prev_addend);
+                prev_addend = r.r_addend();
             }
         }
-        prev_offset = rels[j - 1].r_offset as i64;
+        prev_offset = rels[j - 1].r_offset() as i64;
         i = j;
     }
     buf
@@ -550,7 +539,7 @@ pub mod dynamic {
                 );
                 define(
                     if E::IS_RELA { DT_RELAENT } else { DT_RELENT },
-                    ElfRel::size::<E>() as u64,
+                    std::mem::size_of::<ElfRel<E>>() as u64,
                 );
             }
         }

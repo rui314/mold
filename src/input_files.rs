@@ -649,8 +649,8 @@ pub struct ObjectFile {
     pub sections_parsed: bool,
 
     /// CREL relocation tables decoded into ordinary records, indexed by
-    /// relocation section.
-    decoded_crel: Vec<Option<Box<[ElfRel]>>>,
+    /// relocation section. Records remain in the target's file layout.
+    decoded_crel: Vec<Option<Box<[u8]>>>,
 
     /// The number of section headers in the file; `base.shdrs` may have
     /// synthesized headers appended after them.
@@ -786,7 +786,7 @@ fn is_known_section_type<E: Arch>(shdr: &ElfShdr) -> bool {
 
 // Decode CREL entries one at a time so callers can either stream them or
 // materialize them in an array.
-struct CrelReader<'a> {
+struct CrelReader<'a, E: Layout> {
     data: &'a [u8],
     remaining: usize,
     scale: u32,
@@ -795,10 +795,11 @@ struct CrelReader<'a> {
     r_type: i64,
     r_sym: i64,
     addend: i64,
+    target: PhantomData<E>,
 }
 
-impl<'a> CrelReader<'a> {
-    fn new<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, mut data: &'a [u8]) -> Self {
+impl<'a, E: Arch> CrelReader<'a, E> {
+    fn new(diag: &Diagnostics, file: &dyn fmt::Display, mut data: &'a [u8]) -> Self {
         let hdr = read_uleb(&mut data);
         let is_rela = hdr & 0b100 != 0;
         if is_rela && !E::IS_RELA {
@@ -817,15 +818,16 @@ impl<'a> CrelReader<'a> {
             r_type: 0,
             r_sym: 0,
             addend: 0,
+            target: PhantomData,
         }
     }
 }
 
-impl Iterator for CrelReader<'_> {
-    type Item = ElfRel;
+impl<E: Layout> Iterator for CrelReader<'_, E> {
+    type Item = ElfRel<E>;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<ElfRel> {
+    fn next(&mut self) -> Option<ElfRel<E>> {
         self.remaining = self.remaining.checked_sub(1)?;
         let nflags = if self.is_rela { 3 } else { 2 };
         let flags = self.data[0];
@@ -851,7 +853,7 @@ impl Iterator for CrelReader<'_> {
             self.addend += util::read_sleb(&mut self.data);
         }
 
-        Some(ElfRel::new(
+        Some(ElfRel::<E>::new(
             self.offset,
             self.r_type as u32,
             self.r_sym as u32,
@@ -865,25 +867,25 @@ impl Iterator for CrelReader<'_> {
     }
 }
 
-impl ExactSizeIterator for CrelReader<'_> {}
+impl<E: Layout> ExactSizeIterator for CrelReader<'_, E> {}
 
-enum RelocationIterInner<'a, E> {
-    Ordinary(RelsIter<'a, E>),
-    Crel(CrelReader<'a>),
+enum RelocationIterInner<'a, E: Layout> {
+    Ordinary(std::iter::Copied<std::slice::Iter<'a, E::Rel>>),
+    Crel(CrelReader<'a, E>),
 }
 
-pub(crate) struct RelocationIter<'a, E> {
+pub(crate) struct RelocationIter<'a, E: Layout> {
     inner: RelocationIterInner<'a, E>,
 }
 
 impl<'a, E: Layout> RelocationIter<'a, E> {
-    fn ordinary(rels: Rels<'a, E>) -> Self {
+    fn ordinary(rels: &'a [E::Rel]) -> Self {
         RelocationIter {
-            inner: RelocationIterInner::Ordinary(rels.iter()),
+            inner: RelocationIterInner::Ordinary(rels.iter().copied()),
         }
     }
 
-    fn crel(reader: CrelReader<'a>) -> Self {
+    fn crel(reader: CrelReader<'a, E>) -> Self {
         RelocationIter {
             inner: RelocationIterInner::Crel(reader),
         }
@@ -891,10 +893,10 @@ impl<'a, E: Layout> RelocationIter<'a, E> {
 }
 
 impl<E: Layout> Iterator for RelocationIter<'_, E> {
-    type Item = ElfRel;
+    type Item = ElfRel<E>;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<ElfRel> {
+    fn next(&mut self) -> Option<ElfRel<E>> {
         match &mut self.inner {
             RelocationIterInner::Ordinary(iter) => iter.next(),
             RelocationIterInner::Crel(iter) => iter.next(),
@@ -912,7 +914,7 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
     #[inline(always)]
     fn fold<B, F>(self, init: B, f: F) -> B
     where
-        F: FnMut(B, ElfRel) -> B,
+        F: FnMut(B, ElfRel<E>) -> B,
     {
         match self.inner {
             RelocationIterInner::Ordinary(iter) => iter.fold(init, f),
@@ -928,16 +930,21 @@ impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
 // at the moment.
 //
 // This function converts a CREL relocation table to a regular one.
-fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel]> {
-    let reader = CrelReader::new::<E>(diag, file, data);
-    // ExactArray owns a fixed-size array without value-initializing trivial
-    // elements that the caller is about to overwrite.
-    let mut rels = Box::<[ElfRel]>::new_uninit_slice(reader.len());
+fn decode_crel<E: Arch>(diag: &Diagnostics, file: &dyn fmt::Display, data: &[u8]) -> Box<[u8]> {
+    let reader = CrelReader::<E>::new(diag, file, data);
+    // Own a fixed-size array without value-initializing trivial elements
+    // that the caller is about to overwrite.
+    let mut rels = Box::<[ElfRel<E>]>::new_uninit_slice(reader.len());
     for (i, rel) in reader.enumerate() {
         rels[i].write(rel);
     }
     // SAFETY: CrelReader visits every index from zero to len once.
-    unsafe { rels.assume_init() }
+    let rels = unsafe { rels.assume_init() };
+    let len = std::mem::size_of_val(&*rels);
+    let ptr = Box::into_raw(rels) as *mut ElfRel<E>;
+    // SAFETY: RelRecord requires alignment one and no drop glue. Therefore
+    // `[ElfRel<E>]` and a byte slice of the same size have identical layouts.
+    unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr.cast::<u8>(), len)) }
 }
 
 impl ObjectFile {
@@ -1091,15 +1098,15 @@ impl ObjectFile {
     /// Returns a relocation table from the file unless a compressed table
     /// was decoded into the side table.
     #[inline(always)]
-    pub(crate) fn relocations<E: Layout>(&self, relsec_idx: Option<u32>) -> Rels<'_, E> {
+    pub(crate) fn relocations<E: Layout>(&self, relsec_idx: Option<u32>) -> &[E::Rel] {
         let Some(relsec_idx) = relsec_idx else {
-            return Rels::new(&[]);
+            return &[];
         };
         if let Some(Some(rels)) = self.decoded_crel.get(relsec_idx as usize) {
-            return Rels::decoded(rels);
+            return rels_from_bytes::<E>(rels);
         }
 
-        Rels::new(self.input_relocation_data::<E>(relsec_idx))
+        rels_from_bytes::<E>(self.input_relocation_data::<E>(relsec_idx))
     }
 
     /// Iterates over relocations without materializing a deferred CREL table.
@@ -1110,14 +1117,14 @@ impl ObjectFile {
         relsec_idx: Option<u32>,
     ) -> RelocationIter<'a, E> {
         let Some(relsec_idx) = relsec_idx else {
-            return RelocationIter::ordinary(Rels::new(&[]));
+            return RelocationIter::ordinary(&[]);
         };
         let index = relsec_idx as usize;
         if self.base.shdrs.at_in::<E>(index).sh_type == SHT_CREL
             && !self.decoded_crel.get(index).is_some_and(Option::is_some)
         {
             let data = self.input_relocation_data::<E>(relsec_idx);
-            return RelocationIter::crel(CrelReader::new::<E>(diag, self, data));
+            return RelocationIter::crel(CrelReader::<E>::new(diag, self, data));
         }
 
         RelocationIter::ordinary(self.relocations::<E>(Some(relsec_idx)))
@@ -1152,13 +1159,13 @@ impl ObjectFile {
     /// Returns relocations for rewriting. Ordinary records live in the
     /// input's private writable mapping; decoded CREL records use the side
     /// table because they have no ordinary in-file representation.
-    pub fn rels_mut<E: Layout>(&mut self, shndx: u32) -> RelsMut<'_, E> {
+    pub fn rels_mut<E: Layout>(&mut self, shndx: u32) -> &mut [E::Rel] {
         let Some(relsec_idx) = self.section_at(shndx).relsec_idx() else {
-            return RelsMut::new(&mut []);
+            return &mut [];
         };
         let index = relsec_idx as usize;
         if self.decoded_crel.get(index).is_some_and(Option::is_some) {
-            return RelsMut::decoded(self.decoded_crel[index].as_deref_mut().unwrap());
+            return rels_from_bytes_mut::<E>(self.decoded_crel[index].as_deref_mut().unwrap());
         }
 
         let (offset, size) = self.base.shdrs.sh_offset_and_size_in::<E>(index);
@@ -1171,10 +1178,10 @@ impl ObjectFile {
         let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
         // SAFETY: the same exclusive ownership applies while the returned
         // relocation view is alive.
-        RelsMut::new(unsafe { &mut *data })
+        rels_from_bytes_mut::<E>(unsafe { &mut *data })
     }
 
-    fn set_decoded_crel(&mut self, index: usize, rels: Box<[ElfRel]>) {
+    fn set_decoded_crel(&mut self, index: usize, rels: Box<[u8]>) {
         if self.decoded_crel.len() <= index {
             self.decoded_crel.resize_with(index + 1, || None);
         }
@@ -1439,9 +1446,11 @@ impl ObjectFile {
     // Returns the number of relocations referring to the section symbol of
     // a mergeable section. reattach_section_pieces() replaces each of them
     // with a symbol for the section piece it refers to.
-    fn count_frag_syms<E: Layout>(&self, rels: Rels<'_, E>) -> usize {
+    fn count_frag_syms<E: Layout>(&self, rels: &[E::Rel]) -> usize {
         let mut count = 0;
-        for r_sym in rels.sym_indices().map(|i| i as usize) {
+        // Iterate over symbol indices without decoding the other relocation
+        // fields.
+        for r_sym in rels.iter().map(|rel| rel.r_sym() as usize) {
             let Some(st_info) = self.base.elf_syms.st_info_in_checked::<E>(r_sym) else {
                 invalid_relocation_symbol(self, r_sym);
             };
@@ -1605,10 +1614,14 @@ impl ObjectFile {
                     };
                     if target_flags & SHF_ALLOC as u64 != 0 {
                         let contents = self.base.section_contents_from_shdr(diag, &shdr);
-                        if !contents.len().is_multiple_of(ElfRel::size::<E>()) {
+                        if !contents
+                            .len()
+                            .is_multiple_of(std::mem::size_of::<ElfRel<E>>())
+                        {
                             fatal!(diag, "{self}: corrupted section");
                         }
-                        self.num_frag_syms += self.count_frag_syms(Rels::<E>::new(contents));
+                        self.num_frag_syms +=
+                            self.count_frag_syms::<E>(rels_from_bytes::<E>(contents));
                     }
                     // Relocations are attached to their sections below.
                 }
@@ -1628,7 +1641,7 @@ impl ObjectFile {
                         // Count the relocations just decoded while they are in cache.
                         if target_is_alloc {
                             self.num_frag_syms +=
-                                self.count_frag_syms(Rels::<E>::decoded(&decoded));
+                                self.count_frag_syms::<E>(rels_from_bytes::<E>(&decoded));
                         }
                         self.set_decoded_crel(i, decoded);
                     }
@@ -1809,7 +1822,7 @@ impl ObjectFile {
                     !decoded.is_empty()
                 } else {
                     let contents = self.base.section_contents_from_shdr(diag, &shdr);
-                    CrelReader::new::<E>(diag, self, contents).len() != 0
+                    CrelReader::<E>::new(diag, self, contents).len() != 0
                 }
             } else {
                 shdr.sh_size != 0
@@ -1854,10 +1867,10 @@ impl ObjectFile {
                 continue;
             }
             let rels = isec.rels::<E>(self);
-            if !rels.iter().map(|r| r.r_offset).is_sorted() {
-                let mut sorted: Vec<ElfRel> = rels.iter().collect();
-                sorted.sort_by_key(|r| r.r_offset);
-                self.rels_mut::<E>(shndx).set_all(&sorted);
+            if !rels.iter().map(|r| r.r_offset()).is_sorted() {
+                let mut sorted = rels.to_vec();
+                sorted.sort_by_key(|r| r.r_offset());
+                self.rels_mut::<E>(shndx).copy_from_slice(&sorted);
             }
         }
     }
@@ -2048,7 +2061,7 @@ impl ObjectFile {
                 pos = end_offset;
 
                 let rel_begin = rel_idx;
-                while rel_idx < rels.len() && (rels.at(rel_idx).r_offset as usize) < end_offset {
+                while rel_idx < rels.len() && (rels[rel_idx].r_offset() as usize) < end_offset {
                     rel_idx += 1;
                 }
 
@@ -2074,13 +2087,13 @@ impl ObjectFile {
                     new_cies.push(cie);
                 } else {
                     // This is FDE.
-                    if rel_begin == rel_idx || rels.at(rel_begin).r_sym == 0 {
+                    if rel_begin == rel_idx || rels[rel_begin].r_sym() == 0 {
                         // FDE has no valid relocation, which means FDE is dead from
                         // the beginning. Compilers usually don't create such FDE, but
                         // `ld -r` tend to generate such dead FDEs.
                         continue;
                     }
-                    if rels.at(rel_begin).r_offset as usize - begin_offset != 8 {
+                    if rels[rel_begin].r_offset() as usize - begin_offset != 8 {
                         fatal!(
                             diag,
                             "{}: FDE's first relocation should have offset 8",
@@ -2089,7 +2102,7 @@ impl ObjectFile {
                     }
                     // The function may belong to a discarded COMDAT group.
                     if self
-                        .symbol_section(rels.at(rel_begin).r_sym as usize)
+                        .symbol_section(rels[rel_begin].r_sym() as usize)
                         .is_none()
                     {
                         continue;
@@ -2122,8 +2135,8 @@ impl ObjectFile {
         // We assume that FDEs for the same input sections are contiguous
         // in `fdes` vector.
         let section_of = |file: &ObjectFile, fde: &FdeRecord| -> usize {
-            let rel = fde.rels::<E>(file).at(0);
-            file.shndx_at_in::<E>(rel.r_sym as usize)
+            let rel = fde.rels::<E>(file)[0];
+            file.shndx_at_in::<E>(rel.r_sym() as usize)
         };
         let mut order: Vec<(u64, usize, usize)> = self
             .fdes
@@ -2222,23 +2235,23 @@ impl ObjectFile {
                 // Find the relocation for this FDE's func_start field. An FDE without
                 // one isn't tied to any function (`ld -r` can emit such dead FDEs),
                 // so we drop it.
-                while rel_idx < rels.len() && (rels.at(rel_idx).r_offset as usize) < idx_off {
+                while rel_idx < rels.len() && (rels[rel_idx].r_offset() as usize) < idx_off {
                     rel_idx += 1;
                 }
-                if rel_idx == rels.len() || rels.at(rel_idx).r_offset as usize != idx_off {
+                if rel_idx == rels.len() || rels[rel_idx].r_offset() as usize != idx_off {
                     continue;
                 }
-                let rel = &rels.at(rel_idx);
+                let rel = &rels[rel_idx];
                 let off = fre_off + ent.func_start_fre_off as usize;
 
-                let Some(func) = self.symbol_section(rel.r_sym as usize) else {
+                let Some(func) = self.symbol_section(rel.r_sym() as usize) else {
                     continue;
                 };
                 let fre = &data[off..off + sframe_fre_block_size::<E>(data, off)];
                 new_fdes.push(SFrameFde {
                     section: func.shndx,
-                    sym: self.base.symbols[rel.r_sym as usize],
-                    addend: rel.r_addend,
+                    sym: self.base.symbols[rel.r_sym() as usize],
+                    addend: rel.r_addend(),
                     fre,
                     func_size: ent.func_size,
                     num_fres: E::Endian::read_u16(&data[off..]) as u32,
@@ -2411,8 +2424,8 @@ impl ObjectFile {
             // the side table.
             let relsec_idx = relsec_idx as usize;
             let mut decoded = self.decoded_crel.get_mut(relsec_idx).and_then(Option::take);
-            let mut rels = match decoded.as_deref_mut() {
-                Some(data) => RelsMut::<E>::decoded(data),
+            let rels = match decoded.as_deref_mut() {
+                Some(data) => rels_from_bytes_mut::<E>(data),
                 None => {
                     let (offset, size) = self.base.shdrs.sh_offset_and_size_in::<E>(relsec_idx);
                     let mf = self
@@ -2426,12 +2439,13 @@ impl ObjectFile {
                         unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
                     // SAFETY: the exclusive access described above lasts
                     // until this relocation view is dropped.
-                    RelsMut::<E>::new(unsafe { &mut *data })
+                    rels_from_bytes_mut::<E>(unsafe { &mut *data })
                 }
             };
 
-            for ri in 0..rels.len() {
-                let r_sym = rels.r_sym(ri) as usize;
+            for rel in rels.iter_mut() {
+                let record = *rel;
+                let r_sym = record.r_sym() as usize;
                 if (self.base.elf_syms.st_info_in::<E>(r_sym) & 0xf) as u32 != STT_SECTION {
                     continue;
                 }
@@ -2440,19 +2454,17 @@ impl ObjectFile {
                     let sym_shndx = self.shndx_from(r_sym, esym.st_shndx);
                     self.mergeable_section(sym_shndx).map(|m| {
                         debug_assert!(merged[m.parent.index()].resolved);
-                        let rel = rels.at(ri);
                         let addend = if E::IS_RELA && E::FAMILY != Family::Sh4 {
-                            rel.r_addend
+                            record.r_addend()
                         } else {
-                            E::get_addend(&contents[rel.r_offset as usize..], &rel)
+                            E::get_addend(&contents[record.r_offset() as usize..], &record)
                         };
                         let Some((frag, in_frag_offset)) =
                             m.fragment(esym.st_value.wrapping_add(addend as u64))
                         else {
-                            fatal!(diag, "{self}: bad relocation at {}", rel.r_sym);
+                            fatal!(diag, "{self}: bad relocation at {}", record.r_sym());
                         };
                         (
-                            rel,
                             FragmentRef {
                                 section: m.parent,
                                 entry: frag,
@@ -2461,7 +2473,7 @@ impl ObjectFile {
                         )
                     })
                 };
-                let Some((rel, frag, value)) = found else {
+                let Some((frag, value)) = found else {
                     continue;
                 };
 
@@ -2471,15 +2483,15 @@ impl ObjectFile {
                 let mut sym = Symbol::new(BStr::new(b"<fragment>"));
                 sym.set_file(FileId::Obj(id));
                 sym.set_fragment_dummy(true);
-                sym.sym_idx = rel.r_sym;
-                sym.set_esym(&self.base.elf_syms.at(rel.r_sym as usize));
+                sym.sym_idx = record.r_sym();
+                sym.set_esym(&self.base.elf_syms.at(record.r_sym() as usize));
                 sym.set_visibility(STV_HIDDEN);
                 sym.set_fragment(frag);
                 sym.value = value;
                 slots[next].write(sym);
                 next += 1;
 
-                rels.set_r_sym(ri, dummy_idx);
+                rel.set_r_sym(dummy_idx);
             }
 
             if let Some(data) = decoded {
@@ -2508,8 +2520,8 @@ impl ObjectFile {
         // Scan relocations against exception frames
         for cie in &self.cies {
             for rel in cie.rels::<E>(self) {
-                let sym = &ctx.symbols[self.base.symbols[rel.r_sym as usize]];
-                if ctx.args.pic && rel.r_type == E::R_ABS {
+                let sym = &ctx.symbols[self.base.symbols[rel.r_sym() as usize]];
+                if ctx.args.pic && rel.r_type() == E::R_ABS {
                     error!(
                         ctx,
                         "{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",

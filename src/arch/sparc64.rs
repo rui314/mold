@@ -73,19 +73,9 @@ pub struct Sparc64;
 
 impl Layout for Sparc64 {
     type Endian = BigEndian;
+    type Rel = Sparc64Rela;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
-}
-
-// Target-specific ELF data types
-/// The relocation type proper, without the second addend.
-fn r_type(rel: &ElfRel) -> u32 {
-    rel.r_type & 0xff
-}
-
-/// SPARC-specific: used for R_SPARC_OLO10
-fn r_type_data(rel: &ElfRel) -> u64 {
-    (rel.r_type >> 8) as u64
 }
 
 fn r32(loc: &[u8]) -> u32 {
@@ -263,12 +253,12 @@ impl Arch for Sparc64 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
-        match r_type(rel) {
+        match rel.r_type() {
             R_NONE => {}
             R_SPARC_64 | R_SPARC_UA64 => w64(loc, val),
             R_SPARC_DISP32 => {
@@ -293,21 +283,21 @@ impl Arch for Sparc64 {
 
         // Scan relocations
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match r_type(&rel) {
+            match rel.r_type() {
                 R_SPARC_8 | R_SPARC_5 | R_SPARC_6 | R_SPARC_7 | R_SPARC_10 | R_SPARC_11
                 | R_SPARC_13 | R_SPARC_16 | R_SPARC_22 | R_SPARC_32 | R_SPARC_REGISTER
                 | R_SPARC_UA16 | R_SPARC_UA32 | R_SPARC_PC_HM10 | R_SPARC_OLO10 | R_SPARC_LOX10
                 | R_SPARC_HM10 | R_SPARC_M44 | R_SPARC_HIX22 | R_SPARC_LO10 | R_SPARC_L44
                 | R_SPARC_LM22 | R_SPARC_HI22 | R_SPARC_H44 | R_SPARC_HH22 => {
-                    scan_absrel(ctx, isec, sym, &rel)
+                    scan_absrel(ctx, isec, sym, rel)
                 }
                 R_SPARC_PLT32 | R_SPARC_WPLT30 | R_SPARC_WDISP30 | R_SPARC_HIPLT22
                 | R_SPARC_LOPLT10 | R_SPARC_PCPLT32 | R_SPARC_PCPLT22 | R_SPARC_PCPLT10
@@ -326,7 +316,7 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_DISP16 | R_SPARC_DISP32 | R_SPARC_DISP64 | R_SPARC_DISP8 | R_SPARC_PC10
                 | R_SPARC_PC22 | R_SPARC_PC_LM22 | R_SPARC_WDISP16 | R_SPARC_WDISP19
-                | R_SPARC_WDISP22 | R_SPARC_PC_HH22 => scan_pcrel(ctx, isec, sym, &rel),
+                | R_SPARC_WDISP22 | R_SPARC_PC_HH22 => scan_pcrel(ctx, isec, sym, rel),
                 R_SPARC_TLS_GD_HI22 => {
                     // We always relax if -static because libc.a doesn't contain
                     // __tls_get_addr().
@@ -349,7 +339,7 @@ impl Arch for Sparc64 {
                     }
                 }
                 R_SPARC_TLS_IE_HI22 => sym.add_flags(NEEDS_GOTTP),
-                R_SPARC_TLS_LE_HIX22 | R_SPARC_TLS_LE_LOX10 => check_tlsle(ctx, isec, sym, &rel),
+                R_SPARC_TLS_LE_HIX22 | R_SPARC_TLS_LE_LOX10 => check_tlsle(ctx, isec, sym, rel),
                 R_SPARC_64
                 | R_SPARC_UA64
                 | R_SPARC_GOTDATA_OP_LOX10
@@ -397,18 +387,18 @@ impl Arch for Sparc64 {
         // We iterate over relocations in reverse order so that it is easy
         // to swap instructions for R_SPARC_TLS_GD_CALL.
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate().rev() {
-            if rel.r_type == R_NONE {
+            if rel.r_type() == R_NONE {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
-            let off = rel.r_offset as usize;
+            let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
-            let p = isec.addr(ctx) + rel.r_offset;
+            let a = rel.r_addend() as u64;
+            let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -421,7 +411,7 @@ impl Arch for Sparc64 {
             let rd = insn & (0b11111 << 25);
             let loc = &mut buf[off..];
 
-            match r_type(&rel) {
+            match rel.r_type() {
                 R_SPARC_5 => {
                     check(sa as i64, 0, 1 << 5);
                     or32(loc, bits(sa, 4, 0));
@@ -540,7 +530,11 @@ impl Arch for Sparc64 {
                 R_SPARC_PC22 | R_SPARC_PCPLT22 | R_SPARC_PC_LM22 => or32(loc, bits(pcrel, 31, 10)),
                 R_SPARC_OLO10 => or32(
                     loc,
-                    bits(bits(sa, 9, 0).wrapping_add(r_type_data(&rel)), 12, 0),
+                    bits(
+                        bits(sa, 9, 0).wrapping_add(u64::from(rel.r_type_data.get())),
+                        12,
+                        0,
+                    ),
                 ),
                 R_SPARC_HH22 => or32(loc, bits(sa, 63, 42)),
                 R_SPARC_HM10 => or32(loc, bits(sa, 41, 32)),
@@ -707,19 +701,19 @@ impl Arch for Sparc64 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
-            let loc = &mut buf[rel.r_offset as usize..];
+            let loc = &mut buf[rel.r_offset() as usize..];
 
-            match r_type(&rel) {
+            match rel.r_type() {
                 R_SPARC_64 | R_SPARC_UA64 => w64(
                     loc,
                     isec.tombstone(ctx, sym, frag.map(|(f, _)| f)).unwrap_or(sa),

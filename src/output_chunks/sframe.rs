@@ -172,7 +172,7 @@ impl SFrameRelocSection {
     pub fn new<E: Arch>() -> SFrameRelocSection {
         let mut hdr = ChunkHeader::new(".rela.sframe", SHT_RELA, SHF_INFO_LINK as u64);
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
+        hdr.shdr.sh_entsize = std::mem::size_of::<ElfRel<E>>() as u64;
         SFrameRelocSection { hdr }
     }
 }
@@ -183,7 +183,7 @@ pub mod sframe_reloc {
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let n = ctx.sframe.fdes.len();
         let sec = ctx.sframe_reloc.as_mut().unwrap();
-        sec.hdr.shdr.sh_size = (n * ElfRel::size::<E>()) as u64;
+        sec.hdr.shdr.sh_size = (n * std::mem::size_of::<ElfRel<E>>()) as u64;
         sec.hdr.shdr.sh_link = ctx.symtab.hdr.shndx;
         sec.hdr.shdr.sh_info = ctx.sframe.hdr.shndx;
     }
@@ -194,7 +194,8 @@ pub mod sframe_reloc {
         let Some(r_type) = E::R_SFRAME else {
             return;
         };
-        let size = ElfRel::size::<E>();
+        let out = rels_from_bytes_mut::<E>(buf);
+        debug_assert_eq!(out.len(), ctx.sframe.fdes.len());
         for (i, &(fi, fi_idx)) in ctx.sframe.fdes.iter().enumerate() {
             let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
             let sym = &ctx.symbols[fde.sym];
@@ -214,7 +215,7 @@ pub mod sframe_reloc {
             } else {
                 (sym.output_sym_idx(ctx), fde.addend)
             };
-            ElfRel::new(r_offset, r_type, r_sym, r_addend).write::<E>(&mut buf[i * size..]);
+            out[i] = ElfRel::<E>::new(r_offset, r_type, r_sym, r_addend);
         }
     }
 }

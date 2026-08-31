@@ -44,9 +44,31 @@ pub type Riscv64Be = RiscvTarget<BigEndian, true>;
 pub type Riscv32 = RiscvTarget<LittleEndian, false>;
 pub type Riscv32Be = RiscvTarget<BigEndian, false>;
 
-impl<End: Endian, const IS_64: bool> Layout for RiscvTarget<End, IS_64> {
-    type Endian = End;
-    const IS_64: bool = IS_64;
+impl Layout for RiscvTarget<LittleEndian, true> {
+    type Endian = LittleEndian;
+    type Rel = Elf64RelaLe;
+    const IS_64: bool = true;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for RiscvTarget<BigEndian, true> {
+    type Endian = BigEndian;
+    type Rel = Elf64RelaBe;
+    const IS_64: bool = true;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for RiscvTarget<LittleEndian, false> {
+    type Endian = LittleEndian;
+    type Rel = Elf32RelaLe;
+    const IS_64: bool = false;
+    const IS_RELA: bool = true;
+}
+
+impl Layout for RiscvTarget<BigEndian, false> {
+    type Endian = BigEndian;
+    type Rel = Elf32RelaBe;
+    const IS_64: bool = false;
     const IS_RELA: bool = true;
 }
 
@@ -209,13 +231,13 @@ fn find_paired_reloc<E: Arch>(
 ) -> usize {
     let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
     let value = sym.esym(ctx).st_value;
-    let candidates: Box<dyn Iterator<Item = usize>> = if value <= rels.at(i).r_offset {
+    let candidates: Box<dyn Iterator<Item = usize>> = if value <= rels[i].r_offset() {
         Box::new((0..i).rev())
     } else {
         Box::new(i + 1..rels.len())
     };
     for j in candidates {
-        if is_hi20(rels.at(j).r_type) && value == rels.at(j).r_offset {
+        if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {
             return j;
         }
     }
@@ -239,18 +261,20 @@ fn is_got_load_pair<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) ->
     let file = &ctx.objs[isec.file.index()];
     let contents = isec.original_contents(file);
     i + 3 < rels.len()
-        && rels.at(i).r_type == R_RISCV_GOT_HI20
-        && rels.at(i + 1).r_type == R_RISCV_RELAX
-        && rels.at(i + 2).r_type == R_RISCV_PCREL_LO12_I
-        && rels.at(i + 3).r_type == R_RISCV_RELAX
-        && rels.at(i).r_offset == rels.at(i + 2).r_offset - 4
-        && rels.at(i).r_offset
-            == ctx.symbols[file.base.symbols[rels.at(i + 2).r_sym as usize]].value
-        && rd(&contents[rels.at(i).r_offset as usize..])
-            == rd(&contents[rels.at(i + 2).r_offset as usize..])
+        && rels[i].r_type() == R_RISCV_GOT_HI20
+        && rels[i + 1].r_type() == R_RISCV_RELAX
+        && rels[i + 2].r_type() == R_RISCV_PCREL_LO12_I
+        && rels[i + 3].r_type() == R_RISCV_RELAX
+        && rels[i].r_offset() == rels[i + 2].r_offset() - 4
+        && rels[i].r_offset() == ctx.symbols[file.base.symbols[rels[i + 2].r_sym() as usize]].value
+        && rd(&contents[rels[i].r_offset() as usize..])
+            == rd(&contents[rels[i + 2].r_offset() as usize..])
 }
 
-impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
+impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64>
+where
+    Self: Layout<Endian = End>,
+{
     const NAME: &'static str = match (IS_64, End::IS_LITTLE) {
         (true, true) => "riscv64",
         (true, false) => "riscv64be",
@@ -369,13 +393,13 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection,
-        rel: &ElfRel,
+        rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
         val: u64,
     ) {
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
-        match rel.r_type {
+        match rel.r_type() {
             R_NONE => {}
             R_RISCV_ADD32 => End::write_u32(loc, End::read_u32(loc).wrapping_add(val as u32)),
             R_RISCV_SUB8 => loc[0] = loc[0].wrapping_sub(val as u8),
@@ -402,15 +426,15 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
 
         // Scan relocations
         for rel in isec.relocations::<Self>(ctx) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
             }
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_RISCV_32 => {
                     if IS_64 {
                         scan_absrel(ctx, isec, sym, &rel);
@@ -477,20 +501,20 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         let mut i = 0;
 
         while i < rels.len() {
-            let rel = &rels.at(i);
+            let rel = &rels[i];
             i += 1;
-            if rel.r_type == R_NONE || rel.r_type == R_RISCV_RELAX {
+            if rel.r_type() == R_NONE || rel.r_type() == R_RISCV_RELAX {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.ty() == STT_TLS && sym.is_remaining_undef_weak() {
                 continue;
             }
 
             let (removed, delta) = isec.removed_at(rel);
-            let r_offset = rel.r_offset - delta as u64;
+            let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
-            let a = rel.r_addend as u64;
+            let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + r_offset;
             let got = ctx.got.hdr.shdr.sh_addr;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
@@ -503,9 +527,9 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 write_utype(loc, val);
             };
             let loc = &mut buf[r_offset as usize..];
-            let orig = &contents[rel.r_offset as usize..];
+            let orig = &contents[rel.r_offset() as usize..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_RISCV_32 => {
                     if IS_64 {
                         End::write_u32(loc, sa as u32);
@@ -592,16 +616,17 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 R_RISCV_PCREL_HI20 => utype(loc, pcrel),
                 R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => {
                     let j = find_paired_reloc(ctx, isec, sym, i - 1);
-                    let rel2 = &rels.at(j);
-                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym as usize]];
-                    let write = if rel.r_type == R_RISCV_PCREL_LO12_I {
+                    let rel2 = &rels[j];
+                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
+                    let write = if rel.r_type() == R_RISCV_PCREL_LO12_I {
                         write_itype
                     } else {
                         write_stype
                     };
-                    let a2 = rel2.r_addend as u64;
-                    let p2 = isec.addr(ctx) + rel2.r_offset - r_delta(isec, rel2.r_offset) as u64;
-                    match rel2.r_type {
+                    let a2 = rel2.r_addend() as u64;
+                    let p2 =
+                        isec.addr(ctx) + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
+                    match rel2.r_type() {
                         R_RISCV_GOT_HI20 => {
                             write(loc, sym2.got_addr(ctx).wrapping_add(a2).wrapping_sub(p2))
                         }
@@ -631,7 +656,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     }
                 }
                 R_RISCV_LO12_I | R_RISCV_LO12_S => {
-                    if rel.r_type == R_RISCV_LO12_I {
+                    if rel.r_type() == R_RISCV_LO12_I {
                         write_itype(loc, sa);
                     } else {
                         write_stype(loc, sa);
@@ -658,7 +683,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 }
                 R_RISCV_TPREL_LO12_I | R_RISCV_TPREL_LO12_S => {
                     let val = sa.wrapping_sub(ctx.tp_addr);
-                    if rel.r_type == R_RISCV_TPREL_LO12_I {
+                    if rel.r_type() == R_RISCV_TPREL_LO12_I {
                         write_itype(loc, val);
                     } else {
                         write_stype(loc, val);
@@ -717,12 +742,13 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                         continue;
                     }
                     let j = find_paired_reloc(ctx, isec, sym, i - 1);
-                    let rel2 = &rels.at(j);
-                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym as usize]];
-                    let a2 = rel2.r_addend as u64;
-                    let p2 = isec.addr(ctx) + rel2.r_offset - r_delta(isec, rel2.r_offset) as u64;
+                    let rel2 = &rels[j];
+                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
+                    let a2 = rel2.r_addend() as u64;
+                    let p2 =
+                        isec.addr(ctx) + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
                     let tprel = sym2.addr(ctx).wrapping_add(a2).wrapping_sub(ctx.tp_addr);
-                    match rel.r_type {
+                    match rel.r_type() {
                         R_RISCV_TLSDESC_LOAD_LO12 => {
                             if sym2.has_tlsdesc(&ctx.symbols) {
                                 write_itype(
@@ -787,7 +813,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     // We need to guarantee that the NOP sequence is valid after byte
                     // removal (e.g. we can't remove the first 2 bytes of a 4-byte NOP).
                     // For the sake of simplicity, we always rewrite the entire NOP sequence.
-                    let padding = (rel.r_addend - removed) as usize;
+                    let padding = (rel.r_addend() - removed) as usize;
                     debug_assert_eq!(padding & 1, 0);
                     let mut k = 0;
                     while k + 4 <= padding {
@@ -831,21 +857,21 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels::<Self>(file) {
-            if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
+            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
-            let off = rel.r_offset as usize;
-            let frag = isec.fragment(ctx, &rel);
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            let off = rel.r_offset() as usize;
+            let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend as u64),
+                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
             let sa = s.wrapping_add(a);
             let loc = &mut buf[off..];
 
-            match rel.r_type {
+            match rel.r_type() {
                 R_RISCV_32 => End::write_u32(loc, sa as u32),
                 R_RISCV_64 => match isec.tombstone(ctx, sym, frag_ref) {
                     Some(v) => End::write_u64(loc, v),
@@ -889,16 +915,21 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         }
     }
 
-    fn emitted_rel_type(ctx: &Context<Self>, isec: &InputSection, rel: &ElfRel, i: usize) -> u32 {
+    fn emitted_rel_type(
+        ctx: &Context<Self>,
+        isec: &InputSection,
+        rel: &Self::Rel,
+        i: usize,
+    ) -> u32 {
         if !isec.is_alloc() {
-            return rel.r_type;
+            return rel.r_type();
         }
         let rels = isec.rels::<Self>(&ctx.objs[isec.file.index()]);
         let file = &ctx.objs[isec.file.index()];
-        let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         let (removed, _) = isec.removed_at(rel);
 
-        match rel.r_type {
+        match rel.r_type() {
             R_RISCV_CALL | R_RISCV_CALL_PLT if removed == 4 => R_RISCV_JAL,
             R_RISCV_CALL | R_RISCV_CALL_PLT if removed == 6 => R_RISCV_RVC_JUMP,
             R_RISCV_GOT_HI20 | R_RISCV_HI20 | R_RISCV_TPREL_HI20 | R_RISCV_TPREL_ADD
@@ -909,23 +940,23 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
             R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => {
                 // The load of a materialized GOT value is gone with it.
                 let j = find_paired_reloc(ctx, isec, sym, i);
-                if rels.at(j).r_type == R_RISCV_GOT_HI20 && isec.removed_at(&rels.at(j)).0 != 0 {
+                if rels[j].r_type() == R_RISCV_GOT_HI20 && isec.removed_at(&rels[j]).0 != 0 {
                     R_NONE
                 } else {
-                    rel.r_type
+                    rel.r_type()
                 }
             }
             R_RISCV_TLSDESC_HI20 if !sym.has_tlsdesc(&ctx.symbols) => R_NONE,
             R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 | R_RISCV_TLSDESC_CALL => {
                 let j = find_paired_reloc(ctx, isec, sym, i);
-                let sym2 = &ctx.symbols[file.base.symbols[rels.at(j).r_sym as usize]];
+                let sym2 = &ctx.symbols[file.base.symbols[rels[j].r_sym() as usize]];
                 if sym2.has_tlsdesc(&ctx.symbols) {
-                    rel.r_type
+                    rel.r_type()
                 } else {
                     R_NONE
                 }
             }
-            _ => rel.r_type,
+            _ => rel.r_type(),
         }
     }
 
@@ -942,24 +973,24 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         let use_rvc = file.base.e_flags & EF_RISCV_RVC != 0;
 
         // Records that `d` bytes go away at relocation `r`.
-        fn record(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &ElfRel, d: i64) {
+        fn record<R: RelRecord>(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &R, d: i64) {
             *delta += d;
             deltas.push(RelocDelta {
-                offset: r.r_offset,
+                offset: r.r_offset(),
                 delta: *delta,
             });
         }
 
         for i in 0..rels.len() {
-            let r = &rels.at(i);
-            let sym = &ctx.symbols[file.base.symbols[r.r_sym as usize]];
+            let r = &rels[i];
+            let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
 
             // Handling R_RISCV_ALIGN is mandatory.
             //
             // R_RISCV_ALIGN refers to NOP instructions. We need to eliminate some
             // or all of the instructions so that the instruction that immediately
             // follows the NOPs is aligned to a specified alignment boundary.
-            if r.r_type == R_RISCV_ALIGN {
+            if r.r_type() == R_RISCV_ALIGN {
                 // The total bytes of NOPs is stored to r_addend, so the next
                 // instruction is r_addend away. The alignment itself is not recorded
                 // anywhere; it is the smallest power of two greater than r_addend,
@@ -967,9 +998,9 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 // requires, which is the alignment minus the minimum instruction
                 // size. For example, `.balign 4` yields r_addend 2 in RVC code and
                 // `.balign 8` yields 4 in non-RVC code.
-                let p = isec.addr(ctx) + r.r_offset - delta as u64;
-                let desired = align_to(p, (r.r_addend as u64 + 1).next_power_of_two());
-                let actual = p + r.r_addend as u64;
+                let p = isec.addr(ctx) + r.r_offset() - delta as u64;
+                let desired = align_to(p, (r.r_addend() as u64 + 1).next_power_of_two());
+                let actual = p + r.r_addend() as u64;
                 if desired != actual {
                     record(&mut deltas, &mut delta, r, (actual - desired) as i64);
                 }
@@ -977,7 +1008,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
             }
 
             // Handling other relocations is optional.
-            if !ctx.args.relax || i + 1 == rels.len() || rels.at(i + 1).r_type != R_RISCV_RELAX {
+            if !ctx.args.relax || i + 1 == rels.len() || rels[i + 1].r_type() != R_RISCV_RELAX {
                 continue;
             }
 
@@ -992,7 +1023,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
 
             let mut remove = |d: i64| record(&mut deltas, &mut delta, r, d);
 
-            match r.r_type {
+            match r.r_type() {
                 R_RISCV_CALL | R_RISCV_CALL_PLT => {
                     // These relocations refer to an AUIPC + JALR instruction pair to
                     // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
@@ -1001,7 +1032,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     if dist & 1 != 0 {
                         continue;
                     }
-                    let rd = rd(&contents[r.r_offset as usize + 4..]);
+                    let rd = rd(&contents[r.r_offset() as usize + 4..]);
                     if use_rvc && rd == 0 && is_int(dist, 12) {
                         // If rd is x0 and the jump target is within ±2 KiB, we can use
                         // C.J, saving 6 bytes.
@@ -1021,8 +1052,9 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     // the instructions to directly materialize the value, eliminating a
                     // memory load.
                     if sym.is_absolute() && is_got_load_pair(ctx, isec, i) {
-                        let val = sym.addr(ctx).wrapping_add(r.r_addend as u64) as i64;
-                        if use_rvc && is_int(val, 6) && rd(&contents[r.r_offset as usize..]) != 0 {
+                        let val = sym.addr(ctx).wrapping_add(r.r_addend() as u64) as i64;
+                        if use_rvc && is_int(val, 6) && rd(&contents[r.r_offset() as usize..]) != 0
+                        {
                             // Replace AUIPC + LD with C.LI.
                             remove(6);
                         } else if is_int(val, 12) {
@@ -1032,8 +1064,8 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     }
                 }
                 R_RISCV_HI20 => {
-                    let val = sym.addr(ctx).wrapping_add(r.r_addend as u64) as i64;
-                    let rd = rd(&contents[r.r_offset as usize..]);
+                    let val = sym.addr(ctx).wrapping_add(r.r_addend() as u64) as i64;
+                    let rd = rd(&contents[r.r_offset() as usize..]);
                     if is_int(val, 12) {
                         // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
                         // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
@@ -1067,7 +1099,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
                     let val = sym
                         .addr(ctx)
-                        .wrapping_add(r.r_addend as u64)
+                        .wrapping_add(r.r_addend() as u64)
                         .wrapping_sub(ctx.tp_addr) as i64;
                     if is_int(val, 12) {
                         remove(4);
@@ -1080,16 +1112,16 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 }
                 R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 => {
                     let j = find_paired_reloc(ctx, isec, sym, i);
-                    let rel2 = &rels.at(j);
-                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym as usize]];
-                    if r.r_type == R_RISCV_TLSDESC_LOAD_LO12 {
+                    let rel2 = &rels[j];
+                    let sym2 = &ctx.symbols[file.base.symbols[rel2.r_sym() as usize]];
+                    if r.r_type() == R_RISCV_TLSDESC_LOAD_LO12 {
                         if !sym2.has_tlsdesc(&ctx.symbols) {
                             remove(4);
                         }
                     } else if !sym2.has_tlsdesc(&ctx.symbols) && !sym2.has_gottp(&ctx.symbols) {
                         let val = sym2
                             .addr(ctx)
-                            .wrapping_add(rel2.r_addend as u64)
+                            .wrapping_add(rel2.r_addend() as u64)
                             .wrapping_sub(ctx.tp_addr) as i64;
                         if is_int(val, 12) {
                             remove(4);
