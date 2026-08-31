@@ -1,4 +1,3 @@
-// passes.cc
 //! The passes of a link, in roughly the order the driver runs them.
 
 use std::cell::UnsafeCell;
@@ -12,24 +11,9 @@ use bstr::BStr;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::args::{
+use crate::cmdline::{
     BsymbolicKind, BuildIdKind, CetReportKind, DefsymValue, SectionOrderKind, SeparateCodeKind,
     ShuffleSectionsKind, UnresolvedKind,
-};
-use crate::chunks::dynamic::{DynamicSection, RelrDynSection};
-use crate::chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection};
-use crate::chunks::misc::{
-    self, BuildIdSection, GnuDebuglinkSection, InterpSection, NotePropertySection,
-    RelroPaddingSection,
-};
-use crate::chunks::output_section::OutputSection;
-use crate::chunks::symtab::{
-    self, GnuHashSection, HashSection, ShstrtabSection, SymtabShndxSection,
-};
-use crate::chunks::version::VerdefSection;
-use crate::chunks::{
-    self, ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId,
-    OutputShdr,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -40,6 +24,21 @@ use crate::input_files::{
 use crate::input_sections::{InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
 use crate::mapped_file::MappedFile;
+use crate::output_chunks::dynamic::{DynamicSection, RelrDynSection};
+use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection};
+use crate::output_chunks::misc::{
+    self, BuildIdSection, GnuDebuglinkSection, InterpSection, NotePropertySection,
+    RelroPaddingSection,
+};
+use crate::output_chunks::output_section::OutputSection;
+use crate::output_chunks::symtab::{
+    self, GnuHashSection, HashSection, ShstrtabSection, SymtabShndxSection,
+};
+use crate::output_chunks::version::VerdefSection;
+use crate::output_chunks::{
+    self, ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId,
+    OutputShdr,
+};
 use crate::output_file::OutputFile;
 use crate::symbol::{
     is_c_identifier, Bins, Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT,
@@ -186,7 +185,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
             ..ElfShdr::default()
         };
         let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
-        ctx.comment = crate::chunks::merged::MergedSection::get_instance(
+        ctx.comment = crate::output_chunks::merged::MergedSection::get_instance(
             &ctx.args,
             &merged,
             BStr::new(b".comment"),
@@ -200,15 +199,15 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::NoteProperty);
     }
     if E::IS_RISCV {
-        ctx.riscv_attributes = Some(crate::chunks::misc::RiscvAttributesSection::new());
+        ctx.riscv_attributes = Some(crate::output_chunks::misc::RiscvAttributesSection::new());
         chunks.push(ChunkId::RiscvAttributes);
     }
     if E::FAMILY == Family::Ppc64V2 {
-        ctx.ppc64_save_restore = Some(crate::chunks::misc::Ppc64SaveRestoreSection::new());
+        ctx.ppc64_save_restore = Some(crate::output_chunks::misc::Ppc64SaveRestoreSection::new());
         chunks.push(ChunkId::Ppc64SaveRestore);
     }
     if E::FAMILY == Family::Ppc64V1 {
-        ctx.ppc64_opd = Some(crate::chunks::opd::Ppc64OpdSection::new());
+        ctx.ppc64_opd = Some(crate::output_chunks::opd::Ppc64OpdSection::new());
         chunks.push(ChunkId::Ppc64Opd);
     }
 
@@ -979,8 +978,8 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
 fn merged_resolve_members(
     objs: &mut FileList<ObjectFile>,
     count: usize,
-) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
-    let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
+) -> Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> {
+    let mut members: Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> =
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
         let filename = file.base.filename.as_str();
@@ -989,7 +988,7 @@ fn merged_resolve_members(
         let num_elf_sections = file.num_elf_sections;
         for (mergeable, input) in file.sections.mergeable_sections_with_inputs_mut() {
             let parent = mergeable.parent.index();
-            members[parent].push(crate::chunks::merged::ResolveMember {
+            members[parent].push(crate::output_chunks::merged::ResolveMember {
                 mergeable,
                 section: input,
                 filename,
@@ -1039,10 +1038,10 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
 
     let t = ctx.timer("resolve");
     let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
-    crate::chunks::merged::resolve_sections::<E>(
+    crate::output_chunks::merged::resolve_sections::<E>(
         &mut ctx.merged_sections,
         &mut members,
-        crate::chunks::merged::ResolveOptions {
+        crate::output_chunks::merged::ResolveOptions {
             allocated_only: true,
             gc_sections: ctx.args.gc_sections,
             diag: &ctx.diag,
@@ -1154,7 +1153,7 @@ fn canonicalize_type<E: Arch>(name: &[u8], ty: u32) -> u32 {
 }
 
 fn output_name<E: Arch>(
-    args: &crate::args::Args,
+    args: &crate::cmdline::Args,
     name: &'static BStr,
     flags: u64,
 ) -> &'static BStr {
@@ -1222,7 +1221,7 @@ fn output_name<E: Arch>(
 }
 
 fn output_section_key<E: Arch>(
-    args: &crate::args::Args,
+    args: &crate::cmdline::Args,
     isec: &crate::input_sections::InputSection,
     name: &'static BStr,
     sh_type: u32,
@@ -1496,7 +1495,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
         .map(|i| ChunkId::Output(OutputSectionId::new(i as u32)))
         .chain(
             (0..ctx.merged_sections.len())
-                .map(|i| ChunkId::Merged(crate::chunks::merged::MergedSectionId(i as u32))),
+                .map(|i| ChunkId::Merged(crate::output_chunks::merged::MergedSectionId(i as u32))),
         )
         .collect();
     // Sections are added to the section lists in an arbitrary order
@@ -1913,7 +1912,7 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
     write(
         &mut tar,
         "version.txt",
-        format!("{}\n", crate::args::VERSION).as_bytes(),
+        format!("{}\n", crate::cmdline::VERSION).as_bytes(),
     );
 
     let mut seen: HashSet<String> = HashSet::new();
@@ -2326,8 +2325,8 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
                 && (osec.hdr.shdr.sh_size >= u32::MAX as u64 || is_in_test)
         })
         .collect();
-    let vec2: Vec<crate::chunks::merged::MergedSectionId> = (0..ctx.merged_sections.len())
-        .map(|i| crate::chunks::merged::MergedSectionId(i as u32))
+    let vec2: Vec<crate::output_chunks::merged::MergedSectionId> = (0..ctx.merged_sections.len())
+        .map(|i| crate::output_chunks::merged::MergedSectionId(i as u32))
         .filter(|&id| {
             let msec = &ctx.merged_sections[id.index()];
             !msec.is_alloc()
@@ -2372,7 +2371,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
             .iter()
             .partition(|&&m| objs[section_arena.section(m).file.index()].is_dwarf32);
         osec.members = a.into_iter().chain(b).collect();
-        chunks::compute_section_size(ctx, ChunkId::Output(id));
+        output_chunks::compute_section_size(ctx, ChunkId::Output(id));
     }
 
     // Reorder strings in .debug_str and the like
@@ -2387,7 +2386,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     for id in vec2 {
-        chunks::compute_section_size(ctx, ChunkId::Merged(id));
+        output_chunks::compute_section_size(ctx, ChunkId::Merged(id));
     }
 }
 
@@ -2566,10 +2565,10 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     // parent sections concurrently too.
     {
         let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
-        crate::chunks::merged::resolve_sections::<E>(
+        crate::output_chunks::merged::resolve_sections::<E>(
             &mut ctx.merged_sections,
             &mut members,
-            crate::chunks::merged::ResolveOptions {
+            crate::output_chunks::merged::ResolveOptions {
                 allocated_only: false,
                 gc_sections: ctx.args.gc_sections,
                 diag: &ctx.diag,
@@ -2588,7 +2587,7 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
             .par_iter()
             .filter_map(|&id| match id {
                 ChunkId::Output(osec) if !needs_thunks(ctx, id) => {
-                    Some((osec, chunks::output_section::layout(ctx, osec)))
+                    Some((osec, output_chunks::output_section::layout(ctx, osec)))
                 }
                 _ => None,
             })
@@ -2602,13 +2601,13 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     // layout, just as each C++ Chunk does in the parallel chunk loop.
     ctx.merged_sections
         .par_iter_mut()
-        .for_each(crate::chunks::merged::layout);
+        .for_each(crate::output_chunks::merged::layout);
 
     for id in ctx.chunks.clone() {
         match id {
             ChunkId::Output(_) => {}
             ChunkId::Merged(_) => {}
-            _ => chunks::compute_section_size(ctx, id),
+            _ => output_chunks::compute_section_size(ctx, id),
         }
     }
 }
@@ -2754,7 +2753,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     // separately because they can be promoted to dynamic relocations.
     let results: Vec<(
         OutputSectionId,
-        Vec<crate::chunks::output_section::AbsRel>,
+        Vec<crate::output_chunks::output_section::AbsRel>,
         Vec<u64>,
     )> = {
         let ctx_ref: &Context<E> = ctx;
@@ -2764,7 +2763,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             .filter(|&id| ctx_ref.output_sections[id.index()].hdr.is_alloc())
             .map(|id| {
                 let (abs_rels, offsets) =
-                    crate::chunks::output_section::scan_abs_relocations(ctx_ref, id);
+                    crate::output_chunks::output_section::scan_abs_relocations(ctx_ref, id);
                 (id, abs_rels, offsets)
             })
             .collect()
@@ -2820,7 +2819,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     };
 
     if ctx.needs_tlsld.load(Ordering::Relaxed) {
-        crate::chunks::got::got::add_tlsld(ctx);
+        crate::output_chunks::got::got::add_tlsld(ctx);
     }
 
     // Every dynamic symbol gets its auxiliary record. The loop below
@@ -2845,7 +2844,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             symtab::dynsym::add_symbol(ctx, id);
         }
         if flags & NEEDS_GOT != 0 {
-            crate::chunks::got::got::add_got_symbol(ctx, id);
+            crate::output_chunks::got::got::add_got_symbol(ctx, id);
         }
         if flags & NEEDS_CANONICAL != 0 && ty == STT_FUNC {
             let sym = &mut ctx.symbols[id];
@@ -2857,22 +2856,22 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             // We can't use .plt.got for a canonical PLT because otherwise
             // .plt.got and .got would refer to each other, resulting in an
             // infinite loop at runtime.
-            crate::chunks::got::plt::add_symbol(ctx, id);
+            crate::output_chunks::got::plt::add_symbol(ctx, id);
         } else if flags & NEEDS_PLT != 0 {
             if flags & NEEDS_GOT != 0 {
-                crate::chunks::got::pltgot::add_symbol(ctx, id);
+                crate::output_chunks::got::pltgot::add_symbol(ctx, id);
             } else {
-                crate::chunks::got::plt::add_symbol(ctx, id);
+                crate::output_chunks::got::plt::add_symbol(ctx, id);
             }
         }
         if flags & NEEDS_GOTTP != 0 {
-            crate::chunks::got::got::add_gottp_symbol(ctx, id);
+            crate::output_chunks::got::got::add_gottp_symbol(ctx, id);
         }
         if flags & NEEDS_TLSGD != 0 {
-            crate::chunks::got::got::add_tlsgd_symbol(ctx, id);
+            crate::output_chunks::got::got::add_tlsgd_symbol(ctx, id);
         }
         if flags & NEEDS_TLSDESC != 0 {
-            crate::chunks::got::got::add_tlsdesc_symbol(ctx, id);
+            crate::output_chunks::got::got::add_tlsdesc_symbol(ctx, id);
         }
         if flags & NEEDS_CANONICAL != 0 && ty != STT_FUNC {
             let relro = ctx.args.z_relro
@@ -2885,7 +2884,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             misc::copyrel::add_symbol(ctx, relro, id);
         }
         if E::FAMILY == Family::Ppc64V1 && flags & NEEDS_PPC_OPD != 0 {
-            crate::chunks::opd::add_symbol(ctx, id);
+            crate::output_chunks::opd::add_symbol(ctx, id);
         }
         ctx.symbols[id].clear_flags();
     }
@@ -3052,7 +3051,7 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     for id in ctx.chunks.clone() {
-        chunks::compute_symtab_size(ctx, id);
+        output_chunks::compute_symtab_size(ctx, id);
     }
 
     let obj_plans: Vec<crate::input_files::SymtabPlan> = {
@@ -3760,7 +3759,7 @@ fn tls_segment_alignment<E: Arch>(ctx: &Context<E>) -> u64 {
 fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
     const RELRO: u64 = 1 << 32;
     let flags_of = |ctx: &Context<E>, id: ChunkId| -> u64 {
-        let flags = chunks::to_phdr_flags(ctx, id) as u64;
+        let flags = output_chunks::to_phdr_flags(ctx, id) as u64;
         if ctx.args.z_relro && ctx.chunk_header(id).is_relro {
             flags | RELRO
         } else {
@@ -3895,8 +3894,8 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
                     // put sections with different memory attributes into different
                     // pages. We do it by inserting a padding.
                     if i != 0 {
-                        let flags1 = chunks::to_phdr_flags(ctx, vec[i - 1]);
-                        let flags2 = chunks::to_phdr_flags(ctx, vec[i]);
+                        let flags1 = output_chunks::to_phdr_flags(ctx, vec[i - 1]);
+                        let flags2 = output_chunks::to_phdr_flags(ctx, vec[i]);
                         if flags1 != flags2 {
                             match ctx.args.z_separate_code {
                                 SeparateCodeKind::SeparateLoadableSegments => {
@@ -4041,7 +4040,7 @@ pub fn separate_debug_sections<E: Arch>(ctx: &mut Context<E>) {
 pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     // Update sh_size for each chunk.
     for id in ctx.chunks.clone() {
-        chunks::update_shdr(ctx, id);
+        output_chunks::update_shdr(ctx, id);
     }
 
     // Remove empty chunks.
@@ -4082,7 +4081,7 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     // Some types of section header refer to other section by index.
     // Recompute all section headers to fill such fields with correct values.
     for id in ctx.chunks.clone() {
-        chunks::update_shdr(ctx, id);
+        output_chunks::update_shdr(ctx, id);
     }
 
     if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
@@ -4103,7 +4102,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
 
         if ctx.args.pack_dyn_relocs_android {
             let before = ctx.reldyn.hdr.shdr.sh_size;
-            crate::chunks::dynamic::reldyn::update_shdr(ctx);
+            crate::output_chunks::dynamic::reldyn::update_shdr(ctx);
             if before != ctx.reldyn.hdr.shdr.sh_size {
                 continue;
             }
@@ -4115,7 +4114,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         let fileoff = set_file_offsets(ctx);
         if ctx.phdr.is_some() {
             let before = ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size;
-            chunks::update_phdr(ctx);
+            output_chunks::update_phdr(ctx);
             if before < ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size {
                 continue;
             }
@@ -4513,8 +4512,6 @@ pub fn write_gnu_debuglink<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8]) {
     );
 }
 
-// crc32.cc
-
 // Compute a CRC for given data in parallel
 /// The CRC32 of a large buffer, computed in parallel.
 fn crc32_parallel(buf: &[u8]) -> u32 {
@@ -4595,7 +4592,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
 
     let new_chunks = ctx.chunks[num_chunks..].to_vec();
     for id in new_chunks {
-        chunks::compute_section_size(ctx, id);
+        output_chunks::compute_section_size(ctx, id);
     }
     sort_debug_info_sections(ctx);
 
@@ -4628,7 +4625,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     // The program header keeps its size, since the placeholders' addresses
     // were laid out around it.
     if let Some(n) = ctx.phdr.as_ref().map(|p| p.phdrs.len()) {
-        chunks::update_phdr(ctx);
+        output_chunks::update_phdr(ctx);
         let phdr = ctx.phdr.as_mut().unwrap();
         phdr.phdrs.resize(n, ElfPhdr::default());
         phdr.hdr.shdr.sh_size = (n * ElfPhdr::size::<E>()) as u64;
@@ -4724,7 +4721,7 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
         "merged_strings",
         ctx.merged_sections
             .iter()
-            .map(crate::chunks::merged::num_fragments)
+            .map(crate::output_chunks::merged::num_fragments)
             .sum(),
     );
 }

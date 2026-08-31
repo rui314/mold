@@ -1,4 +1,3 @@
-// arch-riscv.cc
 //! RISC-V is a clean RISC ISA. It supports PC-relative load/store for
 //! position-independent code. Its 32-bit and 64-bit ISAs are almost
 //! identical. That is, you can think RV32 as a RV64 without 64-bit
@@ -24,14 +23,14 @@
 use std::marker::PhantomData;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::{
     check_tlsle, r_delta, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, RelocDelta,
 };
-use crate::relax::compute_distance;
+use crate::output_chunks::eh_frame;
+use crate::shrink_sections::compute_distance;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};

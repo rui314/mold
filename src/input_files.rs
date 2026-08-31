@@ -1,4 +1,3 @@
-// input-files.cc
 //! Input object files and shared libraries.
 
 // DWARF constants keep the spelling of the specification.
@@ -16,16 +15,16 @@ use std::sync::{OnceLock, RwLock};
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::args::Args;
-use crate::chunks::merged::MergedSection;
+use crate::cmdline::Args;
 use crate::context::Context;
-use crate::diagnostics::Diagnostics;
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::input_sections::{
     CieRecord, FdeRecord, FragmentRef, InputSection, MergeableSection, RelocationSpan, SFrameFde,
     SectionList,
 };
 use crate::mapped_file::MappedFile;
+use crate::output_chunks::merged::MergedSection;
 use crate::symbol::{
     hash_key, Bins, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot, SymbolTable, NEEDS_PLT,
 };
@@ -2770,13 +2769,13 @@ impl<'a> SymtabBlock<'a> {
 
     pub fn push_local<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
-        let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
+        let (esym, xindex) = crate::output_chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.locals.push::<E>(esym, xindex);
     }
 
     pub fn push_global<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
-        let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
+        let (esym, xindex) = crate::output_chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.globals.push::<E>(esym, xindex);
     }
 

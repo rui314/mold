@@ -1,11 +1,10 @@
-// cmdline.cc
 //! Command-line argument parsing.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::arch;
-use crate::diagnostics::Diagnostics;
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::Glob;
 use crate::util::{self, align_down, path_clean, path_filename};

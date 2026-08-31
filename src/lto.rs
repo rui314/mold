@@ -1,4 +1,3 @@
-// lto.cc
 //! This file handles the linker plugin to support LTO (Link-Time
 //! Optimization).
 //!
@@ -112,10 +111,10 @@ use std::sync::{Mutex, OnceLock};
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::args::VERSION;
+use crate::cmdline::VERSION;
 use crate::context::Context;
-use crate::diagnostics::Diagnostics;
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::input_files::{FileId, ObjId, ObjectFile};
 use crate::mapped_file::{must_open_file, MappedFile};
 use crate::symbol::SymbolId;

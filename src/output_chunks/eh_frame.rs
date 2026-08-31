@@ -9,11 +9,11 @@ use rayon::prelude::*;
 use std::ptr::NonNull;
 
 use crate::arch::Arch;
-use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
+use crate::output_chunks::ChunkHeader;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
 use crate::util::is_int;

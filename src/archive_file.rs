@@ -1,4 +1,3 @@
-// archive-file.cc
 //! This file contains functions to read an archive file (.a file).
 //! An archive file is just a bundle of object files. It's similar to
 //! tar or zip, but the contents are not compressed.
@@ -24,7 +23,7 @@
 //! see the contents of libc.a by running `ar t
 //! /usr/lib/x86_64-linux-gnu/libc.a`.
 
-use crate::diagnostics::Diagnostics;
+use crate::error::Diagnostics;
 use crate::fatal;
 use crate::mapped_file::MappedFile;
 use crate::util;

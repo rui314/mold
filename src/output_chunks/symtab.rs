@@ -7,11 +7,11 @@ use bstr::BStr;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock, SymtabEntries};
 use crate::input_sections::r_delta;
+use crate::output_chunks::{self, ChunkHeader, ChunkId};
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
 use crate::util::write_cstr;
 use crate::{error, fatal};
@@ -419,7 +419,7 @@ pub mod symtab {
                     part.strtab.0,
                 );
                 match part.writer {
-                    Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
+                    Writer::Chunk(id) => output_chunks::populate_symtab(ctx, id, &mut block),
                     Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
                     Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
                 }

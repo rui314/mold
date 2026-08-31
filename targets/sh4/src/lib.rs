@@ -1,7 +1,7 @@
 //! The linker instantiated for sh4. Every target has a crate like this
 //! one, so that the compiler can build the targets in parallel.
 
-use mold::diagnostics::Diagnostics;
+use mold::error::Diagnostics;
 
 /// Links for this target, or reports the target the inputs are actually
 /// for.

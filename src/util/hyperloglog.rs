@@ -4,8 +4,6 @@
 //! For more info, read
 //! https://engineering.fb.com/2018/12/13/data-infrastructure/hyperloglog
 
-// hyperloglog.cc
-
 /// Estimates the number of distinct values in a stream of hashes.
 ///
 /// Each hash selects a register by its low bits; the register keeps the

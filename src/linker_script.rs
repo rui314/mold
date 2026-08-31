@@ -1,4 +1,3 @@
-// linker-script.cc
 //! On Linux, /usr/lib/x86_64-linux-gnu/libc.so is not actually
 //! a shared object file but an ASCII text file containing a linker
 //! script to include a "real" libc.so file. Therefore, we need to
@@ -8,7 +7,7 @@
 //! version scripts and dynamic lists.
 
 use crate::arch::Arch;
-use crate::args::{DefsymValue, ReaderContext};
+use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
 use crate::mapped_file::{must_open_file, open_file, MappedFile};

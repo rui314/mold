@@ -1,4 +1,3 @@
-// arch-sparc64.cc
 //! SPARC is a RISC ISA developed by Sun Microsystems.
 //!
 //! The byte order of the processor is big-endian. Anything larger than a
@@ -60,11 +59,11 @@
 use std::sync::atomic::Ordering;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::eh_frame;
-use crate::chunks::got::plt::SPARC_NUM_SMALL_PLT;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
+use crate::output_chunks::eh_frame;
+use crate::output_chunks::got::plt::SPARC_NUM_SMALL_PLT;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::{bit, bits};
 use crate::{error, fatal};

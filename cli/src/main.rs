@@ -3,7 +3,7 @@
 //! that the compiler can build them in parallel, and a feature per target
 //! decides which of them are built in.
 
-use mold::diagnostics::Diagnostics;
+use mold::error::Diagnostics;
 
 // Including mimalloc-new-delete.h overrides the new/delete operators.
 // We need it only when using mimalloc as a dynamic library.

@@ -1,4 +1,3 @@
-// gc-sections.cc
 //! This file implements a mark-sweep garbage collector for -gc-sections.
 //! In this algorithm, vertices are sections and edges are relocations.
 //! Any section that is reachable from a root section is considered alive.

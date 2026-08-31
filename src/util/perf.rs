@@ -1,7 +1,5 @@
 //! Wall-clock and CPU time accounting for `--perf`.
 
-// perf.cc
-
 // Counter is used to collect statistics numbers.
 //
 // The Rust port does not currently have the C++ Counter facility; this module

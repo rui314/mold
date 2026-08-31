@@ -1,4 +1,3 @@
-// arch-ppc64v1.cc
 //! This file contains code for the 64-bit PowerPC ELFv1 ABI that is
 //! commonly used for big-endian PPC systems. Modern PPC systems that use
 //! the processor in the little-endian mode use the ELFv2 ABI instead. For
@@ -50,11 +49,11 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use crate::arch::{Arch, Family, ThunkLayout};
-use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::{check_tlsle, InputSection, SectionRef};
+use crate::output_chunks::eh_frame;
 use crate::symbol::{
     AddrFlags, Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD,
 };

@@ -14,17 +14,17 @@ use bstr::BStr;
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::args::Args;
-use crate::chunks::ChunkHeader;
+use crate::cmdline::Args;
 use crate::context::Context;
-use crate::diagnostics::Diagnostics;
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::input_sections::{InputSection, MergeableSection, SectionFragment, SectionRef};
+use crate::output_chunks::ChunkHeader;
 use crate::output_file::split_at_offsets;
 use crate::util::align_to;
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, NUM_SHARDS};
 use crate::util::hyperloglog::HyperLogLog;
-use crate::util::timer::Timers;
+use crate::util::perf::Timers;
 
 /// Index of a merged section in `Context::merged_sections`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -427,7 +427,7 @@ fn add_comment_strings(msec: &MergedSection, gc_sections: bool, cmdline_args: &[
         msec.insert(data, xxhash_rust::xxh3::xxh3_64(data), 0, gc_sections);
     };
     // Add an identification string to .comment.
-    add(crate::args::VERSION.to_string());
+    add(crate::cmdline::VERSION.to_string());
 
     // Embed command line arguments for debugging.
     if std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty()) {

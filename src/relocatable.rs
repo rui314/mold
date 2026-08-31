@@ -1,4 +1,3 @@
-// relocatable.cc
 //! This file implements -r or --relocatable. That option forces the linker
 //! to combine input object files into another single large object file.
 //! Since the behavior of the linker when the option is given is quite
@@ -34,14 +33,14 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::eh_frame::EhFrameRelocSection;
-use crate::chunks::misc::{ComdatGroupSection, NotePropertySection};
-use crate::chunks::sframe::SFrameRelocSection;
-use crate::chunks::symtab::ShstrtabSection;
-use crate::chunks::{self, ChunkId, OutputEhdr, OutputShdr};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::output_chunks::eh_frame::EhFrameRelocSection;
+use crate::output_chunks::misc::{ComdatGroupSection, NotePropertySection};
+use crate::output_chunks::sframe::SFrameRelocSection;
+use crate::output_chunks::symtab::ShstrtabSection;
+use crate::output_chunks::{self, ChunkId, OutputEhdr, OutputShdr};
 use crate::output_file::OutputFile;
 use crate::passes;
 use crate::util::align_to;
@@ -169,8 +168,8 @@ pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
     passes::compute_section_sizes(ctx);
     passes::sort_output_sections(ctx);
     passes::create_output_symtab(ctx);
-    chunks::eh_frame::construct(ctx);
-    chunks::sframe::construct(ctx);
+    output_chunks::eh_frame::construct(ctx);
+    output_chunks::sframe::construct(ctx);
     passes::create_reloc_sections(ctx);
     create_comdat_group_sections(ctx);
     passes::compute_section_headers(ctx);
@@ -191,6 +190,6 @@ pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
         ctx.timers.print();
     }
     if ctx.args.quick_exit {
-        crate::diagnostics::exit_after_cleanup(0);
+        crate::error::exit_after_cleanup(0);
     }
 }

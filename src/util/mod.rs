@@ -7,8 +7,8 @@ pub mod concurrent_map;
 pub mod demangle;
 pub mod glob;
 pub mod hyperloglog;
+pub mod perf;
 pub mod tar;
-pub mod timer;
 
 // Some C++ libraries haven't implemented std::has_single_bit yet.
 // Rust supplies the equivalent operation as `is_power_of_two`.
@@ -191,7 +191,6 @@ pub fn dedup_sorted<T: PartialEq>(vec: &mut Vec<T>) {
     vec.dedup();
 }
 
-// random.cc
 /// Fills `buf` with random bytes from the operating system.
 pub fn random_bytes(buf: &mut [u8]) {
     use std::io::Read;
@@ -217,8 +216,6 @@ pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
 pub fn leak_str(s: String) -> &'static str {
     String::leak(s)
 }
-
-// filepath.cc
 
 // Returns the path of the mold executable itself
 pub fn self_path() -> std::path::PathBuf {

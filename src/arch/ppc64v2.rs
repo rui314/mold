@@ -1,4 +1,3 @@
-// arch-ppc64v2.cc
 //! This file implements the PowerPC ELFv2 ABI which was standardized in
 //! 2014. Modern little-endian PowerPC systems are based on this ABI.
 //! The ABI is often referred to as "ppc64le". This shouldn't be confused
@@ -87,10 +86,10 @@
 use std::sync::atomic::Ordering;
 
 use crate::arch::{Arch, Family, ThunkLayout};
-use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, InputSection};
+use crate::output_chunks::eh_frame;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
 use crate::util::{bits, is_int};

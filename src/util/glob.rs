@@ -5,8 +5,6 @@
 //! at https://research.swtch.com/glob. If there are many such patterns, a
 //! bit-parallel NFA matches them together.
 
-// aho-corasick.cc
-
 //! This file implements the Aho-Corasick algorithm to search multiple
 //! strings within an input string simultaneously. It is essentially a
 //! trie with additional links. For details, see

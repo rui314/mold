@@ -1,4 +1,3 @@
-// output-chunks.cc
 //! Output chunks: the contiguous regions that make up the output file.
 //!
 //! Besides the output sections built from input sections, the linker
@@ -25,7 +24,7 @@ use std::num::NonZeroU32;
 use bstr::BStr;
 
 use crate::arch::Arch;
-use crate::args::SectionOrderKind;
+use crate::cmdline::SectionOrderKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock};

@@ -1,4 +1,3 @@
-// tls.cc
 //! This file contains helper functions for thread-local storage (TLS).
 //! TLS is probably the most obscure feature the linker has to support,
 //! so I'll explain it in detail in this comment.

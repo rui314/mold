@@ -6,12 +6,12 @@ use bstr::BStr;
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::{self, ChunkHeader, ChunkId, DynRelBuffer, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::input_files::FileId;
 use crate::input_sections::{r_delta, InputSection};
+use crate::output_chunks::{self, ChunkHeader, ChunkId, DynRelBuffer, OutputSectionId};
 use crate::symbol::SymbolId;
 use crate::util::align_to;
 use crate::util::compress::Compressor;
@@ -139,7 +139,7 @@ pub mod copyrel {
             s.set_copyrel(true);
             s.set_copyrel_readonly(relro);
             s.value = offset;
-            chunks::symtab::dynsym::add_symbol(ctx, alias);
+            output_chunks::symtab::dynsym::add_symbol(ctx, alias);
         }
     }
 
@@ -466,7 +466,7 @@ pub mod compressed {
         let mut buf = vec![0u8; hdr.shdr.sh_size as usize];
 
         // Write uncompressed contents and then compress them
-        chunks::write_to(ctx, original, &mut buf);
+        output_chunks::write_to(ctx, original, &mut buf);
 
         let level = ctx.args.compress_debug_sections_level;
         let compressor = if ctx.args.compress_debug_sections == ELFCOMPRESS_ZLIB {

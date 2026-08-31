@@ -13,8 +13,8 @@ use std::cell::UnsafeCell;
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::archive;
-use crate::args::{ReaderContext, ReaderJob};
+use crate::archive_file;
+use crate::cmdline::{ReaderContext, ReaderJob};
 use crate::context::Context;
 use crate::filetype::{self, FileType};
 use crate::input_files::{DsoId, FileId, ObjId, ObjectFile, SharedFile};
@@ -200,7 +200,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
             push_loaded(ctx, Loaded::Dso(rctx.pos.clone(), Box::new(file)));
         }
         FileType::Ar | FileType::ThinAr => {
-            for child in archive::read_archive_members(&ctx.diag, mf) {
+            for child in archive_file::read_archive_members(&ctx.diag, mf) {
                 let child_rctx = rctx.next_child();
                 if let Some(loaded) = read_archive_member(ctx, &child_rctx, child, &mf.name) {
                     push_loaded(ctx, loaded);
@@ -374,7 +374,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
             // parallel.
             match get_file_type(ctx_ref, mf) {
                 FileType::Ar => {
-                    for child in archive::read_fat_archive_members(&ctx_ref.diag, mf) {
+                    for child in archive_file::read_fat_archive_members(&ctx_ref.diag, mf) {
                         let child_rctx = rctx.next_child();
                         let archive_name = mf.name.clone();
                         let loaded = &loaded;
@@ -388,7 +388,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                     }
                 }
                 FileType::ThinAr => {
-                    for path in archive::get_thin_archive_member_paths(&ctx_ref.diag, mf) {
+                    for path in archive_file::get_thin_archive_member_paths(&ctx_ref.diag, mf) {
                         let child_rctx = rctx.next_child();
                         let archive_name = mf.name.clone();
                         let loaded = &loaded;

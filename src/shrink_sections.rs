@@ -1,4 +1,3 @@
-// shrink-sections.cc
 //! Since RISC instructions are generally up to 32 bits long, there's no
 //! way to embed very large immediates into their branch instructions. For
 //! example, RISC-V's JAL (jump and link) instruction can jump to only
@@ -79,10 +78,10 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{r_delta, InputSection, RelocDelta, SectionRef};
+use crate::output_chunks::{self, ChunkId};
 use crate::symbol::Symbol;
 
 /// Returns the distance between a relocated place and a symbol.
@@ -177,7 +176,7 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
     for id in ctx.chunks.clone() {
         if let ChunkId::Output(osec) = id {
             if ctx.output_sections[osec.index()].hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
-                chunks::compute_section_size(ctx, id);
+                output_chunks::compute_section_size(ctx, id);
             }
         }
     }

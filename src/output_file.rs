@@ -1,4 +1,3 @@
-// output-file.cc
 //! The output file and helpers for writing to it from many threads.
 
 // The C++ Windows output-file counterpart records:
@@ -13,7 +12,7 @@ use std::sync::Mutex;
 
 use memmap2::{MmapMut, MmapOptions};
 
-use crate::diagnostics::Diagnostics;
+use crate::error::Diagnostics;
 use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.

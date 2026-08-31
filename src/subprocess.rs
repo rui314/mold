@@ -1,11 +1,9 @@
-// signal-unix.cc
-// subprocess.cc
 //! Process management: forking a child to hide exit latency, signal
 //! handling for disk-full errors, and the `-run` subcommand.
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::diagnostics::Diagnostics;
+use crate::error::Diagnostics;
 use crate::fatal;
 
 static PIPE_WRITE_FD: AtomicI32 = AtomicI32::new(-1);

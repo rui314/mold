@@ -1,4 +1,3 @@
-// arch-arm32.cc
 //! ARM32 is a bit special from the linker's viewpoint because ARM
 //! processors support two different instruction encodings: Thumb and
 //! ARM (in a narrower sense). Thumb instructions are either 16 bits or
@@ -48,12 +47,12 @@
 use std::marker::PhantomData;
 
 use crate::arch::{Arch, Family, ThunkLayout};
-use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
     check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, SectionRef,
 };
+use crate::output_chunks::eh_frame;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};

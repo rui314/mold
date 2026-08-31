@@ -15,9 +15,9 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::{output_section, ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
+use crate::output_chunks::{output_section, ChunkHeader, ChunkId, OutputSectionId};
 use crate::util::sign_extend;
 
 const CANTUNWIND: u32 = 1;

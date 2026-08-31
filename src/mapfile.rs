@@ -1,4 +1,3 @@
-// mapfile.cc
 //! `--print-map` / `-Map`: a listing of output sections, their input
 //! sections and symbols.
 
@@ -8,12 +7,12 @@ use std::io::Write;
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::SectionRef;
+use crate::output_chunks::ChunkId;
 use crate::symbol::SymbolId;
 
 // Construct a section-to-symbol map.

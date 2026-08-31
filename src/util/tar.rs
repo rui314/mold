@@ -1,7 +1,5 @@
 //! This file contains functions to create a tar file.
 
-// tar.cc
-
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom, Write};
 

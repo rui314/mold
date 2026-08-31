@@ -1,4 +1,3 @@
-// mapped-file-unix.cc
 //! Input file access.
 //!
 //! Every input file is read once and kept in memory for the whole link,
@@ -18,7 +17,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::diagnostics::{errno_string, Diagnostics};
+use crate::error::{errno_string, Diagnostics};
 use crate::fatal;
 use crate::util;
 

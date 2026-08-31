@@ -9,9 +9,9 @@
 //! same way it synthesizes GOT and PLT entries.
 
 use crate::arch::Arch;
-use crate::chunks::{ChunkHeader, DynRelBuffer};
 use crate::context::Context;
 use crate::elf::*;
+use crate::output_chunks::{ChunkHeader, DynRelBuffer};
 use crate::symbol::{AddrFlags, SymbolId};
 
 pub const ENTRY_SIZE: u64 = 24;

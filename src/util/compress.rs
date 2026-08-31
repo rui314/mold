@@ -14,8 +14,6 @@
 //! a little bit. However, if a shard size is large enough, that loss
 //! is negligible in practice.
 
-// compress.cc
-
 use flate2::{Compress, Compression, FlushCompress, FlushDecompress};
 use rayon::prelude::*;
 

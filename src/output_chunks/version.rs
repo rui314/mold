@@ -2,11 +2,11 @@
 //! `.gnu.version_d`.
 
 use crate::arch::Arch;
-use crate::chunks::symtab::elf_hash;
-use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{DsoId, FileId};
+use crate::output_chunks::symtab::elf_hash;
+use crate::output_chunks::ChunkHeader;
 use crate::symbol::SymbolId;
 use crate::util::path_filename;
 

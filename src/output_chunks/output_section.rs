@@ -6,11 +6,11 @@ use bstr::BStr;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::{ChunkHeader, DynRelBuffer, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::input_sections::{r_delta, InputSectionId};
+use crate::output_chunks::{ChunkHeader, DynRelBuffer, OutputSectionId};
 use crate::symbol::{AddrFlags, SymbolId, NEEDS_CANONICAL};
 use crate::thunks::Thunk;
 use crate::util::align_to;
@@ -600,10 +600,18 @@ pub fn populate_symtab<E: Arch>(
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));
             if E::FAMILY == Family::Arm32 {
                 // Emit "$t", "$a" and "$d" if ARM32.
-                block.push_mapping_symbol::<E>(crate::chunks::symtab::strtab::THUMB, func(addr));
-                block.push_mapping_symbol::<E>(crate::chunks::symtab::strtab::ARM, func(addr + 4));
-                block
-                    .push_mapping_symbol::<E>(crate::chunks::symtab::strtab::DATA, func(addr + 12));
+                block.push_mapping_symbol::<E>(
+                    crate::output_chunks::symtab::strtab::THUMB,
+                    func(addr),
+                );
+                block.push_mapping_symbol::<E>(
+                    crate::output_chunks::symtab::strtab::ARM,
+                    func(addr + 4),
+                );
+                block.push_mapping_symbol::<E>(
+                    crate::output_chunks::symtab::strtab::DATA,
+                    func(addr + 12),
+                );
             }
         }
     }

@@ -36,10 +36,10 @@
 //! https://github.com/IBM/s390x-abi/releases/download/v1.6.1/lzsabi_s390x.pdf
 
 use crate::arch::{Arch, Family};
-use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
+use crate::output_chunks::eh_frame;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};

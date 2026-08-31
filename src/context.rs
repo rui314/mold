@@ -8,36 +8,38 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
-use crate::args::Args;
-use crate::chunks::dynamic::{DynamicSection, RelDynSection, RelrDynSection};
-use crate::chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection, EhFrameSection};
-use crate::chunks::got::{GotPltSection, GotSection, PltGotSection, PltSection, RelPltSection};
-use crate::chunks::merged::{MergedSection, MergedSectionId};
-use crate::chunks::misc::{
-    BuildIdSection, ComdatGroupSection, CompressedSection, CopyrelSection, GnuDebuglinkSection,
-    InterpSection, NotePackageSection, NotePropertySection, RelocSection, RelroPaddingSection,
-    RiscvAttributesSection,
-};
-use crate::chunks::output_section::OutputSection;
-use crate::chunks::sframe::{SFrameRelocSection, SFrameSection};
-use crate::chunks::symtab::{
-    DynstrSection, DynsymSection, GnuHashSection, HashSection, ShstrtabSection, StrtabSection,
-    SymtabSection, SymtabShndxSection,
-};
-use crate::chunks::version::{VerdefSection, VerneedSection, VersymSection};
-use crate::chunks::{
-    ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
-};
-use crate::diagnostics::{Diagnostics, HasDiagnostics};
+use crate::cmdline::Args;
 use crate::elf::ElfSym;
+use crate::error::{Diagnostics, HasDiagnostics};
 use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::mapped_file::MappedFile;
+use crate::output_chunks::dynamic::{DynamicSection, RelDynSection, RelrDynSection};
+use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection, EhFrameSection};
+use crate::output_chunks::got::{
+    GotPltSection, GotSection, PltGotSection, PltSection, RelPltSection,
+};
+use crate::output_chunks::merged::{MergedSection, MergedSectionId};
+use crate::output_chunks::misc::{
+    BuildIdSection, ComdatGroupSection, CompressedSection, CopyrelSection, GnuDebuglinkSection,
+    InterpSection, NotePackageSection, NotePropertySection, RelocSection, RelroPaddingSection,
+    RiscvAttributesSection,
+};
+use crate::output_chunks::output_section::OutputSection;
+use crate::output_chunks::sframe::{SFrameRelocSection, SFrameSection};
+use crate::output_chunks::symtab::{
+    DynstrSection, DynsymSection, GnuHashSection, HashSection, ShstrtabSection, StrtabSection,
+    SymtabSection, SymtabShndxSection,
+};
+use crate::output_chunks::version::{VerdefSection, VerneedSection, VersymSection};
+use crate::output_chunks::{
+    ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
+};
 use crate::symbol::{Bins, SymbolId, SymbolSlot, SymbolTable};
-use crate::util::timer::Timers;
+use crate::util::perf::Timers;
 
 /// Linker-synthesized symbols with well-known names.
 #[derive(Debug, Default)]
@@ -182,9 +184,9 @@ pub struct Context<E: Arch> {
     // Target-specific context members
     pub note_property: Option<NotePropertySection>,
     pub riscv_attributes: Option<RiscvAttributesSection>,
-    pub arm_exidx: Option<crate::chunks::arm_exidx::ArmExidxSection>,
-    pub ppc64_save_restore: Option<crate::chunks::misc::Ppc64SaveRestoreSection>,
-    pub ppc64_opd: Option<crate::chunks::opd::Ppc64OpdSection>,
+    pub arm_exidx: Option<crate::output_chunks::arm_exidx::ArmExidxSection>,
+    pub ppc64_save_restore: Option<crate::output_chunks::misc::Ppc64SaveRestoreSection>,
+    pub ppc64_opd: Option<crate::output_chunks::opd::Ppc64OpdSection>,
     /// Whether any input uses Power10 PC-relative calls, which decides
     /// how thunks address their targets.
     pub is_power10: AtomicBool,
@@ -466,7 +468,7 @@ impl<E: Arch> Context<E> {
             .ppc64_opd
             .as_ref()
             .expect("PPC64 ELFv1 has an .opd section");
-        opd.hdr.shdr.sh_addr + idx as u64 * crate::chunks::opd::ENTRY_SIZE
+        opd.hdr.shdr.sh_addr + idx as u64 * crate::output_chunks::opd::ENTRY_SIZE
     }
 
     /// Whether the file is the internal object holding synthesized symbols.
@@ -604,7 +606,7 @@ impl<E: Arch> Context<E> {
     }
 
     /// Starts a `--perf` timer for a pass.
-    pub fn timer(&self, name: &str) -> crate::util::timer::Timer {
+    pub fn timer(&self, name: &str) -> crate::util::perf::Timer {
         self.timers.start(name)
     }
 }

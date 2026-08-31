@@ -3,10 +3,10 @@
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::output_chunks::{self, ChunkHeader, ChunkId};
 use crate::symbol::SymbolId;
 use crate::util::encode_sleb;
 
@@ -19,7 +19,7 @@ pub struct RelDynSection {
 }
 
 impl RelDynSection {
-    pub fn new<E: Arch>(args: &crate::args::Args) -> RelDynSection {
+    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> RelDynSection {
         let name = if E::IS_RELA { ".rela.dyn" } else { ".rel.dyn" };
         let mut hdr = ChunkHeader::new(name, 0, SHF_ALLOC as u64);
         if args.pack_dyn_relocs_android {
@@ -63,7 +63,7 @@ pub mod reldyn {
             let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
             if count != 0 {
                 let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count);
-                chunks::write_dynrels(ctx, id, chunks::DynRelBuffer::native(slots));
+                output_chunks::write_dynrels(ctx, id, output_chunks::DynRelBuffer::native(slots));
                 rest = tail;
             }
         }
@@ -79,7 +79,7 @@ pub mod reldyn {
         let ids = ctx.chunks.clone();
 
         for &id in &ids {
-            let n = chunks::num_dynrels(ctx, id);
+            let n = output_chunks::num_dynrels(ctx, id);
             let hdr = ctx.chunk_header_mut(id);
             hdr.num_dynrels = n;
             hdr.num_relrs = 0;
@@ -102,7 +102,7 @@ pub mod reldyn {
                 continue;
             }
             if n != 0 {
-                let offsets = chunks::relr_offsets(ctx, id);
+                let offsets = output_chunks::relr_offsets(ctx, id);
                 let hdr = ctx.chunk_header_mut(id);
                 hdr.num_relrs = offsets.len() as u64;
                 debug_assert!(hdr.num_relrs <= hdr.num_dynrels);
@@ -123,7 +123,7 @@ pub mod reldyn {
         let ids = ctx.chunks.clone();
         if !ctx.args.pack_dyn_relocs_relr {
             for &id in &ids {
-                let n = chunks::num_dynrels(ctx, id);
+                let n = output_chunks::num_dynrels(ctx, id);
                 let hdr = ctx.chunk_header_mut(id);
                 hdr.num_dynrels = n;
                 hdr.num_relrs = 0;
@@ -171,7 +171,11 @@ pub mod reldyn {
                 let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
                 if count != 0 {
                     let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count * size);
-                    chunks::write_dynrels(ctx, id, chunks::DynRelBuffer::output(slots));
+                    output_chunks::write_dynrels(
+                        ctx,
+                        id,
+                        output_chunks::DynRelBuffer::output(slots),
+                    );
                     rest = tail;
                 }
             }
@@ -212,11 +216,11 @@ pub mod reldyn {
                 1
             }
         };
-        match chunks::DynRelBuffer::<E>::output(buf) {
-            chunks::DynRelBuffer::Native(relocs) => {
+        match output_chunks::DynRelBuffer::<E>::output(buf) {
+            output_chunks::DynRelBuffer::Native(relocs) => {
                 relocs.par_sort_by_key(|r| (rank(r.r_type), r.r_sym, r.r_offset));
             }
-            chunks::DynRelBuffer::Encoded(buf, _) => {
+            output_chunks::DynRelBuffer::Encoded(buf, _) => {
                 let mut relocs = ElfRel::parse_all::<E>(buf);
                 relocs.par_sort_by_key(|r| (rank(r.r_type), r.r_sym, r.r_offset));
                 ElfRel::write_all::<E>(&relocs, buf);
@@ -264,7 +268,7 @@ pub struct RelrDynSection {
 }
 
 impl RelrDynSection {
-    pub fn new<E: Arch>(args: &crate::args::Args) -> RelrDynSection {
+    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> RelrDynSection {
         let ty = if args.use_android_relr_tags {
             SHT_ANDROID_RELR
         } else {
@@ -433,7 +437,7 @@ pub struct DynamicSection {
 }
 
 impl DynamicSection {
-    pub fn new<E: Arch>(args: &crate::args::Args) -> DynamicSection {
+    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> DynamicSection {
         let mut hdr = ChunkHeader::new(".dynamic", SHT_DYNAMIC, 0);
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         hdr.shdr.sh_entsize = ElfDyn::size::<E>() as u64;
@@ -577,7 +581,8 @@ pub mod dynamic {
             if ctx.gotplt.hdr.shdr.sh_size != 0 {
                 define(
                     DT_PLTGOT,
-                    ctx.gotplt.hdr.shdr.sh_addr + crate::chunks::got::gotplt::header_size::<E>(),
+                    ctx.gotplt.hdr.shdr.sh_addr
+                        + crate::output_chunks::got::gotplt::header_size::<E>(),
                 );
             }
         } else if ctx.gotplt.hdr.shdr.sh_size != 0 {
@@ -709,7 +714,8 @@ pub mod dynamic {
             // it's what it is.
             define(
                 DT_PPC64_GLINK,
-                ctx.plt.hdr.shdr.sh_addr + crate::chunks::got::plt::entry_offset::<E>(0) - 32,
+                ctx.plt.hdr.shdr.sh_addr + crate::output_chunks::got::plt::entry_offset::<E>(0)
+                    - 32,
             );
         }
 

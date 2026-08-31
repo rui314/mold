@@ -1,10 +1,10 @@
 //! `.got`, `.got.plt`, `.plt`, `.plt.got` and `.rela.plt`.
 
 use crate::arch::{Arch, Family};
-use crate::chunks::{ChunkHeader, DynRelBuffer};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
+use crate::output_chunks::{ChunkHeader, DynRelBuffer};
 use crate::symbol::{AddrFlags, SymbolId};
 
 // .got is a linker-synthesized constant pool whose entry size is the same
@@ -474,7 +474,7 @@ pub struct GotPltSection {
 }
 
 impl GotPltSection {
-    pub fn new<E: Arch>(args: &crate::args::Args) -> GotPltSection {
+    pub fn new<E: Arch>(args: &crate::cmdline::Args) -> GotPltSection {
         let sh_type = if E::IS_PPC64 {
             SHT_NOBITS
         } else {
@@ -605,7 +605,7 @@ pub mod plt {
         let idx = ctx.plt.symbols.len() as u32;
         ctx.symbols.aux_mut(sym).plt_idx = Some(idx);
         ctx.plt.symbols.push(sym);
-        crate::chunks::symtab::dynsym::add_symbol(ctx, sym);
+        crate::output_chunks::symtab::dynsym::add_symbol(ctx, sym);
     }
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
@@ -654,7 +654,7 @@ pub mod plt {
             st_value: addr,
             ..ElfSym::default()
         };
-        use crate::chunks::symtab::strtab::{ARM, DATA};
+        use crate::output_chunks::symtab::strtab::{ARM, DATA};
         if E::FAMILY == Family::Arm32 {
             block.push_mapping_symbol::<E>(ARM, func(plt.hdr.shdr.sh_addr));
             block.push_mapping_symbol::<E>(DATA, func(plt.hdr.shdr.sh_addr + 16));
@@ -741,7 +741,7 @@ pub mod pltgot {
             st_value: addr,
             ..ElfSym::default()
         };
-        use crate::chunks::symtab::strtab::{ARM, DATA};
+        use crate::output_chunks::symtab::strtab::{ARM, DATA};
         for &id in &pltgot.symbols {
             let sym = &ctx.symbols[id];
             let addr = sym.plt_addr(ctx);

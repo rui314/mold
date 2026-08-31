@@ -1,4 +1,3 @@
-// error.cc
 //! Error, warning and fatal-error reporting.
 //!
 //! Errors don't abort the link immediately: the linker keeps going so that
@@ -149,28 +148,28 @@ pub fn exit_after_cleanup(status: i32) -> ! {
 #[macro_export]
 macro_rules! fatal {
     ($ctx:expr, $($arg:tt)*) => {
-        $crate::diagnostics::HasDiagnostics::diagnostics(&$ctx).fatal(format_args!($($arg)*))
+        $crate::error::HasDiagnostics::diagnostics(&$ctx).fatal(format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! error {
     ($ctx:expr, $($arg:tt)*) => {
-        $crate::diagnostics::HasDiagnostics::diagnostics(&$ctx).error(format_args!($($arg)*))
+        $crate::error::HasDiagnostics::diagnostics(&$ctx).error(format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($ctx:expr, $($arg:tt)*) => {
-        $crate::diagnostics::HasDiagnostics::diagnostics(&$ctx).warn(format_args!($($arg)*))
+        $crate::error::HasDiagnostics::diagnostics(&$ctx).warn(format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! out {
     ($ctx:expr, $($arg:tt)*) => {
-        $crate::diagnostics::HasDiagnostics::diagnostics(&$ctx).out(format_args!($($arg)*))
+        $crate::error::HasDiagnostics::diagnostics(&$ctx).out(format_args!($($arg)*))
     };
 }
 

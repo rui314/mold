@@ -1,4 +1,3 @@
-// gdb-index.cc
 //! This file contains code to read DWARF debug info to create .gdb_index.
 //!
 //! .gdb_index is an optional section to speed up GNU debugger. It contains
@@ -84,19 +83,19 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::ChunkId;
 use crate::context::Context;
-use crate::diagnostics::Diagnostics;
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::fatal;
+use crate::output_chunks::ChunkId;
 use crate::output_file::{split_at_offsets, OutputFile};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use crate::util::concurrent_map::{ConcurrentMap, FrozenMap, MapEntryRef};
 use crate::util::hyperloglog::HyperLogLog;
+use crate::util::perf::Timer;
 use crate::util::read_uleb;
-use crate::util::timer::Timer;
 
 /// A public name and its GNU kind before the name is interned in GdbNameMap.
 #[derive(Clone, Copy)]
@@ -1506,7 +1505,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     if let Some(section_headers) = &ctx.shdr {
         let shdr = section_headers.hdr.shdr;
         let buf = output.buf();
-        crate::chunks::copy_buf(
+        crate::output_chunks::copy_buf(
             ctx,
             ChunkId::Shdr,
             &mut buf[shdr.sh_offset as usize..(shdr.sh_offset + shdr.sh_size) as usize],

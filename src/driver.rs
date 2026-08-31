@@ -1,5 +1,3 @@
-// jobs-unix.cc
-// main.cc
 //! The linker driver: runs the passes in order.
 
 // Many build systems attempt to invoke as many linker processes as there
@@ -21,12 +19,12 @@ use std::sync::{mpsc, Arc};
 use rayon::prelude::*;
 
 use crate::arch::{self, Arch};
-use crate::args::{self, Args, TargetTraits};
-use crate::chunks::{self, ChunkId};
+use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
-use crate::diagnostics::{self, Diagnostics};
 use crate::elf::*;
+use crate::error::Diagnostics;
 use crate::input_files::FileId;
+use crate::output_chunks::{self, ChunkId};
 use crate::output_file::{split_ranges, OutputFile, Range};
 use crate::{error, fatal, out, passes};
 
@@ -52,7 +50,7 @@ pub fn main(
     let orig_cwd = std::env::current_dir().ok();
 
     // Parse non-positional command line options
-    let cmdline = args::expand_response_files(&diag, &argv);
+    let cmdline = cmdline::expand_response_files(&diag, &argv);
 
     // Parse with x86-64 defaults; if the target turns out to be different,
     // start over with the right one.
@@ -85,7 +83,7 @@ fn configure_diagnostics(diag: &Diagnostics, args: &Args) {
     diag.set_fatal_warnings(args.fatal_warnings);
     diag.set_suppress_warnings(args.suppress_warnings);
     diag.set_noinhibit_exec(args.noinhibit_exec);
-    diagnostics::set_demangle(args.demangle);
+    error::set_demangle(args.demangle);
 }
 
 fn thread_count(args: &Args) -> usize {
@@ -114,8 +112,8 @@ fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
 pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, String> {
-    let parsed = args::parse_args(diag, &target_traits::<E>(), cmdline);
-    let args::ParsedArgs { args, jobs, .. } = parsed;
+    let parsed = cmdline::parse_args(diag, &target_traits::<E>(), cmdline);
+    let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     configure_diagnostics(diag, &args);
 
     let mut ctx = Context::<E>::new(args, Diagnostics::new(false), cmdline.to_vec());
@@ -174,16 +172,16 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             let Some(mf) = mf else {
                 fatal!(ctx, "--version-script: file not found: {path}");
             };
-            let mut rctx = args::ReaderContext::default();
+            let mut rctx = cmdline::ReaderContext::default();
             crate::linker_script::Script::new(&mut ctx, &mut rctx, mf).parse_version_script();
         }
         for source in ctx.args.dynamic_list.clone() {
             match source {
-                args::DynamicListSource::File(path) => {
+                cmdline::DynamicListSource::File(path) => {
                     let patterns = crate::linker_script::parse_dynamic_list(&mut ctx, &path);
                     ctx.dynamic_list_patterns.extend(patterns);
                 }
-                args::DynamicListSource::Pattern(pattern) => {
+                cmdline::DynamicListSource::Pattern(pattern) => {
                     ctx.dynamic_list_patterns
                         .push(crate::linker_script::DynamicPattern {
                             pattern: crate::util::leak_bytes(pattern.into_bytes()),
@@ -357,7 +355,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
 
         // Convert an .ARM.exidx to a synthetic section.
         if E::FAMILY == arch::Family::Arm32 {
-            chunks::arm_exidx::create(&mut ctx);
+            output_chunks::arm_exidx::create(&mut ctx);
         }
 
         // Handle --section-align options.
@@ -373,7 +371,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         // or ctx.dsos.
 
         // Handle `-z cet-report`.
-        if ctx.args.z_cet_report != args::CetReportKind::None {
+        if ctx.args.z_cet_report != cmdline::CetReportKind::None {
             passes::check_cet_errors(&ctx);
         }
         // Handle `-z execstack-if-needed`.
@@ -420,7 +418,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         passes::fixup_ctors_in_init_array(&mut ctx);
 
         // Handle --shuffle-sections
-        if ctx.args.shuffle_sections != args::ShuffleSectionsKind::None {
+        if ctx.args.shuffle_sections != cmdline::ShuffleSectionsKind::None {
             passes::shuffle_sections(&mut ctx);
         }
         // Copy string referred by .dynamic to .dynstr.
@@ -457,7 +455,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         // RELR is encoded independently for each output chunk using offsets
         // relative to that chunk.
         if ctx.args.pack_dyn_relocs_relr {
-            chunks::dynamic::reldyn::construct_relr(&mut ctx);
+            output_chunks::dynamic::reldyn::construct_relr(&mut ctx);
         }
         // Reserve a space for dynamic symbol strings in .dynstr and sort
         // .dynsym contents if necessary. Beyond this point, no symbol will
@@ -498,26 +496,26 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         };
 
         // Print reports about undefined symbols, if needed.
-        if ctx.args.unresolved_symbols == args::UnresolvedKind::Error {
+        if ctx.args.unresolved_symbols == cmdline::UnresolvedKind::Error {
             passes::report_undef_errors(&ctx);
         }
 
         // Fill .gnu.version_d section contents.
         if ctx.verdef.is_some() {
-            chunks::version::verdef::construct(&mut ctx);
+            output_chunks::version::verdef::construct(&mut ctx);
         }
         // Fill .gnu.version_r section contents.
-        chunks::version::verneed::construct(&mut ctx);
+        output_chunks::version::verneed::construct(&mut ctx);
 
         // .eh_frame is a special section from the linker's point of view,
         // as its contents are parsed and reconstructed by the linker,
         // unlike other sections that are regarded as opaque bytes.
         // Here, we construct output .eh_frame contents.
-        chunks::eh_frame::construct(&mut ctx);
+        output_chunks::eh_frame::construct(&mut ctx);
 
         // .sframe is likewise parsed and reconstructed by the linker. Build
         // the merged, PC-sorted output .sframe.
-        chunks::sframe::construct(&mut ctx);
+        output_chunks::sframe::construct(&mut ctx);
 
         // If --emit-relocs is given, we'll copy relocation sections from input
         // files to an output file.
@@ -541,7 +539,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         // be replaced with shorter instruction sequences if destinations
         // are close enough. Do this optimization.
         if E::IS_RISCV || E::IS_LOONGARCH {
-            crate::relax::shrink_sections(&mut ctx);
+            crate::shrink_sections::shrink_sections(&mut ctx);
             filesize = passes::set_osec_offsets(&mut ctx);
         }
 
@@ -553,7 +551,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             filesize = passes::set_osec_offsets(&mut ctx);
         }
         if ctx.arm_exidx.is_some() {
-            chunks::arm_exidx::remove_duplicate_entries(&mut ctx);
+            output_chunks::arm_exidx::remove_duplicate_entries(&mut ctx);
             filesize = passes::set_osec_offsets(&mut ctx);
         }
 
@@ -563,7 +561,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         let t = ctx.timer("fix_synthetic_symbols");
         passes::fix_synthetic_symbols(&mut ctx);
         drop(t);
-        chunks::sframe::sort(&mut ctx);
+        output_chunks::sframe::sort(&mut ctx);
 
         // Beyond this, you can assume that symbol addresses including their
         // GOT or PLT addresses have a correct final value.
@@ -591,7 +589,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         // At this point, both memory and file layouts are fixed.
 
         let t = ctx.timer("update_reldyn");
-        chunks::dynamic::reldyn::update_shdr(&mut ctx);
+        output_chunks::dynamic::reldyn::update_shdr(&mut ctx);
         drop(t);
         ctx.filesize = filesize;
         t_before_copy.stop();
@@ -620,7 +618,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             // so we sort them.
             let reldyn = ctx.reldyn.hdr.shdr;
             if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size != 0 {
-                chunks::dynamic::reldyn::sort(
+                output_chunks::dynamic::reldyn::sort(
                     &ctx,
                     &mut buf
                         [reldyn.sh_offset as usize..(reldyn.sh_offset + reldyn.sh_size) as usize],
@@ -688,7 +686,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         crate::mapped_file::drop_mappings();
 
         if ctx.args.quick_exit {
-            diagnostics::exit_after_cleanup(0);
+            error::exit_after_cleanup(0);
         }
         ctx.checkpoint();
         Ok(0)
@@ -818,7 +816,7 @@ fn run_tasks<E: Arch>(
     ctx: &Context<E>,
     buf: &mut [u8],
     tasks: &[Task],
-    timer: &crate::util::timer::Timer,
+    timer: &crate::util::perf::Timer,
 ) {
     let mut ranges: Vec<Range> = Vec::new();
     let mut task_ranges: Vec<Vec<usize>> = Vec::new();
@@ -850,23 +848,23 @@ fn run_tasks<E: Arch>(
         let mut bufs = bufs.drain(..);
         let own = bufs.next().unwrap();
         match task.chunk {
-            ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
+            ChunkId::EhFrame => output_chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
             ChunkId::Symtab => {
                 let strtab = bufs.next().unwrap();
-                chunks::symtab::symtab::copy_buf(ctx, own, strtab, bufs.next());
+                output_chunks::symtab::symtab::copy_buf(ctx, own, strtab, bufs.next());
             }
-            ChunkId::Reloc(i) => chunks::misc::reloc::copy_buf(ctx, i, own, bufs.next()),
+            ChunkId::Reloc(i) => output_chunks::misc::reloc::copy_buf(ctx, i, own, bufs.next()),
             ChunkId::EhFrameReloc => {
-                chunks::eh_frame::eh_frame_reloc::copy_buf(ctx, own, bufs.next())
+                output_chunks::eh_frame::eh_frame_reloc::copy_buf(ctx, own, bufs.next())
             }
-            id => chunks::copy_buf(ctx, id, own),
+            id => output_chunks::copy_buf(ctx, id, own),
         }
     });
 
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
-        chunks::eh_frame::eh_frame_hdr::write_header(
+        output_chunks::eh_frame::eh_frame_hdr::write_header(
             ctx,
             &mut buf[r.offset as usize..(r.offset + r.size) as usize],
         );
@@ -881,5 +879,5 @@ impl<E: Arch> fmt::Debug for Context<E> {
 
 /// Prints the version banner, for `-v`.
 pub fn print_version(diag: &Diagnostics) {
-    out!(diag, "{}", args::VERSION);
+    out!(diag, "{}", cmdline::VERSION);
 }

@@ -1,4 +1,3 @@
-// icf.cc
 //! This file implements the Identical Code Folding feature which can
 //! reduce the output file size of a typical program by a few percent.
 //! ICF identifies read-only input sections that happen to be identical
@@ -379,14 +378,15 @@ impl DigestMap {
 
 fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
-    let mut leaders: Vec<crate::chunks::eh_frame::CieHandle> = Vec::new();
+    let mut leaders: Vec<crate::output_chunks::eh_frame::CieHandle> = Vec::new();
     for file in &mut ctx.objs {
         let file_ptr = file as *mut ObjectFile;
         let cies = file.cies.as_mut_ptr();
         for ci in 0..file.cies.len() {
             // SAFETY: object files are boxed and ICF does not resize their CIE
             // vectors, so leaders remain stable through this serial pass.
-            let cie = unsafe { crate::chunks::eh_frame::CieHandle::new(file_ptr, cies.add(ci)) };
+            let cie =
+                unsafe { crate::output_chunks::eh_frame::CieHandle::new(file_ptr, cies.add(ci)) };
             let found = leaders.iter().position(|&leader| leader.equals::<E>(cie));
             match found {
                 Some(idx) => cie.icf_idx(idx as u32),
