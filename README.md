@@ -13,10 +13,10 @@ cargo build --release
 
 The binary is `target/release/mold`. It answers to `ld` as well, so a
 symlink named `ld` in a directory passed to the compiler with `-B` makes
-GCC and Clang use it. The build also compiles three C parts: the vendored
-mimalloc in `csrc/mimalloc` (the same copy the C++ mold links, used as the
-global allocator), `mold-wrapper.so`, the preload library behind
-`mold -run`, and the variadic adapter the LTO plugin API needs.
+GCC and Clang use it. The build also compiles three C parts: mimalloc from
+the pinned `mimalloc_rust` dependency, used as the global allocator,
+`mold-wrapper.so`, the preload library behind `mold -run`, and the variadic
+adapter the LTO plugin API needs.
 
 The linker is generic over the target, and instantiating it for all
 twenty targets in one crate keeps the compiler on a single core for

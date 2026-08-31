@@ -194,6 +194,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "git+https://github.com/rui314/mimalloc_rust?rev=cc58b72775b8b5bc89ee37752af61fcb4f7c2909#cc58b72775b8b5bc89ee37752af61fcb4f7c2909"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -206,6 +214,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "git+https://github.com/rui314/mimalloc_rust?rev=cc58b72775b8b5bc89ee37752af61fcb4f7c2909#cc58b72775b8b5bc89ee37752af61fcb4f7c2909"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -242,8 +258,8 @@ dependencies = [
 name = "mold-cli"
 version = "2.42.0"
 dependencies = [
+ "mimalloc",
  "mold",
- "mold-mimalloc",
  "mold-target-arm32",
  "mold-target-arm32be",
  "mold-target-arm64",
@@ -266,10 +282,6 @@ dependencies = [
  "mold-target-x86_64",
  "mold-tests",
 ]
-
-[[package]]
-name = "mold-mimalloc"
-version = "2.42.0"
 
 [[package]]
 name = "mold-target-arm32"

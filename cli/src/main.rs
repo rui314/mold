@@ -12,7 +12,7 @@ use mold::diagnostics::Diagnostics;
 //
 // Rust selects the allocator in this executable for the same one-place rule.
 #[global_allocator]
-static GLOBAL: mold_mimalloc::MiMalloc = mold_mimalloc::MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // Silence mimalloc warnings that users can ignore
 

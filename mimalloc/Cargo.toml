@@ -1,7 +1,0 @@
-[package]
-name = "mold-mimalloc"
-version = "2.42.0"
-edition = "2021"
-description = "The mimalloc allocator that mold links, built from the vendored source"
-license = "MIT"
-links = "mimalloc"
