@@ -281,7 +281,7 @@ type Hook = unsafe extern "C" fn() -> c_int;
 type NewInputHandler = unsafe extern "C" fn(*const PluginInputFile) -> c_int;
 
 extern "C" {
-    /// The printf-like diagnostics callback, defined in `csrc/lto-message.c`.
+    /// The printf-like diagnostics callback, defined in `c/lto-message.c`.
     fn mold_lto_message(level: c_int, fmt: *const c_char, ...) -> c_int;
 }
 

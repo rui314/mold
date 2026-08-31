@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=csrc/mold-wrapper.c");
-    println!("cargo:rerun-if-changed=csrc/lto-message.c");
+    println!("cargo:rerun-if-changed=c/mold-wrapper.c");
+    println!("cargo:rerun-if-changed=c/lto-message.c");
 
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -22,10 +22,10 @@ fn main() {
     let status = Command::new(&cc)
         .args(["-c", "-O2", "-fPIC", "-o"])
         .arg(&object)
-        .arg("csrc/lto-message.c")
+        .arg("c/lto-message.c")
         .status();
     if !matches!(status, Ok(s) if s.success()) {
-        panic!("could not compile csrc/lto-message.c with {cc}");
+        panic!("could not compile c/lto-message.c with {cc}");
     }
     let archive = out_dir.join("libltomessage.a");
     let status = Command::new("ar")
@@ -45,7 +45,7 @@ fn main() {
     let status = Command::new(&cc)
         .args(["-shared", "-fPIC", "-O2", "-o"])
         .arg(&wrapper)
-        .arg("csrc/mold-wrapper.c")
+        .arg("c/mold-wrapper.c")
         .arg("-ldl")
         .status();
     if !matches!(status, Ok(s) if s.success()) {
