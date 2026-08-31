@@ -585,11 +585,12 @@ pub fn populate_symtab<E: Arch>(
     }
     let osec = &ctx.output_sections[id.index()];
     let shndx = osec.hdr.shndx;
-    let func = |addr: u64| ElfSym {
-        st_info: STT_FUNC as u8,
-        st_shndx: shndx as u16,
-        st_value: addr,
-        ..ElfSym::default()
+    let func = |addr: u64| {
+        let mut sym = SymbolEntry::default();
+        sym.st_shndx = shndx as u16;
+        sym.st_value = addr;
+        sym.set_type(STT_FUNC);
+        sym
     };
 
     for thunk in &osec.thunks {

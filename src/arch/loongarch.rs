@@ -47,6 +47,10 @@ pub type LoongArch32 = LoongArchTarget<false>;
 
 impl Layout for LoongArchTarget<true> {
     type Endian = LittleEndian;
+    type Word = Ul64;
+    type Sym = Elf64Sym<LittleEndian>;
+    type Phdr = Elf64Phdr<LittleEndian>;
+    type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
@@ -54,6 +58,10 @@ impl Layout for LoongArchTarget<true> {
 
 impl Layout for LoongArchTarget<false> {
     type Endian = LittleEndian;
+    type Word = Ul32;
+    type Sym = Elf32Sym<LittleEndian>;
+    type Phdr = Elf32Phdr<LittleEndian>;
+    type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelaLe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;

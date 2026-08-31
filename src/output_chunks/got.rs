@@ -439,11 +439,12 @@ pub mod got {
         if got.hdr.num_local_symtab == 0 {
             return;
         }
-        let object = |value: u64| ElfSym {
-            st_info: STT_OBJECT as u8,
-            st_shndx: got.hdr.shndx as u16,
-            st_value: value,
-            ..ElfSym::default()
+        let object = |value: u64| {
+            let mut sym = SymbolEntry::default();
+            sym.st_shndx = got.hdr.shndx as u16;
+            sym.st_value = value;
+            sym.set_type(STT_OBJECT);
+            sym
         };
         for &id in &got.got_syms {
             let sym = &ctx.symbols[id];
@@ -649,11 +650,12 @@ pub mod plt {
         if plt.hdr.num_local_symtab == 0 {
             return;
         }
-        let func = |addr: u64| ElfSym {
-            st_info: STT_FUNC as u8,
-            st_shndx: plt.hdr.shndx as u16,
-            st_value: addr,
-            ..ElfSym::default()
+        let func = |addr: u64| {
+            let mut sym = SymbolEntry::default();
+            sym.st_shndx = plt.hdr.shndx as u16;
+            sym.st_value = addr;
+            sym.set_type(STT_FUNC);
+            sym
         };
         use crate::output_chunks::symtab::strtab::{ARM, DATA};
         if E::FAMILY == Family::Arm32 {
@@ -736,11 +738,12 @@ pub mod pltgot {
         if pltgot.hdr.num_local_symtab == 0 {
             return;
         }
-        let func = |addr: u64| ElfSym {
-            st_info: STT_FUNC as u8,
-            st_shndx: pltgot.hdr.shndx as u16,
-            st_value: addr,
-            ..ElfSym::default()
+        let func = |addr: u64| {
+            let mut sym = SymbolEntry::default();
+            sym.st_shndx = pltgot.hdr.shndx as u16;
+            sym.st_value = addr;
+            sym.set_type(STT_FUNC);
+            sym
         };
         use crate::output_chunks::symtab::strtab::{ARM, DATA};
         for &id in &pltgot.symbols {

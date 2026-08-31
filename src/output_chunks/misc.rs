@@ -432,7 +432,7 @@ impl Default for RelroPaddingSection {
 #[derive(Debug)]
 pub struct CompressedSection {
     pub hdr: ChunkHeader,
-    pub chdr: ElfChdr,
+    pub chdr: CompressionHeader,
     pub compressor: Compressor,
     /// Kept for --gdb-index, which reads the uncompressed contents.
     pub uncompressed_data: Option<Vec<u8>>,
@@ -469,7 +469,7 @@ pub mod compressed {
         };
 
         // Compute header field values
-        let chdr = ElfChdr {
+        let chdr = CompressionHeader {
             ch_type: ctx.args.compress_debug_sections,
             ch_size: hdr.shdr.sh_size,
             ch_addralign: hdr.shdr.sh_addralign,
@@ -484,7 +484,8 @@ pub mod compressed {
         new_hdr.shdr = hdr.shdr;
         new_hdr.shdr.sh_flags |= SHF_COMPRESSED as u64;
         new_hdr.shdr.sh_addralign = 1;
-        new_hdr.shdr.sh_size = (ElfChdr::size::<E>() + compressor.compressed_size()) as u64;
+        new_hdr.shdr.sh_size =
+            (CompressionHeader::size::<E>() + compressor.compressed_size()) as u64;
 
         // We can discard the uncompressed contents unless --gdb-index is given
         CompressedSection {
@@ -499,7 +500,8 @@ pub mod compressed {
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
         let sec = &ctx.compressed_sections[i as usize];
         sec.chdr.write::<E>(buf);
-        sec.compressor.write_to(&mut buf[ElfChdr::size::<E>()..]);
+        sec.compressor
+            .write_to(&mut buf[CompressionHeader::size::<E>()..]);
     }
 }
 

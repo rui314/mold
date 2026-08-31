@@ -143,7 +143,7 @@ pub mod verneed {
         ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
 
         // Allocate a large enough buffer for .gnu.version_r.
-        let capacity = (ElfVerneed::size::<E>() + ElfVernaux::size::<E>()) * (syms.len() + 1);
+        let capacity = (ElfVerneed::<E>::size() + ElfVernaux::<E>::size()) * (syms.len() + 1);
         let mut builder = VerneedBuilder::<E> {
             contents: Vec::with_capacity(capacity),
             veridx: VER_NDX_LAST_RESERVED as u16 + ctx.args.version_definitions.len() as u16,
@@ -196,46 +196,46 @@ pub mod verneed {
         fn start_group(&mut self, vn_file: u32) {
             self.num_groups += 1;
             if let Some(gp) = self.group_pos {
-                let mut vn = ElfVerneed::parse::<E>(&self.contents[gp..]);
-                vn.vn_next = (self.contents.len() - gp) as u32;
-                vn.write::<E>(&mut self.contents[gp..]);
+                let mut vn = ElfVerneed::<E>::parse(&self.contents[gp..]);
+                vn.vn_next.set((self.contents.len() - gp) as u32);
+                vn.write(&mut self.contents[gp..]);
             }
             let pos = self.contents.len();
             self.group_pos = Some(pos);
             self.aux_pos = None;
-            self.contents.resize(pos + ElfVerneed::size::<E>(), 0);
-            ElfVerneed {
-                vn_version: 1,
-                vn_cnt: 0,
-                vn_file,
-                vn_aux: ElfVerneed::size::<E>() as u32,
-                vn_next: 0,
+            self.contents.resize(pos + ElfVerneed::<E>::size(), 0);
+            ElfVerneed::<E> {
+                vn_version: U16::new(1),
+                vn_cnt: U16::default(),
+                vn_file: U32::new(vn_file),
+                vn_aux: U32::new(ElfVerneed::<E>::size() as u32),
+                vn_next: U32::default(),
             }
-            .write::<E>(&mut self.contents[pos..]);
+            .write(&mut self.contents[pos..]);
         }
 
         fn add_entry(&mut self, dynstr: &mut super::super::symtab::DynstrSection, verstr: &[u8]) {
             let gp = self.group_pos.unwrap();
-            let mut vn = ElfVerneed::parse::<E>(&self.contents[gp..]);
-            vn.vn_cnt += 1;
-            vn.write::<E>(&mut self.contents[gp..]);
+            let mut vn = ElfVerneed::<E>::parse(&self.contents[gp..]);
+            vn.vn_cnt.set(vn.vn_cnt.get() + 1);
+            vn.write(&mut self.contents[gp..]);
             if let Some(ap) = self.aux_pos {
-                let mut aux = ElfVernaux::parse::<E>(&self.contents[ap..]);
-                aux.vna_next = ElfVernaux::size::<E>() as u32;
-                aux.write::<E>(&mut self.contents[ap..]);
+                let mut aux = ElfVernaux::<E>::parse(&self.contents[ap..]);
+                aux.vna_next.set(ElfVernaux::<E>::size() as u32);
+                aux.write(&mut self.contents[ap..]);
             }
             self.veridx += 1;
-            let aux = ElfVernaux {
-                vna_hash: elf_hash(verstr),
-                vna_flags: 0,
-                vna_other: self.veridx,
-                vna_name: dynstr.add_string(verstr) as u32,
-                vna_next: 0,
+            let aux = ElfVernaux::<E> {
+                vna_hash: U32::new(elf_hash(verstr)),
+                vna_flags: U16::default(),
+                vna_other: U16::new(self.veridx),
+                vna_name: U32::new(dynstr.add_string(verstr) as u32),
+                vna_next: U32::default(),
             };
             let pos = self.contents.len();
             self.aux_pos = Some(pos);
-            self.contents.resize(pos + ElfVernaux::size::<E>(), 0);
-            aux.write::<E>(&mut self.contents[pos..]);
+            self.contents.resize(pos + ElfVernaux::<E>::size(), 0);
+            aux.write(&mut self.contents[pos..]);
         }
     }
 
@@ -317,8 +317,8 @@ pub mod verdef {
         }
 
         // Allocate a buffer for .gnu.version_d and write to it
-        let verdef_size = ElfVerdef::size::<E>();
-        let verdaux_size = ElfVerdaux::size::<E>();
+        let verdef_size = ElfVerdef::<E>::size();
+        let verdaux_size = ElfVerdaux::<E>::size();
         let mut contents: Vec<u8> = Vec::with_capacity(
             (verdef_size + verdaux_size) * (ctx.args.version_definitions.len() + 1),
         );
@@ -332,28 +332,28 @@ pub mod verdef {
                          flags: u16| {
             count += 1;
             if let Some(p) = prev {
-                let mut vd = ElfVerdef::parse::<E>(&contents[p..]);
-                vd.vd_next = (contents.len() - p) as u32;
-                vd.write::<E>(&mut contents[p..]);
+                let mut vd = ElfVerdef::<E>::parse(&contents[p..]);
+                vd.vd_next.set((contents.len() - p) as u32);
+                vd.write(&mut contents[p..]);
             }
             let pos = contents.len();
             prev = Some(pos);
             contents.resize(pos + verdef_size + verdaux_size, 0);
-            ElfVerdef {
-                vd_version: 1,
-                vd_flags: flags,
-                vd_ndx: idx,
-                vd_cnt: 1,
-                vd_hash: elf_hash(verstr),
-                vd_aux: verdef_size as u32,
-                vd_next: 0,
+            ElfVerdef::<E> {
+                vd_version: U16::new(1),
+                vd_flags: U16::new(flags),
+                vd_ndx: U16::new(idx),
+                vd_cnt: U16::new(1),
+                vd_hash: U32::new(elf_hash(verstr)),
+                vd_aux: U32::new(verdef_size as u32),
+                vd_next: U32::default(),
             }
-            .write::<E>(&mut contents[pos..]);
-            ElfVerdaux {
-                vda_name: dynstr.add_string(verstr) as u32,
-                vda_next: 0,
+            .write(&mut contents[pos..]);
+            ElfVerdaux::<E> {
+                vda_name: U32::new(dynstr.add_string(verstr) as u32),
+                vda_next: U32::default(),
             }
-            .write::<E>(&mut contents[pos + verdef_size..]);
+            .write(&mut contents[pos + verdef_size..]);
         };
 
         let soname = if ctx.args.soname.is_empty() {

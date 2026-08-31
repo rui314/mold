@@ -178,7 +178,7 @@ impl InputSection {
         file: &ObjectFile,
         file_id: ObjId,
         shndx: u32,
-        shdr: &ElfShdr,
+        shdr: &SectionHeader,
         name: &'static BStr,
     ) -> InputSection {
         let contents: &'static [u8] =
@@ -189,7 +189,7 @@ impl InputSection {
             };
 
         let (sh_size, p2align) = if shdr.sh_flags & SHF_COMPRESSED as u64 != 0 {
-            let chdr = ElfChdr::parse::<E>(contents);
+            let chdr = CompressionHeader::parse::<E>(contents);
             (chdr.ch_size, to_p2align(chdr.ch_addralign))
         } else {
             (shdr.sh_size, to_p2align(shdr.sh_addralign))
@@ -473,14 +473,14 @@ impl InputSection {
             return;
         }
 
-        let hdr_size = ElfChdr::size::<E>();
+        let hdr_size = CompressionHeader::size::<E>();
         if input_size < hdr_size {
             fatal!(diag, "{file}:({name}): corrupted compressed section");
         }
         // SAFETY: input_size comes from this section's validated ELF header.
         let contents =
             unsafe { std::slice::from_raw_parts(self.contents as *const u8, input_size) };
-        let chdr = ElfChdr::parse::<E>(contents);
+        let chdr = CompressionHeader::parse::<E>(contents);
         let data = &contents[hdr_size..];
 
         let result = match chdr.ch_type {
@@ -880,9 +880,9 @@ impl InputSection {
         //
         // Every ELF file has an absolute local symbol as its first symbol.
         // Referring to that symbol is always valid.
-        let st_info = file.base.elf_syms.st_info_in::<E>(sym_idx);
+        let st_bind = file.base.elf_syms.st_bind_in::<E>(sym_idx);
         let is_undef = file.base.elf_syms.st_shndx_in::<E>(sym_idx) as u32 == SHN_UNDEF
-            && (st_info >> 4) as u32 != STB_WEAK
+            && st_bind != STB_WEAK
             && sym.sym_idx != 0;
 
         if is_undef && sym.is_undef() {

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
 use crate::cmdline::Args;
-use crate::elf::ElfSym;
+use crate::elf::SymbolEntry;
 use crate::error::{Diagnostics, HasDiagnostics};
 use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
@@ -132,7 +132,7 @@ pub struct Context<E: Arch> {
     pub lto_input_files: Vec<(u32, &'static MappedFile)>,
 
     pub internal_obj: Option<ObjId>,
-    pub internal_esyms: Vec<ElfSym>,
+    pub internal_esyms: Vec<SymbolEntry>,
 
     pub output_sections: Vec<OutputSection>,
     pub merged_sections: Vec<MergedSection>,
@@ -171,7 +171,7 @@ pub struct Context<E: Arch> {
     pub eh_frame: EhFrameSection,
     pub eh_frame_hdr: Option<EhFrameHdrSection>,
     pub eh_frame_reloc: Option<EhFrameRelocSection>,
-    pub sframe: SFrameSection,
+    pub sframe: SFrameSection<E>,
     pub sframe_reloc: Option<SFrameRelocSection>,
     pub copyrel: CopyrelSection,
     pub copyrel_relro: CopyrelSection,
@@ -251,7 +251,7 @@ impl<E: Arch> Context<E> {
             symtab: SymtabSection::new::<E>(),
             dynsym: DynsymSection::new::<E>(),
             eh_frame: EhFrameSection::new::<E>(),
-            sframe: SFrameSection::new(),
+            sframe: SFrameSection::<E>::new(),
             copyrel: CopyrelSection::new(false),
             copyrel_relro: CopyrelSection::new(true),
             versym: VersymSection::new(),

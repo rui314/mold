@@ -25,15 +25,16 @@
 //!
 //! ELF file format definitions.
 //!
-//! Most records are decoded into the host-native structs defined here as
-//! they are used. Relocations instead use their target-dependent file
-//! representation directly, with byte-backed integer fields handling
-//! byte order and unaligned access. Thus the big tables — section headers,
-//! symbols and relocations — stay in the input files rather than being
-//! copied. Encoding and decoding are driven by an
-//! [`Arch`](crate::arch::Arch), whose associated [`Endian`], relocation
-//! type and `IS_64` constant select the layout at compile time, or by a
-//! [`RecordLayout`] value where the target type isn't at hand.
+//! ELF records use their target-dependent file representation, with
+//! byte-backed integer fields handling byte order and unaligned access.
+//! Records whose ELF32 and ELF64 forms have the same field order are generic
+//! over the target word type. Symbols, program headers and compression
+//! headers have genuinely different layouts and convert as complete records
+//! when target-independent bookkeeping needs them. Thus the big tables —
+//! section headers, symbols and relocations — stay in the input files rather
+//! than being copied. [`Arch`](crate::arch::Arch) selects the layout at
+//! compile time, while [`RecordLayout`] is used where the target type isn't at
+//! hand.
 
 mod consts;
 
@@ -49,8 +50,12 @@ use crate::arch::Arch;
 /// relocation record format. Targets implement this through [`Arch`], and
 /// a few plain layouts exist for peeking into files before the target is
 /// known.
-pub trait Layout: Copy + Send + Sync + 'static {
+pub trait Layout: Copy + Default + Send + Sync + 'static {
     type Endian: Endian;
+    type Word: ElfWord<Endian = Self::Endian>;
+    type Sym: SymbolRecord<Endian = Self::Endian>;
+    type Phdr: ProgramHeaderRecord<Endian = Self::Endian>;
+    type Chdr: CompressionHeaderRecord<Endian = Self::Endian>;
     type Rel: RelRecord<Endian = Self::Endian>;
     const IS_64: bool;
     const IS_RELA: bool;
@@ -59,12 +64,16 @@ pub trait Layout: Copy + Send + Sync + 'static {
 }
 
 macro_rules! plain_layout {
-    ($name:ident, $endian:ty, $rel:ty, $is_64:expr) => {
+    ($name:ident, $endian:ty, $word:ty, $sym:ty, $phdr:ty, $chdr:ty, $rel:ty, $is_64:expr) => {
         #[derive(Clone, Copy, Debug, Default)]
         pub struct $name;
 
         impl Layout for $name {
             type Endian = $endian;
+            type Word = $word;
+            type Sym = $sym;
+            type Phdr = $phdr;
+            type Chdr = $chdr;
             type Rel = $rel;
             const IS_64: bool = $is_64;
             const IS_RELA: bool = true;
@@ -72,10 +81,46 @@ macro_rules! plain_layout {
     };
 }
 
-plain_layout!(Elf32Le, LittleEndian, Elf32RelaLe, false);
-plain_layout!(Elf64Le, LittleEndian, Elf64RelaLe, true);
-plain_layout!(Elf32Be, BigEndian, Elf32RelaBe, false);
-plain_layout!(Elf64Be, BigEndian, Elf64RelaBe, true);
+plain_layout!(
+    Elf32Le,
+    LittleEndian,
+    Ul32,
+    Elf32Sym<LittleEndian>,
+    Elf32Phdr<LittleEndian>,
+    Elf32Chdr<LittleEndian>,
+    Elf32RelaLe,
+    false
+);
+plain_layout!(
+    Elf64Le,
+    LittleEndian,
+    Ul64,
+    Elf64Sym<LittleEndian>,
+    Elf64Phdr<LittleEndian>,
+    Elf64Chdr<LittleEndian>,
+    Elf64RelaLe,
+    true
+);
+plain_layout!(
+    Elf32Be,
+    BigEndian,
+    Ub32,
+    Elf32Sym<BigEndian>,
+    Elf32Phdr<BigEndian>,
+    Elf32Chdr<BigEndian>,
+    Elf32RelaBe,
+    false
+);
+plain_layout!(
+    Elf64Be,
+    BigEndian,
+    Ub64,
+    Elf64Sym<BigEndian>,
+    Elf64Phdr<BigEndian>,
+    Elf64Chdr<BigEndian>,
+    Elf64RelaBe,
+    true
+);
 
 /// Byte order of an ELF file, as a type-level marker.
 pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
@@ -113,6 +158,10 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
         Self::read_u32(bytes) as i32
     }
 
+    fn read_i16(bytes: &[u8]) -> i16 {
+        Self::read_u16(bytes) as i16
+    }
+
     fn read_i64(bytes: &[u8]) -> i64 {
         Self::read_u64(bytes) as i64
     }
@@ -148,6 +197,10 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
         Self::write_u32(bytes, value as u32);
     }
 
+    fn write_i16(bytes: &mut [u8], value: i16) {
+        Self::write_u16(bytes, value as u16);
+    }
+
     fn write_i64(bytes: &mut [u8], value: i64) {
         Self::write_u64(bytes, value as u64);
     }
@@ -165,93 +218,6 @@ impl Endian for LittleEndian {
 
 impl Endian for BigEndian {
     const IS_LITTLE: bool = false;
-}
-
-/// A cursor for decoding fixed-layout records.
-struct Reader<'a, E: Layout> {
-    bytes: &'a [u8],
-    _arch: std::marker::PhantomData<E>,
-}
-
-impl<'a, E: Layout> Reader<'a, E> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Reader {
-            bytes,
-            _arch: std::marker::PhantomData,
-        }
-    }
-
-    fn u8(&self, offset: usize) -> u8 {
-        self.bytes[offset]
-    }
-
-    #[inline]
-    fn u16(&self, offset: usize) -> u16 {
-        E::Endian::read_u16(&self.bytes[offset..])
-    }
-
-    #[inline]
-    fn u32(&self, offset: usize) -> u32 {
-        E::Endian::read_u32(&self.bytes[offset..])
-    }
-
-    #[inline]
-    fn u64(&self, offset: usize) -> u64 {
-        E::Endian::read_u64(&self.bytes[offset..])
-    }
-
-    /// Reads a word-sized (4 or 8 bytes) unsigned integer.
-    #[inline]
-    fn word(&self, offset: usize) -> u64 {
-        if E::IS_64 {
-            self.u64(offset)
-        } else {
-            self.u32(offset) as u64
-        }
-    }
-}
-
-/// A cursor for encoding fixed-layout records.
-struct Writer<'a, E: Layout> {
-    bytes: &'a mut [u8],
-    _arch: std::marker::PhantomData<E>,
-}
-
-impl<'a, E: Layout> Writer<'a, E> {
-    fn new(bytes: &'a mut [u8]) -> Self {
-        Writer {
-            bytes,
-            _arch: std::marker::PhantomData,
-        }
-    }
-
-    fn u8(&mut self, offset: usize, value: u8) {
-        self.bytes[offset] = value;
-    }
-
-    #[inline]
-    fn u16(&mut self, offset: usize, value: u16) {
-        E::Endian::write_u16(&mut self.bytes[offset..], value);
-    }
-
-    #[inline]
-    fn u32(&mut self, offset: usize, value: u32) {
-        E::Endian::write_u32(&mut self.bytes[offset..], value);
-    }
-
-    #[inline]
-    fn u64(&mut self, offset: usize, value: u64) {
-        E::Endian::write_u64(&mut self.bytes[offset..], value);
-    }
-
-    #[inline]
-    fn word(&mut self, offset: usize, value: u64) {
-        if E::IS_64 {
-            self.u64(offset, value);
-        } else {
-            self.u32(offset, value as u32);
-        }
-    }
 }
 
 /// A record with a target-dependent on-disk encoding.
@@ -281,90 +247,108 @@ pub trait Record: Sized {
     }
 }
 
+/// A record stored in its target-dependent file representation.
+///
+/// # Safety
+///
+/// Implementations must have alignment one, contain no padding or references,
+/// and accept every bit pattern. These requirements let records in possibly
+/// unaligned archive members be read and written without host dependencies.
+pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
+    fn size() -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    fn parse(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= Self::size());
+        debug_assert_eq!(std::mem::align_of::<Self>(), 1);
+        // SAFETY: the trait guarantees that every bit pattern is valid, and
+        // the length check proves that a complete record is available.
+        unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
+    }
+
+    fn parse_all(bytes: &[u8]) -> Vec<Self> {
+        bytes.chunks_exact(Self::size()).map(Self::parse).collect()
+    }
+
+    fn write(&self, buf: &mut [u8]) {
+        assert!(buf.len() >= Self::size());
+        // SAFETY: `buf` has room for the complete record, and copying bytes
+        // does not depend on its alignment.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                std::ptr::from_ref(self).cast::<u8>(),
+                buf.as_mut_ptr(),
+                Self::size(),
+            );
+        }
+    }
+
+    fn write_all(records: &[Self], buf: &mut [u8]) {
+        for (record, slot) in records.iter().zip(buf.chunks_exact_mut(Self::size())) {
+            record.write(slot);
+        }
+    }
+}
+
 /// The ELF file header.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfEhdr {
+#[derive(Clone, Copy, Default)]
+pub struct ElfEhdr<E: Layout> {
     pub e_ident: [u8; 16],
-    pub e_type: u16,
-    pub e_machine: u16,
-    pub e_version: u32,
-    pub e_entry: u64,
-    pub e_phoff: u64,
-    pub e_shoff: u64,
-    pub e_flags: u32,
-    pub e_ehsize: u16,
-    pub e_phentsize: u16,
-    pub e_phnum: u16,
-    pub e_shentsize: u16,
-    pub e_shnum: u16,
-    pub e_shstrndx: u16,
+    pub e_type: U16<E::Endian>,
+    pub e_machine: U16<E::Endian>,
+    pub e_version: U32<E::Endian>,
+    pub e_entry: E::Word,
+    pub e_phoff: E::Word,
+    pub e_shoff: E::Word,
+    pub e_flags: U32<E::Endian>,
+    pub e_ehsize: U16<E::Endian>,
+    pub e_phentsize: U16<E::Endian>,
+    pub e_phnum: U16<E::Endian>,
+    pub e_shentsize: U16<E::Endian>,
+    pub e_shnum: U16<E::Endian>,
+    pub e_shstrndx: U16<E::Endian>,
 }
 
-impl Record for ElfEhdr {
-    fn size<E: Layout>() -> usize {
-        if E::IS_64 {
-            64
-        } else {
-            52
-        }
-    }
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfEhdr<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfEhdr has the native ELF64 field layout, `bytes`
-            // contains a complete record, and an unaligned read accepts the
-            // file's alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfEhdr>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        let w = E::WORD_SIZE;
-        ElfEhdr {
-            e_ident: bytes[..16].try_into().unwrap(),
-            e_type: r.u16(16),
-            e_machine: r.u16(18),
-            e_version: r.u32(20),
-            e_entry: r.word(24),
-            e_phoff: r.word(24 + w),
-            e_shoff: r.word(24 + 2 * w),
-            e_flags: r.u32(24 + 3 * w),
-            e_ehsize: r.u16(28 + 3 * w),
-            e_phentsize: r.u16(30 + 3 * w),
-            e_phnum: r.u16(32 + 3 * w),
-            e_shentsize: r.u16(34 + 3 * w),
-            e_shnum: r.u16(36 + 3 * w),
-            e_shstrndx: r.u16(38 + 3 * w),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        let ws = E::WORD_SIZE;
-        w.bytes[..16].copy_from_slice(&self.e_ident);
-        w.u16(16, self.e_type);
-        w.u16(18, self.e_machine);
-        w.u32(20, self.e_version);
-        w.word(24, self.e_entry);
-        w.word(24 + ws, self.e_phoff);
-        w.word(24 + 2 * ws, self.e_shoff);
-        w.u32(24 + 3 * ws, self.e_flags);
-        w.u16(28 + 3 * ws, self.e_ehsize);
-        w.u16(30 + 3 * ws, self.e_phentsize);
-        w.u16(32 + 3 * ws, self.e_phnum);
-        w.u16(34 + 3 * ws, self.e_shentsize);
-        w.u16(36 + 3 * ws, self.e_shnum);
-        w.u16(38 + 3 * ws, self.e_shstrndx);
-    }
-}
-
-const _: () = assert!(std::mem::size_of::<ElfEhdr>() == 64);
+const _: () = assert!(std::mem::size_of::<ElfEhdr<Elf32Le>>() == 52);
+const _: () = assert!(std::mem::size_of::<ElfEhdr<Elf64Le>>() == 64);
+const _: () = assert!(std::mem::align_of::<ElfEhdr<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfEhdr<Elf64Le>>() == 1);
 
 /// A section header.
 #[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ElfShdr<E: Layout> {
+    pub sh_name: U32<E::Endian>,
+    pub sh_type: U32<E::Endian>,
+    pub sh_flags: E::Word,
+    pub sh_addr: E::Word,
+    pub sh_offset: E::Word,
+    pub sh_size: E::Word,
+    pub sh_link: U32<E::Endian>,
+    pub sh_info: U32<E::Endian>,
+    pub sh_addralign: E::Word,
+    pub sh_entsize: E::Word,
+}
+
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfShdr<E> {}
+
+const _: () = assert!(std::mem::size_of::<ElfShdr<Elf32Le>>() == 40);
+const _: () = assert!(std::mem::size_of::<ElfShdr<Elf64Le>>() == 64);
+const _: () = assert!(std::mem::align_of::<ElfShdr<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfShdr<Elf64Le>>() == 1);
+
+/// A section header decoded for target-independent bookkeeping.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfShdr {
+pub struct SectionHeader {
     pub sh_name: u32,
     pub sh_type: u32,
     pub sh_flags: u64,
@@ -377,62 +361,158 @@ pub struct ElfShdr {
     pub sh_entsize: u64,
 }
 
-impl Record for ElfShdr {
+impl Record for SectionHeader {
     fn size<E: Layout>() -> usize {
-        if E::IS_64 {
-            64
-        } else {
-            40
-        }
+        ElfShdr::<E>::size()
     }
 
     fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfShdr has the native ELF64 field layout, `bytes`
-            // contains a complete record, and an unaligned read accepts the
-            // file's alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfShdr>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        let w = E::WORD_SIZE;
-        ElfShdr {
-            sh_name: r.u32(0),
-            sh_type: r.u32(4),
-            sh_flags: r.word(8),
-            sh_addr: r.word(8 + w),
-            sh_offset: r.word(8 + 2 * w),
-            sh_size: r.word(8 + 3 * w),
-            sh_link: r.u32(8 + 4 * w),
-            sh_info: r.u32(12 + 4 * w),
-            sh_addralign: r.word(16 + 4 * w),
-            sh_entsize: r.word(16 + 5 * w),
+        let shdr = ElfShdr::<E>::parse(bytes);
+        SectionHeader {
+            sh_name: shdr.sh_name.get(),
+            sh_type: shdr.sh_type.get(),
+            sh_flags: shdr.sh_flags.get(),
+            sh_addr: shdr.sh_addr.get(),
+            sh_offset: shdr.sh_offset.get(),
+            sh_size: shdr.sh_size.get(),
+            sh_link: shdr.sh_link.get(),
+            sh_info: shdr.sh_info.get(),
+            sh_addralign: shdr.sh_addralign.get(),
+            sh_entsize: shdr.sh_entsize.get(),
         }
     }
 
     fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        let ws = E::WORD_SIZE;
-        w.u32(0, self.sh_name);
-        w.u32(4, self.sh_type);
-        w.word(8, self.sh_flags);
-        w.word(8 + ws, self.sh_addr);
-        w.word(8 + 2 * ws, self.sh_offset);
-        w.word(8 + 3 * ws, self.sh_size);
-        w.u32(8 + 4 * ws, self.sh_link);
-        w.u32(12 + 4 * ws, self.sh_info);
-        w.word(16 + 4 * ws, self.sh_addralign);
-        w.word(16 + 5 * ws, self.sh_entsize);
+        ElfShdr::<E> {
+            sh_name: U32::new(self.sh_name),
+            sh_type: U32::new(self.sh_type),
+            sh_flags: E::Word::new(self.sh_flags),
+            sh_addr: E::Word::new(self.sh_addr),
+            sh_offset: E::Word::new(self.sh_offset),
+            sh_size: E::Word::new(self.sh_size),
+            sh_link: U32::new(self.sh_link),
+            sh_info: U32::new(self.sh_info),
+            sh_addralign: E::Word::new(self.sh_addralign),
+            sh_entsize: E::Word::new(self.sh_entsize),
+        }
+        .write(buf);
     }
 }
 
-const _: () = assert!(std::mem::size_of::<ElfShdr>() == 64);
+const _: () = assert!(std::mem::size_of::<SectionHeader>() == 64);
 
 /// A program header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfPhdr {
+pub struct Elf64Phdr<E: Endian> {
+    pub p_type: U32<E>,
+    pub p_flags: U32<E>,
+    pub p_offset: U64<E>,
+    pub p_vaddr: U64<E>,
+    pub p_paddr: U64<E>,
+    pub p_filesz: U64<E>,
+    pub p_memsz: U64<E>,
+    pub p_align: U64<E>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32Phdr<E: Endian> {
+    pub p_type: U32<E>,
+    pub p_offset: U32<E>,
+    pub p_vaddr: U32<E>,
+    pub p_paddr: U32<E>,
+    pub p_filesz: U32<E>,
+    pub p_memsz: U32<E>,
+    pub p_flags: U32<E>,
+    pub p_align: U32<E>,
+}
+
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Endian> FileRecord for Elf64Phdr<E> {}
+// SAFETY: see the Elf64 implementation.
+unsafe impl<E: Endian> FileRecord for Elf32Phdr<E> {}
+
+const _: () = assert!(std::mem::size_of::<Elf32Phdr<LittleEndian>>() == 32);
+const _: () = assert!(std::mem::size_of::<Elf64Phdr<LittleEndian>>() == 56);
+const _: () = assert!(std::mem::align_of::<Elf32Phdr<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Phdr<LittleEndian>>() == 1);
+
+/// The two physical program-header layouts convert as complete records.
+pub trait ProgramHeaderRecord: FileRecord {
+    type Endian: Endian;
+
+    fn decode(&self) -> ProgramHeader;
+    fn encode(phdr: &ProgramHeader) -> Self;
+}
+
+impl<E: Endian> ProgramHeaderRecord for Elf64Phdr<E> {
+    type Endian = E;
+
+    fn decode(&self) -> ProgramHeader {
+        ProgramHeader {
+            p_type: self.p_type.get(),
+            p_flags: self.p_flags.get(),
+            p_offset: self.p_offset.get(),
+            p_vaddr: self.p_vaddr.get(),
+            p_paddr: self.p_paddr.get(),
+            p_filesz: self.p_filesz.get(),
+            p_memsz: self.p_memsz.get(),
+            p_align: self.p_align.get(),
+        }
+    }
+
+    fn encode(phdr: &ProgramHeader) -> Self {
+        Elf64Phdr {
+            p_type: U32::new(phdr.p_type),
+            p_flags: U32::new(phdr.p_flags),
+            p_offset: U64::new(phdr.p_offset),
+            p_vaddr: U64::new(phdr.p_vaddr),
+            p_paddr: U64::new(phdr.p_paddr),
+            p_filesz: U64::new(phdr.p_filesz),
+            p_memsz: U64::new(phdr.p_memsz),
+            p_align: U64::new(phdr.p_align),
+        }
+    }
+}
+
+impl<E: Endian> ProgramHeaderRecord for Elf32Phdr<E> {
+    type Endian = E;
+
+    fn decode(&self) -> ProgramHeader {
+        ProgramHeader {
+            p_type: self.p_type.get(),
+            p_offset: u64::from(self.p_offset.get()),
+            p_vaddr: u64::from(self.p_vaddr.get()),
+            p_paddr: u64::from(self.p_paddr.get()),
+            p_filesz: u64::from(self.p_filesz.get()),
+            p_memsz: u64::from(self.p_memsz.get()),
+            p_flags: self.p_flags.get(),
+            p_align: u64::from(self.p_align.get()),
+        }
+    }
+
+    fn encode(phdr: &ProgramHeader) -> Self {
+        Elf32Phdr {
+            p_type: U32::new(phdr.p_type),
+            p_offset: U32::new(phdr.p_offset as u32),
+            p_vaddr: U32::new(phdr.p_vaddr as u32),
+            p_paddr: U32::new(phdr.p_paddr as u32),
+            p_filesz: U32::new(phdr.p_filesz as u32),
+            p_memsz: U32::new(phdr.p_memsz as u32),
+            p_flags: U32::new(phdr.p_flags),
+            p_align: U32::new(phdr.p_align as u32),
+        }
+    }
+}
+
+pub type ElfPhdr<E> = <E as Layout>::Phdr;
+
+/// A program header decoded for address calculations.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProgramHeader {
     pub p_type: u32,
     pub p_flags: u32,
     pub p_offset: u64,
@@ -443,111 +523,153 @@ pub struct ElfPhdr {
     pub p_align: u64,
 }
 
-impl Record for ElfPhdr {
+impl Record for ProgramHeader {
     fn size<E: Layout>() -> usize {
-        if E::IS_64 {
-            56
-        } else {
-            32
-        }
+        E::Phdr::size()
     }
 
     fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfPhdr has the native ELF64 field layout, `bytes`
-            // contains a complete record, and an unaligned read accepts the
-            // file's alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfPhdr>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        if E::IS_64 {
-            ElfPhdr {
-                p_type: r.u32(0),
-                p_flags: r.u32(4),
-                p_offset: r.u64(8),
-                p_vaddr: r.u64(16),
-                p_paddr: r.u64(24),
-                p_filesz: r.u64(32),
-                p_memsz: r.u64(40),
-                p_align: r.u64(48),
-            }
-        } else {
-            ElfPhdr {
-                p_type: r.u32(0),
-                p_offset: r.u32(4) as u64,
-                p_vaddr: r.u32(8) as u64,
-                p_paddr: r.u32(12) as u64,
-                p_filesz: r.u32(16) as u64,
-                p_memsz: r.u32(20) as u64,
-                p_flags: r.u32(24),
-                p_align: r.u32(28) as u64,
-            }
-        }
+        E::Phdr::parse(bytes).decode()
     }
 
     fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        if E::IS_64 {
-            w.u32(0, self.p_type);
-            w.u32(4, self.p_flags);
-            w.u64(8, self.p_offset);
-            w.u64(16, self.p_vaddr);
-            w.u64(24, self.p_paddr);
-            w.u64(32, self.p_filesz);
-            w.u64(40, self.p_memsz);
-            w.u64(48, self.p_align);
-        } else {
-            w.u32(0, self.p_type);
-            w.u32(4, self.p_offset as u32);
-            w.u32(8, self.p_vaddr as u32);
-            w.u32(12, self.p_paddr as u32);
-            w.u32(16, self.p_filesz as u32);
-            w.u32(20, self.p_memsz as u32);
-            w.u32(24, self.p_flags);
-            w.u32(28, self.p_align as u32);
-        }
+        E::Phdr::encode(self).write(buf);
     }
 }
 
-const _: () = assert!(std::mem::size_of::<ElfPhdr>() == 56);
+const _: () = assert!(std::mem::size_of::<ProgramHeader>() == 56);
 
 /// A symbol table entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfSym {
+pub struct Elf64Sym<E: Endian> {
+    pub st_name: U32<E>,
+    type_and_bind: u8,
+    other: u8,
+    pub st_shndx: U16<E>,
+    pub st_value: U64<E>,
+    pub st_size: U64<E>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32Sym<E: Endian> {
+    pub st_name: U32<E>,
+    pub st_value: U32<E>,
+    pub st_size: U32<E>,
+    type_and_bind: u8,
+    other: u8,
+    pub st_shndx: U16<E>,
+}
+
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
+unsafe impl<E: Endian> FileRecord for Elf64Sym<E> {}
+// SAFETY: see the Elf64 implementation.
+unsafe impl<E: Endian> FileRecord for Elf32Sym<E> {}
+
+const _: () = assert!(std::mem::size_of::<Elf32Sym<LittleEndian>>() == 16);
+const _: () = assert!(std::mem::size_of::<Elf64Sym<LittleEndian>>() == 24);
+const _: () = assert!(std::mem::align_of::<Elf32Sym<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Sym<LittleEndian>>() == 1);
+
+/// The two physical symbol layouts convert as complete records.
+pub trait SymbolRecord: FileRecord {
+    type Endian: Endian;
+
+    fn decode(&self) -> SymbolEntry;
+    fn encode(sym: &SymbolEntry) -> Self;
+}
+
+impl<E: Endian> SymbolRecord for Elf64Sym<E> {
+    type Endian = E;
+
+    fn decode(&self) -> SymbolEntry {
+        SymbolEntry {
+            st_name: self.st_name.get(),
+            type_and_bind: self.type_and_bind,
+            other: self.other,
+            st_shndx: self.st_shndx.get(),
+            st_value: self.st_value.get(),
+            st_size: self.st_size.get(),
+        }
+    }
+
+    fn encode(sym: &SymbolEntry) -> Self {
+        Elf64Sym {
+            st_name: U32::new(sym.st_name),
+            type_and_bind: sym.type_and_bind,
+            other: sym.other,
+            st_shndx: U16::new(sym.st_shndx),
+            st_value: U64::new(sym.st_value),
+            st_size: U64::new(sym.st_size),
+        }
+    }
+}
+
+impl<E: Endian> SymbolRecord for Elf32Sym<E> {
+    type Endian = E;
+
+    fn decode(&self) -> SymbolEntry {
+        SymbolEntry {
+            st_name: self.st_name.get(),
+            st_value: u64::from(self.st_value.get()),
+            st_size: u64::from(self.st_size.get()),
+            type_and_bind: self.type_and_bind,
+            other: self.other,
+            st_shndx: self.st_shndx.get(),
+        }
+    }
+
+    fn encode(sym: &SymbolEntry) -> Self {
+        Elf32Sym {
+            st_name: U32::new(sym.st_name),
+            st_value: U32::new(sym.st_value as u32),
+            st_size: U32::new(sym.st_size as u32),
+            type_and_bind: sym.type_and_bind,
+            other: sym.other,
+            st_shndx: U16::new(sym.st_shndx),
+        }
+    }
+}
+
+pub type ElfSym<E> = <E as Layout>::Sym;
+
+/// A symbol table entry decoded for target-independent bookkeeping.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SymbolEntry {
     pub st_name: u32,
-    pub st_info: u8,
-    pub st_other: u8,
+    type_and_bind: u8,
+    other: u8,
     pub st_shndx: u16,
     pub st_value: u64,
     pub st_size: u64,
 }
 
-impl ElfSym {
+impl SymbolEntry {
     pub fn st_type(&self) -> u32 {
-        (self.st_info & 0xf) as u32
+        (self.type_and_bind & 0xf) as u32
     }
 
     pub fn st_bind(&self) -> u32 {
-        (self.st_info >> 4) as u32
+        (self.type_and_bind >> 4) as u32
     }
 
     pub fn st_visibility(&self) -> u32 {
-        (self.st_other & 3) as u32
+        (self.other & 3) as u32
     }
 
     pub fn set_type(&mut self, ty: u32) {
-        self.st_info = (self.st_info & 0xf0) | (ty as u8 & 0xf);
+        self.type_and_bind = (self.type_and_bind & 0xf0) | (ty as u8 & 0xf);
     }
 
     pub fn set_bind(&mut self, bind: u32) {
-        self.st_info = (self.st_info & 0x0f) | ((bind as u8) << 4);
+        self.type_and_bind = (self.type_and_bind & 0x0f) | ((bind as u8) << 4);
     }
 
     pub fn set_visibility(&mut self, visibility: u32) {
-        self.st_other = (self.st_other & !3) | (visibility as u8 & 3);
+        self.other = (self.other & !3) | (visibility as u8 & 3);
     }
 
     pub fn is_undef(&self) -> bool {
@@ -573,18 +695,30 @@ impl ElfSym {
     /// The `st_other` bit that AArch64 uses to mark functions with a
     /// non-standard calling convention.
     pub fn arm64_variant_pcs(&self) -> bool {
-        self.st_other & 0x80 != 0
+        self.other & 0x80 != 0
+    }
+
+    pub fn set_arm64_variant_pcs(&mut self, value: bool) {
+        self.other = (self.other & !0x80) | if value { 0x80 } else { 0 };
     }
 
     /// The RISC-V counterpart of [`Self::arm64_variant_pcs`].
     pub fn riscv_variant_cc(&self) -> bool {
-        self.st_other & 0x80 != 0
+        self.other & 0x80 != 0
+    }
+
+    pub fn set_riscv_variant_cc(&mut self, value: bool) {
+        self.other = (self.other & !0x80) | if value { 0x80 } else { 0 };
     }
 
     /// The distance between a PPC64 ELFv2 function's global and local entry
     /// points, encoded in the top three bits of `st_other`.
     pub fn ppc64_local_entry(&self) -> u8 {
-        self.st_other >> 5
+        self.other >> 5
+    }
+
+    pub fn set_ppc64_local_entry(&mut self, value: u8) {
+        self.other = (self.other & 0x1f) | ((value & 7) << 5);
     }
 
     pub fn ppc64_preserves_r2(&self) -> bool {
@@ -596,67 +730,21 @@ impl ElfSym {
     }
 }
 
-impl Record for ElfSym {
+impl Record for SymbolEntry {
     fn size<E: Layout>() -> usize {
-        if E::IS_64 {
-            24
-        } else {
-            16
-        }
+        E::Sym::size()
     }
 
     fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfSym has the native ELF64 field layout, `bytes`
-            // contains a complete record, and an unaligned read accepts the
-            // file's alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfSym>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        if E::IS_64 {
-            ElfSym {
-                st_name: r.u32(0),
-                st_info: r.u8(4),
-                st_other: r.u8(5),
-                st_shndx: r.u16(6),
-                st_value: r.u64(8),
-                st_size: r.u64(16),
-            }
-        } else {
-            ElfSym {
-                st_name: r.u32(0),
-                st_value: r.u32(4) as u64,
-                st_size: r.u32(8) as u64,
-                st_info: r.u8(12),
-                st_other: r.u8(13),
-                st_shndx: r.u16(14),
-            }
-        }
+        E::Sym::parse(bytes).decode()
     }
 
     fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        if E::IS_64 {
-            w.u32(0, self.st_name);
-            w.u8(4, self.st_info);
-            w.u8(5, self.st_other);
-            w.u16(6, self.st_shndx);
-            w.u64(8, self.st_value);
-            w.u64(16, self.st_size);
-        } else {
-            w.u32(0, self.st_name);
-            w.u32(4, self.st_value as u32);
-            w.u32(8, self.st_size as u32);
-            w.u8(12, self.st_info);
-            w.u8(13, self.st_other);
-            w.u16(14, self.st_shndx);
-        }
+        E::Sym::encode(self).write(buf);
     }
 }
 
-const _: () = assert!(std::mem::size_of::<ElfSym>() == 24);
+const _: () = assert!(std::mem::size_of::<SymbolEntry>() == 24);
 
 macro_rules! endian_integer {
     ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
@@ -691,6 +779,7 @@ macro_rules! endian_integer {
 endian_integer!(U16, u16, 2, read_u16, write_u16);
 endian_integer!(U32, u32, 4, read_u32, write_u32);
 endian_integer!(U64, u64, 8, read_u64, write_u64);
+endian_integer!(I16, i16, 2, read_i16, write_i16);
 endian_integer!(I32, i32, 4, read_i32, write_i32);
 endian_integer!(I64, i64, 8, read_i64, write_i64);
 
@@ -730,6 +819,60 @@ impl<E: Endian> U24<E> {
         } else {
             self.bytes.copy_from_slice(&bytes[1..]);
         }
+    }
+}
+
+/// A word-sized unsigned integer in an ELF file.
+///
+/// # Safety
+///
+/// Implementations must have alignment one, contain no padding, and accept
+/// every bit pattern.
+pub unsafe trait ElfWord: Clone + Copy + Default + Send + Sync + 'static {
+    type Endian: Endian;
+
+    fn new(value: u64) -> Self;
+    fn get(&self) -> u64;
+    fn set(&mut self, value: u64);
+}
+
+// SAFETY: U32 is a transparent wrapper around a byte array.
+unsafe impl<E: Endian> ElfWord for U32<E> {
+    type Endian = E;
+
+    #[inline(always)]
+    fn new(value: u64) -> Self {
+        U32::new(value as u32)
+    }
+
+    #[inline(always)]
+    fn get(&self) -> u64 {
+        u64::from(U32::get(self))
+    }
+
+    #[inline(always)]
+    fn set(&mut self, value: u64) {
+        U32::set(self, value as u32);
+    }
+}
+
+// SAFETY: U64 is a transparent wrapper around a byte array.
+unsafe impl<E: Endian> ElfWord for U64<E> {
+    type Endian = E;
+
+    #[inline(always)]
+    fn new(value: u64) -> Self {
+        U64::new(value)
+    }
+
+    #[inline(always)]
+    fn get(&self) -> u64 {
+        U64::get(self)
+    }
+
+    #[inline(always)]
+    fn set(&mut self, value: u64) {
+        U64::set(self, value);
     }
 }
 
@@ -1210,34 +1353,34 @@ impl RecordLayout {
     }
 
     #[inline]
-    pub fn read_sym(self, bytes: &[u8]) -> ElfSym {
+    pub fn read_sym(self, bytes: &[u8]) -> SymbolEntry {
         if self.is_64 {
-            ElfSym {
+            SymbolEntry {
                 st_name: self.u32(bytes, 0),
-                st_info: bytes[4],
-                st_other: bytes[5],
+                type_and_bind: bytes[4],
+                other: bytes[5],
                 st_shndx: self.u16(bytes, 6),
                 st_value: self.u64(bytes, 8),
                 st_size: self.u64(bytes, 16),
             }
         } else {
-            ElfSym {
+            SymbolEntry {
                 st_name: self.u32(bytes, 0),
                 st_value: self.u32(bytes, 4) as u64,
                 st_size: self.u32(bytes, 8) as u64,
-                st_info: bytes[12],
-                st_other: bytes[13],
+                type_and_bind: bytes[12],
+                other: bytes[13],
                 st_shndx: self.u16(bytes, 14),
             }
         }
     }
 
     #[inline]
-    pub fn write_sym(self, sym: &ElfSym, buf: &mut [u8]) {
+    pub fn write_sym(self, sym: &SymbolEntry, buf: &mut [u8]) {
         if self.is_64 {
             self.put_u32(buf, 0, sym.st_name);
-            buf[4] = sym.st_info;
-            buf[5] = sym.st_other;
+            buf[4] = sym.type_and_bind;
+            buf[5] = sym.other;
             self.put_u16(buf, 6, sym.st_shndx);
             self.put_u64(buf, 8, sym.st_value);
             self.put_u64(buf, 16, sym.st_size);
@@ -1245,8 +1388,8 @@ impl RecordLayout {
             self.put_u32(buf, 0, sym.st_name);
             self.put_u32(buf, 4, sym.st_value as u32);
             self.put_u32(buf, 8, sym.st_size as u32);
-            buf[12] = sym.st_info;
-            buf[13] = sym.st_other;
+            buf[12] = sym.type_and_bind;
+            buf[13] = sym.other;
             self.put_u16(buf, 14, sym.st_shndx);
         }
     }
@@ -1261,9 +1404,9 @@ impl RecordLayout {
     }
 
     #[inline]
-    pub fn read_shdr(self, bytes: &[u8]) -> ElfShdr {
+    pub fn read_shdr(self, bytes: &[u8]) -> SectionHeader {
         let w = if self.is_64 { 8 } else { 4 };
-        ElfShdr {
+        SectionHeader {
             sh_name: self.u32(bytes, 0),
             sh_type: self.u32(bytes, 4),
             sh_flags: self.word(bytes, 8),
@@ -1278,7 +1421,7 @@ impl RecordLayout {
     }
 
     #[inline]
-    pub fn write_shdr(self, shdr: &ElfShdr, buf: &mut [u8]) {
+    pub fn write_shdr(self, shdr: &SectionHeader, buf: &mut [u8]) {
         let w = if self.is_64 { 8 } else { 4 };
         self.put_u32(buf, 0, shdr.sh_name);
         self.put_u32(buf, 4, shdr.sh_type);
@@ -1321,7 +1464,7 @@ impl SymTable {
         }
     }
 
-    pub fn from_records(layout: RecordLayout, syms: &[ElfSym]) -> SymTable {
+    pub fn from_records(layout: RecordLayout, syms: &[SymbolEntry]) -> SymTable {
         let mut table = SymTable::new(layout);
         for sym in syms {
             table.push(*sym);
@@ -1340,13 +1483,13 @@ impl SymTable {
     }
 
     #[inline]
-    pub fn at(&self, i: usize) -> ElfSym {
+    pub fn at(&self, i: usize) -> SymbolEntry {
         let size = self.layout.sym_size();
         self.layout.read_sym(&self.data[i * size..(i + 1) * size])
     }
 
     #[inline]
-    pub fn get(&self, i: usize) -> Option<ElfSym> {
+    pub fn get(&self, i: usize) -> Option<SymbolEntry> {
         (i < self.len()).then(|| self.at(i))
     }
 
@@ -1354,50 +1497,58 @@ impl SymTable {
     /// knows the layout at compile time; relocation loops read a symbol
     /// per relocation.
     #[inline]
-    pub fn at_in<E: Layout>(&self, i: usize) -> ElfSym {
+    pub fn at_in<E: Layout>(&self, i: usize) -> SymbolEntry {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
-        let size = ElfSym::size::<E>();
-        ElfSym::parse::<E>(&self.data[i * size..(i + 1) * size])
+        let size = SymbolEntry::size::<E>();
+        SymbolEntry::parse::<E>(&self.data[i * size..(i + 1) * size])
     }
 
     #[inline]
-    pub fn get_in<E: Layout>(&self, i: usize) -> Option<ElfSym> {
+    pub fn get_in<E: Layout>(&self, i: usize) -> Option<SymbolEntry> {
         (i < self.len()).then(|| self.at_in::<E>(i))
     }
 
     /// Replaces a symbol in a table the linker builds.
-    pub fn set_in<E: Layout>(&mut self, i: usize, sym: ElfSym) {
+    pub fn set_in<E: Layout>(&mut self, i: usize, sym: SymbolEntry) {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
-        let size = ElfSym::size::<E>();
+        let size = SymbolEntry::size::<E>();
         sym.write::<E>(&mut self.data.to_mut()[i * size..(i + 1) * size]);
     }
 
-    /// The type and binding byte of symbol `i` alone, for relocation loops
-    /// that look for section symbols.
+    /// The type of symbol `i` alone, for relocation loops that look for
+    /// section symbols.
     #[inline]
-    pub fn st_info(&self, i: usize) -> u8 {
+    pub fn st_type(&self, i: usize) -> u32 {
         let offset = if self.layout.is_64 { 4 } else { 12 };
-        self.data[i * self.layout.sym_size() + offset]
+        u32::from(self.data[i * self.layout.sym_size() + offset] & 0xf)
     }
 
-    /// Like [`Self::st_info`] for code specialized for the target.
+    /// Like [`Self::st_type`] for code specialized for the target.
     #[inline]
-    pub fn st_info_in<E: Layout>(&self, i: usize) -> u8 {
+    pub fn st_type_in<E: Layout>(&self, i: usize) -> u32 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         let offset = if E::IS_64 { 4 } else { 12 };
-        self.data[i * ElfSym::size::<E>() + offset]
+        u32::from(self.data[i * SymbolEntry::size::<E>() + offset] & 0xf)
     }
 
-    /// Reads the type and binding byte after checking the symbol index once.
+    /// Reads the type after checking the symbol index once.
     #[inline(always)]
-    pub fn st_info_in_checked<E: Layout>(&self, i: usize) -> Option<u8> {
+    pub fn st_type_in_checked<E: Layout>(&self, i: usize) -> Option<u32> {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i >= self.len {
             return None;
         }
-        let offset = i * ElfSym::size::<E>() + if E::IS_64 { 4 } else { 12 };
+        let offset = i * SymbolEntry::size::<E>() + if E::IS_64 { 4 } else { 12 };
         // SAFETY: `i < self.len` and every symbol record has this field.
-        Some(unsafe { *self.data.as_ptr().add(offset) })
+        Some(u32::from(unsafe { *self.data.as_ptr().add(offset) } & 0xf))
+    }
+
+    /// The binding of symbol `i` alone.
+    #[inline]
+    pub fn st_bind_in<E: Layout>(&self, i: usize) -> u32 {
+        debug_assert_eq!(self.layout, RecordLayout::of::<E>());
+        let offset = if E::IS_64 { 4 } else { 12 };
+        u32::from(self.data[i * SymbolEntry::size::<E>() + offset] >> 4)
     }
 
     /// The section index of symbol `i` alone.
@@ -1413,7 +1564,7 @@ impl SymTable {
     pub fn st_shndx_in<E: Layout>(&self, i: usize) -> u16 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         let offset = if E::IS_64 { 6 } else { 14 };
-        E::Endian::read_u16(&self.data[i * ElfSym::size::<E>() + offset..])
+        E::Endian::read_u16(&self.data[i * SymbolEntry::size::<E>() + offset..])
     }
 
     /// Reads a section index after the caller has checked `i < self.len()`.
@@ -1421,7 +1572,7 @@ impl SymTable {
     pub(crate) unsafe fn st_shndx_in_unchecked<E: Layout>(&self, i: usize) -> u16 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.len);
-        let offset = i * ElfSym::size::<E>() + if E::IS_64 { 6 } else { 14 };
+        let offset = i * SymbolEntry::size::<E>() + if E::IS_64 { 6 } else { 14 };
         // SAFETY: guaranteed by the caller and the fixed symbol layout.
         let raw = unsafe { std::ptr::read_unaligned(self.data.as_ptr().add(offset).cast::<u16>()) };
         if E::Endian::IS_LITTLE {
@@ -1441,7 +1592,7 @@ impl SymTable {
     #[inline]
     pub fn st_name_in<E: Layout>(&self, i: usize) -> u32 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
-        E::Endian::read_u32(&self.data[i * ElfSym::size::<E>()..])
+        E::Endian::read_u32(&self.data[i * SymbolEntry::size::<E>()..])
     }
 
     /// Walks the name offsets without decoding the rest of each symbol.
@@ -1451,11 +1602,11 @@ impl SymTable {
     ) -> impl DoubleEndedIterator<Item = u32> + ExactSizeIterator + '_ {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         self.data
-            .chunks_exact(ElfSym::size::<E>())
+            .chunks_exact(SymbolEntry::size::<E>())
             .map(E::Endian::read_u32)
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = ElfSym> + ExactSizeIterator + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = SymbolEntry> + ExactSizeIterator + '_ {
         let layout = self.layout;
         self.data
             .chunks_exact(layout.sym_size())
@@ -1463,7 +1614,7 @@ impl SymTable {
     }
 
     /// Appends a symbol to a table the linker builds.
-    pub fn push(&mut self, sym: ElfSym) {
+    pub fn push(&mut self, sym: SymbolEntry) {
         let size = self.layout.sym_size();
         let data = self.data.to_mut();
         let start = data.len();
@@ -1481,7 +1632,7 @@ pub struct ShdrTable<'a> {
     layout: RecordLayout,
     /// The number of headers in `data`.
     num_in_file: usize,
-    extra: Vec<ElfShdr>,
+    extra: Vec<SectionHeader>,
 }
 
 impl<'a> ShdrTable<'a> {
@@ -1516,7 +1667,7 @@ impl<'a> ShdrTable<'a> {
     pub fn sh_name_in<E: Layout>(&self, i: usize) -> u32 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i < self.num_in_file {
-            E::Endian::read_u32(&self.data[i * ElfShdr::size::<E>()..])
+            E::Endian::read_u32(&self.data[i * SectionHeader::size::<E>()..])
         } else {
             self.extra[i - self.num_in_file].sh_name
         }
@@ -1533,7 +1684,7 @@ impl<'a> ShdrTable<'a> {
     }
 
     #[inline]
-    pub fn at(&self, i: usize) -> ElfShdr {
+    pub fn at(&self, i: usize) -> SectionHeader {
         let n = self.num_in_file();
         if i < n {
             let size = self.layout.shdr_size();
@@ -1544,18 +1695,18 @@ impl<'a> ShdrTable<'a> {
     }
 
     #[inline]
-    pub fn get(&self, i: usize) -> Option<ElfShdr> {
+    pub fn get(&self, i: usize) -> Option<SectionHeader> {
         (i < self.len()).then(|| self.at(i))
     }
 
     /// Like [`Self::at`] for code specialized for the target, which knows
     /// the layout at compile time.
     #[inline]
-    pub fn at_in<E: Layout>(&self, i: usize) -> ElfShdr {
+    pub fn at_in<E: Layout>(&self, i: usize) -> SectionHeader {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i < self.num_in_file {
-            let size = ElfShdr::size::<E>();
-            ElfShdr::parse::<E>(&self.data[i * size..(i + 1) * size])
+            let size = SectionHeader::size::<E>();
+            SectionHeader::parse::<E>(&self.data[i * size..(i + 1) * size])
         } else {
             self.extra[i - self.num_in_file]
         }
@@ -1569,16 +1720,16 @@ impl<'a> ShdrTable<'a> {
     ///
     /// `i` must be less than [`Self::len`].
     #[inline(always)]
-    pub unsafe fn at_in_unchecked<E: Layout>(&self, i: usize) -> ElfShdr {
+    pub unsafe fn at_in_unchecked<E: Layout>(&self, i: usize) -> SectionHeader {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.len());
         if i < self.num_in_file {
-            let size = ElfShdr::size::<E>();
+            let size = SectionHeader::size::<E>();
             // SAFETY: the caller proved `i`, and `in_file` accepted only a
             // whole number of section-header records.
             let bytes =
                 unsafe { std::slice::from_raw_parts(self.data.as_ptr().add(i * size), size) };
-            ElfShdr::parse::<E>(bytes)
+            SectionHeader::parse::<E>(bytes)
         } else {
             // SAFETY: the total-length precondition proves this extra index.
             unsafe { *self.extra.get_unchecked(i - self.num_in_file) }
@@ -1591,14 +1742,14 @@ impl<'a> ShdrTable<'a> {
     ///
     /// `i` must be less than [`Self::num_in_file`].
     #[inline(always)]
-    pub unsafe fn file_at_in_unchecked<E: Layout>(&self, i: usize) -> ElfShdr {
+    pub unsafe fn file_at_in_unchecked<E: Layout>(&self, i: usize) -> SectionHeader {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.num_in_file);
-        let size = ElfShdr::size::<E>();
+        let size = SectionHeader::size::<E>();
         // SAFETY: the caller proved `i`, and `in_file` accepted only a whole
         // number of section-header records.
         let bytes = unsafe { std::slice::from_raw_parts(self.data.as_ptr().add(i * size), size) };
-        ElfShdr::parse::<E>(bytes)
+        SectionHeader::parse::<E>(bytes)
     }
 
     /// Reads the two fields needed to classify a section without decoding
@@ -1612,7 +1763,7 @@ impl<'a> ShdrTable<'a> {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.len());
         if i < self.num_in_file {
-            let ptr = unsafe { self.data.as_ptr().add(i * ElfShdr::size::<E>()) };
+            let ptr = unsafe { self.data.as_ptr().add(i * SectionHeader::size::<E>()) };
             // SAFETY: a complete header has a u32 at offset 4 and a target
             // word at offset 8. Unaligned reads match ELF's file layout.
             let sh_type = unsafe { std::ptr::read_unaligned(ptr.add(4).cast::<u32>()) };
@@ -1653,7 +1804,7 @@ impl<'a> ShdrTable<'a> {
     pub unsafe fn file_type_and_flags_in_unchecked<E: Layout>(&self, i: usize) -> (u32, u64) {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.num_in_file);
-        let ptr = unsafe { self.data.as_ptr().add(i * ElfShdr::size::<E>()) };
+        let ptr = unsafe { self.data.as_ptr().add(i * SectionHeader::size::<E>()) };
         // SAFETY: a complete header has a u32 at offset 4 and a target word at
         // offset 8. Unaligned reads match ELF's file layout.
         let sh_type = unsafe { std::ptr::read_unaligned(ptr.add(4).cast::<u32>()) };
@@ -1689,7 +1840,7 @@ impl<'a> ShdrTable<'a> {
     pub unsafe fn file_type_in_unchecked<E: Layout>(&self, i: usize) -> u32 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         debug_assert!(i < self.num_in_file);
-        let ptr = unsafe { self.data.as_ptr().add(i * ElfShdr::size::<E>() + 4) };
+        let ptr = unsafe { self.data.as_ptr().add(i * SectionHeader::size::<E>() + 4) };
         // SAFETY: a complete header has a u32 at offset 4. An unaligned read
         // matches ELF's file layout.
         let value = unsafe { std::ptr::read_unaligned(ptr.cast::<u32>()) };
@@ -1717,7 +1868,7 @@ impl<'a> ShdrTable<'a> {
     pub fn sh_type_in<E: Layout>(&self, i: usize) -> u32 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i < self.num_in_file {
-            E::Endian::read_u32(&self.data[i * ElfShdr::size::<E>() + 4..])
+            E::Endian::read_u32(&self.data[i * SectionHeader::size::<E>() + 4..])
         } else {
             self.extra[i - self.num_in_file].sh_type
         }
@@ -1739,7 +1890,7 @@ impl<'a> ShdrTable<'a> {
     pub fn sh_flags_in<E: Layout>(&self, i: usize) -> u64 {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i < self.num_in_file {
-            let bytes = &self.data[i * ElfShdr::size::<E>() + 8..];
+            let bytes = &self.data[i * SectionHeader::size::<E>() + 8..];
             if E::IS_64 {
                 E::Endian::read_u64(bytes)
             } else {
@@ -1758,7 +1909,7 @@ impl<'a> ShdrTable<'a> {
             return None;
         }
         if i < self.num_in_file {
-            let offset = i * ElfShdr::size::<E>() + 8;
+            let offset = i * SectionHeader::size::<E>() + 8;
             if E::IS_64 {
                 // SAFETY: `i` names a complete 64-bit section header.
                 let raw = unsafe {
@@ -1808,7 +1959,7 @@ impl<'a> ShdrTable<'a> {
     pub fn sh_offset_and_size_in<E: Layout>(&self, i: usize) -> (u64, u64) {
         debug_assert_eq!(self.layout, RecordLayout::of::<E>());
         if i < self.num_in_file {
-            let base = i * ElfShdr::size::<E>();
+            let base = i * SectionHeader::size::<E>();
             if E::IS_64 {
                 (
                     E::Endian::read_u64(&self.data[base + 24..]),
@@ -1826,272 +1977,216 @@ impl<'a> ShdrTable<'a> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = ElfShdr> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = SectionHeader> + '_ {
         (0..self.len()).map(|i| self.at(i))
     }
 
-    pub fn push(&mut self, shdr: ElfShdr) {
+    pub fn push(&mut self, shdr: SectionHeader) {
         self.extra.push(shdr);
     }
 }
 
 /// An entry of the `.dynamic` section.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfDyn {
-    pub d_tag: u64,
-    pub d_val: u64,
+#[derive(Clone, Copy, Default)]
+pub struct ElfDyn<E: Layout> {
+    pub d_tag: E::Word,
+    pub d_val: E::Word,
 }
 
-impl Record for ElfDyn {
-    fn size<E: Layout>() -> usize {
-        2 * E::WORD_SIZE
-    }
+// SAFETY: both fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfDyn<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        if E::IS_64 && E::Endian::IS_NATIVE {
-            let bytes = &bytes[..Self::size::<E>()];
-            // SAFETY: ElfDyn has the native ELF64 field layout, `bytes`
-            // contains a complete record, and an unaligned read accepts the
-            // file's alignment.
-            return unsafe { bytes.as_ptr().cast::<ElfDyn>().read_unaligned() };
-        }
-
-        let r = Reader::<E>::new(bytes);
-        ElfDyn {
-            d_tag: r.word(0),
-            d_val: r.word(E::WORD_SIZE),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.word(0, self.d_tag);
-        w.word(E::WORD_SIZE, self.d_val);
-    }
-}
-
-const _: () = assert!(std::mem::size_of::<ElfDyn>() == 16);
+const _: () = assert!(std::mem::size_of::<ElfDyn<Elf32Le>>() == 8);
+const _: () = assert!(std::mem::size_of::<ElfDyn<Elf64Le>>() == 16);
+const _: () = assert!(std::mem::align_of::<ElfDyn<Elf32Le>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfDyn<Elf64Le>>() == 1);
 
 /// The header of a compressed section.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfChdr {
+pub struct Elf64Chdr<E: Endian> {
+    pub ch_type: U32<E>,
+    pub ch_reserved: U32<E>,
+    pub ch_size: U64<E>,
+    pub ch_addralign: U64<E>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elf32Chdr<E: Endian> {
+    pub ch_type: U32<E>,
+    pub ch_size: U32<E>,
+    pub ch_addralign: U32<E>,
+}
+
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Endian> FileRecord for Elf64Chdr<E> {}
+// SAFETY: see the Elf64 implementation.
+unsafe impl<E: Endian> FileRecord for Elf32Chdr<E> {}
+
+const _: () = assert!(std::mem::size_of::<Elf32Chdr<LittleEndian>>() == 12);
+const _: () = assert!(std::mem::size_of::<Elf64Chdr<LittleEndian>>() == 24);
+const _: () = assert!(std::mem::align_of::<Elf32Chdr<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Chdr<LittleEndian>>() == 1);
+
+/// The two physical compression-header layouts convert as complete records.
+pub trait CompressionHeaderRecord: FileRecord {
+    type Endian: Endian;
+
+    fn decode(&self) -> CompressionHeader;
+    fn encode(chdr: &CompressionHeader) -> Self;
+}
+
+impl<E: Endian> CompressionHeaderRecord for Elf64Chdr<E> {
+    type Endian = E;
+
+    fn decode(&self) -> CompressionHeader {
+        CompressionHeader {
+            ch_type: self.ch_type.get(),
+            ch_size: self.ch_size.get(),
+            ch_addralign: self.ch_addralign.get(),
+        }
+    }
+
+    fn encode(chdr: &CompressionHeader) -> Self {
+        Elf64Chdr {
+            ch_type: U32::new(chdr.ch_type),
+            ch_reserved: U32::default(),
+            ch_size: U64::new(chdr.ch_size),
+            ch_addralign: U64::new(chdr.ch_addralign),
+        }
+    }
+}
+
+impl<E: Endian> CompressionHeaderRecord for Elf32Chdr<E> {
+    type Endian = E;
+
+    fn decode(&self) -> CompressionHeader {
+        CompressionHeader {
+            ch_type: self.ch_type.get(),
+            ch_size: u64::from(self.ch_size.get()),
+            ch_addralign: u64::from(self.ch_addralign.get()),
+        }
+    }
+
+    fn encode(chdr: &CompressionHeader) -> Self {
+        Elf32Chdr {
+            ch_type: U32::new(chdr.ch_type),
+            ch_size: U32::new(chdr.ch_size as u32),
+            ch_addralign: U32::new(chdr.ch_addralign as u32),
+        }
+    }
+}
+
+pub type ElfChdr<E> = <E as Layout>::Chdr;
+
+/// A compression header decoded for compression bookkeeping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CompressionHeader {
     pub ch_type: u32,
     pub ch_size: u64,
     pub ch_addralign: u64,
 }
 
-impl Record for ElfChdr {
+impl Record for CompressionHeader {
     fn size<E: Layout>() -> usize {
-        if E::IS_64 {
-            24
-        } else {
-            12
-        }
+        E::Chdr::size()
     }
 
     fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        if E::IS_64 {
-            ElfChdr {
-                ch_type: r.u32(0),
-                ch_size: r.u64(8),
-                ch_addralign: r.u64(16),
-            }
-        } else {
-            ElfChdr {
-                ch_type: r.u32(0),
-                ch_size: r.u32(4) as u64,
-                ch_addralign: r.u32(8) as u64,
-            }
-        }
+        E::Chdr::parse(bytes).decode()
     }
 
     fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        if E::IS_64 {
-            w.u32(0, self.ch_type);
-            w.u32(4, 0);
-            w.u64(8, self.ch_size);
-            w.u64(16, self.ch_addralign);
-        } else {
-            w.u32(0, self.ch_type);
-            w.u32(4, self.ch_size as u32);
-            w.u32(8, self.ch_addralign as u32);
-        }
+        E::Chdr::encode(self).write(buf);
     }
 }
 
 /// A note header.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfNhdr {
-    pub n_namesz: u32,
-    pub n_descsz: u32,
-    pub n_type: u32,
+pub struct ElfNhdr<E: Layout> {
+    pub n_namesz: U32<E::Endian>,
+    pub n_descsz: U32<E::Endian>,
+    pub n_type: U32<E::Endian>,
 }
 
-impl Record for ElfNhdr {
-    fn size<E: Layout>() -> usize {
-        12
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfNhdr<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        ElfNhdr {
-            n_namesz: r.u32(0),
-            n_descsz: r.u32(4),
-            n_type: r.u32(8),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u32(0, self.n_namesz);
-        w.u32(4, self.n_descsz);
-        w.u32(8, self.n_type);
-    }
-}
+const _: () = assert!(std::mem::size_of::<ElfNhdr<Elf32Le>>() == 12);
+const _: () = assert!(std::mem::align_of::<ElfNhdr<Elf32Le>>() == 1);
 
 /// A `.gnu.version_r` file entry.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerneed {
-    pub vn_version: u16,
-    pub vn_cnt: u16,
-    pub vn_file: u32,
-    pub vn_aux: u32,
-    pub vn_next: u32,
+pub struct ElfVerneed<E: Layout> {
+    pub vn_version: U16<E::Endian>,
+    pub vn_cnt: U16<E::Endian>,
+    pub vn_file: U32<E::Endian>,
+    pub vn_aux: U32<E::Endian>,
+    pub vn_next: U32<E::Endian>,
 }
 
-impl Record for ElfVerneed {
-    fn size<E: Layout>() -> usize {
-        16
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfVerneed<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        ElfVerneed {
-            vn_version: r.u16(0),
-            vn_cnt: r.u16(2),
-            vn_file: r.u32(4),
-            vn_aux: r.u32(8),
-            vn_next: r.u32(12),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u16(0, self.vn_version);
-        w.u16(2, self.vn_cnt);
-        w.u32(4, self.vn_file);
-        w.u32(8, self.vn_aux);
-        w.u32(12, self.vn_next);
-    }
-}
+const _: () = assert!(std::mem::size_of::<ElfVerneed<Elf32Le>>() == 16);
 
 /// A `.gnu.version_r` version entry.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVernaux {
-    pub vna_hash: u32,
-    pub vna_flags: u16,
-    pub vna_other: u16,
-    pub vna_name: u32,
-    pub vna_next: u32,
+pub struct ElfVernaux<E: Layout> {
+    pub vna_hash: U32<E::Endian>,
+    pub vna_flags: U16<E::Endian>,
+    pub vna_other: U16<E::Endian>,
+    pub vna_name: U32<E::Endian>,
+    pub vna_next: U32<E::Endian>,
 }
 
-impl Record for ElfVernaux {
-    fn size<E: Layout>() -> usize {
-        16
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfVernaux<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        ElfVernaux {
-            vna_hash: r.u32(0),
-            vna_flags: r.u16(4),
-            vna_other: r.u16(6),
-            vna_name: r.u32(8),
-            vna_next: r.u32(12),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u32(0, self.vna_hash);
-        w.u16(4, self.vna_flags);
-        w.u16(6, self.vna_other);
-        w.u32(8, self.vna_name);
-        w.u32(12, self.vna_next);
-    }
-}
+const _: () = assert!(std::mem::size_of::<ElfVernaux<Elf32Le>>() == 16);
 
 /// A `.gnu.version_d` definition entry.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerdef {
-    pub vd_version: u16,
-    pub vd_flags: u16,
-    pub vd_ndx: u16,
-    pub vd_cnt: u16,
-    pub vd_hash: u32,
-    pub vd_aux: u32,
-    pub vd_next: u32,
+pub struct ElfVerdef<E: Layout> {
+    pub vd_version: U16<E::Endian>,
+    pub vd_flags: U16<E::Endian>,
+    pub vd_ndx: U16<E::Endian>,
+    pub vd_cnt: U16<E::Endian>,
+    pub vd_hash: U32<E::Endian>,
+    pub vd_aux: U32<E::Endian>,
+    pub vd_next: U32<E::Endian>,
 }
 
-impl Record for ElfVerdef {
-    fn size<E: Layout>() -> usize {
-        20
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfVerdef<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        ElfVerdef {
-            vd_version: r.u16(0),
-            vd_flags: r.u16(2),
-            vd_ndx: r.u16(4),
-            vd_cnt: r.u16(6),
-            vd_hash: r.u32(8),
-            vd_aux: r.u32(12),
-            vd_next: r.u32(16),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u16(0, self.vd_version);
-        w.u16(2, self.vd_flags);
-        w.u16(4, self.vd_ndx);
-        w.u16(6, self.vd_cnt);
-        w.u32(8, self.vd_hash);
-        w.u32(12, self.vd_aux);
-        w.u32(16, self.vd_next);
-    }
-}
+const _: () = assert!(std::mem::size_of::<ElfVerdef<Elf32Le>>() == 20);
 
 /// A `.gnu.version_d` name entry.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerdaux {
-    pub vda_name: u32,
-    pub vda_next: u32,
+pub struct ElfVerdaux<E: Layout> {
+    pub vda_name: U32<E::Endian>,
+    pub vda_next: U32<E::Endian>,
 }
 
-impl Record for ElfVerdaux {
-    fn size<E: Layout>() -> usize {
-        8
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfVerdaux<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        ElfVerdaux {
-            vda_name: r.u32(0),
-            vda_next: r.u32(4),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u32(0, self.vda_name);
-        w.u32(4, self.vda_next);
-    }
-}
+const _: () = assert!(std::mem::size_of::<ElfVerdaux<Elf32Le>>() == 8);
 
 /// SFrame is a simple unwind information format used as a lightweight
 /// alternative to .eh_frame. A .sframe section consists of a header, an
@@ -2099,21 +2194,29 @@ impl Record for ElfVerdaux {
 /// of Frame Row Entries (FREs). mold understands SFrame Version 3.
 ///
 /// https://sourceware.org/binutils/docs/sframe-spec.html
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SFrameHeader {
-    pub magic: u16,
+pub struct SFrameHeader<E: Layout> {
+    pub magic: U16<E::Endian>,
     pub version: u8,
     pub flags: u8,
     pub abi_arch: u8,
     pub cfa_fixed_fp_offset: i8,
     pub cfa_fixed_ra_offset: i8,
     pub auxhdr_len: u8,
-    pub num_fdes: u32,
-    pub num_fres: u32,
-    pub fre_len: u32,
-    pub fdeoff: u32,
-    pub freoff: u32,
+    pub num_fdes: U32<E::Endian>,
+    pub num_fres: U32<E::Endian>,
+    pub fre_len: U32<E::Endian>,
+    pub fdeoff: U32<E::Endian>,
+    pub freoff: U32<E::Endian>,
 }
+
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for SFrameHeader<E> {}
+
+const _: () = assert!(std::mem::size_of::<SFrameHeader<Elf32Le>>() == 28);
+const _: () = assert!(std::mem::align_of::<SFrameHeader<Elf32Le>>() == 1);
 
 pub const SFRAME_MAGIC: u16 = 0xdee2;
 pub const SFRAME_F_FDE_SORTED: u8 = 0x1;
@@ -2125,77 +2228,23 @@ pub const SFRAME_ABI_AARCH64_ENDIAN_LITTLE: u8 = 2;
 pub const SFRAME_ABI_AMD64_ENDIAN_LITTLE: u8 = 3;
 pub const SFRAME_ABI_S390X_ENDIAN_BIG: u8 = 4;
 
-impl Record for SFrameHeader {
-    fn size<E: Layout>() -> usize {
-        28
-    }
-
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        SFrameHeader {
-            magic: r.u16(0),
-            version: r.u8(2),
-            flags: r.u8(3),
-            abi_arch: r.u8(4),
-            cfa_fixed_fp_offset: r.u8(5) as i8,
-            cfa_fixed_ra_offset: r.u8(6) as i8,
-            auxhdr_len: r.u8(7),
-            num_fdes: r.u32(8),
-            num_fres: r.u32(12),
-            fre_len: r.u32(16),
-            fdeoff: r.u32(20),
-            freoff: r.u32(24),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u16(0, self.magic);
-        w.u8(2, self.version);
-        w.u8(3, self.flags);
-        w.u8(4, self.abi_arch);
-        w.u8(5, self.cfa_fixed_fp_offset as u8);
-        w.u8(6, self.cfa_fixed_ra_offset as u8);
-        w.u8(7, self.auxhdr_len);
-        w.u32(8, self.num_fdes);
-        w.u32(12, self.num_fres);
-        w.u32(16, self.fre_len);
-        w.u32(20, self.fdeoff);
-        w.u32(24, self.freoff);
-    }
-}
-
 /// The index part of an SFrame Version 3 FDE. The func_start_offset field
 /// is PC-relative (relative to its own address) when the section flag
 /// SFRAME_F_FDE_FUNC_START_PCREL is set, which is how mold always emits it.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SFrameFdeIdx {
-    pub func_start_offset: i64,
-    pub func_size: u32,
-    pub func_start_fre_off: u32,
+pub struct SFrameFdeIdx<E: Layout> {
+    pub func_start_offset: I64<E::Endian>,
+    pub func_size: U32<E::Endian>,
+    pub func_start_fre_off: U32<E::Endian>,
 }
 
-impl Record for SFrameFdeIdx {
-    fn size<E: Layout>() -> usize {
-        16
-    }
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for SFrameFdeIdx<E> {}
 
-    fn parse<E: Layout>(bytes: &[u8]) -> Self {
-        let r = Reader::<E>::new(bytes);
-        SFrameFdeIdx {
-            func_start_offset: r.u64(0) as i64,
-            func_size: r.u32(8),
-            func_start_fre_off: r.u32(12),
-        }
-    }
-
-    fn write<E: Layout>(&self, buf: &mut [u8]) {
-        let mut w = Writer::<E>::new(buf);
-        w.u64(0, self.func_start_offset as u64);
-        w.u32(8, self.func_size);
-        w.u32(12, self.func_start_fre_off);
-    }
-}
+const _: () = assert!(std::mem::size_of::<SFrameFdeIdx<Elf32Le>>() == 16);
+const _: () = assert!(std::mem::align_of::<SFrameFdeIdx<Elf32Le>>() == 1);
 
 /// Returns a symbol type's name for diagnostics.
 pub fn stt_to_string(st_type: u32) -> String {

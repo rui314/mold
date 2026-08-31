@@ -46,6 +46,10 @@ pub type Riscv32Be = RiscvTarget<BigEndian, false>;
 
 impl Layout for RiscvTarget<LittleEndian, true> {
     type Endian = LittleEndian;
+    type Word = Ul64;
+    type Sym = Elf64Sym<LittleEndian>;
+    type Phdr = Elf64Phdr<LittleEndian>;
+    type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
@@ -53,6 +57,10 @@ impl Layout for RiscvTarget<LittleEndian, true> {
 
 impl Layout for RiscvTarget<BigEndian, true> {
     type Endian = BigEndian;
+    type Word = Ub64;
+    type Sym = Elf64Sym<BigEndian>;
+    type Phdr = Elf64Phdr<BigEndian>;
+    type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;
@@ -60,6 +68,10 @@ impl Layout for RiscvTarget<BigEndian, true> {
 
 impl Layout for RiscvTarget<LittleEndian, false> {
     type Endian = LittleEndian;
+    type Word = Ul32;
+    type Sym = Elf32Sym<LittleEndian>;
+    type Phdr = Elf32Phdr<LittleEndian>;
+    type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelaLe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;
@@ -67,6 +79,10 @@ impl Layout for RiscvTarget<LittleEndian, false> {
 
 impl Layout for RiscvTarget<BigEndian, false> {
     type Endian = BigEndian;
+    type Word = Ub32;
+    type Sym = Elf32Sym<BigEndian>;
+    type Phdr = Elf32Phdr<BigEndian>;
+    type Chdr = Elf32Chdr<BigEndian>;
     type Rel = Elf32RelaBe;
     const IS_64: bool = false;
     const IS_RELA: bool = true;

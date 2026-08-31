@@ -121,7 +121,7 @@ impl ChunkId {
 #[derive(Debug)]
 pub struct ChunkHeader {
     pub name: &'static BStr,
-    pub shdr: ElfShdr,
+    pub shdr: SectionHeader,
 
     /// Index in the output section header table; 0 for headers.
     pub shndx: u32,
@@ -151,11 +151,11 @@ impl ChunkHeader {
     pub fn new(name: &'static str, sh_type: u32, sh_flags: u64) -> ChunkHeader {
         ChunkHeader {
             name: BStr::new(name.as_bytes()),
-            shdr: ElfShdr {
+            shdr: SectionHeader {
                 sh_type,
                 sh_flags,
                 sh_addralign: 1,
-                ..ElfShdr::default()
+                ..SectionHeader::default()
             },
             shndx: 0,
             num_dynrels: 0,
@@ -196,7 +196,7 @@ pub struct OutputEhdr {
 impl OutputEhdr {
     pub fn new<E: Arch>(sh_flags: u64) -> OutputEhdr {
         let mut hdr = ChunkHeader::new("EHDR", 0, sh_flags);
-        hdr.shdr.sh_size = ElfEhdr::size::<E>() as u64;
+        hdr.shdr.sh_size = ElfEhdr::<E>::size() as u64;
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         OutputEhdr { hdr }
     }
@@ -228,7 +228,7 @@ impl OutputShdr {
 #[derive(Debug)]
 pub struct OutputPhdr {
     pub hdr: ChunkHeader,
-    pub phdrs: Vec<ElfPhdr>,
+    pub phdrs: Vec<ProgramHeader>,
 }
 
 impl OutputPhdr {
@@ -277,7 +277,7 @@ fn entry_addr<E: Arch>(ctx: &Context<E>) -> u64 {
 }
 
 fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-    let mut ehdr = ElfEhdr::default();
+    let mut ehdr = ElfEhdr::<E>::default();
     ehdr.e_ident[..4].copy_from_slice(b"\x7fELF");
     ehdr.e_ident[EI_CLASS as usize] = if E::IS_64 { ELFCLASS64 } else { ELFCLASS32 } as u8;
     ehdr.e_ident[EI_DATA as usize] = if E::IS_LITTLE_ENDIAN {
@@ -286,23 +286,23 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         ELFDATA2MSB
     } as u8;
     ehdr.e_ident[EI_VERSION as usize] = EV_CURRENT as u8;
-    ehdr.e_machine = E::E_MACHINE as u16;
-    ehdr.e_version = EV_CURRENT;
-    ehdr.e_entry = entry_addr(ctx);
-    ehdr.e_flags = E::eflags(ctx);
-    ehdr.e_ehsize = ElfEhdr::size::<E>() as u16;
+    ehdr.e_machine.set(E::E_MACHINE as u16);
+    ehdr.e_version.set(EV_CURRENT);
+    ehdr.e_entry.set(entry_addr(ctx));
+    ehdr.e_flags.set(E::eflags(ctx));
+    ehdr.e_ehsize.set(ElfEhdr::<E>::size() as u16);
 
     // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
     // The real value is stored to the zero'th section's sh_link field.
     if let Some(shstrtab) = &ctx.shstrtab {
-        ehdr.e_shstrndx = if shstrtab.hdr.shndx < SHN_LORESERVE {
+        ehdr.e_shstrndx.set(if shstrtab.hdr.shndx < SHN_LORESERVE {
             shstrtab.hdr.shndx as u16
         } else {
             SHN_XINDEX as u16
-        };
+        });
     }
 
-    ehdr.e_type = if ctx.args.relocatable {
+    ehdr.e_type.set(if ctx.args.relocatable {
         ET_REL
     } else if ctx.args.pie && ctx.args.ttext_segment.is_some() {
         ET_EXEC
@@ -310,36 +310,37 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         ET_DYN
     } else {
         ET_EXEC
-    } as u16;
+    } as u16);
 
     if let Some(phdr) = &ctx.phdr {
-        ehdr.e_phoff = phdr.hdr.shdr.sh_offset;
-        ehdr.e_phentsize = ElfPhdr::size::<E>() as u16;
-        ehdr.e_phnum = (phdr.hdr.shdr.sh_size / ElfPhdr::size::<E>() as u64) as u16;
+        ehdr.e_phoff.set(phdr.hdr.shdr.sh_offset);
+        ehdr.e_phentsize.set(ProgramHeader::size::<E>() as u16);
+        ehdr.e_phnum
+            .set((phdr.hdr.shdr.sh_size / ProgramHeader::size::<E>() as u64) as u16);
     }
 
     if let Some(shdr) = &ctx.shdr {
-        ehdr.e_shoff = shdr.hdr.shdr.sh_offset;
-        ehdr.e_shentsize = ElfShdr::size::<E>() as u16;
+        ehdr.e_shoff.set(shdr.hdr.shdr.sh_offset);
+        ehdr.e_shentsize.set(SectionHeader::size::<E>() as u16);
         // Since e_shnum is a 16-bit integer field, we can't store a very
         // large value there. If it is >65535, the real value is stored to
         // the zero'th section's sh_size field.
-        let shnum = shdr.hdr.shdr.sh_size / ElfShdr::size::<E>() as u64;
-        ehdr.e_shnum = if shnum <= u16::MAX as u64 {
+        let shnum = shdr.hdr.shdr.sh_size / SectionHeader::size::<E>() as u64;
+        ehdr.e_shnum.set(if shnum <= u16::MAX as u64 {
             shnum as u16
         } else {
             0
-        };
+        });
     }
 
-    ehdr.write::<E>(buf);
+    ehdr.write(buf);
 }
 
 fn write_shdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-    let size = ElfShdr::size::<E>();
+    let size = SectionHeader::size::<E>();
     buf.fill(0);
 
-    let mut first = ElfShdr::default();
+    let mut first = SectionHeader::default();
     if let Some(shstrtab) = &ctx.shstrtab {
         if shstrtab.hdr.shndx >= SHN_LORESERVE {
             first.sh_link = shstrtab.hdr.shndx;
@@ -389,16 +390,16 @@ pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
     PF_R | if write { PF_W } else { 0 } | if exec { PF_X } else { 0 }
 }
 
-fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
-    let mut vec: Vec<ElfPhdr> = Vec::new();
+fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ProgramHeader> {
+    let mut vec: Vec<ProgramHeader> = Vec::new();
 
-    let define = |vec: &mut Vec<ElfPhdr>, p_type: u32, flags: u32, id: ChunkId| {
+    let define = |vec: &mut Vec<ProgramHeader>, p_type: u32, flags: u32, id: ChunkId| {
         let shdr = &ctx.chunk_header(id).shdr;
-        let mut phdr = ElfPhdr {
+        let mut phdr = ProgramHeader {
             p_type,
             p_flags: flags,
             p_align: shdr.sh_addralign,
-            ..ElfPhdr::default()
+            ..ProgramHeader::default()
         };
         if shdr.sh_type == SHT_NOBITS {
             // p_offset indicates the in-file start offset and is not
@@ -418,7 +419,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         vec.push(phdr);
     };
 
-    let append = |vec: &mut Vec<ElfPhdr>, id: ChunkId| {
+    let append = |vec: &mut Vec<ProgramHeader>, id: ChunkId| {
         let shdr = &ctx.chunk_header(id).shdr;
         let phdr = vec.last_mut().unwrap();
         phdr.p_align = phdr.p_align.max(shdr.sh_addralign);
@@ -570,7 +571,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
 
     // Add PT_GNU_STACK, which is a marker segment that doesn't really
     // contain any segments. It controls executable bit of stack area.
-    vec.push(ElfPhdr {
+    vec.push(ProgramHeader {
         p_type: PT_GNU_STACK,
         p_flags: if ctx.args.z_execstack {
             PF_R | PF_W | PF_X
@@ -579,7 +580,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         },
         p_memsz: ctx.args.z_stack_size,
         p_align: 1,
-        ..ElfPhdr::default()
+        ..ProgramHeader::default()
     });
 
     // Create a PT_GNU_RELRO.
@@ -651,7 +652,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
 
     vec.resize(
         vec.len() + ctx.args.spare_program_headers.max(0) as usize,
-        ElfPhdr::default(),
+        ProgramHeader::default(),
     );
     vec
 }
@@ -671,7 +672,7 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     let phdr = ctx.phdr.as_mut().unwrap();
-    phdr.hdr.shdr.sh_size = (phdrs.len() * ElfPhdr::size::<E>()) as u64;
+    phdr.hdr.shdr.sh_size = (phdrs.len() * ProgramHeader::size::<E>()) as u64;
     phdr.phdrs = phdrs;
 }
 
@@ -790,7 +791,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Shdr => write_shdr(ctx, buf),
         ChunkId::Phdr => {
             let phdrs = &ctx.phdr.as_ref().unwrap().phdrs;
-            ElfPhdr::write_all::<E>(phdrs, buf);
+            ProgramHeader::write_all::<E>(phdrs, buf);
         }
         ChunkId::Interp => misc::interp::copy_buf(ctx, buf),
         ChunkId::Got => got::got::copy_buf(ctx, buf),

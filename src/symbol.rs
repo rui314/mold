@@ -245,7 +245,7 @@ pub struct Symbol {
 
     // Index into the symbol table of the owner file.
     pub sym_idx: u32,
-    st_info: u8,
+    type_and_bind: u8,
 
     pub ver_idx: u16,
     pub visibility: AtomicU8,
@@ -467,7 +467,7 @@ impl Symbol {
             origin: Origin::none(),
             value: 0,
             sym_idx: u32::MAX,
-            st_info: 0,
+            type_and_bind: 0,
             ver_idx: VER_NDX_UNSPECIFIED as u16,
             visibility: AtomicU8::new(STV_DEFAULT as u8),
             flags: AtomicU8::new(0),
@@ -869,18 +869,18 @@ impl Symbol {
     /// The symbol's entry in the owner file's symbol table; a blank one
     /// for a symbol no file defines.
     #[inline]
-    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> ElfSym {
+    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> SymbolEntry {
         match self.file() {
             Some(file) => ctx.file(file).elf_syms.at_in::<E>(self.sym_idx as usize),
-            None => ElfSym::default(),
+            None => SymbolEntry::default(),
         }
     }
 
     /// Records the file's entry the symbol now refers to (see
     /// [`Self::esym`]).
     #[inline]
-    pub fn set_esym(&mut self, esym: &ElfSym) {
-        self.st_info = esym.st_info;
+    pub fn set_esym(&mut self, esym: &SymbolEntry) {
+        self.type_and_bind = (esym.st_bind() << 4 | esym.st_type()) as u8;
         let state = if esym.st_shndx as u32 == SHN_UNDEF {
             SYMBOL_UNDEFINED
         } else if esym.st_shndx as u32 == SHN_COMMON {
@@ -893,12 +893,12 @@ impl Symbol {
 
     #[inline]
     pub fn st_type(&self) -> u32 {
-        (self.st_info & 0xf) as u32
+        (self.type_and_bind & 0xf) as u32
     }
 
     #[inline]
     pub fn st_bind(&self) -> u32 {
-        (self.st_info >> 4) as u32
+        (self.type_and_bind >> 4) as u32
     }
 
     #[inline]

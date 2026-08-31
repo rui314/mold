@@ -49,6 +49,10 @@ pub struct S390x;
 
 impl Layout for S390x {
     type Endian = BigEndian;
+    type Word = Ub64;
+    type Sym = Elf64Sym<BigEndian>;
+    type Phdr = Elf64Phdr<BigEndian>;
+    type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;

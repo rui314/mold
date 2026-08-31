@@ -179,10 +179,10 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::NotePackage);
 
     if !ctx.args.oformat_binary {
-        let shdr = ElfShdr {
+        let shdr = SectionHeader {
             sh_type: SHT_PROGBITS,
             sh_flags: (SHF_MERGE | SHF_STRINGS) as u64,
-            ..ElfShdr::default()
+            ..SectionHeader::default()
         };
         let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
         ctx.comment = crate::output_chunks::merged::MergedSection::get_instance(
@@ -409,7 +409,7 @@ fn clear_symbol(sym: &mut Symbol) {
     sym.clear_origin();
     sym.value = 0;
     sym.sym_idx = u32::MAX;
-    sym.set_esym(&ElfSym::default());
+    sym.set_esym(&SymbolEntry::default());
     sym.ver_idx = VER_NDX_UNSPECIFIED as u16;
     sym.set_weak(false);
     sym.set_imported(false);
@@ -1515,7 +1515,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     obj.base.priority = 0;
 
     // Create linker-synthesized symbols.
-    ctx.internal_esyms = vec![ElfSym::default()];
+    ctx.internal_esyms = vec![SymbolEntry::default()];
     let dummy = ctx.symbols.add(Symbol::new(BStr::new(b"")));
     obj.base.symbols.push(dummy);
     obj.base.first_global = 1;
@@ -1528,10 +1528,8 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         // value. 0xdeadbeef is a unique dummy value to make debugging easier
         // if the field is accidentally used before it gets a valid one.
         ctx.symbols[id].value = 0xdeadbeef;
-        let mut esym = ElfSym {
-            st_shndx: SHN_ABS as u16,
-            ..ElfSym::default()
-        };
+        let mut esym = SymbolEntry::default();
+        esym.st_shndx = SHN_ABS as u16;
         esym.set_type(STT_NOTYPE);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_DEFAULT);
@@ -1605,10 +1603,8 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     let obj_id = ctx.internal_obj.unwrap();
 
     fn add<E: Arch>(ctx: &mut Context<E>, name: &str, ty: u32) -> SymbolId {
-        let mut esym = ElfSym {
-            st_shndx: SHN_ABS as u16,
-            ..ElfSym::default()
-        };
+        let mut esym = SymbolEntry::default();
+        esym.st_shndx = SHN_ABS as u16;
         esym.set_type(ty);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_HIDDEN);
@@ -1750,7 +1746,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
                 let mut esym = obj.base.elf_syms.at_in::<E>(i + 1);
                 esym.set_type(sym2_esym.st_type());
                 if E::FAMILY == Family::Ppc64V2 {
-                    esym.st_other = (esym.st_other & 0x1f) | (sym2_esym.st_other & 0xe0);
+                    esym.set_ppc64_local_entry(sym2_esym.ppc64_local_entry());
                 }
                 obj.base.elf_syms.set_in::<E>(i + 1, esym);
                 ctx.internal_esyms[i + 1] = esym;
@@ -1827,7 +1823,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
          # compile source files with the -ffunction-sections compiler flag."
     );
 
-    let println = |src: &dyn std::fmt::Display, sym: &Symbol, esym: &ElfSym| {
+    let println = |src: &dyn std::fmt::Display, sym: &Symbol, esym: &SymbolEntry| {
         let kind = if esym.is_weak() { 'w' } else { 'u' };
         match sym.input_section() {
             Some(sec) => out!(ctx, "{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
@@ -2160,7 +2156,10 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
         STT_COMMON => STT_OBJECT,
         ty => ty,
     };
-    let check = |file: &dyn std::fmt::Display, file_id: FileId, sym: &Symbol, esym2: &ElfSym| {
+    let check = |file: &dyn std::fmt::Display,
+                 file_id: FileId,
+                 sym: &Symbol,
+                 esym2: &SymbolEntry| {
         let esym1 = &sym.esym(ctx);
         if let Some(owner) = sym.file() {
             if owner != file_id
@@ -4075,7 +4074,7 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(shdr) = &mut ctx.shdr {
-        shdr.hdr.shdr.sh_size = shndx as u64 * ElfShdr::size::<E>() as u64;
+        shdr.hdr.shdr.sh_size = shndx as u64 * SectionHeader::size::<E>() as u64;
     }
 
     // Some types of section header refer to other section by index.
@@ -4085,7 +4084,7 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
-        let n = ctx.symtab.hdr.shdr.sh_size / ElfSym::size::<E>() as u64;
+        let n = ctx.symtab.hdr.shdr.sh_size / SymbolEntry::size::<E>() as u64;
         symtab_shndx.hdr.shdr.sh_size = n * 4;
     }
 }
@@ -4581,7 +4580,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         }
         let hdr = ctx.chunk_header(id);
         let mut placeholder = ChunkHeader::with_name(hdr.name, SHT_NOBITS, hdr.shdr.sh_flags);
-        placeholder.shdr = ElfShdr {
+        placeholder.shdr = SectionHeader {
             sh_type: SHT_NOBITS,
             ..hdr.shdr
         };
@@ -4627,8 +4626,8 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     if let Some(n) = ctx.phdr.as_ref().map(|p| p.phdrs.len()) {
         output_chunks::update_phdr(ctx);
         let phdr = ctx.phdr.as_mut().unwrap();
-        phdr.phdrs.resize(n, ElfPhdr::default());
-        phdr.hdr.shdr.sh_size = (n * ElfPhdr::size::<E>()) as u64;
+        phdr.phdrs.resize(n, ProgramHeader::default());
+        phdr.hdr.shdr.sh_size = (n * ProgramHeader::size::<E>()) as u64;
     }
 
     // Write to a separate debug file

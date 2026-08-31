@@ -429,7 +429,7 @@ impl DynamicSection {
     pub fn new<E: Arch>(args: &crate::cmdline::Args) -> DynamicSection {
         let mut hdr = ChunkHeader::new(".dynamic", SHT_DYNAMIC, 0);
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        hdr.shdr.sh_entsize = ElfDyn::size::<E>() as u64;
+        hdr.shdr.sh_entsize = ElfDyn::<E>::size() as u64;
         if args.z_rodynamic {
             hdr.shdr.sh_flags = SHF_ALLOC as u64;
             hdr.is_relro = false;
@@ -580,7 +580,7 @@ pub mod dynamic {
 
         if ctx.dynsym.hdr.shdr.sh_size != 0 {
             define(DT_SYMTAB, ctx.dynsym.hdr.shdr.sh_addr);
-            define(DT_SYMENT, ElfSym::size::<E>() as u64);
+            define(DT_SYMENT, SymbolEntry::size::<E>() as u64);
         }
         if ctx.dynstr.hdr.shdr.sh_size != 0 {
             define(DT_STRTAB, ctx.dynstr.hdr.shdr.sh_addr);
@@ -727,20 +727,23 @@ pub mod dynamic {
         }
         let n = create_contents(ctx).len();
         let dynamic = ctx.dynamic.as_mut().unwrap();
-        dynamic.hdr.shdr.sh_size = (n * ElfDyn::size::<E>()) as u64;
+        dynamic.hdr.shdr.sh_size = (n * ElfDyn::<E>::size()) as u64;
         dynamic.hdr.shdr.sh_link = ctx.dynstr.hdr.shndx;
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        let entries: Vec<ElfDyn> = create_contents(ctx)
+        let entries: Vec<ElfDyn<E>> = create_contents(ctx)
             .into_iter()
-            .map(|(d_tag, d_val)| ElfDyn { d_tag, d_val })
+            .map(|(d_tag, d_val)| ElfDyn {
+                d_tag: E::Word::new(d_tag),
+                d_val: E::Word::new(d_val),
+            })
             .collect();
         debug_assert_eq!(
             ctx.dynamic.as_ref().unwrap().hdr.shdr.sh_size as usize,
-            entries.len() * ElfDyn::size::<E>()
+            entries.len() * ElfDyn::<E>::size()
         );
-        ElfDyn::write_all::<E>(&entries, buf);
+        ElfDyn::<E>::write_all(&entries, buf);
     }
 
     /// A chunk id for the dynamic section, if it exists.

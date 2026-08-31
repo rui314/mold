@@ -49,6 +49,10 @@ pub struct I386;
 
 impl Layout for I386 {
     type Endian = LittleEndian;
+    type Word = Ul32;
+    type Sym = Elf32Sym<LittleEndian>;
+    type Phdr = Elf32Phdr<LittleEndian>;
+    type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelLe;
     const IS_64: bool = false;
     const IS_RELA: bool = false;

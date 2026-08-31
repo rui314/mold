@@ -40,6 +40,10 @@ pub struct X86_64;
 
 impl Layout for X86_64 {
     type Endian = LittleEndian;
+    type Word = Ul64;
+    type Sym = Elf64Sym<LittleEndian>;
+    type Phdr = Elf64Phdr<LittleEndian>;
+    type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;

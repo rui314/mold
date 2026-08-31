@@ -204,7 +204,7 @@ pub struct SymtabSection {
 impl SymtabSection {
     pub fn new<E: Arch>() -> SymtabSection {
         let mut hdr = ChunkHeader::new(".symtab", SHT_SYMTAB, 0);
-        hdr.shdr.sh_entsize = ElfSym::size::<E>() as u64;
+        hdr.shdr.sh_entsize = SymbolEntry::size::<E>() as u64;
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         SymtabSection { hdr }
     }
@@ -282,7 +282,7 @@ pub mod symtab {
         ctx.symtab.hdr.shdr.sh_size = if nsyms == 1 {
             0
         } else {
-            nsyms as u64 * ElfSym::size::<E>() as u64
+            nsyms as u64 * SymbolEntry::size::<E>() as u64
         };
     }
 
@@ -293,7 +293,7 @@ pub mod symtab {
         strtab: &mut [u8],
         mut xindex: Option<&mut [u8]>,
     ) {
-        let size = ElfSym::size::<E>();
+        let size = SymbolEntry::size::<E>();
         symtab[..size].fill(0);
         if let Some(xindex) = xindex.as_deref_mut() {
             xindex.fill(0);
@@ -305,11 +305,9 @@ pub mod symtab {
             if hdr.shndx == 0 {
                 continue;
             }
-            let mut esym = ElfSym {
-                st_info: STT_SECTION as u8,
-                st_value: hdr.shdr.sh_addr,
-                ..ElfSym::default()
-            };
+            let mut esym = SymbolEntry::default();
+            esym.st_value = hdr.shdr.sh_addr;
+            esym.set_type(STT_SECTION);
             match xindex.as_deref_mut() {
                 Some(xindex) => {
                     E::Endian::write_u32(&mut xindex[hdr.shndx as usize * 4..], hdr.shndx);
@@ -467,12 +465,10 @@ fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
 /// Builds the output symbol table entry for a symbol. The returned index
 /// is nonzero if the section index doesn't fit in `st_shndx` and must go
 /// to `.symtab_shndx`.
-pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (ElfSym, u32) {
-    let mut esym = ElfSym {
-        st_name,
-        st_size: symbol_size(ctx, sym),
-        ..ElfSym::default()
-    };
+pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (SymbolEntry, u32) {
+    let mut esym = SymbolEntry::default();
+    esym.st_name = st_name;
+    esym.st_size = symbol_size(ctx, sym);
     esym.set_type(sym.ty());
 
     let file = sym.file().expect("symbol without a file in symbol table");
@@ -487,8 +483,9 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     });
 
     match E::FAMILY {
-        Family::Arm64 | Family::RiscV => esym.st_other |= sym.esym(ctx).st_other & 0x80,
-        Family::Ppc64V2 => esym.st_other |= sym.esym(ctx).st_other & 0xe0,
+        Family::Arm64 => esym.set_arm64_variant_pcs(sym.esym(ctx).arm64_variant_pcs()),
+        Family::RiscV => esym.set_riscv_variant_cc(sym.esym(ctx).riscv_variant_cc()),
+        Family::Ppc64V2 => esym.set_ppc64_local_entry(sym.esym(ctx).ppc64_local_entry()),
         _ => {}
     }
 
@@ -612,7 +609,7 @@ pub struct DynsymSection {
 impl DynsymSection {
     pub fn new<E: Arch>() -> DynsymSection {
         let mut hdr = ChunkHeader::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize = ElfSym::size::<E>() as u64;
+        hdr.shdr.sh_entsize = SymbolEntry::size::<E>() as u64;
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         DynsymSection {
             hdr,
@@ -638,21 +635,21 @@ pub mod dynsym {
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         ctx.dynsym.hdr.shdr.sh_link = ctx.dynstr.hdr.shndx;
-        ctx.dynsym.hdr.shdr.sh_size = ElfSym::size::<E>() as u64 * ctx.dynsym.symbols.len() as u64;
+        ctx.dynsym.hdr.shdr.sh_size =
+            SymbolEntry::size::<E>() as u64 * ctx.dynsym.symbols.len() as u64;
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        let size = ElfSym::size::<E>();
+        let size = SymbolEntry::size::<E>();
         buf[..size].fill(0);
         let mut offset = ctx.dynsym.dynstr_offset as u32;
         for &id in ctx.dynsym.symbols.iter().skip(1).flatten() {
             let sym = &ctx.symbols[id];
             let (esym, xindex) = to_output_esym(ctx, sym, offset);
             if xindex != 0 {
-                let nshdrs = ctx
-                    .shdr
-                    .as_ref()
-                    .map_or(0, |s| s.hdr.shdr.sh_size / ElfShdr::size::<E>() as u64);
+                let nshdrs = ctx.shdr.as_ref().map_or(0, |s| {
+                    s.hdr.shdr.sh_size / SectionHeader::size::<E>() as u64
+                });
                 error!(
                     ctx,
                     "{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",

@@ -26,12 +26,12 @@ fn is_text_file(data: &[u8]) -> bool {
 
 /// Whether an ELF relocatable object is really a GCC LTO object.
 fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
-    let Some(ehdr) = data.get(..ElfEhdr::size::<E>()).map(ElfEhdr::parse::<E>) else {
+    let Some(ehdr) = data.get(..ElfEhdr::<E>::size()).map(ElfEhdr::<E>::parse) else {
         return false;
     };
-    let shoff = ehdr.e_shoff as usize;
-    let shdr_size = ElfShdr::size::<E>();
-    let Some(shdr_bytes) = data.get(shoff..shoff + ehdr.e_shnum as usize * shdr_size) else {
+    let shoff = ehdr.e_shoff.get() as usize;
+    let shdr_size = SectionHeader::size::<E>();
+    let Some(shdr_bytes) = data.get(shoff..shoff + ehdr.e_shnum.get() as usize * shdr_size) else {
         return false;
     };
     let shdrs = ShdrTable::in_file(shdr_bytes, RecordLayout::of::<E>());
@@ -41,10 +41,10 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
 
     // e_shstrndx is a 16-bit field. If .shstrtab's section index is
     // too large, the actual number is stored to sh_link field.
-    let shstrtab_idx = if ehdr.e_shstrndx as u32 == SHN_XINDEX {
+    let shstrtab_idx = if u32::from(ehdr.e_shstrndx.get()) == SHN_XINDEX {
         first.sh_link as usize
     } else {
-        ehdr.e_shstrndx as usize
+        ehdr.e_shstrndx.get() as usize
     };
     let shstrtab_offset = if has_gcc_plugin {
         shdrs.get(shstrtab_idx).map(|shdr| shdr.sh_offset as usize)
@@ -78,8 +78,8 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
             return false;
         };
         let syms = bytes
-            .chunks_exact(ElfSym::size::<E>())
-            .map(ElfSym::parse::<E>);
+            .chunks_exact(SymbolEntry::size::<E>())
+            .map(SymbolEntry::parse::<E>);
         let skip = |ty: u32| ty == STT_NOTYPE || ty == STT_FILE || ty == STT_SECTION;
 
         if let Some(sym) = syms.skip(1).find(|s| !skip(s.st_type())) {

@@ -66,6 +66,10 @@ pub struct Ppc64V1;
 
 impl Layout for Ppc64V1 {
     type Endian = BigEndian;
+    type Word = Ub64;
+    type Sym = Elf64Sym<BigEndian>;
+    type Phdr = Elf64Phdr<BigEndian>;
+    type Chdr = Elf64Chdr<BigEndian>;
     type Rel = Elf64RelaBe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;

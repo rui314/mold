@@ -154,14 +154,14 @@
 //! pointer (DTP) is the base `__tls_get_addr` returns for offset 0.
 
 use crate::arch::{Arch, Family};
-use crate::elf::{ElfPhdr, PT_TLS};
+use crate::elf::{ProgramHeader, PT_TLS};
 use crate::util::{align_down, align_to};
 
 /// Returns the TP address which can be used for efficient TLV accesses in
 /// the main executable. TP at runtime refers to a per-process TLS block
 /// whose address is not known at link-time. So the address returned from
 /// this function is the TP if the TLS template image were a TLS block.
-pub fn tp_addr<E: Arch>(phdr: &ElfPhdr) -> u64 {
+pub fn tp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
     debug_assert_eq!(phdr.p_type, PT_TLS);
     match E::FAMILY {
         // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
@@ -194,7 +194,7 @@ pub fn tp_addr<E: Arch>(phdr: &ElfPhdr) -> u64 {
 
 /// Returns the address __tls_get_addr() would return if it's called
 /// with offset 0.
-pub fn dtp_addr<E: Arch>(phdr: &ElfPhdr) -> u64 {
+pub fn dtp_addr<E: Arch>(phdr: &ProgramHeader) -> u64 {
     debug_assert_eq!(phdr.p_type, PT_TLS);
     match E::FAMILY {
         // On PowerPC and m68k, R_DTPOFF is resolved to the address 0x8000

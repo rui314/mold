@@ -320,11 +320,9 @@ impl ClaimedSymbol {
 
     /// An IR symbol as an ELF symbol; definitions are absolute, since an
     /// IR object has no sections.
-    fn to_elf_sym(&self) -> ElfSym {
-        let mut esym = ElfSym {
-            st_size: self.size,
-            ..ElfSym::default()
-        };
+    fn to_elf_sym(&self) -> SymbolEntry {
+        let mut esym = SymbolEntry::default();
+        esym.st_size = self.size;
         esym.st_shndx = match self.def {
             LDPK_DEF | LDPK_WEAKDEF => SHN_ABS as u16,
             LDPK_COMMON => SHN_COMMON as u16,
@@ -893,7 +891,7 @@ pub fn read_lto_object<E: Arch>(
     let symbols = std::mem::take(&mut *CLAIMED_SYMBOLS.lock().unwrap());
     let mut strtab = vec![0u8];
     // Initialize esyms
-    let mut elf_syms = vec![ElfSym::default()];
+    let mut elf_syms = vec![SymbolEntry::default()];
     let mut comdat_keys = vec![None];
     for sym in &symbols {
         let mut esym = sym.to_elf_sym();

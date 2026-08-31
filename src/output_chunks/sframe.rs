@@ -15,26 +15,26 @@ use crate::output_chunks::ChunkHeader;
 // their FREs, sort the index by PC and rewrite the header. mold reads and
 // writes SFrame Version 3.
 #[derive(Debug)]
-pub struct SFrameSection {
+pub struct SFrameSection<E: Layout> {
     pub hdr: ChunkHeader,
-    pub header: SFrameHeader,
+    pub header: SFrameHeader<E>,
     /// The live FDEs as (file, index into the file's `sframe_fdes`).
     pub fdes: Vec<(ObjId, u32)>,
 }
 
-impl SFrameSection {
-    pub fn new() -> SFrameSection {
+impl<E: Layout> SFrameSection<E> {
+    pub fn new() -> SFrameSection<E> {
         let mut hdr = ChunkHeader::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign = 8;
         SFrameSection {
             hdr,
-            header: SFrameHeader::default(),
+            header: SFrameHeader::<E>::default(),
             fdes: Vec::new(),
         }
     }
 }
 
-impl Default for SFrameSection {
+impl<E: Layout> Default for SFrameSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -70,8 +70,8 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     // We always emit PC-relative function pointers; we can additionally
     // mark the index as sorted unless this is a relocatable output,
     // where the final addresses (and hence the order) aren't known.
-    let mut hdr = SFrameHeader {
-        magic: SFRAME_MAGIC,
+    let mut hdr = SFrameHeader::<E> {
+        magic: U16::new(SFRAME_MAGIC),
         version: 3,
         flags: SFRAME_F_FDE_FUNC_START_PCREL
             | if ctx.args.relocatable {
@@ -81,20 +81,20 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
             },
         abi_arch: abi,
         cfa_fixed_ra_offset: if E::FAMILY == Family::X86_64 { -8 } else { 0 },
-        num_fdes: fdes.len() as u32,
-        freoff: (fdes.len() * SFrameFdeIdx::size::<E>()) as u32,
-        ..SFrameHeader::default()
+        num_fdes: U32::new(fdes.len() as u32),
+        freoff: U32::new((fdes.len() * SFrameFdeIdx::<E>::size()) as u32),
+        ..SFrameHeader::<E>::default()
     };
     for &(fi, i) in &fdes {
         let fde = &ctx.objs[fi.index()].sframe_fdes[i as usize];
-        hdr.fre_len += fde.fre.len() as u32;
-        hdr.num_fres += fde.num_fres;
+        hdr.fre_len.set(hdr.fre_len.get() + fde.fre.len() as u32);
+        hdr.num_fres.set(hdr.num_fres.get() + fde.num_fres);
     }
 
     let sframe = &mut ctx.sframe;
-    sframe.hdr.shdr.sh_size = (SFrameHeader::size::<E>() + fdes.len() * SFrameFdeIdx::size::<E>())
+    sframe.hdr.shdr.sh_size = (SFrameHeader::<E>::size() + fdes.len() * SFrameFdeIdx::<E>::size())
         as u64
-        + hdr.fre_len as u64;
+        + u64::from(hdr.fre_len.get());
     sframe.header = hdr;
     sframe.fdes = fdes;
 }
@@ -126,15 +126,15 @@ pub fn sort<E: Arch>(ctx: &mut Context<E>) {
 // unsorted and func_start is emitted as a relocation by SFrameRelocSection.
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let sframe = &ctx.sframe;
-    let hdr_size = SFrameHeader::size::<E>();
-    let idx_size = SFrameFdeIdx::size::<E>();
+    let hdr_size = SFrameHeader::<E>::size();
+    let idx_size = SFrameFdeIdx::<E>::size();
     // Write the header.
-    sframe.header.write::<E>(buf);
+    sframe.header.write(buf);
 
     // Write the FDE index and concatenate the FRE blocks. Because
     // SFRAME_F_FDE_FUNC_START_PCREL is set, func_start_offset is the distance
     // from the field itself to the function the FDE describes.
-    let fre_base = hdr_size + sframe.header.freoff as usize;
+    let fre_base = hdr_size + sframe.header.freoff.get() as usize;
     let mut fre_off = 0usize;
     for (i, &(fi, fi_idx)) in sframe.fdes.iter().enumerate() {
         let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
@@ -149,12 +149,12 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             let field_addr = sframe.hdr.shdr.sh_addr + hdr_size as u64 + (i * idx_size) as u64;
             func_addr.wrapping_sub(field_addr) as i64
         };
-        let ent = SFrameFdeIdx {
-            func_start_offset,
-            func_size: fde.func_size,
-            func_start_fre_off: fre_off as u32,
+        let ent = SFrameFdeIdx::<E> {
+            func_start_offset: I64::new(func_start_offset),
+            func_size: U32::new(fde.func_size),
+            func_start_fre_off: U32::new(fre_off as u32),
         };
-        ent.write::<E>(&mut buf[hdr_size + i * idx_size..]);
+        ent.write(&mut buf[hdr_size + i * idx_size..]);
         fre_off += fde.fre.len();
     }
 }
@@ -200,8 +200,8 @@ pub mod sframe_reloc {
             let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
             let sym = &ctx.symbols[fde.sym];
             let r_offset = ctx.sframe.hdr.shdr.sh_addr
-                + SFrameHeader::size::<E>() as u64
-                + (i * SFrameFdeIdx::size::<E>()) as u64;
+                + SFrameHeader::<E>::size() as u64
+                + (i * SFrameFdeIdx::<E>::size()) as u64;
 
             let (r_sym, r_addend) = if sym.st_type() == STT_SECTION {
                 // We discard input section symbols and create a fresh one per output

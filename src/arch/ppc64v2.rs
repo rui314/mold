@@ -100,6 +100,10 @@ pub struct Ppc64V2;
 
 impl Layout for Ppc64V2 {
     type Endian = LittleEndian;
+    type Word = Ul64;
+    type Sym = Elf64Sym<LittleEndian>;
+    type Phdr = Elf64Phdr<LittleEndian>;
+    type Chdr = Elf64Chdr<LittleEndian>;
     type Rel = Elf64RelaLe;
     const IS_64: bool = true;
     const IS_RELA: bool = true;

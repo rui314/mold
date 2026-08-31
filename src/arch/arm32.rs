@@ -66,6 +66,10 @@ pub type Arm32Be = Arm32Target<BigEndian>;
 
 impl Layout for Arm32Target<LittleEndian> {
     type Endian = LittleEndian;
+    type Word = Ul32;
+    type Sym = Elf32Sym<LittleEndian>;
+    type Phdr = Elf32Phdr<LittleEndian>;
+    type Chdr = Elf32Chdr<LittleEndian>;
     type Rel = Elf32RelLe;
     const IS_64: bool = false;
     const IS_RELA: bool = false;
@@ -73,6 +77,10 @@ impl Layout for Arm32Target<LittleEndian> {
 
 impl Layout for Arm32Target<BigEndian> {
     type Endian = BigEndian;
+    type Word = Ub32;
+    type Sym = Elf32Sym<BigEndian>;
+    type Phdr = Elf32Phdr<BigEndian>;
+    type Chdr = Elf32Chdr<BigEndian>;
     type Rel = Elf32RelBe;
     const IS_64: bool = false;
     const IS_RELA: bool = false;

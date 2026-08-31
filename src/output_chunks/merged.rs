@@ -164,7 +164,7 @@ impl MergedSection {
         args: &Args,
         sections: &RwLock<Vec<MergedSection>>,
         name: &'static BStr,
-        shdr: &ElfShdr,
+        shdr: &SectionHeader,
     ) -> Option<MergedSectionId> {
         if shdr.sh_flags & SHF_MERGE as u64 == 0 {
             return None;
