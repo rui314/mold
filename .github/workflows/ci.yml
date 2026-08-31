@@ -23,9 +23,7 @@ jobs:
         ! grep -q '^unavailable:' "$RUNNER_TEMP/test-inventory.txt"
     # All workspace crates were built above. Avoid linking empty test binaries
     # for the target crates and command.
-    - run: |
-        cargo test --locked -p mold -p mold-tests -p mold-cli \
-          --lib --test integration
+    - run: cargo test --locked -p mold -p mold-tests -p mold-cli --lib --test integration
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
@@ -58,20 +56,14 @@ jobs:
       with:
         components: rust-src
     - run: sudo ./install-test-deps.sh
-    - run: |
-        cargo +nightly build --locked -Zbuild-std \
-          --target x86_64-unknown-linux-gnu \
-          -p mold-cli --features system-allocator
+    - run: cargo +nightly build --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --features system-allocator
     - run: |
         if [ '${{ matrix.sanitizer }}' = address ]; then
           export ASAN_OPTIONS='${{ matrix.runtime-options }}'
         else
           export TSAN_OPTIONS='${{ matrix.runtime-options }}'
         fi
-        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std \
-          --target x86_64-unknown-linux-gnu \
-          -p mold-cli --features system-allocator \
-          --test integration -- --native
+        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --features system-allocator --test integration -- --native
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
