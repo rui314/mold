@@ -131,13 +131,9 @@ and LoongArch are also attached to each
 
 ## How to Build
 
-mold is written in Rust and built with Cargo. You need Git, a stable Rust
-toolchain, and a C compiler.
-
-### Install Dependencies
-
-Install the stable Rust toolchain with [rustup](https://rustup.rs/) and make
-sure `cc` is available in `PATH`.
+mold is written in Rust and built with Cargo. Install the stable Rust toolchain
+with [rustup](https://rustup.rs/). You also need Git and a C compiler such as
+GCC or Clang, which you can install with your system's package manager.
 
 ### Compile mold
 
