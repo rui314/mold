@@ -978,11 +978,12 @@ fn parse_section_order(diag: &Diagnostics, arg: &str) -> Vec<SectionOrder> {
     orders
 }
 
-fn parse_defsym_value(s: &str) -> DefsymValue {
+fn parse_defsym_value(diag: &Diagnostics, s: &str) -> DefsymValue {
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        if let Ok(v) = u64::from_str_radix(hex, 16) {
-            return DefsymValue::Addr(v);
-        }
+        let Ok(v) = u64::from_str_radix(hex, 16) else {
+            fatal!(diag, "-defsym: not a number: {s}");
+        };
+        return DefsymValue::Addr(v);
     }
     if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
         return DefsymValue::Addr(s.parse().unwrap_or(0));
@@ -1262,7 +1263,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                 fatal!(diag, "-defsym: syntax error: {arg}");
             };
             a.defsyms
-                .push((name.to_string(), parse_defsym_value(value)));
+                .push((name.to_string(), parse_defsym_value(diag, value)));
         } else if read_flag!(":lto-pass2") {
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file") {
