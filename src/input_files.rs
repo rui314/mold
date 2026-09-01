@@ -2472,6 +2472,10 @@ impl<E: Arch> ObjectFile<E> {
                 entry: frag,
             };
             symbols.with_symbol(sym_id, |sym| {
+                // If the symbol resolved to a definition in another file, leave it
+                // alone. Overwriting it would discard the chosen definition, and since
+                // this function runs on all files in parallel, it would also be a data
+                // race.
                 if sym.file() != Some(FileId::Obj(id)) {
                     return;
                 }
