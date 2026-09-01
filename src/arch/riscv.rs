@@ -246,8 +246,8 @@ fn find_paired_reloc<E: Arch>(
             }
         }
     } else {
-        for j in i + 1..rels.len() {
-            if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {
+        for (j, rel) in rels.iter().enumerate().skip(i + 1) {
+            if is_hi20(rel.r_type()) && value == rel.r_offset() {
                 return j;
             }
         }
