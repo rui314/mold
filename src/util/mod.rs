@@ -288,16 +288,13 @@ pub fn path_clean(path: &str) -> String {
     for component in Path::new(path).components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !matches!(
-                    out.components().next_back(),
-                    Some(Component::RootDir) | None
-                ) {
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::RootDir) => {}
+                None | Some(Component::ParentDir) => out.push(".."),
+                _ => {
                     out.pop();
-                } else if out.components().next_back().is_none() {
-                    out.push("..");
                 }
-            }
+            },
             other => out.push(other),
         }
     }
@@ -365,5 +362,10 @@ mod tests {
         assert_eq!(path_clean("a/./b/../c"), "a/c");
         assert_eq!(path_clean("/a/../.."), "/");
         assert_eq!(path_clean("../a"), "../a");
+        assert_eq!(path_clean("../../a/b"), "../../a/b");
+        assert_eq!(path_clean("a/../../b"), "../b");
+        assert_eq!(path_clean("a/b/../../../c"), "../c");
+        assert_eq!(path_clean(".."), "..");
+        assert_eq!(path_clean("/.."), "/");
     }
 }
