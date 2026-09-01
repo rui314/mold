@@ -432,7 +432,8 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     let mut file = ObjectFile::<E>::new(&ctx.diag, mf, String::new());
     file.is_lto_output = true;
     file.base.set_reachable(true);
-    file.base.priority = ctx.file_by_priority.len() as u32;
+    file.base.priority = ctx.lto_file_priority;
+    ctx.lto_file_priority += 1;
     // The corresponding C++ path resolves these immediately:
     // parse_symbols() only registers global symbols. Create their shared
     // Symbol objects and fill in the file's pointers before resolving.

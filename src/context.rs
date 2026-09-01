@@ -130,6 +130,7 @@ pub struct Context<E: Arch> {
     /// IR objects the LTO plugin consumed. They leave the link once
     /// compiled, but the output still depends on them.
     pub lto_input_files: Vec<(u32, &'static MappedFile)>,
+    pub lto_file_priority: u32,
 
     pub internal_obj: Option<ObjId>,
     pub internal_esyms: Vec<ElfSym<E>>,
@@ -270,6 +271,7 @@ impl<E: Arch> Context<E> {
             pending_files: Vec::new(),
             dso_sonames: HashSet::new(),
             lto_input_files: Vec::new(),
+            lto_file_priority: 100,
             internal_obj: None,
             internal_esyms: Vec::new(),
             output_sections: Vec::new(),

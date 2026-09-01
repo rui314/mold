@@ -454,10 +454,11 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     let mut objs: Vec<Option<Box<ObjectFile<E>>>> = objs.into_iter().map(Some).collect();
     let mut dsos: Vec<Option<Box<SharedFile<E>>>> = dsos.into_iter().map(Some).collect();
 
-    // Priority 0 is reserved for the internal object file.
+    // Priority 0 is reserved for the internal object file. LTO-generated
+    // files use priorities beginning at 100, so regular files begin at 10000.
     ctx.file_by_priority.push(None);
     for (_, id) in pending {
-        let priority = ctx.file_by_priority.len() as u32;
+        let priority = 10000 + ctx.file_by_priority.len() as u32 - 1;
         match id {
             FileId::Obj(idx) => {
                 let mut file = objs[idx.index()].take().unwrap();
