@@ -138,6 +138,7 @@ jobs:
       with:
         msystem: UCRT64
         update: true
+        install: git
         pacboy: rust:p cc:p dlfcn:p
     - shell: msys2 {0}
       run: cargo build --locked
