@@ -637,6 +637,7 @@ unsafe extern "C" fn get_api_version(
     if LAPI_V1 < minimal_api_supported {
         fatal!(diag(), "LTO plugin does not support V0 or V1 API");
     }
+    // The plugin reads the string after this function has returned
     static LINKER_VERSION: OnceLock<CString> = OnceLock::new();
     *linker_identifier = c"mold".as_ptr();
     *linker_version = LINKER_VERSION
