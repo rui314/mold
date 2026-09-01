@@ -229,9 +229,9 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       define(PT_NOTE, flags, first);
 
       while (i < chunks.size() &&
-             is_note(ctx.chunks[i]) &&
-             to_phdr_flags(ctx, ctx.chunks[i]) == flags)
-        append(ctx.chunks[i++]);
+             is_note(chunks[i]) &&
+             to_phdr_flags(ctx, chunks[i]) == flags)
+        append(chunks[i++]);
     }
   }
 
