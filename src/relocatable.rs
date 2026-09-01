@@ -37,7 +37,9 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::output_chunks::eh_frame::EhFrameRelocSection;
-use crate::output_chunks::misc::{ComdatGroupSection, NotePropertySection};
+use crate::output_chunks::misc::{
+    ComdatGroupSection, NotePropertySection, RiscvAttributesSection,
+};
 use crate::output_chunks::sframe::SFrameRelocSection;
 use crate::output_chunks::symtab::ShstrtabSection;
 use crate::output_chunks::{self, ChunkId, OutputEhdr, OutputShdr};
@@ -66,6 +68,10 @@ fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     if E::IS_X86 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         ctx.chunks.push(ChunkId::NoteProperty);
+    }
+    if E::IS_RISCV {
+        ctx.riscv_attributes = Some(RiscvAttributesSection::new());
+        ctx.chunks.push(ChunkId::RiscvAttributes);
     }
 }
 
