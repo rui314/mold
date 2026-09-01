@@ -585,7 +585,7 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
     size_t nread;
     u64 addr = std::stoull(std::string(s), &nread, 16);
     if (s.size() != nread)
-      return {};
+      Fatal(ctx) << "-defsym: not a number: " << s;
     return addr;
   }
 
