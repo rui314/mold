@@ -28,6 +28,7 @@ use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, SectionRef};
 use crate::output_chunks::ChunkId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
+use crate::util::virtual_memory;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
@@ -1457,41 +1458,11 @@ impl SymbolArena {
     };
 
     fn new() -> SymbolArena {
-        let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        let flags = flags | libc::MAP_NORESERVE;
-
-        // SAFETY: this creates private anonymous storage. No typed access is
-        // made until an element has been initialized below.
-        let data = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                Self::SIZE,
-                libc::PROT_READ | libc::PROT_WRITE,
-                flags,
-                -1,
-                0,
-            )
-        };
-        if data == libc::MAP_FAILED {
-            panic!(
-                "mmap of {} bytes for symbols failed: {}",
-                Self::SIZE,
-                std::io::Error::last_os_error()
-            );
-        }
-
-        // Large links fill the beginning of the arena densely. Transparent
-        // huge pages reduce address-translation overhead without populating
-        // unused pages.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        // SAFETY: the range is the fresh mapping; the advice is only a hint.
-        unsafe {
-            libc::madvise(data, Self::SIZE, libc::MADV_HUGEPAGE);
-        }
+        let data = virtual_memory::reserve(Self::SIZE)
+            .unwrap_or_else(|| panic!("cannot reserve {} bytes for symbols", Self::SIZE));
 
         SymbolArena {
-            data: NonNull::new(data.cast()).expect("mmap returned a null address"),
+            data: data.cast(),
             len: 0,
             size: Self::SIZE,
         }
@@ -1506,6 +1477,13 @@ impl SymbolArena {
     fn reserve(&self, additional: usize) {
         let end = self.len.checked_add(additional).expect("too many symbols");
         assert!(end <= self.capacity(), "symbol arena is full");
+
+        let size = additional * std::mem::size_of::<Symbol>();
+        // VirtualAlloc reserves and commits address space separately.
+        // SAFETY: this is the uninitialized tail of the arena reservation.
+        if !unsafe { virtual_memory::commit(self.data.as_ptr().add(self.len).cast(), size) } {
+            panic!("cannot commit {size} bytes for symbols");
+        }
     }
 
     #[inline]
@@ -1563,7 +1541,7 @@ impl Drop for SymbolArena {
                 self.data.as_ptr(),
                 self.len,
             ));
-            libc::munmap(self.data.as_ptr().cast(), self.size);
+            virtual_memory::release(self.data.as_ptr().cast(), self.size);
         }
     }
 }

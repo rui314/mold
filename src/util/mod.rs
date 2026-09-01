@@ -9,6 +9,7 @@ pub mod glob;
 pub mod hyperloglog;
 pub mod perf;
 pub mod tar;
+pub(crate) mod virtual_memory;
 
 // Some C++ libraries haven't implemented std::has_single_bit yet.
 // Rust supplies the equivalent operation as `is_power_of_two`.

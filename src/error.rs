@@ -142,7 +142,12 @@ pub fn exit_after_cleanup(status: i32) -> ! {
     let _ = io::stdout().flush();
     let _ = io::stderr().flush();
     // SAFETY: `_exit` only terminates the process.
-    unsafe { libc::_exit(status) }
+    #[cfg(not(windows))]
+    unsafe {
+        libc::_exit(status)
+    }
+    #[cfg(windows)]
+    std::process::exit(status)
 }
 
 #[macro_export]

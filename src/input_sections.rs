@@ -19,6 +19,7 @@ use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, N
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
 use crate::util::hyperloglog::HyperLogLog;
+use crate::util::virtual_memory;
 use crate::util::{self, cstr_at, leak_bytes};
 use crate::{error, fatal};
 
@@ -1689,43 +1690,11 @@ impl SectionArena {
     };
 
     pub fn new() -> SectionArena {
-        let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        // The arena is much larger than most links need. Do not reserve swap for
-        // pages that may never be touched.
-        let flags = flags | libc::MAP_NORESERVE;
-
-        // The C++ implementation's Windows allocation counterpart notes:
-        // VirtualAlloc reserves and commits address space separately.
-        //
-        // SAFETY: this creates private anonymous storage. SectionList makes
-        // typed references only to elements it has initialized.
-        let data = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                Self::SIZE,
-                libc::PROT_READ | libc::PROT_WRITE,
-                flags,
-                -1,
-                0,
-            )
-        };
-        if data == libc::MAP_FAILED {
-            panic!(
-                "mmap of {} bytes for input sections failed: {}",
-                Self::SIZE,
-                std::io::Error::last_os_error()
-            );
-        }
-
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        // SAFETY: the range is the fresh mapping; the advice is only a hint.
-        unsafe {
-            libc::madvise(data, Self::SIZE, libc::MADV_HUGEPAGE);
-        }
+        let data = virtual_memory::reserve(Self::SIZE)
+            .unwrap_or_else(|| panic!("cannot reserve {} bytes for input sections", Self::SIZE));
 
         SectionArena {
-            data: NonNull::new(data.cast()).expect("mmap returned a null address"),
+            data,
             // Leave the first slots unused so that a base-relative index is
             // never zero.
             offset: std::sync::atomic::AtomicUsize::new(8),
@@ -1750,7 +1719,15 @@ impl SectionArena {
                 .offset
                 .compare_exchange_weak(old, end, Ordering::Relaxed, Ordering::Relaxed)
             {
-                Ok(_) => return begin,
+                Ok(_) => {
+                    // VirtualAlloc reserves and commits address space separately.
+                    // SAFETY: the atomic bump pointer assigned a disjoint range
+                    // within the reservation.
+                    if !unsafe { virtual_memory::commit(self.data.as_ptr().add(begin), size) } {
+                        panic!("cannot commit {size} bytes for input sections");
+                    }
+                    return begin;
+                }
                 Err(value) => old = value,
             }
         }
@@ -1861,7 +1838,7 @@ impl Drop for SectionArena {
     fn drop(&mut self) {
         // SAFETY: SectionLists have already dropped their initialized
         // elements; this releases the mapping that supplied their storage.
-        unsafe { libc::munmap(self.data.as_ptr().cast(), self.size) };
+        unsafe { virtual_memory::release(self.data.as_ptr(), self.size) };
     }
 }
 

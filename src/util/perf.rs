@@ -44,12 +44,57 @@ pub struct TimerHandle {
     parent: usize,
 }
 
+#[cfg(windows)]
+#[repr(C)]
+struct FileTime {
+    low: u32,
+    high: u32,
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn GetProcessTimes(
+        process: *mut std::ffi::c_void,
+        creation: *mut FileTime,
+        exit: *mut FileTime,
+        kernel: *mut FileTime,
+        user: *mut FileTime,
+    ) -> i32;
+}
+
+#[cfg(not(windows))]
 fn rusage() -> (f64, f64) {
     // SAFETY: `usage` is a valid, writable rusage struct.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
     let to_secs = |t: libc::timeval| t.tv_sec as f64 + t.tv_usec as f64 / 1_000_000.0;
     (to_secs(usage.ru_utime), to_secs(usage.ru_stime))
+}
+
+#[cfg(windows)]
+fn rusage() -> (f64, f64) {
+    let mut creation = FileTime { low: 0, high: 0 };
+    let mut exit = FileTime { low: 0, high: 0 };
+    let mut kernel = FileTime { low: 0, high: 0 };
+    let mut user = FileTime { low: 0, high: 0 };
+    // SAFETY: all FILETIME pointers are valid outputs and the pseudo-handle
+    // returned by GetCurrentProcess is always valid in this process.
+    unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        );
+    }
+    let to_secs = |time: FileTime| {
+        let ticks = (u64::from(time.high) << 32) | u64::from(time.low);
+        ticks as f64 / 10_000_000.0
+    };
+    (to_secs(user), to_secs(kernel))
 }
 
 impl Timers {

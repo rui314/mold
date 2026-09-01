@@ -110,3 +110,46 @@ jobs:
       with:
         name: test-results-${{ steps.sanitize.outputs.name }}
         path: target/debug/mold-test/out/test
+
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo build --locked
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo build --locked
+
+  build-msys:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        pacboy: rust:p cc:p dlfcn:p
+    - shell: msys2 {0}
+      run: cargo build --locked
+
+  build-freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - uses: vmactions/freebsd-vm@v1
+      with:
+        usesh: true
+        run: |
+          pkg install -y rust
+          ./install-test-deps.sh
+          cargo build --locked
+          cargo test --locked -p mold-cli --test integration -- --native

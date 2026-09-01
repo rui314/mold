@@ -1,6 +1,7 @@
 //! Command-line argument parsing.
 
 use std::collections::{HashMap, HashSet};
+use std::io::IsTerminal;
 
 use crate::arch;
 use crate::elf::*;
@@ -2122,6 +2123,5 @@ fn add_rpath(a: &mut Args, seen: &mut HashSet<String>, path: &str) {
 }
 
 fn stderr_is_tty() -> bool {
-    // SAFETY: isatty only inspects a file descriptor.
-    unsafe { libc::isatty(libc::STDERR_FILENO) != 0 }
+    std::io::stderr().is_terminal()
 }

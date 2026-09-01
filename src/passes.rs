@@ -4455,6 +4455,7 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
                     // Make the kernel page out the file contents we've just written
                     // so that subsequent close(2) call will become quicker.
                     if i > 0 && is_mmapped {
+                        #[cfg(not(windows))]
                         // SAFETY: the shard is part of the output mapping; the
                         // advice only drops the process's mapping of pages
                         // that are backed by the file.

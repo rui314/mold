@@ -4,19 +4,49 @@
 // TODO: use intermediate temporary file for output.
 
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
+#[cfg(not(windows))]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+#[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use memmap2::{MmapMut, MmapOptions};
+use memmap2::MmapMut;
+#[cfg(not(windows))]
+use memmap2::MmapOptions;
 
 use crate::error::Diagnostics;
 use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.
 static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+#[cfg(not(windows))]
+fn open_options(mode: u32) -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.mode(mode);
+    options
+}
+
+#[cfg(windows)]
+fn open_options(_mode: u32) -> OpenOptions {
+    OpenOptions::new()
+}
+
+fn set_permissions(file: &File, perm: u32) -> io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        file.set_permissions(std::fs::Permissions::from_mode(perm & !umask()))
+    }
+
+    #[cfg(windows)]
+    {
+        let mut permissions = file.metadata()?.permissions();
+        permissions.set_readonly(perm & 0o200 == 0);
+        file.set_permissions(permissions)
+    }
+}
 
 /// Removes a partially written output file.
 pub fn cleanup() {
@@ -55,6 +85,7 @@ pub struct OutputFile {
 /// makes things much slower: the kernel allocates and zeroes every page of
 /// the range inside the syscall, on one thread, which takes ~1.8 s for a
 /// 5 GiB file.
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn preallocate(file: &File, size: u64) {
     // SAFETY: fstatfs and fallocate only inspect and act on a valid open
     // descriptor; the statfs buffer is fully written before it is read.
@@ -65,6 +96,9 @@ fn preallocate(file: &File, size: u64) {
         }
     }
 }
+
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn preallocate(_file: &File, _size: u64) {}
 
 fn map_file(file: &File, size: u64) -> Storage {
     if size == 0 {
@@ -77,11 +111,16 @@ fn map_file(file: &File, size: u64) -> Storage {
     // without any further mmap call.
     //
     // SAFETY: the file is private to this process until it's closed.
+    #[cfg(not(windows))]
     let map = unsafe { MmapOptions::new().len(size as usize * 2).map_mut(file) }
         // If the address space is too tight, map just the file.
         .or_else(|_| unsafe { MmapMut::map_mut(file) });
+    #[cfg(windows)]
+    let map = unsafe { MmapMut::map_mut(file) };
     match map {
-        Ok(mut map) => {
+        Ok(map) => {
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            let mut map = map;
             // Enable transparent huge page for an output memory-mapped file.
             // Linking a Chromium debug build is ~20% faster with this madvise call.
             //
@@ -90,6 +129,7 @@ fn map_file(file: &File, size: u64) -> Storage {
             // many copying threads serialize on the file's page cache. With
             // it, the kernel backs the mapping with large folios and the
             // number of faults drops by an order of magnitude.
+            #[cfg(any(target_os = "android", target_os = "linux"))]
             // SAFETY: the range is the mapping; the advice is only a hint.
             unsafe {
                 libc::madvise(
@@ -150,11 +190,10 @@ impl OutputFile {
             if !overwrite_in_place || std::fs::rename(path, &tmp).is_err() {
                 return None;
             }
-            match OpenOptions::new()
+            match open_options(perm)
                 .read(true)
                 .write(true)
                 .create(true)
-                .mode(perm)
                 .open(&tmp)
             {
                 Ok(file) => Some(file),
@@ -165,18 +204,17 @@ impl OutputFile {
             }
         };
         let file = reuse_existing().unwrap_or_else(|| {
-            OpenOptions::new()
+            open_options(perm)
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .mode(perm)
                 .open(&tmp)
                 .unwrap_or_else(|e| fatal!(diag, "cannot open {}: {e}", tmp.display()))
         });
         *TMPFILE.lock().unwrap() = Some(tmp.clone());
 
-        file.set_permissions(std::fs::Permissions::from_mode(perm & !umask()))
+        set_permissions(&file, perm)
             .unwrap_or_else(|e| fatal!(diag, "{}: fchmod failed: {e}", tmp.display()));
         file.set_len(size)
             .unwrap_or_else(|e| fatal!(diag, "{}: ftruncate failed: {e}", tmp.display()));
@@ -198,12 +236,12 @@ impl OutputFile {
     /// a separate debug file that a debugger may wait on. The file is
     /// made unusable right away so that a stale one isn't picked up by
     /// accident; [`Self::resize`] gives it its size.
+    #[cfg(not(windows))]
     pub fn open_locked(diag: &Diagnostics, path: &str, perm: u32) -> OutputFile {
-        let mut file = OpenOptions::new()
+        let mut file = open_options(perm)
             .read(true)
             .write(true)
             .create(true)
-            .mode(perm)
             .open(path)
             .unwrap_or_else(|e| fatal!(diag, "cannot open {path}: {e}"));
         // SAFETY: flock on a valid descriptor.
@@ -222,6 +260,11 @@ impl OutputFile {
             storage: Storage::Memory(Vec::new()),
             perm,
         }
+    }
+
+    #[cfg(windows)]
+    pub fn open_locked(diag: &Diagnostics, _path: &str, _perm: u32) -> OutputFile {
+        fatal!(diag, "LockingOutputFile is not supported on Windows");
     }
 
     /// Sets the size of a file opened with [`Self::open_locked`].
@@ -314,6 +357,7 @@ impl OutputFile {
                     // the output would fail with ETXTBSY while this
                     // process still holds it open for writing.
                     // SAFETY: nothing else writes to stdout after this.
+                    #[cfg(not(windows))]
                     unsafe {
                         libc::close(libc::STDOUT_FILENO);
                     }
@@ -321,11 +365,10 @@ impl OutputFile {
                 }
                 let mut file = match self.file {
                     Some(file) => file,
-                    None => OpenOptions::new()
+                    None => open_options(self.perm)
                         .write(true)
                         .create(true)
                         .truncate(true)
-                        .mode(self.perm)
                         .open(&self.path)
                         .unwrap_or_else(|e| fatal!(diag, "cannot open {}: {e}", self.path)),
                 };
@@ -355,6 +398,7 @@ impl OutputFile {
     }
 }
 
+#[cfg(not(windows))]
 fn umask() -> u32 {
     // SAFETY: umask is thread-safe in the sense that it just swaps a
     // process-wide value; restoring it immediately keeps it unchanged.

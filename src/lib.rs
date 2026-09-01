@@ -14,6 +14,10 @@ pub mod icf;
 pub mod input_files;
 pub mod input_sections;
 pub mod linker_script;
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
+pub mod lto;
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+#[path = "lto_win32.rs"]
 pub mod lto;
 pub mod mapfile;
 pub mod mapped_file;

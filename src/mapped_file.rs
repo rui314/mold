@@ -15,6 +15,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+#[cfg(not(windows))]
 use rayon::prelude::*;
 
 use crate::error::{errno_string, Diagnostics};
@@ -29,6 +30,9 @@ static MAPPED: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
 /// in a single thread on exit. File contents stay in the page cache.
 pub fn drop_mappings() {
     let files = std::mem::take(&mut *MAPPED.lock().unwrap());
+    #[cfg(windows)]
+    let _ = files;
+    #[cfg(not(windows))]
     files.par_iter().for_each(|mf| {
         // SAFETY: the range is a whole mapping of the file that lives for
         // the rest of the process; MADV_DONTNEED only discards the pages,

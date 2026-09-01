@@ -102,8 +102,12 @@
 
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::fs::File;
+#[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
+#[cfg(not(windows))]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -231,7 +235,10 @@ impl TagValue {
 #[repr(C)]
 struct PluginInputFile {
     name: *const c_char,
+    #[cfg(not(windows))]
     fd: c_int,
+    #[cfg(windows)]
+    fd: *mut c_void,
     offset: u64,
     filesize: u64,
     handle: *mut c_void,
@@ -641,10 +648,48 @@ unsafe extern "C" fn get_api_version(
     LAPI_V0
 }
 
+#[cfg(windows)]
+#[link(name = "dl")]
+unsafe extern "C" {
+    fn dlerror() -> *mut c_char;
+    fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+}
+
+#[cfg(not(windows))]
+unsafe fn dynamic_error() -> *mut c_char {
+    unsafe { libc::dlerror() }
+}
+
+#[cfg(windows)]
+unsafe fn dynamic_error() -> *mut c_char {
+    unsafe { dlerror() }
+}
+
+#[cfg(not(windows))]
+unsafe fn dynamic_open(path: *const c_char) -> *mut c_void {
+    unsafe { libc::dlopen(path, libc::RTLD_NOW | libc::RTLD_LOCAL) }
+}
+
+#[cfg(windows)]
+unsafe fn dynamic_open(path: *const c_char) -> *mut c_void {
+    unsafe { dlopen(path, 0) }
+}
+
+#[cfg(not(windows))]
+unsafe fn dynamic_symbol(handle: *mut c_void, name: *const c_char) -> *mut c_void {
+    unsafe { libc::dlsym(handle, name) }
+}
+
+#[cfg(windows)]
+unsafe fn dynamic_symbol(handle: *mut c_void, name: *const c_char) -> *mut c_void {
+    unsafe { dlsym(handle, name) }
+}
+
 fn dlerror_string() -> String {
     // SAFETY: dlerror returns a static string or null.
     unsafe {
-        let err = libc::dlerror();
+        let err = dynamic_error();
         if err.is_null() {
             String::new()
         } else {
@@ -664,11 +709,11 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         let path = CString::new(ctx.args.plugin.as_str()).unwrap();
         // SAFETY: plain dlopen/dlsym calls.
         let onload: OnloadFn = unsafe {
-            let handle = libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+            let handle = dynamic_open(path.as_ptr());
             if handle.is_null() {
                 fatal!(ctx, "could not open plugin file: {}", dlerror_string());
             }
-            let onload = libc::dlsym(handle, c"onload".as_ptr());
+            let onload = dynamic_symbol(handle, c"onload".as_ptr());
             if onload.is_null() {
                 fatal!(
                     ctx,
@@ -831,7 +876,10 @@ fn plugin_input_file<E: Arch>(
         .unwrap_or_else(|e| fatal!(ctx, "cannot open {}: {e}", container.name));
     let input = PluginInputFile {
         name: CString::new(container.name.as_str()).unwrap().into_raw(),
+        #[cfg(not(windows))]
         fd: file.as_raw_fd(),
+        #[cfg(windows)]
+        fd: file.as_raw_handle(),
         offset: mf.offset() as u64,
         filesize: mf.size() as u64,
         handle: mf as *const MappedFile as *mut c_void,
@@ -943,9 +991,23 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
+    #[cfg(not(windows))]
     let err = std::process::Command::new(crate::util::self_path())
         .args(&args[1..])
         .exec();
+    #[cfg(windows)]
+    let err = {
+        let path = CString::new(crate::util::self_path().to_string_lossy().as_bytes()).unwrap();
+        let args: Vec<CString> = args
+            .iter()
+            .map(|arg| CString::new(arg.as_bytes()).unwrap())
+            .collect();
+        let mut argv: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
+        argv.push(ptr::null());
+        // SAFETY: path and every argument are NUL-terminated and argv ends in null.
+        unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };
+        std::io::Error::last_os_error()
+    };
     eprintln!("mold: execv failed: {err}");
     std::process::exit(1);
 }

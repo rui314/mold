@@ -15,6 +15,12 @@ fn main() {
     println!("cargo:rerun-if-changed=c/mold-wrapper.c");
     println!("cargo:rerun-if-changed=c/lto-message.c");
 
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap();
+    if target_os == "windows" && target_env == "msvc" {
+        return;
+    }
+
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let sanitizer = std::env::var("CARGO_CFG_SANITIZE")
@@ -42,6 +48,10 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=ltomessage");
 
+    if target_os == "windows" || target_os == "macos" {
+        return;
+    }
+
     // Cargo uses different build directory layouts with and without
     // -Zbuild-std, so find the profile directory by name.
     let profile = std::env::var("PROFILE").unwrap();
@@ -52,7 +62,10 @@ fn main() {
     let wrapper = profile_dir.join("mold-wrapper.so");
     let mut command = Command::new(&cc);
     command.args(["-shared", "-fPIC", "-O2", "-o"]);
-    command.arg(&wrapper).arg("c/mold-wrapper.c").arg("-ldl");
+    command.arg(&wrapper).arg("c/mold-wrapper.c");
+    if target_os == "android" || target_os == "linux" {
+        command.arg("-ldl");
+    }
     command.args(&sanitizer);
     let status = command.status();
     if !matches!(status, Ok(s) if s.success()) {
