@@ -32,15 +32,42 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
     else {
         return false;
     };
-    let shoff = ehdr.e_shoff.get() as usize;
+    let Ok(shoff) = usize::try_from(ehdr.e_shoff.get()) else {
+        return false;
+    };
+    if shoff == 0 {
+        return false;
+    }
     let shdr_size = std::mem::size_of::<ElfShdr<E>>();
-    let Some(shdr_bytes) = data.get(shoff..shoff + ehdr.e_shnum.get() as usize * shdr_size) else {
+    let Some(first_end) = shoff.checked_add(shdr_size) else {
+        return false;
+    };
+    let Some(first_bytes) = data.get(shoff..first_end) else {
+        return false;
+    };
+    let first = record_from_bytes::<ElfShdr<E>>(first_bytes);
+
+    // e_shnum is a 16-bit field. If an object file contains more than 65279
+    // sections, e_shnum is zero and the actual number is stored to the first
+    // section header's sh_size field.
+    let num_sections = if ehdr.e_shnum.get() == 0 {
+        let Ok(num_sections) = usize::try_from(first.sh_size.get()) else {
+            return false;
+        };
+        num_sections
+    } else {
+        ehdr.e_shnum.get() as usize
+    };
+    let Some(shdr_bytes_size) = num_sections.checked_mul(shdr_size) else {
+        return false;
+    };
+    let Some(shdr_end) = shoff.checked_add(shdr_bytes_size) else {
+        return false;
+    };
+    let Some(shdr_bytes) = data.get(shoff..shdr_end) else {
         return false;
     };
     let shdrs = records_from_bytes::<ElfShdr<E>>(shdr_bytes);
-    let Some(first) = shdrs.first() else {
-        return false;
-    };
 
     // e_shstrndx is a 16-bit field. If .shstrtab's section index is
     // too large, the actual number is stored to sh_link field.
