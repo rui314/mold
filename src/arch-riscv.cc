@@ -603,7 +603,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_ADD8:
-      loc += S + A;
+      *loc += S + A;
       break;
     case R_RISCV_ADD16:
       *(U16<E> *)loc += S + A;
@@ -615,7 +615,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(U64<E> *)loc += S + A;
       break;
     case R_RISCV_SUB8:
-      loc -= S + A;
+      *loc -= S + A;
       break;
     case R_RISCV_SUB16:
       *(U16<E> *)loc -= S + A;
