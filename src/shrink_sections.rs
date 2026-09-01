@@ -80,7 +80,8 @@ use rayon::prelude::*;
 use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::{r_delta, InputSection, RelocDelta, SectionRef};
+use crate::input_files::{FileId, SymbolEditor};
+use crate::input_sections::{r_delta, InputSection, RelocDelta};
 use crate::output_chunks::{self, ChunkId};
 use crate::symbol::Symbol;
 
@@ -117,68 +118,80 @@ pub fn compute_distance<E: Arch>(
 pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("shrink_sections");
 
-    let shrunk: Vec<(SectionRef, Vec<RelocDelta>)> = {
+    let shrunk: Vec<Vec<(u32, Vec<RelocDelta>)>> = {
         let ctx: &Context<E> = ctx;
         ctx.objs
             .par_iter()
-            .flat_map_iter(|file| {
+            .map(|file| {
                 file.input_sections()
                     .filter(|isec| isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
                     .filter_map(|isec| {
                         let deltas = E::shrink_section(ctx, isec);
-                        (!deltas.is_empty()).then_some((
-                            SectionRef {
-                                file: isec.file,
-                                shndx: isec.shndx,
-                            },
-                            deltas,
-                        ))
+                        (!deltas.is_empty()).then_some((isec.shndx, deltas))
                     })
                     .collect::<Vec<_>>()
             })
             .collect()
     };
-    for (r, deltas) in shrunk {
-        let isec = ctx.section_mut(r);
-        isec.sh_size -= deltas.last().unwrap().delta as u64;
-        ctx.set_r_deltas(r, deltas.into_boxed_slice());
-    }
+    let Context {
+        objs,
+        section_arena,
+        ..
+    } = ctx;
+    objs.par_iter_mut().zip(shrunk).for_each(|(file, shrunk)| {
+        for (shndx, deltas) in shrunk {
+            let isec = file
+                .section_mut(shndx as usize)
+                .expect("no such input section");
+            isec.sh_size -= deltas.last().unwrap().delta as u64;
+            isec.set_r_deltas(deltas.into_boxed_slice(), section_arena);
+        }
+    });
 
     // Fix symbol values.
-    let obj_ids: Vec<_> = ctx
-        .objs
-        .iter()
-        .map(crate::input_files::ObjectFile::id)
-        .collect();
-    for obj_id in obj_ids {
-        let fi = obj_id.index();
-        let file_id = crate::input_files::FileId::Obj(obj_id);
-        for i in 0..ctx.objs[fi].base.symbols.len() {
-            let id = ctx.objs[fi].base.symbols[i];
-            let sym = &ctx.symbols[id];
-            if sym.file() != Some(file_id) {
-                continue;
+    {
+        let Context { objs, symbols, .. } = ctx;
+        let editor = SymbolEditor::new(symbols.as_mut_slice());
+        objs.par_iter().for_each(|file| {
+            let file_id = FileId::Obj(file.id());
+            for &id in &file.base.symbols {
+                editor.with_symbol(id, |sym| {
+                    if sym.file() != Some(file_id) {
+                        return;
+                    }
+                    let Some(isec) = sym.input_section_ref() else {
+                        return;
+                    };
+                    if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
+                        return;
+                    }
+                    let delta = r_delta(isec, sym.value);
+                    if delta != 0 {
+                        sym.value -= delta as u64;
+                    }
+                });
             }
-            let Some(isec) = sym.input_section_ref() else {
-                continue;
-            };
-            if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
-                continue;
-            }
-            let delta = r_delta(isec, sym.value);
-            if delta != 0 {
-                ctx.symbols[id].value -= delta as u64;
-            }
-        }
+        });
     }
 
     // Recompute sizes of executable sections
-    for id in ctx.chunks.clone() {
-        if let ChunkId::Output(osec) = id {
-            if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0
-            {
-                output_chunks::compute_section_size(ctx, id);
-            }
-        }
+    let sizes: Vec<_> = {
+        let ctx: &Context<E> = ctx;
+        ctx.chunks
+            .par_iter()
+            .filter_map(|&id| match id {
+                ChunkId::Output(osec)
+                    if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get()
+                        & SHF_EXECINSTR as u64
+                        != 0 =>
+                {
+                    Some((osec, output_chunks::output_section::layout(ctx, osec)))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    for (osec, size) in sizes {
+        ctx.output_sections[osec.index()].hdr.shdr.sh_size.set(size);
     }
 }
