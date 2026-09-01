@@ -113,8 +113,10 @@ get_thin_archive_member_paths(Context<E> &ctx, MappedFile *mf) {
     std::string name = hdr.read_name(strtab, body);
 
     // Skip if symbol table
-    if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED")
+    if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED") {
+      data = body + size;
       continue;
+    }
 
     if (name.starts_with('/'))
       vec.push_back(name);
