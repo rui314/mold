@@ -48,10 +48,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use rayon::prelude::*;
+
 use crate::arch::{Arch, Family, ThunkLayout};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::{check_tlsle, InputSection, SectionRef};
 use crate::output_chunks::eh_frame;
 use crate::symbol::{
@@ -174,25 +176,25 @@ fn toc(ctx: &Context<Ppc64V1>) -> u64 {
 pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("rewrite_opd");
 
-    let obj_ids: Vec<_> = ctx.objs.iter().map(|file| file.id()).collect();
-    for obj_id in obj_ids {
-        let i = obj_id.index();
-        let Some(opd) = ctx.objs[i]
+    let editor = SymbolEditor::new(ctx.symbols.as_mut_slice());
+    let diag = &ctx.diag;
+    ctx.objs.par_iter_mut().for_each(|file| {
+        let Some(opd) = file
             .input_sections()
-            .find(|s| s.name(&ctx.objs[i]) == ".opd")
+            .find(|s| s.name(file) == ".opd")
             .map(|s| SectionRef {
                 file: s.file,
                 shndx: s.shndx,
             })
         else {
-            continue;
+            return;
         };
-        ctx.objs[i].kill_section(opd.shndx as usize);
+        file.kill_section(opd.shndx as usize);
 
-        let local_symbols = ctx.objs[i].base.symbols.clone();
-        let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = ctx.objs[i]
+        let local_symbols = file.base.symbols.clone();
+        let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = file
             .section_at(opd.shndx)
-            .rels::<Ppc64V1>(&ctx.objs[i])
+            .rels::<Ppc64V1>(file)
             .iter()
             .map(|r| (r.r_offset(), *r))
             .collect();
@@ -200,34 +202,36 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         // Move symbols from .opd to .text.
         let mut descriptors: Vec<(u64, u32)> = Vec::new(); // (offset in .opd, local symbol index)
         for (idx, &id) in local_symbols.iter().enumerate() {
-            let sym = &ctx.symbols[id];
-            if sym.file() != Some(FileId::Obj(opd.file))
-                || sym.input_section() != Some(opd)
-                || !matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC)
-            {
+            let value = editor.with_symbol(id, |sym| {
+                (sym.file() == Some(FileId::Obj(opd.file))
+                    && sym.input_section() == Some(opd)
+                    && matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC))
+                .then_some(sym.value)
+            });
+            let Some(value) = value else {
                 continue;
-            }
-            let Some(rel) = rels_at.get(&sym.value) else {
-                fatal!(
-                    ctx,
-                    "{}: cannot find a relocation in .opd for {sym} at offset {:#x}",
-                    ctx.objs[i],
-                    sym.value
-                );
             };
-            let target = &ctx.symbols[local_symbols[rel.r_sym() as usize]];
-            if target.ty() != STT_SECTION {
-                fatal!(
-                    ctx,
-                    "{}: bad relocation in .opd referring to {target}",
-                    ctx.objs[i]
-                );
-            }
-            let origin = target.origin_state();
-            descriptors.push((sym.value, idx as u32));
-            let sym = &mut ctx.symbols[id];
-            sym.set_origin_state(origin);
-            sym.value = rel.r_addend() as u64;
+            let rel = rels_at.get(&value).unwrap_or_else(|| {
+                editor.with_symbol(id, |sym| {
+                    diag.fatal(format_args!(
+                        "{file}: cannot find a relocation in .opd for {sym} at offset {value:#x}"
+                    ))
+                })
+            });
+            let target_id = local_symbols[rel.r_sym() as usize];
+            let origin = editor.with_symbol(target_id, |target| {
+                if target.ty() != STT_SECTION {
+                    diag.fatal(format_args!(
+                        "{file}: bad relocation in .opd referring to {target}"
+                    ));
+                }
+                target.origin_state()
+            });
+            descriptors.push((value, idx as u32));
+            editor.with_symbol(id, |sym| {
+                sym.set_origin_state(origin);
+                sym.value = rel.r_addend() as u64;
+            });
         }
         // Sort symbols so that get_opd_sym_at() can do binary search.
         descriptors.sort_by_key(|&(offset, _)| offset);
@@ -235,17 +239,16 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         // Rewrite relocations so that they directly refer to .opd.
         let refers_to_opd: Vec<bool> = local_symbols
             .iter()
-            .map(|&id| ctx.symbols[id].input_section() == Some(opd))
+            .map(|&id| editor.with_symbol(id, |sym| sym.input_section() == Some(opd)))
             .collect();
-        let mut unresolved = None;
-        let mut rewrites = Vec::new();
-        for isec in ctx.objs[i]
+        let sections: Vec<_> = file
             .input_sections()
             .filter(|s| s.is_alive() && s.shndx != opd.shndx)
-        {
-            let mut rels = isec.rels::<Ppc64V1>(&ctx.objs[i]).to_vec();
-            let mut redirected = false;
-            for rel in &mut rels {
+            .map(|s| (s.shndx, s.name(file)))
+            .collect();
+        for (shndx, name) in sections {
+            let mut unresolved = None;
+            for rel in file.rels_mut(shndx) {
                 if !refers_to_opd[rel.r_sym() as usize] {
                     continue;
                 }
@@ -255,28 +258,19 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                     Ok(n) => {
                         rel.set_r_sym(descriptors[n].1);
                         rel.set_r_addend(0);
-                        redirected = true;
                     }
-                    Err(_) => unresolved = unresolved.or(Some((isec.name(&ctx.objs[i]), *rel))),
+                    Err(_) => unresolved = unresolved.or(Some(*rel)),
                 }
             }
-            if redirected {
-                rewrites.push((isec.shndx, rels));
+            if let Some(rel) = unresolved {
+                diag.fatal(format_args!(
+                    "{file}:({name}): cannot find a symbol in .opd for {} at offset {:#x}",
+                    rel.type_name::<Ppc64V1>(),
+                    rel.r_addend()
+                ));
             }
         }
-        for (shndx, rels) in rewrites {
-            ctx.objs[i].rels_mut(shndx).copy_from_slice(&rels);
-        }
-        if let Some((name, rel)) = unresolved {
-            fatal!(
-                ctx,
-                "{}:({name}): cannot find a symbol in .opd for {} at offset {:#x}",
-                ctx.objs[i],
-                rel.type_name::<Ppc64V1>(),
-                rel.r_addend()
-            );
-        }
-    }
+    });
 }
 
 // When a function is exported, the dynamic symbol for the function should
