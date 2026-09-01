@@ -24,7 +24,6 @@ use crate::input_files::{
 };
 use crate::input_sections::{InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
-use crate::mapped_file::MappedFile;
 use crate::output_chunks::dynamic::{DynamicSection, RelrDynSection};
 use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection};
 use crate::output_chunks::misc::{
@@ -945,12 +944,6 @@ pub fn do_lto<E: Arch>(ctx: &mut Context<E>) {
             file.base.set_reachable(false);
         }
     }
-    let ir_files = ctx
-        .objs
-        .iter()
-        .filter(|file| file.is_lto_input)
-        .filter_map(|file| Some((file.base.priority, file.base.mf?)));
-    ctx.lto_input_files.extend(ir_files);
     remove_objects(ctx, |file| file.is_lto_input);
     resolve_symbols(ctx);
 }
@@ -1915,22 +1908,15 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
     );
 
     let mut seen: HashSet<String> = HashSet::new();
-    let files: Vec<&crate::mapped_file::MappedFile> = ctx
-        .objs
-        .iter()
-        .filter_map(|f| f.base.mf)
-        .chain(ctx.dsos.iter().filter_map(|f| f.base.mf))
-        .collect();
-    for mf in files {
-        let top = mf.parent.unwrap_or(mf);
-        if seen.insert(top.name.clone()) {
+    for mf in crate::mapped_file::file_pool() {
+        if mf.parent.is_none() && seen.insert(mf.name.clone()) {
             // We reopen a file because we may have modified the contents of mf
             // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
             let reopened =
-                crate::mapped_file::must_open_file(&ctx.diag, &ctx.args.chroot, &top.name);
-            let abs = std::fs::canonicalize(&top.name)
+                crate::mapped_file::must_open_file(&ctx.diag, &ctx.args.chroot, &mf.name);
+            let abs = std::fs::canonicalize(&mf.name)
                 .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or(top.name.clone());
+                .unwrap_or(mf.name.clone());
             write(&mut tar, &abs, reopened.data());
         }
     }
@@ -4673,27 +4659,11 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
 // Write Makefile-style dependency rules to a file specified by
 // --dependency-file. This is analogous to the compiler's -M flag.
 pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
-    // Dependencies are listed in command line order, which is the order
-    // of file priorities.
-    let mut files: Vec<(u32, &MappedFile)> = ctx
-        .objs
-        .iter()
-        .filter_map(|f| Some((f.base.priority, f.base.mf?)))
-        .chain(
-            ctx.dsos
-                .iter()
-                .filter_map(|f| Some((f.base.priority, f.base.mf?))),
-        )
-        .chain(ctx.lto_input_files.iter().copied())
-        .collect();
-    files.sort_by_key(|&(priority, _)| priority);
-
     let mut deps: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for (_, mf) in files {
-        let top = mf.parent.unwrap_or(mf);
-        if top.is_dependency() {
-            let path = crate::util::path_clean(&top.name);
+    for mf in crate::mapped_file::file_pool() {
+        if mf.is_dependency() && mf.parent.is_none() {
+            let path = crate::util::path_clean(&mf.name);
             if seen.insert(path.clone()) {
                 deps.push(path);
             }

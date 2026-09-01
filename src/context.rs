@@ -16,7 +16,6 @@ use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
-use crate::mapped_file::MappedFile;
 use crate::output_chunks::dynamic::{DynamicSection, RelDynSection, RelrDynSection};
 use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection, EhFrameSection};
 use crate::output_chunks::got::{
@@ -127,9 +126,6 @@ pub struct Context<E: Arch> {
     /// only be checked if the set of libraries is complete.
     pub dso_sonames: HashSet<String>,
 
-    /// IR objects the LTO plugin consumed. They leave the link once
-    /// compiled, but the output still depends on them.
-    pub lto_input_files: Vec<(u32, &'static MappedFile)>,
     pub lto_file_priority: u32,
 
     pub internal_obj: Option<ObjId>,
@@ -270,7 +266,6 @@ impl<E: Arch> Context<E> {
             file_by_priority: Vec::new(),
             pending_files: Vec::new(),
             dso_sonames: HashSet::new(),
-            lto_input_files: Vec::new(),
             lto_file_priority: 100,
             internal_obj: None,
             internal_esyms: Vec::new(),

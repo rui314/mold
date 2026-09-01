@@ -22,14 +22,22 @@ use crate::error::{errno_string, Diagnostics};
 use crate::fatal;
 use crate::util;
 
+/// All files opened during this link.
+static FILE_POOL: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
+
 /// The files that are memory-mapped, for [`drop_mappings`].
-static MAPPED: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
+static MMAPPED_FILES: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
+
+/// Returns all files opened during this link.
+pub fn file_pool() -> Vec<&'static MappedFile> {
+    FILE_POOL.lock().unwrap().clone()
+}
 
 /// Drops the page table entries of the mapped input files, in parallel.
 /// This makes process exit faster, as the kernel otherwise reclaims them
 /// in a single thread on exit. File contents stay in the page cache.
 pub fn drop_mappings() {
-    let files = std::mem::take(&mut *MAPPED.lock().unwrap());
+    let files = std::mem::take(&mut *MMAPPED_FILES.lock().unwrap());
     #[cfg(windows)]
     let _ = files;
     #[cfg(not(windows))]
@@ -173,8 +181,9 @@ impl MappedFile {
             thin_parent: None,
             is_dependency: AtomicBool::new(true),
         });
+        FILE_POOL.lock().unwrap().push(mf);
         if is_mmapped {
-            MAPPED.lock().unwrap().push(mf);
+            MMAPPED_FILES.lock().unwrap().push(mf);
         }
         Some(mf)
     }
@@ -187,14 +196,16 @@ impl MappedFile {
 
     /// Returns a view of a member of this archive.
     pub fn slice(&'static self, name: String, start: usize, size: usize) -> &'static MappedFile {
-        util::leak(MappedFile {
+        let mf = util::leak(MappedFile {
             name,
             data: self.data.slice(start, size),
             given_fullpath: true,
             parent: Some(self),
             thin_parent: None,
             is_dependency: AtomicBool::new(true),
-        })
+        });
+        FILE_POOL.lock().unwrap().push(mf);
+        mf
     }
 
     pub fn size(&self) -> usize {

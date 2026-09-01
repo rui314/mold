@@ -8,7 +8,14 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -Wl,-dependency-file=$t/dep
+echo "INPUT($t/a.o)" > $t/script
+echo '{ global: main; local: *; };' > $t/version
+
+$CC -B. -o $t/exe $t/script -Wl,--version-script=$t/version -Wl,-dependency-file=$t/dep
 
 grep  "dependency-file/exe:.*/a.o " $t/dep
 grep  ".*/a.o:$" $t/dep
+grep  ".*/script " $t/dep
+grep  ".*/script:$" $t/dep
+grep  ".*/version " $t/dep
+grep  ".*/version:$" $t/dep
