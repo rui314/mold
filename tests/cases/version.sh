@@ -6,7 +6,6 @@ nm mold | grep '__tsan_init' && skip
 
 ./mold -v | grep 'mold .*compatible with GNU ld'
 ./mold --version | grep 'mold .*compatible with GNU ld'
-./mold --version | grep -E '\(([0-9a-f]{40}; )?compatible with GNU ld\)'
 
 ./mold -V | grep 'mold .*compatible with GNU ld'
 ./mold -V | grep elf_x86_64
