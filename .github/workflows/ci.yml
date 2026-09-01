@@ -43,11 +43,13 @@ jobs:
           # Input files intentionally remain allocated until process exit.
           runtime-options: detect_leaks=0:halt_on_error=1
           test-prefix: ''
+          test-timeout: 30
         - sanitizer: thread
           runtime-options: halt_on_error=1
           # TSan cannot model the atomic-fence synchronization in Rayon's
           # work-stealing queue. Two workers still exercise parallel code.
           test-prefix: taskset -c 0,1
+          test-timeout: 60
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -67,7 +69,7 @@ jobs:
         else
           export TSAN_OPTIONS='${{ matrix.runtime-options }}'
         fi
-        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --features system-allocator --test integration -- --native
+        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --features system-allocator --test integration -- --native --timeout ${{ matrix.test-timeout }}
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
@@ -146,6 +148,11 @@ jobs:
   build-freebsd:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # The VM has little disk space, so omit unused build artifacts.
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
     - uses: actions/checkout@v6
     - uses: vmactions/freebsd-vm@v1

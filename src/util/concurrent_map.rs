@@ -320,10 +320,10 @@ impl<T> ConcurrentMap<T> {
     // probed first. Useful when a caller knows the hashes of upcoming
     // insertions, as probes into a large table miss the cache almost
     // every time.
-    pub fn prefetch(&self, hash: u64) {
+    pub fn prefetch(&self, _hash: u64) {
         #[cfg(target_arch = "x86_64")]
         if self.nbuckets > 0 {
-            let idx = hash as usize & (self.nbuckets - 1);
+            let idx = _hash as usize & (self.nbuckets - 1);
             // SAFETY: prefetching is a hint that never faults; the address is
             // within the table anyway.
             unsafe {
