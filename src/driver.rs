@@ -61,6 +61,7 @@ fn target_traits<E: Arch>() -> TargetTraits {
         is_riscv: E::IS_RISCV,
         is_sh4: E::FAMILY == arch::Family::Sh4,
         is_x86_64: E::FAMILY == arch::Family::X86_64,
+        is_arm64: E::FAMILY == arch::Family::Arm64,
         page_size: E::PAGE_SIZE,
     }
 }
@@ -602,6 +603,10 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         copy_chunks(&ctx, buf);
 
         E::finish_output(&ctx, buf);
+
+        if ctx.args.z_rewrite_endbr {
+            passes::rewrite_endbr(&ctx, buf);
+        }
 
         // Dynamic linker works better with sorted .rela.dyn section,
         // so we sort them.

@@ -318,7 +318,12 @@ but as `-o magic`.
   landing pads with no-ops for non-address-taken functions, reducing the
   attack surface.
 
-  This feature is currently available only on x86-64.
+  This feature is currently available only on x86-64 and arm64.
+
+  On arm64, the landing pad is `bti c`. Note that code compiled with
+  `-mbranch-protection=standard` (BTI + pointer authentication) starts
+  functions with `paciasp`, which doubles as a landing pad, so there is no
+  separate `bti c` to rewrite and this option has no effect on such code.
 
 ## GNU-COMPATIBLE OPTIONS
 

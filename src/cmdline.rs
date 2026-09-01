@@ -690,6 +690,7 @@ pub struct TargetTraits {
     pub is_riscv: bool,
     pub is_sh4: bool,
     pub is_x86_64: bool,
+    pub is_arm64: bool,
     pub page_size: u64,
 }
 
@@ -1614,8 +1615,11 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_z_flag!("x86-64-v4") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
         } else if read_z_flag!("rewrite-endbr") {
-            if !target.is_x86_64 {
-                fatal!(diag, "-z rewrite-endbr is supported only on x86-64");
+            if !target.is_x86_64 && !target.is_arm64 {
+                fatal!(
+                    diag,
+                    "-z rewrite-endbr is supported only on x86-64 and arm64"
+                );
             }
             a.z_rewrite_endbr = true;
         } else if read_z_flag!("norewrite-endbr") {

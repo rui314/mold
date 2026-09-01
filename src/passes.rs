@@ -22,7 +22,7 @@ use crate::input_files::{
     resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, FileList, ObjId,
     ObjectFile, SymbolEditor, SymbolResolver,
 };
-use crate::input_sections::{InputSectionId, SectionRef};
+use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
 use crate::output_chunks::dynamic::{DynamicSection, RelrDynSection};
 use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection};
@@ -4803,5 +4803,145 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
 
     for section in &ctx.merged_sections {
         crate::output_chunks::merged::print_stats(section, &ctx.diag);
+    }
+}
+
+// Intel CET and Arm BTI are relatively new CPU features to enhance security by
+// protecting control flow integrity. If the feature is enabled, indirect
+// branches (i.e. branch instructions that take a register instead of an
+// immediate) must land on a "landing pad" instruction, or a CPU-level fault
+// will raise. That prevents an attacker from branching to a middle of a random
+// function, making ROP or JOP much harder to conduct.
+//
+// On x86-64, the landing pad instruction is ENDBR64. On ARM64, it's `bti c`.
+// In both cases the instruction is a repurposed NOP so that the same binary
+// still runs on older hardware that doesn't support the feature.
+//
+// The problem here is that the compiler always emits a landing pad at the
+// beginning of a global function because it doesn't know whether or not the
+// function's address is taken in other translation units. As a result, the
+// resulting binary contains more landing pads than necessary.
+//
+// This function rewrites a landing pad with a nop if the function's address
+// was not actually taken. We can do what the compiler cannot because we
+// know about all translation units.
+pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+    let _t = ctx.timer("rewrite_endbr");
+
+    // The landing pad instruction and the NOP that replaces it. Both are 4
+    // bytes long. ARM64 instructions are always little-endian, even in the
+    // big-endian ABI, so the byte patterns below are the same for ARM64BE.
+    let (landing_pad, nop) = match E::FAMILY {
+        Family::X86_64 => (
+            [0xf3, 0x0f, 0x1e, 0xfa], // endbr64
+            [0x0f, 0x1f, 0x40, 0x00], // nopl 0x0(%rax)
+        ),
+        Family::Arm64 => (
+            [0x5f, 0x24, 0x03, 0xd5], // bti c
+            [0x1f, 0x20, 0x03, 0xd5], // nop
+        ),
+        _ => unreachable!(),
+    };
+
+    let output_offset = |isec: &InputSection| -> Option<u64> {
+        let osec = &ctx.output_sections[isec.output_section?.index()];
+        Some(osec.hdr.shdr.sh_offset.get() + isec.offset())
+    };
+
+    // Rewrite all landing pad instructions referred to by function symbols
+    // with NOPs. We handle only global symbols because the compiler doesn't
+    // emit a landing pad for a file-scoped function in the first place if its
+    // address is not taken within the file.
+    for file in &ctx.objs {
+        for &id in file.base.global_symbols() {
+            let sym = &ctx.symbols[id];
+            if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
+                continue;
+            }
+            let Some(isec) = sym.input_section_ref() else {
+                continue;
+            };
+            if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
+                continue;
+            }
+            let Some(base) = output_offset(isec) else {
+                continue;
+            };
+            let pos = (base + sym.value) as usize;
+            if buf.get(pos..pos + 4) == Some(&landing_pad) {
+                buf[pos..pos + 4].copy_from_slice(&nop);
+            }
+        }
+    }
+
+    let mut write_back = |isec: Option<&InputSection>, offset: i64| {
+        // If isec has a landing pad at a given offset, copy that instruction to
+        // the output buffer, possibly overwriting a nop written in the above
+        // loop.
+        let Some(isec) = isec else { return };
+        let size = isec.contents().len() as i64;
+        if isec.sh_flags & SHF_EXECINSTR as u64 == 0 || offset < 0 || offset > size - 4 {
+            return;
+        }
+        let Some(base) = output_offset(isec) else {
+            return;
+        };
+        if isec.contents()[offset as usize..offset as usize + 4] == landing_pad {
+            let pos = (base as i64 + offset) as usize;
+            buf[pos..pos + 4].copy_from_slice(&landing_pad);
+        }
+    };
+
+    // Write back landing pad instructions if they are referred to by
+    // address-taking relocations.
+    for file in &ctx.objs {
+        for isec in file.input_sections() {
+            if !isec.is_alive() || !isec.is_alloc() {
+                continue;
+            }
+            for rel in isec.rels::<E>(file) {
+                if rel.is_func_call::<E>() {
+                    continue;
+                }
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                let target = sym.input_section_ref();
+                if sym.st_type() == STT_SECTION {
+                    write_back(target, rel.r_addend());
+                } else {
+                    write_back(target, sym.value as i64);
+                }
+            }
+        }
+    }
+
+    // We record addresses of some symbols in the ELF header, .dynamic or in
+    // .dynsym. We need to retain landing pads for such symbols.
+    let mut keep = |id: SymbolId| {
+        let sym = &ctx.symbols[id];
+        write_back(sym.input_section_ref(), sym.value as i64);
+    };
+
+    keep(ctx.syms.entry);
+    keep(ctx.syms.init);
+    keep(ctx.syms.fini);
+
+    for &id in ctx.dynsym.symbols.iter().flatten() {
+        if ctx.symbols[id].is_exported() {
+            keep(id);
+        }
+    }
+
+    // A range extension thunk reaches its target with an indirect branch, so
+    // a thunked function still needs its landing pad even if it's only ever
+    // called directly. thunk->symbols has been reduced to the symbols that
+    // actually need a thunk by remove_redundant_thunks().
+    if E::NEEDS_THUNK {
+        for osec in &ctx.output_sections {
+            for thunk in &osec.thunks {
+                for &id in &thunk.symbols {
+                    keep(id);
+                }
+            }
+        }
     }
 }

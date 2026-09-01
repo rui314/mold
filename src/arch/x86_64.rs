@@ -28,7 +28,6 @@
 use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::FileId;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection};
 use crate::output_chunks::eh_frame;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
@@ -70,12 +69,6 @@ impl Arch for X86_64 {
     const R_TLSDESC: Option<u32> = Some(R_X86_64_TLSDESC);
     const R_SFRAME: Option<u32> = Some(R_X86_64_PC64);
     const R_FUNCALL: &'static [u32] = &[R_X86_64_PLT32, R_X86_64_PLTOFF64];
-
-    fn finish_output(ctx: &Context<Self>, buf: &mut [u8]) {
-        if ctx.args.z_rewrite_endbr {
-            rewrite_endbr(ctx, buf);
-        }
-    }
 
     fn rel_to_string(r_type: u32) -> String {
         x86_64_rel_to_string(r_type)
@@ -954,115 +947,3 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
         _ => unreachable!(),
     }
 }
-
-// Intel CET is a relatively new CPU feature to enhance security by
-// protecting control flow integrity. If the feature is enabled, indirect
-// branches (i.e. branch instructions that take a register instead of an
-// immediate) must land on a "landing pad" instruction, or a CPU-level fault
-// will raise. That prevents an attacker to branch to a middle of a random
-// function, making ROP or JOP much harder to conduct.
-//
-// On x86-64, the landing pad instruction is ENDBR64. That is actually a
-// repurposed NOP instruction to provide binary compatibility with older
-// hardware that doesn't support CET.
-//
-// The problem here is that the compiler always emits a landing pad at the
-// beginning fo a global function because it doesn't know whether or not the
-// function's address is taken in other translation units. As a result, the
-// resulting binary contains more landing pads than necessary.
-//
-// This function rewrites a landing pad with a nop if the function's address
-// was not actually taken. We can do what the compiler cannot because we
-// know about all translation units.
-pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
-    const ENDBR64: [u8; 4] = [0xf3, 0x0f, 0x1e, 0xfa];
-    const NOP: [u8; 4] = [0x0f, 0x1f, 0x40, 0x00];
-
-    let output_offset = |isec: &InputSection| -> Option<u64> {
-        let osec = &ctx.output_sections[isec.output_section?.index()];
-        Some(osec.hdr.shdr.sh_offset.get() + isec.offset())
-    };
-
-    // Rewrite all endbr64 instructions referred to by function symbols with
-    // NOPs. We handle only global symbols because the compiler doesn't emit
-    // an endbr64 for a file-scoped function in the first place if its address
-    // is not taken within the file.
-    for file in &ctx.objs {
-        for &id in file.base.global_symbols() {
-            let sym = &ctx.symbols[id];
-            if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
-                continue;
-            }
-            let Some(isec) = sym.input_section_ref() else {
-                continue;
-            };
-            if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
-                continue;
-            }
-            let Some(base) = output_offset(isec) else {
-                continue;
-            };
-            let pos = (base + sym.value) as usize;
-            if buf.get(pos..pos + 4) == Some(&ENDBR64) {
-                buf[pos..pos + 4].copy_from_slice(&NOP);
-            }
-        }
-    }
-
-    let mut write_back = |isec: Option<&InputSection>, offset: i64| {
-        // If isec has an endbr64 at a given offset, copy that instruction to
-        // the output buffer, possibly overwriting a nop written in the above
-        // loop.
-        let Some(isec) = isec else { return };
-        let size = isec.contents().len() as i64;
-        if isec.sh_flags & SHF_EXECINSTR as u64 == 0 || offset < 0 || offset > size - 4 {
-            return;
-        }
-        let Some(base) = output_offset(isec) else {
-            return;
-        };
-        if isec.contents()[offset as usize..offset as usize + 4] == ENDBR64 {
-            let pos = (base as i64 + offset) as usize;
-            buf[pos..pos + 4].copy_from_slice(&ENDBR64);
-        }
-    };
-
-    // Write back endbr64 instructions if they are referred to by address-taking
-    // relocations.
-    for file in &ctx.objs {
-        for isec in file.input_sections() {
-            if !isec.is_alive() || !isec.is_alloc() {
-                continue;
-            }
-            for rel in isec.rels::<X86_64>(file) {
-                if rel.is_func_call::<X86_64>() {
-                    continue;
-                }
-                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-                let target = sym.input_section_ref();
-                if sym.st_type() == STT_SECTION {
-                    write_back(target, rel.r_addend());
-                } else {
-                    write_back(target, sym.value as i64);
-                }
-            }
-        }
-    }
-
-    // We record addresses of some symbols in the ELF header, .dynamic or in
-    // .dynsym. We need to retain endbr64s for such symbols.
-    let mut keep = |id: SymbolId| {
-        let sym = &ctx.symbols[id];
-        write_back(sym.input_section_ref(), sym.value as i64);
-    };
-    keep(ctx.syms.entry);
-    keep(ctx.syms.init);
-    keep(ctx.syms.fini);
-    for &id in ctx.dynsym.symbols.iter().flatten() {
-        if ctx.symbols[id].is_exported() {
-            keep(id);
-        }
-    }
-}
-
-use crate::symbol::SymbolId;
