@@ -4,7 +4,7 @@ set -e
 PREFIX=${PREFIX:-/usr/local}
 
 srcdir=$(CDPATH= cd "$(dirname "$0")" && pwd)
-artifact_dir="$srcdir/target/release"
+artifact_dir="${CARGO_TARGET_DIR:-$srcdir/target}/release"
 
 if [ ! -x "$artifact_dir/mold" ] ||
   [ ! -f "$artifact_dir/mold-wrapper.so" ]; then
