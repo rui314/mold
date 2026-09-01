@@ -1031,6 +1031,11 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
     let mut visited_libs: HashSet<String> = HashSet::new();
 
     a.color_diagnostics = stderr_is_tty();
+    diag.set_color(a.color_diagnostics);
+    diag.set_fatal_warnings(a.fatal_warnings);
+    diag.set_suppress_warnings(a.suppress_warnings);
+    diag.set_noinhibit_exec(a.noinhibit_exec);
+    crate::error::set_demangle(a.demangle);
     a.page_size = target.page_size;
 
     let mut version_shown = false;
@@ -1262,8 +1267,10 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.ignore_ir_file.insert(arg.clone());
         } else if read_flag!("demangle") {
             a.demangle = true;
+            crate::error::set_demangle(true);
         } else if read_flag!("no-demangle") {
             a.demangle = false;
+            crate::error::set_demangle(false);
         } else if read_flag!("detach") {
             a.detach = true;
         } else if read_flag!("no-detach") {
@@ -1272,6 +1279,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.default_symver = true;
         } else if read_flag!("noinhibit-exec") {
             a.noinhibit_exec = true;
+            diag.set_noinhibit_exec(true);
         } else if read_flag!("shuffle-sections") {
             a.shuffle_sections = ShuffleSectionsKind::Shuffle;
         } else if read_eq!("shuffle-sections") {
@@ -1405,10 +1413,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.chroot = arg.clone();
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
             a.color_diagnostics = stderr_is_tty();
+            diag.set_color(a.color_diagnostics);
         } else if read_flag!("color-diagnostics=always") {
             a.color_diagnostics = true;
+            diag.set_color(true);
         } else if read_flag!("color-diagnostics=never") {
             a.color_diagnostics = false;
+            diag.set_color(false);
         } else if read_flag!("warn-common") {
             a.warn_common = true;
         } else if read_flag!("no-warn-common") {
@@ -1613,10 +1624,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.nmagic = false;
         } else if read_flag!("fatal-warnings") {
             a.fatal_warnings = true;
+            diag.set_fatal_warnings(true);
         } else if read_flag!("no-fatal-warnings") {
             a.fatal_warnings = false;
+            diag.set_fatal_warnings(false);
         } else if read_flag!("w") || read_flag!("no-warnings") {
             a.suppress_warnings = true;
+            diag.set_suppress_warnings(true);
         } else if read_flag!("fork") {
             a.fork = true;
         } else if read_flag!("no-fork") {
