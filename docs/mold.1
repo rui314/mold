@@ -152,7 +152,9 @@ By default, the compiler always emits a landing pad at the beginning of each glo
 .IP
 If \fB\-\-rewrite\-endbr\fR is given, mold conducts a whole program analysis to identify functions whose addresses are actually taken and rewrites landing pads with no\-ops for non\-address\-taken functions, reducing the attack surface\.
 .IP
-This feature is currently available only on x86\-64\.
+This feature is currently available only on x86\-64 and arm64\.
+.IP
+On arm64, the landing pad is \fBbti c\fR\. Note that code compiled with \fB\-mbranch\-protection=standard\fR (BTI + pointer authentication) starts functions with \fBpaciasp\fR, which doubles as a landing pad, so there is no separate \fBbti c\fR to rewrite and this option has no effect on such code\.
 .SH "GNU\-COMPATIBLE OPTIONS"
 .TP
 \fB\-\-help\fR
