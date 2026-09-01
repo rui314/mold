@@ -2721,12 +2721,8 @@ impl<E: Arch> ObjectFile<E> {
         };
         let file_id = FileId::Obj(id);
 
-        // Symbols in garbage-collected sections and fragments are dropped
-        // along with them.
+        // Symbols in dead sections and fragments are dropped along with them.
         let is_alive = |sym: &Symbol| -> bool {
-            if !ctx.args.gc_sections {
-                return true;
-            }
             if let Some(frag) = sym.fragment() {
                 return ctx.fragment(frag).is_alive();
             }
