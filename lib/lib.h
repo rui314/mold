@@ -422,13 +422,6 @@ inline u64 read_uleb(std::string_view str) {
   return read_uleb(&tmp);
 }
 
-inline i64 uleb_size(u64 val) {
-  for (int i = 1; i < 9; i++)
-    if (val < (1LL << (7 * i)))
-      return i;
-  return 9;
-}
-
 inline void overwrite_uleb(u8 *loc, u64 val) {
   while (*loc & 0b1000'0000) {
     *loc++ = 0b1000'0000 | (val & 0b0111'1111);
