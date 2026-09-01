@@ -14,10 +14,23 @@
 //! a little bit. However, if a shard size is large enough, that loss
 //! is negligible in practice.
 
-use flate2::{Compress, Compression, FlushCompress, FlushDecompress};
+use std::mem::MaybeUninit;
+
+use flate2::FlushDecompress;
 use rayon::prelude::*;
 
 const SHARD_SIZE: usize = 1024 * 1024;
+
+// libz-sys exposes the zlib 1.2.3.4 API, but deflatePending was added in
+// zlib 1.2.5.1. C++ mold requires and calls this function directly too.
+unsafe extern "C" {
+    #[link_name = "deflatePending"]
+    fn deflate_pending(
+        stream: libz_sys::z_streamp,
+        pending: *mut std::ffi::c_uint,
+        bits: *mut std::ffi::c_int,
+    ) -> std::ffi::c_int;
+}
 
 pub enum Compressor {
     Zlib { shards: Vec<Vec<u8>>, checksum: u32 },
@@ -67,52 +80,78 @@ fn adler32_combine(adler1: u32, adler2: u32, len2: u64) -> u32 {
 fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     // Initialize zlib stream. Since debug info is generally compressed
     // pretty well with lower compression levels, the default level is 1.
-    let mut compress = Compress::new(Compression::new(level), false);
+    let mut stream = MaybeUninit::<libz_sys::z_stream>::zeroed();
+    // SAFETY: deflateInit2_ initializes the zeroed stream using its default
+    // allocator. The stream remains at a stable address until deflateEnd.
+    let status = unsafe {
+        libz_sys::deflateInit2_(
+            stream.as_mut_ptr(),
+            level as i32,
+            libz_sys::Z_DEFLATED,
+            -15,
+            8,
+            libz_sys::Z_DEFAULT_STRATEGY,
+            libz_sys::zlibVersion(),
+            std::mem::size_of::<libz_sys::z_stream>() as i32,
+        )
+    };
+    assert_eq!(status, libz_sys::Z_OK);
+    // SAFETY: deflateInit2_ returned Z_OK, so the stream is initialized.
+    let stream = unsafe { stream.assume_init_mut() };
 
     // Set an input buffer
+    stream.avail_in = input.len() as u32;
+    stream.next_in = input.as_ptr().cast_mut();
 
-    // flate2 grows this vector as needed instead of exposing deflateBound().
     // Set an output buffer. deflateBound() returns an upper bound
     // on the compression size. +16 for Z_SYNC_FLUSH.
-    let mut out = Vec::with_capacity(input.len() / 2 + 64);
-    loop {
-        let before = compress.total_in() as usize;
+    // SAFETY: stream is initialized and remains valid through deflateEnd.
+    let bound = unsafe { libz_sys::deflateBound(stream, stream.avail_in.into()) } as usize;
+    let mut out = vec![0; bound + 16];
 
-        // Compress data. It writes all compressed bytes except the last
-        // partial byte, so up to 7 bits can be held to be written to the
-        // buffer.
-        //
-        // The C++ zlib path performs the following workaround explicitly.
-        // flate2 owns the lower-level flush operation in this implementation.
-        //
-        // This is a workaround for libbacktrace before 2022-04-06.
-        //
-        // Zlib is a bit stream, and what Z_SYNC_FLUSH does is to write a
-        // three bit value indicating the start of an uncompressed data
-        // block followed by four byte data 00 00 ff ff which indicates that
-        // the length of the block is zero. libbacktrace uses its own zlib
-        // inflate routine, and it had a bug that if that particular three
-        // bit value happens to end at a byte boundary, it accidentally
-        // skipped the next byte.
-        //
-        // In order to avoid triggering that bug, we should avoid calling
-        // deflate() with Z_SYNC_FLUSH if the current bit position is 5.
-        // If it's 5, we insert an empty block consisting of 10 bits so
-        // that the bit position is 7 in the next byte.
-        //
-        // https://github.com/ianlancetaylor/libbacktrace/pull/87
-        let status = compress
-            .compress_vec(&input[before..], &mut out, FlushCompress::Sync)
-            .expect("deflate failed");
-        let consumed = compress.total_in() as usize;
-        if consumed == input.len() && status == flate2::Status::Ok && out.len() < out.capacity() {
-            break;
-        }
-        if status == flate2::Status::StreamEnd {
-            break;
-        }
-        out.reserve(out.capacity().max(1024));
+    // Compress data. It writes all compressed bytes except the last
+    // partial byte, so up to 7 bits can be held to be written to the
+    // buffer.
+    stream.avail_out = out.len() as u32;
+    stream.next_out = out.as_mut_ptr();
+    // SAFETY: the input and output buffers remain alive and the output has
+    // deflateBound() + 16 bytes of space.
+    let status = unsafe { libz_sys::deflate(stream, libz_sys::Z_BLOCK) };
+    assert_eq!(status, libz_sys::Z_OK);
+
+    // This is a workaround for libbacktrace before 2022-04-06.
+    //
+    // Zlib is a bit stream, and what Z_SYNC_FLUSH does is to write a
+    // three bit value indicating the start of an uncompressed data
+    // block followed by four byte data 00 00 ff ff which indicates that
+    // the length of the block is zero. libbacktrace uses its own zlib
+    // inflate routine, and it had a bug that if that particular three
+    // bit value happens to end at a byte boundary, it accidentally
+    // skipped the next byte.
+    //
+    // In order to avoid triggering that bug, we should avoid calling
+    // deflate() with Z_SYNC_FLUSH if the current bit position is 5.
+    // If it's 5, we insert an empty block consisting of 10 bits so
+    // that the bit position is 7 in the next byte.
+    //
+    // https://github.com/ianlancetaylor/libbacktrace/pull/87
+    let mut nbits = 0;
+    // SAFETY: stream is initialized and nbits is a valid output pointer.
+    let status = unsafe { deflate_pending(stream, std::ptr::null_mut(), &mut nbits) };
+    assert_eq!(status, libz_sys::Z_OK);
+    if nbits == 5 {
+        // SAFETY: stream is initialized and has enough pending-buffer space.
+        let status = unsafe { libz_sys::deflatePrime(stream, 10, 2) };
+        assert_eq!(status, libz_sys::Z_OK);
     }
+    // SAFETY: stream and its input and output buffers remain valid.
+    let status = unsafe { libz_sys::deflate(stream, libz_sys::Z_SYNC_FLUSH) };
+    assert_eq!(status, libz_sys::Z_OK);
+
+    let len = out.len() - stream.avail_out as usize;
+    // SAFETY: stream was initialized successfully and is no longer used.
+    unsafe { libz_sys::deflateEnd(stream) };
+    out.truncate(len);
     out
 }
 
