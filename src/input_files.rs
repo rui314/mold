@@ -2151,7 +2151,6 @@ impl<E: Arch> ObjectFile<E> {
             let relocations = self.relocation_span(isec.relsec_idx());
             let rels = isec.rels::<E>(self);
             let cies_begin = self.cies.len();
-            let fdes_begin = self.fdes.len();
             let mut new_cies: Vec<CieRecord> = Vec::new();
             let mut new_fdes: Vec<FdeRecord> = Vec::new();
 
@@ -2235,7 +2234,6 @@ impl<E: Arch> ObjectFile<E> {
 
             self.cies.extend(new_cies);
             self.fdes.extend(new_fdes);
-            let _ = fdes_begin;
             self.kill_section(shndx as usize);
         }
         self.eh_frame_sections = eh_frame_sections;

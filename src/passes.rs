@@ -46,7 +46,7 @@ use crate::symbol::{
 };
 use crate::util::glob::Glob;
 use crate::util::perf::Counter;
-use crate::util::{align_down, align_to, leak_bytes, path_filename};
+use crate::util::{align_to, leak_bytes, path_filename};
 use crate::{error, fatal, out, warn};
 
 pub fn apply_exclude_libs<E: Arch>(ctx: &mut Context<E>) {
@@ -4804,9 +4804,4 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
     for section in &ctx.merged_sections {
         crate::output_chunks::merged::print_stats(section, &ctx.diag);
     }
-}
-
-/// Whether `--section-order` names a section that doesn't exist.
-pub fn align_down_to_page<E: Arch>(ctx: &Context<E>, addr: u64) -> u64 {
-    align_down(addr, ctx.page_size)
 }

@@ -201,7 +201,6 @@ impl Arch for X86_64 {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let loc = &isec.contents()[rel.r_offset() as usize..];
 
             if sym.is_ifunc() {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT);
@@ -298,7 +297,6 @@ impl Arch for X86_64 {
                     rel.type_name::<Self>()
                 ),
             }
-            let _ = loc;
         }
     }
 
