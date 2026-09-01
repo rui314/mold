@@ -430,7 +430,8 @@ get_api_version(const char *plugin_identifier,
   if (LAPI_V1 < minimal_api_supported)
     Fatal(*gctx<E>) << "LTO plugin does not support V0 or V1 API";
 
-  std::string version = mold_version + "\0"s;
+  // The plugin reads the string after this function has returned
+  static std::string version = mold_version + "\0"s;
 
   *linker_identifier = "mold";
   *linker_version = version.data();
