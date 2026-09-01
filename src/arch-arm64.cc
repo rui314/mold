@@ -504,7 +504,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 A = frag ? frag_addend : (i64)rel.r_addend;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
-      check_range(ctx, val, i, lo, hi);
+      check_range(ctx, i, val, lo, hi);
     };
 
     switch (rel.r_type) {
