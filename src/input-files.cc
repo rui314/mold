@@ -1059,6 +1059,13 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
 
+    // If the symbol resolved to a definition in another file, leave it
+    // alone. Overwriting it would discard the chosen definition, and since
+    // this function runs on all files in parallel, it would also be a data
+    // race.
+    if (sym.file != this)
+      continue;
+
     i64 shndx = get_shndx(esym);
     MergeableSection<E> *m = sections.get_mergeable(shndx);
     if (!m || !m->parent.resolved)
