@@ -46,6 +46,8 @@
 
 use std::marker::PhantomData;
 
+use rayon::prelude::*;
+
 use crate::arch::{Arch, Family, ThunkLayout};
 use crate::context::Context;
 use crate::elf::*;
@@ -53,6 +55,7 @@ use crate::input_sections::{
     check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, SectionRef,
 };
 use crate::output_chunks::eh_frame;
+use crate::output_chunks::output_section::OutputBuffer;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};
@@ -232,7 +235,8 @@ pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [
 where
     Arm32Target<End>: Layout<Endian = End>,
 {
-    for file in &ctx.objs {
+    let output = OutputBuffer::new(buf);
+    ctx.objs.par_iter().for_each(|file| {
         // Collect mapping symbols
         let mut marks: Vec<(SectionRef, u64, Option<usize>)> = file
             .base
@@ -265,12 +269,17 @@ where
                 .sh_offset
                 .get()
                 + isec.offset();
-            for insn in buf[(base + start) as usize..(base + end) as usize].chunks_exact_mut(width)
-            {
-                insn.reverse();
+            // SAFETY: live input sections occupy disjoint output ranges, and
+            // this file's mapping-symbol ranges are processed sequentially.
+            unsafe {
+                output.with_slice((base + start) as usize..(base + end) as usize, |buf| {
+                    for insn in buf.chunks_exact_mut(width) {
+                        insn.reverse();
+                    }
+                });
             }
         }
-    }
+    });
 }
 
 impl<End: Endian> Arch for Arm32Target<End>

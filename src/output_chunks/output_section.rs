@@ -57,8 +57,8 @@ pub struct OutputSection<E: Layout> {
     pub relr_offsets: Vec<u64>,
 }
 
-/// A pointer to an output section whose disjoint ranges are written in parallel.
-struct OutputBuffer {
+/// A pointer to an output buffer whose disjoint ranges are written in parallel.
+pub(crate) struct OutputBuffer {
     ptr: *mut u8,
     len: usize,
 }
@@ -69,7 +69,7 @@ unsafe impl Sync for OutputBuffer {}
 
 impl OutputBuffer {
     #[inline]
-    fn new(buf: &mut [u8]) -> OutputBuffer {
+    pub(crate) fn new(buf: &mut [u8]) -> OutputBuffer {
         OutputBuffer {
             ptr: buf.as_mut_ptr(),
             len: buf.len(),
@@ -81,7 +81,7 @@ impl OutputBuffer {
     /// # Safety
     /// No other live access may overlap `range`.
     #[inline]
-    unsafe fn with_slice<R>(
+    pub(crate) unsafe fn with_slice<R>(
         &self,
         range: std::ops::Range<usize>,
         f: impl FnOnce(&mut [u8]) -> R,
