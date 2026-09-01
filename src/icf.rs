@@ -92,6 +92,7 @@ use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, Symbol};
 use crate::util::perf::Counter;
+use crate::util::siphash::SipHash13_128;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Digest {
@@ -99,122 +100,29 @@ struct Digest {
     lo: u64,
 }
 
-// Original source note:
-// This is a header-only C++20 implementation of SipHash based on the
-// reference implementation. To use, just copy this header file into
-// your project and #include it.
-//
-// https://github.com/rui314/siphash/blob/main/siphash.h
-struct SipHash13_128 {
-    v0: u64,
-    v1: u64,
-    v2: u64,
-    v3: u64,
-    buf: [u8; 8],
-    buflen: u8,
-    sum: u8,
+impl Digest {
+    #[inline(always)]
+    fn to_ne_bytes(self) -> [u8; 16] {
+        let mut bytes = [0; 16];
+        bytes[..8].copy_from_slice(&self.hi.to_ne_bytes());
+        bytes[8..].copy_from_slice(&self.lo.to_ne_bytes());
+        bytes
+    }
+
+    #[inline(always)]
+    fn from_ne_bytes(bytes: [u8; 16]) -> Digest {
+        Digest {
+            hi: u64::from_ne_bytes(bytes[..8].try_into().unwrap()),
+            lo: u64::from_ne_bytes(bytes[8..].try_into().unwrap()),
+        }
+    }
 }
 
-impl SipHash13_128 {
-    #[inline]
-    fn new(key: &[u8; 16]) -> SipHash13_128 {
-        let k0 = u64::from_le_bytes(key[..8].try_into().unwrap());
-        let k1 = u64::from_le_bytes(key[8..].try_into().unwrap());
-        SipHash13_128 {
-            v0: 0x736f_6d65_7073_6575 ^ k0,
-            v1: 0x646f_7261_6e64_6f6d ^ k1 ^ 0xee,
-            v2: 0x6c79_6765_6e65_7261 ^ k0,
-            v3: 0x7465_6462_7974_6573 ^ k1,
-            buf: [0; 8],
-            buflen: 0,
-            sum: 0,
-        }
-    }
-
-    #[inline]
-    fn update(&mut self, mut msg: &[u8]) {
-        self.sum = self.sum.wrapping_add(msg.len() as u8);
-
-        if self.buflen != 0 {
-            let buflen = self.buflen as usize;
-            if buflen + msg.len() < 8 {
-                self.buf[buflen..buflen + msg.len()].copy_from_slice(msg);
-                self.buflen += msg.len() as u8;
-                return;
-            }
-
-            let n = 8 - buflen;
-            self.buf[buflen..].copy_from_slice(&msg[..n]);
-            self.compress(u64::from_le_bytes(self.buf));
-            msg = &msg[n..];
-            self.buflen = 0;
-        }
-
-        while msg.len() >= 8 {
-            self.compress(u64::from_le_bytes(msg[..8].try_into().unwrap()));
-            msg = &msg[8..];
-        }
-
-        self.buf[..msg.len()].copy_from_slice(msg);
-        self.buflen = msg.len() as u8;
-    }
-
-    /// Updates the hash with an in-memory `Digest`. Propagation hashes only
-    /// complete digests, so this is the aligned 16-byte path through `update`.
-    #[inline(always)]
-    fn update_digest(&mut self, digest: Digest) {
-        debug_assert_eq!(self.buflen, 0);
-        self.sum = self.sum.wrapping_add(16);
-        self.compress(u64::from_le_bytes(digest.hi.to_ne_bytes()));
-        self.compress(u64::from_le_bytes(digest.lo.to_ne_bytes()));
-    }
-
-    #[inline]
-    fn finish(mut self) -> Digest {
-        self.buf[self.buflen as usize..].fill(0);
-        self.compress((u64::from(self.sum) << 56) | u64::from_le_bytes(self.buf));
-
-        self.v2 ^= 0xee;
-        self.finalize();
-        let hi = self.v0 ^ self.v1 ^ self.v2 ^ self.v3;
-
-        self.v1 ^= 0xdd;
-        self.finalize();
-        let lo = self.v0 ^ self.v1 ^ self.v2 ^ self.v3;
-        Digest { hi, lo }
-    }
-
-    #[inline(always)]
-    fn round(&mut self) {
-        self.v0 = self.v0.wrapping_add(self.v1);
-        self.v1 = self.v1.rotate_left(13);
-        self.v1 ^= self.v0;
-        self.v0 = self.v0.rotate_left(32);
-        self.v2 = self.v2.wrapping_add(self.v3);
-        self.v3 = self.v3.rotate_left(16);
-        self.v3 ^= self.v2;
-        self.v0 = self.v0.wrapping_add(self.v3);
-        self.v3 = self.v3.rotate_left(21);
-        self.v3 ^= self.v0;
-        self.v2 = self.v2.wrapping_add(self.v1);
-        self.v1 = self.v1.rotate_left(17);
-        self.v1 ^= self.v2;
-        self.v2 = self.v2.rotate_left(32);
-    }
-
-    #[inline(always)]
-    fn compress(&mut self, m: u64) {
-        self.v3 ^= m;
-        self.round();
-        self.v0 ^= m;
-    }
-
-    #[inline(always)]
-    fn finalize(&mut self) {
-        self.round();
-        self.round();
-        self.round();
-    }
+#[inline]
+fn finish_digest(hasher: SipHash13_128) -> Digest {
+    let mut bytes = [0; 16];
+    hasher.finish(&mut bytes);
+    Digest::from_ne_bytes(bytes)
 }
 
 // A concurrent hash map from digest to section. We use it to count the
@@ -492,7 +400,7 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
         let id = file.base.symbols[rel.r_sym() as usize];
         hash_symbol(&mut h, id, &ctx.symbols[id]);
     }
-    h.finish()
+    finish_digest(h)
 }
 
 fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
@@ -678,13 +586,13 @@ fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
 fn propagate(key: &[u8; 16], cur: &mut Vec<Digest>, next: &mut Vec<Digest>, edges: &Edges) {
     next.par_iter_mut().enumerate().for_each(|(i, out)| {
         let mut h = SipHash13_128::new(key);
-        h.update_digest(cur[i]);
+        h.update(&cur[i].to_ne_bytes());
         let begin = edges.indices[i] as usize;
         let end = edges.indices[i + 1] as usize;
         for &j in &edges.values[begin..end] {
-            h.update_digest(cur[j as usize]);
+            h.update(&cur[j as usize].to_ne_bytes());
         }
-        *out = h.finish();
+        *out = finish_digest(h);
     });
     std::mem::swap(cur, next);
 }
