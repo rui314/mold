@@ -47,7 +47,7 @@ jobs:
         - sanitizer: thread
           runtime-options: halt_on_error=1
           # TSan cannot model the atomic-fence synchronization in Rayon's
-          # work-stealing queue. Two workers still exercise parallel code.
+          # work-stealing queue. Two CPUs still exercise parallel linker code.
           test-prefix: taskset -c 0,1
           test-timeout: 60
     runs-on: ubuntu-24.04
@@ -69,7 +69,7 @@ jobs:
         else
           export TSAN_OPTIONS='${{ matrix.runtime-options }}'
         fi
-        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --no-default-features --features system-allocator,x86_64 --test integration -- --native --timeout ${{ matrix.test-timeout }}
+        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --no-default-features --features system-allocator,x86_64 --test integration -- --native --test-threads 1 --timeout ${{ matrix.test-timeout }}
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
