@@ -2563,7 +2563,7 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
 
   this->shdr.sh_size = shard_offsets.back();
 
-  tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
+  tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       SectionFragment<E> &frag = map.entries[j].value;
       if (frag.is_alive) {
