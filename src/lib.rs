@@ -13,6 +13,7 @@ pub mod gdb_index;
 pub mod icf;
 pub mod input_files;
 pub mod input_sections;
+pub mod jobs;
 pub mod linker_script;
 #[cfg(not(all(target_os = "windows", target_env = "msvc")))]
 pub mod lto;

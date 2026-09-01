@@ -1,18 +1,5 @@
 //! The linker driver: runs the passes in order.
 
-// Many build systems attempt to invoke as many linker processes as there
-// are cores, based on the assumption that the linker is single-threaded.
-// However, since mold is multi-threaded, such build systems' behavior is
-// not beneficial and just increases the overall peak memory usage.
-// On machines with limited memory, this could lead to an out-of-memory
-// error.
-//
-// This file implements a feature that limits the number of concurrent
-// mold processes to just 1 for each user. It is intended to be used as
-// `MOLD_JOBS=1 ninja` or `MOLD_JOBS=1 make -j$(nproc)`.
-//
-// The Rust driver does not yet implement the C++ MOLD_JOBS process gate.
-
 use std::fmt;
 use std::sync::{mpsc, Arc};
 
@@ -136,6 +123,8 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     if ctx.args.fork {
         crate::subprocess::fork_child();
     }
+
+    crate::jobs::acquire_global_lock();
 
     let threads = thread_count(&ctx.args);
     rayon::ThreadPoolBuilder::new()
@@ -677,6 +666,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
     crate::subprocess::notify_parent();
+    crate::jobs::release_global_lock();
 
     // Dropping page table entries here in parallel makes process exit
     // faster, as the kernel otherwise reclaims them in a single thread
