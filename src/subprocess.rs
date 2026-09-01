@@ -71,7 +71,11 @@ pub fn notify_parent() {
 pub fn notify_parent() {}
 
 #[cfg(not(windows))]
-extern "C" fn on_signal(signo: libc::c_int) {
+extern "C" fn on_signal(
+    signo: libc::c_int,
+    info: *mut libc::siginfo_t,
+    _context: *mut libc::c_void,
+) {
     // mold mmap's an output file, and the mmap succeeds even if there's
     // no enough space left on the filesystem. The actual disk blocks are
     // not allocated on the mmap call but when the program writes to it
@@ -82,7 +86,15 @@ extern "C" fn on_signal(signo: libc::c_int) {
     // signal handler catches that signal and prints out a user-friendly
     // error message. Without this, it is very hard to realize that the
     // disk might be full.
-    if signo == libc::SIGBUS {
+    let addr = if info.is_null() {
+        0
+    } else {
+        // SAFETY: SA_SIGINFO gives the handler a valid siginfo_t pointer.
+        unsafe { (*info).si_addr() as usize }
+    };
+    if (signo == libc::SIGSEGV || signo == libc::SIGBUS)
+        && crate::output_file::output_buffer_contains(addr)
+    {
         // Handle disk full error
         let msg = b"mold: failed to write to an output file. Disk full?\n";
         // SAFETY: write is async-signal-safe.
@@ -96,9 +108,10 @@ extern "C" fn on_signal(signo: libc::c_int) {
     }
     crate::output_file::cleanup();
     // Re-throw the signal
-    // SAFETY: restoring the default handler and re-raising.
+    // SAFETY: restoring the default handlers and re-raising.
     unsafe {
-        libc::signal(signo, libc::SIG_DFL);
+        libc::signal(libc::SIGSEGV, libc::SIG_DFL);
+        libc::signal(libc::SIGBUS, libc::SIG_DFL);
         libc::raise(signo);
     }
 }
@@ -108,11 +121,15 @@ pub fn install_signal_handler() {
     // The C++ handler has an additional OneTBB compatibility condition:
     // OneTBB 2021.9.0 has the interface version 12090.
     // Rust does not install OneTBB's signal handler.
-    // SAFETY: installing a handler that only calls async-signal-safe
-    // functions.
+    // SAFETY: installing a signal handler with the three-argument SA_SIGINFO
+    // calling convention.
     unsafe {
-        libc::signal(libc::SIGSEGV, on_signal as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGBUS, on_signal as *const () as libc::sighandler_t);
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_signal as *const () as libc::sighandler_t;
+        libc::sigemptyset(&mut action.sa_mask);
+        action.sa_flags = libc::SA_SIGINFO;
+        libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGBUS, &action, std::ptr::null_mut());
     }
 }
 

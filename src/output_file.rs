@@ -10,6 +10,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use memmap2::MmapMut;
@@ -21,6 +23,25 @@ use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.
 static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+#[cfg(not(windows))]
+static OUTPUT_BUFFER_START: AtomicUsize = AtomicUsize::new(0);
+#[cfg(not(windows))]
+static OUTPUT_BUFFER_END: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(not(windows))]
+fn set_output_buffer_range(start: usize, len: usize) {
+    OUTPUT_BUFFER_END.store(0, Ordering::SeqCst);
+    OUTPUT_BUFFER_START.store(start, Ordering::SeqCst);
+    OUTPUT_BUFFER_END.store(start + len, Ordering::SeqCst);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn output_buffer_contains(addr: usize) -> bool {
+    let start = OUTPUT_BUFFER_START.load(Ordering::SeqCst);
+    let end = OUTPUT_BUFFER_END.load(Ordering::SeqCst);
+    start != 0 && start <= addr && addr < end
+}
 
 #[cfg(not(windows))]
 fn open_options(mode: u32) -> OpenOptions {
@@ -148,6 +169,16 @@ fn map_file(file: &File, size: u64) -> Storage {
 }
 
 impl OutputFile {
+    #[cfg(not(windows))]
+    fn publish_output_buffer(&self) {
+        match &self.storage {
+            Storage::Mmap { map, len } => {
+                set_output_buffer_range(map.as_ptr() as usize, *len);
+            }
+            Storage::Memory(_) => set_output_buffer_range(0, 0),
+        }
+    }
+
     /// Opens an output file of the given size.
     ///
     /// A regular file is written through a memory mapping of a temporary
@@ -221,13 +252,16 @@ impl OutputFile {
         preallocate(&file, size);
 
         let storage = map_file(&file, size);
-        OutputFile {
+        let output = OutputFile {
             path: path.to_string(),
             tmp_path: Some(tmp),
             file: Some(file),
             storage,
             perm,
-        }
+        };
+        #[cfg(not(windows))]
+        output.publish_output_buffer();
+        output
     }
 
     // LockingOutputFile is similar to MemoryMappedOutputFile, but it doesn't
@@ -279,6 +313,8 @@ impl OutputFile {
         // address space as its size so that extend() can grow the file into
         // the mapping in place.
         self.storage = map_file(file, size);
+        #[cfg(not(windows))]
+        self.publish_output_buffer();
     }
 
     /// Whether the buffer is a mapping of the file rather than memory.
@@ -338,11 +374,15 @@ impl OutputFile {
             }
             (Storage::Mmap { .. }, None) => unreachable!("a mapping always has a file"),
         }
+        #[cfg(not(windows))]
+        self.publish_output_buffer();
     }
 
     /// Finishes writing and moves the file into place. The mapping is
     /// released without waiting for the data to reach the disk.
     pub fn close(self, diag: &Diagnostics) {
+        #[cfg(not(windows))]
+        set_output_buffer_range(0, 0);
         match self.storage {
             Storage::Mmap { map, .. } => drop(map),
             Storage::Memory(vec) => {
@@ -461,4 +501,19 @@ pub fn write_file(diag: &Diagnostics, path: &str, contents: &[u8]) {
     let mut file = File::create(path).unwrap_or_else(|e| fatal!(diag, "cannot open {path}: {e}"));
     file.write_all(contents)
         .unwrap_or_else(|e| fatal!(diag, "{path}: write failed: {e}"));
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_output_buffer_addresses() {
+        set_output_buffer_range(0x1000, 0x100);
+        assert!(!output_buffer_contains(0x0fff));
+        assert!(output_buffer_contains(0x1000));
+        assert!(output_buffer_contains(0x10ff));
+        assert!(!output_buffer_contains(0x1100));
+        set_output_buffer_range(0, 0);
+    }
 }
