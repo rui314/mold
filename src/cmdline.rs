@@ -8,6 +8,7 @@ use crate::elf::*;
 use crate::error::Diagnostics;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::Glob;
+use crate::util::perf::Counter;
 use crate::util::{self, align_down, path_clean, path_filename};
 use crate::{fatal, out, warn};
 
@@ -1407,6 +1408,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.package_metadata = parse_package_metadata(diag, &arg);
         } else if read_flag!("stats") {
             a.stats = true;
+            Counter::enable();
         } else if read_arg!("C") || read_arg!("directory") {
             a.directory = arg.clone();
         } else if read_arg!("chroot") {

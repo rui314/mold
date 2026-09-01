@@ -91,6 +91,7 @@ use crate::fatal;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, Symbol};
+use crate::util::perf::Counter;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Digest {
@@ -497,6 +498,9 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
 fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
     let _t = ctx.timer("gather_sections");
 
+    static ELIGIBLE: Counter = Counter::new("icf_eligibles");
+    static NON_ELIGIBLE: Counter = Counter::new("icf_non_eligibles");
+
     // Count the number of eligible input sections for each input file
     // and turn the counts into starting indices with a prefix sum.
     let counts: Vec<usize> = ctx
@@ -504,6 +508,7 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
         .par_iter()
         .map(|file| {
             let mut count = 0;
+            let mut non_eligible = 0;
             for isec in file.input_sections() {
                 if !isec.is_alive() {
                     continue;
@@ -511,8 +516,12 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
                 if is_eligible(ctx, isec) {
                     isec.set_icf_index(0);
                     count += 1;
+                } else {
+                    non_eligible += 1;
                 }
             }
+            ELIGIBLE.add(count as i64);
+            NON_ELIGIBLE.add(non_eligible);
             count
         })
         .collect();
@@ -687,11 +696,14 @@ fn count_num_classes<E: Arch>(
     map: &mut DigestMap,
 ) -> usize {
     map.next_round();
-    digests
+    let count = digests
         .par_iter()
         .zip(sections)
         .map(|(&digest, &isec)| usize::from(map.insert(ctx, digest, isec)))
-        .sum()
+        .sum();
+    static COUNTER: Counter = Counter::new("icf_round");
+    COUNTER.increment();
+    count
 }
 
 fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) {
@@ -838,11 +850,14 @@ pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
     // exporting to the symtab.
     {
         let _t = ctx.timer("sweep");
+        static ELIMINATED: Counter = Counter::new("icf_eliminated");
+        ELIMINATED.add(0);
         sections.par_iter().for_each(|&r| {
             let isec = ctx.section(r);
             if isec.icf_leader_in_round() != r {
                 isec.set_icf_removed();
                 ctx.objs[r.file.index()].kill_section(r.shndx as usize);
+                ELIMINATED.increment();
             } else {
                 isec.set_offset(u64::MAX);
             }

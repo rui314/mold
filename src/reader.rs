@@ -20,6 +20,7 @@ use crate::filetype::{self, FileType};
 use crate::input_files::{DsoId, FileId, ObjId, ObjectFile, SharedFile};
 use crate::linker_script::Script;
 use crate::mapped_file::{must_open_file, open_file, MappedFile};
+use crate::util::perf::Counter;
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
@@ -89,6 +90,9 @@ fn new_object_file<E: Arch>(
     mf: &'static MappedFile,
     archive_name: &str,
 ) -> ObjectFile<E> {
+    static COUNT: Counter = Counter::new("parsed_objs");
+    COUNT.increment();
+
     let target = filetype::get_machine_type(&ctx.diag, &ctx.args.plugin, mf, || None);
     match target {
         None => fatal!(ctx, "{}: unknown machine type", mf.name),
@@ -147,6 +151,9 @@ fn new_lto_object<E: Arch>(
     mf: &'static MappedFile,
     archive_name: &str,
 ) -> Option<ObjectFile<E>> {
+    static COUNT: Counter = Counter::new("parsed_lto_objs");
+    COUNT.increment();
+
     if ctx.args.ignore_ir_file.contains(&mf.identifier()) {
         return None;
     }

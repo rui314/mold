@@ -60,6 +60,7 @@ pub struct MergedSection<E: Layout> {
 
     /// The fragments once insertion is done.
     pub fragments: FrozenMap<SectionFragment>,
+    pub estimation: u64,
     pub resolved: bool,
 
     /// The fragments in deterministic order within each hash-table shard.
@@ -151,6 +152,7 @@ impl<E: Layout> MergedSection<E> {
             members: Vec::new(),
             map: ConcurrentMap::default(),
             fragments: FrozenMap::default(),
+            estimation: 0,
             resolved: false,
             shards: Vec::new(),
             shard_offsets: Vec::new(),
@@ -285,7 +287,8 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     // We aim 2/3 occupation ratio
     let t = timers.start("resize");
     let msec = &mut merged_sections[id.index()];
-    msec.map = ConcurrentMap::with_capacity(estimate.cardinality() as usize * 3 / 2);
+    msec.estimation = estimate.cardinality();
+    msec.map = ConcurrentMap::with_capacity(msec.estimation as usize * 3 / 2);
     let msec = &*msec;
     drop(t);
 
@@ -378,7 +381,8 @@ pub fn resolve_sections<E: Arch>(
         .zip(&estimates)
         .for_each(|(section, estimate)| {
             if let Some(estimate) = estimate {
-                section.map = ConcurrentMap::with_capacity(estimate.cardinality() as usize * 3 / 2);
+                section.estimation = estimate.cardinality();
+                section.map = ConcurrentMap::with_capacity(section.estimation as usize * 3 / 2);
             }
         });
     drop(t);
@@ -568,7 +572,11 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
     });
 }
 
-/// The number of unique fragments, for `--stats`.
-pub fn num_fragments<E: Layout>(msec: &MergedSection<E>) -> usize {
-    msec.fragments.len()
+pub fn print_stats<E: Layout>(msec: &MergedSection<E>, diag: &Diagnostics) {
+    diag.out(format_args!(
+        "{} estimation={} actual={}",
+        msec.hdr.name,
+        msec.estimation,
+        msec.fragments.len()
+    ));
 }

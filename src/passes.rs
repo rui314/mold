@@ -45,6 +45,7 @@ use crate::symbol::{
     NEEDS_PPC_OPD, NEEDS_TLSDESC, NEEDS_TLSGD,
 };
 use crate::util::glob::Glob;
+use crate::util::perf::Counter;
 use crate::util::{align_down, align_to, leak_bytes, path_filename};
 use crate::{error, fatal, out, warn};
 
@@ -4690,27 +4691,119 @@ pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
 }
 
 pub fn show_stats<E: Arch>(ctx: &Context<E>) {
-    let print = |name: &str, value: usize| out!(ctx, "{name:>20}={value}");
-    print("num_objs", ctx.objs.len());
-    print("num_dsos", ctx.dsos.len());
-    print("output_chunks", ctx.chunks.len());
-    print(
-        "input_sections",
-        ctx.objs.iter().map(|f| f.sections.len()).sum(),
-    );
-    print(
-        "comdats",
-        ctx.objs.iter().map(|f| f.comdat_groups.len()).sum(),
-    );
-    print("num_cies", ctx.objs.iter().map(|f| f.cies.len()).sum());
-    print("num_fdes", ctx.objs.iter().map(|f| f.fdes.len()).sum());
-    print(
-        "merged_strings",
-        ctx.merged_sections
+    for file in &ctx.objs {
+        static DEFINED: Counter = Counter::new("defined_syms");
+        DEFINED.add(file.base.first_global as i64 - 1);
+
+        static UNDEFINED: Counter = Counter::new("undefined_syms");
+        UNDEFINED.add((file.base.symbols.len() - file.base.first_global) as i64);
+
+        static ALLOC: Counter = Counter::new("reloc_alloc");
+        static NONALLOC: Counter = Counter::new("reloc_nonalloc");
+        ALLOC.add(0);
+        NONALLOC.add(0);
+        for isec in (0..file.sections.len())
+            .filter_map(|shndx| file.section(shndx))
+            .filter(|isec| isec.is_alive())
+        {
+            let count = isec.relocations::<E>(ctx).count() as i64;
+            if isec.is_alloc() {
+                ALLOC.add(count);
+            } else {
+                NONALLOC.add(count);
+            }
+        }
+
+        static COMDATS: Counter = Counter::new("comdats");
+        COMDATS.add(file.comdat_groups.len() as i64);
+
+        static REMOVED_COMDATS: Counter = Counter::new("removed_comdat_mem");
+        REMOVED_COMDATS.add(0);
+        for group in &file.comdat_groups {
+            if !group.is_owner() {
+                REMOVED_COMDATS.add(file.comdat_members(group).count() as i64);
+            }
+        }
+
+        static UNIQUE_COMDATS: Counter = Counter::new("unique_comdats");
+        UNIQUE_COMDATS.add(0);
+        for group in &file.comdat_groups {
+            if group.is_owner() {
+                UNIQUE_COMDATS.increment();
+            }
+        }
+
+        static NUM_CIES: Counter = Counter::new("num_cies");
+        NUM_CIES.add(file.cies.len() as i64);
+
+        static NUM_UNIQUE_CIES: Counter = Counter::new("num_unique_cies");
+        for cie in &file.cies {
+            if cie.is_leader {
+                NUM_UNIQUE_CIES.increment();
+            }
+        }
+
+        static NUM_FDES: Counter = Counter::new("num_fdes");
+        NUM_FDES.add(file.fdes.len() as i64);
+    }
+
+    static NUM_BYTES: Counter = Counter::new("total_input_bytes");
+    NUM_BYTES.add(
+        crate::mapped_file::file_pool()
             .iter()
-            .map(crate::output_chunks::merged::num_fragments)
+            .map(|mf| mf.size() as i64)
             .sum(),
     );
+
+    static NUM_INPUT_SECTIONS: Counter = Counter::new("input_sections");
+    NUM_INPUT_SECTIONS.add(ctx.objs.iter().map(|file| file.sections.len() as i64).sum());
+
+    static NUM_OUTPUT_CHUNKS: Counter = Counter::new("output_chunks");
+    NUM_OUTPUT_CHUNKS.add(ctx.chunks.len() as i64);
+    static NUM_OBJS: Counter = Counter::new("num_objs");
+    NUM_OBJS.add(ctx.objs.len() as i64);
+    static NUM_DSOS: Counter = Counter::new("num_dsos");
+    NUM_DSOS.add(ctx.dsos.len() as i64);
+
+    static MERGED_STRINGS: Counter = Counter::new("merged_strings");
+    MERGED_STRINGS.add(
+        ctx.merged_sections
+            .iter()
+            .map(|section| section.fragments.len() as i64)
+            .sum(),
+    );
+
+    if E::NEEDS_THUNK {
+        static THUNK_BYTES: Counter = Counter::new("thunk_bytes");
+        THUNK_BYTES.add(
+            ctx.chunks
+                .iter()
+                .filter_map(|id| id.as_output_section())
+                .flat_map(|id| &ctx.output_sections[id.index()].thunks)
+                .map(|thunk| thunk.size() as i64)
+                .sum(),
+        );
+    }
+
+    if E::IS_RISCV || E::IS_LOONGARCH {
+        static NUM_RELS: Counter = Counter::new("shrunk_relocs");
+        let mut count = 0;
+        for id in ctx.chunks.iter().filter_map(|id| id.as_output_section()) {
+            let osec = &ctx.output_sections[id.index()];
+            if osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
+                for &member in &osec.members {
+                    count += ctx.input_section(member).r_deltas().len() as i64;
+                }
+            }
+        }
+        NUM_RELS.add(count);
+    }
+
+    Counter::print(&ctx.diag);
+
+    for section in &ctx.merged_sections {
+        crate::output_chunks::merged::print_stats(section, &ctx.diag);
+    }
 }
 
 /// Whether `--section-order` names a section that doesn't exist.

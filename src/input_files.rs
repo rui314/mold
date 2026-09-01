@@ -30,6 +30,7 @@ use crate::output_chunks::merged::MergedSection;
 use crate::symbol::{
     hash_key, Bins, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot, SymbolTable, NEEDS_PLT,
 };
+use crate::util::perf::Counter;
 use crate::util::{
     self, align_to, bits, cstr_at, leak_bytes, path_clean, path_filename, read_uleb,
 };
@@ -1422,6 +1423,9 @@ impl<E: Arch> ObjectFile<E> {
         if n == 0 {
             return;
         }
+        static COUNTER: Counter = Counter::new("all_syms");
+        COUNTER.add(n as i64);
+
         self.base.symbols = vec![SymbolId::DISCARDED_COMDAT; n];
         let num_globals = n.saturating_sub(self.base.first_global);
         self.has_symver = vec![false; num_globals];
@@ -1901,6 +1905,8 @@ impl<E: Arch> ObjectFile<E> {
                         }
                     }
 
+                    static COUNTER: Counter = Counter::new("regular_sections");
+                    COUNTER.increment();
                     self.sections.insert(i, isec, section_arena);
                 }
             }
@@ -3330,6 +3336,9 @@ impl<E: Arch> SharedFile<E> {
         self.base.first_global = 0;
         self.base.symbols = vec![SymbolId::DISCARDED_COMDAT; self.base.elf_syms.len()];
         self.symbols2 = vec![SymbolId::NONE; self.base.elf_syms.len()];
+
+        static COUNTER: Counter = Counter::new("dso_syms");
+        COUNTER.add(self.base.elf_syms.len() as i64);
     }
 
     /// Records symbols and default-version aliases in this worker's bin.

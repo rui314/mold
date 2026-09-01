@@ -37,9 +37,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::output_chunks::eh_frame::EhFrameRelocSection;
-use crate::output_chunks::misc::{
-    ComdatGroupSection, NotePropertySection, RiscvAttributesSection,
-};
+use crate::output_chunks::misc::{ComdatGroupSection, NotePropertySection, RiscvAttributesSection};
 use crate::output_chunks::sframe::SFrameRelocSection;
 use crate::output_chunks::symtab::ShstrtabSection;
 use crate::output_chunks::{self, ChunkId, OutputEhdr, OutputShdr};

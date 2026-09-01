@@ -60,11 +60,10 @@ fn git_hash(source_dir: &Path) -> Option<String> {
         .args(["rev-parse", "HEAD"])
         .output()
         .ok()?;
-    output.status.success().then(|| {
-        String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string()
-    })
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn main() {

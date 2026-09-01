@@ -19,6 +19,7 @@ use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, N
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
 use crate::util::hyperloglog::HyperLogLog;
+use crate::util::perf::Counter;
 use crate::util::virtual_memory;
 use crate::util::{self, cstr_at, leak_bytes};
 use crate::{error, fatal};
@@ -1547,6 +1548,9 @@ impl MergeableSection {
             self.hashes.push(hash);
             sketch.insert(hash);
         }
+
+        static COUNTER: Counter = Counter::new("string_fragments");
+        COUNTER.add(self.frag_offsets.len() as i64);
     }
 
     /// Inserts the pieces into the parent section's fragment map.

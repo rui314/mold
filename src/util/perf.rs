@@ -1,12 +1,63 @@
-//! Wall-clock and CPU time accounting for `--perf`.
+//! Statistics counters and wall-clock and CPU time accounting.
 
 // Counter is used to collect statistics numbers.
-//
-// The Rust port does not currently have the C++ Counter facility; this module
-// contains its timer counterpart.
 
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+use crate::error::Diagnostics;
+
+static COUNTERS_ENABLED: AtomicBool = AtomicBool::new(false);
+static COUNTERS: Mutex<Vec<&'static Counter>> = Mutex::new(Vec::new());
+
+pub struct Counter {
+    name: &'static str,
+    value: AtomicI64,
+    registered: AtomicBool,
+}
+
+impl Counter {
+    pub const fn new(name: &'static str) -> Counter {
+        Counter {
+            name,
+            value: AtomicI64::new(0),
+            registered: AtomicBool::new(false),
+        }
+    }
+
+    pub fn enable() {
+        COUNTERS_ENABLED.store(true, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn increment(&'static self) {
+        self.add(1);
+    }
+
+    #[inline]
+    pub fn add(&'static self, delta: i64) {
+        if !COUNTERS_ENABLED.load(Ordering::Relaxed) {
+            return;
+        }
+        if !self.registered.swap(true, Ordering::Relaxed) {
+            COUNTERS.lock().unwrap().push(self);
+        }
+        self.value.fetch_add(delta, Ordering::Relaxed);
+    }
+
+    pub fn print(diag: &Diagnostics) {
+        let mut counters = COUNTERS.lock().unwrap().clone();
+        counters.sort_by_key(|counter| counter.value.load(Ordering::Relaxed));
+        for counter in counters {
+            diag.out(format_args!(
+                "{:>20}={}",
+                counter.name,
+                counter.value.load(Ordering::Relaxed)
+            ));
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Record {
