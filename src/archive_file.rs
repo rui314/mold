@@ -159,6 +159,7 @@ fn for_each_member(
         // Fat-archive counterpart:
         // Skip if symbol table
         if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" {
+            pos = body_end;
             continue;
         }
 
