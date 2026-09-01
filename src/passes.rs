@@ -3045,10 +3045,12 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("compute_symtab_size");
     if E::NEEDS_THUNK {
         let mut n = 0;
-        for osec in &mut ctx.output_sections {
-            for thunk in &mut osec.thunks {
-                thunk.name = format!("thunk{n}");
-                n += 1;
+        for id in ctx.chunks.clone() {
+            if let ChunkId::Output(osec) = id {
+                for thunk in &mut ctx.output_sections[osec.index()].thunks {
+                    thunk.name = format!("thunk{n}");
+                    n += 1;
+                }
             }
         }
     }
