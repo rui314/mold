@@ -17,7 +17,12 @@ static bool is_gcc_lto_obj(MappedFile *mf, bool has_gcc_plugin) {
   const char *data = mf->get_contents().data();
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
   ElfShdr<E> *sh_begin = (ElfShdr<E> *)(data + ehdr.e_shoff);
-  std::span<ElfShdr<E>> shdrs{(ElfShdr<E> *)(data + ehdr.e_shoff), ehdr.e_shnum};
+
+  // e_shnum is a 16-bit field. If an object file contains more than 65279
+  // sections, e_shnum is zero and the actual number is stored to the first
+  // section header's sh_size field.
+  i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
+  std::span<ElfShdr<E>> shdrs{sh_begin, (size_t)num_sections};
 
   // e_shstrndx is a 16-bit field. If .shstrtab's section index is
   // too large, the actual number is stored to sh_link field.
