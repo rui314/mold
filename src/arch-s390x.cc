@@ -168,7 +168,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_12:
       check(S + A, 0, 1 << 12);
-      *(ul16 *)loc |= bits(S + A, 11, 0);
+      *(ub16 *)loc |= bits(S + A, 11, 0);
       break;
     case R_390_16:
       check(S + A, 0, 1 << 16);
@@ -186,7 +186,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PC12DBL:
     case R_390_PLT12DBL:
       check_dbl(S + A - P, -(1 << 12), 1 << 12);
-      *(ul16 *)loc |= bits(S + A - P, 12, 1);
+      *(ub16 *)loc |= bits(S + A - P, 12, 1);
       break;
     case R_390_PC16:
       check(S + A - P, -(1 << 15), 1 << 15);
@@ -222,7 +222,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOT12:
     case R_390_GOTPLT12:
       check(G + A, 0, 1 << 12);
-      *(ul16 *)loc |= bits(G + A, 11, 0);
+      *(ub16 *)loc |= bits(G + A, 11, 0);
       break;
     case R_390_GOT16:
     case R_390_GOTPLT16:
