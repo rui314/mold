@@ -239,14 +239,17 @@ fn find_paired_reloc<E: Arch>(
     i: usize,
 ) -> usize {
     let value = sym.esym(ctx).st_value().get();
-    let candidates: Box<dyn Iterator<Item = usize>> = if value <= rels[i].r_offset() {
-        Box::new((0..i).rev())
+    if value <= rels[i].r_offset() {
+        for j in (0..i).rev() {
+            if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {
+                return j;
+            }
+        }
     } else {
-        Box::new(i + 1..rels.len())
-    };
-    for j in candidates {
-        if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {
-            return j;
+        for j in i + 1..rels.len() {
+            if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {
+                return j;
+            }
         }
     }
     let file = &ctx.objs[isec.file.index()];
