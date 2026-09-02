@@ -805,6 +805,15 @@ void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
     isec->kill();
 
     std::string_view data = this->get_string(ctx, isec->shdr());
+
+    // Some assemblers (e.g. GNU as 2.45 on Scrt1.o) emit a placeholder
+    // SHT_GNU_SFRAME section with sh_size == 0 instead of either omitting
+    // the section or writing a valid empty header (num_fdes == 0). Treat
+    // that the same as "nothing to contribute" rather than reading past
+    // the end of the section as if it were a real header.
+    if (data.size() < sizeof(SFrameHeader<E>))
+      continue;
+
     const SFrameHeader<E> &hdr = *(const SFrameHeader<E> *)data.data();
 
     if (hdr.magic != SFRAME_MAGIC)
