@@ -805,6 +805,12 @@ void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
     isec->kill();
 
     std::string_view data = this->get_string(ctx, isec->shdr());
+
+    // GNU assembler emits an empty .sframe section for an input file that
+    // needs no unwind info (e.g. glibc's Scrt1.o assembled by gas 2.45).
+    if (data.empty())
+      continue;
+
     const SFrameHeader<E> &hdr = *(const SFrameHeader<E> *)data.data();
 
     if (hdr.magic != SFRAME_MAGIC)
