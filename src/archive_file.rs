@@ -95,77 +95,84 @@ fn parse_decimal(bytes: &[u8]) -> usize {
         .fold(0, |acc, &b| acc * 10 + (b - b'0') as usize)
 }
 
-/// Iterates over the members of an archive as (header, name, body)
-/// triples, skipping the symbol table and string table.
-fn for_each_member(mf: &'static MappedFile, thin: bool, mut f: impl FnMut(String, &'static [u8])) {
+/// Iterates over the members of an archive as (name, body) pairs, skipping
+/// the symbol table and string table.
+fn archive_members(
+    mf: &'static MappedFile,
+    thin: bool,
+) -> impl Iterator<Item = (String, &'static [u8])> {
     let data = mf.data();
     let mut pos = 8;
-    let mut strtab: &[u8] = &[];
+    let mut strtab: &'static [u8] = &[];
 
-    while data.len() - pos >= 2 {
-        // Each header is aligned to a 2 byte boundary.
-        if pos % 2 != 0 {
-            pos += 1;
+    std::iter::from_fn(move || {
+        loop {
+            if data.len() - pos < 2 {
+                return None;
+            }
+
+            // Each header is aligned to a 2 byte boundary.
+            if pos % 2 != 0 {
+                pos += 1;
+            }
+
+            let hdr = ArHeader::parse(&data[pos..])?;
+            let body_start = pos + HEADER_SIZE;
+            let body_end = (body_start + hdr.size).min(data.len());
+            let mut body = &data[body_start..body_end];
+
+            // Read a string table.
+            if hdr.is_strtab() {
+                // Read if string table
+                strtab = body;
+                pos = body_end;
+                continue;
+            }
+            // Skip a symbol table.
+            if hdr.is_symtab() {
+                // Skip if symbol table
+                pos = body_end;
+                continue;
+            }
+
+            if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
+                fatal!("{}: filename is not stored as a long filename", mf.name);
+            }
+
+            // Read the name field
+            let name = hdr.read_name(strtab, &mut body);
+
+            if thin {
+                // A thin archive member's contents live elsewhere; only a
+                // BSD-style long name occupies space after the header.
+                pos = body_start + (body_end - body_start - body.len());
+            } else {
+                pos = body_end;
+            }
+
+            // Skip BSD archive symbol tables.
+            if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" {
+                pos = body_end;
+                continue;
+            }
+
+            return Some((name, body));
         }
-
-        let Some(hdr) = ArHeader::parse(&data[pos..]) else {
-            break;
-        };
-        let body_start = pos + HEADER_SIZE;
-        let body_end = (body_start + hdr.size).min(data.len());
-        let mut body = &data[body_start..body_end];
-
-        // Read a string table.
-        if hdr.is_strtab() {
-            // Read if string table
-            strtab = body;
-            pos = body_end;
-            continue;
-        }
-        // Skip a symbol table.
-        if hdr.is_symtab() {
-            // Skip if symbol table
-            pos = body_end;
-            continue;
-        }
-
-        if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-            fatal!("{}: filename is not stored as a long filename", mf.name);
-        }
-
-        // Read the name field
-        let name = hdr.read_name(strtab, &mut body);
-
-        if thin {
-            // A thin archive member's contents live elsewhere; only a
-            // BSD-style long name occupies space after the header.
-            pos = body_start + (body_end - body_start - body.len());
-        } else {
-            pos = body_end;
-        }
-
-        // Skip BSD archive symbol tables.
-        if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" {
-            pos = body_end;
-            continue;
-        }
-
-        f(name, body);
-    }
+    })
 }
 
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
 pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<String> {
-    let mut paths = Vec::new();
-    for_each_member(mf, true, |name, _| {
-        if name.starts_with('/') {
-            paths.push(name);
-        } else {
-            paths.push(format!("{}/{}", util::path_dirname(&mf.name), name));
-        }
-    });
-    paths
+    archive_members(mf, true)
+        .map(|(name, _)| {
+            if name.starts_with('/') {
+                name
+            } else {
+                format!("{}/{}", util::path_dirname(&mf.name), name)
+            }
+        })
+        .collect()
 }
 
 pub fn read_thin_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
@@ -186,13 +193,13 @@ pub fn read_thin_archive_members(mf: &'static MappedFile) -> Vec<&'static Mapped
 }
 
 pub fn read_fat_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
-    let mut members = Vec::new();
     let base = mf.data().as_ptr() as usize;
-    for_each_member(mf, false, |name, body| {
-        let start = body.as_ptr() as usize - base;
-        members.push(mf.slice(name, start, body.len()));
-    });
-    members
+    archive_members(mf, false)
+        .map(|(name, body)| {
+            let start = body.as_ptr() as usize - base;
+            mf.slice(name, start, body.len())
+        })
+        .collect()
 }
 
 pub fn read_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
