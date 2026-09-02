@@ -43,7 +43,6 @@ pub trait Layout: Copy + Default + Send + Sync + 'static {
 /// Byte order of an ELF file, as a type-level marker.
 pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
     const IS_LITTLE: bool;
-    const IS_NATIVE: bool = Self::IS_LITTLE == cfg!(target_endian = "little");
 
     fn read_u16(bytes: &[u8]) -> u16 {
         let bytes = bytes[..2].try_into().unwrap();
@@ -74,10 +73,6 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
 
     fn read_i32(bytes: &[u8]) -> i32 {
         Self::read_u32(bytes) as i32
-    }
-
-    fn read_i16(bytes: &[u8]) -> i16 {
-        Self::read_u16(bytes) as i16
     }
 
     fn read_i64(bytes: &[u8]) -> i64 {
@@ -113,10 +108,6 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
 
     fn write_i32(bytes: &mut [u8], value: i32) {
         Self::write_u32(bytes, value as u32);
-    }
-
-    fn write_i16(bytes: &mut [u8], value: i16) {
-        Self::write_u16(bytes, value as u16);
     }
 
     fn write_i64(bytes: &mut [u8], value: i64) {
@@ -303,13 +294,11 @@ pub trait PhdrRecord: FileRecord + fmt::Debug {
     fn p_type_mut(&mut self) -> &mut U32<Self::Endian>;
     fn p_flags(&self) -> &U32<Self::Endian>;
     fn p_flags_mut(&mut self) -> &mut U32<Self::Endian>;
-    fn p_offset(&self) -> &Self::Word;
     fn p_offset_mut(&mut self) -> &mut Self::Word;
     fn p_vaddr(&self) -> &Self::Word;
     fn p_vaddr_mut(&mut self) -> &mut Self::Word;
     fn p_paddr(&self) -> &Self::Word;
     fn p_paddr_mut(&mut self) -> &mut Self::Word;
-    fn p_filesz(&self) -> &Self::Word;
     fn p_filesz_mut(&mut self) -> &mut Self::Word;
     fn p_memsz(&self) -> &Self::Word;
     fn p_memsz_mut(&mut self) -> &mut Self::Word;
@@ -326,13 +315,11 @@ impl<E: Endian> PhdrRecord for Elf64Phdr<E> {
     fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
     fn p_flags(&self) -> &U32<E> { &self.p_flags }
     fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
-    fn p_offset(&self) -> &U64<E> { &self.p_offset }
     fn p_offset_mut(&mut self) -> &mut U64<E> { &mut self.p_offset }
     fn p_vaddr(&self) -> &U64<E> { &self.p_vaddr }
     fn p_vaddr_mut(&mut self) -> &mut U64<E> { &mut self.p_vaddr }
     fn p_paddr(&self) -> &U64<E> { &self.p_paddr }
     fn p_paddr_mut(&mut self) -> &mut U64<E> { &mut self.p_paddr }
-    fn p_filesz(&self) -> &U64<E> { &self.p_filesz }
     fn p_filesz_mut(&mut self) -> &mut U64<E> { &mut self.p_filesz }
     fn p_memsz(&self) -> &U64<E> { &self.p_memsz }
     fn p_memsz_mut(&mut self) -> &mut U64<E> { &mut self.p_memsz }
@@ -349,13 +336,11 @@ impl<E: Endian> PhdrRecord for Elf32Phdr<E> {
     fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
     fn p_flags(&self) -> &U32<E> { &self.p_flags }
     fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
-    fn p_offset(&self) -> &U32<E> { &self.p_offset }
     fn p_offset_mut(&mut self) -> &mut U32<E> { &mut self.p_offset }
     fn p_vaddr(&self) -> &U32<E> { &self.p_vaddr }
     fn p_vaddr_mut(&mut self) -> &mut U32<E> { &mut self.p_vaddr }
     fn p_paddr(&self) -> &U32<E> { &self.p_paddr }
     fn p_paddr_mut(&mut self) -> &mut U32<E> { &mut self.p_paddr }
-    fn p_filesz(&self) -> &U32<E> { &self.p_filesz }
     fn p_filesz_mut(&mut self) -> &mut U32<E> { &mut self.p_filesz }
     fn p_memsz(&self) -> &U32<E> { &self.p_memsz }
     fn p_memsz_mut(&mut self) -> &mut U32<E> { &mut self.p_memsz }
@@ -564,13 +549,6 @@ macro_rules! endian_integer {
 
         impl<E: Endian> $name<E> {
             #[inline(always)]
-            pub fn new(value: $int) -> Self {
-                let mut result = Self::default();
-                result.set(value);
-                result
-            }
-
-            #[inline(always)]
             pub fn get(&self) -> $int {
                 E::$read(&self.bytes)
             }
@@ -583,12 +561,26 @@ macro_rules! endian_integer {
     };
 }
 
-endian_integer!(U16, u16, 2, read_u16, write_u16);
-endian_integer!(U32, u32, 4, read_u32, write_u32);
-endian_integer!(U64, u64, 8, read_u64, write_u64);
-endian_integer!(I16, i16, 2, read_i16, write_i16);
+macro_rules! endian_integer_with_new {
+    ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
+        endian_integer!($name, $int, $size, $read, $write);
+
+        impl<E: Endian> $name<E> {
+            #[inline(always)]
+            pub fn new(value: $int) -> Self {
+                let mut result = Self::default();
+                result.set(value);
+                result
+            }
+        }
+    };
+}
+
+endian_integer_with_new!(U16, u16, 2, read_u16, write_u16);
+endian_integer_with_new!(U32, u32, 4, read_u32, write_u32);
+endian_integer_with_new!(U64, u64, 8, read_u64, write_u64);
 endian_integer!(I32, i32, 4, read_i32, write_i32);
-endian_integer!(I64, i64, 8, read_i64, write_i64);
+endian_integer_with_new!(I64, i64, 8, read_i64, write_i64);
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -598,13 +590,6 @@ pub struct U24<E: Endian> {
 }
 
 impl<E: Endian> U24<E> {
-    #[inline(always)]
-    pub fn new(value: u32) -> Self {
-        let mut result = Self::default();
-        result.set(value);
-        result
-    }
-
     #[inline(always)]
     pub fn get(&self) -> u32 {
         if E::IS_LITTLE {

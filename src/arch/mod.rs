@@ -105,10 +105,6 @@ pub trait Arch: Layout {
 
     const IS_X86: bool = matches!(Self::FAMILY, Family::X86_64 | Family::I386);
     const IS_ARM: bool = matches!(Self::FAMILY, Family::Arm64 | Family::Arm32);
-    const IS_PPC: bool = matches!(
-        Self::FAMILY,
-        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2
-    );
     const IS_PPC64: bool = matches!(Self::FAMILY, Family::Ppc64V1 | Family::Ppc64V2);
     const IS_SPARC: bool = matches!(Self::FAMILY, Family::Sparc64);
     const IS_RISCV: bool = matches!(Self::FAMILY, Family::RiscV);

@@ -51,11 +51,6 @@ pub fn is_int(value: i64, n: u32) -> bool {
     sign_extend(value as u64, n) == value
 }
 
-/// Whether `value` is representable as an unsigned `n`-bit integer.
-pub fn is_uint(value: u64, n: u32) -> bool {
-    n >= 64 || value >> n == 0
-}
-
 /// Writes a NUL-terminated string and returns the number of bytes written.
 pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
     buf[..s.len()].copy_from_slice(s);
@@ -125,12 +120,6 @@ pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
     }
 }
 
-/// The number of bytes `value` occupies in unsigned LEB128 encoding.
-pub fn uleb_size(value: u64) -> usize {
-    let bits = 64 - value.leading_zeros() as usize;
-    bits.div_ceil(7).max(1)
-}
-
 /// Overwrites an existing unsigned LEB128 value in place, keeping its length.
 pub fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
     let mut i = 0;
@@ -182,11 +171,6 @@ pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
     }
 }
 
-/// Removes consecutive duplicates from a sorted vector.
-pub fn dedup_sorted<T: PartialEq>(vec: &mut Vec<T>) {
-    vec.dedup();
-}
-
 /// Fills `buf` with random bytes from the operating system.
 pub fn random_bytes(buf: &mut [u8]) {
     use std::io::Read;
@@ -206,11 +190,6 @@ pub fn leak<T>(value: T) -> &'static T {
 /// Leaks a byte string for the rest of the process's lifetime.
 pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
-}
-
-/// Leaks a string for the rest of the process's lifetime.
-pub fn leak_str(s: String) -> &'static str {
-    String::leak(s)
 }
 
 // Returns the path of the mold executable itself
@@ -331,7 +310,6 @@ mod tests {
         for &value in &[0u64, 1, 127, 128, 300, u64::MAX] {
             let mut buf = Vec::new();
             encode_uleb(&mut buf, value);
-            assert_eq!(buf.len(), uleb_size(value));
             let mut slice = buf.as_slice();
             assert_eq!(read_uleb(&mut slice), value);
             assert!(slice.is_empty());

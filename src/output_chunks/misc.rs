@@ -2,9 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use bstr::BStr;
-use rayon::prelude::*;
-
 use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
@@ -16,6 +13,7 @@ use crate::symbol::SymbolId;
 use crate::util::align_to;
 use crate::util::compress::Compressor;
 use crate::util::{path_filename, write_cstr};
+use bstr::BStr;
 
 // .interp contains the pathname of a dynamic linker. Dynamically-linked
 // executables have the section. If exists, the kernel runs the program at
@@ -722,13 +720,6 @@ pub mod comdat_group {
             E::Endian::write_u32(&mut buf[4 + j * 4..], ctx.chunk_header(member).shndx);
         }
     }
-}
-
-/// Runs a function over the output sections in parallel.
-pub fn for_each_output_section<E: Arch>(ctx: &Context<E>, f: impl Fn(OutputSectionId) + Sync) {
-    (0..ctx.output_sections.len())
-        .into_par_iter()
-        .for_each(|i| f(OutputSectionId::new(i as u32)));
 }
 
 /// `.riscv.attributes` describes the ISA the output requires, merged

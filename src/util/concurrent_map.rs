@@ -160,19 +160,11 @@ impl<T> ConcurrentMap<T> {
             .expect("table size overflow")
     }
 
-    pub fn nbuckets(&self) -> usize {
-        self.nbuckets
-    }
-
     /// The number of entries, counted.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         (0..self.nbuckets)
             .filter(|&idx| self.is_occupied(idx))
             .count()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     fn entry(&self, idx: usize) -> &Entry<T> {
@@ -338,37 +330,12 @@ impl<T> ConcurrentMap<T> {
         }
     }
 
-    /// Looks up a key.
-    pub fn get(&self, key: &[u8], hash: u64) -> Option<(EntryId, &T)> {
-        if self.nbuckets == 0 {
-            return None;
-        }
-        for idx in self.probe(hash) {
-            match self.key_at(idx) {
-                None => return None,
-                Some(existing) if existing == key => {
-                    return Some((EntryId(idx as u32), self.value_at(idx)))
-                }
-                Some(_) => {}
-            }
-        }
-        None
-    }
-
     pub fn value(&self, id: EntryId) -> &T {
         self.value_at(id.0 as usize)
     }
 
     pub fn key(&self, id: EntryId) -> &'static [u8] {
         self.key_at(id.0 as usize).expect("an occupied bucket")
-    }
-
-    /// The entries in bucket order.
-    pub fn iter(&self) -> impl Iterator<Item = (&'static [u8], EntryId, &T)> {
-        (0..self.nbuckets).filter_map(move |idx| {
-            self.key_at(idx)
-                .map(|key| (key, EntryId(idx as u32), self.value_at(idx)))
-        })
     }
 
     // Return a list of map entries sorted in a deterministic order.
@@ -418,20 +385,6 @@ impl<T> ConcurrentMap<T> {
             }
         }
         vec
-    }
-
-    /// Returns all map entries in deterministic order.
-    pub fn sorted_entries_all(&self) -> Vec<EntryId>
-    where
-        T: Send + Sync,
-    {
-        (0..NUM_SHARDS)
-            .into_par_iter()
-            .map(|shard| self.sorted_entries(shard))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect()
     }
 
     /// Returns all map entries as stable references in deterministic order.
@@ -520,35 +473,16 @@ impl<T> FrozenMap<T> {
         self.map.value(id)
     }
 
-    pub fn get_mut(&mut self, id: EntryId) -> &mut T {
-        // SAFETY: the unique reference to the map makes the value's
-        // UnsafeCell exclusively ours; the entry is occupied.
-        unsafe { (*self.map.entry(id.0 as usize).value.get()).assume_init_mut() }
-    }
-
-    /// Returns the address of an occupied value for disjoint parallel updates.
-    pub fn value_mut_ptr(&self, id: EntryId) -> *mut T {
-        self.map.entry(id.0 as usize).value.get().cast()
-    }
-
     pub fn key(&self, id: EntryId) -> &'static [u8] {
         self.map.key(id)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&'static [u8], EntryId, &T)> {
-        self.map.iter()
     }
 
     pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
         self.map.sorted_entries(shard)
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.map.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.map.is_empty()
     }
 }
 
@@ -605,10 +539,8 @@ mod tests {
             let (_, v, inserted) = map.insert_with(k, hash(k), || 99999);
             assert!(!inserted);
             assert_eq!(*v, i as u32);
-            assert_eq!(map.get(k, hash(k)).map(|(_, v)| *v), Some(i as u32));
         }
         assert_eq!(map.len(), 1000);
-        assert_eq!(map.iter().count(), 1000);
         let sorted: usize = (0..NUM_SHARDS).map(|s| map.sorted_entries(s).len()).sum();
         assert_eq!(sorted, 1000);
     }

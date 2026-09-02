@@ -1,6 +1,6 @@
 //! Input file classification.
 
-use crate::arch::{self, TargetInfo};
+use crate::arch;
 use crate::archive_file;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
@@ -307,9 +307,4 @@ pub fn get_machine_type(
         FileType::Text => script_target(),
         _ => None,
     }
-}
-
-/// Looks up the description of a target by name.
-pub fn target_info(name: &str) -> Option<&'static TargetInfo> {
-    arch::TARGETS.iter().find(|t| t.name == name)
 }

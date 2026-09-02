@@ -23,11 +23,9 @@ use std::num::NonZeroU32;
 use bstr::BStr;
 
 use crate::arch::Arch;
-use crate::cmdline::SectionOrderKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock};
-use crate::symbol::AddrFlags;
 use crate::tls;
 use crate::{error, warn};
 
@@ -181,10 +179,6 @@ impl<E: Layout> ChunkHeader<E> {
 
     pub fn is_alloc(&self) -> bool {
         self.shdr.sh_flags.get() & SHF_ALLOC as u64 != 0
-    }
-
-    pub fn is_nobits(&self) -> bool {
-        self.shdr.sh_type.get() == SHT_NOBITS
     }
 }
 
@@ -858,26 +852,4 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Merged(id) => merged::write_to(ctx, id, buf),
         _ => unreachable!("write_to is only for output and merged sections"),
     }
-}
-
-/// The address of a synthesized symbol placed at the start of a chunk.
-pub fn chunk_start<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u64 {
-    ctx.chunk_header(id).shdr.sh_addr.get()
-}
-
-/// Whether a chunk should be kept after `--section-order` filtering.
-pub fn section_order_index<E: Arch>(
-    ctx: &Context<E>,
-    name: &[u8],
-    kind: SectionOrderKind,
-) -> Option<usize> {
-    ctx.args
-        .section_order
-        .iter()
-        .position(|o| o.kind == kind && o.name.as_bytes() == name)
-}
-
-/// Resolves a symbol's address without going through its PLT entry.
-pub fn addr_no_plt<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> u64 {
-    sym.addr_with(ctx, AddrFlags::NO_PLT)
 }

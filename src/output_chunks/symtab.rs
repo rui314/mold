@@ -9,12 +9,12 @@ use rayon::prelude::*;
 use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::{FileId, SymtabBlock, SymtabEntries};
+use crate::error;
+use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::r_delta;
 use crate::output_chunks::{self, ChunkHeader, ChunkId};
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
 use crate::util::write_cstr;
-use crate::{error, fatal};
 
 // .strtab is referenced by .strtab and contains symbol names. Note that
 // .strtab is not needed at runtime; one can remove the section from an
@@ -926,21 +926,4 @@ pub mod gnu_hash {
             );
         }
     }
-}
-
-/// Chunk ids for which dynamic symbol information must exist.
-pub fn require_dynsym<E: Arch>(ctx: &Context<E>) {
-    if ctx.dynsym.symbols.is_empty() {
-        fatal!("internal error: dynamic symbol table required");
-    }
-}
-
-// True if the symbol's address is in the output file.
-pub fn is_defined_in_output(sym: &Symbol) -> bool {
-    matches!(sym.file(), Some(FileId::Obj(_)))
-}
-
-/// The chunk id of `.symtab_shndx` if it exists.
-pub fn symtab_shndx_id<E: Arch>(ctx: &Context<E>) -> Option<ChunkId> {
-    ctx.symtab_shndx.as_ref().map(|_| ChunkId::SymtabShndx)
 }

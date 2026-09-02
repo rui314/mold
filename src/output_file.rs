@@ -319,15 +319,11 @@ impl OutputFile {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         match &self.storage {
             Storage::Mmap { len, .. } => *len,
             Storage::Memory(vec) => vec.len(),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     // Extend the file so the caller can fill the appended data through the tail
@@ -468,13 +464,6 @@ pub fn split_ranges<'a>(buf: &'a mut [u8], ranges: &[Range]) -> Vec<&'a mut [u8]
         pos = r.offset + r.size;
     }
     result.into_iter().map(|s| s.unwrap()).collect()
-}
-
-/// Creates a file with the given contents.
-pub fn write_file(path: &str, contents: &[u8]) {
-    let mut file = File::create(path).unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
-    file.write_all(contents)
-        .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
 }
 
 #[cfg(all(test, not(windows)))]

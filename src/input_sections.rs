@@ -534,14 +534,6 @@ impl InputSection {
         Display(self, file)
     }
 
-    /// Whether a relocation can be encoded in the RELR format.
-    #[inline]
-    pub fn is_relr_reloc<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
-        ctx.args.pack_dyn_relocs_relr
-            && (1u64 << self.p2align()).is_multiple_of(E::WORD_SIZE as u64)
-            && rel.r_offset().is_multiple_of(E::WORD_SIZE as u64)
-    }
-
     /// Get the name of a function containin a given offset.
     pub fn func_name<E: Arch>(&self, ctx: &Context<E>, offset: u64) -> Option<String> {
         let file = &ctx.objs[self.file.index()];
@@ -1786,13 +1778,6 @@ impl SectionArena {
         unsafe { &*self.input_ptr(id) }
     }
 
-    #[inline]
-    pub(crate) fn section_mut(&mut self, id: InputSectionId) -> &mut InputSection {
-        // SAFETY: an exclusive arena borrow gives exclusive access to the
-        // section named by this id.
-        unsafe { &mut *self.input_ptr(id) }
-    }
-
     fn insert_extra(&self, extra: InputSectionExtras) -> *mut InputSectionExtras {
         let begin = self.allocate_offset(
             std::mem::size_of::<InputSectionExtras>(),
@@ -1860,13 +1845,8 @@ impl SectionList {
 
     /// The number of section indices.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.indices.len()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
     }
 
     /// Adds the section for `shndx`, which has none yet.
@@ -1924,13 +1904,6 @@ impl SectionList {
             .then(|| &self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize])
     }
 
-    #[inline]
-    pub fn mergeable_mut(&mut self, shndx: usize) -> Option<&mut MergeableSection> {
-        let value = *self.indices.get(shndx)?;
-        (value & MERGEABLE_SECTION != 0)
-            .then(|| &mut self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize])
-    }
-
     /// Returns a regular section before it is converted to a mergeable one.
     pub fn regular_section_mut(&mut self, shndx: usize) -> Option<&mut InputSection> {
         let value = self.indices[shndx];
@@ -1983,19 +1956,6 @@ impl SectionList {
             })
     }
 
-    pub fn regular_mut(&mut self) -> impl Iterator<Item = &mut InputSection> {
-        let base = self.arena_base;
-        self.indices
-            .iter()
-            .copied()
-            .filter(|&index| index != 0 && index & MERGEABLE_SECTION == 0)
-            .map(move |index| {
-                // SAFETY: regular table entries are distinct, and the
-                // iterator holds an exclusive borrow of this SectionList.
-                unsafe { &mut *base.as_ptr().add(index as usize * 4).cast() }
-            })
-    }
-
     /// The regular sections and their compact arena pointers, in section order.
     pub fn regular_ids_mut(&mut self) -> impl Iterator<Item = (InputSectionId, &mut InputSection)> {
         let base = self.arena_base;
@@ -2013,10 +1973,6 @@ impl SectionList {
 
     pub fn mergeable_sections(&self) -> impl Iterator<Item = &MergeableSection> {
         self.mergeable.iter()
-    }
-
-    pub fn mergeable_sections_mut(&mut self) -> impl Iterator<Item = &mut MergeableSection> {
-        self.mergeable.iter_mut()
     }
 
     /// The mergeable sections together with their stable input sections.

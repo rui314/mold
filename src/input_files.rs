@@ -271,20 +271,6 @@ impl FileId {
     pub fn is_dso(self) -> bool {
         matches!(self, FileId::Dso(_))
     }
-
-    pub fn as_obj(self) -> Option<ObjId> {
-        match self {
-            FileId::Obj(id) => Some(id),
-            FileId::Dso(_) => None,
-        }
-    }
-
-    pub fn as_dso(self) -> Option<DsoId> {
-        match self {
-            FileId::Dso(id) => Some(id),
-            FileId::Obj(_) => None,
-        }
-    }
 }
 
 impl From<ObjId> for FileId {
@@ -503,16 +489,7 @@ impl<E: Layout> InputFile<E> {
         cstr_at(self.shstrtab, self.shdrs[shndx].sh_name.get() as usize)
     }
 
-    #[inline]
-    pub fn symbol_name(&self, i: usize) -> &'static [u8] {
-        let offset = self.elf_syms[i].st_name().get() as usize;
-        self.symbol_name_lengths.get(i).map_or_else(
-            || cstr_at(self.symbol_strtab, offset),
-            |len| len.get(self.symbol_strtab, offset),
-        )
-    }
-
-    /// Like [`Self::symbol_name`] for code specialized for the target.
+    /// Returns a symbol name using the precomputed length when available.
     #[inline(always)]
     pub fn symbol_name_in(&self, i: usize) -> &'static [u8] {
         let offset = self.elf_syms[i].st_name().get() as usize;
@@ -1115,10 +1092,6 @@ impl<E: Arch> ObjectFile<E> {
         file
     }
 
-    pub fn id_display(&self) -> &dyn fmt::Display {
-        self
-    }
-
     /// The section index of the symbol at `idx`. Indices too large for
     /// the 16-bit `st_shndx` field are stored in `.symtab_shndx`.
     #[inline]
@@ -1274,11 +1247,6 @@ impl<E: Arch> ObjectFile<E> {
         self.sections.mergeable(shndx)
     }
 
-    #[inline]
-    pub fn mergeable_section_mut(&mut self, shndx: usize) -> Option<&mut MergeableSection> {
-        self.sections.mergeable_mut(shndx)
-    }
-
     /// The section the symbol at `idx` is defined in.
     #[inline]
     pub fn symbol_section(&self, idx: usize) -> Option<&InputSection> {
@@ -1313,18 +1281,8 @@ impl<E: Arch> ObjectFile<E> {
     }
 
     #[inline]
-    pub fn input_sections_mut(&mut self) -> impl Iterator<Item = &mut InputSection> {
-        self.sections.regular_mut()
-    }
-
-    #[inline]
     pub fn mergeable_sections(&self) -> impl Iterator<Item = &MergeableSection> {
         self.sections.mergeable_sections()
-    }
-
-    #[inline]
-    pub fn mergeable_sections_mut(&mut self) -> impl Iterator<Item = &mut MergeableSection> {
-        self.sections.mergeable_sections_mut()
     }
 
     /// The section indices of a COMDAT group's members, read from the

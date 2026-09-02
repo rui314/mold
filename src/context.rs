@@ -10,7 +10,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use crate::arch::Arch;
 use crate::cmdline::Args;
 use crate::elf::{ElfSym, ElfWord};
-use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
+use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
 };
@@ -345,26 +345,11 @@ impl<E: Arch> Context<E> {
         self.symbols.intern(crate::util::leak_bytes(name.to_vec()))
     }
 
-    pub fn obj(&self, id: ObjId) -> &ObjectFile<E> {
-        &self.objs[id.index()]
-    }
-
-    pub fn dso(&self, id: DsoId) -> &SharedFile<E> {
-        &self.dsos[id.index()]
-    }
-
     /// The common part of a file.
     pub fn file(&self, id: FileId) -> &InputFile<E> {
         match id {
             FileId::Obj(id) => &self.objs[id.index()].base,
             FileId::Dso(id) => &self.dsos[id.index()].base,
-        }
-    }
-
-    pub fn file_mut(&mut self, id: FileId) -> &mut InputFile<E> {
-        match id {
-            FileId::Obj(id) => &mut self.objs[id.index()].base,
-            FileId::Dso(id) => &mut self.dsos[id.index()].base,
         }
     }
 
@@ -380,40 +365,9 @@ impl<E: Arch> Context<E> {
         self.objs[r.file.index()].section_at(r.shndx)
     }
 
-    pub fn try_section(&self, r: SectionRef) -> Option<&InputSection> {
-        self.objs[r.file.index()].section(r.shndx as usize)
-    }
-
-    pub fn section_mut(&mut self, r: SectionRef) -> &mut InputSection {
-        self.objs[r.file.index()]
-            .section_mut(r.shndx as usize)
-            .expect("no such input section")
-    }
-
     #[inline]
     pub fn input_section(&self, id: InputSectionId) -> &InputSection {
         self.section_arena.section(id)
-    }
-
-    #[inline]
-    pub fn input_section_mut(&mut self, id: InputSectionId) -> &mut InputSection {
-        self.section_arena.section_mut(id)
-    }
-
-    pub fn set_r_deltas(
-        &mut self,
-        r: SectionRef,
-        deltas: Box<[crate::input_sections::RelocDelta]>,
-    ) {
-        let Context {
-            objs,
-            section_arena,
-            ..
-        } = self;
-        objs[r.file.index()]
-            .section_mut(r.shndx as usize)
-            .expect("no such input section")
-            .set_r_deltas(deltas, section_arena);
     }
 
     /// Formats an input section for diagnostics.

@@ -6,7 +6,7 @@ use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
-use crate::output_chunks::{self, ChunkHeader, ChunkId};
+use crate::output_chunks::{self, ChunkHeader};
 use crate::symbol::SymbolId;
 use crate::util::encode_sleb;
 
@@ -760,10 +760,5 @@ pub mod dynamic {
             entries.len() * ElfDyn::<E>::size()
         );
         ElfDyn::<E>::write_all(&entries, buf);
-    }
-
-    /// A chunk id for the dynamic section, if it exists.
-    pub fn id<E: Arch>(ctx: &Context<E>) -> Option<ChunkId> {
-        ctx.dynamic.as_ref().map(|_| ChunkId::Dynamic)
     }
 }

@@ -523,12 +523,6 @@ impl Symbol {
         self.file = SymbolFile::none();
     }
 
-    /// Prevents a definition in a DSO from resolving the symbol.
-    #[inline]
-    pub fn skip_dso(&self) -> bool {
-        self.mu.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
-    }
-
     #[inline]
     pub fn set_skip_dso(&self, on: bool) {
         if on {
@@ -1660,12 +1654,6 @@ impl SymbolTable {
         }
     }
 
-    /// Makes room for `additional` more symbols, so that the table isn't
-    /// copied when it grows.
-    pub fn reserve(&mut self, additional: usize) {
-        self.symbols.reserve(additional);
-    }
-
     /// Returns the auxiliary record for `id`, allocating it in the side
     /// arena if this symbol has none. C++ mold likewise keeps this rarely
     /// used state outside `Symbol` and refers to it with an arena index.
@@ -1810,23 +1798,6 @@ impl SymbolTable {
         id
     }
 
-    /// Adds `n` symbols at once, with `init` filling in the new tail of
-    /// the table, typically from many threads at once. The first of them
-    /// gets the id returned.
-    ///
-    /// # Safety
-    ///
-    /// `init` must initialize every element of the slice it is given.
-    pub unsafe fn add_many(
-        &mut self,
-        n: usize,
-        init: impl FnOnce(&mut [MaybeUninit<Symbol>]),
-    ) -> SymbolId {
-        // SAFETY: `init` has the same obligation for the new slots and does
-        // not access the existing ones.
-        unsafe { self.add_many_with_existing(n, |_, slots| init(slots)) }
-    }
-
     /// Adds `n` symbols while also exposing the initialized prefix. The two
     /// slices are disjoint, so a file-parallel pass can update old symbols
     /// and construct new ones together, as C++ mold's arena permits.
@@ -1889,34 +1860,8 @@ impl SymbolTable {
         unsafe { self.symbols.set_len(first + added) };
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.symbols.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.symbols.is_empty()
-    }
-
-    pub fn ids(&self) -> impl Iterator<Item = SymbolId> {
-        (0..self.symbols.len() as u32).map(SymbolId)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
-        self.symbols
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (SymbolId(i as u32), s))
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (SymbolId, &mut Symbol)> {
-        self.symbols
-            .iter_mut()
-            .enumerate()
-            .map(|(i, s)| (SymbolId(i as u32), s))
-    }
-
-    pub fn as_slice(&self) -> &[Symbol] {
-        &self.symbols
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [Symbol] {
@@ -1929,11 +1874,6 @@ impl SymbolTable {
             .iter()
             .flatten()
             .flat_map(|range| range.clone().map(SymbolId))
-    }
-
-    /// The id ranges of the named (global) symbols.
-    pub fn global_ranges(&self) -> impl Iterator<Item = &Range<u32>> {
-        self.globals.iter().flatten()
     }
 
     /// Applies `f` to all named symbols in parallel, one task per map shard,
@@ -2024,21 +1964,6 @@ impl SymbolTable {
             .into_iter()
             .flatten()
             .collect()
-    }
-
-    /// Splits the table into two disjoint mutable views: the symbol at `id`
-    /// and everything else, for the rare cases where one symbol is updated
-    /// from another's state.
-    pub fn get2_mut(&mut self, a: SymbolId, b: SymbolId) -> (&mut Symbol, &mut Symbol) {
-        assert_ne!(a, b);
-        let (a, b) = (a.index(), b.index());
-        if a < b {
-            let (lo, hi) = self.symbols.split_at_mut(b);
-            (&mut lo[a], &mut hi[0])
-        } else {
-            let (lo, hi) = self.symbols.split_at_mut(a);
-            (&mut hi[0], &mut lo[b])
-        }
     }
 }
 

@@ -12,7 +12,7 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::output_chunks::{self, ChunkId};
 use crate::output_file::{split_ranges, OutputFile, Range};
-use crate::{error, fatal, out, passes};
+use crate::{error, fatal, passes};
 
 /// Runs the linker with the given command line. Returns the exit status.
 ///
@@ -849,9 +849,4 @@ impl<E: Arch> fmt::Debug for Context<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Context<{}>", E::NAME)
     }
-}
-
-/// Prints the version banner, for `-v`.
-pub fn print_version() {
-    out!("{}", cmdline::VERSION);
 }
