@@ -105,7 +105,6 @@ struct InputSectionExtras {
     r_deltas: Box<[RelocDelta]>,
 }
 
-// C++ layout constraint (Rust stores the origin tag separately):
 // InputSection represents a section in an input object file. Symbol::origin
 // uses the low two bits of an InputSection pointer, so keep this type
 // four-byte aligned even on hosts such as m68k.

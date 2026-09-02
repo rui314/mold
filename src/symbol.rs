@@ -25,7 +25,8 @@ use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, SectionRef};
-use crate::output_chunks::ChunkId;
+use crate::output_chunks::ChunkHeader;
+use crate::util::concurrent_map::EntryId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 use crate::util::virtual_memory;
 
@@ -48,47 +49,89 @@ impl SymbolId {
 // TaggedPtr stores one of several pointer types and uses the low pointer bits
 // to record which type it contains.
 //
-// Rust stores the same choice in Symbol's padding byte instead, leaving this
-// payload available for the selected pointer or id.
-/// The payload describing what a symbol's value is relative to. Its kind
-/// lives in a byte of [`Symbol`]'s padding so that the payload remains eight
-/// bytes without restricting any of the contained ids.
-#[repr(C)]
+// Rust uses pointers for input and output sections and compact ids for section
+// fragments and symbols. All four representations leave their low two bits
+// available for the tag.
+#[repr(transparent)]
 #[derive(Clone, Copy)]
-pub union Origin {
-    raw: u64,
-    fragment: FragmentRef,
-    chunk: ChunkId,
-    symbol: SymbolId,
-}
+pub(crate) struct Origin(u64);
+
+const ORIGIN_TAG_MASK: u64 = 0b11;
+const SECTION_TAG: u64 = 0;
+const CHUNK_TAG: u64 = 1;
+const FRAGMENT_TAG: u64 = 2;
+const SYMBOL_TAG: u64 = 3;
 
 impl Origin {
     fn none() -> Origin {
-        Origin { raw: 0 }
+        Origin(0)
+    }
+
+    #[inline]
+    fn pointer<T>(ptr: *const T, tag: u64) -> Origin {
+        let ptr = ptr as usize as u64;
+        debug_assert_ne!(ptr, 0);
+        debug_assert_eq!(ptr & ORIGIN_TAG_MASK, 0);
+        Origin(ptr | tag)
+    }
+
+    #[inline]
+    fn get_pointer<T>(self, tag: u64) -> Option<*const T> {
+        (self.0 != 0 && self.0 & ORIGIN_TAG_MASK == tag)
+            .then_some((self.0 & !ORIGIN_TAG_MASK) as usize as *const T)
     }
 
     fn section(section: &InputSection) -> Origin {
-        Origin {
-            raw: section as *const InputSection as usize as u64,
-        }
+        Origin::pointer(section, SECTION_TAG)
     }
 
     fn fragment(fragment: FragmentRef) -> Origin {
-        let mut origin = Origin::none();
-        origin.fragment = fragment;
-        origin
+        // FragmentRef contains two u32 indices. One billion merged sections
+        // are enough to leave the low two bits available for the tag.
+        assert!(fragment.section.0 < 1 << 30, "too many merged sections");
+        let payload = (u64::from(fragment.section.0) << 32) | u64::from(fragment.entry.raw());
+        Origin(payload << 2 | FRAGMENT_TAG)
     }
 
-    fn chunk(chunk: ChunkId) -> Origin {
-        let mut origin = Origin::none();
-        origin.chunk = chunk;
-        origin
+    fn chunk<E: Layout>(chunk: &ChunkHeader<E>) -> Origin {
+        Origin::pointer(chunk, CHUNK_TAG)
     }
 
     fn symbol(symbol: SymbolId) -> Origin {
-        let mut origin = Origin::none();
-        origin.symbol = symbol;
-        origin
+        Origin(u64::from(symbol.0) << 2 | SYMBOL_TAG)
+    }
+
+    #[inline]
+    fn is_none(self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    fn input_section(self) -> Option<*const InputSection> {
+        self.get_pointer(SECTION_TAG)
+    }
+
+    #[inline]
+    fn fragment_ref(self) -> Option<FragmentRef> {
+        if self.0 == 0 || self.0 & ORIGIN_TAG_MASK != FRAGMENT_TAG {
+            return None;
+        }
+        let payload = self.0 >> 2;
+        Some(FragmentRef {
+            section: crate::output_chunks::MergedSectionId((payload >> 32) as u32),
+            entry: EntryId::from_raw(payload as u32),
+        })
+    }
+
+    #[inline]
+    fn output_chunk<E: Layout>(self) -> Option<*const ChunkHeader<E>> {
+        self.get_pointer(CHUNK_TAG)
+    }
+
+    #[inline]
+    fn symbol_id(self) -> Option<SymbolId> {
+        (self.0 != 0 && self.0 & ORIGIN_TAG_MASK == SYMBOL_TAG)
+            .then_some(SymbolId((self.0 >> 2) as u32))
     }
 }
 
@@ -100,24 +143,7 @@ impl fmt::Debug for Origin {
 
 const _: () = assert!(std::mem::size_of::<Origin>() == 8);
 
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum OriginKind {
-    /// An absolute symbol, or an undefined one.
-    #[default]
-    None,
-    Section,
-    Fragment,
-    Chunk,
-    /// A default-versioned alias (`foo@VERSION`) forwarding to `foo`.
-    Symbol,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct OriginState {
-    payload: Origin,
-    kind: OriginKind,
-}
+pub(crate) type OriginState = Origin;
 
 /// Symbol flags set while scanning relocations.
 pub const NEEDS_GOT: u8 = 1 << 0;
@@ -272,9 +298,7 @@ const WRITE_TO_SYMTAB: u8 = 1 << 7; // for --strip-all and the like
 const NEEDS_MASK: u8 = !WRITE_TO_SYMTAB;
 
 const VISIBILITY_MASK: u8 = 0b11;
-const ORIGIN_KIND_SHIFT: u32 = 2;
-const ORIGIN_KIND_MASK: u8 = 0b111 << ORIGIN_KIND_SHIFT;
-const SYMBOL_STATE_SHIFT: u32 = 5;
+const SYMBOL_STATE_SHIFT: u32 = 2;
 const SYMBOL_STATE_MASK: u8 = 0b11 << SYMBOL_STATE_SHIFT;
 const SYMBOL_UNDEFINED: u8 = 0;
 const SYMBOL_COMMON: u8 = 1;
@@ -588,24 +612,6 @@ impl Symbol {
     }
 
     #[inline]
-    fn origin_kind(&self) -> OriginKind {
-        match (self.visibility.load(Ordering::Relaxed) & ORIGIN_KIND_MASK) >> ORIGIN_KIND_SHIFT {
-            0 => OriginKind::None,
-            1 => OriginKind::Section,
-            2 => OriginKind::Fragment,
-            3 => OriginKind::Chunk,
-            4 => OriginKind::Symbol,
-            _ => unreachable!(),
-        }
-    }
-
-    #[inline]
-    fn set_origin_kind(&mut self, kind: OriginKind) {
-        let bits = self.visibility.get_mut();
-        *bits = (*bits & !ORIGIN_KIND_MASK) | ((kind as u8) << ORIGIN_KIND_SHIFT);
-    }
-
-    #[inline]
     fn symbol_state(&self) -> u8 {
         (self.visibility.load(Ordering::Relaxed) & SYMBOL_STATE_MASK) >> SYMBOL_STATE_SHIFT
     }
@@ -782,85 +788,59 @@ impl Symbol {
     /// The input section itself, stored directly as in C++'s tagged origin.
     #[inline]
     pub fn input_section_ref(&self) -> Option<&InputSection> {
-        if self.origin_kind() == OriginKind::Section {
-            // SAFETY: input sections have stable arena addresses, and
-            // mergeable conversion leaves them in those slots.
-            Some(unsafe { &*(self.origin.raw as usize as *const InputSection) })
-        } else {
-            None
-        }
+        // SAFETY: input sections have stable arena addresses, and mergeable
+        // conversion leaves them in those slots.
+        self.origin.input_section().map(|ptr| unsafe { &*ptr })
     }
 
     #[inline]
     pub fn fragment(&self) -> Option<FragmentRef> {
-        if self.origin_kind() == OriginKind::Fragment {
-            // SAFETY: the kind records the union field last written.
-            Some(unsafe { self.origin.fragment })
-        } else {
-            None
-        }
+        self.origin.fragment_ref()
     }
 
-    pub fn output_chunk(&self) -> Option<ChunkId> {
-        if self.origin_kind() == OriginKind::Chunk {
-            // SAFETY: the kind records the union field last written.
-            Some(unsafe { self.origin.chunk })
-        } else {
-            None
-        }
+    pub fn output_chunk<E: Layout>(&self) -> Option<&ChunkHeader<E>> {
+        // SAFETY: linker-synthesized symbols receive a pointer to a chunk
+        // header of the current target after chunk storage becomes stable.
+        self.origin.output_chunk().map(|ptr| unsafe { &*ptr })
     }
 
     pub fn symbol_origin(&self) -> Option<SymbolId> {
-        if self.origin_kind() == OriginKind::Symbol {
-            // SAFETY: the kind records the union field last written.
-            Some(unsafe { self.origin.symbol })
-        } else {
-            None
-        }
+        self.origin.symbol_id()
     }
 
     #[inline]
     pub fn clear_origin(&mut self) {
         self.origin = Origin::none();
-        self.set_origin_kind(OriginKind::None);
     }
 
     #[inline]
     pub fn set_input_section(&mut self, section: &InputSection) {
         self.origin = Origin::section(section);
-        self.set_origin_kind(OriginKind::Section);
     }
 
     #[inline]
     pub fn set_fragment(&mut self, fragment: FragmentRef) {
         self.origin = Origin::fragment(fragment);
-        self.set_origin_kind(OriginKind::Fragment);
     }
 
     #[inline]
-    pub fn set_output_chunk(&mut self, chunk: ChunkId) {
+    pub fn set_output_chunk<E: Layout>(&mut self, chunk: &ChunkHeader<E>) {
         self.origin = Origin::chunk(chunk);
-        self.set_origin_kind(OriginKind::Chunk);
     }
 
     #[inline]
     pub fn set_symbol_origin(&mut self, symbol: SymbolId) {
         self.origin = Origin::symbol(symbol);
-        self.set_origin_kind(OriginKind::Symbol);
     }
 
     #[inline]
     pub(crate) fn origin_state(&self) -> OriginState {
-        OriginState {
-            payload: self.origin,
-            kind: self.origin_kind(),
-        }
+        self.origin
     }
 
     #[inline]
     pub(crate) fn set_origin_state(&mut self, state: OriginState) {
-        self.origin = state.payload;
-        self.set_origin_kind(state.kind);
+        self.origin = state;
     }
 
     /// The symbol's entry in the owner file's symbol table; a blank one
@@ -945,7 +925,7 @@ impl Symbol {
         if self.is_remaining_undef_weak() {
             return true;
         }
-        !self.is_imported() && self.origin_kind() == OriginKind::None
+        !self.is_imported() && self.origin.is_none()
     }
 
     #[inline]

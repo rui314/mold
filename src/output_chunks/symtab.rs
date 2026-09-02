@@ -547,9 +547,9 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         if sym.is_canonical() {
             esym.st_value_mut().set(sym.plt_addr(ctx));
         }
-    } else if let Some(chunk) = sym.output_chunk() {
+    } else if let Some(chunk) = sym.output_chunk::<E>() {
         // Linker-synthesized symbol
-        shndx = Some(ctx.chunk_header(chunk).shndx);
+        shndx = Some(chunk.shndx);
         esym.st_value_mut().set(sym.addr(ctx));
     } else if let Some(frag) = sym.fragment() {
         shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
