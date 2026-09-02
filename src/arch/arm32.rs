@@ -373,7 +373,7 @@ where
     }
 
     fn apply_eh_reloc(
-        ctx: &Context<Self>,
+        _ctx: &Context<Self>,
         _isec: &InputSection,
         rel: &Self::Rel,
         loc: &mut [u8],
@@ -384,7 +384,7 @@ where
             R_NONE => {}
             R_ARM_ABS32 => End::write_u32(loc, val as u32),
             R_ARM_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -435,7 +435,6 @@ where
                 | R_ARM_V4BX
                 | R_ARM_TLS_GOTDESC => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -482,7 +481,6 @@ where
                 osec.thunks.get(i).map_or_else(
                     || {
                         fatal!(
-                            ctx,
                             "{}: no TLSDESC trampoline after the call",
                             isec.display(file)
                         )
@@ -545,7 +543,6 @@ where
                     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
                     if !is_bl && !is_blx {
                         fatal!(
-                            ctx,
                             "{}: R_ARM_CALL refers to neither BL nor BLX",
                             isec.display(file)
                         );
@@ -725,7 +722,6 @@ where
                     }
                 }
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -756,7 +752,6 @@ where
                     tombstone.unwrap_or(s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)) as u32,
                 ),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

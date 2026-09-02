@@ -11,7 +11,6 @@ use crate::arch::{Arch, Family};
 use crate::cmdline::UnresolvedKind;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::input_files::{ObjId, ObjectFile, RelocationIter};
 use crate::output_chunks::merged::{MergedSection, MergedSectionId};
 use crate::output_chunks::OutputSectionId;
@@ -176,7 +175,6 @@ fn to_p2align(alignment: u64) -> u8 {
 impl InputSection {
     #[inline]
     pub fn new<E: Arch>(
-        diag: &Diagnostics,
         file: &ObjectFile<E>,
         file_id: ObjId,
         shndx: u32,
@@ -187,7 +185,7 @@ impl InputSection {
             if shdr.sh_type.get() == SHT_NOBITS || (shndx as usize) >= file.num_elf_sections {
                 &[]
             } else {
-                file.base.section_contents_from_shdr(diag, shdr)
+                file.base.section_contents_from_shdr(shdr)
             };
 
         let (sh_size, p2align) = if shdr.sh_flags.get() & SHF_COMPRESSED as u64 != 0 {
@@ -227,7 +225,7 @@ impl InputSection {
         // SH-4 stores addends to sections despite being RELA, which is a
         // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
-            isec.uncompress::<E>(diag, file, name, shdr.sh_size.get() as usize);
+            isec.uncompress::<E>(file, name, shdr.sh_size.get() as usize);
         }
         isec
     }
@@ -439,18 +437,12 @@ impl InputSection {
 
     /// Replaces compressed contents with a decompressed copy. `file` is
     /// the owning file's name, for diagnostics.
-    pub fn uncompress<E: Arch>(
-        &mut self,
-        diag: &Diagnostics,
-        file: &dyn fmt::Display,
-        name: &BStr,
-        input_size: usize,
-    ) {
+    pub fn uncompress<E: Arch>(&mut self, file: &dyn fmt::Display, name: &BStr, input_size: usize) {
         if !self.is_compressed() {
             return;
         }
         let mut buf = vec![0u8; self.sh_size as usize];
-        self.copy_contents_to::<E>(diag, file, name, input_size, &mut buf);
+        self.copy_contents_to::<E>(file, name, input_size, &mut buf);
         self.contents = leak_bytes(buf).as_ptr() as usize;
         self.flags.fetch_or(IS_UNCOMPRESSED, Ordering::Relaxed);
     }
@@ -459,7 +451,6 @@ impl InputSection {
     /// `sh_size` bytes long.
     pub fn copy_contents_to<E: Arch>(
         &self,
-        diag: &Diagnostics,
         file: &dyn fmt::Display,
         name: &BStr,
         input_size: usize,
@@ -477,7 +468,7 @@ impl InputSection {
 
         let hdr_size = std::mem::size_of::<ElfChdr<E>>();
         if input_size < hdr_size {
-            fatal!(diag, "{file}:({name}): corrupted compressed section");
+            fatal!("{file}:({name}): corrupted compressed section");
         }
         // SAFETY: input_size comes from this section's validated ELF header.
         let contents =
@@ -488,13 +479,10 @@ impl InputSection {
         let result = match chdr.ch_type().get() {
             ELFCOMPRESS_ZLIB => zlib_decompress(data, buf),
             ELFCOMPRESS_ZSTD => zstd_decompress(data, buf),
-            ty => fatal!(
-                diag,
-                "{file}:({name}): unsupported compression type: 0x{ty:x}"
-            ),
+            ty => fatal!("{file}:({name}): unsupported compression type: 0x{ty:x}"),
         };
         if let Err(msg) = result {
-            fatal!(diag, "{file}:({name}): uncompress failed: {msg}");
+            fatal!("{file}:({name}): uncompress failed: {msg}");
         }
     }
 
@@ -612,7 +600,7 @@ impl InputSection {
     #[inline(always)]
     pub(crate) fn relocations<'a, E: Arch>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
         let file = &ctx.objs[self.file.index()];
-        file.relocation_iter(&ctx.diag, self.relsec_idx())
+        file.relocation_iter(self.relsec_idx())
     }
 
     #[inline]
@@ -711,7 +699,6 @@ impl InputSection {
         let rel = self.rels::<E>(file)[rel_idx];
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
-            ctx,
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",
             self.display(file),
             rel.type_name::<E>(),
@@ -919,7 +906,7 @@ impl InputSection {
                 ctx.objs[owner.index()]
             );
         }
-        error!(ctx, "{msg}");
+        error!("{msg}");
     }
 
     #[cold]
@@ -963,7 +950,7 @@ impl InputSection {
         // section and shrink the overall size of it.
         if self.r_deltas().is_empty() {
             // If a section is not relaxed, we can copy it as a one big chunk.
-            self.copy_contents_to::<E>(&ctx.diag, file, self.name(file), input_size, buf);
+            self.copy_contents_to::<E>(file, self.name(file), input_size, buf);
         } else {
             // A relaxed section is copied piece-wise.
             let contents = self.original_contents(file);
@@ -1103,9 +1090,7 @@ fn do_action<E: Arch>(
 ) {
     match action {
         Action::None => {}
-        Action::Error => error!(
-            ctx,
-            "{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
+        Action::Error => error!("{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
             rel.type_name::<E>(),
             rel.r_offset(),
@@ -1194,9 +1179,7 @@ pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
 
 pub fn check_tlsle<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
     if ctx.args.shared {
-        error!(
-            ctx,
-            "{}: relocation {} against `{}` can not be used when making a shared object; recompile with -fPIC",
+        error!("{}: relocation {} against `{}` can not be used when making a shared object; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
             rel.type_name::<E>(),
             sym
@@ -1499,7 +1482,6 @@ impl MergeableSection {
     /// We do not support mergeable sections that have relocations.
     pub fn split_contents<E: Arch>(
         &mut self,
-        diag: &Diagnostics,
         file: &dyn fmt::Display,
         section: &InputSection,
         name: &BStr,
@@ -1509,7 +1491,6 @@ impl MergeableSection {
         let data = section.contents();
         if data.len() > u32::MAX as usize {
             fatal!(
-                diag,
                 "{}: mergeable section too large",
                 format_args!("{file}:({name})")
             );
@@ -1523,7 +1504,6 @@ impl MergeableSection {
                 self.frag_offsets.push(pos as u32);
                 let Some(end) = find_null(data, pos, entsize) else {
                     fatal!(
-                        diag,
                         "{}: string is not null terminated",
                         format_args!("{file}:({name})")
                     );
@@ -1533,7 +1513,6 @@ impl MergeableSection {
         } else {
             if !data.len().is_multiple_of(entsize) {
                 fatal!(
-                    diag,
                     "{}: section size is not multiple of sh_entsize",
                     format_args!("{file}:({name})")
                 );

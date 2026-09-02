@@ -663,7 +663,7 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) {
         let _ = std::io::stdout().write_all(out.as_bytes());
     } else {
         std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!(ctx, "--print-icf-sections: cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("--print-icf-sections: cannot open {path}: {e}"));
     }
 }
 

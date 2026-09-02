@@ -163,7 +163,7 @@ impl Arch for I386 {
     }
 
     fn apply_eh_reloc(
-        ctx: &Context<Self>,
+        _ctx: &Context<Self>,
         _isec: &InputSection,
         rel: &Self::Rel,
         loc: &mut [u8],
@@ -174,7 +174,7 @@ impl Arch for I386 {
             R_NONE => {}
             R_386_32 => write_u32(loc, val as u32),
             R_386_PC32 => write_u32(loc, val.wrapping_sub(p) as u32),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -204,7 +204,6 @@ impl Arch for I386 {
                     Some(R_386_PLT32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X)
                 ) {
                     fatal!(
-                        ctx,
                         "{}: {} must be followed by PLT or GOT32",
                         isec.display(file),
                         rel.type_name::<Self>()
@@ -256,7 +255,6 @@ impl Arch for I386 {
                 R_386_32 | R_386_GOTOFF | R_386_TLS_LDO_32 | R_386_SIZE32 | R_386_TLS_DESC_CALL => {
                 }
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -425,7 +423,6 @@ impl Arch for I386 {
                         let insn = relax_tlsdesc_to_ie(&buf[..off]);
                         if insn == 0 {
                             fatal!(
-                                ctx,
                                 "{}: illegal instruction sequence for TLSDESC",
                                 isec.display(file)
                             );
@@ -440,7 +437,6 @@ impl Arch for I386 {
                         let insn = relax_tlsdesc_to_le(&buf[..off]);
                         if insn == 0 {
                             fatal!(
-                                ctx,
                                 "{}: illegal instruction sequence for TLSDESC",
                                 isec.display(file)
                             );
@@ -521,7 +517,6 @@ impl Arch for I386 {
                     (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,
                 ),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

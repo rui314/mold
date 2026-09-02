@@ -171,7 +171,7 @@ impl Arch for X86_64 {
                 write_u32(loc, val.wrapping_sub(p) as u32);
             }
             R_X86_64_PC64 => write_u64(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -213,7 +213,6 @@ impl Arch for X86_64 {
                 );
                 if !ok {
                     fatal!(
-                        ctx,
                         "{}: {} must be followed by PLT or GOTPCREL",
                         isec.display(file),
                         rel.type_name::<Self>()
@@ -284,7 +283,6 @@ impl Arch for X86_64 {
                 | R_X86_64_GOTPC32_TLSDESC
                 | R_X86_64_CODE_4_GOTPC32_TLSDESC => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -489,7 +487,6 @@ impl Arch for X86_64 {
                         let insn = relax_tlsdesc_to_ie(&buf[..off], &rel);
                         if insn == 0 {
                             fatal!(
-                                ctx,
                                 "{}: illegal instruction sequence for {}",
                                 isec.display(file),
                                 rel.type_name::<Self>()
@@ -503,7 +500,6 @@ impl Arch for X86_64 {
                         let insn = relax_tlsdesc_to_le(&buf[..off], &rel);
                         if insn == 0 {
                             fatal!(
-                                ctx,
                                 "{}: illegal instruction sequence for {}",
                                 isec.display(file),
                                 rel.type_name::<Self>()
@@ -615,7 +611,6 @@ impl Arch for X86_64 {
                     sym.esym(ctx).st_size().get().wrapping_add(a),
                 ),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

@@ -177,7 +177,6 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("rewrite_opd");
 
     let editor = SymbolEditor::new(ctx.symbols.as_mut_slice());
-    let diag = &ctx.diag;
     ctx.objs.par_iter_mut().for_each(|file| {
         let Some(opd) = file
             .input_sections()
@@ -213,17 +212,15 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             };
             let rel = rels_at.get(&value).unwrap_or_else(|| {
                 editor.with_symbol(id, |sym| {
-                    diag.fatal(format_args!(
+                    fatal!(
                         "{file}: cannot find a relocation in .opd for {sym} at offset {value:#x}"
-                    ))
+                    )
                 })
             });
             let target_id = local_symbols[rel.r_sym() as usize];
             let origin = editor.with_symbol(target_id, |target| {
                 if target.ty() != STT_SECTION {
-                    diag.fatal(format_args!(
-                        "{file}: bad relocation in .opd referring to {target}"
-                    ));
+                    fatal!("{file}: bad relocation in .opd referring to {target}");
                 }
                 target.origin_state()
             });
@@ -263,11 +260,11 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                 }
             }
             if let Some(rel) = unresolved {
-                diag.fatal(format_args!(
+                fatal!(
                     "{file}:({name}): cannot find a symbol in .opd for {} at offset {:#x}",
                     rel.type_name::<Ppc64V1>(),
                     rel.r_addend()
-                ));
+                );
             }
         }
     });
@@ -423,7 +420,7 @@ impl Arch for Ppc64V1 {
                 w32(loc, val.wrapping_sub(p));
             }
             R_PPC64_REL64 => w64(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -485,7 +482,6 @@ impl Arch for Ppc64V1 {
                 | R_PPC64_DTPREL16_LO
                 | R_PPC64_DTPREL16_LO_DS => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -604,7 +600,6 @@ impl Arch for Ppc64V1 {
                 }
                 R_PPC64_DTPREL64 => w64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

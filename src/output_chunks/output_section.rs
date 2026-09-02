@@ -522,17 +522,13 @@ pub fn scan_abs_relocations<E: Arch>(
                 let isec = ctx.input_section(r.isec);
                 if r.kind != AbsRelKind::None && isec.sh_flags & SHF_WRITE as u64 == 0 {
                     if ctx.args.z_text {
-                        error!(
-                            ctx,
-                            "{}: relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
+                        error!("{}: relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
                             ctx.input_section_display(r.isec),
                             r.offset,
                             sym
                         );
                     } else if ctx.args.warn_textrel {
-                        warn!(
-                            ctx,
-                            "{}: relocation against symbol `{}' in read-only section",
+                        warn!("{}: relocation against symbol `{}' in read-only section",
                             ctx.input_section_display(r.isec),
                             sym
                         );

@@ -276,7 +276,7 @@ where
                 End::write_u32(loc, val.wrapping_sub(p) as u32);
             }
             R_AARCH64_PREL64 => End::write_u64(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -386,7 +386,6 @@ where
                 | R_AARCH64_TLSDESC_LD64_LO12
                 | R_AARCH64_TLSDESC_ADD_LO12 => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -740,7 +739,6 @@ where
                     None => End::write_u64(loc, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
                 },
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

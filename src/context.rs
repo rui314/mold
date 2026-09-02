@@ -5,12 +5,11 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
 use crate::cmdline::Args;
 use crate::elf::{ElfSym, ElfWord};
-use crate::error::{Diagnostics, HasDiagnostics};
 use crate::input_files::{DsoId, FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
@@ -86,7 +85,6 @@ pub struct SyntheticSymbols {
 pub struct Context<E: Arch> {
     // Command-line arguments
     pub args: Args,
-    pub diag: Arc<Diagnostics>,
 
     // Fully-expanded command line args
     pub cmdline_args: Vec<String>,
@@ -219,14 +217,8 @@ pub struct Context<E: Arch> {
     _arch: PhantomData<E>,
 }
 
-impl<E: Arch> HasDiagnostics for Context<E> {
-    fn diagnostics(&self) -> &Diagnostics {
-        &self.diag
-    }
-}
-
 impl<E: Arch> Context<E> {
-    pub fn new(args: Args, diag: Diagnostics, cmdline_args: Vec<String>) -> Context<E> {
+    pub fn new(args: Args, cmdline_args: Vec<String>) -> Context<E> {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
             entry: symbols.intern(crate::util::leak_bytes(args.entry.clone().into_bytes())),
@@ -255,7 +247,6 @@ impl<E: Arch> Context<E> {
             verneed: VerneedSection::new(),
             note_package: NotePackageSection::new(),
             args,
-            diag: Arc::new(diag),
             cmdline_args,
             timers: Timers::new(),
             symbols,
@@ -318,10 +309,6 @@ impl<E: Arch> Context<E> {
             filesize: 0,
             _arch: PhantomData,
         }
-    }
-
-    pub fn checkpoint(&self) {
-        self.diag.checkpoint();
     }
 
     /// Returns this worker's symbol bin. Looking it up once per file keeps the

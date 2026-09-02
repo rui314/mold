@@ -17,8 +17,8 @@ use crate::arch::Arch;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::input_sections::{InputSection, MergeableSection, SectionFragment, SectionRef};
+use crate::out;
 use crate::output_chunks::ChunkHeader;
 use crate::output_file::split_at_offsets;
 use crate::util::align_to;
@@ -86,7 +86,6 @@ pub struct ResolveMember<'a> {
 pub struct ResolveOptions<'a> {
     pub allocated_only: bool,
     pub gc_sections: bool,
-    pub diag: &'a Diagnostics,
     pub comment: Option<MergedSectionId>,
     pub cmdline_args: &'a [String],
     pub timers: &'a Timers,
@@ -248,7 +247,6 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
         objs,
         merged_sections,
         args,
-        diag,
         ..
     } = ctx;
     let msec = &merged_sections[id.index()];
@@ -276,7 +274,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
                     .mergeable_with_section_mut(i as usize)
                     .expect("a mergeable section");
                 let name = isec.name(file);
-                m.split_contents::<E>(diag, file, isec, name, msec, &mut sketch);
+                m.split_contents::<E>(file, isec, name, msec, &mut sketch);
             }
             file.sections = slots;
             sketch
@@ -341,7 +339,6 @@ pub fn resolve_sections<E: Arch>(
     let ResolveOptions {
         allocated_only,
         gc_sections,
-        diag,
         comment,
         cmdline_args,
         timers,
@@ -356,7 +353,6 @@ pub fn resolve_sections<E: Arch>(
                     .par_iter_mut()
                     .fold(HyperLogLog::default, |mut sketch, member| {
                         member.mergeable.split_contents::<E>(
-                            diag,
                             &FileName {
                                 filename: member.filename,
                                 archive_name: member.archive_name,
@@ -572,11 +568,11 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
     });
 }
 
-pub fn print_stats<E: Layout>(msec: &MergedSection<E>, diag: &Diagnostics) {
-    diag.out(format_args!(
+pub fn print_stats<E: Layout>(msec: &MergedSection<E>) {
+    out!(
         "{} estimation={} actual={}",
         msec.hdr.name,
         msec.estimation,
         msec.fragments.len()
-    ));
+    );
 }

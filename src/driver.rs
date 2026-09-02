@@ -1,7 +1,7 @@
 //! The linker driver: runs the passes in order.
 
 use std::fmt;
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 
 use rayon::prelude::*;
 
@@ -9,7 +9,6 @@ use crate::arch::{self, Arch};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::input_files::FileId;
 use crate::output_chunks::{self, ChunkId};
 use crate::output_file::{split_ranges, OutputFile, Range};
@@ -22,13 +21,11 @@ use crate::{error, fatal, out, passes};
 /// are instantiated in crates of their own.
 pub fn main(
     argv: Vec<String>,
-    link_for_target: impl Fn(&str, &[String], &Diagnostics) -> Result<i32, String>,
+    link_for_target: impl Fn(&str, &[String]) -> Result<i32, String>,
 ) -> i32 {
-    let diag = Diagnostics::new(false);
-
     // Process -run option first. process_run_subcommand() does not return.
     if argv.get(1).is_some_and(|a| a == "-run" || a == "--run") {
-        crate::subprocess::process_run_subcommand(&diag, &argv);
+        crate::subprocess::process_run_subcommand(&argv);
     }
 
     // parse_nonpositional_args() may chdir(2) for -C. If we end up
@@ -37,7 +34,7 @@ pub fn main(
     let orig_cwd = std::env::current_dir().ok();
 
     // Parse non-positional command line options
-    let cmdline = cmdline::expand_response_files(&diag, &argv);
+    let cmdline = cmdline::expand_response_files(&argv);
 
     // Parse with x86-64 defaults; if the target turns out to be different,
     // start over with the right one.
@@ -46,7 +43,7 @@ pub fn main(
         if let Some(cwd) = &orig_cwd {
             let _ = std::env::set_current_dir(cwd);
         }
-        match link_for_target(&target, &cmdline, &diag) {
+        match link_for_target(&target, &cmdline) {
             Ok(status) => return status,
             Err(actual) => target = actual,
         }
@@ -64,14 +61,6 @@ fn target_traits<E: Arch>() -> TargetTraits {
         is_arm64: E::FAMILY == arch::Family::Arm64,
         page_size: E::PAGE_SIZE,
     }
-}
-
-fn configure_diagnostics(diag: &Diagnostics, args: &Args) {
-    diag.set_color(args.color_diagnostics);
-    diag.set_fatal_warnings(args.fatal_warnings);
-    diag.set_suppress_warnings(args.suppress_warnings);
-    diag.set_noinhibit_exec(args.noinhibit_exec);
-    error::set_demangle(args.demangle);
 }
 
 fn thread_count(args: &Args) -> usize {
@@ -99,13 +88,10 @@ fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
 
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
-pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, String> {
-    let parsed = cmdline::parse_args(diag, &target_traits::<E>(), cmdline);
+pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
+    let parsed = cmdline::parse_args(&target_traits::<E>(), cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
-    configure_diagnostics(diag, &args);
-
-    let mut ctx = Context::<E>::new(args, Diagnostics::new(false), cmdline.to_vec());
-    configure_diagnostics(&ctx.diag, &ctx.args);
+    let mut ctx = Context::<E>::new(args, cmdline.to_vec());
 
     // If no -m option is given, deduce it from input files.
     if ctx.args.emulation.is_empty() {
@@ -154,13 +140,14 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     // Version scripts and dynamic lists given on the command line.
     for path in ctx.args.version_scripts.clone() {
         let chroot = ctx.args.chroot.clone();
-        let mf = crate::mapped_file::open_file(&ctx.diag, &chroot, &path).or_else(|| {
-            ctx.args.library_paths.iter().find_map(|dir| {
-                crate::mapped_file::open_file(&ctx.diag, &chroot, &format!("{dir}/{path}"))
-            })
+        let mf = crate::mapped_file::open_file(&chroot, &path).or_else(|| {
+            ctx.args
+                .library_paths
+                .iter()
+                .find_map(|dir| crate::mapped_file::open_file(&chroot, &format!("{dir}/{path}")))
         });
         let Some(mf) = mf else {
-            fatal!(ctx, "--version-script: file not found: {path}");
+            fatal!("--version-script: file not found: {path}");
         };
         let mut rctx = cmdline::ReaderContext::default();
         crate::linker_script::Script::new(&mut ctx, &mut rctx, mf).parse_version_script();
@@ -254,11 +241,10 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     let gdb_input_job = if ctx.args.gdb_index && !ctx.args.relocatable {
         let timer = t_before_copy.handle();
         let inputs = crate::gdb_index::prepare_inputs(&mut ctx);
-        let diag = Arc::clone(&ctx.diag);
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let job = move || {
             let timer = timer.child("read_gdb_index_inputs");
-            let data = crate::gdb_index::read_inputs::<E>(timer, &diag, inputs);
+            let data = crate::gdb_index::read_inputs::<E>(timer, inputs);
             let _ = sender.send(data);
         };
         // Rayon has no task priorities, so queue this as an ordinary
@@ -388,10 +374,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     for name in ctx.args.require_defined.clone() {
         let id = ctx.get_symbol(name.as_bytes());
         if ctx.symbols[id].file().is_none() {
-            error!(
-                ctx,
-                "--require-defined: undefined symbol: {}", ctx.symbols[id]
-            );
+            error!("--require-defined: undefined symbol: {}", ctx.symbols[id]);
         }
     }
 
@@ -588,7 +571,6 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     // Output buffer
     let t_open = ctx.timer("open_file");
     let mut output = OutputFile::open(
-        &ctx.diag,
         &ctx.args.output,
         filesize,
         0o777,
@@ -638,11 +620,11 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         }
         t_copy.stop();
     }
-    ctx.checkpoint();
+    error::checkpoint();
 
     // Close the output file. This is the end of the linker's main job.
     let t_close = ctx.timer("close_file");
-    output.close(&ctx.diag);
+    output.close();
     drop(t_close);
 
     // Handle --dependency-file
@@ -681,7 +663,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     if ctx.args.quick_exit {
         error::exit_after_cleanup(0);
     }
-    ctx.checkpoint();
+    error::checkpoint();
     Ok(0)
 }
 
@@ -870,6 +852,6 @@ impl<E: Arch> fmt::Debug for Context<E> {
 }
 
 /// Prints the version banner, for `-v`.
-pub fn print_version(diag: &Diagnostics) {
-    out!(diag, "{}", cmdline::VERSION);
+pub fn print_version() {
+    out!("{}", cmdline::VERSION);
 }

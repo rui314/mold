@@ -1075,7 +1075,6 @@ impl Symbol {
                             return eh_frame.sh_addr.get();
                         }
                         crate::fatal!(
-                            ctx,
                             "symbol referring to .eh_frame is not supported: {} {}",
                             self,
                             ctx.file_display(self.file().unwrap())
@@ -1171,7 +1170,7 @@ impl Symbol {
                 return addr;
             }
         }
-        crate::fatal!(ctx, "range extension thunk out of range: {}", self);
+        crate::fatal!("range extension thunk out of range: {}", self);
     }
 
     /// The symbol's index in the output symbol table.

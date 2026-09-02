@@ -85,7 +85,6 @@ use rayon::prelude::*;
 use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::fatal;
 use crate::output_chunks::ChunkId;
 use crate::output_file::{split_at_offsets, OutputFile};
@@ -280,17 +279,15 @@ struct UnitHeader {
 }
 
 /// A cursor over DWARF data.
-struct Reader<'d, 'a, E: Arch> {
-    diag: &'d Diagnostics,
+struct Reader<'a, E: Arch> {
     data: &'a [u8],
     pos: usize,
     marker: std::marker::PhantomData<E>,
 }
 
-impl<'d, 'a, E: Arch> Reader<'d, 'a, E> {
-    fn new(diag: &'d Diagnostics, data: &'a [u8], pos: usize) -> Reader<'d, 'a, E> {
+impl<'a, E: Arch> Reader<'a, E> {
+    fn new(data: &'a [u8], pos: usize) -> Reader<'a, E> {
         Reader {
-            diag,
             data,
             pos,
             marker: std::marker::PhantomData,
@@ -299,7 +296,7 @@ impl<'d, 'a, E: Arch> Reader<'d, 'a, E> {
 
     fn take(&mut self, n: usize) -> &'a [u8] {
         let Some(bytes) = self.data.get(self.pos..self.pos + n) else {
-            fatal!(self.diag, "--gdb-index: truncated debug info");
+            fatal!("--gdb-index: truncated debug info");
         };
         self.pos += n;
         bytes
@@ -357,18 +354,18 @@ impl<'d, 'a, E: Arch> Reader<'d, 'a, E> {
         // SAFETY: strnlen reads at most rest.len() bytes from the slice.
         let len = unsafe { libc::strnlen(rest.as_ptr().cast(), rest.len()) };
         if len == rest.len() {
-            fatal!(self.diag, "--gdb-index: unterminated string in debug info");
+            fatal!("--gdb-index: unterminated string in debug info");
         }
         self.pos += len + 1;
         &rest[..len]
     }
 }
 
-fn parse_unit_header<E: Arch>(diag: &Diagnostics, data: &[u8], pos: usize) -> UnitHeader {
+fn parse_unit_header<E: Arch>(data: &[u8], pos: usize) -> UnitHeader {
     // The first word is either a DWARF32 unit length or DWARF64's reserved
     // marker. unit_length excludes its own encoding: four bytes in DWARF32, or
     // the four-byte marker plus eight-byte length in DWARF64.
-    let mut r = Reader::<E>::new(diag, data, pos);
+    let mut r = Reader::<E>::new(data, pos);
     let mut unit_length = r.u32() as u64;
     let mut initial_length_size = 4;
     let mut offset_size = 4;
@@ -380,10 +377,7 @@ fn parse_unit_header<E: Arch>(diag: &Diagnostics, data: &[u8], pos: usize) -> Un
 
     let version = r.u16();
     if version > 5 {
-        fatal!(
-            diag,
-            "--gdb-index: DWARF version {version} is not supported"
-        );
+        fatal!("--gdb-index: DWARF version {version} is not supported");
     }
 
     let mut hdr = UnitHeader {
@@ -431,32 +425,27 @@ struct RangeSections<'a> {
 
 /// The first DIE refers to an abbreviation by its ULEB128 code. Walk the
 /// unit's abbreviation table to find the attribute forms for that DIE.
-fn find_cu_abbrev<'d, 'a, E: Arch>(
-    diag: &'d Diagnostics,
-    die: &mut Reader<'d, 'a, E>,
+fn find_cu_abbrev<'a, E: Arch>(
+    die: &mut Reader<'a, E>,
     abbrev_section: &'a [u8],
     hdr: &UnitHeader,
-) -> Reader<'d, 'a, E> {
+) -> Reader<'a, E> {
     if hdr.address_size as usize != E::WORD_SIZE {
-        fatal!(
-            diag,
-            "--gdb-index: unsupported address size {}",
-            hdr.address_size
-        );
+        fatal!("--gdb-index: unsupported address size {}", hdr.address_size);
     }
     let abbrev_code = die.uleb();
-    let mut abbrev = Reader::<E>::new(diag, abbrev_section, hdr.abbrev_offset as usize);
+    let mut abbrev = Reader::<E>::new(abbrev_section, hdr.abbrev_offset as usize);
     loop {
         let code = abbrev.uleb();
         if code == 0 {
-            fatal!(diag, "--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record");
+            fatal!("--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record");
         }
         let tag = abbrev.uleb(); // tag
         abbrev.u8(); // skip has_children byte
         if code == abbrev_code {
             // Found a record
             if tag != DW_TAG_compile_unit as u64 && tag != DW_TAG_skeleton_unit as u64 {
-                fatal!(diag, "--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}");
+                fatal!("--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}");
             }
             return abbrev;
         }
@@ -477,7 +466,7 @@ fn find_cu_abbrev<'d, 'a, E: Arch>(
 /// .debug_info contains variable-length fields. `offset_size` is four or eight
 /// bytes according to the DWARF32/DWARF64 format; Word<E> is instead the
 /// target's address width. This function advances over one scalar value.
-fn read_scalar<E: Arch>(diag: &Diagnostics, r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
+fn read_scalar<E: Arch>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
     match form as u32 {
         DW_FORM_flag_present => 0,
         DW_FORM_data1 | DW_FORM_flag | DW_FORM_strx1 | DW_FORM_addrx1 | DW_FORM_ref1 => {
@@ -495,7 +484,7 @@ fn read_scalar<E: Arch>(diag: &Diagnostics, r: &mut Reader<E>, form: u64, offset
             r.cstr();
             0
         }
-        _ => fatal!(diag, "--gdb-index: unhandled debug info form: {form:#x}"),
+        _ => fatal!("--gdb-index: unhandled debug info form: {form:#x}"),
     }
 }
 
@@ -517,14 +506,9 @@ fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64
 }
 
 /// Read a range list from .debug_rnglists starting at the given offset.
-fn read_rnglist<E: Arch>(
-    diag: &Diagnostics,
-    r: &mut Reader<E>,
-    addrx: &[u8],
-    mut base: u64,
-) -> Vec<(u64, u64)> {
+fn read_rnglist<E: Arch>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Vec<(u64, u64)> {
     let addr_at = |i: u64| -> u64 {
-        let mut a = Reader::<E>::new(diag, addrx, i as usize * E::WORD_SIZE);
+        let mut a = Reader::<E>::new(addrx, i as usize * E::WORD_SIZE);
         a.uint(E::WORD_SIZE)
     };
     let mut vec = Vec::new();
@@ -559,10 +543,7 @@ fn read_rnglist<E: Arch>(
                 let len = r.uleb();
                 vec.push((a, a + len));
             }
-            kind => fatal!(
-                diag,
-                "--gdb-index: unknown .debug_rnglists entry kind: {kind:#x}"
-            ),
+            kind => fatal!("--gdb-index: unknown .debug_rnglists entry kind: {kind:#x}"),
         }
     }
 }
@@ -575,15 +556,11 @@ fn read_rnglist<E: Arch>(
 /// ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
 /// Otherwise, a range is read directly from .debug_info (or possibly
 /// from .debug_addr for DWARF5).
-fn read_address_ranges<E: Arch>(
-    diag: &Diagnostics,
-    secs: &RangeSections,
-    cu: &Compunit,
-) -> Vec<(u64, u64)> {
+fn read_address_ranges<E: Arch>(secs: &RangeSections, cu: &Compunit) -> Vec<(u64, u64)> {
     // Read .debug_info to find the record at a given offset.
-    let hdr = parse_unit_header::<E>(diag, secs.info, cu.offset as usize);
-    let mut die = Reader::<E>::new(diag, secs.info, (cu.offset + hdr.header_size) as usize);
-    let mut abbrev = find_cu_abbrev::<E>(diag, &mut die, secs.abbrev, &hdr);
+    let hdr = parse_unit_header::<E>(secs.info, cu.offset as usize);
+    let mut die = Reader::<E>::new(secs.info, (cu.offset + hdr.header_size) as usize);
+    let mut abbrev = find_cu_abbrev::<E>(&mut die, secs.abbrev, &hdr);
 
     // Now, read debug info records.
     let mut low_pc: Option<(u64, u64)> = None;
@@ -599,7 +576,7 @@ fn read_address_ranges<E: Arch>(
         if name == 0 && form == 0 {
             break;
         }
-        let val = read_scalar::<E>(diag, &mut die, form, hdr.offset_size);
+        let val = read_scalar::<E>(&mut die, form, hdr.offset_size);
         match name as u32 {
             DW_AT_low_pc => low_pc = Some((form, val)),
             DW_AT_high_pc => high_pc = Some((form, val)),
@@ -610,9 +587,8 @@ fn read_address_ranges<E: Arch>(
         }
     }
 
-    let addr_at = |i: u64| -> u64 {
-        Reader::<E>::new(diag, addrx, i as usize * E::WORD_SIZE).uint(E::WORD_SIZE)
-    };
+    let addr_at =
+        |i: u64| -> u64 { Reader::<E>::new(addrx, i as usize * E::WORD_SIZE).uint(E::WORD_SIZE) };
     let base = low_pc.map_or(0, |(_, val)| val);
 
     // Before DWARF 5, DW_AT_ranges is a byte offset into .debug_ranges. In
@@ -620,24 +596,23 @@ fn read_address_ranges<E: Arch>(
     // index into the offset table rooted at DW_AT_rnglists_base (rnglistx).
     if let Some((form, val)) = ranges {
         if hdr.version <= 4 {
-            let mut r = Reader::<E>::new(diag, secs.ranges, val as usize);
+            let mut r = Reader::<E>::new(secs.ranges, val as usize);
             return read_debug_ranges::<E>(&mut r, base);
         }
         if form == DW_FORM_sec_offset as u64 {
-            let mut r = Reader::<E>::new(diag, secs.rnglists, val as usize);
-            return read_rnglist::<E>(diag, &mut r, addrx, base);
+            let mut r = Reader::<E>::new(secs.rnglists, val as usize);
+            return read_rnglist::<E>(&mut r, addrx, base);
         }
         let Some(list_base) = rnglists_base else {
-            fatal!(diag, "--gdb-index: missing DW_AT_rnglists_base");
+            fatal!("--gdb-index: missing DW_AT_rnglists_base");
         };
         let mut entry = Reader::<E>::new(
-            diag,
             secs.rnglists,
             (list_base + val * hdr.offset_size as u64) as usize,
         );
         let offset = entry.offset(hdr.offset_size);
-        let mut r = Reader::<E>::new(diag, secs.rnglists, (list_base + offset) as usize);
-        return read_rnglist::<E>(diag, &mut r, addrx, base);
+        let mut r = Reader::<E>::new(secs.rnglists, (list_base + offset) as usize);
+        return read_rnglist::<E>(&mut r, addrx, base);
     }
 
     // For one contiguous range, high_pc is either an address or an unsigned
@@ -649,10 +624,7 @@ fn read_address_ranges<E: Arch>(
     let lo = match lo_form as u32 {
         DW_FORM_addr => lo_val,
         DW_FORM_addrx | DW_FORM_addrx1 | DW_FORM_addrx2 | DW_FORM_addrx4 => addr_at(lo_val),
-        _ => fatal!(
-            diag,
-            "--gdb-index: unhandled form for DW_AT_low_pc: {lo_form:#x}"
-        ),
+        _ => fatal!("--gdb-index: unhandled form for DW_AT_low_pc: {lo_form:#x}"),
     };
     let hi = match hi_form as u32 {
         DW_FORM_addr => hi_val,
@@ -660,10 +632,7 @@ fn read_address_ranges<E: Arch>(
         DW_FORM_udata | DW_FORM_data1 | DW_FORM_data2 | DW_FORM_data4 | DW_FORM_data8 => {
             lo + hi_val
         }
-        _ => fatal!(
-            diag,
-            "--gdb-index: unhandled form for DW_AT_high_pc: {hi_form:#x}"
-        ),
+        _ => fatal!("--gdb-index: unhandled form for DW_AT_high_pc: {hi_form:#x}"),
     };
     vec![(lo, hi)]
 }
@@ -708,7 +677,6 @@ pub struct GdbInputFile {
 /// `.gdb_index` work diverge. Relocations are reduced to the unit associations
 /// the reader needs, so the background task never aliases an ObjectFile.
 pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
-    let diag = &*ctx.diag;
     ctx.objs
         .par_iter_mut()
         .map(|file| {
@@ -729,7 +697,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress::<E>(diag, &name, section_name, input_size);
+                isec.uncompress::<E>(&name, section_name, input_size);
                 debug_info.push(DebugInfoInput {
                     shndx,
                     contents: isec.contents(),
@@ -749,11 +717,11 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress::<E>(diag, &name, section_name, input_size);
+                isec.uncompress::<E>(&name, section_name, input_size);
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
-                for rel in file.relocation_iter(diag, isec.relsec_idx()) {
+                for rel in file.relocation_iter(isec.relsec_idx()) {
                     let esym = &file.base.elf_syms[rel.r_sym() as usize];
                     if let Some(target) = file.symbol_section(rel.r_sym() as usize) {
                         relocations.push(PubnamesRelocation {
@@ -783,7 +751,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 }
 
 /// Reads the units of every live `.debug_info` section of a file.
-fn read_debug_units<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, file_idx: u32) -> FileUnits {
+fn read_debug_units<E: Arch>(file: &GdbInputFile, file_idx: u32) -> FileUnits {
     let mut units = FileUnits::default();
     for input in &file.debug_info {
         // Read every unit in one input .debug_info contribution. Keeping this separate
@@ -791,7 +759,7 @@ fn read_debug_units<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, file_idx: 
         let contents = input.contents;
         let mut pos = 0;
         while pos < contents.len() {
-            let unit = parse_unit_header::<E>(diag, contents, pos);
+            let unit = parse_unit_header::<E>(contents, pos);
             match unit.unit_type as u32 {
                 DW_UT_compile | DW_UT_partial | DW_UT_skeleton | DW_UT_split_compile => {
                     units.cus.push(Compunit {
@@ -811,7 +779,7 @@ fn read_debug_units<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, file_idx: 
                     shndx: input.shndx,
                     names: Vec::new(),
                 }),
-                kind => fatal!(diag, "--gdb-index: unknown unit type: {kind:#x}"),
+                kind => fatal!("--gdb-index: unknown unit type: {kind:#x}"),
             }
             pos += unit.size as usize;
         }
@@ -859,12 +827,12 @@ fn pubnames_unit<'a>(
 /// DWARF32 or DWARF64 header identifying one debug unit, followed by
 /// (DIE offset, 1-byte kind, NUL-terminated name) tuples. The GNU kind byte lets
 /// GDB distinguish functions, variables and types without reading their DIEs.
-fn read_pubnames<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, units: &mut FileUnits) {
+fn read_pubnames<E: Arch>(file: &GdbInputFile, units: &mut FileUnits) {
     for input in &file.pubnames {
         let contents = input.contents;
         let mut pos = 0;
         while pos < contents.len() {
-            let mut r = Reader::<E>::new(diag, contents, pos);
+            let mut r = Reader::<E>::new(contents, pos);
             let (set_size, offset_size, field_offset) = if r.u32() == u32::MAX {
                 // Header of one GNU pubnames or pubtypes set in DWARF64 format.
                 let size = r.u64();
@@ -880,7 +848,7 @@ fn read_pubnames<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, units: &mut F
             r.offset(offset_size); // debug_info_size
 
             let Some(names) = pubnames_unit(input, field_offset, units) else {
-                fatal!(diag, "{}: corrupted debug_info_offset", file.name);
+                fatal!("{}: corrupted debug_info_offset", file.name);
             };
             let end = pos + set_size as usize;
             while r.pos < end {
@@ -1022,17 +990,13 @@ fn estimate_names<T: Sync>(units: &[T], names: impl Fn(&T) -> &[NameRecord] + Sy
 /// Read compilation units and their public names, deduplicate and intern the
 /// names, and determine the constant-pool layout. This stage needs only input
 /// sections, so it can run before output-section offsets are assigned.
-pub fn read_inputs<E: Arch>(
-    timer: Timer,
-    diag: &Diagnostics,
-    files: Vec<GdbInputFile>,
-) -> GdbIndexData {
+pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexData {
     let _timer = timer;
     let per_file: Vec<FileUnits> = files
         .par_iter()
         .map(|file| {
-            let mut units = read_debug_units::<E>(diag, file, file.file);
-            read_pubnames::<E>(diag, file, &mut units);
+            let mut units = read_debug_units::<E>(file, file.file);
+            read_pubnames::<E>(file, &mut units);
             for cu in &mut units.cus {
                 dedup_names(&mut cu.names);
             }
@@ -1403,9 +1367,8 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
             addr: section_contents(ctx, buf, ".debug_addr"),
             rnglists: section_contents(ctx, buf, ".debug_rnglists"),
         };
-        let diag = &ctx.diag;
         data.cus.par_iter_mut().for_each(|cu| {
-            cu.ranges = read_address_ranges::<E>(diag, &secs, cu);
+            cu.ranges = read_address_ranges::<E>(&secs, cu);
             cu.ranges.retain(|&(start, end)| start != 0 && start != end);
         });
     }
@@ -1437,7 +1400,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     let size = const_pool_offset + (data.type_pool_size + data.name_pool_size) as usize;
 
     let file_size = output.len();
-    output.extend(&ctx.diag, size);
+    output.extend(size);
     let buf = &mut output.buf()[file_size..];
 
     // Write a section header. A zero language marks the version 9 shortcut

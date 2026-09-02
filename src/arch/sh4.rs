@@ -266,7 +266,7 @@ where
     }
 
     fn apply_eh_reloc(
-        ctx: &Context<Self>,
+        _ctx: &Context<Self>,
         _isec: &InputSection,
         rel: &Self::Rel,
         loc: &mut [u8],
@@ -277,7 +277,7 @@ where
             R_NONE => {}
             R_SH_DIR32 => End::write_u32(loc, val as u32),
             R_SH_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -290,7 +290,7 @@ where
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
-                error!(ctx, "{sym}: GNU ifunc symbol is not supported on sh4");
+                error!("{sym}: GNU ifunc symbol is not supported on sh4");
             }
 
             match rel.r_type() {
@@ -307,7 +307,6 @@ where
                 R_SH_TLS_LE_32 => check_tlsle(ctx, isec, sym, &rel),
                 R_SH_DIR32 | R_SH_GOTPC | R_SH_GOTOFF | R_SH_TLS_LDO_32 => {}
                 _ => fatal!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -382,7 +381,6 @@ where
                     tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
                 ),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

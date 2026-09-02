@@ -198,7 +198,7 @@ impl Arch for Ppc32 {
     }
 
     fn apply_eh_reloc(
-        ctx: &Context<Self>,
+        _ctx: &Context<Self>,
         _isec: &InputSection,
         rel: &Self::Rel,
         loc: &mut [u8],
@@ -209,7 +209,7 @@ impl Arch for Ppc32 {
             R_NONE => {}
             R_PPC_ADDR32 => w32(loc, val),
             R_PPC_REL32 => w32(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -250,7 +250,6 @@ impl Arch for Ppc32 {
                 | R_PPC_TLSLD | R_PPC_DTPREL16_LO | R_PPC_DTPREL16_HI | R_PPC_DTPREL16_HA
                 | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -359,7 +358,6 @@ impl Arch for Ppc32 {
                 R_PPC_ADDR32 => w32(loc, tombstone.unwrap_or(sa)),
                 R_PPC_DTPREL32 => w32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr))),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

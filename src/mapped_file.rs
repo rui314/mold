@@ -18,7 +18,7 @@ use std::sync::Mutex;
 #[cfg(not(windows))]
 use rayon::prelude::*;
 
-use crate::error::{errno_string, Diagnostics};
+use crate::error::errno_string;
 use crate::fatal;
 use crate::util;
 
@@ -130,16 +130,16 @@ unsafe impl Sync for MappedFile {}
 
 impl MappedFile {
     /// Opens a file, returning `None` if it doesn't exist.
-    pub fn open(diag: &Diagnostics, path: &str) -> Option<&'static MappedFile> {
+    pub fn open(path: &str) -> Option<&'static MappedFile> {
         let file = match File::open(path) {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-            Err(e) => fatal!(diag, "opening {path} failed: {e}"),
+            Err(e) => fatal!("opening {path} failed: {e}"),
         };
 
         let metadata = file
             .metadata()
-            .unwrap_or_else(|e| fatal!(diag, "{path}: fstat failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{path}: fstat failed: {e}"));
         let size = metadata.len();
 
         // True if `data` is a memory mapping of the file rather than a copy of
@@ -152,9 +152,9 @@ impl MappedFile {
             (&file)
                 .take(size)
                 .read_to_end(&mut buf)
-                .unwrap_or_else(|e| fatal!(diag, "{path}: read failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{path}: read failed: {e}"));
             if buf.len() as u64 != size {
-                fatal!(diag, "{path}: file is shorter than its reported size");
+                fatal!("{path}: file is shorter than its reported size");
             }
             MappedBytes::from_mut(Vec::leak(buf))
         } else {
@@ -166,9 +166,9 @@ impl MappedFile {
             // process. Input files are not expected to change while the
             // linker runs.
             let map_len = usize::try_from(size)
-                .unwrap_or_else(|_| fatal!(diag, "{path}: file is too large to map"));
+                .unwrap_or_else(|_| fatal!("{path}: file is too large to map"));
             let map = unsafe { memmap2::MmapOptions::new().len(map_len).map_copy(&file) }
-                .unwrap_or_else(|e| fatal!(diag, "{path}: mmap failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{path}: mmap failed: {e}"));
             is_mmapped = true;
             MappedBytes::from_mut(Box::leak(Box::new(map)).as_mut())
         };
@@ -189,9 +189,8 @@ impl MappedFile {
     }
 
     /// Opens a file that must exist.
-    pub fn must_open(diag: &Diagnostics, path: &str) -> &'static MappedFile {
-        MappedFile::open(diag, path)
-            .unwrap_or_else(|| fatal!(diag, "cannot open {path}: {}", errno_string()))
+    pub fn must_open(path: &str) -> &'static MappedFile {
+        MappedFile::open(path).unwrap_or_else(|| fatal!("cannot open {path}: {}", errno_string()))
     }
 
     /// Returns a view of a member of this archive.
@@ -276,18 +275,17 @@ impl MappedFile {
 }
 
 /// Opens an input file, applying `--chroot` to absolute paths.
-pub fn open_file(diag: &Diagnostics, chroot: &str, path: &str) -> Option<&'static MappedFile> {
+pub fn open_file(chroot: &str, path: &str) -> Option<&'static MappedFile> {
     if path.starts_with('/') && !chroot.is_empty() {
         let path = format!("{chroot}/{}", util::path_clean(path));
-        return MappedFile::open(diag, &path);
+        return MappedFile::open(&path);
     }
-    MappedFile::open(diag, path)
+    MappedFile::open(path)
 }
 
 /// Opens an input file that must exist, applying `--chroot` to absolute paths.
-pub fn must_open_file(diag: &Diagnostics, chroot: &str, path: &str) -> &'static MappedFile {
-    open_file(diag, chroot, path)
-        .unwrap_or_else(|| fatal!(diag, "cannot open {path}: {}", errno_string()))
+pub fn must_open_file(chroot: &str, path: &str) -> &'static MappedFile {
+    open_file(chroot, path).unwrap_or_else(|| fatal!("cannot open {path}: {}", errno_string()))
 }
 
 /// Whether a path refers to something that is not a directory.

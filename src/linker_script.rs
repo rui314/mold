@@ -65,7 +65,7 @@ fn unquote(s: &[u8]) -> &[u8] {
 }
 
 /// Reports a syntax error, pointing at the offending token.
-fn syntax_error<E: Arch>(ctx: &Context<E>, mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
+fn syntax_error(mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
     let input = mf.data();
     let pos = offset_of(input, tok).min(input.len().saturating_sub(1));
     let (line_start, line) = get_line(input, pos);
@@ -74,14 +74,13 @@ fn syntax_error<E: Arch>(ctx: &Context<E>, mf: &MappedFile, tok: &[u8], msg: &st
     let indent = "mold: fatal: ".len() + label.len();
     let column = pos - line_start;
     fatal!(
-        ctx,
         "{label}{}\n{}^ {msg}",
         util::display(line),
         " ".repeat(indent + column)
     );
 }
 
-fn tokenize<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) -> Vec<&'static [u8]> {
+fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
     let mut tokens = Vec::new();
     let mut input = mf.data();
 
@@ -93,7 +92,7 @@ fn tokenize<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) -> Vec<&'static 
 
         if input.starts_with(b"/*") {
             let Some(pos) = input[2..].windows(2).position(|w| w == b"*/") else {
-                syntax_error(ctx, mf, input, "unclosed comment");
+                syntax_error(mf, input, "unclosed comment");
             };
             input = &input[pos + 4..];
             continue;
@@ -109,7 +108,7 @@ fn tokenize<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) -> Vec<&'static 
 
         if c == b'"' {
             let Some(pos) = input[1..].iter().position(|&b| b == b'"') else {
-                syntax_error(ctx, mf, input, "unclosed string literal");
+                syntax_error(mf, input, "unclosed string literal");
             };
             tokens.push(&input[..pos + 2]);
             input = &input[pos + 2..];
@@ -151,18 +150,14 @@ fn resolve_path<E: Arch>(
     check_target: bool,
 ) -> &'static MappedFile {
     let s = String::from_utf8_lossy(unquote(tok)).into_owned();
-    let diag = &ctx.diag;
     let chroot = &ctx.args.chroot;
 
     let open = |path: &str| -> Option<&'static MappedFile> {
-        let mf = open_file(diag, chroot, path)?;
+        let mf = open_file(chroot, path)?;
         if check_target {
-            if let Some(target) =
-                crate::filetype::get_machine_type(diag, &ctx.args.plugin, mf, || None)
-            {
+            if let Some(target) = crate::filetype::get_machine_type(&ctx.args.plugin, mf, || None) {
                 if target != E::NAME {
                     warn!(
-                        ctx,
                         "{path}: skipping incompatible file: {target} (e_machine {})",
                         E::E_MACHINE
                     );
@@ -177,7 +172,7 @@ fn resolve_path<E: Arch>(
     // script being processed is in the sysroot. We do the same.
     if s.starts_with('/') && is_in_sysroot(ctx, &mf.name) {
         let path = format!("{}{s}", ctx.args.sysroot);
-        return must_open_file(diag, chroot, &path);
+        return must_open_file(chroot, &path);
     }
 
     if let Some(rest) = s.strip_prefix('=') {
@@ -186,7 +181,7 @@ fn resolve_path<E: Arch>(
         } else {
             format!("{}{rest}", ctx.args.sysroot)
         };
-        return must_open_file(diag, chroot, &path);
+        return must_open_file(chroot, &path);
     }
 
     if let Some(lib) = s.strip_prefix("-l") {
@@ -210,7 +205,7 @@ fn resolve_path<E: Arch>(
         }
     }
 
-    syntax_error(ctx, mf, tok, &format!("library not found: {s}"));
+    syntax_error(mf, tok, &format!("library not found: {s}"));
 }
 
 /// The target a script produces output for: the one `OUTPUT_FORMAT`
@@ -220,7 +215,7 @@ pub fn output_target<E: Arch>(
     rctx: &ReaderContext,
     mf: &'static MappedFile,
 ) -> Option<&'static str> {
-    let tokens = tokenize(ctx, mf);
+    let tokens = tokenize(mf);
     let mut tok: &[&'static [u8]] = &tokens;
 
     if tok.len() >= 3 && tok[0] == b"OUTPUT_FORMAT" && tok[1] == b"(" {
@@ -248,7 +243,7 @@ impl<'a, E: Arch> Script<'a, E> {
         rctx: &'a mut ReaderContext,
         mf: &'static MappedFile,
     ) -> Self {
-        let tokens = tokenize(ctx, mf);
+        let tokens = tokenize(mf);
         Script {
             ctx,
             rctx,
@@ -258,16 +253,12 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 
     fn error(&self, tok: &[u8], msg: &str) -> ! {
-        syntax_error(self.ctx, self.mf, tok, msg)
+        syntax_error(self.mf, tok, msg)
     }
 
     fn skip<'t>(&self, tok: &'t [&'static [u8]], expected: &str) -> &'t [&'static [u8]] {
         match tok.first() {
-            None => fatal!(
-                self.ctx,
-                "{}: expected '{expected}', but got EOF",
-                self.mf.name
-            ),
+            None => fatal!("{}: expected '{expected}', but got EOF", self.mf.name),
             Some(t) if *t == expected.as_bytes() => &tok[1..],
             Some(t) => self.error(t, &format!("expected '{expected}'")),
         }
@@ -298,7 +289,7 @@ impl<'a, E: Arch> Script<'a, E> {
         let tok = self.skip(tok, "(");
         match tok.iter().position(|t| *t == b")") {
             Some(pos) => &tok[pos + 1..],
-            None => fatal!(self.ctx, "{}: expected ')', but got EOF", self.mf.name),
+            None => fatal!("{}: expected ')', but got EOF", self.mf.name),
         }
     }
 
@@ -324,7 +315,7 @@ impl<'a, E: Arch> Script<'a, E> {
         }
 
         if tok.is_empty() {
-            fatal!(self.ctx, "{}: expected ')', but got EOF", self.mf.name);
+            fatal!("{}: expected ')', but got EOF", self.mf.name);
         }
         &tok[1..]
     }
@@ -556,7 +547,7 @@ fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'stati
 }
 
 pub fn parse_dynamic_list<E: Arch>(ctx: &mut Context<E>, path: &str) -> Vec<DynamicPattern> {
-    let mf = must_open_file(&ctx.diag, &ctx.args.chroot.clone(), path);
+    let mf = must_open_file(&ctx.args.chroot.clone(), path);
     let mut rctx = ReaderContext::default();
     Script::new(ctx, &mut rctx, mf).parse_dynamic_list()
 }

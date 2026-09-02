@@ -408,7 +408,7 @@ where
                 LittleEndian::write_u32(loc, val.wrapping_sub(p) as u32);
             }
             R_LARCH_64_PCREL => LittleEndian::write_u64(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -489,7 +489,6 @@ where
                 | R_LARCH_TLS_DESC_LD
                 | R_LARCH_TLS_LE_ADD_R => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -558,7 +557,6 @@ where
                 check(val, lo, hi);
                 if val & 0b11 != 0 {
                     error!(
-                        ctx,
                         "{}: misaligned symbol {sym} for relocation {}",
                         isec.display(file),
                         rel.type_name::<Self>()
@@ -918,7 +916,6 @@ where
                 R_LARCH_ADD_ULEB128 => add_uleb(loc, sa, false),
                 R_LARCH_SUB_ULEB128 => add_uleb(loc, sa, true),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -961,7 +958,6 @@ where
                 let alignment = if r.r_sym() != 0 {
                     if r.r_addend() >> 8 != 0 {
                         fatal!(
-                            ctx,
                             "{}: ternary R_LARCH_ALIGN is not supported: {i}",
                             isec.display(file)
                         );
@@ -971,7 +967,6 @@ where
                     let alignment = r.r_addend() as u64 + 4;
                     if !alignment.is_power_of_two() {
                         fatal!(
-                            ctx,
                             "{}: R_LARCH_ALIGN: invalid alignment requirement: {i}",
                             isec.display(file)
                         );

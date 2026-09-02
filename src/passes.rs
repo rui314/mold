@@ -247,7 +247,7 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                     sym.merge_visibility(esym.st_visibility());
                 }
                 if sym.is_traced() {
-                    crate::input_files::print_trace_symbol(&ctx.diag, file, esym, sym);
+                    crate::input_files::print_trace_symbol(file, esym, sym);
                 }
 
                 if let Some(target) = sym.file() {
@@ -257,7 +257,6 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                         found.push(target);
                         if sym.is_traced() {
                             out!(
-                                ctx,
                                 "trace-symbol: {file} keeps {} for {sym}",
                                 ctx.file_display(target)
                             );
@@ -272,7 +271,7 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                 let esym = &file.base.elf_syms[i];
                 let sym = &ctx.symbols[file.base.symbols[i]];
                 if sym.is_traced() {
-                    crate::input_files::print_trace_symbol(&ctx.diag, file, esym, sym);
+                    crate::input_files::print_trace_symbol(file, esym, sym);
                 }
                 // We follow undefined symbols in a DSO only to handle
                 // --no-allow-shlib-undefined.
@@ -284,7 +283,6 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                             found.push(target);
                             if sym.is_traced() {
                                 out!(
-                                    ctx,
                                     "trace-symbol: {file} keeps {} for {sym}",
                                     ctx.file_display(target)
                                 );
@@ -597,18 +595,13 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     // the other signatures for interning while each file's metadata is hot.
     let t = ctx.timer("read_section_metadata");
     let (bins, pending): (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) = {
-        let Context {
-            objs,
-            symbols,
-            diag,
-            ..
-        } = ctx;
+        let Context { objs, symbols, .. } = ctx;
         let work = ComdatWorkBins::new();
         objs.par_iter_mut().for_each(|file| {
             work.with_local(|bins, pending| {
                 if file.base.is_reachable() {
                     if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
-                        file.read_section_metadata(diag);
+                        file.read_section_metadata();
                     }
                     let priority = file.base.priority;
                     let is_lto_output = file.is_lto_output;
@@ -771,7 +764,6 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             objs,
             symbols,
             section_arena,
-            diag,
             args,
             ..
         } = ctx;
@@ -783,7 +775,6 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                     && !file.sections_parsed
                 {
                     file.parse_sections(
-                        diag,
                         args,
                         file.id(),
                         section_arena,
@@ -951,9 +942,8 @@ pub fn do_lto<E: Arch>(ctx: &mut Context<E>) {
 
 pub fn parse_eh_frame_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("parse_eh_frame_sections");
-    let Context { objs, diag, .. } = ctx;
-    objs.par_iter_mut()
-        .for_each(|file| file.parse_ehframe(diag));
+    let Context { objs, .. } = ctx;
+    objs.par_iter_mut().for_each(|file| file.parse_ehframe());
 }
 
 pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
@@ -961,8 +951,8 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     let _t = ctx.timer("parse_sframe_sections");
-    let Context { objs, diag, .. } = ctx;
-    objs.par_iter_mut().for_each(|file| file.parse_sframe(diag));
+    let Context { objs, .. } = ctx;
+    objs.par_iter_mut().for_each(|file| file.parse_sframe());
 }
 
 /// Registers direct, stable member borrows with their merged sections for a
@@ -1002,12 +992,11 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
             objs,
             merged_sections,
             args,
-            diag,
             ..
         } = ctx;
         let merged = RwLock::new(std::mem::take(merged_sections));
         objs.par_iter_mut()
-            .for_each(|file| file.convert_mergeable_sections(args, &merged, diag));
+            .for_each(|file| file.convert_mergeable_sections(args, &merged));
         *merged_sections = merged.into_inner().unwrap();
     }
     drop(t);
@@ -1036,7 +1025,6 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         crate::output_chunks::merged::ResolveOptions {
             allocated_only: true,
             gc_sections: ctx.args.gc_sections,
-            diag: &ctx.diag,
             comment: ctx.comment,
             cmdline_args: &ctx.cmdline_args,
             timers: &ctx.timers,
@@ -1049,7 +1037,6 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         objs,
         symbols,
         merged_sections,
-        diag,
         ..
     } = ctx;
 
@@ -1081,8 +1068,8 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                 .zip(slices)
                 .for_each(|(file, (base_id, slots))| {
                     let id = file.id();
-                    file.reattach_section_symbols(diag, id, &editor, merged_sections);
-                    file.reattach_fragment_relocations(diag, id, merged_sections, base_id, slots);
+                    file.reattach_section_symbols(id, &editor, merged_sections);
+                    file.reattach_fragment_relocations(id, merged_sections, base_id, slots);
                 });
         });
     }
@@ -1094,20 +1081,12 @@ pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
     let Context {
         objs,
         symbols,
-        diag,
         args,
         section_arena,
         ..
     } = ctx;
     for file in objs {
-        file.convert_common_symbols(
-            diag,
-            args,
-            file.id(),
-            symbols,
-            default_version,
-            section_arena,
-        );
+        file.convert_common_symbols(args, file.id(), symbols, default_version, section_arena);
     }
 }
 
@@ -1736,7 +1715,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
             DefsymValue::Symbol(target) => {
                 let sym2 = ctx.get_symbol(target.as_bytes());
                 if ctx.symbols[sym2].file().is_none() {
-                    error!(ctx, "--defsym: undefined symbol: {}", ctx.symbols[sym2]);
+                    error!("--defsym: undefined symbol: {}", ctx.symbols[sym2]);
                     continue;
                 }
                 let sym2_esym = ctx.symbols[sym2].esym(ctx);
@@ -1791,15 +1770,9 @@ pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
         ] {
             if !has_feature(file, feature) {
                 if warning {
-                    warn!(
-                        ctx,
-                        "{file}: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_{name}"
-                    );
+                    warn!("{file}: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
                 } else {
-                    error!(
-                        ctx,
-                        "{file}: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_{name}"
-                    );
+                    error!("{file}: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
                 }
             }
         }
@@ -1808,7 +1781,6 @@ pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
 
 pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
     out!(
-        ctx,
         "# This is an output of the mold linker's --print-dependencies option.\n\
          #\n\
          # Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and\n\
@@ -1823,9 +1795,8 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
     let println = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
         let kind = if is_weak { 'w' } else { 'u' };
         match sym.input_section() {
-            Some(sec) => out!(ctx, "{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
+            Some(sec) => out!("{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
             None => out!(
-                ctx,
                 "{src}\t{}\t{kind}\t{sym}",
                 ctx.file_display(sym.file().unwrap())
             ),
@@ -1891,11 +1862,11 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
     let path = format!("{}.repro.tar", ctx.args.output);
     let basedir = format!("{}.repro", path_filename(&ctx.args.output));
     let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
-        .unwrap_or_else(|e| fatal!(ctx, "cannot open {path}: {e}"));
+        .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
 
     let write = |tar: &mut crate::util::tar::TarWriter, name: &str, data: &[u8]| {
         tar.append(name, data)
-            .unwrap_or_else(|e| fatal!(ctx, "{path}: write failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
     };
     write(
         &mut tar,
@@ -1913,8 +1884,7 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
         if mf.parent.is_none() && seen.insert(mf.name.clone()) {
             // We reopen a file because we may have modified the contents of mf
             // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
-            let reopened =
-                crate::mapped_file::must_open_file(&ctx.diag, &ctx.args.chroot, &mf.name);
+            let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
             let abs = std::fs::canonicalize(&mf.name)
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or(mf.name.clone());
@@ -1966,13 +1936,12 @@ pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
                 }
             }
             error!(
-                ctx,
                 "duplicate symbol: {file}: {}: {sym}",
                 ctx.file_display(owner)
             );
         }
     });
-    ctx.checkpoint();
+    crate::error::checkpoint();
 }
 
 // A default-versioned symbol `foo@@VER` can also be referred to as
@@ -2007,7 +1976,6 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
             if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
                 let file = &ctx.objs[obj.index()];
                 error!(
-                    ctx,
                     "duplicate symbol: {file}: {}: {}",
                     ctx.file_display(sym2.file().unwrap()),
                     crate::util::display(file.base.symbol_name_in(sym.sym_idx as usize))
@@ -2015,7 +1983,7 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
             }
         }
     }
-    ctx.checkpoint();
+    crate::error::checkpoint();
 }
 
 // GCC and Clang set the SHT_NOBITS flag for an output section only if the
@@ -2080,7 +2048,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     // for the program, because if there's a missing .so, an undefined
     // symbol might be defined by that library.
     let complete = ctx.dsos.iter().all(|dso| {
-        dso.dt_needed(&ctx.diag)
+        dso.dt_needed()
             .iter()
             .all(|needed| ctx.dso_sonames.contains(&*String::from_utf8_lossy(needed)))
     });
@@ -2102,10 +2070,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
                     && !defined
                     && !has_dso_definition(ctx, id)
                 {
-                    error!(
-                        ctx,
-                        "{file}: --no-allow-shlib-undefined: undefined symbol: {sym}"
-                    );
+                    error!("{file}: --no-allow-shlib-undefined: undefined symbol: {sym}");
                 }
             }
         });
@@ -2154,9 +2119,7 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
                 && st_type2 != STT_NOTYPE
                 && canonicalize(esym1.st_type()) != canonicalize(st_type2)
             {
-                warn!(
-                    ctx,
-                    "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
+                warn!("symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
                     ctx.file_display(owner),
                     stt_to_string(esym1.st_type()),
                     stt_to_string(st_type2)
@@ -2326,9 +2289,9 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
 
     // Record whether each input file contains DWARF32 debug info.
     {
-        let Context { objs, diag, .. } = ctx;
+        let Context { objs, .. } = ctx;
         objs.par_iter_mut().for_each(|file| {
-            file.is_dwarf32 = !file.debug_info_sections.is_empty() && file.is_dwarf32(diag);
+            file.is_dwarf32 = !file.debug_info_sections.is_empty() && file.is_dwarf32();
         });
     }
 
@@ -2407,11 +2370,10 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
             {
                 continue;
             }
-            let diag = &ctx.diag;
             let file = &ctx.objs[section_ref.file.index()];
             let isec = ctx.input_section(m);
             if !isec.sh_size.is_multiple_of(word as u64) {
-                fatal!(diag, "{}: section corrupted", isec.display(file));
+                fatal!("{}: section corrupted", isec.display(file));
             }
             let mut contents = isec.contents().to_vec();
             let n = contents.len() / word;
@@ -2497,7 +2459,7 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
         .map(crate::input_files::SharedFile::id)
         .collect();
     for id in dso_ids {
-        let audit = ctx.dsos[id.index()].dt_audit(&ctx.diag);
+        let audit = ctx.dsos[id.index()].dt_audit();
         if !audit.is_empty() {
             if !ctx.args.depaudit.is_empty() {
                 ctx.args.depaudit.push(':');
@@ -2558,7 +2520,6 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
             crate::output_chunks::merged::ResolveOptions {
                 allocated_only: false,
                 gc_sections: ctx.args.gc_sections,
-                diag: &ctx.diag,
                 comment: ctx.comment,
                 cmdline_args: &ctx.cmdline_args,
                 timers: &ctx.timers,
@@ -2651,7 +2612,6 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
             let sym = &ctx.symbols[id];
             if sym.is_traced() {
                 out!(
-                    ctx,
                     "trace-symbol: {}: unresolved{} symbol {sym}",
                     ctx.objs[obj_id.index()],
                     if esym.is_weak() { " weak" } else { "" }
@@ -2734,7 +2694,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|file| file.scan_relocations(ctx_ref));
     }
     // Exit if there was a relocation that refers an undefined symbol.
-    ctx.checkpoint();
+    crate::error::checkpoint();
 
     // Word-size absolute relocations (e.g. R_X86_64_64) are handled
     // separately because they can be promoted to dynamic relocations.
@@ -2761,7 +2721,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         osec.dynrel_offsets = offsets;
     }
     // Exit if the absolute-relocation pass reported an error.
-    ctx.checkpoint();
+    crate::error::checkpoint();
 
     // Aggregate dynamic symbols to a single vector.
     let syms: Vec<SymbolId> = {
@@ -2875,7 +2835,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if ctx.has_textrel.load(Ordering::Relaxed) && ctx.args.warn_textrel {
-        warn!(ctx, "creating a DT_TEXTREL in an output file");
+        warn!("creating a DT_TEXTREL in an output file");
     }
 }
 
@@ -2931,12 +2891,12 @@ pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
         // Remove the trailing '\n' because Error/Warn adds it automatically
         msg.pop();
         if ctx.args.unresolved_symbols == UnresolvedKind::Error {
-            error!(ctx, "{msg}");
+            error!("{msg}");
         } else {
-            warn!(ctx, "{msg}");
+            warn!("{msg}");
         }
     }
-    ctx.checkpoint();
+    crate::error::checkpoint();
 }
 
 pub fn create_reloc_sections<E: Arch>(ctx: &mut Context<E>) {
@@ -3095,14 +3055,12 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
         if v.is_cpp {
             if !cpp_matcher.add(v.pattern, i as i64) {
                 fatal!(
-                    ctx,
                     "invalid version pattern: {}",
                     crate::util::display(v.pattern)
                 );
             }
         } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, i as i64) {
             fatal!(
-                ctx,
                 "invalid version pattern: {}",
                 crate::util::display(v.pattern)
             );
@@ -3140,7 +3098,6 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
             let sym = &ctx.symbols[id];
             if sym.file().is_none() && !ctx.args.undefined_version {
                 warn!(
-                    ctx,
                     "{}: cannot assign version `{}` to symbol `{sym}`: symbol not found",
                     v.source,
                     crate::util::display(v.ver_str)
@@ -3208,7 +3165,6 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             }
             let Some(&ver_idx) = verdefs.get(ver) else {
                 error!(
-                    ctx,
                     "{}: symbol {} has undefined version {}",
                     ctx.objs[obj_id.index()],
                     ctx.symbols[id],
@@ -3382,7 +3338,6 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
         if p.is_cpp {
             if !cpp_matcher.add(p.pattern, 1) {
                 fatal!(
-                    ctx,
                     "{}: invalid dynamic list entry: {}",
                     p.source,
                     crate::util::display(p.pattern)
@@ -3393,7 +3348,6 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
         if p.pattern.iter().any(|&c| matches!(c, b'*' | b'?' | b'[')) {
             if !matcher.add(p.pattern, 1) {
                 fatal!(
-                    ctx,
                     "{}: invalid dynamic list entry: {}",
                     p.source,
                     crate::util::display(p.pattern)
@@ -3682,8 +3636,8 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
                 return i as i64;
             }
             error!(
-                ctx,
-                "--section-order: missing section specification for {}", hdr.name
+                "--section-order: missing section specification for {}",
+                hdr.name
             );
             0
         };
@@ -3911,9 +3865,7 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
             }
             SectionOrderKind::Addr => {
                 if addr != ctx.args.image_base && ord.value < addr {
-                    error!(
-                        ctx,
-                        "--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
+                    error!("--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
                         ord.value,
                         ord.token
                     );
@@ -4107,7 +4059,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
                 continue;
             }
         }
-        ctx.checkpoint();
+        crate::error::checkpoint();
 
         // Assigning new offsets may change the contents and the length
         // of the program header, so repeat it until converge.
@@ -4556,7 +4508,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     let path = ctx.args.separate_debug_file.clone();
 
     // Open an output file early
-    let mut output = OutputFile::open_locked(&ctx.diag, &path, 0o666);
+    let mut output = OutputFile::open_locked(&path, 0o666);
 
     // We want to write to the debug info file in background so that the
     // user doesn't have to wait for it to complete.
@@ -4636,7 +4588,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // Write to a separate debug file
-    output.resize(&ctx.diag, fileoff);
+    output.resize(fileoff);
     crate::driver::copy_chunks(ctx, output.buf());
 
     if ctx.gdb_index.is_some() {
@@ -4652,9 +4604,9 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         ctx.gnu_debuglink.as_ref().unwrap().crc32,
     );
     let len = output.len();
-    output.extend(&ctx.diag, trailer.len());
+    output.extend(trailer.len());
     output.buf()[len..].copy_from_slice(&trailer);
-    output.close(&ctx.diag);
+    output.close();
 }
 
 // Write Makefile-style dependency rules to a file specified by
@@ -4686,7 +4638,7 @@ pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
         let _ = std::io::stdout().write_all(out.as_bytes());
     } else {
         std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!(ctx, "--dependency-file: cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("--dependency-file: cannot open {path}: {e}"));
     }
 }
 
@@ -4799,10 +4751,10 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
         NUM_RELS.add(count);
     }
 
-    Counter::print(&ctx.diag);
+    Counter::print();
 
     for section in &ctx.merged_sections {
-        crate::output_chunks::merged::print_stats(section, &ctx.diag);
+        crate::output_chunks::merged::print_stats(section);
     }
 }
 

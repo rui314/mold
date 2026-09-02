@@ -4,7 +4,6 @@
 #[cfg(not(windows))]
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::error::Diagnostics;
 use crate::fatal;
 
 #[cfg(not(windows))]
@@ -139,9 +138,9 @@ pub fn install_signal_handler() {}
 /// `mold -run COMMAND ARGS...` runs a command with mold interposed as the
 /// linker, which requires the `mold-wrapper.so` preload library.
 #[cfg(not(windows))]
-pub fn process_run_subcommand(diag: &Diagnostics, argv: &[String]) -> ! {
+pub fn process_run_subcommand(argv: &[String]) -> ! {
     if argv.len() < 3 {
-        fatal!(diag, "-run: argument missing");
+        fatal!("-run: argument missing");
     }
     let self_path = crate::util::self_path();
     let candidates = [
@@ -159,7 +158,7 @@ pub fn process_run_subcommand(diag: &Diagnostics, argv: &[String]) -> ! {
     ];
     // Get the mold-wrapper.so path
     let Some(dso) = candidates.into_iter().flatten().find(|p| p.is_file()) else {
-        fatal!(diag, "mold-wrapper.so is missing");
+        fatal!("mold-wrapper.so is missing");
     };
 
     // Set environment variables
@@ -177,10 +176,10 @@ pub fn process_run_subcommand(diag: &Diagnostics, argv: &[String]) -> ! {
         std::process::Command::new(&argv[2]).args(&argv[3..]).exec()
     };
     // Execute a given command
-    fatal!(diag, "mold -run failed: {}: {err}", argv[2]);
+    fatal!("mold -run failed: {}: {err}", argv[2]);
 }
 
 #[cfg(windows)]
-pub fn process_run_subcommand(diag: &Diagnostics, _argv: &[String]) -> ! {
-    fatal!(diag, "-run is supported only on Unix");
+pub fn process_run_subcommand(_argv: &[String]) -> ! {
+    fatal!("-run is supported only on Unix");
 }

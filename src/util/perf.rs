@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::error::Diagnostics;
+use crate::out;
 
 static COUNTERS_ENABLED: AtomicBool = AtomicBool::new(false);
 static COUNTERS: Mutex<Vec<&'static Counter>> = Mutex::new(Vec::new());
@@ -46,15 +46,15 @@ impl Counter {
         self.value.fetch_add(delta, Ordering::Relaxed);
     }
 
-    pub fn print(diag: &Diagnostics) {
+    pub fn print() {
         let mut counters = COUNTERS.lock().unwrap().clone();
         counters.sort_by_key(|counter| counter.value.load(Ordering::Relaxed));
         for counter in counters {
-            diag.out(format_args!(
+            out!(
                 "{:>20}={}",
                 counter.name,
                 counter.value.load(Ordering::Relaxed)
-            ));
+            );
         }
     }
 }

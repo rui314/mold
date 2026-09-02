@@ -112,7 +112,7 @@ impl Arch for M68k {
     }
 
     fn apply_eh_reloc(
-        ctx: &Context<Self>,
+        _ctx: &Context<Self>,
         _isec: &InputSection,
         rel: &Self::Rel,
         loc: &mut [u8],
@@ -123,7 +123,7 @@ impl Arch for M68k {
             R_NONE => {}
             R_68K_32 => w32(loc, val as u32),
             R_68K_PC32 => w32(loc, val.wrapping_sub(p) as u32),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -136,7 +136,7 @@ impl Arch for M68k {
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             if sym.is_ifunc() {
-                error!(ctx, "{sym}: GNU ifunc symbol is not supported on m68k");
+                error!("{sym}: GNU ifunc symbol is not supported on m68k");
             }
 
             match rel.r_type() {
@@ -159,7 +159,6 @@ impl Arch for M68k {
                 }
                 R_68K_32 | R_68K_TLS_LDO32 | R_68K_TLS_LDO16 | R_68K_TLS_LDO8 => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -284,7 +283,6 @@ impl Arch for M68k {
                     tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
                 ),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

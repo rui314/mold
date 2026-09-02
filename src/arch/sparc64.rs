@@ -274,7 +274,7 @@ impl Arch for Sparc64 {
                 );
                 w32(loc, val.wrapping_sub(p));
             }
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -362,7 +362,6 @@ impl Arch for Sparc64 {
                 | R_SPARC_TLS_IE_LO10
                 | R_SPARC_SIZE32 => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -722,7 +721,6 @@ impl Arch for Sparc64 {
                 R_SPARC_TLS_DTPOFF32 => w32(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 R_SPARC_TLS_DTPOFF64 => w64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

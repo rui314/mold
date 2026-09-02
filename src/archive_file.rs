@@ -23,7 +23,6 @@
 //! see the contents of libc.a by running `ar t
 //! /usr/lib/x86_64-linux-gnu/libc.a`.
 
-use crate::error::Diagnostics;
 use crate::fatal;
 use crate::mapped_file::MappedFile;
 use crate::util;
@@ -98,12 +97,7 @@ fn parse_decimal(bytes: &[u8]) -> usize {
 
 /// Iterates over the members of an archive as (header, name, body)
 /// triples, skipping the symbol table and string table.
-fn for_each_member(
-    diag: &Diagnostics,
-    mf: &'static MappedFile,
-    thin: bool,
-    mut f: impl FnMut(String, &'static [u8]),
-) {
+fn for_each_member(mf: &'static MappedFile, thin: bool, mut f: impl FnMut(String, &'static [u8])) {
     let data = mf.data();
     let mut pos = 8;
     let mut strtab: &[u8] = &[];
@@ -136,11 +130,7 @@ fn for_each_member(
         }
 
         if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-            fatal!(
-                diag,
-                "{}: filename is not stored as a long filename",
-                mf.name
-            );
+            fatal!("{}: filename is not stored as a long filename", mf.name);
         }
 
         // Read the name field
@@ -169,9 +159,9 @@ fn for_each_member(
 
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
-pub fn get_thin_archive_member_paths(diag: &Diagnostics, mf: &'static MappedFile) -> Vec<String> {
+pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<String> {
     let mut paths = Vec::new();
-    for_each_member(diag, mf, true, |name, _| {
+    for_each_member(mf, true, |name, _| {
         if name.starts_with('/') {
             paths.push(name);
         } else {
@@ -181,14 +171,11 @@ pub fn get_thin_archive_member_paths(diag: &Diagnostics, mf: &'static MappedFile
     paths
 }
 
-pub fn read_thin_archive_members(
-    diag: &Diagnostics,
-    mf: &'static MappedFile,
-) -> Vec<&'static MappedFile> {
-    get_thin_archive_member_paths(diag, mf)
+pub fn read_thin_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
+    get_thin_archive_member_paths(mf)
         .into_iter()
         .map(|path| {
-            let member = MappedFile::must_open(diag, &path);
+            let member = MappedFile::must_open(&path);
             util::leak(MappedFile {
                 name: member.name.clone(),
                 data: member.data,
@@ -201,27 +188,21 @@ pub fn read_thin_archive_members(
         .collect::<Vec<_>>()
 }
 
-pub fn read_fat_archive_members(
-    diag: &Diagnostics,
-    mf: &'static MappedFile,
-) -> Vec<&'static MappedFile> {
+pub fn read_fat_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
     let mut members = Vec::new();
     let base = mf.data().as_ptr() as usize;
-    for_each_member(diag, mf, false, |name, body| {
+    for_each_member(mf, false, |name, body| {
         let start = body.as_ptr() as usize - base;
         members.push(mf.slice(name, start, body.len()));
     });
     members
 }
 
-pub fn read_archive_members(
-    diag: &Diagnostics,
-    mf: &'static MappedFile,
-) -> Vec<&'static MappedFile> {
+pub fn read_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
     if mf.data().starts_with(b"!<arch>\n") {
-        read_fat_archive_members(diag, mf)
+        read_fat_archive_members(mf)
     } else {
         debug_assert!(mf.data().starts_with(b"!<thin>\n"));
-        read_thin_archive_members(diag, mf)
+        read_thin_archive_members(mf)
     }
 }

@@ -180,10 +180,10 @@ pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
     passes::compute_section_headers(ctx);
 
     let filesize = set_osec_offsets(ctx);
-    let mut output = OutputFile::open(&ctx.diag, &ctx.args.output, filesize, 0o666, false);
+    let mut output = OutputFile::open(&ctx.args.output, filesize, 0o666, false);
     crate::driver::copy_chunks(ctx, output.buf());
-    output.close(&ctx.diag);
-    ctx.checkpoint();
+    output.close();
+    crate::error::checkpoint();
 
     if ctx.args.print_map {
         crate::mapfile::print_map(ctx);

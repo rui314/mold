@@ -90,23 +90,18 @@ pub mod copyrel {
             debug_assert!(sym.is_undef_weak());
             let file = ctx.file_display(sym.file().unwrap());
             error!(
-                ctx,
                 "{file}: cannot create a copy relocation for {sym}; recompile with -fPIE or -fPIC"
             );
             return;
         };
         let dso = &ctx.dsos[dso_id.index()];
         if sym.esym(ctx).st_visibility() == STV_PROTECTED {
-            error!(
-                ctx,
-                "{dso}: cannot create a copy relocation for protected symbol '{sym}'; recompile with -fPIC"
+            error!("{dso}: cannot create a copy relocation for protected symbol '{sym}'; recompile with -fPIC"
             );
             return;
         }
         if !ctx.args.z_copyreloc {
-            error!(
-                ctx,
-                "-z nocopyreloc: {dso}: cannot create a copy relocation for symbol '{sym}'; recompile with -fPIC"
+            error!("-z nocopyreloc: {dso}: cannot create a copy relocation for symbol '{sym}'; recompile with -fPIC"
             );
             return;
         }

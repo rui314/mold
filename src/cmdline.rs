@@ -5,7 +5,6 @@ use std::io::IsTerminal;
 
 use crate::arch;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::Glob;
 use crate::util::perf::Counter;
@@ -715,12 +714,12 @@ fn is_space(c: u8) -> bool {
 //
 // This function opens a given file, tokenizes its contents, and returns a
 // list of tokens.
-fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<String> {
+fn read_response_file(path: &str, depth: usize) -> Vec<String> {
     if depth > 10 {
-        fatal!(diag, "{path}: response file nesting too deep");
+        fatal!("{path}: response file nesting too deep");
     }
 
-    let mf = MappedFile::must_open(diag, path);
+    let mf = MappedFile::must_open(path);
     mf.set_dependency(false);
     let data = mf.data();
     let mut tokens = Vec::new();
@@ -747,7 +746,7 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
             let c = data[i];
             if c == b'\\' {
                 if i + 1 == data.len() {
-                    fatal!(diag, "{path}: premature end of input");
+                    fatal!("{path}: premature end of input");
                 }
                 tok.push(data[i + 1]);
                 i += 2;
@@ -769,7 +768,7 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
             }
         }
         if quote.is_some() {
-            fatal!(diag, "{path}: premature end of input");
+            fatal!("{path}: premature end of input");
         }
         tokens.push(String::from_utf8_lossy(&tok).into_owned());
     }
@@ -777,7 +776,7 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
     let mut expanded = Vec::new();
     for tok in tokens {
         if let Some(nested) = tok.strip_prefix('@') {
-            expanded.extend(read_response_file(diag, nested, depth + 1));
+            expanded.extend(read_response_file(nested, depth + 1));
         } else {
             expanded.push(tok);
         }
@@ -786,11 +785,11 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
 }
 
 // Replace "@path/to/some/text/file" with its file contents.
-pub fn expand_response_files(diag: &Diagnostics, argv: &[String]) -> Vec<String> {
+pub fn expand_response_files(argv: &[String]) -> Vec<String> {
     let mut args = Vec::new();
     for arg in argv {
         if let Some(path) = arg.strip_prefix('@') {
-            args.extend(read_response_file(diag, path, 1));
+            args.extend(read_response_file(path, 1));
         } else {
             args.push(arg.clone());
         }
@@ -824,16 +823,16 @@ fn match_option<'a>(arg: &'a str, name: &str) -> Option<&'a str> {
     arg.strip_prefix(name)
 }
 
-fn parse_hex(diag: &Diagnostics, opt: &str, value: &str) -> u64 {
+fn parse_hex(opt: &str, value: &str) -> u64 {
     let digits = value
         .strip_prefix("0x")
         .or_else(|| value.strip_prefix("0X"))
         .unwrap_or(value);
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
-        fatal!(diag, "option -{opt}: not a hexadecimal number");
+        fatal!("option -{opt}: not a hexadecimal number");
     }
     u64::from_str_radix(digits, 16)
-        .unwrap_or_else(|_| fatal!(diag, "option -{opt}: not a hexadecimal number"))
+        .unwrap_or_else(|_| fatal!("option -{opt}: not a hexadecimal number"))
 }
 
 /// Parses an integer in C syntax (decimal, `0x` hex or leading-zero octal).
@@ -847,13 +846,13 @@ fn parse_c_number(s: &str) -> Option<u64> {
     }
 }
 
-fn parse_number(diag: &Diagnostics, opt: &str, value: &str) -> i64 {
+fn parse_number(opt: &str, value: &str) -> i64 {
     let (negative, digits) = match value.strip_prefix('-') {
         Some(rest) => (true, rest),
         None => (false, value),
     };
-    let n = parse_c_number(digits)
-        .unwrap_or_else(|| fatal!(diag, "option -{opt}: not a number: {value}")) as i64;
+    let n = parse_c_number(digits).unwrap_or_else(|| fatal!("option -{opt}: not a number: {value}"))
+        as i64;
     if negative {
         -n
     } else {
@@ -869,12 +868,12 @@ fn from_hex(c: u8) -> u8 {
     }
 }
 
-fn parse_hex_build_id(diag: &Diagnostics, arg: &str) -> Vec<u8> {
+fn parse_hex_build_id(arg: &str) -> Vec<u8> {
     let digits = arg
         .strip_prefix("0x")
         .or_else(|| arg.strip_prefix("0X"))
         .filter(|d| !d.is_empty() && d.len() % 2 == 0 && d.bytes().all(|b| b.is_ascii_hexdigit()))
-        .unwrap_or_else(|| fatal!(diag, "invalid build-id: {arg}"));
+        .unwrap_or_else(|| fatal!("invalid build-id: {arg}"));
     digits
         .as_bytes()
         .chunks(2)
@@ -882,7 +881,7 @@ fn parse_hex_build_id(diag: &Diagnostics, arg: &str) -> Vec<u8> {
         .collect()
 }
 
-fn parse_package_metadata(diag: &Diagnostics, arg: &str) -> String {
+fn parse_package_metadata(arg: &str) -> String {
     let bytes = arg.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
@@ -892,7 +891,7 @@ fn parse_package_metadata(diag: &Diagnostics, arg: &str) -> String {
                 || !bytes[i + 1].is_ascii_hexdigit()
                 || !bytes[i + 2].is_ascii_hexdigit()
             {
-                fatal!(diag, "--package-metadata: invalid string: {arg}");
+                fatal!("--package-metadata: invalid string: {arg}");
             }
             out.push((from_hex(bytes[i + 1]) << 4) | from_hex(bytes[i + 2]));
             i += 3;
@@ -904,8 +903,8 @@ fn parse_package_metadata(diag: &Diagnostics, arg: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn read_retain_symbols_file(diag: &Diagnostics, path: &str) -> Vec<String> {
-    let mf = MappedFile::must_open(diag, path);
+fn read_retain_symbols_file(path: &str) -> Vec<String> {
+    let mf = MappedFile::must_open(path);
     String::from_utf8_lossy(mf.data())
         .lines()
         .map(|line| line.trim_matches(|c| c == ' ' || c == '\t'))
@@ -914,7 +913,7 @@ fn read_retain_symbols_file(diag: &Diagnostics, path: &str) -> Vec<String> {
         .collect()
 }
 
-fn parse_section_order(diag: &Diagnostics, arg: &str) -> Vec<SectionOrder> {
+fn parse_section_order(arg: &str) -> Vec<SectionOrder> {
     let parse_value = |s: &str| -> Option<u64> {
         if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
             u64::from_str_radix(hex, 16).ok()
@@ -957,7 +956,7 @@ fn parse_section_order(diag: &Diagnostics, arg: &str) -> Vec<SectionOrder> {
             order.kind = SectionOrderKind::Section;
             order.name = tok.to_string();
         } else {
-            fatal!(diag, "--section-order: parse error: {arg}");
+            fatal!("--section-order: parse error: {arg}");
         }
         orders.push(order);
     }
@@ -968,20 +967,17 @@ fn parse_section_order(diag: &Diagnostics, arg: &str) -> Vec<SectionOrder> {
             if is_first {
                 is_first = false;
             } else if order.name == "EHDR" {
-                fatal!(
-                    diag,
-                    "--section-order: EHDR must be the first section specifier: {arg}"
-                );
+                fatal!("--section-order: EHDR must be the first section specifier: {arg}");
             }
         }
     }
     orders
 }
 
-fn parse_defsym_value(diag: &Diagnostics, s: &str) -> DefsymValue {
+fn parse_defsym_value(s: &str) -> DefsymValue {
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         let Ok(v) = u64::from_str_radix(hex, 16) else {
-            fatal!(diag, "-defsym: not a number: {s}");
+            fatal!("-defsym: not a number: {s}");
         };
         return DefsymValue::Addr(v);
     }
@@ -1022,7 +1018,7 @@ pub struct ParsedArgs {
 }
 
 /// Parses all options. `cmdline` includes the program name.
-pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
+pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     // Input file arguments are turned into ReaderJobs for
     // read_input_files(). rctx tracks the reader state options, such as
     // --as-needed, that apply to the files after them; each job gets a
@@ -1034,10 +1030,10 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
     let mut visited_libs: HashSet<String> = HashSet::new();
 
     a.color_diagnostics = stderr_is_tty();
-    diag.set_color(a.color_diagnostics);
-    diag.set_fatal_warnings(a.fatal_warnings);
-    diag.set_suppress_warnings(a.suppress_warnings);
-    diag.set_noinhibit_exec(a.noinhibit_exec);
+    crate::error::set_color(a.color_diagnostics);
+    crate::error::set_fatal_warnings(a.fatal_warnings);
+    crate::error::set_suppress_warnings(a.suppress_warnings);
+    crate::error::set_noinhibit_exec(a.noinhibit_exec);
     crate::error::set_demangle(a.demangle);
     a.page_size = target.page_size;
 
@@ -1080,7 +1076,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                 None => false,
                 Some(rest) if rest.is_empty() => {
                     if i + 1 == cmdline.len() {
-                        fatal!(diag, "option -{name}: argument missing");
+                        fatal!("option -{name}: argument missing");
                     }
                     arg = cmdline[i + 1].clone();
                     i += 2;
@@ -1177,7 +1173,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         }
 
         if read_flag!("help") {
-            out!(diag, "Usage: {} [options] file...\n{}", cmdline[0], HELP);
+            out!("Usage: {} [options] file...\n{}", cmdline[0], HELP);
             std::process::exit(0);
         }
 
@@ -1188,15 +1184,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_flag!("no-dynamic-linker") {
             a.dynamic_linker.clear();
         } else if read_flag!("v") {
-            out!(diag, "{VERSION}");
+            out!("{VERSION}");
             version_shown = true;
         } else if read_flag!("version") {
-            out!(diag, "{VERSION}");
+            out!("{VERSION}");
             std::process::exit(0);
         } else if read_flag!("V") {
-            out!(
-                diag,
-                "{VERSION}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
+            out!("{VERSION}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
                  aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
                  elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
                  elf64_s390\n   elf64_sparc\n   m68kelf\n   shlelf_linux\n   shelf_linux\n   \
@@ -1208,7 +1202,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_arg!("m") {
             match arch::emulation_to_target(&arg) {
                 Some(name) => a.emulation = name.to_string(),
-                None => fatal!(diag, "unknown -m argument: {arg}"),
+                None => fatal!("unknown -m argument: {arg}"),
             }
         } else if read_flag!("end-lib") {
             rctx.in_lib = false;
@@ -1249,9 +1243,9 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_flag!("shared") || read_flag!("Bshareable") {
             a.shared = true;
         } else if read_arg!("spare-dynamic-tags") {
-            a.spare_dynamic_tags = parse_number(diag, "spare-dynamic-tags", &arg);
+            a.spare_dynamic_tags = parse_number("spare-dynamic-tags", &arg);
         } else if read_arg!("spare-program-headers") {
-            a.spare_program_headers = parse_number(diag, "spare-program-headers", &arg);
+            a.spare_program_headers = parse_number("spare-program-headers", &arg);
         } else if read_flag!("start-lib") {
             rctx.in_lib = true;
         } else if read_flag!("start-stop") {
@@ -1260,10 +1254,10 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.dependency_file = arg.clone();
         } else if read_arg!("defsym") {
             let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!(diag, "-defsym: syntax error: {arg}");
+                fatal!("-defsym: syntax error: {arg}");
             };
             a.defsyms
-                .push((name.to_string(), parse_defsym_value(diag, value)));
+                .push((name.to_string(), parse_defsym_value(value)));
         } else if read_flag!(":lto-pass2") {
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file") {
@@ -1282,12 +1276,12 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.default_symver = true;
         } else if read_flag!("noinhibit-exec") {
             a.noinhibit_exec = true;
-            diag.set_noinhibit_exec(true);
+            crate::error::set_noinhibit_exec(true);
         } else if read_flag!("shuffle-sections") {
             a.shuffle_sections = ShuffleSectionsKind::Shuffle;
         } else if read_eq!("shuffle-sections") {
             a.shuffle_sections = ShuffleSectionsKind::Shuffle;
-            shuffle_sections_seed = Some(parse_number(diag, "shuffle-sections", &arg) as u64);
+            shuffle_sections_seed = Some(parse_number("shuffle-sections", &arg) as u64);
         } else if read_flag!("reverse-sections") {
             a.shuffle_sections = ShuffleSectionsKind::Reverse;
         } else if read_flag!("rosegment") {
@@ -1297,26 +1291,26 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_arg!("y") || read_arg!("trace-symbol") {
             a.trace_symbol.push(arg.clone());
         } else if read_arg!("filler") {
-            a.filler = Some(parse_hex(diag, "filler", &arg) as u8);
+            a.filler = Some(parse_hex("filler", &arg) as u8);
         } else if read_arg!("L") || read_arg!("library-path") {
             a.library_paths.push(arg.clone());
         } else if read_arg!("sysroot") {
             a.sysroot = arg.clone();
         } else if read_arg!("unique") {
             if !a.unique.add(arg.as_bytes(), 1) {
-                fatal!(diag, "-unique: invalid glob pattern: {arg}");
+                fatal!("-unique: invalid glob pattern: {arg}");
             }
         } else if read_arg!("unresolved-symbols") {
             match arg.as_str() {
                 "report-all" | "ignore-in-shared-libs" => report_undefined = Some(true),
                 "ignore-all" | "ignore-in-object-files" => report_undefined = Some(false),
-                _ => fatal!(diag, "unknown --unresolved-symbols argument: {arg}"),
+                _ => fatal!("unknown --unresolved-symbols argument: {arg}"),
             }
         } else if read_arg!("undefined") || read_arg!("u") {
             a.undefined.push(arg.clone());
         } else if read_arg!("undefined-glob") {
             if !a.undefined_glob.add(arg.as_bytes(), 0) {
-                fatal!(diag, "--undefined-glob: invalid pattern: {arg}");
+                fatal!("--undefined-glob: invalid pattern: {arg}");
             }
         } else if read_arg!("require-defined") {
             a.require_defined.push(arg.clone());
@@ -1342,7 +1336,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                     a.hash_style_sysv = false;
                     a.hash_style_gnu = false;
                 }
-                _ => fatal!(diag, "invalid --hash-style argument: {arg}"),
+                _ => fatal!("invalid --hash-style argument: {arg}"),
             }
         } else if read_arg!("soname") || read_arg!("h") {
             a.soname = arg.clone();
@@ -1407,7 +1401,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_flag!("no-use-android-relr-tags") {
             a.use_android_relr_tags = false;
         } else if read_arg!("package-metadata") {
-            a.package_metadata = parse_package_metadata(diag, &arg);
+            a.package_metadata = parse_package_metadata(&arg);
         } else if read_flag!("stats") {
             a.stats = true;
             Counter::enable();
@@ -1417,13 +1411,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.chroot = arg.clone();
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
             a.color_diagnostics = stderr_is_tty();
-            diag.set_color(a.color_diagnostics);
+            crate::error::set_color(a.color_diagnostics);
         } else if read_flag!("color-diagnostics=always") {
             a.color_diagnostics = true;
-            diag.set_color(true);
+            crate::error::set_color(true);
         } else if read_flag!("color-diagnostics=never") {
             a.color_diagnostics = false;
-            diag.set_color(false);
+            crate::error::set_color(false);
         } else if read_flag!("warn-common") {
             a.warn_common = true;
         } else if read_flag!("no-warn-common") {
@@ -1455,27 +1449,23 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                 "none" => a.compress_debug_sections = ELFCOMPRESS_NONE,
                 s if s.starts_with("zlib:") => {
                     a.compress_debug_sections = ELFCOMPRESS_ZLIB;
-                    let level = parse_number(diag, "compress-debug-sections", &s[5..]);
+                    let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(0..=9).contains(&level) {
-                        fatal!(
-                            diag,
-                            "invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
+                        fatal!("invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
                         );
                     }
                     a.compress_debug_sections_level = level;
                 }
                 s if s.starts_with("zstd:") => {
                     a.compress_debug_sections = ELFCOMPRESS_ZSTD;
-                    let level = parse_number(diag, "compress-debug-sections", &s[5..]);
+                    let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(1..=22).contains(&level) {
-                        fatal!(
-                            diag,
-                            "invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
+                        fatal!("invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
                         );
                     }
                     a.compress_debug_sections_level = level;
                 }
-                _ => fatal!(diag, "invalid --compress-debug-sections argument: {arg}"),
+                _ => fatal!("invalid --compress-debug-sections argument: {arg}"),
             }
         } else if read_arg!("wrap") {
             a.wrap.insert(arg.clone());
@@ -1486,39 +1476,39 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.omagic = false;
         } else if read_arg!("oformat") {
             if arg != "binary" {
-                fatal!(diag, "-oformat: {arg} is not supported");
+                fatal!("-oformat: {arg} is not supported");
             }
             a.oformat_binary = true;
         } else if read_arg!("retain-symbols-file") {
-            a.retain_symbols_file = Some(read_retain_symbols_file(diag, &arg));
+            a.retain_symbols_file = Some(read_retain_symbols_file(&arg));
         } else if read_arg!("section-align") {
             let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!(diag, "--section-align: syntax error: {arg}");
+                fatal!("--section-align: syntax error: {arg}");
             };
-            let value = parse_number(diag, "section-align", value);
+            let value = parse_number("section-align", value);
             if value <= 0 || !(value as u64).is_power_of_two() {
-                fatal!(diag, "--section-align={arg}: value must be a power of 2");
+                fatal!("--section-align={arg}: value must be a power of 2");
             }
             a.section_align.insert(name.to_string(), value as u64);
         } else if read_arg!("section-start") {
             let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!(diag, "--section-start: syntax error: {arg}");
+                fatal!("--section-start: syntax error: {arg}");
             };
             a.section_start
-                .insert(name.to_string(), parse_hex(diag, "section-start", value));
+                .insert(name.to_string(), parse_hex("section-start", value));
         } else if read_arg!("section-order") {
-            a.section_order = parse_section_order(diag, &arg);
+            a.section_order = parse_section_order(&arg);
         } else if read_arg!("Tbss") {
             a.section_start
-                .insert(".bss".to_string(), parse_hex(diag, "Tbss", &arg));
+                .insert(".bss".to_string(), parse_hex("Tbss", &arg));
         } else if read_arg!("Tdata") {
             a.section_start
-                .insert(".data".to_string(), parse_hex(diag, "Tdata", &arg));
+                .insert(".data".to_string(), parse_hex("Tdata", &arg));
         } else if read_arg!("Ttext") {
             a.section_start
-                .insert(".text".to_string(), parse_hex(diag, "Ttext", &arg));
+                .insert(".text".to_string(), parse_hex("Ttext", &arg));
         } else if read_arg!("Ttext-segment") {
-            a.ttext_segment = Some(parse_number(diag, "Ttext-segment", &arg) as u64);
+            a.ttext_segment = Some(parse_number("Ttext-segment", &arg) as u64);
         } else if read_flag!("repro") {
             a.repro = true;
         } else if read_z_flag!("now") {
@@ -1536,9 +1526,9 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_z_flag!("execstack-if-needed") {
             a.z_execstack_if_needed = true;
         } else if read_z_arg!("max-page-size") {
-            a.page_size = parse_number(diag, "-z max-page-size", &arg) as u64;
+            a.page_size = parse_number("-z max-page-size", &arg) as u64;
             if !a.page_size.is_power_of_two() {
-                fatal!(diag, "-z max-page-size {arg}: value must be a power of 2");
+                fatal!("-z max-page-size {arg}: value must be a power of 2");
             }
         } else if read_z_flag!("start-stop-visibility=protected") {
             a.z_start_stop_visibility_protected = true;
@@ -1598,7 +1588,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_z_flag!("noseparate-code") {
             z_separate_code = Some(SeparateCodeKind::NoSeparateCode);
         } else if read_z_arg!("stack-size") {
-            a.z_stack_size = parse_number(diag, "-z stack-size", &arg) as u64;
+            a.z_stack_size = parse_number("-z stack-size", &arg) as u64;
         } else if read_z_flag!("dynamic-undefined-weak") {
             z_dynamic_undefined_weak = Some(true);
         } else if read_z_flag!("nodynamic-undefined-weak") {
@@ -1617,10 +1607,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
         } else if read_z_flag!("rewrite-endbr") {
             if !target.is_x86_64 && !target.is_arm64 {
-                fatal!(
-                    diag,
-                    "-z rewrite-endbr is supported only on x86-64 and arm64"
-                );
+                fatal!("-z rewrite-endbr is supported only on x86-64 and arm64");
             }
             a.z_rewrite_endbr = true;
         } else if read_z_flag!("norewrite-endbr") {
@@ -1631,13 +1618,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.nmagic = false;
         } else if read_flag!("fatal-warnings") {
             a.fatal_warnings = true;
-            diag.set_fatal_warnings(true);
+            crate::error::set_fatal_warnings(true);
         } else if read_flag!("no-fatal-warnings") {
             a.fatal_warnings = false;
-            diag.set_fatal_warnings(false);
+            crate::error::set_fatal_warnings(false);
         } else if read_flag!("w") || read_flag!("no-warnings") {
             a.suppress_warnings = true;
-            diag.set_suppress_warnings(true);
+            crate::error::set_suppress_warnings(true);
         } else if read_flag!("fork") {
             a.fork = true;
         } else if read_flag!("no-fork") {
@@ -1664,16 +1651,16 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                 }
                 "safe" => a.icf = true,
                 "none" => a.icf = false,
-                _ => fatal!(diag, "unknown --icf argument: {arg}"),
+                _ => fatal!("unknown --icf argument: {arg}"),
             }
         } else if read_flag!("no-icf") {
             a.icf = false;
         } else if read_flag!("ignore-data-address-equality") {
             a.ignore_data_address_equality = true;
         } else if read_arg!("image-base") {
-            a.image_base = parse_number(diag, "image-base", &arg) as u64;
+            a.image_base = parse_number("image-base", &arg) as u64;
         } else if read_arg!("physical-image-base") {
-            a.physical_image_base = Some(parse_number(diag, "physical-image-base", &arg) as u64);
+            a.physical_image_base = Some(parse_number("physical-image-base", &arg) as u64);
         } else if read_flag!("print-icf-sections") {
             a.print_icf_sections = "-".to_string();
         } else if read_eq!("print-icf-sections") {
@@ -1748,13 +1735,13 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_arg!("thinlto-jobs") {
             a.plugin_opt.push(format!("jobs={arg}"));
         } else if read_arg!("thread-count") {
-            a.thread_count = Some(parse_number(diag, "thread-count", &arg).max(1) as usize);
+            a.thread_count = Some(parse_number("thread-count", &arg).max(1) as usize);
         } else if read_flag!("threads") {
             a.thread_count = None;
         } else if read_flag!("no-threads") {
             a.thread_count = Some(1);
         } else if read_eq!("threads") {
-            a.thread_count = Some(parse_number(diag, "threads", &arg).max(1) as usize);
+            a.thread_count = Some(parse_number("threads", &arg).max(1) as usize);
         } else if read_flag!("discard-all") || read_flag!("x") {
             a.discard_all = true;
         } else if read_flag!("discard-locals") || read_flag!("X") {
@@ -1774,10 +1761,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             add_rpath(&mut a, &mut rpaths, &arg);
         } else if read_arg!("R") {
             if crate::mapped_file::is_file(&arg) {
-                fatal!(
-                    diag,
-                    "-R{arg}: -R as an alias for --just-symbols is not supported"
-                );
+                fatal!("-R{arg}: -R as an alias for --just-symbols is not supported");
             }
             add_rpath(&mut a, &mut rpaths, &arg);
         } else if read_flag!("undefined-version") {
@@ -1805,9 +1789,9 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
                 }
                 s if s.starts_with("0x") || s.starts_with("0X") => {
                     a.build_id.kind = BuildIdKind::Hex;
-                    a.build_id.value = parse_hex_build_id(diag, s);
+                    a.build_id.value = parse_hex_build_id(s);
                 }
-                _ => fatal!(diag, "invalid --build-id argument: {arg}"),
+                _ => fatal!("invalid --build-id argument: {arg}"),
             }
         } else if read_flag!("no-build-id") {
             a.build_id.kind = BuildIdKind::None;
@@ -1817,13 +1801,11 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
             a.be8 = false;
         } else if read_arg!("format") || read_arg!("b") {
             if arg == "binary" {
-                fatal!(
-                    diag,
-                    "mold does not support `-b binary`. If you want to convert a binary file into an \
+                fatal!("mold does not support `-b binary`. If you want to convert a binary file into an \
                      object file, use `objcopy -I binary -O default <input-file> <output-file.o>` instead."
                 );
             }
-            fatal!(diag, "unknown command line option: -b {arg}");
+            fatal!("unknown command line option: -b {arg}");
         } else if read_arg!("fuse-ld") {
         } else if read_arg!("auxiliary") || read_arg!("f") {
             a.auxiliary.push(arg.clone());
@@ -1919,20 +1901,18 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         } else if read_flag!("pop-state") {
             rctx = rctx_stack
                 .pop()
-                .unwrap_or_else(|| fatal!(diag, "no state pushed before popping"));
+                .unwrap_or_else(|| fatal!("no state pushed before popping"));
         } else if cmdline[i].starts_with("-z") && cmdline[i].len() > 2 {
-            warn!(diag, "unknown command line option: {}", cmdline[i]);
+            warn!("unknown command line option: {}", cmdline[i]);
             i += 1;
         } else if cmdline[i] == "-z" && i + 1 < cmdline.len() {
-            warn!(diag, "unknown command line option: -z {}", cmdline[i + 1]);
+            warn!("unknown command line option: -z {}", cmdline[i + 1]);
             i += 2;
         } else if cmdline[i] == "-dynamic" {
-            fatal!(
-                diag,
-                "unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
+            fatal!("unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
         } else {
-            fatal!(diag, "unknown command line option: {}", cmdline[i]);
+            fatal!("unknown command line option: {}", cmdline[i]);
         }
     }
 
@@ -1947,7 +1927,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
 
     if !a.directory.is_empty() {
         if let Err(e) = std::env::set_current_dir(&a.directory) {
-            fatal!(diag, "chdir failed: {}: {e}", a.directory);
+            fatal!("chdir failed: {}: {e}", a.directory);
         }
     }
 
@@ -1973,7 +1953,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
 
     if let Some(val) = a.ttext_segment {
         if val % a.page_size != 0 {
-            warn!(diag, "-Ttext-segment is not a multiple of page size: {val}");
+            warn!("-Ttext-segment is not a multiple of page size: {val}");
         }
         a.image_base = align_down(val, a.page_size);
     } else if a.pic {
@@ -2030,10 +2010,10 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
 
     if !a.shared {
         if !a.filter.is_empty() {
-            fatal!(diag, "-filter may not be used without -shared");
+            fatal!("-filter may not be used without -shared");
         }
         if !a.auxiliary.is_empty() {
-            fatal!(diag, "-auxiliary may not be used without -shared");
+            fatal!("-auxiliary may not be used without -shared");
         }
     }
 
@@ -2042,23 +2022,22 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
     // to handle it as an exception.
     if (!target.is_rela || target.is_sh4) && !a.apply_dynamic_relocs {
         fatal!(
-            diag,
             "--no-apply-dynamic-relocs may not be used on {}",
             target.name
         );
     }
     if target.is_sparc && a.apply_dynamic_relocs {
-        fatal!(diag, "--apply-dynamic-relocs may not be used on SPARC64");
+        fatal!("--apply-dynamic-relocs may not be used on SPARC64");
     }
 
     if !a.section_start.is_empty() && !a.section_order.is_empty() {
-        fatal!(diag, "--section-start may not be used with --section-order");
+        fatal!("--section-start may not be used with --section-order");
     }
     if a.image_base % a.page_size != 0 {
-        fatal!(diag, "-image-base must be a multiple of -max-page-size");
+        fatal!("-image-base must be a multiple of -max-page-size");
     }
     if a.emulation == "arm32be" && !a.be8 {
-        fatal!(diag, "--be32 is not supported");
+        fatal!("--be32 is not supported");
     }
 
     if std::env::var("MOLD_REPRO").is_ok_and(|v| !v.is_empty()) {

@@ -18,7 +18,6 @@ use memmap2::MmapMut;
 #[cfg(not(windows))]
 use memmap2::MmapOptions;
 
-use crate::error::Diagnostics;
 use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.
@@ -187,13 +186,7 @@ impl OutputFile {
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
     /// at the end.
-    pub fn open(
-        diag: &Diagnostics,
-        path: &str,
-        size: u64,
-        perm: u32,
-        overwrite_in_place: bool,
-    ) -> OutputFile {
+    pub fn open(path: &str, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
         let is_special = path == "-" || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
         if is_special {
             return OutputFile {
@@ -241,14 +234,14 @@ impl OutputFile {
                 .create(true)
                 .truncate(true)
                 .open(&tmp)
-                .unwrap_or_else(|e| fatal!(diag, "cannot open {}: {e}", tmp.display()))
+                .unwrap_or_else(|e| fatal!("cannot open {}: {e}", tmp.display()))
         });
         *TMPFILE.lock().unwrap() = Some(tmp.clone());
 
         set_permissions(&file, perm)
-            .unwrap_or_else(|e| fatal!(diag, "{}: fchmod failed: {e}", tmp.display()));
+            .unwrap_or_else(|e| fatal!("{}: fchmod failed: {e}", tmp.display()));
         file.set_len(size)
-            .unwrap_or_else(|e| fatal!(diag, "{}: ftruncate failed: {e}", tmp.display()));
+            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
         preallocate(&file, size);
 
         let storage = map_file(&file, size);
@@ -271,13 +264,13 @@ impl OutputFile {
     /// made unusable right away so that a stale one isn't picked up by
     /// accident; [`Self::resize`] gives it its size.
     #[cfg(not(windows))]
-    pub fn open_locked(diag: &Diagnostics, path: &str, perm: u32) -> OutputFile {
+    pub fn open_locked(path: &str, perm: u32) -> OutputFile {
         let mut file = open_options(perm)
             .read(true)
             .write(true)
             .create(true)
             .open(path)
-            .unwrap_or_else(|e| fatal!(diag, "cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
         // SAFETY: flock on a valid descriptor.
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_EX);
@@ -286,7 +279,7 @@ impl OutputFile {
         // make the file unusable so that gdb won't use it by accident until
         // it's ready.
         file.write_all(&[0; 256])
-            .unwrap_or_else(|e| fatal!(diag, "{path}: write failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
         OutputFile {
             path: path.to_string(),
             tmp_path: None,
@@ -297,18 +290,18 @@ impl OutputFile {
     }
 
     #[cfg(windows)]
-    pub fn open_locked(diag: &Diagnostics, _path: &str, _perm: u32) -> OutputFile {
-        fatal!(diag, "LockingOutputFile is not supported on Windows");
+    pub fn open_locked(_path: &str, _perm: u32) -> OutputFile {
+        fatal!("LockingOutputFile is not supported on Windows");
     }
 
     /// Sets the size of a file opened with [`Self::open_locked`].
-    pub fn resize(&mut self, diag: &Diagnostics, size: u64) {
+    pub fn resize(&mut self, size: u64) {
         let file = self
             .file
             .as_ref()
             .expect("resizing an output file that isn't a file");
         file.set_len(size)
-            .unwrap_or_else(|e| fatal!(diag, "{}: ftruncate failed: {e}", self.path));
+            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path));
         // As in MemoryMappedOutputFile, we map the file with twice as much
         // address space as its size so that extend() can grow the file into
         // the mapping in place.
@@ -352,13 +345,13 @@ impl OutputFile {
     // it for .gdb_index, whose size is not known until all other
     // sections have been written. The new space is zero-initialized.
     // `buf` and `ctx.buf` may move as a result of this call.
-    pub fn extend(&mut self, diag: &Diagnostics, size: usize) {
+    pub fn extend(&mut self, size: usize) {
         let new_len = self.len() + size;
         match (&mut self.storage, &self.file) {
             (Storage::Memory(vec), _) => vec.resize(new_len, 0),
             (Storage::Mmap { map, len }, Some(file)) => {
                 file.set_len(new_len as u64)
-                    .unwrap_or_else(|e| fatal!(diag, "{}: ftruncate failed: {e}", self.path));
+                    .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path));
                 preallocate(file, new_len as u64);
                 if new_len <= map.len() {
                     *len = new_len;
@@ -380,7 +373,7 @@ impl OutputFile {
 
     /// Finishes writing and moves the file into place. The mapping is
     /// released without waiting for the data to reach the disk.
-    pub fn close(self, diag: &Diagnostics) {
+    pub fn close(self) {
         #[cfg(not(windows))]
         set_output_buffer_range(0, 0);
         match self.storage {
@@ -391,7 +384,7 @@ impl OutputFile {
                     stdout
                         .write_all(&vec)
                         .and_then(|()| stdout.flush())
-                        .unwrap_or_else(|e| fatal!(diag, "write failed: {e}"));
+                        .unwrap_or_else(|e| fatal!("write failed: {e}"));
                     // Close the descriptor too: the parent process may
                     // already have exited, and a program that then runs
                     // the output would fail with ETXTBSY while this
@@ -410,10 +403,10 @@ impl OutputFile {
                         .create(true)
                         .truncate(true)
                         .open(&self.path)
-                        .unwrap_or_else(|e| fatal!(diag, "cannot open {}: {e}", self.path)),
+                        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path)),
                 };
                 file.write_all(&vec)
-                    .unwrap_or_else(|e| fatal!(diag, "{}: write failed: {e}", self.path));
+                    .unwrap_or_else(|e| fatal!("{}: write failed: {e}", self.path));
             }
         }
         if let Some(tmp) = self.tmp_path {
@@ -426,12 +419,7 @@ impl OutputFile {
                 std::mem::forget(old);
             }
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!(
-                    diag,
-                    "cannot rename {} to {}: {e}",
-                    tmp.display(),
-                    self.path
-                )
+                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path)
             });
             *TMPFILE.lock().unwrap() = None;
         }
@@ -497,10 +485,10 @@ pub fn split_ranges<'a>(buf: &'a mut [u8], ranges: &[Range]) -> Vec<&'a mut [u8]
 }
 
 /// Creates a file with the given contents.
-pub fn write_file(diag: &Diagnostics, path: &str, contents: &[u8]) {
-    let mut file = File::create(path).unwrap_or_else(|e| fatal!(diag, "cannot open {path}: {e}"));
+pub fn write_file(path: &str, contents: &[u8]) {
+    let mut file = File::create(path).unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
     file.write_all(contents)
-        .unwrap_or_else(|e| fatal!(diag, "{path}: write failed: {e}"));
+        .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
 }
 
 #[cfg(all(test, not(windows)))]

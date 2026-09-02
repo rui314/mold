@@ -253,11 +253,7 @@ fn find_paired_reloc<E: Arch>(
         }
     }
     let file = &ctx.objs[isec.file.index()];
-    fatal!(
-        ctx,
-        "{}: paired relocation is missing: {i}",
-        isec.display(file)
-    );
+    fatal!("{}: paired relocation is missing: {i}", isec.display(file));
 }
 
 // Returns true if isec's i'th relocation refers to the following
@@ -346,13 +342,10 @@ where
                 ret |= EF_RISCV_RVC;
             }
             if flags & EF_RISCV_FLOAT_ABI != ret & EF_RISCV_FLOAT_ABI {
-                error!(ctx, "{file}: cannot link object files with different floating-point ABI from {first}");
+                error!("{file}: cannot link object files with different floating-point ABI from {first}");
             }
             if flags & EF_RISCV_RVE != ret & EF_RISCV_RVE {
-                error!(
-                    ctx,
-                    "{file}: cannot link object files with different EF_RISCV_RVE from {first}"
-                );
+                error!("{file}: cannot link object files with different EF_RISCV_RVE from {first}");
             }
         }
         ret
@@ -432,7 +425,7 @@ where
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
                 End::write_u32(loc, val.wrapping_sub(p) as u32);
             }
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -501,7 +494,6 @@ where
                 | R_RISCV_SET_ULEB128
                 | R_RISCV_SUB_ULEB128 => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -958,7 +950,6 @@ where
                     overwrite_uleb(loc, cur.wrapping_sub(sa));
                 }
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -1310,14 +1301,13 @@ pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         let attrs = &file.riscv_attributes;
         if let Some(val) = attrs.stack_align {
             if stack.is_some_and(|s| s != val) {
-                error!(ctx, "{file}: stack alignment requirement mistmatch");
+                error!("{file}: stack alignment requirement mistmatch");
             }
             stack = Some(val);
         }
         if let Some(s) = attrs.arch {
             let Some(arch2) = parse_arch_string(s) else {
                 error!(
-                    ctx,
                     "{file}: corrupted .riscv.attributes ISA string: {}",
                     String::from_utf8_lossy(s)
                 );
@@ -1329,7 +1319,6 @@ pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
                 match merge_extensions(&arch, &arch2) {
                     Some(merged) => arch = merged,
                     None => error!(
-                        ctx,
                         "{file}: incompatible .riscv.attributes ISA string: {}",
                         String::from_utf8_lossy(s)
                     ),

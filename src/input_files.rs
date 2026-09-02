@@ -20,7 +20,6 @@ use crate::arch::{Arch, Family};
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::input_sections::{
     CieRecord, FdeRecord, FragmentRef, InputSection, MergeableSection, RelocationSpan, SFrameFde,
     SectionList,
@@ -372,17 +371,13 @@ impl<E: Layout> InputFile<E> {
     }
 
     /// Reads the ELF and section headers.
-    fn parse(
-        diag: &Diagnostics,
-        mf: &'static MappedFile,
-        display: &dyn fmt::Display,
-    ) -> InputFile<E> {
+    fn parse(mf: &'static MappedFile, display: &dyn fmt::Display) -> InputFile<E> {
         let data = mf.data();
         if data.len() < std::mem::size_of::<ElfEhdr<E>>() {
-            fatal!(diag, "{display}: file too small");
+            fatal!("{display}: file too small");
         }
         if !data.starts_with(b"\x7fELF") {
-            fatal!(diag, "{display}: not an ELF file");
+            fatal!("{display}: not an ELF file");
         }
 
         let ehdr = record_from_bytes::<ElfEhdr<E>>(data);
@@ -403,7 +398,6 @@ impl<E: Layout> InputFile<E> {
 
         let Some(shdr_bytes) = data.get(shoff..shoff + num_sections * shdr_size) else {
             fatal!(
-                diag,
                 "{}: e_shoff or e_shnum corrupted: {} {num_sections}",
                 mf.name,
                 data.len()
@@ -426,7 +420,7 @@ impl<E: Layout> InputFile<E> {
         } else {
             ehdr.e_shstrndx.get() as usize
         };
-        file.shstrtab = file.section_contents_checked(diag, shstrtab_idx, display);
+        file.shstrtab = file.section_contents_checked(shstrtab_idx, display);
         file
     }
 
@@ -459,33 +453,23 @@ impl<E: Layout> InputFile<E> {
 
     /// The contents of a section, checked against the file size.
     #[inline]
-    pub fn section_contents(&self, diag: &Diagnostics, idx: usize) -> &'static [u8] {
-        self.section_contents_checked(diag, idx, &self.filename)
+    pub fn section_contents(&self, idx: usize) -> &'static [u8] {
+        self.section_contents_checked(idx, &self.filename)
     }
 
-    fn section_contents_checked(
-        &self,
-        diag: &Diagnostics,
-        idx: usize,
-        display: &dyn fmt::Display,
-    ) -> &'static [u8] {
+    fn section_contents_checked(&self, idx: usize, display: &dyn fmt::Display) -> &'static [u8] {
         if idx >= self.shdrs.len() {
-            fatal!(diag, "{display}: invalid section index: {idx}");
+            fatal!("{display}: invalid section index: {idx}");
         }
         let shdr = &self.shdrs[idx];
         let (sh_offset, sh_size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        self.section_contents_range_checked(diag, sh_offset, sh_size, display)
+        self.section_contents_range_checked(sh_offset, sh_size, display)
     }
 
     /// The contents described by a section header.
     #[inline]
-    pub(crate) fn section_contents_from_shdr(
-        &self,
-        diag: &Diagnostics,
-        shdr: &ElfShdr<E>,
-    ) -> &'static [u8] {
+    pub(crate) fn section_contents_from_shdr(&self, shdr: &ElfShdr<E>) -> &'static [u8] {
         self.section_contents_range_checked(
-            diag,
             shdr.sh_offset.get(),
             shdr.sh_size.get(),
             &self.filename,
@@ -494,7 +478,6 @@ impl<E: Layout> InputFile<E> {
 
     fn section_contents_range_checked(
         &self,
-        diag: &Diagnostics,
         sh_offset: u64,
         sh_size: u64,
         display: &dyn fmt::Display,
@@ -503,10 +486,7 @@ impl<E: Layout> InputFile<E> {
         let start = sh_offset as usize;
         let end = start.saturating_add(sh_size as usize);
         if end > data.len() {
-            fatal!(
-                diag,
-                "{display}: section header is out of range: {sh_offset}"
-            );
+            fatal!("{display}: section header is out of range: {sh_offset}");
         }
         &data[start..end]
     }
@@ -902,15 +882,11 @@ struct CrelReader<'a, E: Layout> {
 }
 
 impl<'a, E: Arch> CrelReader<'a, E> {
-    fn new(diag: &Diagnostics, file: &dyn fmt::Display, mut data: &'a [u8]) -> Self {
+    fn new(file: &dyn fmt::Display, mut data: &'a [u8]) -> Self {
         let hdr = read_uleb(&mut data);
         let is_rela = hdr & 0b100 != 0;
         if is_rela && !E::IS_RELA {
-            fatal!(
-                diag,
-                "{file}: CREL with addends is not supported for {}",
-                E::NAME
-            );
+            fatal!("{file}: CREL with addends is not supported for {}", E::NAME);
         }
         CrelReader {
             data,
@@ -1033,12 +1009,8 @@ impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
 // at the moment.
 //
 // This function converts a CREL relocation table to a regular one.
-fn decode_crel<E: Arch>(
-    diag: &Diagnostics,
-    file: &dyn fmt::Display,
-    data: &[u8],
-) -> Box<[ElfRel<E>]> {
-    let reader = CrelReader::<E>::new(diag, file, data);
+fn decode_crel<E: Arch>(file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel<E>]> {
+    let reader = CrelReader::<E>::new(file, data);
     // Own a fixed-size array without value-initializing trivial elements
     // that the caller is about to overwrite.
     let mut rels = Box::<[ElfRel<E>]>::new_uninit_slice(reader.len());
@@ -1111,11 +1083,11 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
-    pub fn new(diag: &Diagnostics, mf: &'static MappedFile, archive_name: String) -> ObjectFile<E> {
+    pub fn new(mf: &'static MappedFile, archive_name: String) -> ObjectFile<E> {
         let display = FileName(&mf.name, &archive_name);
-        let base = InputFile::<E>::parse(diag, mf, &display);
+        let base = InputFile::<E>::parse(mf, &display);
         let mut file = ObjectFile::with_base(base, archive_name);
-        file.parse_symbols(diag);
+        file.parse_symbols();
         file
     }
 
@@ -1196,11 +1168,7 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Iterates over relocations without materializing a deferred CREL table.
     #[inline(always)]
-    pub(crate) fn relocation_iter<'a>(
-        &'a self,
-        diag: &Diagnostics,
-        relsec_idx: Option<u32>,
-    ) -> RelocationIter<'a, E> {
+    pub(crate) fn relocation_iter<'a>(&'a self, relsec_idx: Option<u32>) -> RelocationIter<'a, E> {
         let Some(relsec_idx) = relsec_idx else {
             return RelocationIter::ordinary(&[]);
         };
@@ -1209,7 +1177,7 @@ impl<E: Arch> ObjectFile<E> {
             && !self.decoded_crel.get(index).is_some_and(Option::is_some)
         {
             let data = self.input_relocation_data(relsec_idx);
-            return RelocationIter::crel(CrelReader::<E>::new(diag, self, data));
+            return RelocationIter::crel(CrelReader::<E>::new(self, data));
         }
 
         RelocationIter::ordinary(self.relocations(Some(relsec_idx)))
@@ -1392,27 +1360,25 @@ impl<E: Arch> ObjectFile<E> {
 
     // Read global symbols before archive extraction so they can participate in
     // symbol resolution without constructing input sections.
-    fn parse_symbols(&mut self, diag: &Diagnostics) {
+    fn parse_symbols(&mut self) {
         if let Some(idx) = self.base.find_section(SHT_SYMTAB) {
             let shdr = &self.base.shdrs[idx];
             // In ELF, all local symbols precede global symbols in the symbol table.
             // sh_info has an index of the first global symbol.
             self.base.first_global = shdr.sh_info.get() as usize;
-            let contents = self.base.section_contents(diag, idx);
+            let contents = self.base.section_contents(idx);
             if !contents
                 .len()
                 .is_multiple_of(std::mem::size_of::<ElfSym<E>>())
             {
-                fatal!(diag, "{self}: corrupted section");
+                fatal!("{self}: corrupted section");
             }
             self.base.elf_syms = Cow::Borrowed(records_from_bytes::<ElfSym<E>>(contents));
-            self.base.symbol_strtab = self
-                .base
-                .section_contents(diag, shdr.sh_link.get() as usize);
+            self.base.symbol_strtab = self.base.section_contents(shdr.sh_link.get() as usize);
             self.base.populate_symbol_name_lengths();
 
             if let Some(idx) = self.base.find_section(SHT_SYMTAB_SHNDX) {
-                let bytes = self.base.section_contents(diag, idx);
+                let bytes = self.base.section_contents(idx);
                 self.symtab_shndx = bytes.chunks_exact(4).map(E::Endian::read_u32).collect();
             }
         }
@@ -1481,7 +1447,7 @@ impl<E: Arch> ObjectFile<E> {
 
     // Read COMDAT groups and detect GCC offload objects. Both affect which input
     // sections can be discarded before LTO.
-    pub fn read_section_metadata(&mut self, diag: &Diagnostics) {
+    pub fn read_section_metadata(&mut self) {
         debug_assert!(!self.sections_parsed);
 
         for i in 0..self.num_elf_sections {
@@ -1502,7 +1468,7 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
             if shdr.sh_info.get() as usize >= self.base.elf_syms.len() {
-                fatal!(diag, "{self}: invalid symbol index");
+                fatal!("{self}: invalid symbol index");
             }
 
             let esym = &self.base.elf_syms[shdr.sh_info.get() as usize];
@@ -1520,16 +1486,16 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
 
-            let contents = self.base.section_contents_from_shdr(diag, shdr);
+            let contents = self.base.section_contents_from_shdr(shdr);
             if contents.len() < 4 {
-                fatal!(diag, "{self}: empty SHT_GROUP");
+                fatal!("{self}: empty SHT_GROUP");
             }
             let kind = E::Endian::read_u32(contents);
             if kind == 0 {
                 continue;
             }
             if kind != GRP_COMDAT {
-                fatal!(diag, "{self}: unsupported SHT_GROUP format");
+                fatal!("{self}: unsupported SHT_GROUP format");
             }
 
             // Ordinary global signatures already have a Symbol. Local, section
@@ -1626,9 +1592,9 @@ impl<E: Arch> ObjectFile<E> {
 
     // <format-version>
     // [ <section-length> "vendor-name" <file-tag> <size> <attribute>*]+ ]*
-    fn read_riscv_attributes(&mut self, diag: &Diagnostics, data: &'static [u8]) {
+    fn read_riscv_attributes(&mut self, data: &'static [u8]) {
         if data.is_empty() {
-            fatal!(diag, "{self}: corrupted .riscv.attributes section");
+            fatal!("{self}: corrupted .riscv.attributes section");
         }
         if data[0] != b'A' {
             return;
@@ -1638,7 +1604,7 @@ impl<E: Arch> ObjectFile<E> {
         while !data.is_empty() {
             let sz = E::Endian::read_u32(data) as usize;
             if data.len() < sz || sz < 4 {
-                fatal!(diag, "{self}: corrupted .riscv.attributes section");
+                fatal!("{self}: corrupted .riscv.attributes section");
             }
             let mut p = &data[4..sz];
             data = &data[sz..];
@@ -1648,7 +1614,7 @@ impl<E: Arch> ObjectFile<E> {
             };
             p = rest;
             if p.first() != Some(&(ELF_TAG_FILE as u8)) {
-                fatal!(diag, "{self}: corrupted .riscv.attributes section");
+                fatal!("{self}: corrupted .riscv.attributes section");
             }
             p = &p[5..]; // skip the tag and the sub-sub-section size
 
@@ -1674,7 +1640,6 @@ impl<E: Arch> ObjectFile<E> {
 
     fn initialize_sections(
         &mut self,
-        diag: &Diagnostics,
         args: &Args,
         id: ObjId,
         section_arena: &crate::input_sections::SectionArena,
@@ -1707,8 +1672,8 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
             if E::IS_RISCV && sh_type == SHT_RISCV_ATTRIBUTES {
-                let contents = self.base.section_contents_from_shdr(diag, shdr);
-                self.read_riscv_attributes(diag, contents);
+                let contents = self.base.section_contents_from_shdr(shdr);
+                self.read_riscv_attributes(contents);
                 continue;
             }
 
@@ -1725,12 +1690,12 @@ impl<E: Arch> ObjectFile<E> {
                         continue;
                     };
                     if target_flags & SHF_ALLOC as u64 != 0 {
-                        let contents = self.base.section_contents_from_shdr(diag, shdr);
+                        let contents = self.base.section_contents_from_shdr(shdr);
                         if !contents
                             .len()
                             .is_multiple_of(std::mem::size_of::<ElfRel<E>>())
                         {
-                            fatal!(diag, "{self}: corrupted section");
+                            fatal!("{self}: corrupted section");
                         }
                         self.num_frag_syms += self.count_frag_syms(rels_from_bytes::<E>(contents));
                     }
@@ -1745,8 +1710,8 @@ impl<E: Arch> ObjectFile<E> {
                     };
                     let target_is_alloc = target_flags & SHF_ALLOC as u64 != 0;
                     if target_is_alloc || args.relocatable || args.emit_relocs {
-                        let contents = self.base.section_contents_from_shdr(diag, shdr);
-                        let decoded = decode_crel::<E>(diag, self, contents);
+                        let contents = self.base.section_contents_from_shdr(shdr);
+                        let decoded = decode_crel::<E>(self, contents);
 
                         // Count the relocations just decoded while they are in cache.
                         if target_is_alloc {
@@ -1760,7 +1725,6 @@ impl<E: Arch> ObjectFile<E> {
                     let name = cstr_at(self.base.shstrtab, shdr.sh_name.get() as usize);
                     if !is_known_section_type::<E>(shdr) {
                         fatal!(
-                            diag,
                             "{self}: {}: unsupported section type: 0x{:x}",
                             util::display(name),
                             shdr.sh_type.get()
@@ -1774,9 +1738,7 @@ impl<E: Arch> ObjectFile<E> {
                     if name == b".note.GNU-stack" && !args.relocatable {
                         if flags & SHF_EXECINSTR as u64 != 0 {
                             if !args.z_execstack && !args.z_execstack_if_needed {
-                                warn!(
-                                    diag,
-                                    "{self}: this file may cause a segmentation fault because it requires an executable stack. See https://github.com/rui314/mold/tree/main/docs/execstack.md for more info."
+                                warn!("{self}: this file may cause a segmentation fault because it requires an executable stack. See https://github.com/rui314/mold/tree/main/docs/execstack.md for more info."
                                 );
                             }
                             self.needs_executable_stack = true;
@@ -1785,7 +1747,7 @@ impl<E: Arch> ObjectFile<E> {
                     }
 
                     if name == b".note.gnu.property" {
-                        let contents = self.base.section_contents_from_shdr(diag, shdr);
+                        let contents = self.base.section_contents_from_shdr(shdr);
                         self.parse_note_gnu_property(contents);
                         continue;
                     }
@@ -1826,7 +1788,7 @@ impl<E: Arch> ObjectFile<E> {
                     if name == b".comment"
                         && self
                             .base
-                            .section_contents_from_shdr(diag, shdr)
+                            .section_contents_from_shdr(shdr)
                             .starts_with(b"rustc ")
                     {
                         self.is_rust_obj = true;
@@ -1840,8 +1802,7 @@ impl<E: Arch> ObjectFile<E> {
                         continue;
                     }
 
-                    let isec =
-                        InputSection::new::<E>(diag, self, id, i as u32, shdr, BStr::new(name));
+                    let isec = InputSection::new::<E>(self, id, i as u32, shdr, BStr::new(name));
 
                     // Save .llvm_addrsig for --icf=safe.
                     if shdr.sh_type.get() == SHT_LLVM_ADDRSIG && !args.relocatable {
@@ -1898,9 +1859,7 @@ impl<E: Arch> ObjectFile<E> {
                             // It exists only in DWARF 4, has been removed in DWARF 5 and neither
                             // GCC nor Clang generate it by default (-fdebug-types-section is
                             // needed). As such there is probably little need to support it.
-                            fatal!(
-                                diag,
-                                "{self}: mold's --gdb-index is not compatible with .debug_types; to fix this error, remove -fdebug-types-section and recompile"
+                            fatal!("{self}: mold's --gdb-index is not compatible with .debug_types; to fix this error, remove -fdebug-types-section and recompile"
                             );
                         }
                     }
@@ -1929,8 +1888,8 @@ impl<E: Arch> ObjectFile<E> {
                 if let Some(Some(decoded)) = self.decoded_crel.get(i) {
                     !decoded.is_empty()
                 } else {
-                    let contents = self.base.section_contents_from_shdr(diag, shdr);
-                    CrelReader::<E>::new(diag, self, contents).len() != 0
+                    let contents = self.base.section_contents_from_shdr(shdr);
+                    CrelReader::<E>::new(self, contents).len() != 0
                 }
             } else {
                 shdr.sh_size.get() != 0
@@ -1988,7 +1947,6 @@ impl<E: Arch> ObjectFile<E> {
     // them too so a different copy can become live.
     pub(crate) fn parse_sections(
         &mut self,
-        diag: &Diagnostics,
         args: &Args,
         id: ObjId,
         section_arena: &crate::input_sections::SectionArena,
@@ -2017,8 +1975,8 @@ impl<E: Arch> ObjectFile<E> {
         // symbol-table length.
         unsafe {
             allocator.allocate(count, |base_id, slots| {
-                self.initialize_sections(diag, args, id, section_arena);
-                self.initialize_local_symbols(diag, id, base_id, slots);
+                self.initialize_sections(args, id, section_arena);
+                self.initialize_local_symbols(id, base_id, slots);
                 self.sort_relocations();
                 self.sections_parsed = true;
             });
@@ -2042,14 +2000,13 @@ impl<E: Arch> ObjectFile<E> {
     /// initialized, those left over with blank symbols.
     pub fn initialize_local_symbols(
         &mut self,
-        diag: &Diagnostics,
         id: ObjId,
         base_id: SymbolId,
         slots: &mut [MaybeUninit<Symbol>],
     ) {
         let mut next = 0;
         if !slots.is_empty() && !self.base.elf_syms.is_empty() {
-            next = self.initialize_local_symbols_into(diag, id, base_id, slots);
+            next = self.initialize_local_symbols_into(id, base_id, slots);
         }
         for slot in &mut slots[next..] {
             slot.write(Symbol::new(BStr::new(b"")));
@@ -2059,7 +2016,6 @@ impl<E: Arch> ObjectFile<E> {
     /// Returns the number of slots written.
     fn initialize_local_symbols_into(
         &mut self,
-        diag: &Diagnostics,
         id: ObjId,
         base_id: SymbolId,
         slots: &mut [MaybeUninit<Symbol>],
@@ -2076,7 +2032,7 @@ impl<E: Arch> ObjectFile<E> {
         for i in 1..self.base.first_global {
             let esym = &self.base.elf_syms[i];
             if esym.is_common() {
-                fatal!(diag, "{self}: common local symbol?");
+                fatal!("{self}: common local symbol?");
             }
             if self.is_discarded_comdat_sym(i, esym) {
                 self.base.symbols[i] = SymbolId::DISCARDED_COMDAT;
@@ -2143,7 +2099,7 @@ impl<E: Arch> ObjectFile<E> {
     //   In order to create .eh_frame_hdr, linker has to read .eh_frame.
     //
     // This function parses an input .eh_frame section.
-    pub fn parse_ehframe(&mut self, diag: &Diagnostics) {
+    pub fn parse_ehframe(&mut self) {
         let eh_frame_sections = std::mem::take(&mut self.eh_frame_sections);
         for &shndx in &eh_frame_sections {
             let isec = self.section_at(shndx);
@@ -2185,12 +2141,8 @@ impl<E: Arch> ObjectFile<E> {
                         fde_ptr_size: 0,
                         is_leader: false,
                     };
-                    cie.fde_ptr_size = parse_fde_encoding::<E>(
-                        diag,
-                        self,
-                        isec,
-                        &contents[begin_offset..end_offset],
-                    );
+                    cie.fde_ptr_size =
+                        parse_fde_encoding::<E>(self, isec, &contents[begin_offset..end_offset]);
                     new_cies.push(cie);
                 } else {
                     // This is FDE.
@@ -2202,7 +2154,6 @@ impl<E: Arch> ObjectFile<E> {
                     }
                     if rels[rel_begin].r_offset() as usize - begin_offset != 8 {
                         fatal!(
-                            diag,
                             "{}: FDE's first relocation should have offset 8",
                             isec.display(self)
                         );
@@ -2227,7 +2178,7 @@ impl<E: Arch> ObjectFile<E> {
                     .iter()
                     .position(|c| c.input_offset as i64 == target)
                 else {
-                    fatal!(diag, "{}: bad FDE pointer", isec.display(self));
+                    fatal!("{}: bad FDE pointer", isec.display(self));
                 };
                 fde.cie_idx = (cies_begin + ci) as u16;
             }
@@ -2293,7 +2244,7 @@ impl<E: Arch> ObjectFile<E> {
     // FDE's func_start, which points to the function the FDE describes; we
     // use it both to find the function (for garbage collection and to obtain
     // its output address) and to re-emit a PC-relative offset.
-    pub fn parse_sframe(&mut self, diag: &Diagnostics) {
+    pub fn parse_sframe(&mut self) {
         let Some(abi) = E::SFRAME_ABI else {
             return;
         };
@@ -2306,15 +2257,14 @@ impl<E: Arch> ObjectFile<E> {
             let data = isec.contents();
 
             if data.len() < SFrameHeader::<E>::size() {
-                fatal!(diag, "{}: corrupted .sframe section", isec.display(self));
+                fatal!("{}: corrupted .sframe section", isec.display(self));
             }
             let hdr = SFrameHeader::<E>::parse(data);
             if hdr.magic.get() != SFRAME_MAGIC {
-                fatal!(diag, "{}: corrupted .sframe section", isec.display(self));
+                fatal!("{}: corrupted .sframe section", isec.display(self));
             }
             if hdr.abi_arch != abi {
                 fatal!(
-                    diag,
                     "{}: .sframe is incompatible with {}",
                     isec.display(self),
                     E::NAME
@@ -2373,7 +2323,6 @@ impl<E: Arch> ObjectFile<E> {
         &mut self,
         ctx_args: &Args,
         merged: &RwLock<Vec<MergedSection<E>>>,
-        diag: &Diagnostics,
     ) {
         let mut sections = std::mem::take(&mut self.sections);
         for i in 0..sections.len() {
@@ -2392,7 +2341,7 @@ impl<E: Arch> ObjectFile<E> {
             sections
                 .regular_section_mut(i)
                 .expect("a regular section")
-                .uncompress::<E>(diag, self, name, self.base.shdrs[i].sh_size.get() as usize);
+                .uncompress::<E>(self, name, self.base.shdrs[i].sh_size.get() as usize);
             sections.set_mergeable(i, parent);
         }
         self.sections = sections;
@@ -2445,7 +2394,6 @@ impl<E: Arch> ObjectFile<E> {
     // are not handled here for performance reasons.
     pub(crate) fn reattach_section_symbols(
         &self,
-        diag: &Diagnostics,
         id: ObjId,
         symbols: &SymbolEditor<'_>,
         merged: &[MergedSection<E>],
@@ -2465,7 +2413,7 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
             let Some((frag, offset)) = m.fragment(esym.st_value().get()) else {
-                fatal!(diag, "{self}: bad symbol value: {}", esym.st_value().get());
+                fatal!("{self}: bad symbol value: {}", esym.st_value().get());
             };
             let frag = FragmentRef {
                 section: m.parent,
@@ -2494,7 +2442,6 @@ impl<E: Arch> ObjectFile<E> {
     // to the newly created symbol.
     pub(crate) fn reattach_fragment_relocations(
         &mut self,
-        diag: &Diagnostics,
         id: ObjId,
         merged: &[MergedSection<E>],
         base_id: SymbolId,
@@ -2568,7 +2515,7 @@ impl<E: Arch> ObjectFile<E> {
                         let Some((frag, in_frag_offset)) =
                             m.fragment(esym.st_value().get().wrapping_add(addend as u64))
                         else {
-                            fatal!(diag, "{self}: bad relocation at {}", record.r_sym());
+                            fatal!("{self}: bad relocation at {}", record.r_sym());
                         };
                         (
                             FragmentRef {
@@ -2628,17 +2575,13 @@ impl<E: Arch> ObjectFile<E> {
             for rel in cie.rels::<E>(self) {
                 let sym = &ctx.symbols[self.base.symbols[rel.r_sym() as usize]];
                 if ctx.args.pic && rel.r_type() == E::R_ABS {
-                    error!(
-                        ctx,
-                        "{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",
+                    error!("{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",
                         rel.type_name::<E>()
                     );
                 }
                 if sym.is_imported() {
                     if sym.ty() != STT_FUNC {
-                        fatal!(
-                            ctx,
-                            "{self}: {sym}: .eh_frame CIE record with an external data reference is not supported"
+                        fatal!("{self}: {sym}: .eh_frame CIE record with an external data reference is not supported"
                         );
                     }
                     sym.add_flags(NEEDS_PLT);
@@ -2667,7 +2610,6 @@ impl<E: Arch> ObjectFile<E> {
     // symbols in previous passes.
     pub fn convert_common_symbols(
         &mut self,
-        diag: &Diagnostics,
         args: &Args,
         id: ObjId,
         symbols: &mut SymbolTable,
@@ -2686,7 +2628,7 @@ impl<E: Arch> ObjectFile<E> {
             let sym = &symbols[sym_id];
             if sym.file() != Some(FileId::Obj(id)) {
                 if args.warn_common {
-                    warn!(diag, "{self}: multiple common symbols: {sym}");
+                    warn!("{self}: multiple common symbols: {sym}");
                 }
                 continue;
             }
@@ -2708,7 +2650,7 @@ impl<E: Arch> ObjectFile<E> {
 
             self.elf_sections2.push(shdr);
             let shndx = self.num_elf_sections + self.elf_sections2.len() - 1;
-            let isec = InputSection::new::<E>(diag, self, id, shndx as u32, &shdr, BStr::new(name));
+            let isec = InputSection::new::<E>(self, id, shndx as u32, &shdr, BStr::new(name));
             self.sections.push(isec, section_arena);
 
             let sym = &mut symbols[sym_id];
@@ -2783,7 +2725,7 @@ impl<E: Arch> ObjectFile<E> {
 
     // Returns true if a given section contains a DWARF32 debug record.
     // `isec` must be a .debug_info section.
-    pub fn is_dwarf32(&mut self, diag: &Diagnostics) -> bool {
+    pub fn is_dwarf32(&mut self) -> bool {
         let name = self.to_string();
         for shndx in self.debug_info_sections.clone() {
             let isec = self.section_at(shndx);
@@ -2796,7 +2738,7 @@ impl<E: Arch> ObjectFile<E> {
             }
             let mut buf = [0u8; 12];
             let input_size = self.shdr(shndx as usize).sh_size.get() as usize;
-            isec.copy_contents_to::<E>(diag, &name, section_name, input_size, &mut buf);
+            isec.copy_contents_to::<E>(&name, section_name, input_size, &mut buf);
             // A .debug_info section contains compilation units (CUs). A 32-bit CU
             // starts with a 32-bit size field, while a 64-bit CU starts with a
             // magic number 0xffff'ffff followed by a 64-bit size field.
@@ -2821,7 +2763,7 @@ impl<E: Arch> ObjectFile<E> {
             // An input .debug_info section may be compressed using zlib or zstd, so
             // we need to uncompress it before accessing `isec->contents`.
             let isec = self.section_mut(shndx as usize).unwrap();
-            isec.uncompress::<E>(diag, &name, section_name, input_size);
+            isec.uncompress::<E>(&name, section_name, input_size);
             let contents = isec.contents();
             let mut p = first_size;
             while contents.len() - p >= 12 {
@@ -3007,12 +2949,7 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
 // Initialize cie's fde_ptr_size member by parsing the augmentation
 // string. We need this member to remove FDE records referring to an
 // empty segment from the output .eh_frame_hdr.
-fn parse_fde_encoding<E: Arch>(
-    diag: &Diagnostics,
-    file: &ObjectFile<E>,
-    isec: &InputSection,
-    data: &[u8],
-) -> u8 {
+fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection, data: &[u8]) -> u8 {
     // Returns the size in bytes of a value in the DWARF exception header
     // encoding `enc`.
     let ptr_size = |enc: u8| -> u8 {
@@ -3021,7 +2958,6 @@ fn parse_fde_encoding<E: Arch>(
             DW_EH_PE_udata4 | DW_EH_PE_sdata4 => 4,
             DW_EH_PE_udata8 | DW_EH_PE_sdata8 => 8,
             _ => fatal!(
-                diag,
                 "{}: unsupported FDE pointer encoding: {enc}",
                 isec.display(file)
             ),
@@ -3031,11 +2967,7 @@ fn parse_fde_encoding<E: Arch>(
     // Skip the length, CIE ID and version fields.
     let version = data[8];
     if version != 1 && version != 3 {
-        fatal!(
-            diag,
-            "{}: unsupported CIE version: {version}",
-            isec.display(file)
-        );
+        fatal!("{}: unsupported CIE version: {version}", isec.display(file));
     }
     let mut rest = &data[9..];
     // Read the augmentation string
@@ -3052,7 +2984,6 @@ fn parse_fde_encoding<E: Arch>(
         }
         if aug[0] != b'z' {
             fatal!(
-                diag,
                 "{}: unsupported CIE augmentation string: {}",
                 isec.display(file),
                 util::display(aug)
@@ -3089,7 +3020,6 @@ fn parse_fde_encoding<E: Arch>(
                     // 'G' (AArch64 memory tagging) are not followed by data
                 }
                 _ => fatal!(
-                    diag,
                     "{}: unsupported CIE augmentation string: {}",
                     isec.display(file),
                     util::display(aug)
@@ -3103,7 +3033,6 @@ fn parse_fde_encoding<E: Arch>(
     // We support only raw absolute and PC-relative pointers.
     if enc & 0xf0 != 0 && enc as u32 & 0xf0 != DW_EH_PE_pcrel {
         fatal!(
-            diag,
             "{}: unsupported FDE pointer encoding: {enc}",
             isec.display(file)
         );
@@ -3167,8 +3096,8 @@ impl<E: Arch> SharedFile<E> {
         DsoId(self.base.file_index)
     }
 
-    pub fn new(diag: &Diagnostics, mf: &'static MappedFile) -> SharedFile<E> {
-        let base = InputFile::<E>::parse(diag, mf, &FileName(&mf.name, ""));
+    pub fn new(mf: &'static MappedFile) -> SharedFile<E> {
+        let base = InputFile::<E>::parse(mf, &FileName(&mf.name, ""));
         let mut file = SharedFile {
             base,
             soname: String::new(),
@@ -3179,29 +3108,27 @@ impl<E: Arch> SharedFile<E> {
             symbol2_keys: Vec::new(),
             sorted_syms: OnceLock::new(),
         };
-        file.parse(diag);
+        file.parse();
         file
     }
 
     /// The strings of the dynamic entries with the given tag, such as the
     /// DT_NEEDED libraries.
-    fn dynamic_strings(&self, diag: &Diagnostics, tag: u64) -> Vec<&'static [u8]> {
+    fn dynamic_strings(&self, tag: u64) -> Vec<&'static [u8]> {
         let Some(idx) = self.base.find_section(SHT_DYNAMIC) else {
             return Vec::new();
         };
         let shdr = &self.base.shdrs[idx];
-        let strtab = self
-            .base
-            .section_contents(diag, shdr.sh_link.get() as usize);
-        ElfDyn::<E>::parse_all(self.base.section_contents(diag, idx))
+        let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
+        ElfDyn::<E>::parse_all(self.base.section_contents(idx))
             .into_iter()
             .filter(|entry| entry.d_tag.get() == tag)
             .map(|entry| cstr_at(strtab, entry.d_val.get() as usize))
             .collect()
     }
 
-    fn get_soname(&self, diag: &Diagnostics) -> String {
-        if let Some(soname) = self.dynamic_strings(diag, DT_SONAME as u64).first() {
+    fn get_soname(&self) -> String {
+        if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).first() {
             return String::from_utf8_lossy(soname).into_owned();
         }
         if self.base.mf.is_none_or(|mf| mf.given_fullpath) {
@@ -3210,22 +3137,22 @@ impl<E: Arch> SharedFile<E> {
         path_filename(&self.base.filename)
     }
 
-    fn parse(&mut self, diag: &Diagnostics) {
+    fn parse(&mut self) {
         let Some(symtab_idx) = self.base.find_section(SHT_DYNSYM) else {
             return;
         };
         let symtab_shdr = &self.base.shdrs[symtab_idx];
         self.base.symbol_strtab = self
             .base
-            .section_contents(diag, symtab_shdr.sh_link.get() as usize);
-        self.soname = self.get_soname(diag);
-        self.version_strings = self.read_version_strings(diag);
+            .section_contents(symtab_shdr.sh_link.get() as usize);
+        self.soname = self.get_soname();
+        self.version_strings = self.read_version_strings();
 
         // Read a symbol table.
-        let esyms = records_from_bytes::<ElfSym<E>>(self.base.section_contents(diag, symtab_idx));
+        let esyms = records_from_bytes::<ElfSym<E>>(self.base.section_contents(symtab_idx));
         let first = symtab_shdr.sh_info.get() as usize;
         if esyms.len() < first {
-            fatal!(diag, "{self}: invalid symbol table");
+            fatal!("{self}: invalid symbol table");
         }
         // Only the symbols this file exports are kept, so the table is
         // rebuilt rather than read in place.
@@ -3234,7 +3161,7 @@ impl<E: Arch> SharedFile<E> {
         let vers: Vec<u16> = match self.base.find_section(SHT_GNU_VERSYM) {
             Some(idx) => self
                 .base
-                .section_contents(diag, idx)
+                .section_contents(idx)
                 .chunks_exact(2)
                 .map(E::Endian::read_u16)
                 .collect(),
@@ -3260,7 +3187,6 @@ impl<E: Arch> SharedFile<E> {
             if ver as u32 == VER_NDX_LOCAL {
                 if !esym.is_undef() {
                     fatal!(
-                        diag,
                         "{self}: invalid version index 0 for defined symbol {}",
                         util::display(cstr_at(
                             self.base.symbol_strtab,
@@ -3362,12 +3288,12 @@ impl<E: Arch> SharedFile<E> {
         }
     }
 
-    pub fn dt_needed(&self, diag: &Diagnostics) -> Vec<&'static [u8]> {
-        self.dynamic_strings(diag, DT_NEEDED as u64)
+    pub fn dt_needed(&self) -> Vec<&'static [u8]> {
+        self.dynamic_strings(DT_NEEDED as u64)
     }
 
-    pub fn dt_audit(&self, diag: &Diagnostics) -> &'static [u8] {
-        self.dynamic_strings(diag, DT_AUDIT as u64)
+    pub fn dt_audit(&self) -> &'static [u8] {
+        self.dynamic_strings(DT_AUDIT as u64)
             .first()
             .copied()
             .unwrap_or(b"")
@@ -3408,7 +3334,7 @@ impl<E: Arch> SharedFile<E> {
     // version names indexed by versym value. The versym index space is
     // shared between the two sections (vd_ndx for defined symbols and
     // vna_other for undefined ones), so a single vector covers both.
-    fn read_version_strings(&self, diag: &Diagnostics) -> Vec<&'static [u8]> {
+    fn read_version_strings(&self) -> Vec<&'static [u8]> {
         let mut vec: Vec<&'static [u8]> = Vec::new();
         let mut set = |idx: usize, name: &'static [u8]| {
             if vec.len() <= idx {
@@ -3418,15 +3344,15 @@ impl<E: Arch> SharedFile<E> {
         };
 
         if let Some(idx) = self.base.find_section(SHT_GNU_VERDEF) {
-            let verdef = self.base.section_contents(diag, idx);
+            let verdef = self.base.section_contents(idx);
             let strtab = self
                 .base
-                .section_contents(diag, self.base.shdrs[idx].sh_link.get() as usize);
+                .section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
                 let ver = ElfVerdef::<E>::parse(&verdef[pos..]);
                 if u32::from(ver.vd_ndx.get()) == VER_NDX_UNSPECIFIED {
-                    fatal!(diag, "{self}: symbol version too large");
+                    fatal!("{self}: symbol version too large");
                 }
                 let aux = ElfVerdaux::<E>::parse(&verdef[pos + ver.vd_aux.get() as usize..]);
                 set(
@@ -3441,10 +3367,10 @@ impl<E: Arch> SharedFile<E> {
         }
 
         if let Some(idx) = self.base.find_section(SHT_GNU_VERNEED) {
-            let verneed = self.base.section_contents(diag, idx);
+            let verneed = self.base.section_contents(idx);
             let strtab = self
                 .base
-                .section_contents(diag, self.base.shdrs[idx].sh_link.get() as usize);
+                .section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
                 let vn = ElfVerneed::<E>::parse(&verneed[pos..]);
@@ -3821,17 +3747,12 @@ impl<E: Arch> SharedFile<E> {
 }
 
 /// Prints a `--trace-symbol` line for a reference or definition.
-pub fn print_trace_symbol<R: SymbolRecord>(
-    diag: &Diagnostics,
-    file: &dyn fmt::Display,
-    esym: &R,
-    sym: &Symbol,
-) {
+pub fn print_trace_symbol<R: SymbolRecord>(file: &dyn fmt::Display, esym: &R, sym: &Symbol) {
     if !esym.is_undef() {
-        out!(diag, "trace-symbol: {file}: definition of {sym}");
+        out!("trace-symbol: {file}: definition of {sym}");
     } else if esym.is_weak() {
-        out!(diag, "trace-symbol: {file}: weak reference to {sym}");
+        out!("trace-symbol: {file}: weak reference to {sym}");
     } else {
-        out!(diag, "trace-symbol: {file}: reference to {sym}");
+        out!("trace-symbol: {file}: reference to {sym}");
     }
 }

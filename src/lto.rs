@@ -118,7 +118,6 @@ use crate::arch::Arch;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::input_files::{FileId, ObjId, ObjectFile};
 use crate::mapped_file::{must_open_file, MappedFile};
 use crate::symbol::SymbolId;
@@ -369,17 +368,9 @@ static HOOKS: Mutex<Hooks> = Mutex::new(Hooks {
 static CLAIM_LOCK: Mutex<()> = Mutex::new(());
 static CLAIMED_SYMBOLS: Mutex<Vec<ClaimedSymbol>> = Mutex::new(Vec::new());
 
-/// The linker's state, for callbacks. `DIAG` is set once the plugin is
-/// loaded; `CONTEXT` only while the plugin is compiling, when nothing
-/// else touches the context.
-static DIAG: AtomicPtr<Diagnostics> = AtomicPtr::new(ptr::null_mut());
+/// The linker's state, for callbacks. `CONTEXT` is set only while the plugin
+/// is compiling, when nothing else touches the context.
 static CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
-
-fn diag() -> &'static Diagnostics {
-    // SAFETY: set in `load_plugin` to the diagnostics of the context,
-    // which outlives the plugin.
-    unsafe { &*DIAG.load(Ordering::Acquire) }
-}
 
 // Event handlers
 /// Reports a message the plugin formatted.
@@ -391,9 +382,9 @@ fn diag() -> &'static Diagnostics {
 pub unsafe extern "C" fn mold_lto_report(level: c_int, msg: *const c_char) {
     let msg = unsafe { CStr::from_ptr(msg) }.to_string_lossy();
     match level {
-        LDPL_INFO => out!(diag(), "{msg}"),
-        LDPL_WARNING => warn!(diag(), "{msg}"),
-        _ => fatal!(diag(), "{msg}"),
+        LDPL_INFO => out!("{msg}"),
+        LDPL_WARNING => warn!("{msg}"),
+        _ => fatal!("{msg}"),
     }
 }
 
@@ -426,10 +417,10 @@ unsafe extern "C" fn add_symbols(
 unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     let ctx = &mut *(CONTEXT.load(Ordering::Acquire) as *mut Context<E>);
     let path = CStr::from_ptr(path).to_string_lossy().into_owned();
-    let mf = must_open_file(&ctx.diag, "", &path);
+    let mf = must_open_file("", &path);
     mf.set_dependency(false);
 
-    let mut file = ObjectFile::<E>::new(&ctx.diag, mf, String::new());
+    let mut file = ObjectFile::<E>::new(mf, String::new());
     file.is_lto_output = true;
     file.base.set_reachable(true);
     file.base.priority = ctx.lto_file_priority;
@@ -635,7 +626,7 @@ unsafe extern "C" fn get_api_version(
     linker_version: *mut *const c_char,
 ) -> c_int {
     if LAPI_V1 < minimal_api_supported {
-        fatal!(diag(), "LTO plugin does not support V0 or V1 API");
+        fatal!("LTO plugin does not support V0 or V1 API");
     }
     // The plugin reads the string after this function has returned
     static LINKER_VERSION: OnceLock<CString> = OnceLock::new();
@@ -703,22 +694,16 @@ fn dlerror_string() -> String {
 /// dlopen the linker plugin file
 fn load_plugin<E: Arch>(ctx: &Context<E>) {
     LOADED.get_or_init(|| {
-        DIAG.store(
-            std::sync::Arc::as_ptr(&ctx.diag) as *mut Diagnostics,
-            Ordering::Release,
-        );
-
         let path = CString::new(ctx.args.plugin.as_str()).unwrap();
         // SAFETY: plain dlopen/dlsym calls.
         let onload: OnloadFn = unsafe {
             let handle = dynamic_open(path.as_ptr());
             if handle.is_null() {
-                fatal!(ctx, "could not open plugin file: {}", dlerror_string());
+                fatal!("could not open plugin file: {}", dlerror_string());
             }
             let onload = dynamic_symbol(handle, c"onload".as_ptr());
             if onload.is_null() {
                 fatal!(
-                    ctx,
                     "failed to load plugin {}: {}",
                     ctx.args.plugin,
                     dlerror_string()
@@ -849,7 +834,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         // SAFETY: the transfer vector is terminated by LDPT_NULL.
         let status = unsafe { onload(tv.as_ptr()) };
         if status != LDPS_OK {
-            fatal!(ctx, "LTO plugin's onload failed: {status}");
+            fatal!("LTO plugin's onload failed: {status}");
         }
     });
 }
@@ -869,13 +854,10 @@ fn supports_v3_api<E: Arch>(ctx: &Context<E>) -> bool {
 /// Describes a file to the plugin, which reads it through a descriptor,
 /// at an offset for an archive member. The descriptor stays open as long
 /// as the returned file does.
-fn plugin_input_file<E: Arch>(
-    ctx: &Context<E>,
-    mf: &'static MappedFile,
-) -> (PluginInputFile, File) {
+fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
     let container = mf.parent.unwrap_or(mf);
     let file = File::open(&container.name)
-        .unwrap_or_else(|e| fatal!(ctx, "cannot open {}: {e}", container.name));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name));
     let input = PluginInputFile {
         name: CString::new(container.name.as_str()).unwrap().into_raw(),
         #[cfg(not(windows))]
@@ -897,9 +879,7 @@ pub fn read_lto_object<E: Arch>(
     archive_name: String,
 ) -> Option<ObjectFile<E>> {
     if ctx.args.plugin.is_empty() {
-        fatal!(
-            ctx,
-            "{}: unable to handle this LTO object file because the -plugin option was not provided. \
+        fatal!("{}: unable to handle this LTO object file because the -plugin option was not provided. \
              Please make sure you added -flto not only when creating object files but also when linking \
              the final executable.",
             mf.name
@@ -907,7 +887,7 @@ pub fn read_lto_object<E: Arch>(
     }
     load_plugin(ctx);
     let Some(claim_file) = HOOKS.lock().unwrap().claim_file else {
-        fatal!(ctx, "LTO plugin did not register a claim_file hook");
+        fatal!("LTO plugin did not register a claim_file hook");
     };
 
     // We read input files in parallel, but the plugin interface is not
@@ -918,7 +898,7 @@ pub fn read_lto_object<E: Arch>(
     // claim sequence.
     let _claim = CLAIM_LOCK.lock().unwrap();
     // Create plugin's object instance
-    let (input, file) = plugin_input_file(ctx, mf);
+    let (input, file) = plugin_input_file(mf);
     let mut claimed: c_int = 0;
     // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
     // SAFETY: `input` describes an open file.
@@ -927,9 +907,7 @@ pub fn read_lto_object<E: Arch>(
 
     if claimed == 0 {
         if mf.parent.is_none() && mf.thin_parent.is_none() {
-            fatal!(
-                ctx,
-                "{}: not claimed by the LTO plugin; please make sure you are using the same compiler of the \
+            fatal!("{}: not claimed by the LTO plugin; please make sure you are using the same compiler of the \
                  same version for all object files",
                 mf.name
             );
@@ -1069,7 +1047,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         .expect("the plugin registered a claim_file hook");
     for file in &ctx.objs {
         if file.base.is_reachable() && !file.is_lto_input && file.is_gcc_offload_obj {
-            let (input, _file) = plugin_input_file(ctx, file.base.mf.unwrap());
+            let (input, _file) = plugin_input_file(file.base.mf.unwrap());
             let mut claimed: c_int = 0;
             // SAFETY: `input` describes an open file.
             unsafe { claim_file(&input, &mut claimed) };
@@ -1088,7 +1066,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
     let status = unsafe { all_symbols_read() };
     CONTEXT.store(ptr::null_mut(), Ordering::Release);
     if status != LDPS_OK {
-        fatal!(ctx, "LTO: all_symbols_read_hook returns {status}");
+        fatal!("LTO: all_symbols_read_hook returns {status}");
     }
 }
 

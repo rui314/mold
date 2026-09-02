@@ -278,7 +278,7 @@ fn entry_addr<E: Arch>(ctx: &Context<E>) -> u64 {
         return sym.addr(ctx);
     }
     if !ctx.args.shared {
-        warn!(ctx, "entry symbol is not defined: {sym}");
+        warn!("entry symbol is not defined: {sym}");
     }
     0
 }
@@ -383,8 +383,8 @@ pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
     if exec && ctx.args.execute_only {
         if write {
             error!(
-                ctx,
-                "--execute-only is not compatible with writable section: {}", hdr.name
+                "--execute-only is not compatible with writable section: {}",
+                hdr.name
             );
         }
         return PF_X;

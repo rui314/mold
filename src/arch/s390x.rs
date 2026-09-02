@@ -216,7 +216,7 @@ impl Arch for S390x {
                 w32(loc, val.wrapping_sub(p) as u32);
             }
             R_390_64 => w64(loc, val),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -274,7 +274,6 @@ impl Arch for S390x {
                 R_390_64 | R_390_TLS_LDO32 | R_390_TLS_LDO64 | R_390_TLS_GDCALL
                 | R_390_TLS_LDCALL => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -315,7 +314,6 @@ impl Arch for S390x {
                 check(val, lo, hi);
                 if val & 1 != 0 {
                     error!(
-                        ctx,
                         "{}: misaligned symbol {sym} for relocation {}",
                         isec.display(file),
                         rel.type_name::<Self>()
@@ -519,7 +517,6 @@ impl Arch for S390x {
                     None => w64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
                 },
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

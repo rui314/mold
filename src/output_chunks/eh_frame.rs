@@ -362,7 +362,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
                 // The table entries are 32-bit offsets from .eh_frame_hdr.
                 if !is_int(func_addr.wrapping_sub(origin) as i64, 32) {
                     let sym = &ctx.symbols[file.base.symbols[rels[0].r_sym() as usize]];
-                    error!(ctx, "{file}: {sym}: address out of range of .eh_frame_hdr");
+                    error!("{file}: {sym}: address out of range of .eh_frame_hdr");
                 }
                 E::Endian::write_i32(entry, func_addr.wrapping_sub(origin) as i32);
                 E::Endian::write_i32(
@@ -397,7 +397,6 @@ pub fn check_range<E: Arch>(
         let file = &ctx.objs[isec.file.index()];
         let sym: &Symbol = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
-            ctx,
             "{}: relocation {} against {sym} out of range: {val} is not in [{lo}, {hi})",
             isec.display(file),
             rel.type_name::<E>()
@@ -593,9 +592,8 @@ pub mod eh_frame_reloc {
 }
 
 /// Fatal error for `.eh_frame` contents that can't be handled.
-pub fn unsupported<E: Arch>(ctx: &Context<E>, rel: &ElfRel<E>) -> ! {
+pub fn unsupported<E: Arch>(rel: &ElfRel<E>) -> ! {
     fatal!(
-        ctx,
         "unsupported relocation in .eh_frame: {}",
         rel.type_name::<E>()
     )

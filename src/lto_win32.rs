@@ -11,7 +11,7 @@ pub fn read_lto_object<E: Arch>(
     _mf: &'static MappedFile,
     _archive_name: String,
 ) -> Option<ObjectFile<E>> {
-    fatal!(ctx, "LTO is not supported on Windows");
+    fatal!("LTO is not supported on Windows");
 }
 
 pub fn run_plugin<E: Arch>(_ctx: &mut Context<E>) {}

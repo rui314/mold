@@ -176,7 +176,7 @@ fn is_power10(ctx: &Context<Ppc64V2>) -> bool {
 fn local_entry_offset(ctx: &Context<Ppc64V2>, sym: &Symbol) -> u64 {
     match sym.esym(ctx).ppc64_local_entry() {
         0 | 1 => 0,
-        7 => fatal!(ctx, "{sym}: local entry offset 7 is reserved"),
+        7 => fatal!("{sym}: local entry offset 7 is reserved"),
         n => 1 << n,
     }
 }
@@ -491,7 +491,7 @@ impl Arch for Ppc64V2 {
                 w32(loc, val.wrapping_sub(p) as u32);
             }
             R_PPC64_REL64 => w64(loc, val.wrapping_sub(p)),
-            _ => eh_frame::unsupported(ctx, rel),
+            _ => eh_frame::unsupported::<Self>(rel),
         }
     }
 
@@ -566,7 +566,6 @@ impl Arch for Ppc64V2 {
                 | R_PPC64_DTPREL34
                 | R_PPC64_ENTRY => {}
                 _ => error!(
-                    ctx,
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()
@@ -725,7 +724,6 @@ impl Arch for Ppc64V2 {
                 }
                 R_PPC64_DTPREL64 => w64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 _ => fatal!(
-                    ctx,
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

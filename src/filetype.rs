@@ -3,7 +3,6 @@
 use crate::arch::{self, TargetInfo};
 use crate::archive_file;
 use crate::elf::*;
-use crate::error::Diagnostics;
 use crate::mapped_file::MappedFile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,14 +280,13 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 pub fn get_machine_type(
-    diag: &Diagnostics,
     plugin: &str,
     mf: &'static MappedFile,
     script_target: impl FnOnce() -> Option<&'static str>,
 ) -> Option<&'static str> {
     match get_file_type(plugin, mf) {
         FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
-        FileType::Ar => archive_file::read_fat_archive_members(diag, mf)
+        FileType::Ar => archive_file::read_fat_archive_members(mf)
             .into_iter()
             .find(|child| {
                 matches!(
@@ -297,7 +295,7 @@ pub fn get_machine_type(
                 )
             })
             .and_then(|child| get_elf_target(child.data())),
-        FileType::ThinAr => archive_file::read_thin_archive_members(diag, mf)
+        FileType::ThinAr => archive_file::read_thin_archive_members(mf)
             .into_iter()
             .find(|child| {
                 matches!(

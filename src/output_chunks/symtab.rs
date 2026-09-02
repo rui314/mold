@@ -685,9 +685,7 @@ pub mod dynsym {
                 let nshdrs = ctx.shdr.as_ref().map_or(0, |s| {
                     s.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64
                 });
-                error!(
-                    ctx,
-                    "{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
+                error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
                     ctx.args.output
                 );
                 return;
@@ -933,7 +931,7 @@ pub mod gnu_hash {
 /// Chunk ids for which dynamic symbol information must exist.
 pub fn require_dynsym<E: Arch>(ctx: &Context<E>) {
     if ctx.dynsym.symbols.is_empty() {
-        fatal!(ctx, "internal error: dynamic symbol table required");
+        fatal!("internal error: dynamic symbol table required");
     }
 }
 
