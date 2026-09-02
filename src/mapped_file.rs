@@ -7,8 +7,9 @@
 //! keeps lifetimes out of every data structure that refers to file
 //! contents.
 
+use std::borrow::Cow;
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::ops::Range;
 use std::path::Path;
 use std::ptr::NonNull;
@@ -18,7 +19,6 @@ use std::sync::Mutex;
 #[cfg(not(windows))]
 use rayon::prelude::*;
 
-use crate::error::errno_string;
 use crate::fatal;
 use crate::util;
 
@@ -129,13 +129,8 @@ unsafe impl Send for MappedFile {}
 unsafe impl Sync for MappedFile {}
 
 impl MappedFile {
-    /// Opens a file, returning `None` if it doesn't exist.
-    pub fn open(path: &str) -> Option<&'static MappedFile> {
-        let file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-            Err(e) => fatal!("opening {path} failed: {e}"),
-        };
+    fn open_impl(path: &str) -> io::Result<&'static MappedFile> {
+        let file = File::open(path)?;
 
         let metadata = file
             .metadata()
@@ -185,12 +180,21 @@ impl MappedFile {
         if is_mmapped {
             MMAPPED_FILES.lock().unwrap().push(mf);
         }
-        Some(mf)
+        Ok(mf)
+    }
+
+    /// Opens a file, returning `None` if it doesn't exist.
+    pub fn open(path: &str) -> Option<&'static MappedFile> {
+        match Self::open_impl(path) {
+            Ok(mf) => Some(mf),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => fatal!("opening {path} failed: {e}"),
+        }
     }
 
     /// Opens a file that must exist.
     pub fn must_open(path: &str) -> &'static MappedFile {
-        MappedFile::open(path).unwrap_or_else(|| fatal!("cannot open {path}: {}", errno_string()))
+        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {path}: {e}"))
     }
 
     /// Returns a view of a member of this archive.
@@ -274,18 +278,23 @@ impl MappedFile {
     }
 }
 
+fn apply_chroot<'a>(chroot: &str, path: &'a str) -> Cow<'a, str> {
+    if path.starts_with('/') && !chroot.is_empty() {
+        Cow::Owned(format!("{chroot}/{}", util::path_clean(path)))
+    } else {
+        Cow::Borrowed(path)
+    }
+}
+
 /// Opens an input file, applying `--chroot` to absolute paths.
 pub fn open_file(chroot: &str, path: &str) -> Option<&'static MappedFile> {
-    if path.starts_with('/') && !chroot.is_empty() {
-        let path = format!("{chroot}/{}", util::path_clean(path));
-        return MappedFile::open(&path);
-    }
-    MappedFile::open(path)
+    MappedFile::open(&apply_chroot(chroot, path))
 }
 
 /// Opens an input file that must exist, applying `--chroot` to absolute paths.
 pub fn must_open_file(chroot: &str, path: &str) -> &'static MappedFile {
-    open_file(chroot, path).unwrap_or_else(|| fatal!("cannot open {path}: {}", errno_string()))
+    MappedFile::open_impl(&apply_chroot(chroot, path))
+        .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"))
 }
 
 /// Whether a path refers to something that is not a directory.
