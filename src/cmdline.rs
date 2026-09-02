@@ -1027,7 +1027,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
     let mut visited_libs: HashSet<String> = HashSet::new();
 
-    a.color_diagnostics = stderr_is_tty();
+    a.color_diagnostics = std::io::stderr().is_terminal();
     crate::error::set_color(a.color_diagnostics);
     crate::error::set_fatal_warnings(a.fatal_warnings);
     crate::error::set_suppress_warnings(a.suppress_warnings);
@@ -1408,7 +1408,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
         } else if read_arg!("chroot") {
             a.chroot = arg.clone();
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
-            a.color_diagnostics = stderr_is_tty();
+            a.color_diagnostics = std::io::stderr().is_terminal();
             crate::error::set_color(a.color_diagnostics);
         } else if read_flag!("color-diagnostics=always") {
             a.color_diagnostics = true;
@@ -2118,8 +2118,4 @@ fn add_rpath(a: &mut Args, seen: &mut HashSet<String>, path: &str) {
         }
         a.rpaths.push_str(path);
     }
-}
-
-fn stderr_is_tty() -> bool {
-    std::io::stderr().is_terminal()
 }
