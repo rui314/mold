@@ -73,9 +73,9 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
 
     let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection>| {
         let sym = &ctx.symbols[id];
-        if let Some(frag) = sym.fragment(ctx) {
+        if let Some(frag) = sym.fragment() {
             ctx.fragment(frag).set_alive();
-        } else if let Some(isec) = sym.input_section_ref(ctx) {
+        } else if let Some(isec) = sym.input_section_ref() {
             if mark_section(isec) {
                 out.push(isec);
             }
@@ -163,7 +163,7 @@ fn visit_section<'scope, E: Arch>(
     for fde in isec.fdes(file) {
         for rel in fde.rels::<E>(file).iter().skip(1) {
             if let Some(target) =
-                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref(ctx)
+                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref()
             {
                 mark(target);
             }
@@ -177,11 +177,11 @@ fn visit_section<'scope, E: Arch>(
             continue;
         }
         // Symbol can refer to either a section fragment or an input section.
-        if let Some(frag) = sym.fragment(ctx) {
+        if let Some(frag) = sym.fragment() {
             ctx.fragment(frag).set_alive();
             continue;
         }
-        if let Some(target) = sym.input_section_ref(ctx) {
+        if let Some(target) = sym.input_section_ref() {
             mark(target);
         }
 

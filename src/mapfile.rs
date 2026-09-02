@@ -23,7 +23,7 @@ fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<SectionRef, Vec<SymbolI
         for &id in &file.base.symbols {
             let sym = &ctx.symbols[id];
             if sym.file() == Some(file_id) && sym.ty() != STT_SECTION {
-                if let Some(r) = sym.input_section(ctx) {
+                if let Some(r) = sym.input_section() {
                     map.entry(r).or_default().push(id);
                 }
             }

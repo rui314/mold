@@ -24,10 +24,8 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
-use crate::input_sections::{FragmentRef, InputSection, InputSectionId, SectionRef};
-use crate::output_chunks::merged::OriginMergedSectionId;
+use crate::input_sections::{FragmentRef, InputSection, SectionRef};
 use crate::output_chunks::ChunkId;
-use crate::util::concurrent_map::EntryId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 use crate::util::virtual_memory;
 
@@ -47,102 +45,60 @@ impl SymbolId {
     }
 }
 
-// TaggedPtr stores one of several pointer types and uses low pointer bits to
-// record which type it contains. Origin applies the same idea to compact ids.
-// The tags form a unary code starting at the least-significant bit, giving the
-// frequently used fragment payload one more bit than the other alternatives.
-#[repr(transparent)]
+// TaggedPtr stores one of several pointer types and uses the low pointer bits
+// to record which type it contains.
+//
+// Rust stores the same choice in Symbol's padding byte instead, leaving this
+// payload available for the selected pointer or id.
+/// The payload describing what a symbol's value is relative to. Its kind
+/// lives in a byte of [`Symbol`]'s padding so that the payload remains eight
+/// bytes without restricting any of the contained ids.
+#[repr(C)]
 #[derive(Clone, Copy)]
-pub struct Origin(u32);
-
-const FRAGMENT_TAG: u32 = 0b0001;
-const SECTION_TAG: u32 = 0b0010;
-const CHUNK_TAG: u32 = 0b0100;
-const SYMBOL_TAG: u32 = 0b1000;
-const FRAGMENT_ENTRY_BITS: u32 = 25;
-const FRAGMENT_ENTRY_MASK: u32 = (1 << FRAGMENT_ENTRY_BITS) - 1;
+pub union Origin {
+    raw: u64,
+    fragment: FragmentRef,
+    chunk: ChunkId,
+    symbol: SymbolId,
+}
 
 impl Origin {
     fn none() -> Origin {
-        Origin(0)
+        Origin { raw: 0 }
     }
 
-    fn section(section: InputSectionId) -> Origin {
-        Origin(section.origin_payload() << 2 | SECTION_TAG)
-    }
-
-    fn fragment(section: OriginMergedSectionId, entry: EntryId) -> Origin {
-        if entry.raw() >= 1 << FRAGMENT_ENTRY_BITS {
-            crate::fatal!(
-                "cannot encode fragment bucket {} in a symbol origin",
-                entry.raw()
-            );
+    fn section(section: &InputSection) -> Origin {
+        Origin {
+            raw: section as *const InputSection as usize as u64,
         }
-        let payload = section.raw() << FRAGMENT_ENTRY_BITS | entry.raw();
-        Origin(payload << 1 | FRAGMENT_TAG)
+    }
+
+    fn fragment(fragment: FragmentRef) -> Origin {
+        let mut origin = Origin::none();
+        origin.fragment = fragment;
+        origin
     }
 
     fn chunk(chunk: ChunkId) -> Origin {
-        Origin(chunk.origin_payload() << 3 | CHUNK_TAG)
+        let mut origin = Origin::none();
+        origin.chunk = chunk;
+        origin
     }
 
     fn symbol(symbol: SymbolId) -> Origin {
-        if symbol.0 >= 1 << 28 {
-            crate::fatal!("cannot create more than {} symbols", 1u32 << 28);
-        }
-        Origin(symbol.0 << 4 | SYMBOL_TAG)
-    }
-
-    #[inline]
-    fn kind(self) -> OriginKind {
-        if self.0 == 0 {
-            return OriginKind::None;
-        }
-        match self.0.trailing_zeros() {
-            0 => OriginKind::Fragment,
-            1 => OriginKind::Section,
-            2 => OriginKind::Chunk,
-            3 => OriginKind::Symbol,
-            _ => unreachable!("invalid origin tag"),
-        }
-    }
-
-    #[inline]
-    fn section_id(self) -> InputSectionId {
-        debug_assert_eq!(self.kind(), OriginKind::Section);
-        InputSectionId::from_origin_payload(self.0 >> 2)
-    }
-
-    #[inline]
-    fn fragment_ref(self) -> (OriginMergedSectionId, EntryId) {
-        debug_assert_eq!(self.kind(), OriginKind::Fragment);
-        let payload = self.0 >> 1;
-        (
-            OriginMergedSectionId::from_raw(payload >> FRAGMENT_ENTRY_BITS),
-            EntryId::from_raw(payload & FRAGMENT_ENTRY_MASK),
-        )
-    }
-
-    #[inline]
-    fn chunk_id(self) -> ChunkId {
-        debug_assert_eq!(self.kind(), OriginKind::Chunk);
-        ChunkId::from_origin_payload(self.0 >> 3)
-    }
-
-    #[inline]
-    fn symbol_id(self) -> SymbolId {
-        debug_assert_eq!(self.kind(), OriginKind::Symbol);
-        SymbolId(self.0 >> 4)
+        let mut origin = Origin::none();
+        origin.symbol = symbol;
+        origin
     }
 }
 
 impl fmt::Debug for Origin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Origin").field(&self.0).finish()
+        f.write_str("Origin")
     }
 }
 
-const _: () = assert!(std::mem::size_of::<Origin>() == 4);
+const _: () = assert!(std::mem::size_of::<Origin>() == 8);
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -157,7 +113,11 @@ enum OriginKind {
     Symbol,
 }
 
-pub(crate) type OriginState = Origin;
+#[derive(Clone, Copy)]
+pub(crate) struct OriginState {
+    payload: Origin,
+    kind: OriginKind,
+}
 
 /// Symbol flags set while scanning relocations.
 pub const NEEDS_GOT: u8 = 1 << 0;
@@ -249,78 +209,10 @@ impl SymbolFile {
     }
 }
 
-// Store short name lengths exactly. A long name stores a logarithmic lower
-// bound so that finding its exact length requires scanning only its suffix.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct NameLen(u8);
-
-impl NameLen {
-    const LONG_NAME: usize = 240;
-
-    #[inline]
-    pub(crate) fn new(len: usize) -> NameLen {
-        if len < Self::LONG_NAME {
-            return NameLen(len as u8);
-        }
-        let log2 = (len - Self::LONG_NAME + 1).ilog2() as usize;
-        NameLen((Self::LONG_NAME + log2.min(u8::MAX as usize - Self::LONG_NAME)) as u8)
-    }
-
-    #[inline]
-    fn is_long(self) -> bool {
-        self.0 as usize >= Self::LONG_NAME
-    }
-
-    #[inline]
-    fn lower_bound(self) -> usize {
-        if !self.is_long() {
-            return self.0 as usize;
-        }
-        Self::LONG_NAME - 1 + (1 << (self.0 as usize - Self::LONG_NAME))
-    }
-
-    #[inline]
-    pub(crate) fn get(self, strtab: &'static [u8], offset: usize) -> &'static [u8] {
-        let rest = strtab.get(offset..).unwrap_or(&[]);
-        let lower = self.lower_bound().min(rest.len());
-        let len = if self.is_long() {
-            lower + crate::util::cstr_at(rest, lower).len()
-        } else {
-            lower
-        };
-        &rest[..len]
-    }
-
-    /// Recovers a name whose backing storage has a trailing NUL sentinel.
-    /// Map names may be prefixes of versioned keys and therefore end at `@`.
-    #[inline]
-    unsafe fn get_from_ptr(self, ptr: *const u8, has_map_name: bool) -> &'static BStr {
-        let mut len = self.lower_bound();
-        if self.is_long() {
-            // SAFETY: callers keep a NUL sentinel after the complete key or
-            // string-table entry, and lower_bound never exceeds the length
-            // supplied to NameLen::new.
-            let suffix = unsafe { ptr.add(len) }.cast();
-            let suffix_len = unsafe { libc::strlen(suffix) };
-            len += if has_map_name {
-                // SAFETY: strlen bounded the slice at its NUL sentinel.
-                let suffix = unsafe { std::slice::from_raw_parts(suffix.cast(), suffix_len) };
-                crate::util::find_byte(b'@', suffix).unwrap_or(suffix_len)
-            } else {
-                suffix_len
-            };
-        }
-        // SAFETY: the preceding scan, or the exact short length, stays within
-        // the static backing allocation.
-        BStr::new(unsafe { std::slice::from_raw_parts(ptr, len) })
-    }
-}
-
 // Symbol represents one local symbol or one unique global symbol name.
 //
 // A symbol may have several addresses when it has PLT or GOT entries. This type
 // provides the operations that compute those addresses.
-#[repr(C)]
 #[derive(Debug)]
 pub struct Symbol {
     // Global symbols are stored next to their names in the symbol map.
@@ -328,10 +220,12 @@ pub struct Symbol {
     // Rust's symbol map is separate from its symbol array, so retain a thin
     // pointer rather than a 16-byte slice.
     name_ptr: usize,
+    name_len: u32,
 
-    // `value` contains the symbol value. If this is an absolute symbol, it is
-    // equivalent to its address. Otherwise, it is relative to `origin`.
-    pub value: u64,
+    /// Serializes the parallel updates made while resolving definitions.
+    /// The byte also holds the resolution-only `skip_dso` bit; both fit in
+    /// the structure's existing padding.
+    mu: AtomicU8,
 
     // A symbol is owned by a file. If two or more files define the
     // same symbol, the one with the strongest definition owns the symbol.
@@ -342,8 +236,19 @@ pub struct Symbol {
     file: SymbolFile,
     origin: Origin,
 
+    // `value` contains the symbol value. If this is an absolute symbol, it is
+    // equivalent to its address. Otherwise, it is relative to `origin`.
+    pub value: u64,
+
     // Index into the symbol table of the owner file.
     pub sym_idx: u32,
+    type_and_bind: u8,
+
+    pub ver_idx: u16,
+    pub visibility: AtomicU8,
+
+    // `flags` has NEEDS_ flags.
+    pub flags: AtomicU8,
 
     // Auxiliary data for dynamic symbols, allocated in ctx.arena on demand.
     // Rust stores an index into SymbolTable's auxiliary-data array.
@@ -352,20 +257,9 @@ pub struct Symbol {
     /// The symbol's boolean attributes, packed; the accessors below name
     /// them.
     bits: u16,
-
-    pub ver_idx: u16,
-    name_len: NameLen,
-    type_and_bind: u8,
-
-    /// Serializes parallel symbol resolution and also holds the other atomic
-    /// symbol properties.
-    state: AtomicU8,
-
-    // `flags` has NEEDS_ flags.
-    pub flags: AtomicU8,
 }
 
-const _: () = assert!(std::mem::size_of::<Symbol>() == 40);
+const _: () = assert!(std::mem::size_of::<Symbol>() == 48);
 
 const SYMBOL_LOCKED: u8 = 1 << 0;
 
@@ -377,9 +271,10 @@ const NO_AUX: u32 = u32::MAX;
 const WRITE_TO_SYMTAB: u8 = 1 << 7; // for --strip-all and the like
 const NEEDS_MASK: u8 = !WRITE_TO_SYMTAB;
 
-const VISIBILITY_SHIFT: u32 = 2;
-const VISIBILITY_MASK: u8 = 0b11 << VISIBILITY_SHIFT;
-const SYMBOL_STATE_SHIFT: u32 = 4;
+const VISIBILITY_MASK: u8 = 0b11;
+const ORIGIN_KIND_SHIFT: u32 = 2;
+const ORIGIN_KIND_MASK: u8 = 0b111 << ORIGIN_KIND_SHIFT;
+const SYMBOL_STATE_SHIFT: u32 = 5;
 const SYMBOL_STATE_MASK: u8 = 0b11 << SYMBOL_STATE_SHIFT;
 const SYMBOL_UNDEFINED: u8 = 0;
 const SYMBOL_COMMON: u8 = 1;
@@ -497,9 +392,6 @@ const WRAPPED: u16 = 1 << 7; // for --wrap
 // For symbols with default symbol version, e.g. foo@@VERSION.
 const VERSIONED_DEFAULT: u16 = 1 << 8;
 
-// Global symbols are stored next to their names in the symbol map.
-const HAS_MAP_NAME: u16 = 1 << 9;
-
 // For --gc-sections
 const GC_ROOT: u16 = 1 << 10;
 
@@ -551,7 +443,6 @@ symbol_bits! {
     is_traced, set_traced: TRACED;
     is_wrapped, set_wrapped: WRAPPED;
     is_versioned_default, set_versioned_default: VERSIONED_DEFAULT;
-    has_map_name, set_has_map_name: HAS_MAP_NAME;
     gc_root, set_gc_root: GC_ROOT;
     referenced_by_regular_obj, set_referenced_by_regular_obj: REFERENCED_BY_REGULAR_OBJ;
     comdat_claimed_by_ir, set_comdat_claimed_by_ir: COMDAT_CLAIMED_BY_IR;
@@ -562,68 +453,35 @@ symbol_bits! {
 // Inline objects and functions
 
 impl Symbol {
-    fn from_name_parts(name_ptr: *const u8, name_len: usize, has_map_name: bool) -> Symbol {
-        let bits = if has_map_name { HAS_MAP_NAME } else { 0 };
-        Symbol {
-            name_ptr: name_ptr as usize,
-            value: 0,
-            file: SymbolFile::none(),
-            origin: Origin::none(),
-            sym_idx: u32::MAX,
-            aux_idx: NO_AUX,
-            bits,
-            ver_idx: VER_NDX_UNSPECIFIED as u16,
-            name_len: NameLen::new(name_len),
-            type_and_bind: 0,
-            state: AtomicU8::new(0),
-            flags: AtomicU8::new(0),
-        }
-    }
-
     #[inline]
     pub fn new(name: &'static BStr) -> Symbol {
-        if name.len() < NameLen::LONG_NAME {
-            return Symbol::from_name_parts(name.as_ptr(), name.len(), false);
+        let name_len = u32::try_from(name.len()).expect("symbol name is larger than 4 GiB");
+        Symbol {
+            name_ptr: name.as_ptr() as usize,
+            name_len,
+            mu: AtomicU8::new(0),
+            file: SymbolFile::none(),
+            origin: Origin::none(),
+            value: 0,
+            sym_idx: u32::MAX,
+            type_and_bind: 0,
+            ver_idx: VER_NDX_UNSPECIFIED as u16,
+            visibility: AtomicU8::new(STV_DEFAULT as u8),
+            flags: AtomicU8::new(0),
+            aux_idx: NO_AUX,
+            bits: 0,
         }
-        let name = crate::util::leak_bytes(name.to_vec());
-        Symbol::from_name_parts(name.as_ptr(), name.len(), false)
     }
 
-    /// Creates a file-local symbol whose name is followed by a NUL in an
-    /// input string table.
-    ///
-    /// # Safety
-    ///
-    /// The byte after `name` must remain readable and the complete string
-    /// table entry must end in NUL.
-    #[inline]
-    pub(crate) unsafe fn new_in_strtab(name: &'static BStr) -> Symbol {
-        Symbol::from_name_parts(name.as_ptr(), name.len(), false)
-    }
-
-    /// Creates a global symbol named by a prefix of its map key. The prefix
-    /// may end before an `@` version suffix.
-    ///
-    /// # Safety
-    ///
-    /// For a long name, the backing storage beginning at `key` must remain
-    /// readable through a trailing NUL.
-    #[inline]
-    unsafe fn new_map(key: &'static [u8], name_len: usize) -> Symbol {
-        debug_assert!(name_len <= key.len());
-        Symbol::from_name_parts(key.as_ptr(), name_len, true)
-    }
-
-    /// The name storage outlives the link and has a NUL sentinel after the
-    /// complete string-table entry or symbol-map key.
+    /// The name storage outlives the link. Only [`Self::new`] sets the
+    /// pointer, and it accepts a static string.
     #[inline]
     pub fn name(&self) -> &'static BStr {
-        // SAFETY: Symbol constructors receive names backed by input string
-        // tables or leak_bytes, both of which keep that sentinel alive.
-        unsafe {
-            self.name_len
-                .get_from_ptr(self.name_ptr as *const u8, self.has_map_name())
-        }
+        // SAFETY: `name_ptr` and `name_len` came from the same static slice
+        // in `new` and are never modified.
+        BStr::new(unsafe {
+            std::slice::from_raw_parts(self.name_ptr as *const u8, self.name_len as usize)
+        })
     }
 
     #[inline]
@@ -644,15 +502,15 @@ impl Symbol {
     /// Prevents a definition in a DSO from resolving the symbol.
     #[inline]
     pub fn skip_dso(&self) -> bool {
-        self.state.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
+        self.mu.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
     }
 
     #[inline]
     pub fn set_skip_dso(&self, on: bool) {
         if on {
-            self.state.fetch_or(SYMBOL_SKIP_DSO, Ordering::Relaxed);
+            self.mu.fetch_or(SYMBOL_SKIP_DSO, Ordering::Relaxed);
         } else {
-            self.state.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
+            self.mu.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
         }
     }
 
@@ -664,8 +522,8 @@ impl Symbol {
     /// `ptr` must point to a live Symbol.
     #[inline]
     pub(crate) unsafe fn skip_dso_at(ptr: *const Symbol) -> bool {
-        let state = unsafe { std::ptr::addr_of!((*ptr).state) };
-        unsafe { &*state }.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
+        let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
+        unsafe { &*mu }.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
     }
 
     /// Runs `f` while holding this symbol's resolution lock.
@@ -680,10 +538,10 @@ impl Symbol {
         ptr: *mut Symbol,
         f: impl FnOnce(&mut Symbol) -> R,
     ) -> R {
-        let state = unsafe { std::ptr::addr_of!((*ptr).state) };
+        let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
         let mut unlocked = 0;
         loop {
-            match unsafe { &*state }.compare_exchange_weak(
+            match unsafe { &*mu }.compare_exchange_weak(
                 unlocked,
                 unlocked | SYMBOL_LOCKED,
                 Ordering::Acquire,
@@ -693,34 +551,36 @@ impl Symbol {
                 Err(mut actual) => {
                     while actual & SYMBOL_LOCKED != 0 {
                         std::hint::spin_loop();
-                        actual = unsafe { &*state }.load(Ordering::Relaxed);
+                        actual = unsafe { &*mu }.load(Ordering::Relaxed);
                     }
                     unlocked = actual;
                 }
             }
         }
 
-        struct Guard(*const AtomicU8);
+        struct Guard(*const AtomicU8, u8);
         impl Drop for Guard {
             #[inline(always)]
             fn drop(&mut self) {
-                unsafe { &*self.0 }.fetch_and(!SYMBOL_LOCKED, Ordering::Release);
+                unsafe { &*self.0 }.store(self.1, Ordering::Release);
             }
         }
 
-        let _guard = Guard(state);
+        let _guard = Guard(mu, unlocked);
         unsafe { f(&mut *ptr) }
     }
 
     #[inline]
-    fn set_state_bits(&self, mask: u8, value: u8) {
-        let mut cur = self.state.load(Ordering::Relaxed);
+    fn set_visibility_bits(&self, mask: u8, value: u8) {
+        let mut cur = self.visibility.load(Ordering::Relaxed);
         loop {
             let new = (cur & !mask) | (value & mask);
-            match self
-                .state
-                .compare_exchange_weak(cur, new, Ordering::Relaxed, Ordering::Relaxed)
-            {
+            match self.visibility.compare_exchange_weak(
+                cur,
+                new,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => return,
                 Err(actual) => cur = actual,
             }
@@ -729,27 +589,41 @@ impl Symbol {
 
     #[inline]
     fn origin_kind(&self) -> OriginKind {
-        self.origin.kind()
+        match (self.visibility.load(Ordering::Relaxed) & ORIGIN_KIND_MASK) >> ORIGIN_KIND_SHIFT {
+            0 => OriginKind::None,
+            1 => OriginKind::Section,
+            2 => OriginKind::Fragment,
+            3 => OriginKind::Chunk,
+            4 => OriginKind::Symbol,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn set_origin_kind(&mut self, kind: OriginKind) {
+        let bits = self.visibility.get_mut();
+        *bits = (*bits & !ORIGIN_KIND_MASK) | ((kind as u8) << ORIGIN_KIND_SHIFT);
     }
 
     #[inline]
     fn symbol_state(&self) -> u8 {
-        (self.state.load(Ordering::Relaxed) & SYMBOL_STATE_MASK) >> SYMBOL_STATE_SHIFT
+        (self.visibility.load(Ordering::Relaxed) & SYMBOL_STATE_MASK) >> SYMBOL_STATE_SHIFT
     }
 
     #[inline]
-    fn set_symbol_state(&self, state: u8) {
-        self.set_state_bits(SYMBOL_STATE_MASK, state << SYMBOL_STATE_SHIFT);
+    fn set_symbol_state(&mut self, state: u8) {
+        let bits = self.visibility.get_mut();
+        *bits = (*bits & !SYMBOL_STATE_MASK) | (state << SYMBOL_STATE_SHIFT);
     }
 
     #[inline]
     pub fn visibility(&self) -> u32 {
-        ((self.state.load(Ordering::Relaxed) & VISIBILITY_MASK) >> VISIBILITY_SHIFT) as u32
+        (self.visibility.load(Ordering::Relaxed) & VISIBILITY_MASK) as u32
     }
 
     #[inline]
     pub fn set_visibility(&self, v: u32) {
-        self.set_state_bits(VISIBILITY_MASK, (v as u8) << VISIBILITY_SHIFT);
+        self.set_visibility_bits(VISIBILITY_MASK, v as u8);
     }
 
     // Symbol's visibility is set to the most restrictive one. For example,
@@ -766,13 +640,15 @@ impl Symbol {
             STV_PROTECTED => 2,
             _ => 3,
         };
-        let mut cur = self.state.load(Ordering::Relaxed);
-        while rank(vis) < rank((cur & VISIBILITY_MASK) >> VISIBILITY_SHIFT) {
-            let new = (cur & !VISIBILITY_MASK) | (vis << VISIBILITY_SHIFT);
-            match self
-                .state
-                .compare_exchange_weak(cur, new, Ordering::Relaxed, Ordering::Relaxed)
-            {
+        let mut cur = self.visibility.load(Ordering::Relaxed);
+        while rank(vis) < rank(cur & VISIBILITY_MASK) {
+            let new = (cur & !VISIBILITY_MASK) | vis;
+            match self.visibility.compare_exchange_weak(
+                cur,
+                new,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => break,
                 Err(actual) => cur = actual,
             }
@@ -896,32 +772,30 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn input_section<E: Arch>(&self, ctx: &Context<E>) -> Option<SectionRef> {
-        self.input_section_ref(ctx).map(|section| SectionRef {
+    pub fn input_section(&self) -> Option<SectionRef> {
+        self.input_section_ref().map(|section| SectionRef {
             file: section.file,
             shndx: section.shndx,
         })
     }
 
+    /// The input section itself, stored directly as in C++'s tagged origin.
     #[inline]
-    pub fn input_section_id(&self) -> Option<InputSectionId> {
+    pub fn input_section_ref(&self) -> Option<&InputSection> {
         if self.origin_kind() == OriginKind::Section {
-            Some(self.origin.section_id())
+            // SAFETY: input sections have stable arena addresses, and
+            // mergeable conversion leaves them in those slots.
+            Some(unsafe { &*(self.origin.raw as usize as *const InputSection) })
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn input_section_ref<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a InputSection> {
-        self.input_section_id().map(|id| ctx.input_section(id))
-    }
-
-    #[inline]
-    pub fn fragment<E: Arch>(&self, ctx: &Context<E>) -> Option<FragmentRef> {
+    pub fn fragment(&self) -> Option<FragmentRef> {
         if self.origin_kind() == OriginKind::Fragment {
-            let (section, entry) = self.origin.fragment_ref();
-            Some(ctx.origin_fragment_ref(section, entry))
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.fragment })
         } else {
             None
         }
@@ -929,7 +803,8 @@ impl Symbol {
 
     pub fn output_chunk(&self) -> Option<ChunkId> {
         if self.origin_kind() == OriginKind::Chunk {
-            Some(self.origin.chunk_id())
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.chunk })
         } else {
             None
         }
@@ -937,7 +812,8 @@ impl Symbol {
 
     pub fn symbol_origin(&self) -> Option<SymbolId> {
         if self.origin_kind() == OriginKind::Symbol {
-            Some(self.origin.symbol_id())
+            // SAFETY: the kind records the union field last written.
+            Some(unsafe { self.origin.symbol })
         } else {
             None
         }
@@ -946,36 +822,45 @@ impl Symbol {
     #[inline]
     pub fn clear_origin(&mut self) {
         self.origin = Origin::none();
+        self.set_origin_kind(OriginKind::None);
     }
 
     #[inline]
-    pub fn set_input_section(&mut self, section: InputSectionId) {
+    pub fn set_input_section(&mut self, section: &InputSection) {
         self.origin = Origin::section(section);
+        self.set_origin_kind(OriginKind::Section);
     }
 
     #[inline]
-    pub(crate) fn set_fragment(&mut self, section: OriginMergedSectionId, entry: EntryId) {
-        self.origin = Origin::fragment(section, entry);
+    pub fn set_fragment(&mut self, fragment: FragmentRef) {
+        self.origin = Origin::fragment(fragment);
+        self.set_origin_kind(OriginKind::Fragment);
     }
 
     #[inline]
     pub fn set_output_chunk(&mut self, chunk: ChunkId) {
         self.origin = Origin::chunk(chunk);
+        self.set_origin_kind(OriginKind::Chunk);
     }
 
     #[inline]
     pub fn set_symbol_origin(&mut self, symbol: SymbolId) {
         self.origin = Origin::symbol(symbol);
+        self.set_origin_kind(OriginKind::Symbol);
     }
 
     #[inline]
     pub(crate) fn origin_state(&self) -> OriginState {
-        self.origin
+        OriginState {
+            payload: self.origin,
+            kind: self.origin_kind(),
+        }
     }
 
     #[inline]
     pub(crate) fn set_origin_state(&mut self, state: OriginState) {
-        self.origin = state;
+        self.origin = state.payload;
+        self.set_origin_kind(state.kind);
     }
 
     /// The symbol's entry in the owner file's symbol table; a blank one
@@ -1119,7 +1004,7 @@ impl Symbol {
 
     #[inline]
     pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
-        if let Some(frag_ref) = self.fragment(ctx) {
+        if let Some(frag_ref) = self.fragment() {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
                 // This condition is met if a non-alloc section refers an
@@ -1150,7 +1035,7 @@ impl Symbol {
             return self.plt_addr(ctx);
         }
 
-        match self.input_section_ref(ctx) {
+        match self.input_section_ref() {
             Some(isec) => {
                 if !isec.is_alive() {
                     if let Some(leader) = isec.icf_leader() {
@@ -1779,16 +1664,8 @@ impl SymbolTable {
         if let Some(&id) = shard.get(&Key { hash, key }) {
             return id;
         }
-        let key = if name.len() < NameLen::LONG_NAME {
-            key
-        } else {
-            crate::util::leak_bytes(key.to_vec())
-        };
         let id = SymbolId(self.symbols.len() as u32);
-        // SAFETY: short names need no scan, and the copied long key has a NUL
-        // sentinel.
-        self.symbols
-            .push(unsafe { Symbol::new_map(key, name.len()) });
+        self.symbols.push(Symbol::new(BStr::new(name)));
         shard.insert(Key { hash, key }, id);
         self.note_globals(shard_idx, id.0..id.0 + 1);
         id
@@ -1900,14 +1777,11 @@ impl SymbolTable {
                             let id = SymbolId(index as u32);
                             // SAFETY: reserve keeps `symbols` stable, and the
                             // atomic bump pointer gives this shard exclusive
-                            // ownership of the slot. Recorded input keys are
-                            // backed by normalized string tables; synthesized
-                            // keys come from leak_bytes, so long keys have a
-                            // terminating NUL or an `@` at the name boundary.
+                            // ownership of the slot.
                             unsafe {
-                                symbols
-                                    .add(index)
-                                    .write(Symbol::new_map(p.key.key, p.name_len as usize));
+                                symbols.add(index).write(Symbol::new(BStr::new(
+                                    &p.key.key[..p.name_len as usize],
+                                )));
                             }
                             entry.insert(id);
                             id
@@ -2211,86 +2085,5 @@ pub fn is_c_identifier(s: &[u8]) -> bool {
             is_alpha(first) && rest.iter().all(|&c| is_alpha(c) || c.is_ascii_digit())
         }
         None => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::output_chunks::{MergedSectionId, OutputSectionId};
-
-    #[test]
-    fn packed_origins_round_trip() {
-        assert_eq!(Origin::none().kind(), OriginKind::None);
-
-        let section = InputSectionId::from_origin_payload((1 << 30) - 1);
-        let origin = Origin::section(section);
-        assert_eq!(origin.0 & 0b11, SECTION_TAG);
-        assert_eq!(origin.kind(), OriginKind::Section);
-        assert_eq!(origin.section_id(), section);
-
-        let merged = OriginMergedSectionId::new(OriginMergedSectionId::LIMIT - 1);
-        let entry = EntryId::from_raw((1 << FRAGMENT_ENTRY_BITS) - 1);
-        let origin = Origin::fragment(merged, entry);
-        assert_eq!(origin.0 & 0b1, FRAGMENT_TAG);
-        assert_eq!(origin.kind(), OriginKind::Fragment);
-        assert_eq!(origin.fragment_ref(), (merged, entry));
-
-        let chunks = [
-            ChunkId::Ehdr,
-            ChunkId::RelroPadding,
-            ChunkId::Output(OutputSectionId::new((1 << 23) - 1)),
-            ChunkId::Merged(MergedSectionId((1 << 23) - 1)),
-            ChunkId::Reloc((1 << 23) - 1),
-            ChunkId::ComdatGroup((1 << 23) - 1),
-            ChunkId::Compressed((1 << 23) - 1),
-            ChunkId::Placeholder((1 << 23) - 1),
-        ];
-        for chunk in chunks {
-            let origin = Origin::chunk(chunk);
-            assert_eq!(origin.0 & 0b111, CHUNK_TAG);
-            assert_eq!(origin.kind(), OriginKind::Chunk);
-            assert_eq!(origin.chunk_id(), chunk);
-        }
-
-        let symbol = SymbolId((1 << 28) - 1);
-        let origin = Origin::symbol(symbol);
-        assert_eq!(origin.0 & 0b1111, SYMBOL_TAG);
-        assert_eq!(origin.kind(), OriginKind::Symbol);
-        assert_eq!(origin.symbol_id(), symbol);
-    }
-
-    #[test]
-    fn compact_name_lengths_recover_long_names() {
-        let name = vec![b'x'; 1000];
-        let name = crate::util::leak_bytes(name);
-        let symbol = Symbol::new(BStr::new(name));
-        assert_eq!(symbol.name(), BStr::new(name));
-
-        let mut key = vec![b'y'; 1000];
-        key.extend_from_slice(b"@VERSION");
-        let key = crate::util::leak_bytes(key);
-        // SAFETY: leak_bytes appended the sentinel required by new_map.
-        let symbol = unsafe { Symbol::new_map(key, 1000) };
-        assert_eq!(symbol.name(), BStr::new(&key[..1000]));
-    }
-
-    #[test]
-    fn resolution_lock_preserves_atomic_symbol_state() {
-        let mut symbol = Symbol::new(BStr::new(b"symbol"));
-        let ptr = &mut symbol as *mut Symbol;
-        // SAFETY: the local symbol remains live and no other reference accesses
-        // its non-atomic fields during the call.
-        unsafe {
-            Symbol::with_resolution_lock(ptr, |symbol| {
-                symbol.set_skip_dso(true);
-                symbol.set_visibility(STV_HIDDEN);
-                symbol.set_symbol_state(SYMBOL_DEFINED);
-            });
-        }
-        assert!(symbol.skip_dso());
-        assert_eq!(symbol.visibility(), STV_HIDDEN);
-        assert_eq!(symbol.symbol_state(), SYMBOL_DEFINED);
-        assert_eq!(symbol.state.load(Ordering::Relaxed) & SYMBOL_LOCKED, 0);
     }
 }

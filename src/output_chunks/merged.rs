@@ -36,44 +36,6 @@ impl MergedSectionId {
     }
 }
 
-/// Index of an allocated merged section in a symbol origin. Only allocated
-/// sections need fragment origins, so they use a separate compact namespace.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct OriginMergedSectionId(u8);
-
-impl OriginMergedSectionId {
-    pub(crate) const LIMIT: usize = 1 << 6;
-
-    #[inline]
-    pub(crate) fn new(index: usize) -> OriginMergedSectionId {
-        if index >= Self::LIMIT {
-            crate::fatal!(
-                "cannot create more than {} allocated merged sections",
-                Self::LIMIT
-            );
-        }
-        OriginMergedSectionId(index as u8)
-    }
-
-    #[inline]
-    pub(crate) fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    #[inline]
-    pub(crate) fn raw(self) -> u32 {
-        self.0 as u32
-    }
-
-    #[inline]
-    pub(crate) fn from_raw(raw: u32) -> OriginMergedSectionId {
-        debug_assert!(raw < Self::LIMIT as u32);
-        OriginMergedSectionId(raw as u8)
-    }
-}
-
-pub(crate) const ORIGIN_FRAGMENT_BUCKET_LIMIT: usize = 1 << 25;
-
 /// The deterministically ordered fragments and the two output sizes of one
 /// hash-table shard.
 #[derive(Debug)]
@@ -100,10 +62,6 @@ pub struct MergedSection<E: Layout> {
     pub fragments: FrozenMap<SectionFragment>,
     pub estimation: u64,
     pub resolved: bool,
-
-    /// Its compact index when symbols may use fragments in this section as
-    /// their origins. Non-allocated merged sections have no such index.
-    pub(crate) origin_id: Option<OriginMergedSectionId>,
 
     /// The fragments in deterministic order within each hash-table shard.
     shards: Vec<ShardLayout>,
@@ -195,7 +153,6 @@ impl<E: Layout> MergedSection<E> {
             fragments: FrozenMap::default(),
             estimation: 0,
             resolved: false,
-            origin_id: None,
             shards: Vec::new(),
             shard_offsets: Vec::new(),
         }
@@ -422,15 +379,6 @@ pub fn resolve_sections<E: Arch>(
             if let Some(estimate) = estimate {
                 section.estimation = estimate.cardinality();
                 section.map = ConcurrentMap::with_capacity(section.estimation as usize * 3 / 2);
-                if section.origin_id.is_some()
-                    && section.map.nbuckets() > ORIGIN_FRAGMENT_BUCKET_LIMIT
-                {
-                    crate::fatal!(
-                        "{}: cannot create more than {} fragment buckets",
-                        section.hdr.name,
-                        ORIGIN_FRAGMENT_BUCKET_LIMIT
-                    );
-                }
             }
         });
     drop(t);

@@ -1017,18 +1017,6 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     }
     drop(t);
 
-    ctx.origin_merged_sections.clear();
-    for (i, section) in ctx.merged_sections.iter_mut().enumerate() {
-        if section.is_alloc() {
-            let id = crate::output_chunks::merged::OriginMergedSectionId::new(
-                ctx.origin_merged_sections.len(),
-            );
-            section.origin_id = Some(id);
-            ctx.origin_merged_sections
-                .push(crate::output_chunks::MergedSectionId(i as u32));
-        }
-    }
-
     let t = ctx.timer("resolve");
     let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
     crate::output_chunks::merged::resolve_sections::<E>(
@@ -1806,7 +1794,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
 
     let println = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
         let kind = if is_weak { 'w' } else { 'u' };
-        match sym.input_section(ctx) {
+        match sym.input_section() {
             Some(sec) => out!("{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
             None => out!(
                 "{src}\t{}\t{kind}\t{sym}",
@@ -3438,7 +3426,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             while !p.is_empty() {
                 let idx = crate::util::read_uleb(&mut p) as usize;
                 let sym = &ctx_ref.symbols[file.base.symbols[idx]];
-                if let Some(r) = sym.input_section(ctx_ref) {
+                if let Some(r) = sym.input_section() {
                     ctx_ref.section(r).set_address_taken();
                 }
             }
@@ -3456,7 +3444,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             for r in isec.rels::<E>(file) {
                 if !r.is_func_call::<E>() {
                     let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
-                    if let Some(dst) = sym.input_section_ref(ctx_ref) {
+                    if let Some(dst) = sym.input_section_ref() {
                         if dst.sh_flags & SHF_EXECINSTR as u64 != 0 {
                             dst.set_address_taken();
                         }
@@ -3467,7 +3455,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
     });
 
     let mark = |id: SymbolId| {
-        if let Some(r) = ctx_ref.symbols[id].input_section(ctx_ref) {
+        if let Some(r) = ctx_ref.symbols[id].input_section() {
             ctx_ref.section(r).set_address_taken();
         }
     };
@@ -4816,7 +4804,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
                 continue;
             }
-            let Some(isec) = sym.input_section_ref(ctx) else {
+            let Some(isec) = sym.input_section_ref() else {
                 continue;
             };
             if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
@@ -4862,7 +4850,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
                     continue;
                 }
                 let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-                let target = sym.input_section_ref(ctx);
+                let target = sym.input_section_ref();
                 if sym.st_type() == STT_SECTION {
                     write_back(target, rel.r_addend());
                 } else {
@@ -4876,7 +4864,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     // .dynsym. We need to retain landing pads for such symbols.
     let mut keep = |id: SymbolId| {
         let sym = &ctx.symbols[id];
-        write_back(sym.input_section_ref(ctx), sym.value as i64);
+        write_back(sym.input_section_ref(), sym.value as i64);
     };
 
     keep(ctx.syms.entry);

@@ -469,7 +469,7 @@ pub mod symtab {
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
     if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size().get() != 0 {
-        if let Some(isec) = sym.input_section_ref(ctx) {
+        if let Some(isec) = sym.input_section_ref() {
             if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
                 let end = esym.st_value().get() + esym.st_size().get();
                 return (esym.st_size().get() as i64 + esym.st_value().get() as i64
@@ -509,7 +509,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     }
 
     let st_shndx_of = |sym: &Symbol| -> u32 {
-        if let Some(frag) = sym.fragment(ctx) {
+        if let Some(frag) = sym.fragment() {
             if ctx.fragment(frag).is_alive() {
                 return ctx.merged_sections[frag.section.index()].hdr.shndx;
             }
@@ -517,7 +517,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) {
             return ctx.ppc64_opd.as_ref().unwrap().hdr.shndx;
         }
-        if let Some(isec) = sym.input_section_ref(ctx) {
+        if let Some(isec) = sym.input_section_ref() {
             if isec.is_alive() {
                 return ctx.output_section(isec.output_section.unwrap()).hdr.shndx;
             }
@@ -530,7 +530,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     };
 
     let mut shndx: Option<u32> = None;
-    let isec = sym.input_section_ref(ctx);
+    let isec = sym.input_section_ref();
 
     if sym.has_copyrel() {
         // Symbol in .copyrel
@@ -551,7 +551,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         // Linker-synthesized symbol
         shndx = Some(ctx.chunk_header(chunk).shndx);
         esym.st_value_mut().set(sym.addr(ctx));
-    } else if let Some(frag) = sym.fragment(ctx) {
+    } else if let Some(frag) = sym.fragment() {
         shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
         esym.st_value_mut().set(sym.addr(ctx));
     } else if isec.is_none() {

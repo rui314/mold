@@ -76,11 +76,6 @@ impl EntryId {
     pub fn raw(self) -> u32 {
         self.0
     }
-
-    #[inline]
-    pub(crate) fn from_raw(raw: u32) -> EntryId {
-        EntryId(raw)
-    }
 }
 
 pub struct ConcurrentMap<T> {

@@ -203,12 +203,9 @@ pub fn leak<T>(value: T) -> &'static T {
     Box::leak(Box::new(value))
 }
 
-/// Leaks a byte string for the rest of the process's lifetime. The byte just
-/// beyond the returned slice is a NUL sentinel for compact string lengths.
-pub fn leak_bytes(mut bytes: Vec<u8>) -> &'static [u8] {
-    let len = bytes.len();
-    bytes.push(0);
-    &Vec::leak(bytes)[..len]
+/// Leaks a byte string for the rest of the process's lifetime.
+pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
+    Vec::leak(bytes)
 }
 
 /// Leaks a string for the rest of the process's lifetime.
