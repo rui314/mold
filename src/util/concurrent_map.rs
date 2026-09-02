@@ -338,7 +338,7 @@ impl<T> ConcurrentMap<T> {
         self.key_at(id.0 as usize).expect("an occupied bucket")
     }
 
-    // Return a list of map entries sorted in a deterministic order.
+    /// Returns the map entries in a deterministic order.
     ///
     /// Linear probing fills the same set of buckets whatever the order
     /// keys were inserted in, but which of two colliding keys got the

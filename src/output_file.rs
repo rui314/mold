@@ -254,12 +254,11 @@ impl OutputFile {
         output
     }
 
-    // LockingOutputFile is similar to MemoryMappedOutputFile, but it doesn't
-    // rename output files and instead acquires file lock using flock().
-    /// Opens a file that is written in place under an exclusive lock, for
-    /// a separate debug file that a debugger may wait on. The file is
-    /// made unusable right away so that a stale one isn't picked up by
-    /// accident; [`Self::resize`] gives it its size.
+    /// Opens a file that is written in place rather than renamed and holds an
+    /// exclusive `flock`. This is used for a separate debug file that a
+    /// debugger may wait on. The file is made unusable right away so that a
+    /// stale one is not picked up by accident; [`Self::resize`] gives it its
+    /// size.
     #[cfg(not(windows))]
     pub fn open_locked(path: &str, perm: u32) -> OutputFile {
         let mut file = open_options(perm)
@@ -299,9 +298,8 @@ impl OutputFile {
             .expect("resizing an output file that isn't a file");
         file.set_len(size)
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path));
-        // As in MemoryMappedOutputFile, we map the file with twice as much
-        // address space as its size so that extend() can grow the file into
-        // the mapping in place.
+        // Reserve twice as much address space as the file needs so that
+        // extend() can grow it into the mapping in place.
         self.storage = map_file(file, size);
         #[cfg(not(windows))]
         self.publish_output_buffer();

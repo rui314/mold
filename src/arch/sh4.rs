@@ -94,9 +94,10 @@ impl Layout for Sh4Target<BigEndian> {
     type Rel = Elf32RelaBe;
 }
 
-// Even though SH-4 uses RELA-type relocations, addends are stored in
-// the relocated places for some reason.
-/// Whether the relocation's addend lives in the relocated word.
+/// Whether a relocation stores its addend in the relocated word.
+///
+/// Although SH-4 uses RELA records, these relocation types keep their addends
+/// in place.
 fn addend_in_place(r_type: u32) -> bool {
     matches!(
         r_type,

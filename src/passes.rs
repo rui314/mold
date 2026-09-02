@@ -4467,7 +4467,6 @@ pub fn write_gnu_debuglink<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8]) {
     misc::gnu_debuglink::copy_buf(ctx, &mut buf[start..end]);
 }
 
-// Compute a CRC for given data in parallel
 /// The CRC32 of a large buffer, computed in parallel.
 fn crc32_parallel(buf: &[u8]) -> u32 {
     const SHARD: usize = 1024 * 1024; // 1 MiB

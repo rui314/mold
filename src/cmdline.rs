@@ -729,15 +729,11 @@ fn read_response_file(path: &str, depth: usize) -> Vec<String> {
             continue;
         }
 
-        // The C++ tokenizer preserves this zero-copy fast path:
-        // A token containing no quotes or backslashes, which is by far the
-        // common case, is returned as a substring of the file.
-        //
-        // Rust's owned command-line strings require copying either way.
-
-        // Otherwise, copy the token, removing quotes and backslashes. A
-        // backslash escapes the next character, and a quoted part may be
-        // followed by more characters of the same token.
+        // Copy the token while removing quotes and backslashes. Tokens with
+        // neither are by far the common case and could otherwise be borrowed
+        // from the file, but command-line strings are owned. A backslash
+        // escapes the next character, and a quoted part may be followed by
+        // more characters of the same token.
         let mut tok = Vec::new();
         let mut quote = None;
         while i < data.len() {

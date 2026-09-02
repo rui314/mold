@@ -72,10 +72,8 @@ struct Record {
     children: Vec<usize>,
 }
 
-// Timer and TimeRecord records elapsed time (wall clock time)
-// used by each pass of the linker.
-/// Collects timing records for the passes of a link. Cloning shares the
-/// underlying records.
+/// Collects wall-clock and CPU timing records for the passes of a link.
+/// Cloning shares the underlying records.
 #[derive(Clone, Debug, Default)]
 pub struct Timers {
     records: Arc<Mutex<Vec<Record>>>,

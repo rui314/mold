@@ -46,12 +46,9 @@ impl SymbolId {
     }
 }
 
-// TaggedPtr stores one of several pointer types and uses the low pointer bits
-// to record which type it contains.
-//
-// Rust uses pointers for input and output sections and compact ids for section
-// fragments and symbols. All four representations leave their low two bits
-// available for the tag.
+// Origin stores pointers for input and output sections and compact ids for
+// section fragments and symbols. All four representations leave their low two
+// bits available for a tag identifying which representation it contains.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub(crate) struct Origin(u64);
@@ -241,10 +238,9 @@ impl SymbolFile {
 // provides the operations that compute those addresses.
 #[derive(Debug)]
 pub struct Symbol {
-    // Global symbols are stored next to their names in the symbol map.
-    // The name bytes live in the surrounding map entry or the owner file.
-    // Rust's symbol map is separate from its symbol array, so retain a thin
-    // pointer rather than a 16-byte slice.
+    // Global symbol names live in the symbol map, and local symbol names live
+    // in the owner file. Since the symbol map and symbol array are separate,
+    // retain a thin pointer rather than a 16-byte slice.
     name_ptr: usize,
     name_len: u32,
 
@@ -276,8 +272,8 @@ pub struct Symbol {
     // `flags` has NEEDS_ flags.
     pub flags: AtomicU8,
 
-    // Auxiliary data for dynamic symbols, allocated in ctx.arena on demand.
-    // Rust stores an index into SymbolTable's auxiliary-data array.
+    // Index into SymbolTable's side array of auxiliary data, allocated on
+    // demand for dynamic symbols.
     aux_idx: u32,
 
     /// The symbol's boolean attributes, packed; the accessors below name
@@ -1198,13 +1194,11 @@ pub fn name_len(key: &[u8]) -> usize {
     crate::util::find_byte(b'@', key).unwrap_or(key.len())
 }
 
-// Keeping the key outside T means that values not stored in a map do not
-// pay for it. A mapped T is the base subobject of this entry.
-//
-// add() already computed the string hash. Store it in the map key so that
-// unordered_map does not scan the string again.
-/// A key with its hash. Recording a key already computed its hash; it is
-/// stored in the map key so that the map does not scan the string again.
+/// A map key with its precomputed hash.
+///
+/// Keeping the key outside [`Symbol`] means symbols not stored in the map do
+/// not pay for it. Recording a key already computed its hash, so retaining it
+/// avoids scanning the string again during insertion.
 #[derive(Clone, Copy, Debug)]
 struct Key {
     hash: u64,
@@ -1275,9 +1269,8 @@ fn shard_of(hash: u64) -> usize {
     (hash % NUM_SHARDS as u64) as usize
 }
 
-// A key recorded by add() with the slot that receives its value's address.
-/// A key recorded for interning, with the slot that receives its symbol.
-/// A slot is an owner and an index whose meaning is up to the recorder.
+/// A key recorded for interning and the slot that receives its symbol id.
+/// The slot's meaning is determined by the recorder.
 #[derive(Clone, Copy, Debug)]
 struct Pending<S> {
     key: Key,
@@ -1285,8 +1278,7 @@ struct Pending<S> {
     slot: S,
 }
 
-// A thread's recorded keys, grouped by shard.
-/// The keys one task recorded for interning, grouped by shard.
+/// The keys recorded by one task for interning, grouped by shard.
 #[derive(Debug)]
 pub struct Bins<S = (u32, u32)>(Vec<Vec<Pending<S>>>);
 
@@ -1301,12 +1293,11 @@ impl<S> Bins<S> {
         Bins((0..NUM_SHARDS).map(|_| Vec::new()).collect())
     }
 
-    // Records a key and the slot to receive its value's address. A caller
-    // adding many keys should fetch its thread's bin once with get_bin(),
-    // as the thread-local lookup costs more than the record itself.
-    //
-    // Rust passes the task-local Bins value to this method directly.
-    /// Records `key`, whose symbol is named by its first `name_len` bytes.
+    /// Records `key` and the slot that receives its symbol id.
+    ///
+    /// The symbol is named by the first `name_len` bytes of `key`. Callers
+    /// adding many keys retain one task-local [`Bins`] value, avoiding repeated
+    /// thread-local lookups that would cost more than recording an entry.
     #[inline]
     pub fn record(&mut self, key: &'static [u8], name_len: usize, slot: S) {
         self.record_hashed(key, hash_key(key), name_len, slot);
@@ -1389,22 +1380,12 @@ impl ParallelSymbolAllocator<'_> {
     }
 }
 
-// ArenaResource owns a sparsely-backed address range for symbols, input files,
-// and related linker data structures. Allocation is thread-safe and monotonic;
-// individual allocations are not freed. Keeping related objects in this range
-// lets ArenaPtr represent references between them as 32-bit self-relative
-// offsets.
-//
-// ArenaAllocator adapts ArenaResource to the standard allocator interface so
-// containers can place their backing storage in the resource's address range.
-// It does not own the resource, and deallocation is deferred until the
-// resource itself is destroyed.
-//
-// Rust uses typed arena storage rather than a standard-container allocator.
-/// A sparsely-backed address range for symbols. Allocation is monotonic and
-/// individual symbols are not freed. Reserving the complete range up front
-/// keeps symbol addresses stable and lets the kernel back the densely filled
-/// prefix with transparent huge pages, as C++ mold's `ArenaResource` does.
+/// A sparsely backed, monotonic address range for symbols.
+///
+/// Individual symbols are not freed. Reserving the complete range up front
+/// keeps their addresses stable without immediately allocating physical
+/// pages, and lets the kernel back the densely filled prefix with transparent
+/// huge pages.
 struct SymbolArena {
     data: NonNull<Symbol>,
     len: usize,
@@ -1556,39 +1537,17 @@ impl SymbolBlockPtr {
     }
 }
 
-// ShardedMap is a map from strings to values of type T, built in two phases.
-// In the first phase, which may run in parallel, add() records a key and an
-// ArenaPtr<T> slot that needs the key's value. gather() then deduplicates the
-// keys, finds or creates one value for each key, and writes its address to
-// every recorded slot. The slots must remain at stable addresses until
-// gather().
-//
-// Keys whose hashes fall into different shards never interact, and
-// each shard is processed by exactly one thread during gather(), so
-// unlike with a concurrent hash table, no synchronization is needed,
-// and each key is hashed only once, in add().
-//
-// If a value needs to be initialized from its key, pass an
-// `on_create(key, value)` callback to gather() or insert(). It is called
-// exactly once when a value is created.
-//
-// insert() handles keys that arrive outside the two-phase pattern under a
-// shard mutex. All values live in stable arena blocks.
-//
-// Rust's SymbolTable is the corresponding specialized map and hands SymbolId
-// values to its recorded slots.
 /// The arena of all symbols, and the index of global ones by name.
 ///
-/// The index is a map from strings to symbols, built in two phases. In
-/// the first phase, which may run in parallel, [`Bins::record`] records a
-/// key and a slot that needs the key's symbol. [`SymbolTable::gather`]
-/// then deduplicates the keys, finds or creates one symbol for each key,
-/// and hands its id to every recorded slot.
+/// The index is built in two phases. The parallel first phase records keys and
+/// stable slots that need their symbols. [`SymbolTable::gather`] then
+/// deduplicates the keys, finds or creates one symbol for each key, and hands
+/// its id to every recorded slot. The slots must remain stable until gathering
+/// finishes, and all symbols live in stable arena blocks.
 ///
-/// Keys whose hashes fall into different shards never interact, and each
-/// shard is processed by exactly one thread during `gather`, so unlike
-/// with a concurrent hash table, no synchronization is needed, and each
-/// key is hashed only once, when recorded.
+/// Keys whose hashes fall into different shards never interact. Each shard is
+/// processed by exactly one thread during `gather`, so no synchronization is
+/// needed and each key is hashed only once, when recorded.
 ///
 /// [`SymbolTable::intern`] handles keys that arrive outside the two-phase
 /// pattern, one at a time.
@@ -1876,8 +1835,7 @@ impl SymbolTable {
             .flat_map(|range| range.clone().map(SymbolId))
     }
 
-    /// Applies `f` to all named symbols in parallel, one task per map shard,
-    /// as C++ mold's `ShardedMap::parallel_for_each` does.
+    /// Applies `f` to all named symbols in parallel, one task per map shard.
     pub fn par_for_each_global_mut(&mut self, f: impl Fn(&mut Symbol) + Send + Sync) {
         let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
         self.globals.par_iter().for_each(|ranges| {

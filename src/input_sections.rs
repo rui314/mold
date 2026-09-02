@@ -147,14 +147,11 @@ pub struct InputSection {
     /// First FDE in the owner file's contiguous run for this section.
     pub(crate) fde_begin: u32,
 
-    // ArenaPtr stores a pointer as a signed 32-bit offset from itself, in units of
-    // four bytes. It is used for references between objects in an ArenaResource;
-    // the ArenaPtr and its target must be four-byte aligned and less than 8 GiB
-    // apart. An offset of zero represents a null pointer.
-    //
-    // The offset is relative to this ArenaPtr, so copying it verbatim would
-    // make it point somewhere else.
-    /// A self-relative pointer to rarely used state, in four-byte units.
+    // A self-relative pointer to rarely used state, stored as a signed 32-bit
+    // offset in four-byte units. The field and its target must be four-byte
+    // aligned and less than 8 GiB apart; zero represents a null pointer. Since
+    // the offset is relative to this field, copying it verbatim would make it
+    // point somewhere else.
     extra: i32,
 
     flags: AtomicU8,
@@ -981,12 +978,9 @@ impl InputSection {
 
 impl Drop for InputSection {
     fn drop(&mut self) {
-        // C++ mold has this arena constraint:
-        // InputSections are allocated from the arena, which does not run
-        // destructors, so the class must stay trivially destructible.
-        //
-        // Rust's SectionList explicitly drops every InputSection, so an
-        // extras record may own its r_deltas allocation here.
+        // The arena does not run destructors itself. SectionList explicitly
+        // drops every InputSection, allowing an extras record to own its
+        // r_deltas allocation.
         if let Some(extra) = self.extra_ptr() {
             // SAFETY: this section uniquely owns its initialized extras
             // record. Its arena storage is released after all sections drop.
@@ -1624,10 +1618,9 @@ const MAX_LOCAL_SECTION_ALLOC: usize = SECTION_ARENA_BLOCK_SIZE / 4;
 
 #[derive(Clone, Copy)]
 struct LocalSectionBlock {
-    // Index into the per-thread array of allocation blocks. Slots are never
-    // reused, so a new arena cannot inherit stale pointers from an old one.
-    //
-    // Rust records an arena identity in its one thread-local block instead.
+    // Identity of the arena owning this thread-local allocation block. Arena
+    // identities are never reused, so a new arena cannot inherit stale
+    // offsets from an old one.
     arena_id: u64,
     position: usize,
     end: usize,
@@ -1996,11 +1989,9 @@ impl SectionList {
 
 impl Drop for SectionList {
     fn drop(&mut self) {
-        // ArenaObjectDeleter runs an arena object's destructor without freeing its
-        // storage. ArenaObjectPtr uses it to retain normal unique_ptr ownership
-        // semantics for objects whose storage belongs to ArenaResource.
-        //
-        // Rust performs the corresponding destructor-only operation explicitly.
+        // Run each arena object's destructor without freeing its storage. This
+        // retains ordinary ownership semantics for values whose storage belongs
+        // to the arena.
         for &value in &self.indices {
             let index = if value == 0 {
                 continue;

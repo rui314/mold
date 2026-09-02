@@ -117,9 +117,9 @@ extern "C" fn on_signal(
 
 #[cfg(not(windows))]
 pub fn install_signal_handler() {
-    // The C++ handler has an additional OneTBB compatibility condition:
-    // OneTBB 2021.9.0 has the interface version 12090.
-    // Rust does not install OneTBB's signal handler.
+    // OneTBB 2021.9.0 (interface version 12090) installs its own signal
+    // handler. This binary does not link OneTBB, so no compatibility condition
+    // is needed.
     // SAFETY: installing a signal handler with the three-argument SA_SIGINFO
     // calling convention.
     unsafe {
