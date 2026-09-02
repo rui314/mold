@@ -46,8 +46,8 @@ pub fn set_noinhibit_exec(on: bool) {
     NOINHIBIT_EXEC.store(on, Ordering::Relaxed);
 }
 
-// Some C++ stdlibs don't support std::osyncstream even though
-// it's is in the C++20 standard. So we implement it ourselves.
+// Format each message before taking the lock so diagnostics from different
+// threads cannot interleave.
 fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
     let prefix = if COLOR.load(Ordering::Relaxed) {
         prefix_color

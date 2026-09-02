@@ -78,10 +78,8 @@ pub struct SyntheticSymbols {
     pub fini: SymbolId,
 }
 
-// Context represents a context object for each invocation of the linker.
-// It contains command line flags, pointers to singleton objects
-// (such as linker-synthesized output sections), unique_ptrs for
-// resource management, and other miscellaneous objects.
+// Context contains the state for one linker invocation: command-line options,
+// input and output files, symbols, sections and target-specific data.
 pub struct Context<E: Arch> {
     // Command-line arguments
     pub args: Args,
@@ -187,8 +185,7 @@ pub struct Context<E: Arch> {
     pub is_power10: AtomicBool,
     pub gdb_index: Option<GdbIndexSection<E>>,
 
-    // For --gdb-index
-    // shared_ptr lets the implementation type remain in gdb-index.cc.
+    // Partially built .gdb_index data passed between its background stages.
     pub gdb_index_data: Option<crate::gdb_index::GdbIndexData>,
     pub relro_padding: Option<RelroPaddingSection<E>>,
     pub comment: Option<MergedSectionId>,

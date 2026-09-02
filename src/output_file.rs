@@ -1,7 +1,6 @@
 //! The output file and helpers for writing to it from many threads.
 
-// The C++ Windows output-file counterpart records:
-// TODO: use intermediate temporary file for output.
+// TODO: use an intermediate temporary file for output on Windows.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
@@ -81,9 +80,7 @@ enum Storage {
     /// A mapping of the file, possibly larger than the file itself; `len`
     /// is the file's size.
     Mmap {
-        // Size of the file mapping, which may extend past the end of the file.
-        // The C++ locking-output counterpart tracks the same capacity:
-        // Size of the file mapping, which may extend past the end of the file.
+        // The mapping may extend past `len` so the file can grow in place.
         map: MmapMut,
         len: usize,
     },
@@ -333,18 +330,11 @@ impl OutputFile {
         self.len() == 0
     }
 
-    // Extend the file so that the caller can fill the appended data
-    // through the tail of the mapping. This is called at most once per
-    // output file.
-    //
-    // C++ OutputFile::extend has this pointer-returning contract; Rust grows
-    // the same storage and lets the caller borrow the new tail afterwards.
-    //
-    // Appends `size` bytes to the output file and returns a pointer to
-    // the newly-allocated space, bumping `filesize` accordingly. We use
-    // it for .gdb_index, whose size is not known until all other
-    // sections have been written. The new space is zero-initialized.
-    // `buf` and `ctx.buf` may move as a result of this call.
+    // Extend the file so the caller can fill the appended data through the tail
+    // of the mapping. This is called at most once per output file, for
+    // .gdb_index, whose size is not known until the other sections have been
+    // written. The new space is zero-initialized, and the output buffer may
+    // move.
     pub fn extend(&mut self, size: usize) {
         let new_len = self.len() + size;
         match (&mut self.storage, &self.file) {
@@ -356,12 +346,8 @@ impl OutputFile {
                 if new_len <= map.len() {
                     *len = new_len;
                 } else {
-                    // MemoryMappedOutputFile counterpart:
-                    // The appended data does not fit in the mapping. Map the grown
-                    // file again, moving the buffer.
-                    // LockingOutputFile counterpart:
-                    // The appended data does not fit in the mapping. Map the
-                    // grown file again, moving the buffer.
+                    // The appended data does not fit in the existing mapping, so map
+                    // the grown file again.
                     self.storage = map_file(file, new_len as u64);
                 }
             }

@@ -699,10 +699,8 @@ fn is_space(c: u8) -> bool {
     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
-// True for the characters that end or alter a token: whitespace, quotes
-// and backslash. A table keeps the tokenizer's scan loop tight.
-//
-// Rust tests these characters directly in the tokenizer below.
+// Whitespace ends a token, while quotes and backslashes alter how its bytes
+// are interpreted. The tokenizer tests these characters directly.
 
 // If a command line argument is in the form of `@path/to/some/file` (i.e.
 // it starts with an atsign), the linker reads the given file and
@@ -801,7 +799,7 @@ pub fn expand_response_files(argv: &[String]) -> Vec<String> {
 // name and, on success, returns the remainder of the argument. For
 // example, matching "--foo=bar" against "foo" yields "=bar", and
 // matching "--foo" against "foo" yields an empty string. On
-// mismatch, it returns std::nullopt.
+// mismatch, it returns None.
 //
 // Multi-letter option names can be preceded by either a single dash
 // or double dashes except ones starting with "o", which must be

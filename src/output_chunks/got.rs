@@ -868,7 +868,7 @@ pub mod relplt {
                     // A large PLT entry resolves through a data pointer rather than
                     // self-modifying code, so its relocation targets that pointer and
                     // carries -(call address) as the addend, making the loader store
-                    // (target - call) there (see arch-sparc64.cc).
+                    // (target - call) there (see arch/sparc64.rs).
                     let call = sym.plt_addr(ctx) + 4;
                     let ptr = ctx.plt.hdr.shdr.sh_addr.get()
                         + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);

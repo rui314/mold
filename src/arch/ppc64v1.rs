@@ -1,7 +1,7 @@
 //! This file contains code for the 64-bit PowerPC ELFv1 ABI that is
 //! commonly used for big-endian PPC systems. Modern PPC systems that use
 //! the processor in the little-endian mode use the ELFv2 ABI instead. For
-//! ELFv2, see arch-ppc64v2.cc.
+//! ELFv2, see ppc64v2.rs.
 //!
 //! Even though they are similiar, ELFv1 isn't only different from ELFv2 in
 //! endianness. The most notable difference is, in ELFv1, a function

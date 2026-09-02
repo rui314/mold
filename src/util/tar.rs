@@ -7,11 +7,11 @@ use super::{align_to, path_clean};
 
 const BLOCK_SIZE: u64 = 512;
 
-// TarFile is a class to create a tar file.
+// TarWriter creates the archive used by --repro.
 //
-// If you pass `--repro` to mold, mold collects all input files and
-// put them into `<output-file-path>.repro.tar`, so that it is easy to
-// run the same command with the same command line arguments.
+// If you pass `--repro` to mold, mold collects all input files and puts them
+// into `<output-file-path>.repro.tar`, making it easy to run the same command
+// with the same command-line arguments.
 //
 /// A tar file consists of one or more Ustar header followed by data.
 /// Each Ustar header represents a single file in an archive.
@@ -37,11 +37,9 @@ fn ustar_header(name: &[u8], mode: &[u8], size: u64, typeflag: u8) -> [u8; 512] 
     hdr[257..262].copy_from_slice(b"ustar");
     hdr[263..265].copy_from_slice(b"00");
 
-    // Compute checksum
+    // Compute checksum. The field is six octal digits, a NUL byte and a
+    // trailing space.
     let checksum: u32 = hdr.iter().map(|&b| b as u32).sum();
-    // The C++ implementation records this formatting constraint:
-    // We need to convince the compiler that sum isn't too big to silence
-    // -Werror=format-truncation.
     let checksum = format!("{checksum:06o}\0");
     hdr[148..148 + checksum.len()].copy_from_slice(checksum.as_bytes());
     hdr

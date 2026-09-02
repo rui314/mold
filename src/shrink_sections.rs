@@ -26,7 +26,7 @@
 //!     instruction if the branch target is close enough. RISC-V and
 //!     LoongArch take this approach.
 //!
-//! This file contains functions to support (2). For (1), see thunks.cc.
+//! This file contains functions to support (2). For (1), see thunks.rs.
 //!
 //! With the presence of this code-shrinking relaxation, sections can no
 //! longer be considered as atomic units. If we delete an instruction from

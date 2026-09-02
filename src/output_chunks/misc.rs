@@ -464,11 +464,9 @@ pub mod compressed {
     pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
         let hdr = ctx.chunk_header(original);
 
-        // The C++ implementation avoids zero-initializing this scratch buffer:
-        //
-        // Allocate a temporary buffer to write uncompressed contents. Note
-        // that we use u8[] instead of std::vector<u8> to avoid the cost of
-        // zero-initialization, as sh_size can be very large.
+        // C++ mold uses uninitialized storage here to avoid zero-filling a
+        // potentially large scratch buffer. Rust currently uses a
+        // zero-initialized Vec because write_to accepts &mut [u8].
         let mut buf = vec![0u8; hdr.shdr.sh_size.get() as usize];
 
         // Write uncompressed contents and then compress them

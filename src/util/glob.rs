@@ -20,7 +20,7 @@
 //!
 //! Aho-Corasick can do only substring search, so it cannot handle
 //! complex glob patterns such as `*foo*bar*`. We handle such patterns
-//! with the Glob class.
+//! with the [`Glob`] type.
 
 use std::collections::VecDeque;
 use std::sync::OnceLock;

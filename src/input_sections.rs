@@ -1070,10 +1070,6 @@ fn find_comdat_owner<E: Arch>(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// wingdi.h defines ERROR as a macro, so undefine it before use
-//
-// Rust does not have the C preprocessor collision, but keeps the same action
-// name as the C++ decision tables.
 enum Action {
     None,
     Error,

@@ -2410,14 +2410,8 @@ fn shuffle(vec: &mut [InputSectionId], mut seed: u64) {
         seed ^= seed << 17;
         seed
     };
-    // The Fisher-Yates shuffling algorithm.
-    //
-    // We don't want to use std::shuffle for build reproducibility. That is,
-    // std::shuffle's implementation is not guaranteed to be the same across
-    // platform, so even though the result is guaranteed to be randomly
-    // shuffled, the exact order may be different across implementations.
-    //
-    // We are not using std::uniform_int_distribution for the same reason.
+    // The Fisher-Yates shuffling algorithm. Use a fixed RNG and index mapping so
+    // the exact order is reproducible across platforms and library versions.
     for i in 0..vec.len() - 1 {
         let j = i + (rand() % (vec.len() - i) as u64) as usize;
         vec.swap(i, j);

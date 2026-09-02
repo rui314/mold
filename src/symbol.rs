@@ -12,9 +12,8 @@ use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 
-// C++ mold wraps the standard atomics used throughout its data structures:
-// This is the same as std::atomic except that the default memory
-// order is relaxed instead of sequential consistency.
+// Atomic accesses use relaxed ordering unless stronger synchronization is
+// required, matching C++ mold's default atomic wrapper.
 
 use bstr::BStr;
 use hashbrown::{Equivalent, HashMap};
@@ -150,10 +149,9 @@ impl AddrFlags {
     };
 }
 
-// Additional class members for dynamic symbols. Because most symbols
-// don't need them and we allocate tens of millions of symbol objects
-// for large programs, we separate them from `Symbol` class to save
-// memory.
+// Rarely used fields for dynamic symbols. Because mold allocates tens of
+// millions of symbols for large programs, keeping these fields separate from
+// Symbol saves memory.
 #[derive(Debug, Default)]
 pub struct SymbolAux {
     pub got_idx: Option<u32>,
@@ -211,12 +209,10 @@ impl SymbolFile {
     }
 }
 
-// Symbol class represents a symbol. For each unique symbol name, we
-// create one instance of Symbol.
+// Symbol represents one local symbol or one unique global symbol name.
 //
-// A symbol has not only one but several different addresses if it
-// has PLT or GOT entries. This class provides various functions to
-// compute different addresses.
+// A symbol may have several addresses when it has PLT or GOT entries. This type
+// provides the operations that compute those addresses.
 #[derive(Debug)]
 pub struct Symbol {
     // Global symbols are stored next to their names in the symbol map.

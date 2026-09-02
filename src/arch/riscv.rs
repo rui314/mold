@@ -12,7 +12,7 @@
 //! From the linker's point of view, the RISC-V's psABI is unique because
 //! sections in input object files can be shrunk while being copied to the
 //! output file. That is contrary to other psABIs in which sections are an
-//! atomic unit of copying. See file comments in shrink-sections.cc for
+//! atomic unit of copying. See the file comments in shrink_sections.rs for
 //! details.
 //!
 //! https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
@@ -1289,9 +1289,7 @@ fn arch_string(extensions: &[Extension]) -> String {
         .join("_")
 }
 
-//
-// Output .riscv.attributes class
-//
+// Build the output .riscv.attributes contents.
 pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let mut stack: Option<u64> = None;
     let mut arch: Vec<Extension> = Vec::new();

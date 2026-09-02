@@ -467,9 +467,8 @@ pub mod eh_frame_hdr {
     }
 }
 
-// EhFrameRelocSection contains relcoation records for .eh_frame. We use
-// this class only for relocatable outputs (i.e. the output is an .o file
-// as opposed to an executable or a .so file.)
+// EhFrameRelocSection contains relocation records for .eh_frame. It is used
+// only for relocatable outputs (an .o file rather than an executable or .so).
 #[derive(Debug)]
 pub struct EhFrameRelocSection<E: Layout> {
     pub hdr: ChunkHeader<E>,

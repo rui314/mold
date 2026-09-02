@@ -1,32 +1,13 @@
-//! This file defines integral types for file input/output. We need to use
-//! these types instead of the plain integers (such as uint32_t or int32_t)
-//! when reading from/writing to an mmap'ed file area for the following
-//! reasons:
-//!
-//! 1. mold is always a cross linker and should not depend on what host it
-//!    is running on. For example, users should be able to run mold on a
-//!    little-endian x86 machine to create a big-endian s390x binary.
-//!
-//! 2. Even though data members in all ELF data strucutres are naturally
-//!    aligned, they are not guaranteed to be aligned on memory because of
-//!    archive files. Archive files (.a files) align each file only to a
-//!    2 byte boundary, so anything larger than 2 bytes may be misaligned
-//!    in an mmap'ed memory. Misaligned access is an undefined behavior in
-//!    C/C++, so we shouldn't cast an arbitrary pointer to a uint32_t, for
-//!    example, to read a 32 bit value.
-//!
-//! The data types defined in this file are independent of the host byte
-//! order and are designed to avoid unaligned access.
-//!
-//! Note that in C/C++, memcpy is a portable and efficient way to access
-//! unaligned data, as it is typically treated as an intrinsic. Compilers
-//! can easily optimize memcpy calls in this file into a single load or
-//! store instruction.
-//!
 //! ELF file format definitions.
 //!
-//! ELF records use their target-dependent file representation, with
-//! byte-backed integer fields handling byte order and unaligned access.
+//! mold is always a cross linker, so file integers must use the target byte
+//! order rather than the host byte order. ELF records in archive members may
+//! also be unaligned because archives align members to only two bytes. Creating
+//! ordinary integer references into such data would be invalid.
+//!
+//! The byte-backed integer fields below handle both target endianness and
+//! unaligned access.
+//!
 //! Records whose ELF32 and ELF64 forms have the same field order are generic
 //! over the target word type. Symbols, program headers and compression
 //! headers have genuinely different layouts and convert as complete records
@@ -742,18 +723,16 @@ pub unsafe trait RelRecord:
     }
 }
 
-// Depending on the target, ElfRel may or may not contain r_addend member.
-// The relocation record containing r_addend is called RELA, and that
-// without r_addend is called REL.
+// Depending on the target, ElfRel may or may not contain an r_addend member.
+// A relocation record containing r_addend is called RELA; one without it is
+// called REL.
 //
-// If REL, relocation addends are stored as parts of section contents.
-// That means we add a computed value to an existing value when writing a
-// relocated value if REL. If RELA, we just overwrite an existing value
-// with a newly computed value.
+// For REL records, applying a relocation adds the computed value to the addend
+// stored in the section contents. For RELA records, it writes the value
+// computed from the explicit addend.
 //
-// We don't want to have too many `if (REL)`s and `if (RELA)`s in our
-// codebase, so ElfRel always takes r_addend as a constructor argument.
-// If it's REL, the argument will simply be ignored.
+// To keep target-independent code uniform, RelRecord::new always accepts an
+// addend. REL implementations ignore it.
 
 pub(crate) type Ul24 = U24<LittleEndian>;
 pub(crate) type Ul32 = U32<LittleEndian>;

@@ -299,7 +299,7 @@ impl From<DsoId> for FileId {
     }
 }
 
-// InputFile is the base class of ObjectFile and SharedFile.
+// InputFile contains the fields shared by ObjectFile and SharedFile.
 #[derive(Debug)]
 pub struct InputFile<E: Layout> {
     pub mf: Option<&'static MappedFile>,

@@ -145,10 +145,8 @@ fn visit_section<'scope, E: Arch>(
     let file = &ctx.objs[isec.file.index()];
     debug_assert!(isec.is_visited());
 
-    // Mark a section alive. For better performacne, we don't call
-    // `feeder.add` too often.
-    //
-    // The Rust port likewise avoids adding work to the pool too often.
+    // Mark a section alive. Recurse for a few levels before queueing more work
+    // so that we do not create a Rayon task for every edge.
     let mut mark = |target: &'scope InputSection| {
         if mark_section(target) {
             if depth < 3 {
@@ -194,12 +192,9 @@ fn visit_section<'scope, E: Arch>(
         // of marking the sections one by one.
         if let Some(name) = start_stop_name(sym.name()) {
             if let Some(sections) = map.get(name) {
-                // Mark and visit the sections with a nested parallel loop.
-                // As in mark() below, a section added to a feeder has
-                // already been marked, so a feeder's loop body must visit
-                // it unconditionally.
-                //
-                // Rayon uses tasks rather than TBB feeder items here.
+                // Mark targets in parallel. mark_section returns true only for
+                // newly marked sections, which the batch visitor must then visit
+                // unconditionally.
                 sections.par_chunks(GC_BATCH).for_each(|sections| {
                     let mut found = Vec::with_capacity(sections.len());
                     for &target in sections {
@@ -224,9 +219,8 @@ fn visit_section<'scope, E: Arch>(
 
 const GC_BATCH: usize = 16;
 
-/// Visits marked sections and publishes newly found work in batches. Rayon
-/// tasks are heavier than TBB feeder items, so a small batch preserves the
-/// feeder's dynamic load balancing while amortizing task allocation.
+/// Visits marked sections and publishes newly found work in batches. Batching
+/// preserves dynamic load balancing while amortizing Rayon task allocation.
 fn visit_batch<'scope, E: Arch>(
     ctx: &'scope Context<E>,
     batch: &[&'scope InputSection],

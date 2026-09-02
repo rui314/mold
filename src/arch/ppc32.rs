@@ -1,5 +1,5 @@
 //! This file implements the PowerPC 32-bit ISA. For 64-bit PowerPC, see
-//! arch-ppc64v1.cpp and arch-ppc64v2.cpp.
+//! ppc64v1.rs and ppc64v2.rs.
 //!
 //! PPC32 is a RISC ISA. It has 32 general-purpose registers (GPRs).
 //! r0, r11 and r12 are reserved for static linkers, so we can use these

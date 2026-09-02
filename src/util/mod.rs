@@ -12,12 +12,6 @@ pub(crate) mod siphash;
 pub mod tar;
 pub(crate) mod virtual_memory;
 
-// Some C++ libraries haven't implemented std::has_single_bit yet.
-// Rust supplies the equivalent operation as `is_power_of_two`.
-
-// Some C++ libraries haven't implemented std::bit_ceil yet.
-// Rust supplies the equivalent operation as `next_power_of_two`.
-
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".
 #[inline]
