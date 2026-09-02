@@ -57,6 +57,22 @@ const _: () = assert!(std::mem::size_of::<InputSectionId>() == 4);
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
     pub(crate) const NONE: InputSectionId = InputSectionId(0);
+
+    /// Encodes an input-section arena offset for a symbol origin. Input
+    /// sections are eight-byte aligned, so their four-byte-unit indices are
+    /// even and retain the arena's full 8 GiB range in 30 bits.
+    #[inline]
+    pub(crate) fn origin_payload(self) -> u32 {
+        debug_assert_ne!(self, Self::NONE);
+        debug_assert_eq!(self.0 & 1, 0);
+        self.0 >> 1
+    }
+
+    #[inline]
+    pub(crate) fn from_origin_payload(payload: u32) -> InputSectionId {
+        debug_assert_ne!(payload, 0);
+        InputSectionId(payload << 1)
+    }
 }
 
 /// Identifies a section fragment in a merged output section.
@@ -105,10 +121,11 @@ struct InputSectionExtras {
     r_deltas: Box<[RelocDelta]>,
 }
 
-// C++ layout constraint (Rust stores the origin tag separately):
-// InputSection represents a section in an input object file. Symbol::origin
-// uses the low two bits of an InputSection pointer, so keep this type
-// four-byte aligned even on hosts such as m68k.
+// InputSection represents a section in an input object file. C++ mold uses
+// the low two bits of its pointer in Symbol::origin. Rust stores its arena
+// index there instead; eight-byte alignment leaves one more index bit for the
+// variable-length tag without reducing the arena's range.
+#[repr(align(8))]
 #[derive(Debug)]
 pub struct InputSection {
     pub file: ObjId,
@@ -794,7 +811,7 @@ impl InputSection {
             return None;
         }
 
-        let isec = sym.input_section_ref();
+        let isec = sym.input_section_ref(ctx);
         let discarded = sym.file().is_none() && sym.name().is_empty() && !sym.is_fragment_dummy();
         let discarded = discarded && std::ptr::eq(sym, &ctx.symbols[SymbolId::DISCARDED_COMDAT]);
 
@@ -1897,6 +1914,22 @@ impl SectionList {
         } else {
             // SAFETY: a nonzero regular table entry is a live arena index.
             Some(unsafe { &*self.input_ptr(value) })
+        }
+    }
+
+    /// The stable arena index of the section at `shndx`, including a section
+    /// that has since been converted to a mergeable section.
+    #[inline]
+    pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
+        let value = *self.indices.get(shndx)?;
+        if value == 0 {
+            None
+        } else if value & MERGEABLE_SECTION != 0 {
+            Some(InputSectionId(
+                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_offset,
+            ))
+        } else {
+            Some(InputSectionId(value))
         }
     }
 

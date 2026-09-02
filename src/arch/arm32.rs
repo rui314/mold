@@ -245,7 +245,7 @@ where
             .map(|&id| &ctx.symbols[id])
             .filter_map(|sym| {
                 let kind = mapping_symbol_kind(sym.name())?;
-                let sec = sym.input_section()?;
+                let sec = sym.input_section(ctx)?;
                 let isec = ctx.section(sec);
                 (isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
                     .then_some((sec, sym.value, kind))

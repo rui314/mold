@@ -548,7 +548,7 @@ pub mod eh_frame_reloc {
                 // We discard section symbols in input files and re-create new
                 // ones for each output section. So we need to adjust relocations'
                 // addends if they refer a section symbol.
-                let target = sym.input_section_ref().unwrap();
+                let target = sym.input_section_ref(ctx).unwrap();
                 rel.set_r_sym(ctx.output_section(target.output_section.unwrap()).hdr.shndx);
                 let addend = isec.rel_addend::<E>(r) + target.offset() as i64;
                 if E::IS_RELA {

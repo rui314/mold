@@ -151,7 +151,7 @@ fn requires_thunk<E: Arch>(
     if first_pass {
         // On the first pass, we pessimistically assume that all out-of-section
         // relocations are out of range.
-        match sym.input_section_ref() {
+        match sym.input_section_ref(ctx) {
             Some(target) if target.output_section == isec.output_section => {
                 // If the target section is in the same output section but
                 // hasn't got any address yet, that's unreacahble.

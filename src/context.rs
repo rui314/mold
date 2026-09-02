@@ -20,7 +20,7 @@ use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection, EhF
 use crate::output_chunks::got::{
     GotPltSection, GotSection, PltGotSection, PltSection, RelPltSection,
 };
-use crate::output_chunks::merged::{MergedSection, MergedSectionId};
+use crate::output_chunks::merged::{MergedSection, MergedSectionId, OriginMergedSectionId};
 use crate::output_chunks::misc::{
     BuildIdSection, ComdatGroupSection, CompressedSection, CopyrelSection, GnuDebuglinkSection,
     InterpSection, NotePackageSection, NotePropertySection, RelocSection, RelroPaddingSection,
@@ -129,6 +129,8 @@ pub struct Context<E: Arch> {
 
     pub output_sections: Vec<OutputSection<E>>,
     pub merged_sections: Vec<MergedSection<E>>,
+    /// Maps compact symbol-origin section numbers to merged sections.
+    pub(crate) origin_merged_sections: Vec<MergedSectionId>,
     pub reloc_sections: Vec<RelocSection<E>>,
     pub comdat_group_sections: Vec<ComdatGroupSection<E>>,
     pub compressed_sections: Vec<CompressedSection<E>>,
@@ -259,6 +261,7 @@ impl<E: Arch> Context<E> {
             internal_esyms: Vec::new(),
             output_sections: Vec::new(),
             merged_sections: Vec::new(),
+            origin_merged_sections: Vec::new(),
             reloc_sections: Vec::new(),
             comdat_group_sections: Vec::new(),
             compressed_sections: Vec::new(),
@@ -432,6 +435,18 @@ impl<E: Arch> Context<E> {
         self.merged_sections[r.section.index()]
             .fragments
             .get(r.entry)
+    }
+
+    #[inline]
+    pub(crate) fn origin_fragment_ref(
+        &self,
+        section: OriginMergedSectionId,
+        entry: crate::util::concurrent_map::EntryId,
+    ) -> FragmentRef {
+        FragmentRef {
+            section: self.origin_merged_sections[section.index()],
+            entry,
+        }
     }
 
     pub fn fragment_addr(&self, r: FragmentRef) -> u64 {

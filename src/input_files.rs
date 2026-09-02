@@ -21,13 +21,14 @@ use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
-    CieRecord, FdeRecord, FragmentRef, InputSection, MergeableSection, RelocationSpan, SFrameFde,
-    SectionList,
+    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeableSection,
+    RelocationSpan, SFrameFde, SectionList,
 };
 use crate::mapped_file::MappedFile;
 use crate::output_chunks::merged::MergedSection;
 use crate::symbol::{
-    hash_key, Bins, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot, SymbolTable, NEEDS_PLT,
+    hash_key, Bins, NameLen, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot, SymbolTable,
+    NEEDS_PLT,
 };
 use crate::util::perf::Counter;
 use crate::util::{
@@ -36,46 +37,13 @@ use crate::util::{
 use crate::{error, fatal, out, warn};
 use bstr::BStr;
 
-// Store short name lengths exactly. A long name stores a logarithmic lower
-// bound so that finding its exact length requires scanning only its suffix.
-#[derive(Clone, Copy, Debug, Default)]
-struct NameLen(u8);
-
-impl NameLen {
-    const LONG_NAME: usize = 240;
-
-    #[inline]
-    fn new(len: usize) -> NameLen {
-        if len < Self::LONG_NAME {
-            return NameLen(len as u8);
-        }
-        let log2 = (len - Self::LONG_NAME + 1).ilog2() as usize;
-        NameLen((Self::LONG_NAME + log2.min(u8::MAX as usize - Self::LONG_NAME)) as u8)
-    }
-
-    #[inline]
-    fn is_long(self) -> bool {
-        self.0 as usize >= Self::LONG_NAME
-    }
-
-    #[inline]
-    fn lower_bound(self) -> usize {
-        if !self.is_long() {
-            return self.0 as usize;
-        }
-        Self::LONG_NAME - 1 + (1 << (self.0 as usize - Self::LONG_NAME))
-    }
-
-    #[inline]
-    fn get(self, strtab: &'static [u8], offset: usize) -> &'static [u8] {
-        let rest = strtab.get(offset..).unwrap_or(&[]);
-        let lower = self.lower_bound().min(rest.len());
-        let len = if self.is_long() {
-            lower + cstr_at(rest, lower).len()
-        } else {
-            lower
-        };
-        &rest[..len]
+/// Ensures that a string-table slice has a readable NUL immediately after
+/// its contents even when a malformed input omitted the terminator.
+fn with_nul_sentinel(data: &'static [u8]) -> &'static [u8] {
+    if data.last() == Some(&0) {
+        data
+    } else {
+        leak_bytes(data.to_vec())
     }
 }
 
@@ -420,7 +388,7 @@ impl<E: Layout> InputFile<E> {
         } else {
             ehdr.e_shstrndx.get() as usize
         };
-        file.shstrtab = file.section_contents_checked(shstrtab_idx, display);
+        file.shstrtab = with_nul_sentinel(file.section_contents_checked(shstrtab_idx, display));
         file
     }
 
@@ -1104,7 +1072,7 @@ impl<E: Arch> ObjectFile<E> {
         let mut base = InputFile::<E>::empty(&mf.name);
         base.mf = Some(mf);
         base.elf_syms = Cow::Owned(elf_syms);
-        base.symbol_strtab = strtab;
+        base.symbol_strtab = with_nul_sentinel(strtab);
         base.populate_symbol_name_lengths();
         base.first_global = 1;
         let mut file = ObjectFile::with_base(base, archive_name);
@@ -1153,6 +1121,11 @@ impl<E: Arch> ObjectFile<E> {
     #[inline]
     pub fn section(&self, shndx: usize) -> Option<&InputSection> {
         self.sections.section(shndx)
+    }
+
+    #[inline]
+    pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
+        self.sections.section_id(shndx)
     }
 
     #[inline]
@@ -1374,7 +1347,8 @@ impl<E: Arch> ObjectFile<E> {
                 fatal!("{self}: corrupted section");
             }
             self.base.elf_syms = Cow::Borrowed(records_from_bytes::<ElfSym<E>>(contents));
-            self.base.symbol_strtab = self.base.section_contents(shdr.sh_link.get() as usize);
+            self.base.symbol_strtab =
+                with_nul_sentinel(self.base.section_contents(shdr.sh_link.get() as usize));
             self.base.populate_symbol_name_lengths();
 
             if let Some(idx) = self.base.find_section(SHT_SYMTAB_SHNDX) {
@@ -2051,14 +2025,16 @@ impl<E: Arch> ObjectFile<E> {
                 self.base.symbol_name_in(i)
             };
 
-            let mut sym = Symbol::new(BStr::new(name));
+            // SAFETY: names come from the normalized symbol or section-name
+            // string table, which has a trailing NUL sentinel.
+            let mut sym = unsafe { Symbol::new_in_strtab(BStr::new(name)) };
             sym.set_file(file_id);
             sym.value = esym.st_value().get();
             sym.sym_idx = i as u32;
             sym.set_esym(esym);
             sym.set_rust(self.is_rust_obj);
             if let Some(shndx) = shndx {
-                if let Some(section) = self.section(shndx) {
+                if let Some(section) = self.section_id(shndx) {
                     sym.set_input_section(section);
                 }
             }
@@ -2427,7 +2403,8 @@ impl<E: Arch> ObjectFile<E> {
                 if sym.file() != Some(FileId::Obj(id)) {
                     return;
                 }
-                sym.set_fragment(frag);
+                let origin_section = merged[frag.section.index()].origin_id.unwrap();
+                sym.set_fragment(origin_section, frag.entry);
                 sym.value = offset as u64;
             });
         }
@@ -2539,7 +2516,8 @@ impl<E: Arch> ObjectFile<E> {
                 sym.sym_idx = record.r_sym();
                 sym.set_esym(&self.base.elf_syms[record.r_sym() as usize]);
                 sym.set_visibility(STV_HIDDEN);
-                sym.set_fragment(frag);
+                let origin_section = merged[frag.section.index()].origin_id.unwrap();
+                sym.set_fragment(origin_section, frag.entry);
                 sym.value = value;
                 slots[next].write(sym);
                 next += 1;
@@ -2654,7 +2632,7 @@ impl<E: Arch> ObjectFile<E> {
             self.sections.push(isec, section_arena);
 
             let sym = &mut symbols[sym_id];
-            sym.set_input_section(self.section_at(shndx as u32));
+            sym.set_input_section(self.section_id(shndx).unwrap());
             sym.value = 0;
             sym.sym_idx = i as u32;
             sym.ver_idx = default_version;
@@ -2673,10 +2651,10 @@ impl<E: Arch> ObjectFile<E> {
 
         // Symbols in dead sections and fragments are dropped along with them.
         let is_alive = |sym: &Symbol| -> bool {
-            if let Some(frag) = sym.fragment() {
+            if let Some(frag) = sym.fragment(ctx) {
                 return ctx.fragment(frag).is_alive();
             }
-            if let Some(isec) = sym.input_section_ref() {
+            if let Some(isec) = sym.input_section_ref(ctx) {
                 return isec.is_alive();
             }
             true
@@ -2937,7 +2915,7 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
         if ctx.args.discard_locals {
             return false;
         }
-        if let Some(isec) = sym.input_section_ref() {
+        if let Some(isec) = sym.input_section_ref(ctx) {
             if isec.sh_flags & SHF_MERGE as u64 != 0 {
                 return false;
             }
@@ -3142,9 +3120,10 @@ impl<E: Arch> SharedFile<E> {
             return;
         };
         let symtab_shdr = &self.base.shdrs[symtab_idx];
-        self.base.symbol_strtab = self
-            .base
-            .section_contents(symtab_shdr.sh_link.get() as usize);
+        self.base.symbol_strtab = with_nul_sentinel(
+            self.base
+                .section_contents(symtab_shdr.sh_link.get() as usize),
+        );
         self.soname = self.get_soname();
         self.version_strings = self.read_version_strings();
 
@@ -3677,7 +3656,7 @@ impl<E: Arch> ObjectFile<E> {
             if !isec.is_alive() {
                 return;
             }
-            origin = Some(isec);
+            origin = self.section_id(shndx);
         }
 
         let rank = symbol_resolution_rank(esym, false, in_archive, self.base.priority);
