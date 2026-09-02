@@ -447,22 +447,15 @@ pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
     let mut sections = executable_sections(ctx);
     sections.sort_by_key(|id| ctx.output_sections[id.index()].hdr.shdr.sh_addr.get());
 
+    let output_sections = &ctx.output_sections;
+    let symbols = &mut ctx.symbols;
     for id in sections {
-        let osec = &ctx.output_sections[id.index()];
-        let entries: Vec<(SymbolId, u64)> = osec
-            .thunks
-            .iter()
-            .flat_map(|thunk| {
-                let base = thunk.addr(osec);
-                thunk
-                    .symbols
-                    .iter()
-                    .enumerate()
-                    .map(move |(i, &sym)| (sym, base + thunk.offsets[i]))
-            })
-            .collect();
-        for (sym, addr) in entries {
-            ctx.symbols.add_thunk_addr(sym, addr);
+        let osec = &output_sections[id.index()];
+        for thunk in &osec.thunks {
+            let base = thunk.addr(osec);
+            for (i, &sym) in thunk.symbols.iter().enumerate() {
+                symbols.add_thunk_addr(sym, base + thunk.offsets[i]);
+            }
         }
     }
 }
