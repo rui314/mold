@@ -237,7 +237,7 @@ pub struct Symbol {
     // in the owner file. Since the symbol map and symbol array are separate,
     // retain a thin pointer rather than a 16-byte slice.
     name_ptr: usize,
-    name_len: u32,
+    name_len: u16,
 
     /// Serializes the parallel updates made while resolving definitions.
     /// The byte also holds the resolution-only `skip_dso` bit; both fit in
@@ -470,7 +470,7 @@ symbol_bits! {
 impl Symbol {
     #[inline]
     pub fn new(name: &'static BStr) -> Symbol {
-        let name_len = u32::try_from(name.len()).expect("symbol name is larger than 4 GiB");
+        let name_len = u16::try_from(name.len()).expect("symbol name is longer than 65535 bytes");
         Symbol {
             name_ptr: name.as_ptr() as usize,
             name_len,
@@ -1974,5 +1974,12 @@ mod tests {
             panic!("input-section origin decoded as another variant");
         };
         assert_eq!(decoded, section);
+    }
+
+    #[test]
+    #[should_panic(expected = "symbol name is longer than 65535 bytes")]
+    fn rejects_too_long_symbol_name() {
+        let name = Box::leak(vec![b'x'; u16::MAX as usize + 1].into_boxed_slice());
+        Symbol::new(BStr::new(name));
     }
 }
