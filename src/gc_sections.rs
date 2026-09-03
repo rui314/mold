@@ -13,7 +13,7 @@ use crate::elf::*;
 use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
-use crate::symbol::{is_c_identifier, SymbolId};
+use crate::symbol::{is_c_identifier, OriginValue, SymbolId};
 
 fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection) -> bool {
     let ty = isec.sh_type(file);
@@ -73,12 +73,12 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
 
     let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection>| {
         let sym = &ctx.symbols[id];
-        if let Some(frag) = sym.fragment() {
-            ctx.fragment(frag).set_alive();
-        } else if let Some(isec) = sym.input_section_ref() {
-            if mark_section(isec) {
+        match sym.origin::<E>() {
+            OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
+            OriginValue::InputSection(isec) if mark_section(isec) => {
                 out.push(isec);
             }
+            _ => {}
         }
     };
 
@@ -177,12 +177,15 @@ fn visit_section<'scope, E: Arch>(
             continue;
         }
         // Symbol can refer to either a section fragment or an input section.
-        if let Some(frag) = sym.fragment() {
-            ctx.fragment(frag).set_alive();
-            continue;
-        }
-        if let Some(target) = sym.input_section_ref() {
-            mark(target);
+        match sym.origin::<E>() {
+            OriginValue::Fragment(frag) => {
+                ctx.fragment(frag).set_alive();
+                continue;
+            }
+            OriginValue::InputSection(target) => {
+                mark(target);
+            }
+            _ => {}
         }
 
         // A reference to __start_<name> or __stop_<name> keeps every

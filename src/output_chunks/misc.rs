@@ -9,7 +9,7 @@ use crate::error;
 use crate::input_files::FileId;
 use crate::input_sections::{r_delta, InputSection};
 use crate::output_chunks::{self, ChunkHeader, ChunkId, OutputSectionId};
-use crate::symbol::SymbolId;
+use crate::symbol::{OriginValue, SymbolId};
 use crate::util::align_to;
 use crate::util::compress::Compressor;
 use crate::util::{path_filename, write_cstr};
@@ -599,22 +599,25 @@ pub mod reloc {
         }
 
         if sym.st_type() == STT_SECTION {
-            if let Some(frag) = sym.fragment() {
-                let msec = &ctx.merged_sections[frag.section.index()];
-                return (
-                    msec.hdr.shndx,
-                    msec.fragments.get(frag.entry).offset() as i64
-                        + sym.value as i64
-                        + isec.rel_addend::<E>(rel),
-                );
-            }
-            if let Some(target) = sym.input_section_ref() {
-                if let Some(osec) = target.output_section {
+            match sym.origin::<E>() {
+                OriginValue::Fragment(frag) => {
+                    let msec = &ctx.merged_sections[frag.section.index()];
                     return (
-                        ctx.output_section(osec).hdr.shndx,
-                        isec.rel_addend::<E>(rel) + target.offset() as i64,
+                        msec.hdr.shndx,
+                        msec.fragments.get(frag.entry).offset() as i64
+                            + sym.value as i64
+                            + isec.rel_addend::<E>(rel),
                     );
                 }
+                OriginValue::InputSection(target) => {
+                    if let Some(osec) = target.output_section {
+                        return (
+                            ctx.output_section(osec).hdr.shndx,
+                            isec.rel_addend::<E>(rel) + target.offset() as i64,
+                        );
+                    }
+                }
+                _ => {}
             }
             // This is usually a dead debug section referring to a
             // COMDAT-eliminated section.

@@ -13,7 +13,7 @@ use crate::error;
 use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::r_delta;
 use crate::output_chunks::{self, ChunkHeader, ChunkId};
-use crate::symbol::{AddrFlags, Symbol, SymbolId};
+use crate::symbol::{AddrFlags, OriginValue, Symbol, SymbolId};
 use crate::util::write_cstr;
 
 // .strtab is referenced by .strtab and contains symbol names. Note that
@@ -509,28 +509,26 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     }
 
     let st_shndx_of = |sym: &Symbol| -> u32 {
-        if let Some(frag) = sym.fragment() {
-            if ctx.fragment(frag).is_alive() {
-                return ctx.merged_sections[frag.section.index()].hdr.shndx;
+        match sym.origin::<E>() {
+            OriginValue::Fragment(frag) if ctx.fragment(frag).is_alive() => {
+                ctx.merged_sections[frag.section.index()].hdr.shndx
             }
-        }
-        if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) {
-            return ctx.ppc64_opd.as_ref().unwrap().hdr.shndx;
-        }
-        if let Some(isec) = sym.input_section_ref() {
-            if isec.is_alive() {
-                return ctx.output_section(isec.output_section.unwrap()).hdr.shndx;
+            _ if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) => {
+                ctx.ppc64_opd.as_ref().unwrap().hdr.shndx
             }
-            if isec.is_icf_removed() {
+            OriginValue::InputSection(isec) if isec.is_alive() => {
+                ctx.output_section(isec.output_section.unwrap()).hdr.shndx
+            }
+            OriginValue::InputSection(isec) if isec.is_icf_removed() => {
                 let leader = ctx.section(isec.icf_leader().unwrap());
-                return ctx.output_section(leader.output_section.unwrap()).hdr.shndx;
+                ctx.output_section(leader.output_section.unwrap()).hdr.shndx
             }
+            _ => SHN_UNDEF,
         }
-        SHN_UNDEF
     };
 
     let mut shndx: Option<u32> = None;
-    let isec = sym.input_section_ref();
+    let origin = sym.origin::<E>();
 
     if sym.has_copyrel() {
         // Symbol in .copyrel
@@ -547,60 +545,71 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         if sym.is_canonical() {
             esym.st_value_mut().set(sym.plt_addr(ctx));
         }
-    } else if let Some(chunk) = sym.output_chunk::<E>() {
-        // Linker-synthesized symbol
-        shndx = Some(chunk.shndx);
-        esym.st_value_mut().set(sym.addr(ctx));
-    } else if let Some(frag) = sym.fragment() {
-        shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
-        esym.st_value_mut().set(sym.addr(ctx));
-    } else if isec.is_none() {
-        if sym.is_common() {
-            // Common symbol. Common symbols are converted to .bss unless we are
-            // creating a relocatable output, in which case they are passed
-            // through as they are. st_value of a common symbol is its alignment.
-            debug_assert!(ctx.args.relocatable);
-            esym.st_shndx_mut().set(SHN_COMMON as u16);
-            esym.st_value_mut().set(sym.esym(ctx).st_value().get());
-        } else {
-            // Absolute symbol
-            esym.st_shndx_mut().set(SHN_ABS as u16);
-            esym.st_value_mut().set(sym.addr(ctx));
-        }
-    } else if sym.ty() == STT_TLS {
-        // TLS symbol
-        shndx = Some(st_shndx_of(sym));
-        esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
-    } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
-        // IFUNC symbol in PDE that uses two GOT slots
-        shndx = Some(st_shndx_of(sym));
-        esym.set_type(STT_FUNC);
-        esym.set_visibility(sym.visibility());
-        esym.st_value_mut().set(sym.plt_addr(ctx));
-    } else if let Some(isec) = isec.filter(|isec| {
-        isec.sh_flags & SHF_MERGE as u64 != 0 && isec.sh_flags & SHF_ALLOC as u64 == 0
-    }) {
-        // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
-        let file = &ctx.objs[isec.file.index()];
-        let m = file
-            .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
-            .expect("mergeable section");
-        let (frag, addend) = m
-            .fragment(sym.esym(ctx).st_value().get())
-            .expect("fragment");
-        let msec = &ctx.merged_sections[m.parent.index()];
-        shndx = Some(msec.hdr.shndx);
-        esym.set_visibility(sym.visibility());
-        esym.st_value_mut().set(
-            (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
-                .wrapping_add(addend as u64),
-        );
     } else {
-        // Symbol in a regular section
-        shndx = Some(st_shndx_of(sym));
-        esym.set_visibility(sym.visibility());
-        esym.st_value_mut()
-            .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+        match origin {
+            OriginValue::OutputChunk(chunk) => {
+                // Linker-synthesized symbol
+                shndx = Some(chunk.shndx);
+                esym.st_value_mut().set(sym.addr(ctx));
+            }
+            OriginValue::Fragment(frag) => {
+                shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
+                esym.st_value_mut().set(sym.addr(ctx));
+            }
+            OriginValue::None | OriginValue::Symbol(_) => {
+                if sym.is_common() {
+                    // Common symbols are converted to .bss unless we are creating a
+                    // relocatable output, in which case they are passed through as-is.
+                    // Their st_value is their alignment.
+                    debug_assert!(ctx.args.relocatable);
+                    esym.st_shndx_mut().set(SHN_COMMON as u16);
+                    esym.st_value_mut().set(sym.esym(ctx).st_value().get());
+                } else {
+                    // Absolute symbol
+                    esym.st_shndx_mut().set(SHN_ABS as u16);
+                    esym.st_value_mut().set(sym.addr(ctx));
+                }
+            }
+            OriginValue::InputSection(_) if sym.ty() == STT_TLS => {
+                // TLS symbol
+                shndx = Some(st_shndx_of(sym));
+                esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
+            }
+            OriginValue::InputSection(_) if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) => {
+                // IFUNC symbol in PDE that uses two GOT slots
+                shndx = Some(st_shndx_of(sym));
+                esym.set_type(STT_FUNC);
+                esym.set_visibility(sym.visibility());
+                esym.st_value_mut().set(sym.plt_addr(ctx));
+            }
+            OriginValue::InputSection(isec)
+                if isec.sh_flags & SHF_MERGE as u64 != 0
+                    && isec.sh_flags & SHF_ALLOC as u64 == 0 =>
+            {
+                // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
+                let file = &ctx.objs[isec.file.index()];
+                let m = file
+                    .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
+                    .expect("mergeable section");
+                let (frag, addend) = m
+                    .fragment(sym.esym(ctx).st_value().get())
+                    .expect("fragment");
+                let msec = &ctx.merged_sections[m.parent.index()];
+                shndx = Some(msec.hdr.shndx);
+                esym.set_visibility(sym.visibility());
+                esym.st_value_mut().set(
+                    (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
+                        .wrapping_add(addend as u64),
+                );
+            }
+            OriginValue::InputSection(_) => {
+                // Symbol in a regular section
+                shndx = Some(st_shndx_of(sym));
+                esym.set_visibility(sym.visibility());
+                esym.st_value_mut()
+                    .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+            }
+        }
     }
 
     // Symbol's st_shndx is only 16 bits wide, so we can't store a large

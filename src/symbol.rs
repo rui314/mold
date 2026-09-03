@@ -59,6 +59,17 @@ const CHUNK_TAG: u64 = 1;
 const FRAGMENT_TAG: u64 = 2;
 const SYMBOL_TAG: u64 = 3;
 
+#[derive(Clone, Copy)]
+pub(crate) enum OriginValue<I, C> {
+    None,
+    InputSection(I),
+    OutputChunk(C),
+    Fragment(FragmentRef),
+    Symbol(SymbolId),
+}
+
+type RawOriginValue = OriginValue<*const InputSection, *const ()>;
+
 impl Origin {
     fn none() -> Origin {
         Origin(0)
@@ -70,12 +81,6 @@ impl Origin {
         debug_assert_ne!(ptr, 0);
         debug_assert_eq!(ptr & ORIGIN_TAG_MASK, 0);
         Origin(ptr | tag)
-    }
-
-    #[inline]
-    fn get_pointer<T>(self, tag: u64) -> Option<*const T> {
-        (self.0 != 0 && self.0 & ORIGIN_TAG_MASK == tag)
-            .then_some((self.0 & !ORIGIN_TAG_MASK) as usize as *const T)
     }
 
     fn section(section: &InputSection) -> Origin {
@@ -99,36 +104,28 @@ impl Origin {
     }
 
     #[inline]
-    fn is_none(self) -> bool {
-        self.0 == 0
-    }
-
-    #[inline]
-    fn input_section(self) -> Option<*const InputSection> {
-        self.get_pointer(SECTION_TAG)
-    }
-
-    #[inline]
-    fn fragment_ref(self) -> Option<FragmentRef> {
-        if self.0 == 0 || self.0 & ORIGIN_TAG_MASK != FRAGMENT_TAG {
-            return None;
+    fn get(self) -> RawOriginValue {
+        if self.0 == 0 {
+            return OriginValue::None;
         }
-        let payload = self.0 >> 2;
-        Some(FragmentRef {
-            section: crate::output_chunks::MergedSectionId((payload >> 32) as u32),
-            entry: EntryId::from_raw(payload as u32),
-        })
-    }
 
-    #[inline]
-    fn output_chunk<E: Layout>(self) -> Option<*const ChunkHeader<E>> {
-        self.get_pointer(CHUNK_TAG)
-    }
-
-    #[inline]
-    fn symbol_id(self) -> Option<SymbolId> {
-        (self.0 != 0 && self.0 & ORIGIN_TAG_MASK == SYMBOL_TAG)
-            .then_some(SymbolId((self.0 >> 2) as u32))
+        match self.0 & ORIGIN_TAG_MASK {
+            SECTION_TAG => OriginValue::InputSection(
+                (self.0 & !ORIGIN_TAG_MASK) as usize as *const InputSection,
+            ),
+            CHUNK_TAG => {
+                OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
+            }
+            FRAGMENT_TAG => {
+                let payload = self.0 >> 2;
+                OriginValue::Fragment(FragmentRef {
+                    section: crate::output_chunks::MergedSectionId((payload >> 32) as u32),
+                    entry: EntryId::from_raw(payload as u32),
+                })
+            }
+            SYMBOL_TAG => OriginValue::Symbol(SymbolId((self.0 >> 2) as u32)),
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -775,27 +772,56 @@ impl Symbol {
         })
     }
 
+    /// Returns the decoded origin with pointers restored to references for
+    /// the current target.
+    #[inline]
+    pub(crate) fn origin<E: Layout>(&self) -> OriginValue<&InputSection, &ChunkHeader<E>> {
+        match self.origin.get() {
+            OriginValue::None => OriginValue::None,
+            // SAFETY: input sections have stable arena addresses, and
+            // mergeable conversion leaves them in those slots.
+            OriginValue::InputSection(ptr) => OriginValue::InputSection(unsafe { &*ptr }),
+            // SAFETY: linker-synthesized symbols receive a pointer to a chunk
+            // header of the current target after chunk storage becomes stable.
+            OriginValue::OutputChunk(ptr) => {
+                OriginValue::OutputChunk(unsafe { &*ptr.cast::<ChunkHeader<E>>() })
+            }
+            OriginValue::Fragment(fragment) => OriginValue::Fragment(fragment),
+            OriginValue::Symbol(symbol) => OriginValue::Symbol(symbol),
+        }
+    }
+
     /// The input section itself, stored directly as in C++'s tagged origin.
     #[inline]
     pub fn input_section_ref(&self) -> Option<&InputSection> {
         // SAFETY: input sections have stable arena addresses, and mergeable
         // conversion leaves them in those slots.
-        self.origin.input_section().map(|ptr| unsafe { &*ptr })
+        match self.origin.get() {
+            OriginValue::InputSection(ptr) => Some(unsafe { &*ptr }),
+            _ => None,
+        }
     }
 
     #[inline]
     pub fn fragment(&self) -> Option<FragmentRef> {
-        self.origin.fragment_ref()
+        match self.origin.get() {
+            OriginValue::Fragment(fragment) => Some(fragment),
+            _ => None,
+        }
     }
 
     pub fn output_chunk<E: Layout>(&self) -> Option<&ChunkHeader<E>> {
-        // SAFETY: linker-synthesized symbols receive a pointer to a chunk
-        // header of the current target after chunk storage becomes stable.
-        self.origin.output_chunk().map(|ptr| unsafe { &*ptr })
+        match self.origin::<E>() {
+            OriginValue::OutputChunk(chunk) => Some(chunk),
+            _ => None,
+        }
     }
 
     pub fn symbol_origin(&self) -> Option<SymbolId> {
-        self.origin.symbol_id()
+        match self.origin.get() {
+            OriginValue::Symbol(symbol) => Some(symbol),
+            _ => None,
+        }
     }
 
     #[inline]
@@ -914,7 +940,7 @@ impl Symbol {
         if self.is_remaining_undef_weak() {
             return true;
         }
-        !self.is_imported() && self.origin.is_none()
+        !self.is_imported() && matches!(self.origin.get(), OriginValue::None)
     }
 
     #[inline]
@@ -972,7 +998,9 @@ impl Symbol {
     }
 
     pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
-        if let Some(frag_ref) = self.fragment() {
+        let origin = self.origin::<E>();
+
+        if let OriginValue::Fragment(frag_ref) = origin {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
                 // This condition is met if a non-alloc section refers an
@@ -1003,8 +1031,8 @@ impl Symbol {
             return self.plt_addr(ctx);
         }
 
-        match self.input_section_ref() {
-            Some(isec) => {
+        match origin {
+            OriginValue::InputSection(isec) => {
                 if !isec.is_alive() {
                     if let Some(leader) = isec.icf_leader() {
                         return ctx.section(leader).addr(ctx) + self.value;
@@ -1056,7 +1084,7 @@ impl Symbol {
             }
             // Synthetic symbols hold their final address in `value`, as do
             // absolute ones.
-            None => self.value,
+            _ => self.value,
         }
     }
 

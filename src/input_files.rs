@@ -27,7 +27,8 @@ use crate::input_sections::{
 use crate::mapped_file::MappedFile;
 use crate::output_chunks::merged::MergedSection;
 use crate::symbol::{
-    hash_key, Bins, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot, SymbolTable, NEEDS_PLT,
+    hash_key, Bins, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
+    SymbolTable, NEEDS_PLT,
 };
 use crate::util::perf::Counter;
 use crate::util::{
@@ -2628,13 +2629,11 @@ impl<E: Arch> ObjectFile<E> {
 
         // Symbols in dead sections and fragments are dropped along with them.
         let is_alive = |sym: &Symbol| -> bool {
-            if let Some(frag) = sym.fragment() {
-                return ctx.fragment(frag).is_alive();
+            match sym.origin::<E>() {
+                OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
+                OriginValue::InputSection(isec) => isec.is_alive(),
+                _ => true,
             }
-            if let Some(isec) = sym.input_section_ref() {
-                return isec.is_alive();
-            }
-            true
         };
 
         // Compute the size of local symbols

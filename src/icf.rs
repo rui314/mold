@@ -90,7 +90,7 @@ use crate::elf::*;
 use crate::fatal;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
-use crate::symbol::{is_c_identifier, Symbol};
+use crate::symbol::{is_c_identifier, OriginValue, Symbol};
 use crate::util::perf::Counter;
 use crate::util::siphash::SipHash13_128;
 
@@ -347,22 +347,23 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
         if sym.file().is_none() || sym.is_imported() {
             h.update(b"1");
             hash_u64(h, id.0 as u64);
-        } else if let Some(frag) = sym.fragment() {
-            h.update(b"2");
-            hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);
-        } else if let Some(isec) = sym.input_section_ref() {
-            if isec.icf_index().is_some() {
-                h.update(b"4");
-            } else {
-                h.update(b"5");
-                let sec = SectionRef {
-                    file: isec.file,
-                    shndx: isec.shndx,
-                };
-                hash_u64(h, ((sec.file.0 as u64) << 32) | sec.shndx as u64);
-            }
         } else {
-            h.update(b"3");
+            match sym.origin::<E>() {
+                OriginValue::Fragment(frag) => {
+                    h.update(b"2");
+                    hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);
+                }
+                OriginValue::InputSection(isec) if isec.icf_index().is_some() => h.update(b"4"),
+                OriginValue::InputSection(isec) => {
+                    h.update(b"5");
+                    let sec = SectionRef {
+                        file: isec.file,
+                        shndx: isec.shndx,
+                    };
+                    hash_u64(h, ((sec.file.0 as u64) << 32) | sec.shndx as u64);
+                }
+                _ => h.update(b"3"),
+            }
         }
         hash_u64(h, sym.value);
     };
