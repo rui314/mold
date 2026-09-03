@@ -68,12 +68,11 @@ pub(crate) enum OriginValue<I, C> {
     Symbol(SymbolId),
 }
 
+type NewOriginValue<'a> = OriginValue<&'a InputSection, *const ()>;
 type RawOriginValue = OriginValue<*const InputSection, *const ()>;
 
 impl Origin {
-    fn none() -> Origin {
-        Origin(0)
-    }
+    const NONE: Origin = Origin(0);
 
     #[inline]
     fn pointer<T>(ptr: *const T, tag: u64) -> Origin {
@@ -83,24 +82,23 @@ impl Origin {
         Origin(ptr | tag)
     }
 
-    fn section(section: &InputSection) -> Origin {
-        Origin::pointer(section, SECTION_TAG)
-    }
-
-    fn fragment(fragment: FragmentRef) -> Origin {
-        // FragmentRef contains two u32 indices. One billion merged sections
-        // are enough to leave the low two bits available for the tag.
-        assert!(fragment.section.0 < 1 << 30, "too many merged sections");
-        let payload = (u64::from(fragment.section.0) << 32) | u64::from(fragment.entry.raw());
-        Origin(payload << 2 | FRAGMENT_TAG)
-    }
-
-    fn chunk<E: Layout>(chunk: &ChunkHeader<E>) -> Origin {
-        Origin::pointer(chunk, CHUNK_TAG)
-    }
-
-    fn symbol(symbol: SymbolId) -> Origin {
-        Origin(u64::from(symbol.0) << 2 | SYMBOL_TAG)
+    fn new(value: NewOriginValue<'_>) -> Origin {
+        match value {
+            OriginValue::None => Origin::NONE,
+            OriginValue::InputSection(section) => {
+                Origin::pointer(std::ptr::from_ref(section), SECTION_TAG)
+            }
+            OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
+            OriginValue::Fragment(fragment) => {
+                // FragmentRef contains two u32 indices. One billion merged sections
+                // are enough to leave the low two bits available for the tag.
+                assert!(fragment.section.0 < 1 << 30, "too many merged sections");
+                let payload =
+                    (u64::from(fragment.section.0) << 32) | u64::from(fragment.entry.raw());
+                Origin(payload << 2 | FRAGMENT_TAG)
+            }
+            OriginValue::Symbol(symbol) => Origin(u64::from(symbol.0) << 2 | SYMBOL_TAG),
+        }
     }
 
     #[inline]
@@ -478,7 +476,7 @@ impl Symbol {
             name_len,
             mu: AtomicU8::new(0),
             file: SymbolFile::none(),
-            origin: Origin::none(),
+            origin: Origin::NONE,
             value: 0,
             sym_idx: u32::MAX,
             type_and_bind: 0,
@@ -826,27 +824,27 @@ impl Symbol {
 
     #[inline]
     pub fn clear_origin(&mut self) {
-        self.origin = Origin::none();
+        self.origin = Origin::NONE;
     }
 
     #[inline]
     pub fn set_input_section(&mut self, section: &InputSection) {
-        self.origin = Origin::section(section);
+        self.origin = Origin::new(OriginValue::InputSection(section));
     }
 
     #[inline]
     pub fn set_fragment(&mut self, fragment: FragmentRef) {
-        self.origin = Origin::fragment(fragment);
+        self.origin = Origin::new(OriginValue::Fragment(fragment));
     }
 
     #[inline]
     pub fn set_output_chunk<E: Layout>(&mut self, chunk: &ChunkHeader<E>) {
-        self.origin = Origin::chunk(chunk);
+        self.origin = Origin::new(OriginValue::OutputChunk(std::ptr::from_ref(chunk).cast()));
     }
 
     #[inline]
     pub fn set_symbol_origin(&mut self, symbol: SymbolId) {
-        self.origin = Origin::symbol(symbol);
+        self.origin = Origin::new(OriginValue::Symbol(symbol));
     }
 
     #[inline]
