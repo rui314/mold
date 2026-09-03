@@ -75,8 +75,11 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
         let sym = &ctx.symbols[id];
         match sym.origin::<E>() {
             OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
-            OriginValue::InputSection(isec) if mark_section(isec) => {
-                out.push(isec);
+            OriginValue::InputSection(section) => {
+                let isec = ctx.section(section);
+                if mark_section(isec) {
+                    out.push(isec);
+                }
             }
             _ => {}
         }
@@ -163,7 +166,7 @@ fn visit_section<'scope, E: Arch>(
     for fde in isec.fdes(file) {
         for rel in fde.rels::<E>(file).iter().skip(1) {
             if let Some(target) =
-                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref()
+                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref(ctx)
             {
                 mark(target);
             }
@@ -182,8 +185,8 @@ fn visit_section<'scope, E: Arch>(
                 ctx.fragment(frag).set_alive();
                 continue;
             }
-            OriginValue::InputSection(target) => {
-                mark(target);
+            OriginValue::InputSection(section) => {
+                mark(ctx.section(section));
             }
             _ => {}
         }

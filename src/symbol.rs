@@ -46,9 +46,9 @@ impl SymbolId {
     }
 }
 
-// Origin stores pointers for input and output sections and compact ids for
-// section fragments and symbols. All four representations leave their low two
-// bits available for a tag identifying which representation it contains.
+// Origin stores an input-section reference, an output-chunk pointer, or compact
+// ids for section fragments and symbols in one word. The low two bits identify
+// which representation it contains.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub(crate) struct Origin(u64);
@@ -59,12 +59,12 @@ const CHUNK_TAG: u64 = 1;
 const FRAGMENT_TAG: u64 = 2;
 const SYMBOL_TAG: u64 = 3;
 
-// Origin::{new, get} use the default raw pointer payloads. Symbol::origin
-// substitutes references so callers can match without unsafe code.
+// Origin::{new, get} use the default raw chunk pointer. Symbol::origin
+// substitutes a reference so callers can match without unsafe code.
 #[derive(Clone, Copy)]
-pub(crate) enum OriginValue<I = *const InputSection, C = *const ()> {
+pub(crate) enum OriginValue<C = *const ()> {
     None,
-    InputSection(I),
+    InputSection(SectionRef),
     OutputChunk(C),
     Fragment(FragmentRef),
     Symbol(SymbolId),
@@ -84,7 +84,13 @@ impl Origin {
     fn new(value: OriginValue) -> Origin {
         match value {
             OriginValue::None => Origin::NONE,
-            OriginValue::InputSection(section) => Origin::pointer(section, SECTION_TAG),
+            OriginValue::InputSection(section) => {
+                // The section index uses 32 payload bits, leaving 30 bits for
+                // the object-file index after reserving the two tag bits.
+                assert!(section.file.0 < 1 << 30, "too many input files");
+                assert_ne!(section.shndx, 0, "input section 0 cannot be an origin");
+                Origin(section.encode() << 2 | SECTION_TAG)
+            }
             OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
                 // FragmentRef contains two u32 indices. One billion merged sections
@@ -105,9 +111,7 @@ impl Origin {
         }
 
         match self.0 & ORIGIN_TAG_MASK {
-            SECTION_TAG => OriginValue::InputSection(
-                (self.0 & !ORIGIN_TAG_MASK) as usize as *const InputSection,
-            ),
+            SECTION_TAG => OriginValue::InputSection(SectionRef::decode(self.0 >> 2)),
             CHUNK_TAG => {
                 OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
             }
@@ -761,21 +765,19 @@ impl Symbol {
 
     #[inline]
     pub fn input_section(&self) -> Option<SectionRef> {
-        self.input_section_ref().map(|section| SectionRef {
-            file: section.file,
-            shndx: section.shndx,
-        })
+        match self.origin.get() {
+            OriginValue::InputSection(section) => Some(section),
+            _ => None,
+        }
     }
 
-    /// Returns the decoded origin with pointers restored to references for
-    /// the current target.
+    /// Returns the decoded origin with the chunk pointer restored to a
+    /// reference for the current target.
     #[inline]
-    pub(crate) fn origin<E: Layout>(&self) -> OriginValue<&InputSection, &ChunkHeader<E>> {
+    pub(crate) fn origin<E: Layout>(&self) -> OriginValue<&ChunkHeader<E>> {
         match self.origin.get() {
             OriginValue::None => OriginValue::None,
-            // SAFETY: input sections have stable arena addresses, and
-            // mergeable conversion leaves them in those slots.
-            OriginValue::InputSection(ptr) => OriginValue::InputSection(unsafe { &*ptr }),
+            OriginValue::InputSection(section) => OriginValue::InputSection(section),
             // SAFETY: linker-synthesized symbols receive a pointer to a chunk
             // header of the current target after chunk storage becomes stable.
             OriginValue::OutputChunk(ptr) => {
@@ -786,15 +788,10 @@ impl Symbol {
         }
     }
 
-    /// The input section itself, stored directly as in C++'s tagged origin.
+    /// Resolves the symbol's input-section reference in `ctx`.
     #[inline]
-    pub fn input_section_ref(&self) -> Option<&InputSection> {
-        // SAFETY: input sections have stable arena addresses, and mergeable
-        // conversion leaves them in those slots.
-        match self.origin.get() {
-            OriginValue::InputSection(ptr) => Some(unsafe { &*ptr }),
-            _ => None,
-        }
+    pub fn input_section_ref<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a InputSection> {
+        self.input_section().map(|section| ctx.section(section))
     }
 
     #[inline]
@@ -826,7 +823,7 @@ impl Symbol {
 
     #[inline]
     pub fn set_input_section(&mut self, section: &InputSection) {
-        self.origin = Origin::new(OriginValue::InputSection(std::ptr::from_ref(section)));
+        self.origin = Origin::new(OriginValue::InputSection(section.section_ref()));
     }
 
     #[inline]
@@ -1027,7 +1024,8 @@ impl Symbol {
         }
 
         match origin {
-            OriginValue::InputSection(isec) => {
+            OriginValue::InputSection(section) => {
+                let isec = ctx.section(section);
                 if !isec.is_alive() {
                     if let Some(leader) = isec.icf_leader() {
                         return ctx.section(leader).addr(ctx) + self.value;
@@ -1961,5 +1959,23 @@ pub fn is_c_identifier(s: &[u8]) -> bool {
             is_alpha(first) && rest.iter().all(|&c| is_alpha(c) || c.is_ascii_digit())
         }
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_section_origin_roundtrip() {
+        let section = SectionRef {
+            file: crate::input_files::ObjId((1 << 30) - 1),
+            shndx: u32::MAX,
+        };
+        let origin = Origin::new(OriginValue::InputSection(section));
+        let OriginValue::InputSection(decoded) = origin.get() else {
+            panic!("input-section origin decoded as another variant");
+        };
+        assert_eq!(decoded, section);
     }
 }

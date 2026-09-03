@@ -353,14 +353,13 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
                     h.update(b"2");
                     hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);
                 }
-                OriginValue::InputSection(isec) if isec.icf_index().is_some() => h.update(b"4"),
-                OriginValue::InputSection(isec) => {
-                    h.update(b"5");
-                    let sec = SectionRef {
-                        file: isec.file,
-                        shndx: isec.shndx,
-                    };
-                    hash_u64(h, ((sec.file.0 as u64) << 32) | sec.shndx as u64);
+                OriginValue::InputSection(sec) => {
+                    if ctx.section(sec).icf_index().is_some() {
+                        h.update(b"4");
+                    } else {
+                        h.update(b"5");
+                        hash_u64(h, sec.encode());
+                    }
                 }
                 _ => h.update(b"3"),
             }
@@ -487,7 +486,7 @@ fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32
     let isec = file.section_at(r.shndx);
     let mut add = |sym_idx: u32| {
         let sym = &ctx.symbols[file.base.symbols[sym_idx as usize]];
-        if let Some(target) = sym.input_section_ref().and_then(InputSection::icf_index) {
+        if let Some(target) = sym.input_section_ref(ctx).and_then(InputSection::icf_index) {
             f(target);
         }
     };

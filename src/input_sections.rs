@@ -780,7 +780,7 @@ impl InputSection {
             return None;
         }
 
-        let isec = sym.input_section_ref();
+        let isec = sym.input_section_ref(ctx);
         let discarded = sym.file().is_none() && sym.name().is_empty() && !sym.is_fragment_dummy();
         let discarded = discarded && std::ptr::eq(sym, &ctx.symbols[SymbolId::DISCARDED_COMDAT]);
 

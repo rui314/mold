@@ -3458,7 +3458,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             for r in isec.rels::<E>(file) {
                 if !r.is_func_call::<E>() {
                     let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
-                    if let Some(dst) = sym.input_section_ref() {
+                    if let Some(dst) = sym.input_section_ref(ctx_ref) {
                         if dst.sh_flags & SHF_EXECINSTR as u64 != 0 {
                             dst.set_address_taken();
                         }
@@ -4809,7 +4809,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
                 continue;
             }
-            let Some(isec) = sym.input_section_ref() else {
+            let Some(isec) = sym.input_section_ref(ctx) else {
                 continue;
             };
             if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
@@ -4855,7 +4855,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
                     continue;
                 }
                 let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-                let target = sym.input_section_ref();
+                let target = sym.input_section_ref(ctx);
                 if sym.st_type() == STT_SECTION {
                     write_back(target, rel.r_addend());
                 } else {
@@ -4869,7 +4869,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     // .dynsym. We need to retain landing pads for such symbols.
     let mut keep = |id: SymbolId| {
         let sym = &ctx.symbols[id];
-        write_back(sym.input_section_ref(), sym.value as i64);
+        write_back(sym.input_section_ref(ctx), sym.value as i64);
     };
 
     keep(ctx.syms.entry);

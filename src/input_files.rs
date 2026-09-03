@@ -2631,7 +2631,7 @@ impl<E: Arch> ObjectFile<E> {
         let is_alive = |sym: &Symbol| -> bool {
             match sym.origin::<E>() {
                 OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
-                OriginValue::InputSection(isec) => isec.is_alive(),
+                OriginValue::InputSection(section) => ctx.section(section).is_alive(),
                 _ => true,
             }
         };
@@ -2891,7 +2891,7 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
         if ctx.args.discard_locals {
             return false;
         }
-        if let Some(isec) = sym.input_section_ref() {
+        if let Some(isec) = sym.input_section_ref(ctx) {
             if isec.sh_flags & SHF_MERGE as u64 != 0 {
                 return false;
             }

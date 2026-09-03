@@ -220,7 +220,7 @@ pub mod sframe_reloc {
                 // We discard input section symbols and create a fresh one per output
                 // section, so a reference to a section symbol needs its addend
                 // adjusted by the input section's offset in its output section.
-                let target = sym.input_section_ref().unwrap();
+                let target = sym.input_section_ref(ctx).unwrap();
                 (
                     ctx.output_section(target.output_section.unwrap()).hdr.shndx,
                     fde.addend + target.offset() as i64,

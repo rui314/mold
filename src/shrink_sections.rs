@@ -159,9 +159,11 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
                     if sym.file() != Some(file_id) {
                         return;
                     }
-                    let Some(isec) = sym.input_section_ref() else {
+                    let Some(section) = sym.input_section() else {
                         return;
                     };
+                    debug_assert_eq!(section.file, file.id());
+                    let isec = file.section_at(section.shndx);
                     if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
                         return;
                     }

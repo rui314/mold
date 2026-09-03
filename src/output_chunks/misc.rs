@@ -609,7 +609,8 @@ pub mod reloc {
                             + isec.rel_addend::<E>(rel),
                     );
                 }
-                OriginValue::InputSection(target) => {
+                OriginValue::InputSection(section) => {
+                    let target = ctx.section(section);
                     if let Some(osec) = target.output_section {
                         return (
                             ctx.output_section(osec).hdr.shndx,
@@ -705,7 +706,7 @@ pub mod comdat_group {
         let sec = &ctx.comdat_group_sections[i as usize];
         let sym = &ctx.symbols[sec.sym];
         let sh_info = if sym.st_type() == STT_SECTION {
-            let isec = sym.input_section_ref().unwrap();
+            let isec = sym.input_section_ref(ctx).unwrap();
             ctx.output_section(isec.output_section.unwrap()).hdr.shndx
         } else {
             sym.output_sym_idx(ctx)

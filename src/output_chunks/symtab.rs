@@ -11,7 +11,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::input_files::{SymtabBlock, SymtabEntries};
-use crate::input_sections::r_delta;
+use crate::input_sections::{r_delta, InputSection};
 use crate::output_chunks::{self, ChunkHeader, ChunkId};
 use crate::symbol::{AddrFlags, OriginValue, Symbol, SymbolId};
 use crate::util::write_cstr;
@@ -469,7 +469,7 @@ pub mod symtab {
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
     if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size().get() != 0 {
-        if let Some(isec) = sym.input_section_ref() {
+        if let Some(isec) = sym.input_section_ref(ctx) {
             if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
                 let end = esym.st_value().get() + esym.st_size().get();
                 return (esym.st_size().get() as i64 + esym.st_value().get() as i64
@@ -508,23 +508,18 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         _ => {}
     }
 
-    let st_shndx_of = |sym: &Symbol| -> u32 {
-        match sym.origin::<E>() {
-            OriginValue::Fragment(frag) if ctx.fragment(frag).is_alive() => {
-                ctx.merged_sections[frag.section.index()].hdr.shndx
-            }
-            _ if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) => {
-                ctx.ppc64_opd.as_ref().unwrap().hdr.shndx
-            }
-            OriginValue::InputSection(isec) if isec.is_alive() => {
-                ctx.output_section(isec.output_section.unwrap()).hdr.shndx
-            }
-            OriginValue::InputSection(isec) if isec.is_icf_removed() => {
-                let leader = ctx.section(isec.icf_leader().unwrap());
-                ctx.output_section(leader.output_section.unwrap()).hdr.shndx
-            }
-            _ => SHN_UNDEF,
+    let st_shndx_of = |sym: &Symbol, isec: &InputSection| -> u32 {
+        if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) {
+            return ctx.ppc64_opd.as_ref().unwrap().hdr.shndx;
         }
+        if isec.is_alive() {
+            return ctx.output_section(isec.output_section.unwrap()).hdr.shndx;
+        }
+        if isec.is_icf_removed() {
+            let leader = ctx.section(isec.icf_leader().unwrap());
+            return ctx.output_section(leader.output_section.unwrap()).hdr.shndx;
+        }
+        SHN_UNDEF
     };
 
     let mut shndx: Option<u32> = None;
@@ -570,44 +565,43 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     esym.st_value_mut().set(sym.addr(ctx));
                 }
             }
-            OriginValue::InputSection(_) if sym.ty() == STT_TLS => {
-                // TLS symbol
-                shndx = Some(st_shndx_of(sym));
-                esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
-            }
-            OriginValue::InputSection(_) if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) => {
-                // IFUNC symbol in PDE that uses two GOT slots
-                shndx = Some(st_shndx_of(sym));
-                esym.set_type(STT_FUNC);
-                esym.set_visibility(sym.visibility());
-                esym.st_value_mut().set(sym.plt_addr(ctx));
-            }
-            OriginValue::InputSection(isec)
-                if isec.sh_flags & SHF_MERGE as u64 != 0
-                    && isec.sh_flags & SHF_ALLOC as u64 == 0 =>
-            {
-                // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
-                let file = &ctx.objs[isec.file.index()];
-                let m = file
-                    .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
-                    .expect("mergeable section");
-                let (frag, addend) = m
-                    .fragment(sym.esym(ctx).st_value().get())
-                    .expect("fragment");
-                let msec = &ctx.merged_sections[m.parent.index()];
-                shndx = Some(msec.hdr.shndx);
-                esym.set_visibility(sym.visibility());
-                esym.st_value_mut().set(
-                    (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
-                        .wrapping_add(addend as u64),
-                );
-            }
-            OriginValue::InputSection(_) => {
-                // Symbol in a regular section
-                shndx = Some(st_shndx_of(sym));
-                esym.set_visibility(sym.visibility());
-                esym.st_value_mut()
-                    .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+            OriginValue::InputSection(section) => {
+                let isec = ctx.section(section);
+                if sym.ty() == STT_TLS {
+                    // TLS symbol
+                    shndx = Some(st_shndx_of(sym, isec));
+                    esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
+                } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
+                    // IFUNC symbol in PDE that uses two GOT slots
+                    shndx = Some(st_shndx_of(sym, isec));
+                    esym.set_type(STT_FUNC);
+                    esym.set_visibility(sym.visibility());
+                    esym.st_value_mut().set(sym.plt_addr(ctx));
+                } else if isec.sh_flags & SHF_MERGE as u64 != 0
+                    && isec.sh_flags & SHF_ALLOC as u64 == 0
+                {
+                    // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
+                    let file = &ctx.objs[isec.file.index()];
+                    let m = file
+                        .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
+                        .expect("mergeable section");
+                    let (frag, addend) = m
+                        .fragment(sym.esym(ctx).st_value().get())
+                        .expect("fragment");
+                    let msec = &ctx.merged_sections[m.parent.index()];
+                    shndx = Some(msec.hdr.shndx);
+                    esym.set_visibility(sym.visibility());
+                    esym.st_value_mut().set(
+                        (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
+                            .wrapping_add(addend as u64),
+                    );
+                } else {
+                    // Symbol in a regular section
+                    shndx = Some(st_shndx_of(sym, isec));
+                    esym.set_visibility(sym.visibility());
+                    esym.st_value_mut()
+                        .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+                }
             }
         }
     }
