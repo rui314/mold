@@ -101,7 +101,6 @@ struct Digest {
 }
 
 impl Digest {
-    #[inline(always)]
     fn to_ne_bytes(self) -> [u8; 16] {
         let mut bytes = [0; 16];
         bytes[..8].copy_from_slice(&self.hi.to_ne_bytes());
@@ -109,7 +108,6 @@ impl Digest {
         bytes
     }
 
-    #[inline(always)]
     fn from_ne_bytes(bytes: [u8; 16]) -> Digest {
         Digest {
             hi: u64::from_ne_bytes(bytes[..8].try_into().unwrap()),
@@ -118,7 +116,6 @@ impl Digest {
     }
 }
 
-#[inline]
 fn finish_digest(hasher: SipHash13_128) -> Digest {
     let mut bytes = [0; 16];
     hasher.finish(&mut bytes);
@@ -484,7 +481,6 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
     sections
 }
 
-#[inline]
 fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32)) {
     let file: &ObjectFile<E> = &ctx.objs[r.file.index()];
     let isec = file.section_at(r.shndx);
@@ -519,7 +515,6 @@ unsafe impl Sync for EdgeBuffer {}
 impl EdgeBuffer {
     /// # Safety
     /// `index` must belong exclusively to the calling vertex's edge range.
-    #[inline]
     unsafe fn write(&self, index: usize, edge: u32) {
         // SAFETY: guaranteed by the caller and the prefix-sum ranges above.
         unsafe { self.0.add(index).write(edge) };

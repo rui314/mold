@@ -66,7 +66,6 @@ pub fn reserve(size: usize) -> Option<NonNull<u8>> {
 /// # Safety
 ///
 /// The range must lie within a reservation returned by [`reserve`].
-#[inline]
 pub unsafe fn commit(address: *mut u8, size: usize) -> bool {
     #[cfg(windows)]
     {

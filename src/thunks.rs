@@ -136,7 +136,6 @@ impl ThunkSymbolBins {
 
 /// Whether a call needs a thunk. On the first pass, before addresses are
 /// known, every call out of the section is assumed to need one.
-#[inline(always)]
 fn requires_thunk<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection,

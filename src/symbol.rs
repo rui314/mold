@@ -547,7 +547,7 @@ impl Symbol {
     /// `ptr` must come from an exclusively borrowed symbol table that stays
     /// in place for the call. All concurrent access to the pointed-to symbol
     /// must use this function.
-    #[inline(always)]
+    #[inline]
     pub(crate) unsafe fn with_resolution_lock<R>(
         ptr: *mut Symbol,
         f: impl FnOnce(&mut Symbol) -> R,
@@ -574,7 +574,7 @@ impl Symbol {
 
         struct Guard(*const AtomicU8, u8);
         impl Drop for Guard {
-            #[inline(always)]
+            #[inline]
             fn drop(&mut self) {
                 unsafe { &*self.0 }.store(self.1, Ordering::Release);
             }
@@ -845,7 +845,6 @@ impl Symbol {
 
     /// Records the file's entry the symbol now refers to (see
     /// [`Self::esym`]).
-    #[inline]
     pub fn set_esym<R: SymbolRecord>(&mut self, esym: &R) {
         self.type_and_bind = (esym.st_bind() << 4 | esym.st_type()) as u8;
         let state = if esym.st_shndx().get() as u32 == SHN_UNDEF {
@@ -972,7 +971,6 @@ impl Symbol {
         self.addr_with(ctx, AddrFlags::default())
     }
 
-    #[inline]
     pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
         if let Some(frag_ref) = self.fragment() {
             let frag = ctx.fragment(frag_ref);
@@ -1189,7 +1187,6 @@ impl fmt::Display for Symbol {
 
 /// The length of the symbol name in a key, which may carry a version
 /// suffix (`foo@VER`).
-#[inline]
 pub fn name_len(key: &[u8]) -> usize {
     crate::util::find_byte(b'@', key).unwrap_or(key.len())
 }
@@ -1298,14 +1295,12 @@ impl<S> Bins<S> {
     /// The symbol is named by the first `name_len` bytes of `key`. Callers
     /// adding many keys retain one task-local [`Bins`] value, avoiding repeated
     /// thread-local lookups that would cost more than recording an entry.
-    #[inline]
     pub fn record(&mut self, key: &'static [u8], name_len: usize, slot: S) {
         self.record_hashed(key, hash_key(key), name_len, slot);
     }
 
     /// Records a key whose hash was computed along with the key, as the
     /// files' keys are hashed while the files are read.
-    #[inline]
     pub fn record_hashed(&mut self, key: &'static [u8], hash: u64, name_len: usize, slot: S) {
         debug_assert_eq!(hash, hash_key(key));
         self.0[shard_of(hash)].push(Pending {
@@ -1418,12 +1413,10 @@ impl SymbolArena {
         }
     }
 
-    #[inline]
     fn capacity(&self) -> usize {
         self.size / std::mem::size_of::<Symbol>()
     }
 
-    #[inline]
     fn reserve(&self, additional: usize) {
         let end = self.len.checked_add(additional).expect("too many symbols");
         assert!(end <= self.capacity(), "symbol arena is full");
@@ -1436,7 +1429,6 @@ impl SymbolArena {
         }
     }
 
-    #[inline]
     fn push(&mut self, symbol: Symbol) {
         self.reserve(1);
         // SAFETY: reserve proved this is the first uninitialized slot.
@@ -1444,7 +1436,6 @@ impl SymbolArena {
         self.len += 1;
     }
 
-    #[inline]
     fn as_mut_ptr(&mut self) -> *mut Symbol {
         self.data.as_ptr()
     }
@@ -1452,7 +1443,6 @@ impl SymbolArena {
     /// # Safety
     ///
     /// Every element added to the initialized prefix must have been written.
-    #[inline]
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len <= self.capacity());
         self.len = len;

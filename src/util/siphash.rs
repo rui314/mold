@@ -85,7 +85,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn round(&mut self) {
         self.v0 = self.v0.wrapping_add(self.v1);
         self.v1 = self.v1.rotate_left(13);
@@ -103,7 +103,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
         self.v2 = self.v2.rotate_left(32);
     }
 
-    #[inline(always)]
+    #[inline]
     fn compress(&mut self, m: u64) {
         self.v3 ^= m;
         for _ in 0..C_ROUNDS {
@@ -112,7 +112,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
         self.v0 ^= m;
     }
 
-    #[inline(always)]
+    #[inline]
     fn finalize(&mut self) {
         for _ in 0..D_ROUNDS {
             self.round();

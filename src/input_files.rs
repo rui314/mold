@@ -477,7 +477,6 @@ impl<E: Layout> InputFile<E> {
         &data[start..end]
     }
 
-    #[inline]
     pub fn find_section(&self, sh_type: u32) -> Option<usize> {
         self.shdrs
             .iter()
@@ -1156,7 +1155,6 @@ impl<E: Arch> ObjectFile<E> {
         RelocationIter::ordinary(self.relocations(Some(relsec_idx)))
     }
 
-    #[inline]
     fn relocation_span(&self, relsec_idx: Option<u32>) -> RelocationSpan {
         let Some(relsec_idx) = relsec_idx else {
             return RelocationSpan::Input(&[]);
@@ -1943,7 +1941,6 @@ impl<E: Arch> ObjectFile<E> {
 
     /// The number of local symbols this file contributes to the symbol
     /// table: the null symbol plus every local not in a discarded COMDAT.
-    #[inline]
     pub fn num_local_symbols(&self) -> usize {
         if self.base.elf_syms.is_empty() {
             return 0;

@@ -169,7 +169,6 @@ fn to_p2align(alignment: u64) -> u8 {
 }
 
 impl InputSection {
-    #[inline]
     pub fn new<E: Arch>(
         file: &ObjectFile<E>,
         file_id: ObjId,
@@ -346,7 +345,6 @@ impl InputSection {
     }
 
     /// The complete input contents, including bytes removed by relaxation.
-    #[inline]
     pub fn original_contents<E: Layout>(&self, file: &ObjectFile<E>) -> &'static [u8] {
         if self.contents == 0 {
             return &[];
@@ -1430,7 +1428,6 @@ pub struct MergeableSection {
 impl MergeableSection {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    #[inline]
     fn new(parent: MergedSectionId, input_offset: u32, section: &InputSection) -> MergeableSection {
         section.kill();
         MergeableSection {
@@ -1813,7 +1810,6 @@ impl Default for SectionList {
 
 impl SectionList {
     /// A list for `nsections` section indices, none with a section yet.
-    #[inline]
     pub fn new(nsections: usize, additional: usize, arena: &SectionArena) -> SectionList {
         let mut indices = vec![0; nsections];
         indices.reserve(additional);

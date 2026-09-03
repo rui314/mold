@@ -1537,7 +1537,6 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
 /// Associates a symbol with a linker-created output chunk. Chunk vectors are
 /// complete before synthetic symbols are attached, so their headers have
 /// stable addresses for the remainder of the link.
-#[inline]
 fn set_symbol_output_chunk<E: Arch>(
     ctx: &mut Context<E>,
     sym: SymbolId,
