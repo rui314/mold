@@ -52,7 +52,7 @@ use crate::arch::{Arch, Family, ThunkLayout};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
-    check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, SectionRef,
+    check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, InputSectionId,
 };
 use crate::output_chunks::eh_frame;
 use crate::output_chunks::output_section::OutputBuffer;
@@ -238,7 +238,7 @@ where
     let output = OutputBuffer::new(buf);
     ctx.objs.par_iter().for_each(|file| {
         // Collect mapping symbols
-        let mut marks: Vec<(SectionRef, u64, Option<usize>)> = file
+        let mut marks: Vec<(InputSectionId, u64, Option<usize>)> = file
             .base
             .local_symbols()
             .iter()
@@ -246,18 +246,18 @@ where
             .filter_map(|sym| {
                 let kind = mapping_symbol_kind(sym.name())?;
                 let sec = sym.input_section()?;
-                let isec = ctx.section(sec);
+                let isec = ctx.input_section(sec);
                 (isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
                     .then_some((sec, sym.value, kind))
             })
             .collect();
         // Group mapping symbols by input section and sort by address
-        marks.sort_by_key(|&(sec, offset, _)| (sec.shndx, offset));
+        marks.sort_by_key(|&(sec, offset, _)| (ctx.input_section(sec).shndx, offset));
 
         // Swap bytes
         for (i, &(sec, start, kind)) in marks.iter().enumerate() {
             let Some(width) = kind else { continue };
-            let isec = ctx.section(sec);
+            let isec = ctx.input_section(sec);
             let end = match marks.get(i + 1) {
                 Some(&(next, offset, _)) if next == sec => offset,
                 _ => isec.sh_size,

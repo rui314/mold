@@ -188,6 +188,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         else {
             return;
         };
+        let opd_id = file.section_id(opd.shndx as usize).unwrap();
         file.kill_section(opd.shndx as usize);
 
         let local_symbols = file.base.symbols.clone();
@@ -203,7 +204,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         for (idx, &id) in local_symbols.iter().enumerate() {
             let value = editor.with_symbol(id, |sym| {
                 (sym.file() == Some(FileId::Obj(opd.file))
-                    && sym.input_section() == Some(opd)
+                    && sym.input_section() == Some(opd_id)
                     && matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC))
                 .then_some(sym.value)
             });
@@ -236,7 +237,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         // Rewrite relocations so that they directly refer to .opd.
         let refers_to_opd: Vec<bool> = local_symbols
             .iter()
-            .map(|&id| editor.with_symbol(id, |sym| sym.input_section() == Some(opd)))
+            .map(|&id| editor.with_symbol(id, |sym| sym.input_section() == Some(opd_id)))
             .collect();
         let sections: Vec<_> = file
             .input_sections()

@@ -76,7 +76,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
         match sym.origin::<E>() {
             OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
             OriginValue::InputSection(section) => {
-                let isec = ctx.section(section);
+                let isec = ctx.input_section(section);
                 if mark_section(isec) {
                     out.push(isec);
                 }
@@ -186,7 +186,7 @@ fn visit_section<'scope, E: Arch>(
                 continue;
             }
             OriginValue::InputSection(section) => {
-                mark(ctx.section(section));
+                mark(ctx.input_section(section));
             }
             _ => {}
         }

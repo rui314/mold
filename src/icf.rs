@@ -354,11 +354,12 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
                     hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);
                 }
                 OriginValue::InputSection(sec) => {
-                    if ctx.section(sec).icf_index().is_some() {
+                    let isec = ctx.input_section(sec);
+                    if isec.icf_index().is_some() {
                         h.update(b"4");
                     } else {
                         h.update(b"5");
-                        hash_u64(h, sec.encode());
+                        hash_u64(h, isec.section_ref().encode());
                     }
                 }
                 _ => h.update(b"3"),

@@ -1809,7 +1809,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
     let println = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
         let kind = if is_weak { 'w' } else { 'u' };
         match sym.input_section() {
-            Some(sec) => out!("{src}\t{}\t{kind}\t{sym}", ctx.section_display(sec)),
+            Some(sec) => out!("{src}\t{}\t{kind}\t{sym}", ctx.input_section_display(sec)),
             None => out!(
                 "{src}\t{}\t{kind}\t{sym}",
                 ctx.file_display(sym.file().unwrap())
@@ -3441,7 +3441,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
                 let idx = crate::util::read_uleb(&mut p) as usize;
                 let sym = &ctx_ref.symbols[file.base.symbols[idx]];
                 if let Some(r) = sym.input_section() {
-                    ctx_ref.section(r).set_address_taken();
+                    ctx_ref.input_section(r).set_address_taken();
                 }
             }
             return;
@@ -3470,7 +3470,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
 
     let mark = |id: SymbolId| {
         if let Some(r) = ctx_ref.symbols[id].input_section() {
-            ctx_ref.section(r).set_address_taken();
+            ctx_ref.input_section(r).set_address_taken();
         }
     };
     // Some symbols' pointer values are leaked to the dynamic section.

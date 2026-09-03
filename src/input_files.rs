@@ -21,8 +21,8 @@ use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
-    CieRecord, FdeRecord, FragmentRef, InputSection, MergeableSection, RelocationSpan, SFrameFde,
-    SectionList,
+    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeableSection,
+    RelocationSpan, SFrameFde, SectionList,
 };
 use crate::mapped_file::MappedFile;
 use crate::output_chunks::merged::MergedSection;
@@ -1128,6 +1128,12 @@ impl<E: Arch> ObjectFile<E> {
         self.sections.section(shndx)
     }
 
+    /// Returns the compact arena id of the section at `shndx`.
+    #[inline]
+    pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
+        self.sections.section_id(shndx)
+    }
+
     #[inline]
     pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection> {
         self.sections.section_mut(shndx)
@@ -2014,7 +2020,7 @@ impl<E: Arch> ObjectFile<E> {
             sym.set_esym(esym);
             sym.set_rust(self.is_rust_obj);
             if let Some(shndx) = shndx {
-                if let Some(section) = self.section(shndx) {
+                if let Some(section) = self.section_id(shndx) {
                     sym.set_input_section(section);
                 }
             }
@@ -2607,10 +2613,10 @@ impl<E: Arch> ObjectFile<E> {
             self.elf_sections2.push(shdr);
             let shndx = self.num_elf_sections + self.elf_sections2.len() - 1;
             let isec = InputSection::new::<E>(self, id, shndx as u32, &shdr, BStr::new(name));
-            self.sections.push(isec, section_arena);
+            let section = self.sections.push(isec, section_arena);
 
             let sym = &mut symbols[sym_id];
-            sym.set_input_section(self.section_at(shndx as u32));
+            sym.set_input_section(section);
             sym.value = 0;
             sym.sym_idx = i as u32;
             sym.ver_idx = default_version;
@@ -2631,7 +2637,7 @@ impl<E: Arch> ObjectFile<E> {
         let is_alive = |sym: &Symbol| -> bool {
             match sym.origin::<E>() {
                 OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
-                OriginValue::InputSection(section) => ctx.section(section).is_alive(),
+                OriginValue::InputSection(section) => ctx.input_section(section).is_alive(),
                 _ => true,
             }
         };
@@ -3625,13 +3631,13 @@ impl<E: Arch> ObjectFile<E> {
         let mut origin = None;
         if !esym.is_abs() && !esym.is_common() && self.sections_parsed {
             let shndx = self.shndx_from(i, esym.st_shndx().get());
-            let Some(isec) = self.section(shndx) else {
+            let Some((section, isec)) = self.sections.section_with_id(shndx) else {
                 return;
             };
             if !isec.is_alive() {
                 return;
             }
-            origin = Some(isec);
+            origin = Some(section);
         }
 
         let rank = symbol_resolution_rank(esym, false, in_archive, self.base.priority);

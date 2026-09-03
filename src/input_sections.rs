@@ -57,6 +57,16 @@ const _: () = assert!(std::mem::size_of::<InputSectionId>() == 4);
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
     pub(crate) const NONE: InputSectionId = InputSectionId(0);
+
+    #[inline]
+    pub(crate) const fn from_raw(value: u32) -> InputSectionId {
+        InputSectionId(value)
+    }
+
+    #[inline]
+    pub(crate) const fn raw(self) -> u32 {
+        self.0
+    }
 }
 
 /// Identifies a section fragment in a merged output section.
@@ -105,8 +115,8 @@ struct InputSectionExtras {
     r_deltas: Box<[RelocDelta]>,
 }
 
-// InputSection represents a section in an input object file. Symbol::origin
-// uses the low two bits of an InputSection pointer, so keep this type
+// InputSection represents a section in an input object file. SectionArena
+// encodes its address as an offset in four-byte units, so keep this type
 // four-byte aligned even on hosts such as m68k.
 #[derive(Debug)]
 pub struct InputSection {
@@ -1727,7 +1737,7 @@ impl SectionArena {
         self.allocate_global(size, alignment)
     }
 
-    fn insert(&self, section: InputSection) -> u32 {
+    fn insert(&self, section: InputSection) -> InputSectionId {
         let size = std::mem::size_of::<InputSection>();
         let begin = self.allocate_offset(size, std::mem::align_of::<InputSection>());
         debug_assert!(begin > 0 && begin < Self::SIZE);
@@ -1745,7 +1755,7 @@ impl SectionArena {
         };
         // ArenaPtr and base-relative indices both encode offsets in four-byte units.
         // Offsets are from the beginning of the arena in four-byte units.
-        u32::try_from(begin / 4).expect("input-section arena is too large")
+        InputSectionId(u32::try_from(begin / 4).expect("input-section arena is too large"))
     }
 
     #[inline]
@@ -1840,32 +1850,52 @@ impl SectionList {
 
     /// Adds the section for `shndx`, which has none yet.
     #[inline]
-    pub fn insert(&mut self, shndx: usize, section: InputSection, arena: &SectionArena) {
+    pub fn insert(
+        &mut self,
+        shndx: usize,
+        section: InputSection,
+        arena: &SectionArena,
+    ) -> InputSectionId {
         debug_assert_eq!(self.indices[shndx], 0);
         debug_assert_eq!(self.arena_base, arena.data);
-        self.indices[shndx] = arena.insert(section);
+        let id = arena.insert(section);
+        self.indices[shndx] = id.raw();
+        id
     }
 
     /// Adds a section the linker made up, under a new section index.
-    pub fn push(&mut self, section: InputSection, arena: &SectionArena) {
+    pub fn push(&mut self, section: InputSection, arena: &SectionArena) -> InputSectionId {
         self.indices.push(0);
-        self.insert(self.indices.len() - 1, section, arena);
+        self.insert(self.indices.len() - 1, section, arena)
     }
 
+    /// Returns the compact arena id for the section at `shndx`.
     #[inline]
-    pub fn section(&self, shndx: usize) -> Option<&InputSection> {
+    pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
         } else if value & MERGEABLE_SECTION != 0 {
-            let m = &self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize];
-            // SAFETY: the mergeable section retains the arena index of its
-            // stable input section.
-            Some(unsafe { &*self.input_ptr(m.input_offset) })
+            Some(InputSectionId(
+                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_offset,
+            ))
         } else {
-            // SAFETY: a nonzero regular table entry is a live arena index.
-            Some(unsafe { &*self.input_ptr(value) })
+            Some(InputSectionId(value))
         }
+    }
+
+    #[inline]
+    pub fn section(&self, shndx: usize) -> Option<&InputSection> {
+        self.section_with_id(shndx).map(|(_, section)| section)
+    }
+
+    /// Returns both representations without looking up `shndx` twice.
+    #[inline]
+    pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection)> {
+        let id = self.section_id(shndx)?;
+        // SAFETY: section_id returns the arena index of the initialized input
+        // section named by this table entry.
+        Some((id, unsafe { &*self.input_ptr(id.raw()) }))
     }
 
     #[inline]

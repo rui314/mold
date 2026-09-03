@@ -11,13 +11,13 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::input_files::FileId;
-use crate::input_sections::SectionRef;
+use crate::input_sections::InputSectionId;
 use crate::output_chunks::ChunkId;
 use crate::symbol::SymbolId;
 
 // Construct a section-to-symbol map.
-fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<SectionRef, Vec<SymbolId>> {
-    let mut map: HashMap<SectionRef, Vec<SymbolId>> = HashMap::new();
+fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<SymbolId>> {
+    let mut map: HashMap<InputSectionId, Vec<SymbolId>> = HashMap::new();
     for file in &ctx.objs {
         let file_id = FileId::Obj(file.id());
         for &id in &file.base.symbols {
@@ -60,7 +60,6 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
             .par_iter()
             .map(|&member| {
                 let isec = ctx.input_section(member);
-                let r = isec.section_ref();
                 let addr = if osec.hdr.is_alloc() {
                     osec.hdr.shdr.sh_addr.get() + isec.offset()
                 } else {
@@ -73,7 +72,7 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
                     1u64 << isec.p2align(),
                     isec.display(&ctx.objs[isec.file.index()])
                 );
-                if let Some(syms) = map.get(&r) {
+                if let Some(syms) = map.get(&member) {
                     for &id in syms {
                         let sym = &ctx.symbols[id];
                         s.push_str(&format!(

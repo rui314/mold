@@ -24,7 +24,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
-use crate::input_sections::{FragmentRef, InputSection, SectionRef};
+use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
 use crate::output_chunks::ChunkHeader;
 use crate::util::concurrent_map::EntryId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
@@ -46,7 +46,7 @@ impl SymbolId {
     }
 }
 
-// Origin stores an input-section reference, an output-chunk pointer, or compact
+// Origin stores an input-section id, an output-chunk pointer, or compact
 // ids for section fragments and symbols in one word. The low two bits identify
 // which representation it contains.
 #[repr(transparent)]
@@ -64,7 +64,7 @@ const SYMBOL_TAG: u64 = 3;
 #[derive(Clone, Copy)]
 pub(crate) enum OriginValue<C = *const ()> {
     None,
-    InputSection(SectionRef),
+    InputSection(InputSectionId),
     OutputChunk(C),
     Fragment(FragmentRef),
     Symbol(SymbolId),
@@ -85,11 +85,8 @@ impl Origin {
         match value {
             OriginValue::None => Origin::NONE,
             OriginValue::InputSection(section) => {
-                // The section index uses 32 payload bits, leaving 30 bits for
-                // the object-file index after reserving the two tag bits.
-                assert!(section.file.0 < 1 << 30, "too many input files");
-                assert_ne!(section.shndx, 0, "input section 0 cannot be an origin");
-                Origin(section.encode() << 2 | SECTION_TAG)
+                assert_ne!(section, InputSectionId::NONE);
+                Origin(u64::from(section.raw()) << 2 | SECTION_TAG)
             }
             OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
@@ -111,7 +108,9 @@ impl Origin {
         }
 
         match self.0 & ORIGIN_TAG_MASK {
-            SECTION_TAG => OriginValue::InputSection(SectionRef::decode(self.0 >> 2)),
+            SECTION_TAG => {
+                OriginValue::InputSection(InputSectionId::from_raw((self.0 >> 2) as u32))
+            }
             CHUNK_TAG => {
                 OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
             }
@@ -764,7 +763,7 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn input_section(&self) -> Option<SectionRef> {
+    pub fn input_section(&self) -> Option<InputSectionId> {
         match self.origin.get() {
             OriginValue::InputSection(section) => Some(section),
             _ => None,
@@ -791,7 +790,8 @@ impl Symbol {
     /// Resolves the symbol's input-section reference in `ctx`.
     #[inline]
     pub fn input_section_ref<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a InputSection> {
-        self.input_section().map(|section| ctx.section(section))
+        self.input_section()
+            .map(|section| ctx.input_section(section))
     }
 
     #[inline]
@@ -822,8 +822,8 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn set_input_section(&mut self, section: &InputSection) {
-        self.origin = Origin::new(OriginValue::InputSection(section.section_ref()));
+    pub fn set_input_section(&mut self, section: InputSectionId) {
+        self.origin = Origin::new(OriginValue::InputSection(section));
     }
 
     #[inline]
@@ -1025,7 +1025,7 @@ impl Symbol {
 
         match origin {
             OriginValue::InputSection(section) => {
-                let isec = ctx.section(section);
+                let isec = ctx.input_section(section);
                 if !isec.is_alive() {
                     if let Some(leader) = isec.icf_leader() {
                         return ctx.section(leader).addr(ctx) + self.value;
@@ -1968,10 +1968,7 @@ mod tests {
 
     #[test]
     fn input_section_origin_roundtrip() {
-        let section = SectionRef {
-            file: crate::input_files::ObjId((1 << 30) - 1),
-            shndx: u32::MAX,
-        };
+        let section = InputSectionId::from_raw(u32::MAX);
         let origin = Origin::new(OriginValue::InputSection(section));
         let OriginValue::InputSection(decoded) = origin.get() else {
             panic!("input-section origin decoded as another variant");

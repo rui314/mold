@@ -610,7 +610,7 @@ pub mod reloc {
                     );
                 }
                 OriginValue::InputSection(section) => {
-                    let target = ctx.section(section);
+                    let target = ctx.input_section(section);
                     if let Some(osec) = target.output_section {
                         return (
                             ctx.output_section(osec).hdr.shndx,

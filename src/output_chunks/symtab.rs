@@ -566,7 +566,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                 }
             }
             OriginValue::InputSection(section) => {
-                let isec = ctx.section(section);
+                let isec = ctx.input_section(section);
                 if sym.ty() == STT_TLS {
                     // TLS symbol
                     shndx = Some(st_shndx_of(sym, isec));
