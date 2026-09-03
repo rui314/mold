@@ -59,17 +59,16 @@ const CHUNK_TAG: u64 = 1;
 const FRAGMENT_TAG: u64 = 2;
 const SYMBOL_TAG: u64 = 3;
 
+// Origin::{new, get} use the default raw pointer payloads. Symbol::origin
+// substitutes references so callers can match without unsafe code.
 #[derive(Clone, Copy)]
-pub(crate) enum OriginValue<I, C> {
+pub(crate) enum OriginValue<I = *const InputSection, C = *const ()> {
     None,
     InputSection(I),
     OutputChunk(C),
     Fragment(FragmentRef),
     Symbol(SymbolId),
 }
-
-type NewOriginValue<'a> = OriginValue<&'a InputSection, *const ()>;
-type RawOriginValue = OriginValue<*const InputSection, *const ()>;
 
 impl Origin {
     const NONE: Origin = Origin(0);
@@ -82,12 +81,10 @@ impl Origin {
         Origin(ptr | tag)
     }
 
-    fn new(value: NewOriginValue<'_>) -> Origin {
+    fn new(value: OriginValue) -> Origin {
         match value {
             OriginValue::None => Origin::NONE,
-            OriginValue::InputSection(section) => {
-                Origin::pointer(std::ptr::from_ref(section), SECTION_TAG)
-            }
+            OriginValue::InputSection(section) => Origin::pointer(section, SECTION_TAG),
             OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
                 // FragmentRef contains two u32 indices. One billion merged sections
@@ -102,7 +99,7 @@ impl Origin {
     }
 
     #[inline]
-    fn get(self) -> RawOriginValue {
+    fn get(self) -> OriginValue {
         if self.0 == 0 {
             return OriginValue::None;
         }
@@ -829,7 +826,7 @@ impl Symbol {
 
     #[inline]
     pub fn set_input_section(&mut self, section: &InputSection) {
-        self.origin = Origin::new(OriginValue::InputSection(section));
+        self.origin = Origin::new(OriginValue::InputSection(std::ptr::from_ref(section)));
     }
 
     #[inline]
