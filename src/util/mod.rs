@@ -10,7 +10,6 @@ pub mod hyperloglog;
 pub mod perf;
 pub(crate) mod siphash;
 pub mod tar;
-pub(crate) mod virtual_memory;
 
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".

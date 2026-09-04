@@ -12,7 +12,7 @@ use crate::cmdline::Args;
 use crate::elf::{ElfSym, ElfWord};
 use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
-    FragmentRef, InputSection, InputSectionId, SectionArena, SectionFragment, SectionRef,
+    FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::output_chunks::dynamic::{DynamicSection, RelDynSection, RelrDynSection};
@@ -101,10 +101,6 @@ pub struct Context<E: Arch> {
 
     pub objs: FileList<ObjectFile<E>>,
     pub dsos: FileList<SharedFile<E>>,
-
-    // Declared after all object files so their SectionLists are dropped
-    // before the arena releases its backing mapping.
-    pub(crate) section_arena: SectionArena,
 
     /// Files indexed by priority, for decoding symbol resolution results.
     pub file_by_priority: Vec<Option<FileId>>,
@@ -250,7 +246,6 @@ impl<E: Arch> Context<E> {
             symbol_bins: OnceLock::new(),
             objs: FileList::default(),
             dsos: FileList::default(),
-            section_arena: SectionArena::new(),
             file_by_priority: Vec::new(),
             pending_files: Vec::new(),
             dso_sonames: HashSet::new(),

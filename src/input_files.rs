@@ -1601,12 +1601,7 @@ impl<E: Arch> ObjectFile<E> {
         }
     }
 
-    fn initialize_sections(
-        &mut self,
-        args: &Args,
-        id: ObjId,
-        section_arena: &crate::input_sections::SectionArena,
-    ) {
+    fn initialize_sections(&mut self, args: &Args, id: ObjId) {
         // Read sections
         let nsections = self.num_elf_sections;
         let expected_reloc_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
@@ -1829,7 +1824,7 @@ impl<E: Arch> ObjectFile<E> {
 
                     static COUNTER: Counter = Counter::new("regular_sections");
                     COUNTER.increment();
-                    self.sections.insert(i, isec, section_arena);
+                    self.sections.insert(i, isec);
                 }
             }
         }
@@ -1912,13 +1907,12 @@ impl<E: Arch> ObjectFile<E> {
         &mut self,
         args: &Args,
         id: ObjId,
-        section_arena: &crate::input_sections::SectionArena,
         allocator: &ParallelSymbolAllocator<'_>,
         keep_discarded_comdat: bool,
     ) {
         debug_assert!(!self.sections_parsed);
         let n = self.base.shdrs.len();
-        self.sections = SectionList::new(n, self.num_common_symbols as usize, section_arena);
+        self.sections = SectionList::new(n, self.num_common_symbols as usize);
 
         if !keep_discarded_comdat && !self.comdat_groups.is_empty() {
             let mut discarded = vec![false; n];
@@ -1938,7 +1932,7 @@ impl<E: Arch> ObjectFile<E> {
         // symbol-table length.
         unsafe {
             allocator.allocate(count, |base_id, slots| {
-                self.initialize_sections(args, id, section_arena);
+                self.initialize_sections(args, id);
                 self.initialize_local_symbols(id, base_id, slots);
                 self.sort_relocations();
                 self.sections_parsed = true;
@@ -2576,7 +2570,6 @@ impl<E: Arch> ObjectFile<E> {
         id: ObjId,
         symbols: &mut SymbolTable,
         default_version: u16,
-        section_arena: &crate::input_sections::SectionArena,
     ) {
         if self.num_common_symbols == 0 {
             return;
@@ -2613,7 +2606,7 @@ impl<E: Arch> ObjectFile<E> {
             self.elf_sections2.push(shdr);
             let shndx = self.num_elf_sections + self.elf_sections2.len() - 1;
             let isec = InputSection::new(self, id, shndx as u32, &shdr, BStr::new(name));
-            let section = self.sections.push(isec, section_arena);
+            let section = self.sections.push(isec);
 
             let sym = &mut symbols[sym_id];
             sym.set_input_section(section);

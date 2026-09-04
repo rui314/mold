@@ -763,7 +763,6 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
         let Context {
             objs,
             symbols,
-            section_arena,
             args,
             ..
         } = ctx;
@@ -774,13 +773,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                     && !file.is_lto_input
                     && !file.sections_parsed
                 {
-                    file.parse_sections(
-                        args,
-                        file.id(),
-                        section_arena,
-                        allocator,
-                        keep_discarded_comdat,
-                    );
+                    file.parse_sections(args, file.id(), allocator, keep_discarded_comdat);
                 }
             });
         });
@@ -1082,11 +1075,10 @@ pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
         objs,
         symbols,
         args,
-        section_arena,
         ..
     } = ctx;
     for file in objs {
-        file.convert_common_symbols(args, file.id(), symbols, default_version, section_arena);
+        file.convert_common_symbols(args, file.id(), symbols, default_version);
     }
 }
 
