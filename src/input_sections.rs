@@ -1680,7 +1680,7 @@ impl<E: Arch> SectionList<E> {
     /// Decodes the table entry at `shndx` to a dense input index. Sections
     /// with merge metadata still resolve to their retained, dead input.
     #[inline]
-    fn input_index(&self, shndx: usize) -> Option<u32> {
+    pub(crate) fn input_index(&self, shndx: usize) -> Option<u32> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
@@ -1709,31 +1709,18 @@ impl<E: Arch> SectionList<E> {
         self.insert(self.indices.len() - 1, section)
     }
 
-    /// Returns the logical input-section ID for the section at `shndx`.
-    #[inline]
-    pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
-        let index = self.input_index(shndx)?;
-        Some(InputSectionId::new(self.inputs[index as usize].file, index))
-    }
-
     #[inline]
     pub fn section(&self, shndx: usize) -> Option<&InputSection<E>> {
         let index = self.input_index(shndx)?;
-        Some(&self.inputs[index as usize])
-    }
-
-    /// Returns both representations without looking up `shndx` twice.
-    #[inline]
-    pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection<E>)> {
-        let index = self.input_index(shndx)?;
-        let section = &self.inputs[index as usize];
-        Some((InputSectionId::new(section.file, index), section))
+        // SAFETY: table entries contain only indices assigned by `insert`.
+        Some(unsafe { self.input_unchecked(index as usize) })
     }
 
     #[inline]
     pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         let index = self.input_index(shndx)?;
-        Some(&mut self.inputs[index as usize])
+        // SAFETY: table entries contain only indices assigned by `insert`.
+        Some(unsafe { self.inputs.get_unchecked_mut(index as usize) })
     }
 
     #[inline]
@@ -1791,6 +1778,7 @@ impl<E: Arch> SectionList<E> {
     /// The regular sections and their logical IDs, in section order.
     pub fn regular_ids_mut(
         &mut self,
+        file: ObjId,
     ) -> impl Iterator<Item = (InputSectionId, &mut InputSection<E>)> {
         let indices = &self.indices;
         self.inputs
@@ -1800,10 +1788,7 @@ impl<E: Arch> SectionList<E> {
                 let value = indices[section.shndx as usize];
                 (value != 0 && value & HAS_MERGE_INFO == 0).then(|| {
                     debug_assert_eq!(value as usize, input_index + 1);
-                    (
-                        InputSectionId::new(section.file, input_index as u32),
-                        section,
-                    )
+                    (InputSectionId::new(file, input_index as u32), section)
                 })
             })
     }

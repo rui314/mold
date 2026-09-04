@@ -1367,13 +1367,14 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
         let Context { objs, args, .. } = ctx;
         objs.par_iter_mut().enumerate().for_each(|(fi, file)| {
             caches.with_local(|cache| {
+                let file_id = file.id();
                 let shstrtab = file.base.shstrtab;
                 let num_elf_sections = file.num_elf_sections;
                 let shdrs = &file.base.shdrs;
                 let extra_shdrs = &file.elf_sections2;
                 for (member, isec) in file
                     .sections
-                    .regular_ids_mut()
+                    .regular_ids_mut(file_id)
                     .filter(|(_, isec)| isec.is_alive())
                 {
                     let name = isec.name_in(shstrtab, num_elf_sections);

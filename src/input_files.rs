@@ -1161,7 +1161,21 @@ impl<E: Arch> ObjectFile<E> {
     /// Returns the logical ID of the section at `shndx`.
     #[inline]
     pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
-        self.sections.section_id(shndx)
+        self.sections
+            .input_index(shndx)
+            .map(|index| InputSectionId::new(self.id(), index))
+    }
+
+    /// Returns a section together with its logical ID without resolving the
+    /// section-header index twice.
+    #[inline]
+    fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection<E>)> {
+        let index = self.sections.input_index(shndx)?;
+        Some((
+            InputSectionId::new(self.id(), index),
+            // SAFETY: `input_index` only returns indices assigned by insertion.
+            unsafe { self.sections.input_unchecked(index as usize) },
+        ))
     }
 
     #[inline]
@@ -3670,7 +3684,7 @@ impl<E: Arch> ObjectFile<E> {
         let mut origin = None;
         if !esym.is_abs() && !esym.is_common() && self.sections_parsed {
             let shndx = self.shndx_from(i, esym.st_shndx().get());
-            let Some((section, isec)) = self.sections.section_with_id(shndx) else {
+            let Some((section, isec)) = self.section_with_id(shndx) else {
                 return;
             };
             if !isec.is_alive() {
