@@ -179,6 +179,18 @@ impl<T: FileInPool> FileList<T> {
         self.pool.len()
     }
 
+    /// Returns a file by its stable pool index without a bounds check.
+    ///
+    /// # Safety
+    ///
+    /// `index` must have been returned by this list's `push` method.
+    #[inline]
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> &T {
+        debug_assert!(index < self.pool.len());
+        // SAFETY: guaranteed by the caller.
+        unsafe { self.pool.get_unchecked(index) }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.live.is_empty()
     }
