@@ -879,6 +879,24 @@ impl<'a, E: Arch> CrelReader<'a, E> {
     }
 }
 
+/// Reads only the relocation count from a CREL header. Invalid input is left
+/// for the ordinary decoder to diagnose if the section is later selected.
+fn crel_count(data: &[u8]) -> Option<usize> {
+    let mut value = 0u64;
+    for (i, &byte) in data.iter().take(10).enumerate() {
+        let payload = u64::from(byte & 0x7f);
+        let shift = i * 7;
+        if shift == 63 && payload > 1 {
+            return None;
+        }
+        value |= payload << shift;
+        if byte & 0x80 == 0 {
+            return usize::try_from(value >> 3).ok();
+        }
+    }
+    None
+}
+
 impl<E: Layout> Iterator for CrelReader<'_, E> {
     type Item = ElfRel<E>;
 
@@ -2392,6 +2410,57 @@ impl<E: Arch> ObjectFile<E> {
 
     pub(crate) fn num_fragment_dummies(&self) -> usize {
         self.num_frag_syms
+    }
+
+    /// An upper bound for fragment dummy symbols, available before sections
+    /// are parsed. Reserving it with the symbol vector prevents a late move of
+    /// all symbols when mergeable-section relocations are rewritten.
+    pub(crate) fn fragment_dummy_upper_bound(&self) -> usize {
+        let expected_reloc_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
+        self.base
+            .shdrs
+            .iter()
+            .filter_map(|shdr| {
+                let sh_type = shdr.sh_type.get();
+                if sh_type != expected_reloc_type && sh_type != SHT_CREL {
+                    return None;
+                }
+
+                let target = self.base.shdrs.get(shdr.sh_info.get() as usize)?;
+                if target.sh_flags.get() & SHF_ALLOC as u64 == 0 {
+                    return None;
+                }
+
+                let contents = self.base.section_contents_from_shdr(shdr);
+                if sh_type == SHT_CREL {
+                    crel_count(contents)
+                } else {
+                    let size = std::mem::size_of::<E::Rel>();
+                    if !contents.len().is_multiple_of(size) {
+                        return Some(0);
+                    }
+                    Some(
+                        rels_from_bytes::<E>(contents)
+                            .iter()
+                            .filter(|rel| {
+                                let r_sym = rel.r_sym() as usize;
+                                let Some(esym) = self.base.elf_syms.get(r_sym) else {
+                                    return false;
+                                };
+                                if esym.st_type() != STT_SECTION {
+                                    return false;
+                                }
+                                let shndx = self.shndx_from(r_sym, esym.st_shndx().get());
+                                self.base
+                                    .shdrs
+                                    .get(shndx)
+                                    .is_some_and(|shdr| shdr.sh_flags.get() & SHF_MERGE as u64 != 0)
+                            })
+                            .count(),
+                    )
+                }
+            })
+            .fold(0, usize::saturating_add)
     }
 
     // For each relocation referring to a mergeable section symbol, we

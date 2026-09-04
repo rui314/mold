@@ -432,28 +432,29 @@ fn clear_symbols<E: Arch>(ctx: &mut Context<E>) {
 pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_symbols");
     let bins = ctx.take_symbol_bins();
-    // Local symbols are appended after global resolution determines which
-    // object files are reachable. Reserve their upper bound now so that the
-    // global-symbol vector does not have to move during parallel section
-    // parsing. LTO inputs themselves are replaced rather than parsed.
-    let local_maximum: usize = ctx
+    // Local and fragment dummy symbols are appended after global resolution.
+    // Reserve their upper bound now so that the global-symbol vector does not
+    // have to move during parallel section parsing or merge processing. LTO
+    // inputs themselves are replaced rather than parsed.
+    let additional_capacity: usize = ctx
         .objs
-        .iter()
+        .par_iter()
         .filter(|file| file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed)
         .map(|file| {
-            if file.base.elf_syms.is_empty() {
+            let locals = if file.base.elf_syms.is_empty() {
                 0
             } else {
                 file.base.first_global.max(1)
-            }
+            };
+            locals.saturating_add(file.fragment_dummy_upper_bound())
         })
-        .sum();
+        .reduce(|| 0, usize::saturating_add);
     let Context { symbols, .. } = ctx;
 
     // Each hash shard is populated by one thread and writes directly to the
     // stable slots recorded while files were parsed, so no synchronization
     // or final scatter pass is needed.
-    symbols.gather_symbol_slots(bins, local_maximum);
+    symbols.gather_symbol_slots(bins, additional_capacity);
 }
 
 fn current_rank<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {

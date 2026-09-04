@@ -1610,8 +1610,11 @@ impl SymbolTable {
         let capacity = count
             .saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1))
             .saturating_add(additional_capacity);
+        let old_capacity = self.symbols.capacity();
         self.symbols.reserve(capacity);
-        advise_hugepage(&self.symbols);
+        if self.symbols.capacity() != old_capacity {
+            advise_hugepage(&self.symbols);
+        }
         let capacity = self.symbols.capacity();
         let storage = AtomicPtr::new(self.symbols.as_mut_ptr());
         let next = AtomicUsize::new(first);
@@ -1711,8 +1714,11 @@ impl SymbolTable {
         init: impl FnOnce(&mut [Symbol], &mut [MaybeUninit<Symbol>]),
     ) -> SymbolId {
         let first = SymbolId(self.symbols.len() as u32);
+        let old_capacity = self.symbols.capacity();
         self.symbols.reserve(n);
-        advise_hugepage(&self.symbols);
+        if self.symbols.capacity() != old_capacity {
+            advise_hugepage(&self.symbols);
+        }
         let ptr = self.symbols.as_mut_ptr();
         // SAFETY: `first` is the initialized length and reserve made room for
         // `n` further elements. The ranges do not overlap.
@@ -1736,8 +1742,11 @@ impl SymbolTable {
         let first = self.symbols.len();
         let end = first.checked_add(maximum).expect("too many symbols");
         assert!(end <= u32::MAX as usize);
+        let old_capacity = self.symbols.capacity();
         self.symbols.reserve(maximum);
-        advise_hugepage(&self.symbols);
+        if self.symbols.capacity() != old_capacity {
+            advise_hugepage(&self.symbols);
+        }
 
         let allocator = ParallelSymbolAllocator {
             // SAFETY: reserve made the entire tail available, even though it
