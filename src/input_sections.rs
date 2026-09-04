@@ -138,7 +138,7 @@ pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
         &[]
     }
 
-    fn set_r_deltas(&mut self, _deltas: Box<[RelocDelta]>) {
+    fn r_deltas_mut(&mut self) -> &mut Box<[RelocDelta]> {
         unreachable!("only RISC-V and LoongArch input sections have relaxation metadata")
     }
 }
@@ -186,8 +186,8 @@ impl InputSectionExtra for RelaxationInputSectionExtra {
     }
 
     #[inline]
-    fn set_r_deltas(&mut self, deltas: Box<[RelocDelta]>) {
-        self.r_deltas = deltas;
+    fn r_deltas_mut(&mut self) -> &mut Box<[RelocDelta]> {
+        &mut self.r_deltas
     }
 }
 
@@ -699,7 +699,7 @@ impl<E: Arch> InputSection<E> {
 
     pub fn set_r_deltas(&mut self, deltas: Box<[RelocDelta]>) {
         debug_assert!(!deltas.is_empty());
-        self.extra.set_r_deltas(deltas);
+        *self.extra.r_deltas_mut() = deltas;
     }
 
     /// Reports a relocation whose value doesn't fit in the field.
