@@ -84,7 +84,7 @@ impl Origin {
         match value {
             OriginValue::None => Origin::NONE,
             OriginValue::InputSection(section) => {
-                assert_ne!(section, InputSectionId::NONE);
+                debug_assert_ne!(section, InputSectionId::NONE);
                 Origin(section.raw() << 2 | SECTION_TAG)
             }
             OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
@@ -1437,6 +1437,42 @@ impl SymbolBlockPtr {
     }
 }
 
+/// Asks Linux to back the interior pages of an allocation with transparent
+/// huge pages. The first and last partial pages stay untouched because they
+/// may contain allocator metadata or another small allocation.
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn advise_hugepage<T>(values: &Vec<T>) {
+    let Some(byte_len) = values.capacity().checked_mul(std::mem::size_of::<T>()) else {
+        return;
+    };
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if byte_len == 0 || page_size <= 0 {
+        return;
+    }
+
+    let page_size = page_size as usize;
+    let start = values.as_ptr().addr();
+    let Some(end) = start.checked_add(byte_len) else {
+        return;
+    };
+    let first_page = start.div_ceil(page_size) * page_size;
+    let last_page = end / page_size * page_size;
+    if first_page < last_page {
+        // SAFETY: the advised range contains only whole pages strictly inside
+        // the vector allocation, and MADV_HUGEPAGE is only a kernel hint.
+        unsafe {
+            libc::madvise(
+                first_page as *mut libc::c_void,
+                last_page - first_page,
+                libc::MADV_HUGEPAGE,
+            )
+        };
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn advise_hugepage<T>(_values: &Vec<T>) {}
+
 /// The vector of all symbols, and the index of global ones by name.
 ///
 /// The index is built in two phases. The parallel first phase records keys and
@@ -1564,6 +1600,7 @@ impl SymbolTable {
     pub fn gather<S: Copy + Send + Sync>(
         &mut self,
         bins: Vec<Bins<S>>,
+        additional_capacity: usize,
         assign: impl Fn(S, SymbolId) + Sync,
     ) {
         // C++ mold gives each shard stable arena blocks and constructs a new
@@ -1573,8 +1610,11 @@ impl SymbolTable {
         const BLOCK_SIZE: usize = 256;
         let count: usize = bins.iter().flat_map(|bin| &bin.0).map(Vec::len).sum();
         let first = self.symbols.len();
-        self.symbols
-            .reserve(count.saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1)));
+        let capacity = count
+            .saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1))
+            .saturating_add(additional_capacity);
+        self.symbols.reserve(capacity);
+        advise_hugepage(&self.symbols);
         let capacity = self.symbols.capacity();
         let storage = AtomicPtr::new(self.symbols.as_mut_ptr());
         let next = AtomicUsize::new(first);
@@ -1646,8 +1686,12 @@ impl SymbolTable {
     }
 
     /// Gathers keys recorded against stable input-file symbol slots.
-    pub(crate) fn gather_symbol_slots(&mut self, bins: Vec<Bins<SymbolSlot>>) {
-        self.gather(bins, SymbolSlot::assign);
+    pub(crate) fn gather_symbol_slots(
+        &mut self,
+        bins: Vec<Bins<SymbolSlot>>,
+        additional_capacity: usize,
+    ) {
+        self.gather(bins, additional_capacity, SymbolSlot::assign);
     }
 
     /// Adds a symbol that is not indexed by name, such as a local symbol.
@@ -1671,6 +1715,7 @@ impl SymbolTable {
     ) -> SymbolId {
         let first = SymbolId(self.symbols.len() as u32);
         self.symbols.reserve(n);
+        advise_hugepage(&self.symbols);
         let ptr = self.symbols.as_mut_ptr();
         // SAFETY: `first` is the initialized length and reserve made room for
         // `n` further elements. The ranges do not overlap.
@@ -1695,6 +1740,7 @@ impl SymbolTable {
         let end = first.checked_add(maximum).expect("too many symbols");
         assert!(end <= u32::MAX as usize);
         self.symbols.reserve(maximum);
+        advise_hugepage(&self.symbols);
 
         let allocator = ParallelSymbolAllocator {
             // SAFETY: reserve made the entire tail available, even though it

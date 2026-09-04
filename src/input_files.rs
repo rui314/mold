@@ -162,6 +162,7 @@ impl<T: FileInPool> FileList<T> {
     /// stable pool index.
     pub fn push(&mut self, mut file: Box<T>) -> u32 {
         let index = u32::try_from(self.pool.len()).expect("too many input files");
+        assert!(index < 1 << 30, "too many input files");
         file.set_file_index(index);
         let ptr = NonNull::from(file.as_mut());
         self.pool.push(file);

@@ -58,8 +58,9 @@ impl InputSectionId {
     pub(crate) fn new(file: ObjId, index: u32) -> InputSectionId {
         // Origin reserves the low two bits of its u64 representation for a
         // tag, leaving 62 bits for this ID.
-        assert!(file.0 < 1 << 30, "too many input files");
-        let index = index.checked_add(1).expect("too many input sections");
+        debug_assert!(file.0 < 1 << 30);
+        debug_assert_ne!(index, u32::MAX);
+        let index = index.wrapping_add(1);
         InputSectionId((u64::from(file.0) << 32) | u64::from(index))
     }
 
@@ -80,9 +81,9 @@ impl InputSectionId {
 
     #[inline]
     pub(crate) fn index(self) -> usize {
-        (self.0 as u32)
-            .checked_sub(1)
-            .expect("null input-section ID") as usize
+        let index = self.0 as u32;
+        debug_assert_ne!(index, 0);
+        index.wrapping_sub(1) as usize
     }
 }
 
@@ -1645,7 +1646,7 @@ impl<E: Arch> SectionList<E> {
         indices.reserve(additional);
         SectionList {
             indices,
-            inputs: Vec::with_capacity(nsections.saturating_add(additional)),
+            inputs: Vec::with_capacity(additional),
             merge_info: Vec::new(),
         }
     }

@@ -432,12 +432,28 @@ fn clear_symbols<E: Arch>(ctx: &mut Context<E>) {
 pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_symbols");
     let bins = ctx.take_symbol_bins();
+    // Local symbols are appended after global resolution determines which
+    // object files are reachable. Reserve their upper bound now so that the
+    // global-symbol vector does not have to move during parallel section
+    // parsing. LTO inputs themselves are replaced rather than parsed.
+    let local_maximum: usize = ctx
+        .objs
+        .iter()
+        .filter(|file| file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed)
+        .map(|file| {
+            if file.base.elf_syms.is_empty() {
+                0
+            } else {
+                file.base.first_global.max(1)
+            }
+        })
+        .sum();
     let Context { symbols, .. } = ctx;
 
     // Each hash shard is populated by one thread and writes directly to the
     // stable slots recorded while files were parsed, so no synchronization
     // or final scatter pass is needed.
-    symbols.gather_symbol_slots(bins);
+    symbols.gather_symbol_slots(bins, local_maximum);
 }
 
 fn current_rank<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
@@ -643,7 +659,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     let t = ctx.timer("comdat_signatures");
     {
         let Context { objs, symbols, .. } = ctx;
-        symbols.gather(bins, ComdatSymbolSlot::assign);
+        symbols.gather(bins, 0, ComdatSymbolSlot::assign);
 
         // Signatures just interned could not participate in the metadata
         // traversal above. Record them now.
