@@ -17,7 +17,7 @@ use crate::arch::Arch;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::{InputSection, MergeableSection, SectionFragment, SectionRef};
+use crate::input_sections::{InputSection, MergeInfo, SectionFragment, SectionRef};
 use crate::out;
 use crate::output_chunks::ChunkHeader;
 use crate::output_file::split_at_offsets;
@@ -45,9 +45,8 @@ struct ShardLayout {
     fragments: Vec<EntryId>,
 }
 
-// MergedSection represents a section containing a constant pool such as
-// string literals or floating-point constants. It is created from
-// MergeableSection.
+// MergedSection represents an output section containing a constant pool such
+// as string literals or floating-point constants.
 #[derive(Debug)]
 pub struct MergedSection<E: Layout> {
     pub hdr: ChunkHeader<E>,
@@ -76,7 +75,7 @@ pub struct MergedSection<E: Layout> {
 /// `MergedSection::members`; Rust keeps the durable section references there
 /// and borrows the stable objects directly for this phase.
 pub struct ResolveMember<'a, E: Arch> {
-    pub mergeable: &'a mut MergeableSection,
+    pub merge_info: &'a mut MergeInfo,
     pub section: &'a InputSection<E>,
     pub filename: &'a str,
     pub archive_name: &'a str,
@@ -271,7 +270,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
             let mut slots = std::mem::take(&mut file.sections);
             for &i in shndx {
                 let (m, isec) = slots
-                    .mergeable_with_section_mut(i as usize)
+                    .merge_info_with_section_mut(i as usize)
                     .expect("a mergeable section");
                 let name = isec.name(file);
                 m.split_contents::<E>(file, isec, name, msec, &mut sketch);
@@ -300,7 +299,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
             for &i in shndx {
                 let (m, isec) = file
                     .sections
-                    .mergeable_with_section_mut(i as usize)
+                    .merge_info_with_section_mut(i as usize)
                     .expect("a mergeable section");
                 m.resolve_contents(isec, msec, gc_sections);
             }
@@ -317,7 +316,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     let p2align = msec
         .members
         .iter()
-        .filter_map(|m| ctx.objs[m.file.index()].mergeable_section(m.shndx as usize))
+        .filter_map(|m| ctx.objs[m.file.index()].merge_info(m.shndx as usize))
         .map(|m| m.p2align)
         .max()
         .unwrap_or(0);
@@ -330,7 +329,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 
 /// Resolves selected merged sections concurrently, as C++ mold does.
 /// Direct member borrows let different parent sections mutate disjoint
-/// `MergeableSection`s even when they belong to the same object file.
+/// `MergeInfo`s even when they belong to the same object file.
 pub fn resolve_sections<E: Arch>(
     sections: &mut [MergedSection<E>],
     members: &mut [Vec<ResolveMember<'_, E>>],
@@ -352,7 +351,7 @@ pub fn resolve_sections<E: Arch>(
                 members
                     .par_iter_mut()
                     .fold(HyperLogLog::default, |mut sketch, member| {
-                        member.mergeable.split_contents::<E>(
+                        member.merge_info.split_contents::<E>(
                             &FileName {
                                 filename: member.filename,
                                 archive_name: member.archive_name,
@@ -391,7 +390,7 @@ pub fn resolve_sections<E: Arch>(
         .for_each(|(section, members)| {
             members.par_iter_mut().for_each(|member| {
                 member
-                    .mergeable
+                    .merge_info
                     .resolve_contents(member.section, section, gc_sections);
             });
         });
@@ -410,7 +409,7 @@ pub fn resolve_sections<E: Arch>(
             // Compute section alignment
             let p2align = members
                 .iter()
-                .map(|member| member.mergeable.p2align)
+                .map(|member| member.merge_info.p2align)
                 .max()
                 .unwrap_or(0);
             section.hdr.shdr.sh_addralign.set(1 << p2align);

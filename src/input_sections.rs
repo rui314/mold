@@ -749,7 +749,7 @@ impl<E: Arch> InputSection<E> {
             return None;
         }
         let shndx = file.shndx_from(sym_idx, st_shndx);
-        let m = file.mergeable_section(shndx)?;
+        let m = file.merge_info(shndx)?;
         let esym = &file.base.elf_syms[sym_idx];
         let addend = self.rel_addend(rel);
         if esym.st_type() == STT_SECTION {
@@ -1441,9 +1441,9 @@ impl SectionFragment {
     }
 }
 
-/// An input section with the SHF_MERGE flag, split into fragments.
+/// Fragment metadata for an input section with the `SHF_MERGE` flag.
 #[derive(Debug)]
-pub struct MergeableSection {
+pub struct MergeInfo {
     pub parent: MergedSectionId,
     pub p2align: u8,
     pub shndx: u32,
@@ -1454,16 +1454,16 @@ pub struct MergeableSection {
     hashes: Vec<u64>,
 }
 
-impl MergeableSection {
+impl MergeInfo {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
     fn new<E: Arch>(
         parent: MergedSectionId,
         input_index: u32,
         section: &InputSection<E>,
-    ) -> MergeableSection {
+    ) -> MergeInfo {
         section.kill();
-        MergeableSection {
+        MergeInfo {
             parent,
             p2align: section.p2align(),
             shndx: section.shndx,
@@ -1616,24 +1616,24 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
 
 // ObjectFile needs a lookup table indexed by ELF section number. A regular
 // entry stores its dense input-section index plus one. The high bit
-// distinguishes mergeable sections, which are stored as indices into
-// `mergeable`.
+// distinguishes sections with merge metadata, storing an index into
+// `merge_info`.
 #[derive(Debug)]
 pub struct SectionList<E: Arch> {
     indices: Vec<u32>,
     inputs: Vec<InputSection<E>>,
-    mergeable: Vec<MergeableSection>,
+    merge_info: Vec<MergeInfo>,
 }
 
-const MERGEABLE_SECTION: u32 = 1 << 31;
-const SECTION_INDEX_MASK: u32 = !MERGEABLE_SECTION;
+const HAS_MERGE_INFO: u32 = 1 << 31;
+const SECTION_INDEX_MASK: u32 = !HAS_MERGE_INFO;
 
 impl<E: Arch> Default for SectionList<E> {
     fn default() -> Self {
         SectionList {
             indices: Vec::new(),
             inputs: Vec::new(),
-            mergeable: Vec::new(),
+            merge_info: Vec::new(),
         }
     }
 }
@@ -1646,7 +1646,7 @@ impl<E: Arch> SectionList<E> {
         SectionList {
             indices,
             inputs: Vec::with_capacity(nsections.saturating_add(additional)),
-            mergeable: Vec::new(),
+            merge_info: Vec::new(),
         }
     }
 
@@ -1685,8 +1685,8 @@ impl<E: Arch> SectionList<E> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
-        } else if value & MERGEABLE_SECTION != 0 {
-            let index = self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
+        } else if value & HAS_MERGE_INFO != 0 {
+            let index = self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
             Some(InputSectionId::new(self.inputs[index as usize].file, index))
         } else {
             let index = value - 1;
@@ -1711,9 +1711,9 @@ impl<E: Arch> SectionList<E> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
-        } else if value & MERGEABLE_SECTION != 0 {
+        } else if value & HAS_MERGE_INFO != 0 {
             let input_index =
-                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
+                self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
             Some(&mut self.inputs[input_index as usize])
         } else {
             Some(&mut self.inputs[(value - 1) as usize])
@@ -1721,45 +1721,44 @@ impl<E: Arch> SectionList<E> {
     }
 
     #[inline]
-    pub fn mergeable(&self, shndx: usize) -> Option<&MergeableSection> {
+    pub fn merge_info(&self, shndx: usize) -> Option<&MergeInfo> {
         let value = *self.indices.get(shndx)?;
-        (value & MERGEABLE_SECTION != 0)
-            .then(|| &self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize])
+        (value & HAS_MERGE_INFO != 0)
+            .then(|| &self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize])
     }
 
     /// Returns a regular section before it is converted to a mergeable one.
     pub fn regular_section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         let value = self.indices[shndx];
-        (value != 0 && value & MERGEABLE_SECTION == 0)
-            .then(|| &mut self.inputs[(value - 1) as usize])
+        (value != 0 && value & HAS_MERGE_INFO == 0).then(|| &mut self.inputs[(value - 1) as usize])
     }
 
-    /// Installs mergeable metadata while leaving the original input section
+    /// Installs merge metadata while leaving the original input section
     /// in its dense storage slot.
-    pub fn set_mergeable(&mut self, shndx: usize, parent: MergedSectionId) {
+    pub fn set_merge_info(&mut self, shndx: usize, parent: MergedSectionId) {
         let value = self.indices[shndx];
-        debug_assert!(value != 0 && value & MERGEABLE_SECTION == 0);
-        debug_assert!(self.mergeable.len() < SECTION_INDEX_MASK as usize);
+        debug_assert!(value != 0 && value & HAS_MERGE_INFO == 0);
+        debug_assert!(self.merge_info.len() < SECTION_INDEX_MASK as usize);
         let input_index = value - 1;
         let input = &self.inputs[input_index as usize];
-        self.mergeable
-            .push(MergeableSection::new(parent, input_index, input));
-        self.indices[shndx] = MERGEABLE_SECTION | self.mergeable.len() as u32;
+        self.merge_info
+            .push(MergeInfo::new(parent, input_index, input));
+        self.indices[shndx] = HAS_MERGE_INFO | self.merge_info.len() as u32;
     }
 
-    /// Returns mergeable metadata together with its stable input section.
-    pub fn mergeable_with_section_mut(
+    /// Returns merge metadata together with its input section.
+    pub fn merge_info_with_section_mut(
         &mut self,
         shndx: usize,
-    ) -> Option<(&mut MergeableSection, &InputSection<E>)> {
+    ) -> Option<(&mut MergeInfo, &InputSection<E>)> {
         let value = *self.indices.get(shndx)?;
-        if value & MERGEABLE_SECTION == 0 {
+        if value & HAS_MERGE_INFO == 0 {
             return None;
         }
-        let mergeable_idx = ((value & SECTION_INDEX_MASK) - 1) as usize;
-        let input_index = self.mergeable[mergeable_idx].input_index;
+        let merge_info_idx = ((value & SECTION_INDEX_MASK) - 1) as usize;
+        let input_index = self.merge_info[merge_info_idx].input_index;
         Some((
-            &mut self.mergeable[mergeable_idx],
+            &mut self.merge_info[merge_info_idx],
             &self.inputs[input_index as usize],
         ))
     }
@@ -1769,7 +1768,7 @@ impl<E: Arch> SectionList<E> {
         self.indices
             .iter()
             .copied()
-            .filter(|&index| index != 0 && index & MERGEABLE_SECTION == 0)
+            .filter(|&index| index != 0 && index & HAS_MERGE_INFO == 0)
             .map(|index| &self.inputs[(index - 1) as usize])
     }
 
@@ -1783,7 +1782,7 @@ impl<E: Arch> SectionList<E> {
             .enumerate()
             .filter_map(move |(input_index, section)| {
                 let value = indices[section.shndx as usize];
-                (value != 0 && value & MERGEABLE_SECTION == 0).then(|| {
+                (value != 0 && value & HAS_MERGE_INFO == 0).then(|| {
                     debug_assert_eq!(value as usize, input_index + 1);
                     (
                         InputSectionId::new(section.file, input_index as u32),
@@ -1793,16 +1792,16 @@ impl<E: Arch> SectionList<E> {
             })
     }
 
-    pub fn mergeable_sections(&self) -> impl Iterator<Item = &MergeableSection> {
-        self.mergeable.iter()
+    pub fn merge_infos(&self) -> impl Iterator<Item = &MergeInfo> {
+        self.merge_info.iter()
     }
 
-    /// The mergeable sections together with their stable input sections.
-    pub fn mergeable_sections_with_inputs_mut(
+    /// The merge metadata together with its input sections.
+    pub fn merge_infos_with_inputs_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&mut MergeableSection, &InputSection<E>)> {
+    ) -> impl Iterator<Item = (&mut MergeInfo, &InputSection<E>)> {
         let inputs = &self.inputs;
-        self.mergeable.iter_mut().map(move |m| {
+        self.merge_info.iter_mut().map(move |m| {
             let input = &inputs[m.input_index as usize];
             (m, input)
         })

@@ -583,7 +583,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
                     let file = &ctx.objs[isec.file.index()];
                     let m = file
-                        .mergeable_section(file.shndx_at_in(sym.sym_idx as usize))
+                        .merge_info(file.shndx_at_in(sym.sym_idx as usize))
                         .expect("mergeable section");
                     let (frag, addend) = m
                         .fragment(sym.esym(ctx).st_value().get())

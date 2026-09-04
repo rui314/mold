@@ -21,8 +21,8 @@ use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
-    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeableSection,
-    RelocationSpan, SFrameFde, SectionList,
+    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeInfo, RelocationSpan,
+    SFrameFde, SectionList,
 };
 use crate::mapped_file::MappedFile;
 use crate::output_chunks::merged::MergedSection;
@@ -1248,8 +1248,8 @@ impl<E: Arch> ObjectFile<E> {
     }
 
     #[inline]
-    pub fn mergeable_section(&self, shndx: usize) -> Option<&MergeableSection> {
-        self.sections.mergeable(shndx)
+    pub fn merge_info(&self, shndx: usize) -> Option<&MergeInfo> {
+        self.sections.merge_info(shndx)
     }
 
     /// The section the symbol at `idx` is defined in.
@@ -1286,8 +1286,8 @@ impl<E: Arch> ObjectFile<E> {
     }
 
     #[inline]
-    pub fn mergeable_sections(&self) -> impl Iterator<Item = &MergeableSection> {
-        self.sections.mergeable_sections()
+    pub fn merge_infos(&self) -> impl Iterator<Item = &MergeInfo> {
+        self.sections.merge_infos()
     }
 
     /// The section indices of a COMDAT group's members, read from the
@@ -2274,7 +2274,8 @@ impl<E: Arch> ObjectFile<E> {
         self.sframe_sections = sections;
     }
 
-    // Convert InputSections to MergeableSections
+    // Create fragment metadata for eligible SHF_MERGE input sections and mark
+    // the original sections dead.
     pub fn convert_mergeable_sections(
         &mut self,
         ctx_args: &Args,
@@ -2298,7 +2299,7 @@ impl<E: Arch> ObjectFile<E> {
                 .regular_section_mut(i)
                 .expect("a regular section")
                 .uncompress(self, name, self.base.shdrs[i].sh_size.get() as usize);
-            sections.set_mergeable(i, parent);
+            sections.set_merge_info(i, parent);
         }
         self.sections = sections;
     }
@@ -2362,7 +2363,7 @@ impl<E: Arch> ObjectFile<E> {
             }
             let sym_id = self.base.symbols[i];
             let shndx = self.shndx_from(i, esym.st_shndx().get());
-            let Some(m) = self.mergeable_section(shndx) else {
+            let Some(m) = self.merge_info(shndx) else {
                 continue;
             };
             if !merged[m.parent.index()].resolved {
@@ -2461,7 +2462,7 @@ impl<E: Arch> ObjectFile<E> {
                 let found = {
                     let esym = &self.base.elf_syms[r_sym];
                     let sym_shndx = self.shndx_from(r_sym, esym.st_shndx().get());
-                    self.mergeable_section(sym_shndx).map(|m| {
+                    self.merge_info(sym_shndx).map(|m| {
                         debug_assert!(merged[m.parent.index()].resolved);
                         let addend = if E::IS_RELA && E::FAMILY != Family::Sh4 {
                             record.r_addend()

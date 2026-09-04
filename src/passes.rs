@@ -961,10 +961,10 @@ fn merged_resolve_members<E: Arch>(
         let archive_name = file.archive_name.as_str();
         let shstrtab = file.base.shstrtab;
         let num_elf_sections = file.num_elf_sections;
-        for (mergeable, input) in file.sections.mergeable_sections_with_inputs_mut() {
-            let parent = mergeable.parent.index();
+        for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {
+            let parent = merge_info.parent.index();
             members[parent].push(crate::output_chunks::merged::ResolveMember {
-                mergeable,
+                merge_info,
                 section: input,
                 filename,
                 archive_name,
@@ -978,7 +978,8 @@ fn merged_resolve_members<E: Arch>(
 pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_merged_sections");
 
-    // Convert InputSections to MergeableSections.
+    // Create fragment metadata for eligible SHF_MERGE input sections. The
+    // original InputSections remain stored but are marked dead.
     let t = ctx.timer("convert_mergeable_sections");
     {
         let Context {
@@ -999,7 +1000,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     // above under a lock would serialize all threads on it.
     let t = ctx.timer("register_members");
     for file in &ctx.objs {
-        for m in file.mergeable_sections() {
+        for m in file.merge_infos() {
             ctx.merged_sections[m.parent.index()]
                 .members
                 .push(SectionRef {
@@ -2330,7 +2331,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     for id in &vec2 {
         let msec = &ctx.merged_sections[id.index()];
         for file in ctx.objs.iter().filter(|f| f.is_dwarf32) {
-            for m in file.mergeable_sections().filter(|m| m.parent == *id) {
+            for m in file.merge_infos().filter(|m| m.parent == *id) {
                 for &frag in &m.fragments {
                     msec.fragments.get(frag).set_32bit();
                 }
