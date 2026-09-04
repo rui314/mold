@@ -2412,53 +2412,18 @@ impl<E: Arch> ObjectFile<E> {
         self.num_frag_syms
     }
 
-    /// An upper bound for fragment dummy symbols, available before sections
-    /// are parsed. Reserving it with the symbol vector prevents a late move of
-    /// all symbols when mergeable-section relocations are rewritten.
-    pub(crate) fn fragment_dummy_upper_bound(&self) -> usize {
-        let expected_reloc_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
+    /// Reads only CREL headers to estimate fragment-symbol demand before
+    /// archive extraction. Ordinary relocation tables are counted later,
+    /// while selected files are already being prepared for section parsing.
+    pub(crate) fn crel_fragment_dummy_upper_bound(&self) -> usize {
         self.base
             .shdrs
             .iter()
+            .filter(|shdr| shdr.sh_type.get() == SHT_CREL)
             .filter_map(|shdr| {
-                let sh_type = shdr.sh_type.get();
-                if sh_type != expected_reloc_type && sh_type != SHT_CREL {
-                    return None;
-                }
-
                 let target = self.base.shdrs.get(shdr.sh_info.get() as usize)?;
-                if target.sh_flags.get() & SHF_ALLOC as u64 == 0 {
-                    return None;
-                }
-
-                let contents = self.base.section_contents_from_shdr(shdr);
-                if sh_type == SHT_CREL {
-                    crel_count(contents)
-                } else {
-                    let size = std::mem::size_of::<E::Rel>();
-                    if !contents.len().is_multiple_of(size) {
-                        return Some(0);
-                    }
-                    Some(
-                        rels_from_bytes::<E>(contents)
-                            .iter()
-                            .filter(|rel| {
-                                let r_sym = rel.r_sym() as usize;
-                                let Some(esym) = self.base.elf_syms.get(r_sym) else {
-                                    return false;
-                                };
-                                if esym.st_type() != STT_SECTION {
-                                    return false;
-                                }
-                                let shndx = self.shndx_from(r_sym, esym.st_shndx().get());
-                                self.base
-                                    .shdrs
-                                    .get(shndx)
-                                    .is_some_and(|shdr| shdr.sh_flags.get() & SHF_MERGE as u64 != 0)
-                            })
-                            .count(),
-                    )
-                }
+                (target.sh_flags.get() & SHF_ALLOC as u64 != 0)
+                    .then(|| crel_count(self.base.section_contents_from_shdr(shdr)).unwrap_or(0))
             })
             .fold(0, usize::saturating_add)
     }

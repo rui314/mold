@@ -433,20 +433,28 @@ pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_symbols");
     let bins = ctx.take_symbol_bins();
     // Local and fragment dummy symbols are appended after global resolution.
-    // Reserve their upper bound now so that the global-symbol vector does not
-    // have to move during parallel section parsing or merge processing. LTO
-    // inputs themselves are replaced rather than parsed.
+    // Reserve all local symbols and the CREL upper bound of direct inputs now,
+    // before constructing globals. CREL-heavy inputs otherwise grow the symbol
+    // vector after millions of globals have been created. Ordinary relocation
+    // tables and selected archive members are counted after COMDAT selection.
     let additional_capacity: usize = ctx
         .objs
         .par_iter()
-        .filter(|file| file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed)
-        .map(|file| {
+        .filter_map(|file| {
+            if file.base.mf.is_none() || file.is_lto_input || file.sections_parsed {
+                return None;
+            }
             let locals = if file.base.elf_syms.is_empty() {
                 0
             } else {
                 file.base.first_global.max(1)
             };
-            locals.saturating_add(file.fragment_dummy_upper_bound())
+            let fragments = if file.archive_name.is_empty() || file.base.is_reachable() {
+                file.crel_fragment_dummy_upper_bound()
+            } else {
+                0
+            };
+            Some(locals.saturating_add(fragments))
         })
         .reduce(|| 0, usize::saturating_add);
     let Context { symbols, .. } = ctx;
