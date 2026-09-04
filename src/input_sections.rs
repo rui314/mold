@@ -1661,6 +1661,20 @@ impl<E: Arch> SectionList<E> {
         self.indices.len()
     }
 
+    /// Decodes the table entry at `shndx` to a dense input index. Sections
+    /// with merge metadata still resolve to their retained, dead input.
+    #[inline]
+    fn input_index(&self, shndx: usize) -> Option<u32> {
+        let value = *self.indices.get(shndx)?;
+        if value == 0 {
+            None
+        } else if value & HAS_MERGE_INFO != 0 {
+            Some(self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize].input_index)
+        } else {
+            Some(value - 1)
+        }
+    }
+
     /// Adds the section for `shndx`, which has none yet.
     #[inline]
     pub fn insert(&mut self, shndx: usize, section: InputSection<E>) -> InputSectionId {
@@ -1682,42 +1696,28 @@ impl<E: Arch> SectionList<E> {
     /// Returns the logical input-section ID for the section at `shndx`.
     #[inline]
     pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
-        let value = *self.indices.get(shndx)?;
-        if value == 0 {
-            None
-        } else if value & HAS_MERGE_INFO != 0 {
-            let index = self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
-            Some(InputSectionId::new(self.inputs[index as usize].file, index))
-        } else {
-            let index = value - 1;
-            Some(InputSectionId::new(self.inputs[index as usize].file, index))
-        }
+        let index = self.input_index(shndx)?;
+        Some(InputSectionId::new(self.inputs[index as usize].file, index))
     }
 
     #[inline]
     pub fn section(&self, shndx: usize) -> Option<&InputSection<E>> {
-        self.section_with_id(shndx).map(|(_, section)| section)
+        let index = self.input_index(shndx)?;
+        Some(&self.inputs[index as usize])
     }
 
     /// Returns both representations without looking up `shndx` twice.
     #[inline]
     pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection<E>)> {
-        let id = self.section_id(shndx)?;
-        Some((id, self.input(id.index())))
+        let index = self.input_index(shndx)?;
+        let section = &self.inputs[index as usize];
+        Some((InputSectionId::new(section.file, index), section))
     }
 
     #[inline]
     pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
-        let value = *self.indices.get(shndx)?;
-        if value == 0 {
-            None
-        } else if value & HAS_MERGE_INFO != 0 {
-            let input_index =
-                self.merge_info[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
-            Some(&mut self.inputs[input_index as usize])
-        } else {
-            Some(&mut self.inputs[(value - 1) as usize])
-        }
+        let index = self.input_index(shndx)?;
+        Some(&mut self.inputs[index as usize])
     }
 
     #[inline]

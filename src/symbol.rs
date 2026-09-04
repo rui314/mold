@@ -1857,7 +1857,7 @@ mod tests {
 
     #[test]
     fn input_section_origin_roundtrip() {
-        let section = InputSectionId::new(crate::input_files::ObjId((1 << 30) - 1), (1 << 31) - 1);
+        let section = InputSectionId::new(crate::input_files::ObjId((1 << 30) - 1), u32::MAX - 1);
         let origin = Origin::new(OriginValue::InputSection(section));
         let OriginValue::InputSection(decoded) = origin.get() else {
             panic!("input-section origin decoded as another variant");
