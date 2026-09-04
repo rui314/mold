@@ -45,27 +45,47 @@ impl SectionRef {
     }
 }
 
-/// A compact arena pointer to an input section. C++ mold stores output-section
-/// members as `ArenaPtr<InputSection>` rather than looking them up by file and
-/// ELF section index.
+/// Identifies an input section by its object file and dense index within that
+/// file's section storage.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct InputSectionId(u32);
+pub struct InputSectionId(u64);
 
-const _: () = assert!(std::mem::size_of::<InputSectionId>() == 4);
+const _: () = assert!(std::mem::size_of::<InputSectionId>() == 8);
 
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
     pub(crate) const NONE: InputSectionId = InputSectionId(0);
 
     #[inline]
-    pub(crate) const fn from_raw(value: u32) -> InputSectionId {
+    pub(crate) fn new(file: ObjId, index: u32) -> InputSectionId {
+        // Origin reserves the low two bits of its u64 representation for a
+        // tag, leaving 62 bits for this ID.
+        assert!(file.0 < 1 << 30, "too many input files");
+        let index = index.checked_add(1).expect("too many input sections");
+        InputSectionId((u64::from(file.0) << 32) | u64::from(index))
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw(value: u64) -> InputSectionId {
         InputSectionId(value)
     }
 
     #[inline]
-    pub(crate) const fn raw(self) -> u32 {
+    pub(crate) const fn raw(self) -> u64 {
         self.0
+    }
+
+    #[inline]
+    pub(crate) const fn file(self) -> ObjId {
+        ObjId((self.0 >> 32) as u32)
+    }
+
+    #[inline]
+    pub(crate) fn index(self) -> usize {
+        (self.0 as u32)
+            .checked_sub(1)
+            .expect("null input-section ID") as usize
     }
 }
 
@@ -1428,7 +1448,7 @@ pub struct MergeableSection {
     pub parent: MergedSectionId,
     pub p2align: u8,
     pub shndx: u32,
-    input_offset: u32,
+    input_index: u32,
     // indices into parent.map.entries
     pub fragments: Vec<EntryId>,
     frag_offsets: Vec<u32>,
@@ -1438,13 +1458,13 @@ pub struct MergeableSection {
 impl MergeableSection {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    fn new(parent: MergedSectionId, input_offset: u32, section: &InputSection) -> MergeableSection {
+    fn new(parent: MergedSectionId, input_index: u32, section: &InputSection) -> MergeableSection {
         section.kill();
         MergeableSection {
             parent,
             p2align: section.p2align(),
             shndx: section.shndx,
-            input_offset,
+            input_index,
             fragments: Vec::new(),
             frag_offsets: Vec::new(),
             hashes: Vec::new(),
@@ -1591,13 +1611,17 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
     None
 }
 
-// ObjectFile needs a lookup table indexed by ELF section number. The table
-// lives outside the arena, so it cannot use ArenaPtr; a regular section is
-// instead stored as its 31-bit arena index. The high bit distinguishes
-// mergeable sections, which are stored as indices into mergeable_sections.
+// ObjectFile needs a lookup table indexed by ELF section number. A regular
+// entry stores its dense input-section index plus one. The high bit
+// distinguishes mergeable sections, which are stored as indices into
+// `mergeable`.
 #[derive(Debug)]
 pub struct SectionList {
     indices: Vec<u32>,
+    /// Arena offsets for input sections, in dense per-file order. This
+    /// indirection is temporary; it lets IDs stop depending on addresses
+    /// before the arena itself is replaced by a Vec.
+    inputs: Vec<u32>,
     mergeable: Vec<MergeableSection>,
     arena_base: NonNull<u8>,
 }
@@ -1737,7 +1761,7 @@ impl SectionArena {
         self.allocate_global(size, alignment)
     }
 
-    fn insert(&self, section: InputSection) -> InputSectionId {
+    fn insert(&self, section: InputSection) -> u32 {
         let size = std::mem::size_of::<InputSection>();
         let begin = self.allocate_offset(size, std::mem::align_of::<InputSection>());
         debug_assert!(begin > 0 && begin < Self::SIZE);
@@ -1753,29 +1777,8 @@ impl SectionArena {
                 .cast::<InputSection>()
                 .write(section)
         };
-        // ArenaPtr and base-relative indices both encode offsets in four-byte units.
-        // Offsets are from the beginning of the arena in four-byte units.
-        InputSectionId(u32::try_from(begin / 4).expect("input-section arena is too large"))
-    }
-
-    #[inline]
-    fn input_ptr(&self, id: InputSectionId) -> *mut InputSection {
-        debug_assert_ne!(id, InputSectionId::NONE);
-        // SAFETY: every nonzero InputSectionId was created from an initialized
-        // allocation within this arena.
-        unsafe {
-            self.data
-                .as_ptr()
-                .add(id.0 as usize * 4)
-                .cast::<InputSection>()
-        }
-    }
-
-    #[inline]
-    pub(crate) fn section(&self, id: InputSectionId) -> &InputSection {
-        // SAFETY: InputSectionId values remain live until their SectionList is
-        // dropped, after all output-section users.
-        unsafe { &*self.input_ptr(id) }
+        // Arena offsets are represented in four-byte units.
+        u32::try_from(begin / 4).expect("input-section arena is too large")
     }
 
     fn insert_extra(&self, extra: InputSectionExtras) -> *mut InputSectionExtras {
@@ -1812,6 +1815,7 @@ impl Default for SectionList {
     fn default() -> Self {
         SectionList {
             indices: Vec::new(),
+            inputs: Vec::new(),
             mergeable: Vec::new(),
             arena_base: NonNull::dangling(),
         }
@@ -1825,6 +1829,7 @@ impl SectionList {
         indices.reserve(additional);
         SectionList {
             indices,
+            inputs: Vec::with_capacity(nsections.saturating_add(additional)),
             mergeable: Vec::new(),
             arena_base: arena.data,
         }
@@ -1832,14 +1837,18 @@ impl SectionList {
 
     #[inline]
     fn input_ptr(&self, index: u32) -> *mut InputSection {
-        debug_assert!(index != 0 && index & MERGEABLE_SECTION == 0);
-        // ArenaPtr works only if the pointer field itself is within 8 GiB of its
-        // target. Records stored outside the arena instead use an index from the
-        // beginning of the arena. Indices count four-byte slots, and zero represents
-        // a null pointer.
-        // SAFETY: regular indices are offsets in four-byte units into this
-        // SectionList's arena mapping.
-        unsafe { self.arena_base.as_ptr().add(index as usize * 4).cast() }
+        let offset = self.inputs[index as usize];
+        // SAFETY: every dense input index names an initialized allocation in
+        // this SectionList's arena mapping. Arena offsets count four-byte
+        // slots.
+        unsafe { self.arena_base.as_ptr().add(offset as usize * 4).cast() }
+    }
+
+    #[inline]
+    pub(crate) fn input(&self, index: usize) -> &InputSection {
+        // SAFETY: callers obtain dense indices from an InputSectionId created
+        // by this list.
+        unsafe { &*self.input_ptr(index as u32) }
     }
 
     /// The number of section indices.
@@ -1858,9 +1867,13 @@ impl SectionList {
     ) -> InputSectionId {
         debug_assert_eq!(self.indices[shndx], 0);
         debug_assert_eq!(self.arena_base, arena.data);
-        let id = arena.insert(section);
-        self.indices[shndx] = id.raw();
-        id
+        let file = section.file;
+        let offset = arena.insert(section);
+        let index = u32::try_from(self.inputs.len()).expect("too many input sections");
+        assert!(index < SECTION_INDEX_MASK, "too many input sections");
+        self.inputs.push(offset);
+        self.indices[shndx] = index + 1;
+        InputSectionId::new(file, index)
     }
 
     /// Adds a section the linker made up, under a new section index.
@@ -1869,18 +1882,28 @@ impl SectionList {
         self.insert(self.indices.len() - 1, section, arena)
     }
 
-    /// Returns the compact arena id for the section at `shndx`.
+    /// Returns the logical input-section ID for the section at `shndx`.
     #[inline]
     pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
         } else if value & MERGEABLE_SECTION != 0 {
-            Some(InputSectionId(
-                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_offset,
+            let index = self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
+            Some(InputSectionId::new(
+                // SAFETY: mergeable metadata retains the dense index of its
+                // initialized input section.
+                unsafe { &*self.input_ptr(index) }.file,
+                index,
             ))
         } else {
-            Some(InputSectionId(value))
+            let index = value - 1;
+            Some(InputSectionId::new(
+                // SAFETY: a regular table entry retains the dense index of
+                // its initialized input section.
+                unsafe { &*self.input_ptr(index) }.file,
+                index,
+            ))
         }
     }
 
@@ -1893,9 +1916,7 @@ impl SectionList {
     #[inline]
     pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection)> {
         let id = self.section_id(shndx)?;
-        // SAFETY: section_id returns the arena index of the initialized input
-        // section named by this table entry.
-        Some((id, unsafe { &*self.input_ptr(id.raw()) }))
+        Some((id, self.input(id.index())))
     }
 
     #[inline]
@@ -1904,15 +1925,15 @@ impl SectionList {
         if value == 0 {
             None
         } else if value & MERGEABLE_SECTION != 0 {
-            let input_offset =
-                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_offset;
+            let input_index =
+                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_index;
             // SAFETY: an exclusive SectionList borrow gives exclusive access
             // to each input section it owns.
-            Some(unsafe { &mut *self.input_ptr(input_offset) })
+            Some(unsafe { &mut *self.input_ptr(input_index) })
         } else {
             // SAFETY: an exclusive SectionList borrow gives exclusive access
             // to each input section it owns.
-            Some(unsafe { &mut *self.input_ptr(value) })
+            Some(unsafe { &mut *self.input_ptr(value - 1) })
         }
     }
 
@@ -1929,7 +1950,7 @@ impl SectionList {
         (value != 0 && value & MERGEABLE_SECTION == 0)
             // SAFETY: an exclusive SectionList borrow gives exclusive access
             // to the regular section named by this table entry.
-            .then(|| unsafe { &mut *self.input_ptr(value) })
+            .then(|| unsafe { &mut *self.input_ptr(value - 1) })
     }
 
     /// Installs mergeable metadata while leaving the input section in its
@@ -1938,10 +1959,11 @@ impl SectionList {
         let value = self.indices[shndx];
         debug_assert!(value != 0 && value & MERGEABLE_SECTION == 0);
         debug_assert!(self.mergeable.len() < SECTION_INDEX_MASK as usize);
-        // SAFETY: `value` is the regular arena index currently in this slot.
-        let input = unsafe { &*self.input_ptr(value) };
+        let input_index = value - 1;
+        // SAFETY: `input_index` is the dense index currently in this slot.
+        let input = unsafe { &*self.input_ptr(input_index) };
         self.mergeable
-            .push(MergeableSection::new(parent, value, input));
+            .push(MergeableSection::new(parent, input_index, input));
         self.indices[shndx] = MERGEABLE_SECTION | self.mergeable.len() as u32;
     }
 
@@ -1955,8 +1977,8 @@ impl SectionList {
             return None;
         }
         let mergeable_idx = ((value & SECTION_INDEX_MASK) - 1) as usize;
-        let input_offset = self.mergeable[mergeable_idx].input_offset;
-        let input = self.input_ptr(input_offset);
+        let input_index = self.mergeable[mergeable_idx].input_index;
+        let input = self.input_ptr(input_index);
         // SAFETY: mergeable metadata and its arena-allocated input section
         // occupy disjoint storage and both belong to this SectionList.
         Some((&mut self.mergeable[mergeable_idx], unsafe { &*input }))
@@ -1971,22 +1993,30 @@ impl SectionList {
             .map(|index| {
                 // SAFETY: every yielded regular index names a distinct,
                 // initialized section owned by this SectionList.
-                unsafe { &*self.input_ptr(index) }
+                unsafe { &*self.input_ptr(index - 1) }
             })
     }
 
-    /// The regular sections and their compact arena pointers, in section order.
+    /// The regular sections and their logical IDs, in section order.
     pub fn regular_ids_mut(&mut self) -> impl Iterator<Item = (InputSectionId, &mut InputSection)> {
         let base = self.arena_base;
+        let inputs = &self.inputs;
         self.indices
             .iter()
             .copied()
             .filter(|&index| index != 0 && index & MERGEABLE_SECTION == 0)
             .map(move |index| {
+                let input_index = index - 1;
+                let offset = inputs[input_index as usize];
                 // SAFETY: regular table entries are distinct, and the
                 // iterator holds an exclusive borrow of this SectionList.
-                let section = unsafe { &mut *base.as_ptr().add(index as usize * 4).cast() };
-                (InputSectionId(index), section)
+                let section = unsafe {
+                    &mut *base
+                        .as_ptr()
+                        .add(offset as usize * 4)
+                        .cast::<InputSection>()
+                };
+                (InputSectionId::new(section.file, input_index), section)
             })
     }
 
@@ -1999,13 +2029,14 @@ impl SectionList {
         &mut self,
     ) -> impl Iterator<Item = (&mut MergeableSection, &InputSection)> {
         let base = self.arena_base;
+        let inputs = &self.inputs;
         self.mergeable.iter_mut().map(move |m| {
             // SAFETY: each mergeable record retains the arena index of its
             // initialized input section, which is disjoint from this vector.
             let input = unsafe {
                 &*base
                     .as_ptr()
-                    .add(m.input_offset as usize * 4)
+                    .add(inputs[m.input_index as usize] as usize * 4)
                     .cast::<InputSection>()
             };
             (m, input)
@@ -2018,17 +2049,10 @@ impl Drop for SectionList {
         // Run each arena object's destructor without freeing its storage. This
         // retains ordinary ownership semantics for values whose storage belongs
         // to the arena.
-        for &value in &self.indices {
-            let index = if value == 0 {
-                continue;
-            } else if value & MERGEABLE_SECTION != 0 {
-                self.mergeable[((value & SECTION_INDEX_MASK) - 1) as usize].input_offset
-            } else {
-                value
-            };
-            // SAFETY: each initialized input section appears exactly once in
-            // the table, either directly or through its mergeable metadata.
-            unsafe { std::ptr::drop_in_place(self.input_ptr(index)) };
+        for index in 0..self.inputs.len() {
+            // SAFETY: `inputs` contains each initialized input section exactly
+            // once.
+            unsafe { std::ptr::drop_in_place(self.input_ptr(index as u32)) };
         }
     }
 }

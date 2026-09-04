@@ -332,8 +332,12 @@ pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
 /// offsets within the section.
 pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;
-    let section_arena = &ctx.section_arena;
-    let osec = &mut ctx.output_sections[id.index()];
+    let Context {
+        objs,
+        output_sections,
+        ..
+    } = ctx;
+    let osec = &mut output_sections[id.index()];
     let nshards = osec.dynrel_offsets.len().saturating_sub(1);
     let mut relr_offsets = vec![0u64; nshards + 1];
 
@@ -346,7 +350,7 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u
                 if r.kind != AbsRelKind::BaseRel {
                     continue;
                 }
-                let isec = section_arena.section(r.isec);
+                let isec = objs[r.isec.file().index()].sections.input(r.isec.index());
                 if (1u64 << isec.p2align()).is_multiple_of(word) && r.offset % word == 0 {
                     r.kind = AbsRelKind::Relr;
                     out.push(isec.offset() + r.offset);

@@ -85,7 +85,7 @@ impl Origin {
             OriginValue::None => Origin::NONE,
             OriginValue::InputSection(section) => {
                 assert_ne!(section, InputSectionId::NONE);
-                Origin(u64::from(section.raw()) << 2 | SECTION_TAG)
+                Origin(section.raw() << 2 | SECTION_TAG)
             }
             OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
@@ -107,9 +107,7 @@ impl Origin {
         }
 
         match self.0 & ORIGIN_TAG_MASK {
-            SECTION_TAG => {
-                OriginValue::InputSection(InputSectionId::from_raw((self.0 >> 2) as u32))
-            }
+            SECTION_TAG => OriginValue::InputSection(InputSectionId::from_raw(self.0 >> 2)),
             CHUNK_TAG => {
                 OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
             }
@@ -1856,7 +1854,7 @@ mod tests {
 
     #[test]
     fn input_section_origin_roundtrip() {
-        let section = InputSectionId::from_raw(u32::MAX);
+        let section = InputSectionId::new(crate::input_files::ObjId((1 << 30) - 1), (1 << 31) - 1);
         let origin = Origin::new(OriginValue::InputSection(section));
         let OriginValue::InputSection(decoded) = origin.get() else {
             panic!("input-section origin decoded as another variant");

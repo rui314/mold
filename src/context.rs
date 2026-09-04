@@ -367,7 +367,7 @@ impl<E: Arch> Context<E> {
 
     #[inline]
     pub fn input_section(&self, id: InputSectionId) -> &InputSection {
-        self.section_arena.section(id)
+        self.objs[id.file().index()].sections.input(id.index())
     }
 
     /// Formats an input section for diagnostics.
@@ -376,7 +376,7 @@ impl<E: Arch> Context<E> {
         file.section_at(r.shndx).display(file)
     }
 
-    /// Formats an arena-addressed input section for diagnostics.
+    /// Formats an input section for diagnostics.
     pub fn input_section_display(&self, id: InputSectionId) -> impl fmt::Display + '_ {
         let isec = self.input_section(id);
         isec.display(&self.objs[isec.file.index()])

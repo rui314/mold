@@ -2323,7 +2323,6 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     // Reorder input sections in the output section so that DWARF32
     // precededs DWARF64.
     for id in vec1 {
-        let section_arena = &ctx.section_arena;
         let objs = &ctx.objs;
         let osec = &mut ctx.output_sections[id.index()];
         // We can't partition osec->members in place because stable_partition
@@ -2332,7 +2331,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
         let (a, b): (Vec<InputSectionId>, Vec<InputSectionId>) = osec
             .members
             .iter()
-            .partition(|&&m| objs[section_arena.section(m).file.index()].is_dwarf32);
+            .partition(|&&m| objs[m.file().index()].is_dwarf32);
         osec.members = a.into_iter().chain(b).collect();
         output_chunks::compute_section_size(ctx, ChunkId::Output(id));
     }

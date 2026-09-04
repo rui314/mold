@@ -150,12 +150,7 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
 
     // Fix symbol values.
     {
-        let Context {
-            objs,
-            section_arena,
-            symbols,
-            ..
-        } = ctx;
+        let Context { objs, symbols, .. } = ctx;
         let editor = SymbolEditor::new(symbols.as_mut_slice());
         objs.par_iter().for_each(|file| {
             let file_id = FileId::Obj(file.id());
@@ -167,7 +162,8 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
                     let Some(section) = sym.input_section() else {
                         return;
                     };
-                    let isec = section_arena.section(section);
+                    debug_assert_eq!(section.file(), file.id());
+                    let isec = file.sections.input(section.index());
                     debug_assert_eq!(isec.file, file.id());
                     if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
                         return;
