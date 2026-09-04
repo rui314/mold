@@ -15,7 +15,7 @@ use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, OriginValue, SymbolId};
 
-fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection) -> bool {
+fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
     let ty = isec.sh_type(file);
     let flags = isec.sh_flags as u32;
     let name: &[u8] = isec.name(file);
@@ -38,10 +38,10 @@ fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection) -> bool {
 /// Such sections must be kept alive only if such a marker symbol is
 /// referenced from a live section. This map lets us find all sections
 /// of a given name when we encounter such a reference during marking.
-type StartStopMap<'a> = HashMap<&'static [u8], Vec<&'a InputSection>>;
+type StartStopMap<'a, E> = HashMap<&'static [u8], Vec<&'a InputSection<E>>>;
 
-fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a> {
-    let per_file: Vec<Vec<(&'static [u8], &'a InputSection)>> = ctx
+fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a, E> {
+    let per_file: Vec<Vec<(&'static [u8], &'a InputSection<E>)>> = ctx
         .objs
         .par_iter()
         .map(|file| {
@@ -56,7 +56,7 @@ fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a> {
                 .collect()
         })
         .collect();
-    let mut map: StartStopMap<'a> = HashMap::new();
+    let mut map: StartStopMap<'a, E> = HashMap::new();
     for (name, isec) in per_file.into_iter().flatten() {
         map.entry(name).or_default().push(isec);
     }
@@ -64,14 +64,14 @@ fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a> {
 }
 
 #[inline]
-fn mark_section(isec: &InputSection) -> bool {
+fn mark_section<E: Arch>(isec: &InputSection<E>) -> bool {
     isec.is_alive() && isec.visit()
 }
 
-fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
+fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection<E>> {
     let _t = ctx.timer("collect_root_set");
 
-    let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection>| {
+    let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection<E>>| {
         let sym = &ctx.symbols[id];
         match sym.origin::<E>() {
             OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
@@ -122,7 +122,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
             // records, and they are a unit of inclusion or exclusion.
             // We just keep all CIEs and everything that are referenced by them.
             for cie in &file.cies {
-                for rel in cie.rels::<E>(file) {
+                for rel in cie.rels(file) {
                     enqueue_symbol(file.base.symbols[rel.r_sym() as usize], &mut roots);
                 }
             }
@@ -139,18 +139,18 @@ fn start_stop_name(name: &[u8]) -> Option<&[u8]> {
 
 fn visit_section<'scope, E: Arch>(
     ctx: &'scope Context<E>,
-    isec: &'scope InputSection,
+    isec: &'scope InputSection<E>,
     depth: usize,
-    map: &'scope StartStopMap<'scope>,
+    map: &'scope StartStopMap<'scope, E>,
     scope: &rayon::Scope<'scope>,
-    next: &mut Vec<&'scope InputSection>,
+    next: &mut Vec<&'scope InputSection<E>>,
 ) {
     let file = &ctx.objs[isec.file.index()];
     debug_assert!(isec.is_visited());
 
     // Mark a section alive. Recurse for a few levels before queueing more work
     // so that we do not create a Rayon task for every edge.
-    let mut mark = |target: &'scope InputSection| {
+    let mut mark = |target: &'scope InputSection<E>| {
         if mark_section(target) {
             if depth < 3 {
                 visit_section(ctx, target, depth + 1, map, scope, next);
@@ -164,7 +164,7 @@ fn visit_section<'scope, E: Arch>(
     // describing how to handle exceptions for that function.
     // We want to keep associated .eh_frame records.
     for fde in isec.fdes(file) {
-        for rel in fde.rels::<E>(file).iter().skip(1) {
+        for rel in fde.rels(file).iter().skip(1) {
             if let Some(target) =
                 ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref(ctx)
             {
@@ -173,7 +173,7 @@ fn visit_section<'scope, E: Arch>(
         }
     }
 
-    for rel in isec.rels::<E>(file) {
+    for rel in isec.rels(file) {
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         if let Some(FileId::Dso(dso)) = sym.file() {
             ctx.dsos[dso.index()].base.set_reachable(true);
@@ -229,8 +229,8 @@ const GC_BATCH: usize = 16;
 /// preserves dynamic load balancing while amortizing Rayon task allocation.
 fn visit_batch<'scope, E: Arch>(
     ctx: &'scope Context<E>,
-    batch: &[&'scope InputSection],
-    map: &'scope StartStopMap<'scope>,
+    batch: &[&'scope InputSection<E>],
+    map: &'scope StartStopMap<'scope, E>,
     scope: &rayon::Scope<'scope>,
 ) {
     let mut next = Vec::with_capacity(GC_BATCH);
@@ -247,7 +247,11 @@ fn visit_batch<'scope, E: Arch>(
 }
 
 // Mark all reachable sections
-fn mark<'a, E: Arch>(ctx: &'a Context<E>, roots: Vec<&'a InputSection>, map: &'a StartStopMap<'a>) {
+fn mark<'a, E: Arch>(
+    ctx: &'a Context<E>,
+    roots: Vec<&'a InputSection<E>>,
+    map: &'a StartStopMap<'a, E>,
+) {
     let _t = ctx.timer("mark");
 
     rayon::scope(|scope| {

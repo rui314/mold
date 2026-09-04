@@ -377,6 +377,8 @@ pub fn save_restore_contents() -> Vec<u8> {
 }
 
 impl Arch for Ppc64V2 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "ppc64v2";
     const FAMILY: Family = Family::Ppc64V2;
     const PAGE_SIZE: u64 = 65536;
@@ -470,7 +472,7 @@ impl Arch for Ppc64V2 {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -495,11 +497,11 @@ impl Arch for Ppc64V2 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -576,7 +578,7 @@ impl Arch for Ppc64V2 {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -698,9 +700,9 @@ impl Arch for Ppc64V2 {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }

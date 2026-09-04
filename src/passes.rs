@@ -960,8 +960,8 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
 fn merged_resolve_members<E: Arch>(
     objs: &mut FileList<ObjectFile<E>>,
     count: usize,
-) -> Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> {
-    let mut members: Vec<Vec<crate::output_chunks::merged::ResolveMember<'_>>> =
+) -> Vec<Vec<crate::output_chunks::merged::ResolveMember<'_, E>>> {
+    let mut members: Vec<Vec<crate::output_chunks::merged::ResolveMember<'_, E>>> =
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
         let filename = file.base.filename.as_str();
@@ -1187,7 +1187,7 @@ fn output_name<E: Arch>(
 
 fn output_section_key<E: Arch>(
     args: &crate::cmdline::Args,
-    isec: &crate::input_sections::InputSection,
+    isec: &crate::input_sections::InputSection<E>,
     name: &'static BStr,
     sh_type: u32,
     ctors_in_init_array: bool,
@@ -1820,7 +1820,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
     for file in &ctx.objs {
         for isec in file.input_sections() {
             let mut visited: HashSet<SymbolId> = HashSet::new();
-            for r in isec.rels::<E>(file) {
+            for r in isec.rels(file) {
                 if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
                     continue;
                 }
@@ -2023,7 +2023,7 @@ pub fn convert_zero_to_bss<E: Arch>(ctx: &mut Context<E>) {
                     && flags & SHF_ALLOC != 0
                     && flags & SHF_WRITE != 0
                     && flags & SHF_EXECINSTR == 0
-                    && isec.rels::<E>(file).is_empty()
+                    && isec.rels(file).is_empty()
                     && !isec.contents().is_empty()
                     && isec.contents().iter().all(|&b| b == 0)
             })
@@ -2325,9 +2325,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     for id in vec1 {
         let objs = &ctx.objs;
         let osec = &mut ctx.output_sections[id.index()];
-        // We can't partition osec->members in place because stable_partition
-        // may move elements to a heap-allocated temporary buffer, and an
-        // ArenaPtr cannot live more than 8 GiB away from its target.
+        // Preserve the relative order within the two DWARF classes.
         let (a, b): (Vec<InputSectionId>, Vec<InputSectionId>) = osec
             .members
             .iter()
@@ -2397,7 +2395,7 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
                 }
             }
             let size = isec.sh_size;
-            let mut rels = isec.rels::<E>(file).to_vec();
+            let mut rels = isec.rels(file).to_vec();
             for r in &mut rels {
                 r.set_r_offset(size - r.r_offset() - word as u64);
             }
@@ -3454,7 +3452,7 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
                 isec.set_address_taken();
             }
-            for r in isec.rels::<E>(file) {
+            for r in isec.rels(file) {
                 if !r.is_func_call::<E>() {
                     let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
                     if let Some(dst) = sym.input_section_ref(ctx_ref) {
@@ -4656,7 +4654,7 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
             .filter_map(|shndx| file.section(shndx))
             .filter(|isec| isec.is_alive())
         {
-            let count = isec.relocations::<E>(ctx).count() as i64;
+            let count = isec.relocations(ctx).count() as i64;
             if isec.is_alloc() {
                 ALLOC.add(count);
             } else {
@@ -4793,7 +4791,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         _ => unreachable!(),
     };
 
-    let output_offset = |isec: &InputSection| -> Option<u64> {
+    let output_offset = |isec: &InputSection<E>| -> Option<u64> {
         let osec = &ctx.output_sections[isec.output_section?.index()];
         Some(osec.hdr.shdr.sh_offset.get() + isec.offset())
     };
@@ -4824,7 +4822,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         }
     }
 
-    let mut write_back = |isec: Option<&InputSection>, offset: i64| {
+    let mut write_back = |isec: Option<&InputSection<E>>, offset: i64| {
         // If isec has a landing pad at a given offset, copy that instruction to
         // the output buffer, possibly overwriting a nop written in the above
         // loop.
@@ -4849,7 +4847,7 @@ pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             if !isec.is_alive() || !isec.is_alloc() {
                 continue;
             }
-            for rel in isec.rels::<E>(file) {
+            for rel in isec.rels(file) {
                 if rel.is_func_call::<E>() {
                     continue;
                 }

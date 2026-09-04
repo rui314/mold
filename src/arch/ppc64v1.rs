@@ -194,7 +194,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         let local_symbols = file.base.symbols.clone();
         let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = file
             .section_at(opd.shndx)
-            .rels::<Ppc64V1>(file)
+            .rels(file)
             .iter()
             .map(|r| (r.r_offset(), *r))
             .collect();
@@ -297,6 +297,8 @@ pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
 }
 
 impl Arch for Ppc64V1 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "ppc64v1";
     const FAMILY: Family = Family::Ppc64V1;
     const PAGE_SIZE: u64 = 65536;
@@ -400,7 +402,7 @@ impl Arch for Ppc64V1 {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -425,12 +427,12 @@ impl Arch for Ppc64V1 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
 
         // Scan relocations
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -493,7 +495,7 @@ impl Arch for Ppc64V1 {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -575,9 +577,9 @@ impl Arch for Ppc64V1 {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }

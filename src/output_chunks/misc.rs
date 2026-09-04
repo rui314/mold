@@ -556,7 +556,7 @@ pub mod reloc {
             offsets.push(sum);
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
-            sum += isec.rels::<E>(file).len() as u64;
+            sum += isec.rels(file).len() as u64;
         }
         hdr.shdr
             .sh_size
@@ -582,7 +582,7 @@ pub mod reloc {
     // section index (for section-relative relocs) or an output symbol table index.
     fn symidx_addend<E: Arch>(
         ctx: &Context<E>,
-        isec: &InputSection,
+        isec: &InputSection<E>,
         rel: &ElfRel<E>,
     ) -> (u32, i64) {
         let file = &ctx.objs[isec.file.index()];
@@ -606,7 +606,7 @@ pub mod reloc {
                         msec.hdr.shndx,
                         msec.fragments.get(frag.entry).offset() as i64
                             + sym.value as i64
-                            + isec.rel_addend::<E>(rel),
+                            + isec.rel_addend(rel),
                     );
                 }
                 OriginValue::InputSection(section) => {
@@ -614,7 +614,7 @@ pub mod reloc {
                     if let Some(osec) = target.output_section {
                         return (
                             ctx.output_section(osec).hdr.shndx,
-                            isec.rel_addend::<E>(rel) + target.offset() as i64,
+                            isec.rel_addend(rel) + target.offset() as i64,
                         );
                     }
                 }
@@ -626,7 +626,7 @@ pub mod reloc {
         }
 
         if sym.write_to_symtab() {
-            return (sym.output_sym_idx(ctx), isec.rel_addend::<E>(rel));
+            return (sym.output_sym_idx(ctx), isec.rel_addend(rel));
         }
         (0, 0)
     }
@@ -648,7 +648,7 @@ pub mod reloc {
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
             let base = sec.offsets[mi] as usize;
-            for (j, rel) in isec.rels::<E>(file).iter().enumerate() {
+            for (j, rel) in isec.rels(file).iter().enumerate() {
                 let (symidx, addend) = symidx_addend(ctx, isec, rel);
                 let mut r_offset = osec.hdr.shdr.sh_addr.get() + isec.offset() + rel.r_offset();
                 if E::IS_RISCV || E::IS_LOONGARCH {

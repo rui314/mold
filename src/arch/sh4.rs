@@ -131,6 +131,8 @@ impl<End: Endian> Arch for Sh4Target<End>
 where
     Self: Layout<Endian = End>,
 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = if End::IS_LITTLE { "sh4" } else { "sh4be" };
     const FAMILY: Family = Family::Sh4;
     const PAGE_SIZE: u64 = 4096;
@@ -268,7 +270,7 @@ where
 
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
-        _isec: &InputSection,
+        _isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -282,10 +284,10 @@ where
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
-        for rel in isec.relocations::<Self>(ctx) {
+        for rel in isec.relocations(ctx) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
@@ -318,7 +320,7 @@ where
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -335,7 +337,7 @@ where
             }
 
             let s = sym.addr(ctx);
-            let a = isec.rel_addend::<Self>(rel) as u64;
+            let a = isec.rel_addend(rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
@@ -359,9 +361,9 @@ where
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -369,7 +371,7 @@ where
             let frag = isec.fragment(ctx, rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), isec.rel_addend::<Self>(rel) as u64),
+                None => (sym.addr(ctx), isec.rel_addend(rel) as u64),
             };
             let sa = s.wrapping_add(a);
             let tombstone = isec.tombstone(ctx, sym, frag.map(|(f, _)| f));

@@ -138,7 +138,7 @@ impl ThunkSymbolBins {
 /// known, every call out of the section is assumed to need one.
 fn requires_thunk<E: Arch>(
     ctx: &Context<E>,
-    isec: &InputSection,
+    isec: &InputSection<E>,
     rel: &ElfRel<E>,
     sym: &Symbol,
     first_pass: bool,
@@ -176,7 +176,7 @@ fn requires_thunk<E: Arch>(
     // Compute a distance between the relocated place and the symbol
     // and check if they are within reach.
     let s = sym.addr_with(ctx, AddrFlags::NO_OPD) as i64;
-    let a = isec.rel_addend::<E>(rel);
+    let a = isec.rel_addend(rel);
     let p = (isec.addr(ctx) + rel.r_offset()) as i64;
     let val = s.wrapping_add(a).wrapping_sub(p);
     val < -E::branch_distance() || E::branch_distance() <= val
@@ -298,7 +298,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
             members[b..c].par_iter().for_each(|&member| {
                 let isec = ctx.input_section(member);
                 let file = &ctx.objs[isec.file.index()];
-                for rel in isec.rels::<E>(file) {
+                for rel in isec.rels(file) {
                     if !rel.is_func_call::<E>() {
                         continue;
                     }
@@ -380,7 +380,7 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
                 .for_each(|&m| {
                     let isec = ctx.input_section(m);
                     let file = &ctx.objs[isec.file.index()];
-                    for rel in isec.rels::<E>(file) {
+                    for rel in isec.rels(file) {
                         if !rel.is_func_call::<E>() {
                             continue;
                         }

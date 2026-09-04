@@ -697,7 +697,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress::<E>(&name, section_name, input_size);
+                isec.uncompress(&name, section_name, input_size);
                 debug_info.push(DebugInfoInput {
                     shndx,
                     contents: isec.contents(),
@@ -717,7 +717,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress::<E>(&name, section_name, input_size);
+                isec.uncompress(&name, section_name, input_size);
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
@@ -730,7 +730,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                             unit_offset: esym
                                 .st_value()
                                 .get()
-                                .wrapping_add(isec.rel_addend::<E>(&rel) as u64),
+                                .wrapping_add(isec.rel_addend(&rel) as u64),
                         });
                     }
                 }

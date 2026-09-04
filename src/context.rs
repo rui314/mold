@@ -361,12 +361,12 @@ impl<E: Arch> Context<E> {
         }
     }
 
-    pub fn section(&self, r: SectionRef) -> &InputSection {
+    pub fn section(&self, r: SectionRef) -> &InputSection<E> {
         self.objs[r.file.index()].section_at(r.shndx)
     }
 
     #[inline]
-    pub fn input_section(&self, id: InputSectionId) -> &InputSection {
+    pub fn input_section(&self, id: InputSectionId) -> &InputSection<E> {
         self.objs[id.file().index()].sections.input(id.index())
     }
 

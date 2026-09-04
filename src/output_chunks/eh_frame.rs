@@ -23,12 +23,12 @@ use crate::{error, fatal};
 /// `CieRecord *` leaders; the owner pointer is needed here because Rust keeps
 /// the file-dependent relocation and symbol tables outside the record.
 #[derive(Clone, Copy)]
-pub(crate) struct CieHandle<E: Layout> {
+pub(crate) struct CieHandle<E: Arch> {
     file: NonNull<ObjectFile<E>>,
     cie: NonNull<CieRecord>,
 }
 
-impl<E: Layout> CieHandle<E> {
+impl<E: Arch> CieHandle<E> {
     /// Creates a handle while object files and their CIE vectors are stable.
     ///
     /// # Safety
@@ -114,7 +114,7 @@ impl<E: Arch> Default for EhFrameSection<E> {
 }
 
 /// Whether two CIEs are identical, including their relocations.
-pub fn cie_equals<E: Layout>(
+pub fn cie_equals<E: Arch>(
     a_file: &ObjectFile<E>,
     a: &CieRecord,
     b_file: &ObjectFile<E>,
@@ -123,8 +123,8 @@ pub fn cie_equals<E: Layout>(
     if a.contents::<E>() != b.contents::<E>() {
         return false;
     }
-    let x = a.rels::<E>(a_file);
-    let y = b.rels::<E>(b_file);
+    let x = a.rels(a_file);
+    let y = b.rels(b_file);
     x.len() == y.len()
         && x.iter().zip(y).all(|(rx, ry)| {
             rx.r_offset() - a.input_offset as u64 == ry.r_offset() - b.input_offset as u64
@@ -220,12 +220,12 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
         if ctx.args.relocatable {
             return;
         }
-        for rel in cie.rels::<E>(file) {
+        for rel in cie.rels(file) {
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let loc = (rel.r_offset() - cie.input_offset as u64) as usize;
             let val = sym
                 .addr(ctx)
-                .wrapping_add(file.section_at(cie.section).rel_addend::<E>(rel) as u64);
+                .wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
             let p = sh_addr + cie.output_offset as u64 + loc as u64;
             E::apply_eh_reloc(
                 ctx,
@@ -239,7 +239,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     };
 
     // Gather per-file work items with their slices.
-    struct Item<'a, E: Layout> {
+    struct Item<'a, E: Arch> {
         file: &'a ObjectFile<E>,
         cies: Vec<(usize, &'a mut [u8])>,
         fdes: Option<&'a mut [u8]>,
@@ -299,7 +299,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
 
         // Copy FDEs.
         for (i, fde) in file.fdes.iter().enumerate() {
-            let rels = fde.rels::<E>(file);
+            let rels = fde.rels(file);
             let offset = file.fde_offset + fde.output_offset as u64;
             let dst = &mut fde_buf[fde.output_offset as usize..];
             let contents = fde.contents::<E>(file);
@@ -322,7 +322,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
                 let loc = (rel.r_offset() - fde.input_offset as u64) as usize;
                 let val = sym
                     .addr(ctx)
-                    .wrapping_add(file.section_at(cie.section).rel_addend::<E>(rel) as u64);
+                    .wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
                 let p = sh_addr + offset + loc as u64;
                 E::apply_eh_reloc(
                     ctx,
@@ -387,7 +387,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
 /// Reports an `.eh_frame` relocation whose value doesn't fit.
 pub fn check_range<E: Arch>(
     ctx: &Context<E>,
-    isec: &crate::input_sections::InputSection,
+    isec: &crate::input_sections::InputSection<E>,
     rel: &ElfRel<E>,
     val: i64,
     lo: i64,
@@ -508,9 +508,9 @@ pub mod eh_frame_reloc {
                     .cies
                     .iter()
                     .filter(|c| c.is_leader)
-                    .map(|c| c.rels::<E>(file).len())
+                    .map(|c| c.rels(file).len())
                     .sum();
-                let fdes: usize = file.fdes.iter().map(|f| f.rels::<E>(file).len()).sum();
+                let fdes: usize = file.fdes.iter().map(|f| f.rels(file).len()).sum();
                 cies + fdes
             })
             .sum();
@@ -550,7 +550,7 @@ pub mod eh_frame_reloc {
                 // addends if they refer a section symbol.
                 let target = sym.input_section_ref(ctx).unwrap();
                 rel.set_r_sym(ctx.output_section(target.output_section.unwrap()).hdr.shndx);
-                let addend = isec.rel_addend::<E>(r) + target.offset() as i64;
+                let addend = isec.rel_addend(r) + target.offset() as i64;
                 if E::IS_RELA {
                     rel.set_r_addend(addend);
                 } else if ctx.args.relocatable {
@@ -561,7 +561,7 @@ pub mod eh_frame_reloc {
             } else {
                 rel.set_r_sym(sym.output_sym_idx(ctx));
                 if E::IS_RELA {
-                    rel.set_r_addend(isec.rel_addend::<E>(r));
+                    rel.set_r_addend(isec.rel_addend(r));
                 }
             }
             out[n] = rel;
@@ -571,7 +571,7 @@ pub mod eh_frame_reloc {
         for file in &ctx.objs {
             for cie in &file.cies {
                 if cie.is_leader {
-                    for rel in cie.rels::<E>(file) {
+                    for rel in cie.rels(file) {
                         let offset =
                             cie.output_offset as u64 + rel.r_offset() - cie.input_offset as u64;
                         copy(file, cie.section, rel, offset, &mut eh_frame_buf);
@@ -581,7 +581,7 @@ pub mod eh_frame_reloc {
             for fde in &file.fdes {
                 let cie = &file.cies[fde.cie_idx as usize];
                 let base = file.fde_offset + fde.output_offset as u64;
-                for rel in fde.rels::<E>(file) {
+                for rel in fde.rels(file) {
                     let offset = base + rel.r_offset() - fde.input_offset as u64;
                     copy(file, cie.section, rel, offset, &mut eh_frame_buf);
                 }

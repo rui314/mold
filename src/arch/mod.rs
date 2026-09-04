@@ -36,7 +36,7 @@ pub use x86_64::X86_64;
 
 use crate::context::Context;
 use crate::elf::{Endian, Layout, RelRecord};
-use crate::input_sections::{InputSection, RelocDelta};
+use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
 
@@ -69,6 +69,9 @@ pub struct ThunkLayout {
 
 // Machine descriptions
 pub trait Arch: Layout {
+    /// Target-specific members embedded directly in each input section.
+    type InputSectionExtra: InputSectionExtra;
+
     const NAME: &'static str;
     const FAMILY: Family;
     const PAGE_SIZE: u64;
@@ -166,7 +169,7 @@ pub trait Arch: Layout {
     /// the relocated location, `p` its address and `val` the resolved value.
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -175,18 +178,18 @@ pub trait Arch: Layout {
 
     /// Scans the relocations of an allocated section to find symbols that
     /// need GOT, PLT or dynamic relocation entries.
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection);
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>);
 
     /// Applies relocations to a copy of an allocated section's contents.
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     );
 
     /// Applies relocations to a copy of a non-allocated section's contents.
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]);
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]);
 
     /// Whether a call must go through a thunk however close its target
     /// is: a processor mode switch on ARM32, or TOC setup on PowerPC.
@@ -210,7 +213,7 @@ pub trait Arch: Layout {
     /// section, for targets whose branches are shortened by the linker
     /// (RISC-V, LoongArch). The result lists the cumulative number of
     /// bytes removed up to each relocation that shrinks.
-    fn shrink_section(_ctx: &Context<Self>, _isec: &InputSection) -> Vec<RelocDelta> {
+    fn shrink_section(_ctx: &Context<Self>, _isec: &InputSection<Self>) -> Vec<RelocDelta> {
         Vec::new()
     }
 

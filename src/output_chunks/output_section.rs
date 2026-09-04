@@ -483,14 +483,14 @@ pub fn scan_abs_relocations<E: Arch>(
         .flat_map_iter(|&m| {
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
-            isec.rels::<E>(file)
+            isec.rels(file)
                 .iter()
                 .filter(|r| is_absrel::<E>(r))
                 .map(move |r| AbsRel {
                     isec: m,
                     offset: r.r_offset(),
                     sym: file.base.symbols[r.r_sym() as usize],
-                    addend: isec.rel_addend::<E>(r),
+                    addend: isec.rel_addend(r),
                     kind: AbsRelKind::None,
                 })
         })

@@ -47,6 +47,8 @@ impl Layout for X86_64 {
 }
 
 impl Arch for X86_64 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "x86_64";
     const FAMILY: Family = Family::X86_64;
     const PAGE_SIZE: u64 = 4096;
@@ -152,7 +154,7 @@ impl Arch for X86_64 {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<X86_64>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -175,7 +177,7 @@ impl Arch for X86_64 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<X86_64>) {
         // Linker has to create data structures in an output file to apply
         // some type of relocations. For example, if a relocation refers a GOT
         // or a PLT entry of a symbol, linker has to create an entry in .got
@@ -183,7 +185,7 @@ impl Arch for X86_64 {
         // need to scan relocations.
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
+        let rels = isec.rels(file);
         let mut i = 0;
 
         // Scan relocations
@@ -296,7 +298,7 @@ impl Arch for X86_64 {
     // scan_relocations().
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<X86_64>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -540,15 +542,15 @@ impl Arch for X86_64 {
     //
     // Relocations against non-SHF_ALLOC sections are not scanned by
     // scan_relocations.
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<X86_64>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error_with_file(ctx, file, &rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let off = rel.r_offset() as usize;
-            let frag = isec.fragment_with_file::<Self>(file, &rel);
+            let frag = isec.fragment_with_file(file, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
                 None => (sym.addr(ctx), rel.r_addend() as u64),
@@ -633,7 +635,7 @@ fn write_u64(buf: &mut [u8], v: u64) {
 }
 
 /// The bytes of a section preceding a relocated location.
-fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel<X86_64>) -> &'a [u8] {
+fn loc_before<'a>(isec: &'a InputSection<X86_64>, rel: &ElfRel<X86_64>) -> &'a [u8] {
     &isec.contents()[..rel.r_offset() as usize]
 }
 

@@ -663,13 +663,13 @@ unsafe impl<R: Send + Sync> Sync for DecodedRelocations<R> {}
 
 // ObjectFile represents an input .o file.
 #[derive(Debug)]
-pub struct ObjectFile<E: Layout> {
+pub struct ObjectFile<E: Arch> {
     pub base: InputFile<E>,
     pub archive_name: String,
 
     /// The sections by section header index, plus sections synthesized
     /// for common symbols.
-    pub sections: SectionList,
+    pub sections: SectionList<E>,
     pub sections_parsed: bool,
 
     pub elf_sections2: Vec<ElfShdr<E>>,
@@ -709,7 +709,7 @@ pub struct ObjectFile<E: Layout> {
     pub fde_size: u64,
 
     // For ICF
-    pub llvm_addrsig: Option<InputSection>,
+    pub llvm_addrsig: Option<InputSection<E>>,
 
     // .debug_info sections
     pub debug_info_sections: Vec<u32>,
@@ -735,7 +735,7 @@ pub struct ObjectFile<E: Layout> {
     num_common_symbols: u32,
 }
 
-impl<E: Layout> fmt::Display for ObjectFile<E> {
+impl<E: Arch> fmt::Display for ObjectFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.archive_name.is_empty() {
             write!(f, "{}", path_clean(&self.base.filename))
@@ -750,13 +750,13 @@ impl<E: Layout> fmt::Display for ObjectFile<E> {
     }
 }
 
-impl<E: Layout> FileInPool for ObjectFile<E> {
+impl<E: Arch> FileInPool for ObjectFile<E> {
     fn set_file_index(&mut self, index: u32) {
         self.base.file_index = index;
     }
 }
 
-impl<E: Layout> ObjectFile<E> {
+impl<E: Arch> ObjectFile<E> {
     /// The section header at `shndx`, including headers synthesized for
     /// common symbols.
     #[inline]
@@ -793,13 +793,13 @@ impl<E: Layout> ObjectFile<E> {
 
 #[cold]
 #[inline(never)]
-fn invalid_relocation_symbol<E: Layout>(file: &ObjectFile<E>, r_sym: usize) -> ! {
+fn invalid_relocation_symbol<E: Arch>(file: &ObjectFile<E>, r_sym: usize) -> ! {
     panic!("{file}: invalid relocation symbol index {r_sym}")
 }
 
 #[cold]
 #[inline(never)]
-fn invalid_relocation_section<E: Layout>(file: &ObjectFile<E>, r_sym: usize, shndx: usize) -> ! {
+fn invalid_relocation_section<E: Arch>(file: &ObjectFile<E>, r_sym: usize, shndx: usize) -> ! {
     panic!("{file}: relocation symbol {r_sym} has invalid section index {shndx}")
 }
 
@@ -1124,24 +1124,24 @@ impl<E: Arch> ObjectFile<E> {
     /// defined in it keep referring to it until they're attached to
     /// fragments.
     #[inline]
-    pub fn section(&self, shndx: usize) -> Option<&InputSection> {
+    pub fn section(&self, shndx: usize) -> Option<&InputSection<E>> {
         self.sections.section(shndx)
     }
 
-    /// Returns the compact arena id of the section at `shndx`.
+    /// Returns the logical ID of the section at `shndx`.
     #[inline]
     pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
         self.sections.section_id(shndx)
     }
 
     #[inline]
-    pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection> {
+    pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         self.sections.section_mut(shndx)
     }
 
     /// The regular section at `shndx`, which must exist.
     #[inline]
-    pub fn section_at(&self, shndx: u32) -> &InputSection {
+    pub fn section_at(&self, shndx: u32) -> &InputSection<E> {
         self.section(shndx as usize).expect("no such input section")
     }
 
@@ -1254,7 +1254,7 @@ impl<E: Arch> ObjectFile<E> {
 
     /// The section the symbol at `idx` is defined in.
     #[inline]
-    pub fn symbol_section(&self, idx: usize) -> Option<&InputSection> {
+    pub fn symbol_section(&self, idx: usize) -> Option<&InputSection<E>> {
         self.section(self.shndx_at(idx))
     }
 
@@ -1281,7 +1281,7 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Iterates over the live regular sections.
     #[inline]
-    pub fn input_sections(&self) -> impl Iterator<Item = &InputSection> {
+    pub fn input_sections(&self) -> impl Iterator<Item = &InputSection<E>> {
         self.sections.regular()
     }
 
@@ -1765,7 +1765,7 @@ impl<E: Arch> ObjectFile<E> {
                         continue;
                     }
 
-                    let isec = InputSection::new::<E>(self, id, i as u32, shdr, BStr::new(name));
+                    let isec = InputSection::new(self, id, i as u32, shdr, BStr::new(name));
 
                     // Save .llvm_addrsig for --icf=safe.
                     if shdr.sh_type.get() == SHT_LLVM_ADDRSIG && !args.relocatable {
@@ -1877,7 +1877,7 @@ impl<E: Arch> ObjectFile<E> {
                 .collect();
             for (target, exidx) in pairs {
                 if let Some(isec) = self.section_mut(target) {
-                    isec.set_exidx(exidx as u32, section_arena);
+                    isec.set_exidx(exidx as u32);
                 }
             }
         }
@@ -1896,7 +1896,7 @@ impl<E: Arch> ObjectFile<E> {
             if !isec.is_alive() || !isec.is_alloc() {
                 continue;
             }
-            let rels = isec.rels::<E>(self);
+            let rels = isec.rels(self);
             if !rels.iter().map(|r| r.r_offset()).is_sorted() {
                 let mut sorted = rels.to_vec();
                 sorted.sort_by_key(|r| r.r_offset());
@@ -2067,7 +2067,7 @@ impl<E: Arch> ObjectFile<E> {
             let isec = self.section_at(shndx);
             let contents = isec.contents();
             let relocations = self.relocation_span(isec.relsec_idx());
-            let rels = isec.rels::<E>(self);
+            let rels = isec.rels(self);
             let cies_begin = self.cies.len();
             let mut new_cies: Vec<CieRecord> = Vec::new();
             let mut new_fdes: Vec<FdeRecord> = Vec::new();
@@ -2154,7 +2154,7 @@ impl<E: Arch> ObjectFile<E> {
         // We assume that FDEs for the same input sections are contiguous
         // in `fdes` vector.
         let section_of = |file: &ObjectFile<E>, fde: &FdeRecord| -> usize {
-            let rel = fde.rels::<E>(file)[0];
+            let rel = fde.rels(file)[0];
             file.shndx_at_in(rel.r_sym() as usize)
         };
         let mut order: Vec<(u64, usize, usize)> = self
@@ -2242,7 +2242,7 @@ impl<E: Arch> ObjectFile<E> {
             let hdr_len = SFrameHeader::<E>::size() + hdr.auxhdr_len as usize;
             let fde_off = hdr_len + hdr.fdeoff.get() as usize;
             let fre_off = hdr_len + hdr.freoff.get() as usize;
-            let rels = isec.rels::<E>(self);
+            let rels = isec.rels(self);
             let mut rel_idx = 0;
             let mut new_fdes = Vec::new();
 
@@ -2303,7 +2303,7 @@ impl<E: Arch> ObjectFile<E> {
             sections
                 .regular_section_mut(i)
                 .expect("a regular section")
-                .uncompress::<E>(self, name, self.base.shdrs[i].sh_size.get() as usize);
+                .uncompress(self, name, self.base.shdrs[i].sh_size.get() as usize);
             sections.set_mergeable(i, parent);
         }
         self.sections = sections;
@@ -2534,7 +2534,7 @@ impl<E: Arch> ObjectFile<E> {
 
         // Scan relocations against exception frames
         for cie in &self.cies {
-            for rel in cie.rels::<E>(self) {
+            for rel in cie.rels(self) {
                 let sym = &ctx.symbols[self.base.symbols[rel.r_sym() as usize]];
                 if ctx.args.pic && rel.r_type() == E::R_ABS {
                     error!("{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",
@@ -2612,7 +2612,7 @@ impl<E: Arch> ObjectFile<E> {
 
             self.elf_sections2.push(shdr);
             let shndx = self.num_elf_sections + self.elf_sections2.len() - 1;
-            let isec = InputSection::new::<E>(self, id, shndx as u32, &shdr, BStr::new(name));
+            let isec = InputSection::new(self, id, shndx as u32, &shdr, BStr::new(name));
             let section = self.sections.push(isec, section_arena);
 
             let sym = &mut symbols[sym_id];
@@ -2698,7 +2698,7 @@ impl<E: Arch> ObjectFile<E> {
             }
             let mut buf = [0u8; 12];
             let input_size = self.shdr(shndx as usize).sh_size.get() as usize;
-            isec.copy_contents_to::<E>(&name, section_name, input_size, &mut buf);
+            isec.copy_contents_to(&name, section_name, input_size, &mut buf);
             // A .debug_info section contains compilation units (CUs). A 32-bit CU
             // starts with a 32-bit size field, while a 64-bit CU starts with a
             // magic number 0xffff'ffff followed by a 64-bit size field.
@@ -2723,7 +2723,7 @@ impl<E: Arch> ObjectFile<E> {
             // An input .debug_info section may be compressed using zlib or zstd, so
             // we need to uncompress it before accessing `isec->contents`.
             let isec = self.section_mut(shndx as usize).unwrap();
-            isec.uncompress::<E>(&name, section_name, input_size);
+            isec.uncompress(&name, section_name, input_size);
             let contents = isec.contents();
             let mut p = first_size;
             while contents.len() - p >= 12 {
@@ -2909,7 +2909,7 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
 // Initialize cie's fde_ptr_size member by parsing the augmentation
 // string. We need this member to remove FDE records referring to an
 // empty segment from the output .eh_frame_hdr.
-fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection, data: &[u8]) -> u8 {
+fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, data: &[u8]) -> u8 {
     // Returns the size in bytes of a value in the DWARF exception header
     // encoding `enc`.
     let ptr_size = |enc: u8| -> u8 {
@@ -3541,7 +3541,7 @@ impl<'a> SymbolEditor<'a> {
 }
 
 /// The files and defaults needed while editing symbols during resolution.
-pub struct SymbolResolver<'a, E: Layout> {
+pub struct SymbolResolver<'a, E: Arch> {
     editor: SymbolEditor<'a>,
     objs: &'a FileList<ObjectFile<E>>,
     dsos: &'a FileList<SharedFile<E>>,
@@ -3549,9 +3549,9 @@ pub struct SymbolResolver<'a, E: Layout> {
 }
 
 // SymbolResolver's mutable symbol-table access is serialized by its editor.
-unsafe impl<E: Layout> Sync for SymbolResolver<'_, E> {}
+unsafe impl<E: Arch> Sync for SymbolResolver<'_, E> {}
 
-impl<'a, E: Layout> SymbolResolver<'a, E> {
+impl<'a, E: Arch> SymbolResolver<'a, E> {
     pub fn new(
         symbols: &'a mut [Symbol],
         objs: &'a FileList<ObjectFile<E>>,

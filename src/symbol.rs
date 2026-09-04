@@ -786,7 +786,10 @@ impl Symbol {
 
     /// Resolves the symbol's input-section reference in `ctx`.
     #[inline]
-    pub fn input_section_ref<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a InputSection> {
+    pub fn input_section_ref<'a, E: Arch>(
+        &self,
+        ctx: &'a Context<E>,
+    ) -> Option<&'a InputSection<E>> {
         self.input_section()
             .map(|section| ctx.input_section(section))
     }

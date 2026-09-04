@@ -75,9 +75,9 @@ pub struct MergedSection<E: Layout> {
 /// are resolved in parallel. C++ mold keeps the same pointers in
 /// `MergedSection::members`; Rust keeps the durable section references there
 /// and borrows the stable objects directly for this phase.
-pub struct ResolveMember<'a> {
+pub struct ResolveMember<'a, E: Arch> {
     pub mergeable: &'a mut MergeableSection,
-    pub section: &'a InputSection,
+    pub section: &'a InputSection<E>,
     pub filename: &'a str,
     pub archive_name: &'a str,
     pub name: &'static BStr,
@@ -333,7 +333,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 /// `MergeableSection`s even when they belong to the same object file.
 pub fn resolve_sections<E: Arch>(
     sections: &mut [MergedSection<E>],
-    members: &mut [Vec<ResolveMember<'_>>],
+    members: &mut [Vec<ResolveMember<'_, E>>],
     options: ResolveOptions<'_>,
 ) {
     let ResolveOptions {

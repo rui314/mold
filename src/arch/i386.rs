@@ -57,6 +57,8 @@ impl Layout for I386 {
 }
 
 impl Arch for I386 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "i386";
     const FAMILY: Family = Family::I386;
     const PAGE_SIZE: u64 = 4096;
@@ -164,7 +166,7 @@ impl Arch for I386 {
 
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
-        _isec: &InputSection,
+        _isec: &InputSection<I386>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -178,10 +180,10 @@ impl Arch for I386 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<I386>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
+        let rels = isec.rels(file);
         let mut i = 0;
 
         // Scan relocations
@@ -265,7 +267,7 @@ impl Arch for I386 {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<I386>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -286,7 +288,7 @@ impl Arch for I386 {
 
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
-            let a = isec.rel_addend::<Self>(&rel) as u64;
+            let a = isec.rel_addend(&rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
             let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
             let g = || sym.got_addr(ctx).wrapping_sub(got);
@@ -461,9 +463,9 @@ impl Arch for I386 {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<I386>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
@@ -472,7 +474,7 @@ impl Arch for I386 {
             let frag = isec.fragment(ctx, &rel);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), isec.rel_addend::<Self>(&rel) as u64),
+                None => (sym.addr(ctx), isec.rel_addend(&rel) as u64),
             };
             let frag_ref = frag.map(|(f, _)| f);
             let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
@@ -562,7 +564,7 @@ fn write_u32(buf: &mut [u8], v: u32) {
 }
 
 /// The bytes of a section preceding a relocated location.
-fn loc_before<'a>(isec: &'a InputSection, rel: &ElfRel<I386>) -> &'a [u8] {
+fn loc_before<'a>(isec: &'a InputSection<I386>, rel: &ElfRel<I386>) -> &'a [u8] {
     &isec.contents()[..rel.r_offset() as usize]
 }
 

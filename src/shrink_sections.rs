@@ -89,7 +89,7 @@ use crate::symbol::Symbol;
 pub fn compute_distance<E: Arch>(
     ctx: &Context<E>,
     sym: &Symbol,
-    isec: &InputSection,
+    isec: &InputSection<E>,
     rel: &ElfRel<E>,
 ) -> i64 {
     // We handle absolute symbols as if they were infinitely far away
@@ -133,18 +133,14 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
             })
             .collect()
     };
-    let Context {
-        objs,
-        section_arena,
-        ..
-    } = ctx;
+    let Context { objs, .. } = ctx;
     objs.par_iter_mut().zip(shrunk).for_each(|(file, shrunk)| {
         for (shndx, deltas) in shrunk {
             let isec = file
                 .section_mut(shndx as usize)
                 .expect("no such input section");
             isec.sh_size -= deltas.last().unwrap().delta as u64;
-            isec.set_r_deltas(deltas.into_boxed_slice(), section_arena);
+            isec.set_r_deltas(deltas.into_boxed_slice());
         }
     });
 

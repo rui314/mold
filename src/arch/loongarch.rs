@@ -229,7 +229,7 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
 // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
 fn is_relaxable_got_load<E: Arch>(
     ctx: &Context<E>,
-    isec: &InputSection,
+    isec: &InputSection<E>,
     rels: &[E::Rel],
     i: usize,
 ) -> bool {
@@ -294,6 +294,8 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64>
 where
     Self: Layout<Endian = LittleEndian>,
 {
+    type InputSectionExtra = crate::input_sections::RelaxationInputSectionExtra;
+
     const NAME: &'static str = if IS_64 { "loongarch64" } else { "loongarch32" };
     const FAMILY: Family = Family::LoongArch;
     const PAGE_SIZE: u64 = 65536;
@@ -378,7 +380,7 @@ where
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -412,11 +414,11 @@ where
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if is_marker(rel.r_type()) || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -499,7 +501,7 @@ where
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -876,9 +878,9 @@ where
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for rel in isec.relocations::<Self>(ctx) {
+        for rel in isec.relocations(ctx) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
@@ -924,9 +926,9 @@ where
         }
     }
 
-    fn shrink_section(ctx: &Context<Self>, isec: &InputSection) -> Vec<RelocDelta> {
+    fn shrink_section(ctx: &Context<Self>, isec: &InputSection<Self>) -> Vec<RelocDelta> {
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
+        let rels = isec.rels(file);
         let contents = isec.original_contents(file);
         let mut deltas: Vec<RelocDelta> = Vec::new();
         let mut delta: i64 = 0;

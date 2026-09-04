@@ -305,7 +305,7 @@ fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection) -> bool {
+fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
     let file = &ctx.objs[isec.file.index()];
     let name: &[u8] = isec.name(file);
     if isec.sh_size == 0
@@ -372,7 +372,7 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
     hash_u64(&mut h, isec.sh_flags);
     let fdes = isec.fdes(file);
     h.update(&fdes.len().to_ne_bytes());
-    h.update(&isec.rels::<E>(file).len().to_ne_bytes());
+    h.update(&isec.rels(file).len().to_ne_bytes());
 
     for fde in fdes {
         let cie = &file.cies[fde.cie_idx as usize];
@@ -380,21 +380,21 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
         // Bytes 0 to 4 contain the length of this record, and
         // bytes 4 to 8 contain an offset to CIE.
         hash_bytes(&mut h, &fde.contents::<E>(file)[8..]);
-        let rels = fde.rels::<E>(file);
+        let rels = fde.rels(file);
         h.update(&rels.len().to_ne_bytes());
         for rel in rels.iter().skip(1) {
             let id = file.base.symbols[rel.r_sym() as usize];
             hash_symbol(&mut h, id, &ctx.symbols[id]);
             hash_u32(&mut h, rel.r_type());
             hash_u64(&mut h, rel.r_offset() - fde.input_offset as u64);
-            hash_i64(&mut h, file.section_at(cie.section).rel_addend::<E>(rel));
+            hash_i64(&mut h, file.section_at(cie.section).rel_addend(rel));
         }
     }
 
-    for rel in isec.rels::<E>(file) {
+    for rel in isec.rels(file) {
         hash_u64(&mut h, rel.r_offset());
         hash_u32(&mut h, rel.r_type());
-        hash_i64(&mut h, isec.rel_addend::<E>(rel));
+        hash_i64(&mut h, isec.rel_addend(rel));
         let id = file.base.symbols[rel.r_sym() as usize];
         hash_symbol(&mut h, id, &ctx.symbols[id]);
     }
@@ -492,11 +492,11 @@ fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32
         }
     };
     for fde in isec.fdes(file) {
-        for rel in fde.rels::<E>(file).iter().skip(1) {
+        for rel in fde.rels(file).iter().skip(1) {
             add(rel.r_sym());
         }
     }
-    for rel in isec.rels::<E>(file) {
+    for rel in isec.rels(file) {
         add(rel.r_sym());
     }
 }

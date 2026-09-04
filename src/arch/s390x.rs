@@ -94,7 +94,7 @@ fn write_mid20(loc: &mut [u8], val: u64) {
 /// the relocated operand) can become an address-materializing LARL.
 fn relaxes_gotent(
     ctx: &Context<S390x>,
-    isec: &InputSection,
+    isec: &InputSection<S390x>,
     rel: &ElfRel<S390x>,
     sym: &Symbol,
 ) -> bool {
@@ -110,6 +110,8 @@ fn relaxes_gotent(
 }
 
 impl Arch for S390x {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "s390x";
     const FAMILY: Family = Family::S390x;
     const PAGE_SIZE: u64 = 4096;
@@ -202,7 +204,7 @@ impl Arch for S390x {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<S390x>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -220,11 +222,11 @@ impl Arch for S390x {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<S390x>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -284,7 +286,7 @@ impl Arch for S390x {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<S390x>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -486,9 +488,9 @@ impl Arch for S390x {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<S390x>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }

@@ -127,7 +127,7 @@ where
     /// which the psABI allows when the target is within ±1 MiB.
     fn relaxes_adrp_add(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &[ElfRel<Self>],
         i: usize,
     ) -> bool {
@@ -170,6 +170,8 @@ impl<End: Endian> Arch for Arm64Target<End>
 where
     Self: Layout<Endian = End>,
 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = if End::IS_LITTLE { "arm64" } else { "arm64be" };
     const FAMILY: Family = Family::Arm64;
     const PAGE_SIZE: u64 = 65536;
@@ -261,7 +263,7 @@ where
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -280,10 +282,10 @@ where
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
-        let rels = isec.rels::<Self>(file);
+        let rels = isec.rels(file);
         let mut i = 0;
 
         // Scan relocations
@@ -396,7 +398,7 @@ where
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -708,9 +710,9 @@ where
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }

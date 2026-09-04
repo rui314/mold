@@ -508,7 +508,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         _ => {}
     }
 
-    let st_shndx_of = |sym: &Symbol, isec: &InputSection| -> u32 {
+    let st_shndx_of = |sym: &Symbol, isec: &InputSection<E>| -> u32 {
         if E::FAMILY == Family::Ppc64V1 && sym.has_opd(&ctx.symbols) {
             return ctx.ppc64_opd.as_ref().unwrap().hdr.shndx;
         }

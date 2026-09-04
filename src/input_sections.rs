@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::fmt;
+use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
@@ -107,8 +108,8 @@ pub struct FragmentRef {
 // Since code-shrinking relaxation never bloats section contents, `delta`
 // increases monotonically within the array as well.
 //
-// The array is written once by shrink_section() and lives in the arena so
-// that InputSection stays trivially destructible.
+// The array is written once by shrink_section() and then owned by the input
+// section until the link completes.
 #[derive(Clone, Copy, Debug)]
 pub struct RelocDelta {
     pub offset: u64,
@@ -125,21 +126,80 @@ const IS_NOBITS: u8 = 1 << 6;
 const NO_RELSEC: u32 = u32::MAX;
 const NO_FDE: u32 = u32::MAX;
 
-// A struct to hold target-dependent input section members.
-#[derive(Debug, Default)]
-struct InputSectionExtras {
-    /// The `.ARM.exidx` section describing this section (ARM32).
-    exidx: Option<u32>,
+/// Target-specific state embedded in an input section.
+pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
+    #[inline]
+    fn exidx(&self) -> Option<u32> {
+        None
+    }
 
-    /// Bytes removed by linker relaxation (RISC-V, LoongArch).
+    fn set_exidx(&mut self, _exidx: u32) {
+        unreachable!("only ARM32 input sections have exidx metadata")
+    }
+
+    #[inline]
+    fn r_deltas(&self) -> &[RelocDelta] {
+        &[]
+    }
+
+    fn set_r_deltas(&mut self, _deltas: Box<[RelocDelta]>) {
+        unreachable!("only RISC-V and LoongArch input sections have relaxation metadata")
+    }
+}
+
+/// Input-section state for targets without extra members.
+#[derive(Debug, Default)]
+pub struct NoInputSectionExtra;
+
+impl InputSectionExtra for NoInputSectionExtra {}
+
+const _: () = assert!(std::mem::size_of::<NoInputSectionExtra>() == 0);
+
+/// ARM32's link from a code section to its `.ARM.exidx` section.
+#[derive(Debug, Default)]
+pub struct Arm32InputSectionExtra {
+    // ELF section zero is reserved, so it is also our null value.
+    exidx: u32,
+}
+
+impl InputSectionExtra for Arm32InputSectionExtra {
+    #[inline]
+    fn exidx(&self) -> Option<u32> {
+        (self.exidx != 0).then_some(self.exidx)
+    }
+
+    #[inline]
+    fn set_exidx(&mut self, exidx: u32) {
+        debug_assert_ne!(exidx, 0);
+        self.exidx = exidx;
+    }
+}
+
+const _: () = assert!(std::mem::size_of::<Arm32InputSectionExtra>() == 4);
+
+/// Relaxation bookkeeping embedded only for RISC-V and LoongArch.
+#[derive(Debug, Default)]
+pub struct RelaxationInputSectionExtra {
     r_deltas: Box<[RelocDelta]>,
+}
+
+impl InputSectionExtra for RelaxationInputSectionExtra {
+    #[inline]
+    fn r_deltas(&self) -> &[RelocDelta] {
+        &self.r_deltas
+    }
+
+    #[inline]
+    fn set_r_deltas(&mut self, deltas: Box<[RelocDelta]>) {
+        self.r_deltas = deltas;
+    }
 }
 
 // InputSection represents a section in an input object file. SectionArena
 // encodes its address as an offset in four-byte units, so keep this type
 // four-byte aligned even on hosts such as m68k.
 #[derive(Debug)]
-pub struct InputSection {
+pub struct InputSection<E: Arch> {
     pub file: ObjId,
     pub shndx: u32,
 
@@ -177,17 +237,12 @@ pub struct InputSection {
     /// First FDE in the owner file's contiguous run for this section.
     pub(crate) fde_begin: u32,
 
-    // A self-relative pointer to rarely used state, stored as a signed 32-bit
-    // offset in four-byte units. The field and its target must be four-byte
-    // aligned and less than 8 GiB apart; zero represents a null pointer. Since
-    // the offset is relative to this field, copying it verbatim would make it
-    // point somewhere else.
-    extra: i32,
-
     flags: AtomicU8,
-}
 
-const _: () = assert!(std::mem::size_of::<InputSection>() == 64);
+    /// Members present only on targets that need them. This field is zero
+    /// sized for all other targets.
+    extra: E::InputSectionExtra,
+}
 
 #[inline]
 fn to_p2align(alignment: u64) -> u8 {
@@ -198,14 +253,14 @@ fn to_p2align(alignment: u64) -> u8 {
     }
 }
 
-impl InputSection {
-    pub fn new<E: Arch>(
+impl<E: Arch> InputSection<E> {
+    pub fn new(
         file: &ObjectFile<E>,
         file_id: ObjId,
         shndx: u32,
         shdr: &ElfShdr<E>,
         name: &'static BStr,
-    ) -> InputSection {
+    ) -> InputSection<E> {
         let contents: &'static [u8] =
             if shdr.sh_type.get() == SHT_NOBITS || (shndx as usize) >= file.num_elf_sections {
                 &[]
@@ -237,8 +292,8 @@ impl InputSection {
             offset: AtomicU64::new(u64::MAX),
             relsec_idx: NO_RELSEC,
             fde_begin: NO_FDE,
-            extra: 0,
             flags: AtomicU8::new(IS_ALIVE),
+            extra: E::InputSectionExtra::default(),
         };
 
         // Sections may have been compressed. We usually uncompress them
@@ -250,7 +305,7 @@ impl InputSection {
         // SH-4 stores addends to sections despite being RELA, which is a
         // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
-            isec.uncompress::<E>(file, name, shdr.sh_size.get() as usize);
+            isec.uncompress(file, name, shdr.sh_size.get() as usize);
         }
         isec
     }
@@ -299,7 +354,7 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn sh_type<E: Layout>(&self, file: &ObjectFile<E>) -> u32 {
+    pub fn sh_type(&self, file: &ObjectFile<E>) -> u32 {
         if self.flags.load(Ordering::Relaxed) & IS_NOBITS != 0 {
             SHT_NOBITS
         } else {
@@ -375,7 +430,7 @@ impl InputSection {
     }
 
     /// The complete input contents, including bytes removed by relaxation.
-    pub fn original_contents<E: Layout>(&self, file: &ObjectFile<E>) -> &'static [u8] {
+    pub fn original_contents(&self, file: &ObjectFile<E>) -> &'static [u8] {
         if self.contents == 0 {
             return &[];
         }
@@ -392,7 +447,7 @@ impl InputSection {
 
     /// The section name, read from the owner file's string table.
     #[inline]
-    pub fn name<E: Layout>(&self, file: &ObjectFile<E>) -> &'static BStr {
+    pub fn name(&self, file: &ObjectFile<E>) -> &'static BStr {
         self.name_in(file.base.shstrtab, file.num_elf_sections)
     }
 
@@ -443,7 +498,7 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn addr(&self, ctx: &Context<E>) -> u64 {
         let osec = self.output_section.expect("section has no output section");
         ctx.output_sections[osec.index()].hdr.shdr.sh_addr.get() + self.offset()
     }
@@ -455,25 +510,25 @@ impl InputSection {
 
     /// Sort key for deterministic ordering: files are processed in
     /// command line order, sections in file order.
-    pub fn priority<E: Layout>(&self, file: &ObjectFile<E>) -> u64 {
+    pub fn priority(&self, file: &ObjectFile<E>) -> u64 {
         ((file.base.priority as u64) << 32) | self.shndx as u64
     }
 
     /// Replaces compressed contents with a decompressed copy. `file` is
     /// the owning file's name, for diagnostics.
-    pub fn uncompress<E: Arch>(&mut self, file: &dyn fmt::Display, name: &BStr, input_size: usize) {
+    pub fn uncompress(&mut self, file: &dyn fmt::Display, name: &BStr, input_size: usize) {
         if !self.is_compressed() {
             return;
         }
         let mut buf = vec![0u8; self.sh_size as usize];
-        self.copy_contents_to::<E>(file, name, input_size, &mut buf);
+        self.copy_contents_to(file, name, input_size, &mut buf);
         self.contents = leak_bytes(buf).as_ptr() as usize;
         self.flags.fetch_or(IS_UNCOMPRESSED, Ordering::Relaxed);
     }
 
     /// Copies the (decompressed) contents into `buf`, which must be
     /// `sh_size` bytes long.
-    pub fn copy_contents_to<E: Arch>(
+    pub fn copy_contents_to(
         &self,
         file: &dyn fmt::Display,
         name: &BStr,
@@ -524,7 +579,7 @@ impl InputSection {
     /// FDE records describing this section. FDEs for one input section are
     /// contiguous, and the last record carries the end marker, as in C++.
     #[inline]
-    pub fn fdes<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [FdeRecord] {
+    pub fn fdes<'a>(&self, file: &'a ObjectFile<E>) -> &'a [FdeRecord] {
         if self.fde_begin == NO_FDE {
             return &[];
         }
@@ -540,7 +595,7 @@ impl InputSection {
 
     /// The addend of a relocation against this section.
     #[inline]
-    pub fn rel_addend<E: Arch>(&self, rel: &ElfRel<E>) -> i64 {
+    pub fn rel_addend(&self, rel: &ElfRel<E>) -> i64 {
         if E::IS_RELA && E::FAMILY != Family::Sh4 {
             rel.r_addend()
         } else {
@@ -549,9 +604,9 @@ impl InputSection {
     }
 
     /// Formats the section as `file:(name)` for diagnostics.
-    pub fn display<'a, E: Layout>(&'a self, file: &'a ObjectFile<E>) -> impl fmt::Display + 'a {
-        struct Display<'a, E: Layout>(&'a InputSection, &'a ObjectFile<E>);
-        impl<E: Layout> fmt::Display for Display<'_, E> {
+    pub fn display<'a>(&'a self, file: &'a ObjectFile<E>) -> impl fmt::Display + 'a {
+        struct Display<'a, E: Arch>(&'a InputSection<E>, &'a ObjectFile<E>);
+        impl<E: Arch> fmt::Display for Display<'_, E> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}:({})", self.1, self.0.name(self.1))
             }
@@ -560,7 +615,7 @@ impl InputSection {
     }
 
     /// Get the name of a function containin a given offset.
-    pub fn func_name<E: Arch>(&self, ctx: &Context<E>, offset: u64) -> Option<String> {
+    pub fn func_name(&self, ctx: &Context<E>, offset: u64) -> Option<String> {
         let file = &ctx.objs[self.file.index()];
         for &id in &file.base.symbols {
             let sym = &ctx.symbols[id];
@@ -606,7 +661,7 @@ impl InputSection {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
         file.relocations(self.relsec_idx())
     }
 
@@ -614,39 +669,9 @@ impl InputSection {
     // pass has already decoded it. The hot path must be always-inline because
     // this function may yield millions of entries.
     #[inline(always)]
-    pub(crate) fn relocations<'a, E: Arch>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
+    pub(crate) fn relocations<'a>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
         let file = &ctx.objs[self.file.index()];
         file.relocation_iter(self.relsec_idx())
-    }
-
-    #[inline]
-    fn extra_ptr(&self) -> Option<*mut InputSectionExtras> {
-        if self.extra == 0 {
-            return None;
-        }
-        let field = std::ptr::addr_of!(self.extra).cast::<u8>();
-        // SAFETY: a nonzero offset was created from an extras allocation in
-        // the same arena and InputSection has not moved since then.
-        Some(unsafe {
-            field
-                .offset(self.extra as isize * 4)
-                .cast::<InputSectionExtras>()
-                .cast_mut()
-        })
-    }
-
-    fn extra_mut(&mut self, arena: &SectionArena) -> &mut InputSectionExtras {
-        if self.extra == 0 {
-            let ptr = arena.insert_extra(InputSectionExtras::default());
-            let field = std::ptr::addr_of!(self.extra).cast::<u8>();
-            let bytes = ptr as isize - field as isize;
-            debug_assert_eq!(bytes % 4, 0);
-            self.extra = i32::try_from(bytes / 4).expect("input-section extras are too far away");
-            debug_assert_ne!(self.extra, 0);
-        }
-        // SAFETY: extra_mut has exclusive access to the section and hence to
-        // its uniquely owned extras record.
-        unsafe { &mut *self.extra_ptr().unwrap() }
     }
 
     #[inline]
@@ -666,53 +691,35 @@ impl InputSection {
 
     #[inline]
     pub fn exidx(&self) -> Option<u32> {
-        self.extra_ptr()
-            // SAFETY: a published extras pointer remains valid with its arena.
-            .and_then(|extra| unsafe { (*extra).exidx })
+        self.extra.exidx()
     }
 
-    pub fn set_exidx(&mut self, exidx: u32, arena: &SectionArena) {
-        self.extra_mut(arena).exidx = Some(exidx);
+    pub fn set_exidx(&mut self, exidx: u32) {
+        self.extra.set_exidx(exidx);
     }
 
     #[inline]
     pub fn r_deltas(&self) -> &[RelocDelta] {
-        self.extra_ptr()
-            // SAFETY: a published extras pointer remains valid with its arena.
-            .map_or(&[], |extra| unsafe { &(*extra).r_deltas })
+        self.extra.r_deltas()
     }
 
-    pub fn set_r_deltas(&mut self, deltas: Box<[RelocDelta]>, arena: &SectionArena) {
+    pub fn set_r_deltas(&mut self, deltas: Box<[RelocDelta]>) {
         debug_assert!(!deltas.is_empty());
-        self.extra_mut(arena).r_deltas = deltas;
+        self.extra.set_r_deltas(deltas);
     }
 
     /// Reports a relocation whose value doesn't fit in the field.
     #[inline(always)]
-    pub fn check_range<E: Arch>(
-        &self,
-        ctx: &Context<E>,
-        rel_idx: usize,
-        val: i64,
-        lo: i64,
-        hi: i64,
-    ) {
+    pub fn check_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
         if val < lo || hi <= val {
-            self.report_out_of_range::<E>(ctx, rel_idx, val, lo, hi);
+            self.report_out_of_range(ctx, rel_idx, val, lo, hi);
         }
     }
 
     #[cold]
-    fn report_out_of_range<E: Arch>(
-        &self,
-        ctx: &Context<E>,
-        rel_idx: usize,
-        val: i64,
-        lo: i64,
-        hi: i64,
-    ) {
+    fn report_out_of_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
         let file = &ctx.objs[self.file.index()];
-        let rel = self.rels::<E>(file)[rel_idx];
+        let rel = self.rels(file)[rel_idx];
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",
@@ -725,19 +732,15 @@ impl InputSection {
     /// For a relocation in a non-allocated section, finds the section
     /// fragment it refers to, if it refers to a mergeable section.
     #[inline]
-    pub fn fragment<E: Arch>(
-        &self,
-        ctx: &Context<E>,
-        rel: &ElfRel<E>,
-    ) -> Option<(FragmentRef, i64)> {
+    pub fn fragment(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> Option<(FragmentRef, i64)> {
         debug_assert!(!self.is_alloc());
         let file = &ctx.objs[self.file.index()];
-        self.fragment_with_file::<E>(file, rel)
+        self.fragment_with_file(file, rel)
     }
 
     /// Like [`Self::fragment`], using an owner the caller already loaded.
     #[inline]
-    pub fn fragment_with_file<E: Arch>(
+    pub fn fragment_with_file(
         &self,
         file: &ObjectFile<E>,
         rel: &ElfRel<E>,
@@ -754,7 +757,7 @@ impl InputSection {
         let shndx = file.shndx_from(sym_idx, st_shndx);
         let m = file.mergeable_section(shndx)?;
         let esym = &file.base.elf_syms[sym_idx];
-        let addend = self.rel_addend::<E>(rel);
+        let addend = self.rel_addend(rel);
         if esym.st_type() == STT_SECTION {
             let (frag, offset) = m.fragment(esym.st_value().get().wrapping_add(addend as u64))?;
             Some((
@@ -787,7 +790,7 @@ impl InputSection {
     // This function returns a tombstone value for the symbol if the symbol
     // refers a dead debug info section.
     #[inline(always)]
-    pub fn tombstone<E: Arch>(
+    pub fn tombstone(
         &self,
         ctx: &Context<E>,
         sym: &Symbol,
@@ -799,7 +802,7 @@ impl InputSection {
 
     /// Like [`Self::tombstone`], using an owner the caller already loaded.
     #[inline(always)]
-    pub fn tombstone_with_file<E: Arch>(
+    pub fn tombstone_with_file(
         &self,
         ctx: &Context<E>,
         file: &ObjectFile<E>,
@@ -848,7 +851,7 @@ impl InputSection {
     /// Test if the symbol a given relocation refers to has already been resolved.
     /// If not, record that error and returns true.
     #[inline(always)]
-    pub fn record_undef_error<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
+    pub fn record_undef_error(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
         let file = &ctx.objs[self.file.index()];
         self.record_undef_error_with_file(ctx, file, rel)
     }
@@ -856,7 +859,7 @@ impl InputSection {
     /// Like [`Self::record_undef_error`], using an owner the caller already
     /// loaded.
     #[inline(always)]
-    pub fn record_undef_error_with_file<E: Arch>(
+    pub fn record_undef_error_with_file(
         &self,
         ctx: &Context<E>,
         file: &ObjectFile<E>,
@@ -904,7 +907,7 @@ impl InputSection {
     }
 
     #[cold]
-    fn report_discarded_comdat<E: Arch>(
+    fn report_discarded_comdat(
         &self,
         ctx: &Context<E>,
         file: &ObjectFile<E>,
@@ -926,7 +929,7 @@ impl InputSection {
     }
 
     #[cold]
-    fn record_undefined_reference<E: Arch>(
+    fn record_undefined_reference(
         &self,
         ctx: &Context<E>,
         file: &ObjectFile<E>,
@@ -952,7 +955,7 @@ impl InputSection {
     }
 
     /// Copies the section to `buf` and applies relocations.
-    pub fn write_to<E: Arch>(&self, ctx: &Context<E>, buf: &mut [u8]) {
+    pub fn write_to(&self, ctx: &Context<E>, buf: &mut [u8]) {
         let file = &ctx.objs[self.file.index()];
         if self.sh_type(file) == SHT_NOBITS || self.sh_size == 0 {
             return;
@@ -966,7 +969,7 @@ impl InputSection {
         // section and shrink the overall size of it.
         if self.r_deltas().is_empty() {
             // If a section is not relaxed, we can copy it as a one big chunk.
-            self.copy_contents_to::<E>(file, self.name(file), input_size, buf);
+            self.copy_contents_to(file, self.name(file), input_size, buf);
         } else {
             // A relaxed section is copied piece-wise.
             let contents = self.original_contents(file);
@@ -1004,20 +1007,7 @@ impl InputSection {
     }
 }
 
-impl Drop for InputSection {
-    fn drop(&mut self) {
-        // The arena does not run destructors itself. SectionList explicitly
-        // drops every InputSection, allowing an extras record to own its
-        // r_deltas allocation.
-        if let Some(extra) = self.extra_ptr() {
-            // SAFETY: this section uniquely owns its initialized extras
-            // record. Its arena storage is released after all sections drop.
-            unsafe { std::ptr::drop_in_place(extra) };
-        }
-    }
-}
-
-impl InputSection {
+impl<E: Arch> InputSection<E> {
     /// The number of bytes relaxation removed at the location of
     /// relocation `rel`, and the number removed before it.
     #[inline]
@@ -1044,7 +1034,7 @@ pub fn removed_bytes(deltas: &[RelocDelta], i: usize) -> i64 {
 }
 
 /// The total number of bytes removed before `offset`.
-pub fn r_delta(isec: &InputSection, offset: u64) -> i64 {
+pub fn r_delta<E: Arch>(isec: &InputSection<E>, offset: u64) -> i64 {
     let deltas = isec.r_deltas();
     let i = deltas.partition_point(|d| d.offset < offset);
     if i == 0 {
@@ -1093,7 +1083,7 @@ enum Action {
 fn do_action<E: Arch>(
     ctx: &Context<E>,
     action: Action,
-    isec: &InputSection,
+    isec: &InputSection<E>,
     sym: &Symbol,
     rel: &ElfRel<E>,
 ) {
@@ -1138,7 +1128,12 @@ fn sym_type(sym: &Symbol) -> usize {
 /// This is for PC-relative relocations (e.g. R_X86_64_PC32).
 /// We cannot promote them to dynamic relocations because the dynamic
 /// linker generally does not support PC-relative relocations.
-pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
+pub fn scan_pcrel<E: Arch>(
+    ctx: &Context<E>,
+    isec: &InputSection<E>,
+    sym: &Symbol,
+    rel: &ElfRel<E>,
+) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
         // Absolute  Local  Imported data  Imported code
@@ -1154,7 +1149,12 @@ pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, 
 /// generally does not support dynamic relocations smaller than the
 /// pointer size, we need to report an error if a relocation cannot be
 /// resolved at link-time.
-pub fn scan_absrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
+pub fn scan_absrel<E: Arch>(
+    ctx: &Context<E>,
+    isec: &InputSection<E>,
+    sym: &Symbol,
+    rel: &ElfRel<E>,
+) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
         // Absolute  Local  Imported data  Imported code
@@ -1186,7 +1186,12 @@ pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
     }
 }
 
-pub fn check_tlsle<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel<E>) {
+pub fn check_tlsle<E: Arch>(
+    ctx: &Context<E>,
+    isec: &InputSection<E>,
+    sym: &Symbol,
+    rel: &ElfRel<E>,
+) {
     if ctx.args.shared {
         error!("{}: relocation {} against `{}` can not be used when making a shared object; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
@@ -1231,7 +1236,7 @@ pub(crate) enum RelocationSpan {
 
 impl RelocationSpan {
     #[inline]
-    fn rels<E: Layout>(self, file: &ObjectFile<E>) -> &[E::Rel] {
+    fn rels<E: Arch>(self, file: &ObjectFile<E>) -> &[E::Rel] {
         match self {
             RelocationSpan::Input(data) => rels_from_bytes::<E>(data),
             RelocationSpan::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
@@ -1273,9 +1278,9 @@ impl CieRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
         rels_in::<E>(
-            self.relocations.rels::<E>(file),
+            self.relocations.rels(file),
             self.rel_idx,
             self.input_offset as usize + self.size::<E>(),
         )
@@ -1338,12 +1343,12 @@ impl FdeRecord {
     }
 
     #[inline]
-    fn cie<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a CieRecord {
+    fn cie<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a CieRecord {
         &file.cies[self.cie_idx as usize]
     }
 
     #[inline]
-    pub fn size<E: Layout>(&self, file: &ObjectFile<E>) -> usize {
+    pub fn size<E: Arch>(&self, file: &ObjectFile<E>) -> usize {
         self.size_with::<E>(&file.cies)
     }
 
@@ -1353,16 +1358,16 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub fn contents<E: Layout>(&self, file: &ObjectFile<E>) -> &'static [u8] {
+    pub fn contents<E: Arch>(&self, file: &ObjectFile<E>) -> &'static [u8] {
         let start = self.input_offset as usize;
         &self.cie(file).contents[start..start + self.size::<E>(file)]
     }
 
     #[inline]
-    pub fn rels<'a, E: Layout>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
-        rels_in::<E>(cie.relocations.rels::<E>(file), self.rel_idx, end)
+        rels_in::<E>(cie.relocations.rels(file), self.rel_idx, end)
     }
 }
 
@@ -1458,7 +1463,11 @@ pub struct MergeableSection {
 impl MergeableSection {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    fn new(parent: MergedSectionId, input_index: u32, section: &InputSection) -> MergeableSection {
+    fn new<E: Arch>(
+        parent: MergedSectionId,
+        input_index: u32,
+        section: &InputSection<E>,
+    ) -> MergeableSection {
         section.kill();
         MergeableSection {
             parent,
@@ -1491,7 +1500,7 @@ impl MergeableSection {
     pub fn split_contents<E: Arch>(
         &mut self,
         file: &dyn fmt::Display,
-        section: &InputSection,
+        section: &InputSection<E>,
         name: &BStr,
         parent: &MergedSection<E>,
         sketch: &mut HyperLogLog,
@@ -1541,9 +1550,9 @@ impl MergeableSection {
     }
 
     /// Inserts the pieces into the parent section's fragment map.
-    pub fn resolve_contents<E: Layout>(
+    pub fn resolve_contents<E: Arch>(
         &mut self,
-        section: &InputSection,
+        section: &InputSection<E>,
         parent: &crate::output_chunks::merged::MergedSection<E>,
         gc_sections: bool,
     ) {
@@ -1586,7 +1595,7 @@ impl MergeableSection {
     }
 
     #[inline]
-    fn contents(&self, section: &InputSection, i: usize) -> &'static [u8] {
+    fn contents<E: Arch>(&self, section: &InputSection<E>, i: usize) -> &'static [u8] {
         let contents = section.contents();
         let start = self.frag_offsets[i] as usize;
         match self.frag_offsets.get(i + 1) {
@@ -1616,7 +1625,7 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
 // distinguishes mergeable sections, which are stored as indices into
 // `mergeable`.
 #[derive(Debug)]
-pub struct SectionList {
+pub struct SectionList<E: Arch> {
     indices: Vec<u32>,
     /// Arena offsets for input sections, in dense per-file order. This
     /// indirection is temporary; it lets IDs stop depending on addresses
@@ -1624,13 +1633,14 @@ pub struct SectionList {
     inputs: Vec<u32>,
     mergeable: Vec<MergeableSection>,
     arena_base: NonNull<u8>,
+    marker: PhantomData<InputSection<E>>,
 }
 
 // SAFETY: a SectionList owns the distinct arena objects named by its table.
 // Shared access yields only shared references, and mutation requires an
 // exclusive borrow of the list.
-unsafe impl Send for SectionList {}
-unsafe impl Sync for SectionList {}
+unsafe impl<E: Arch> Send for SectionList<E> {}
+unsafe impl<E: Arch> Sync for SectionList<E> {}
 
 /// A sparsely-backed address range for input sections. Allocation is
 /// thread-safe and monotonic; individual allocations are not freed. Large
@@ -1761,12 +1771,12 @@ impl SectionArena {
         self.allocate_global(size, alignment)
     }
 
-    fn insert(&self, section: InputSection) -> u32 {
-        let size = std::mem::size_of::<InputSection>();
-        let begin = self.allocate_offset(size, std::mem::align_of::<InputSection>());
+    fn insert<E: Arch>(&self, section: InputSection<E>) -> u32 {
+        let size = std::mem::size_of::<InputSection<E>>();
+        let begin = self.allocate_offset(size, std::mem::align_of::<InputSection<E>>());
         debug_assert!(begin > 0 && begin < Self::SIZE);
         debug_assert_eq!(begin % 4, 0);
-        debug_assert_eq!(begin % std::mem::align_of::<InputSection>(), 0);
+        debug_assert_eq!(begin % std::mem::align_of::<InputSection<E>>(), 0);
 
         // SAFETY: the atomic bump pointer assigned this object a disjoint,
         // properly aligned range within the mapping.
@@ -1774,23 +1784,11 @@ impl SectionArena {
             self.data
                 .as_ptr()
                 .add(begin)
-                .cast::<InputSection>()
+                .cast::<InputSection<E>>()
                 .write(section)
         };
         // Arena offsets are represented in four-byte units.
         u32::try_from(begin / 4).expect("input-section arena is too large")
-    }
-
-    fn insert_extra(&self, extra: InputSectionExtras) -> *mut InputSectionExtras {
-        let begin = self.allocate_offset(
-            std::mem::size_of::<InputSectionExtras>(),
-            std::mem::align_of::<InputSectionExtras>(),
-        );
-        // SAFETY: the arena assigned this record a disjoint, properly aligned
-        // range which remains live until after all InputSections are dropped.
-        let ptr = unsafe { self.data.as_ptr().add(begin).cast::<InputSectionExtras>() };
-        unsafe { ptr.write(extra) };
-        ptr
     }
 }
 
@@ -1811,20 +1809,21 @@ impl Drop for SectionArena {
 const MERGEABLE_SECTION: u32 = 1 << 31;
 const SECTION_INDEX_MASK: u32 = !MERGEABLE_SECTION;
 
-impl Default for SectionList {
+impl<E: Arch> Default for SectionList<E> {
     fn default() -> Self {
         SectionList {
             indices: Vec::new(),
             inputs: Vec::new(),
             mergeable: Vec::new(),
             arena_base: NonNull::dangling(),
+            marker: PhantomData,
         }
     }
 }
 
-impl SectionList {
+impl<E: Arch> SectionList<E> {
     /// A list for `nsections` section indices, none with a section yet.
-    pub fn new(nsections: usize, additional: usize, arena: &SectionArena) -> SectionList {
+    pub fn new(nsections: usize, additional: usize, arena: &SectionArena) -> SectionList<E> {
         let mut indices = vec![0; nsections];
         indices.reserve(additional);
         SectionList {
@@ -1832,11 +1831,12 @@ impl SectionList {
             inputs: Vec::with_capacity(nsections.saturating_add(additional)),
             mergeable: Vec::new(),
             arena_base: arena.data,
+            marker: PhantomData,
         }
     }
 
     #[inline]
-    fn input_ptr(&self, index: u32) -> *mut InputSection {
+    fn input_ptr(&self, index: u32) -> *mut InputSection<E> {
         let offset = self.inputs[index as usize];
         // SAFETY: every dense input index names an initialized allocation in
         // this SectionList's arena mapping. Arena offsets count four-byte
@@ -1845,7 +1845,7 @@ impl SectionList {
     }
 
     #[inline]
-    pub(crate) fn input(&self, index: usize) -> &InputSection {
+    pub(crate) fn input(&self, index: usize) -> &InputSection<E> {
         // SAFETY: callers obtain dense indices from an InputSectionId created
         // by this list.
         unsafe { &*self.input_ptr(index as u32) }
@@ -1862,7 +1862,7 @@ impl SectionList {
     pub fn insert(
         &mut self,
         shndx: usize,
-        section: InputSection,
+        section: InputSection<E>,
         arena: &SectionArena,
     ) -> InputSectionId {
         debug_assert_eq!(self.indices[shndx], 0);
@@ -1877,7 +1877,7 @@ impl SectionList {
     }
 
     /// Adds a section the linker made up, under a new section index.
-    pub fn push(&mut self, section: InputSection, arena: &SectionArena) -> InputSectionId {
+    pub fn push(&mut self, section: InputSection<E>, arena: &SectionArena) -> InputSectionId {
         self.indices.push(0);
         self.insert(self.indices.len() - 1, section, arena)
     }
@@ -1908,19 +1908,19 @@ impl SectionList {
     }
 
     #[inline]
-    pub fn section(&self, shndx: usize) -> Option<&InputSection> {
+    pub fn section(&self, shndx: usize) -> Option<&InputSection<E>> {
         self.section_with_id(shndx).map(|(_, section)| section)
     }
 
     /// Returns both representations without looking up `shndx` twice.
     #[inline]
-    pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection)> {
+    pub fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection<E>)> {
         let id = self.section_id(shndx)?;
         Some((id, self.input(id.index())))
     }
 
     #[inline]
-    pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection> {
+    pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         let value = *self.indices.get(shndx)?;
         if value == 0 {
             None
@@ -1945,7 +1945,7 @@ impl SectionList {
     }
 
     /// Returns a regular section before it is converted to a mergeable one.
-    pub fn regular_section_mut(&mut self, shndx: usize) -> Option<&mut InputSection> {
+    pub fn regular_section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         let value = self.indices[shndx];
         (value != 0 && value & MERGEABLE_SECTION == 0)
             // SAFETY: an exclusive SectionList borrow gives exclusive access
@@ -1971,7 +1971,7 @@ impl SectionList {
     pub fn mergeable_with_section_mut(
         &mut self,
         shndx: usize,
-    ) -> Option<(&mut MergeableSection, &InputSection)> {
+    ) -> Option<(&mut MergeableSection, &InputSection<E>)> {
         let value = *self.indices.get(shndx)?;
         if value & MERGEABLE_SECTION == 0 {
             return None;
@@ -1985,7 +1985,7 @@ impl SectionList {
     }
 
     /// The regular sections in section order.
-    pub fn regular(&self) -> impl Iterator<Item = &InputSection> {
+    pub fn regular(&self) -> impl Iterator<Item = &InputSection<E>> {
         self.indices
             .iter()
             .copied()
@@ -1998,7 +1998,9 @@ impl SectionList {
     }
 
     /// The regular sections and their logical IDs, in section order.
-    pub fn regular_ids_mut(&mut self) -> impl Iterator<Item = (InputSectionId, &mut InputSection)> {
+    pub fn regular_ids_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (InputSectionId, &mut InputSection<E>)> {
         let base = self.arena_base;
         let inputs = &self.inputs;
         self.indices
@@ -2014,7 +2016,7 @@ impl SectionList {
                     &mut *base
                         .as_ptr()
                         .add(offset as usize * 4)
-                        .cast::<InputSection>()
+                        .cast::<InputSection<E>>()
                 };
                 (InputSectionId::new(section.file, input_index), section)
             })
@@ -2027,7 +2029,7 @@ impl SectionList {
     /// The mergeable sections together with their stable input sections.
     pub fn mergeable_sections_with_inputs_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&mut MergeableSection, &InputSection)> {
+    ) -> impl Iterator<Item = (&mut MergeableSection, &InputSection<E>)> {
         let base = self.arena_base;
         let inputs = &self.inputs;
         self.mergeable.iter_mut().map(move |m| {
@@ -2037,14 +2039,14 @@ impl SectionList {
                 &*base
                     .as_ptr()
                     .add(inputs[m.input_index as usize] as usize * 4)
-                    .cast::<InputSection>()
+                    .cast::<InputSection<E>>()
             };
             (m, input)
         })
     }
 }
 
-impl Drop for SectionList {
+impl<E: Arch> Drop for SectionList<E> {
     fn drop(&mut self) {
         // Run each arena object's destructor without freeing its storage. This
         // retains ordinary ownership semantics for values whose storage belongs

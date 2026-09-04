@@ -124,6 +124,8 @@ pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
 }
 
 impl Arch for Sparc64 {
+    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+
     const NAME: &'static str = "sparc64";
     const FAMILY: Family = Family::Sparc64;
     const PAGE_SIZE: u64 = 8192;
@@ -254,7 +256,7 @@ impl Arch for Sparc64 {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -278,13 +280,13 @@ impl Arch for Sparc64 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         let mut needs_tlsgd = false;
 
         // Scan relocations
-        for rel in isec.rels::<Self>(file) {
+        for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
@@ -381,7 +383,7 @@ impl Arch for Sparc64 {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -694,9 +696,9 @@ impl Arch for Sparc64 {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations::<Self>(ctx).enumerate() {
+        for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
             }
