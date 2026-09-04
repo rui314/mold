@@ -158,10 +158,11 @@ impl<T: FileInPool> Default for FileList<T> {
 }
 
 impl<T: FileInPool> FileList<T> {
-    /// Adds a file to the arena and the live pointer vector, returning its
+    /// Adds a file to the stable pool and the live pointer vector, returning its
     /// stable pool index.
     pub fn push(&mut self, mut file: Box<T>) -> u32 {
         let index = u32::try_from(self.pool.len()).expect("too many input files");
+        // Packed input-section IDs reserve two of the file-index bits.
         assert!(index < 1 << 30, "too many input files");
         file.set_file_index(index);
         let ptr = NonNull::from(file.as_mut());
@@ -194,7 +195,7 @@ impl<T: FileInPool> FileList<T> {
         self.live.iter_mut().map(file_ref_mut)
     }
 
-    /// Iterates over the arena, including files erased from the live vector.
+    /// Iterates over the pool, including files erased from the live vector.
     pub fn pool_iter(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator {
         self.pool.iter().map(Box::as_ref)
     }
@@ -214,7 +215,7 @@ impl<T: FileInPool> FileList<T> {
     }
 
     /// Erases pointers from the live vector without destroying their
-    /// arena-owned files.
+    /// pool-owned files.
     pub fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
         self.live.retain(|file| keep(file));
     }
@@ -541,9 +542,7 @@ impl<E: Layout> InputFile<E> {
 pub struct ComdatGroupRef {
     pub sect_idx: u32,
 
-    // The vector backing comdat_groups is outside the arena, so it cannot use
-    // ArenaPtr. The arena has at most 2^31 four-byte slots, leaving the high bit
-    // for is_owner.
+    // The high bit records ownership; symbol IDs occupy the remaining bits.
     signature_and_owner: u32,
 }
 
@@ -2407,10 +2406,9 @@ impl<E: Arch> ObjectFile<E> {
     ) {
         debug_assert_eq!(slots.len(), self.num_frag_syms);
 
-        // Arena allocations cannot be reclaimed, so grow this vector only once.
-        // num_frag_syms, counted when the sections were parsed, may include
-        // references to mergeable sections that were not converted; the extra
-        // symbols stay unused.
+        // Reserve once before appending. num_frag_syms, counted when the
+        // sections were parsed, may include references to mergeable sections
+        // that were not converted; the extra capacity then stays unused.
         self.base.symbols.reserve(slots.len());
         let mut next = 0;
 

@@ -1387,8 +1387,8 @@ pub struct SFrameFde {
 
 // Mergeable section fragments
 //
-// SectionFragment lives in a separately mapped hash table, so it cannot use
-// ArenaPtr.
+// SectionFragment lives in a separately allocated hash table and is identified
+// by its merged-section and entry indices.
 #[derive(Debug)]
 pub struct SectionFragment {
     pub p2align: AtomicU8,
@@ -1646,6 +1646,9 @@ impl<E: Arch> SectionList<E> {
         indices.reserve(additional);
         SectionList {
             indices,
+            // Most ELF headers describe relocations or metadata rather than
+            // InputSections. Let this vector grow with the sections actually
+            // inserted instead of over-reserving once per object file.
             inputs: Vec::with_capacity(additional),
             merge_info: Vec::new(),
         }

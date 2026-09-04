@@ -1050,10 +1050,9 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         ..
     } = ctx;
 
-    // Arena allocations cannot be reclaimed, so grow the symbol table only
-    // once. num_frag_syms, counted when the sections were parsed, may include
-    // references to mergeable sections that were not converted; the extra
-    // symbols stay unused.
+    // Grow the symbol table once. num_frag_syms, counted when the sections
+    // were parsed, may include references to mergeable sections that were not
+    // converted; the extra symbols stay unused.
     let counts: Vec<usize> = objs
         .iter()
         .map(|file| file.num_fragment_dummies())
@@ -1431,9 +1430,9 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     let (map, sections) = shared.into_inner().unwrap();
     ctx.output_sections = sections;
 
-    // Flatten members_vec into an arena-allocated members array and
-    // compute the section alignment. Both are done in parallel over the
-    // files; an output section such as .text has a million members.
+    // Flatten the per-file members into contiguous vectors and compute the
+    // section alignment. Both are done in parallel over the files; an output
+    // section such as .text has a million members.
     let builders: Vec<Arc<OutputSectionBuilder>> = map.into_values().collect();
     drop(caches);
     let flattened: Vec<(OutputSectionId, Vec<InputSectionId>, u64, u8)> = builders
@@ -2785,7 +2784,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
 
     // Every dynamic symbol gets its auxiliary record. The loop below
     // assigns table entries in order and so runs on one thread; the
-    // records are allocated beforehand in the side arena.
+    // records are allocated beforehand in the side vector.
     {
         let mut ids = syms.clone();
         ids.par_sort_unstable();

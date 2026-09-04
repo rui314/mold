@@ -237,7 +237,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // Building .gdb_index is split into three stages because the required data
     // becomes available at different points in the link. Compilation units and
     // public names depend only on input sections, so read them now in a
-    // low-priority arena while foreground passes continue.
+    // background task while foreground passes continue.
     let gdb_input_job = if ctx.args.gdb_index && !ctx.args.relocatable {
         let timer = t_before_copy.handle();
         let inputs = crate::gdb_index::prepare_inputs(&mut ctx);
@@ -445,7 +445,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // Type vectors identify compilation units by their order in the output
     // .debug_info section. That order is now fixed, so build the table while the
     // remaining layout passes continue. This stage stops scaling after about 12
-    // workers, so limit its arena to avoid competing with foreground work.
+    // workers, so limit its concurrency to avoid competing with foreground work.
     let gdb_table_workers = (threads * 3 / 8).clamp(1, 12);
     let mut gdb_table_job = if ctx.gdb_index.is_some() && ctx.gnu_debuglink.is_none() {
         let timer = t_all.handle();

@@ -182,8 +182,7 @@ pub struct SymbolAux {
     pub thunk_addrs: Vec<u64>,
 }
 
-/// A nullable 32-bit file reference. C++ mold's arena pointers have the
-/// same compact representation; the high bit distinguishes shared files
+/// A nullable 32-bit file reference. The high bit distinguishes shared files
 /// from object files and the all-ones value represents no file.
 #[derive(Clone, Copy, Debug)]
 struct SymbolFile(u32);
@@ -1335,7 +1334,7 @@ impl<S> Bins<S> {
 /// A stable slot in an input file that receives an interned symbol id.
 ///
 /// Files allocate their complete symbol-id arrays before recording keys and
-/// keep them alive until `gather`, just as C++ keeps an ArenaPtr slot stable.
+/// keep them alive until `gather`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SymbolSlot(NonNull<SymbolId>);
 
@@ -1359,9 +1358,8 @@ impl SymbolSlot {
 }
 
 /// A thread-safe bump allocator over the unused tail of a symbol table.
-/// C++ mold's arena lets each file allocate its local symbols while that
-/// file is being parsed; this provides the same disjoint ranges in the
-/// central Rust vector.
+/// Each file allocates its local symbols while it is being parsed. This gives
+/// every worker a disjoint range in the central vector.
 pub struct ParallelSymbolAllocator<'a> {
     slots: AtomicPtr<MaybeUninit<Symbol>>,
     first: usize,
@@ -1603,10 +1601,9 @@ impl SymbolTable {
         additional_capacity: usize,
         assign: impl Fn(S, SymbolId) + Sync,
     ) {
-        // C++ mold gives each shard stable arena blocks and constructs a new
-        // symbol as soon as its key is inserted. Reserve the Rust vector
-        // once, then hand out the same 256-slot blocks from an atomic bump
-        // pointer. At most one partial block per shard is left unused.
+        // Reserve the Rust vector once, then hand each shard 256-slot blocks
+        // from an atomic bump pointer. At most one partial block per shard is
+        // left unused.
         const BLOCK_SIZE: usize = 256;
         let count: usize = bins.iter().flat_map(|bin| &bin.0).map(Vec::len).sum();
         let first = self.symbols.len();
@@ -1702,8 +1699,8 @@ impl SymbolTable {
     }
 
     /// Adds `n` symbols while also exposing the initialized prefix. The two
-    /// slices are disjoint, so a file-parallel pass can update old symbols
-    /// and construct new ones together, as C++ mold's arena permits.
+    /// slices are disjoint, so a file-parallel pass can update old symbols and
+    /// construct new ones together.
     ///
     /// # Safety
     ///
