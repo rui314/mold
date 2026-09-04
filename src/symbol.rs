@@ -1,14 +1,14 @@
 //! Symbols and the global symbol table.
 //!
 //! There is one [`Symbol`] per unique global symbol name plus one per local
-//! symbol of each object file. All of them live in a single arena, the
+//! symbol of each object file. All of them live in a single table, the
 //! [`SymbolTable`], and are referred to by [`SymbolId`].
 
 use std::fmt;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
+use std::ops::{Index, IndexMut, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 
@@ -28,7 +28,6 @@ use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
 use crate::output_chunks::ChunkHeader;
 use crate::util::concurrent_map::EntryId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
-use crate::util::virtual_memory;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
@@ -1360,8 +1359,8 @@ impl SymbolSlot {
 
 /// A thread-safe bump allocator over the unused tail of a symbol table.
 /// C++ mold's arena lets each file allocate its local symbols while that
-/// file is being parsed; this provides the same stable, disjoint ranges in
-/// the central Rust arena.
+/// file is being parsed; this provides the same disjoint ranges in the
+/// central Rust vector.
 pub struct ParallelSymbolAllocator<'a> {
     slots: AtomicPtr<MaybeUninit<Symbol>>,
     first: usize,
@@ -1396,125 +1395,14 @@ impl ParallelSymbolAllocator<'_> {
     }
 }
 
-/// A sparsely backed, monotonic address range for symbols.
-///
-/// Individual symbols are not freed. Reserving the complete range up front
-/// keeps their addresses stable without immediately allocating physical
-/// pages, and lets the kernel back the densely filled prefix with transparent
-/// huge pages.
-struct SymbolArena {
-    data: NonNull<Symbol>,
-    len: usize,
-    size: usize,
-}
-
-// SAFETY: initialized symbols follow their own Send and Sync bounds. Growing
-// the initialized prefix requires an exclusive borrow of the arena.
-unsafe impl Send for SymbolArena {}
-unsafe impl Sync for SymbolArena {}
-
-impl SymbolArena {
-    // An 8 GiB arena ensures that the distance between any two allocations fits
-    // in ArenaPtr's signed 32-bit offset. A smaller reservation is used on
-    // 32-bit hosts, where address space is more limited.
-    const SIZE: usize = if usize::BITS == 64 {
-        1usize << 33
-    } else {
-        1usize << 28
-    };
-
-    fn new() -> SymbolArena {
-        let data = virtual_memory::reserve(Self::SIZE)
-            .unwrap_or_else(|| panic!("cannot reserve {} bytes for symbols", Self::SIZE));
-
-        SymbolArena {
-            data: data.cast(),
-            len: 0,
-            size: Self::SIZE,
-        }
-    }
-
-    fn capacity(&self) -> usize {
-        self.size / std::mem::size_of::<Symbol>()
-    }
-
-    fn reserve(&self, additional: usize) {
-        let end = self.len.checked_add(additional).expect("too many symbols");
-        assert!(end <= self.capacity(), "symbol arena is full");
-
-        let size = additional * std::mem::size_of::<Symbol>();
-        // VirtualAlloc reserves and commits address space separately.
-        // SAFETY: this is the uninitialized tail of the arena reservation.
-        if !unsafe { virtual_memory::commit(self.data.as_ptr().add(self.len).cast(), size) } {
-            panic!("cannot commit {size} bytes for symbols");
-        }
-    }
-
-    fn push(&mut self, symbol: Symbol) {
-        self.reserve(1);
-        // SAFETY: reserve proved this is the first uninitialized slot.
-        unsafe { self.data.as_ptr().add(self.len).write(symbol) };
-        self.len += 1;
-    }
-
-    fn as_mut_ptr(&mut self) -> *mut Symbol {
-        self.data.as_ptr()
-    }
-
-    /// # Safety
-    ///
-    /// Every element added to the initialized prefix must have been written.
-    unsafe fn set_len(&mut self, len: usize) {
-        debug_assert!(len <= self.capacity());
-        self.len = len;
-    }
-}
-
-impl Deref for SymbolArena {
-    type Target = [Symbol];
-
-    fn deref(&self) -> &[Symbol] {
-        // SAFETY: `len` covers exactly the initialized prefix.
-        unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.len) }
-    }
-}
-
-impl DerefMut for SymbolArena {
-    fn deref_mut(&mut self) -> &mut [Symbol] {
-        // SAFETY: an exclusive arena borrow gives exclusive access to the
-        // initialized prefix.
-        unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.len) }
-    }
-}
-
-impl fmt::Debug for SymbolArena {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&**self, f)
-    }
-}
-
-impl Drop for SymbolArena {
-    fn drop(&mut self) {
-        // SAFETY: the prefix contains initialized symbols, and the complete
-        // address range is the mapping created in `new`.
-        unsafe {
-            std::ptr::drop_in_place(std::ptr::slice_from_raw_parts_mut(
-                self.data.as_ptr(),
-                self.len,
-            ));
-            virtual_memory::release(self.data.as_ptr().cast(), self.size);
-        }
-    }
-}
-
-/// Mutable access to the stable symbol-arena blocks owned by map shards.
+/// Mutable access to the stable symbol blocks owned by map shards.
 struct SymbolBlockPtr(*mut Symbol);
 
 // SAFETY: `SymbolTable::par_for_each_global_mut` gives each parallel task the
-// non-overlapping blocks owned by one shard while holding the arena exclusively.
+// non-overlapping blocks owned by one shard while holding the vector exclusively.
 unsafe impl Sync for SymbolBlockPtr {}
 
-/// A pointer to the auxiliary arena during a parallel scatter to unique symbols.
+/// A pointer to the auxiliary vector during a parallel scatter to unique symbols.
 struct SymbolAuxPtr(*mut SymbolAux);
 
 // SAFETY: the two methods using this wrapper require distinct symbol ids, so
@@ -1533,7 +1421,7 @@ impl SymbolAuxPtr {
 }
 
 impl SymbolBlockPtr {
-    /// Applies `f` to the symbols in non-overlapping arena ranges.
+    /// Applies `f` to the symbols in non-overlapping vector ranges.
     ///
     /// # Safety
     /// The ranges must be initialized and exclusively owned by this task.
@@ -1548,13 +1436,13 @@ impl SymbolBlockPtr {
     }
 }
 
-/// The arena of all symbols, and the index of global ones by name.
+/// The vector of all symbols, and the index of global ones by name.
 ///
 /// The index is built in two phases. The parallel first phase records keys and
 /// stable slots that need their symbols. [`SymbolTable::gather`] then
 /// deduplicates the keys, finds or creates one symbol for each key, and hands
 /// its id to every recorded slot. The slots must remain stable until gathering
-/// finishes, and all symbols live in stable arena blocks.
+/// finishes, and bulk construction reserves the vector before exposing slots.
 ///
 /// Keys whose hashes fall into different shards never interact. Each shard is
 /// processed by exactly one thread during `gather`, so no synchronization is
@@ -1564,11 +1452,11 @@ impl SymbolBlockPtr {
 /// pattern, one at a time.
 #[derive(Debug)]
 pub struct SymbolTable {
-    symbols: SymbolArena,
+    symbols: Vec<Symbol>,
     aux: Vec<SymbolAux>,
     shards: Vec<ShardMap>,
 
-    /// The arena blocks of named symbols owned by each map shard. The other
+    /// The ranges of named symbols owned by each map shard. The other
     /// symbols are files' local symbols.
     globals: Vec<Vec<Range<u32>>>,
 }
@@ -1582,7 +1470,7 @@ impl Default for SymbolTable {
 impl SymbolTable {
     pub fn new() -> SymbolTable {
         let mut table = SymbolTable {
-            symbols: SymbolArena::new(),
+            symbols: Vec::new(),
             aux: Vec::new(),
             shards: (0..NUM_SHARDS).map(|_| ShardMap::default()).collect(),
             globals: (0..NUM_SHARDS).map(|_| Vec::new()).collect(),
@@ -1625,8 +1513,8 @@ impl SymbolTable {
     }
 
     /// Returns the auxiliary record for `id`, allocating it in the side
-    /// arena if this symbol has none. C++ mold likewise keeps this rarely
-    /// used state outside `Symbol` and refers to it with an arena index.
+    /// vector if this symbol has none. C++ mold likewise keeps this rarely
+    /// used state outside `Symbol` and refers to it with an index.
     pub fn aux_mut(&mut self, id: SymbolId) -> &mut SymbolAux {
         let mut index = self.symbols[id.index()].aux_idx;
         if index == NO_AUX {
@@ -1678,7 +1566,7 @@ impl SymbolTable {
         assign: impl Fn(S, SymbolId) + Sync,
     ) {
         // C++ mold gives each shard stable arena blocks and constructs a new
-        // symbol as soon as its key is inserted. Reserve the backing vector
+        // symbol as soon as its key is inserted. Reserve the Rust vector
         // once, then hand out the same 256-slot blocks from an atomic bump
         // pointer. At most one partial block per shard is left unused.
         const BLOCK_SIZE: usize = 256;
@@ -1850,7 +1738,7 @@ impl SymbolTable {
     pub fn par_for_each_global_mut(&mut self, f: impl Fn(&mut Symbol) + Send + Sync) {
         let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
         self.globals.par_iter().for_each(|ranges| {
-            // SAFETY: The arena is exclusively borrowed, every global range
+            // SAFETY: The vector is exclusively borrowed, every global range
             // belongs to exactly one shard, and shard blocks never overlap.
             unsafe { symbols.for_each(ranges, &f) };
         });
@@ -1875,7 +1763,7 @@ impl SymbolTable {
             debug_assert_ne!(sym.aux_idx, NO_AUX);
             debug_assert!((sym.aux_idx as usize) < aux_len);
             // SAFETY: the caller guarantees that ids, and hence aux_idx values,
-            // are distinct, and the exclusive table borrow keeps the arena fixed.
+            // are distinct, and the exclusive table borrow keeps the vector fixed.
             unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) };
         });
     }
@@ -1902,7 +1790,7 @@ impl SymbolTable {
                 debug_assert!((sym.aux_idx as usize) < aux_len);
                 // SAFETY: the caller guarantees that ids, and hence aux_idx
                 // values, are distinct, and the exclusive table borrow keeps
-                // the arena fixed.
+                // the vector fixed.
                 unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) }
             })
             .sum()
