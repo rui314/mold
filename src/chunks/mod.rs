@@ -700,13 +700,10 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     let phdrs = create_phdr(ctx);
-    for phdr in &phdrs {
-        if phdr.p_type().get() == PT_TLS {
-            ctx.tls_begin = phdr.p_vaddr().get();
-            ctx.tp_addr = tls::tp_addr::<E>(phdr);
-            ctx.dtp_addr = tls::dtp_addr::<E>(phdr);
-            break;
-        }
+    if let Some(phdr) = phdrs.iter().find(|p| p.p_type().get() == PT_TLS) {
+        ctx.tls_begin = phdr.p_vaddr().get();
+        ctx.tp_addr = tls::tp_addr::<E>(phdr);
+        ctx.dtp_addr = tls::dtp_addr::<E>(phdr);
     }
     let phdr = ctx.phdr.as_mut().unwrap();
     phdr.hdr
