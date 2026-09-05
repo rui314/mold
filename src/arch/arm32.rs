@@ -262,13 +262,8 @@ where
                 Some(&(next, offset, _)) if next == sec => offset,
                 _ => isec.sh_size,
             };
-            let base = ctx
-                .output_section(isec.output_section.expect("output section"))
-                .hdr
-                .shdr
-                .sh_offset
-                .get()
-                + isec.offset();
+            let osec = ctx.output_section(isec.output_section.expect("output section"));
+            let base = osec.hdr.shdr.sh_offset.get() + isec.offset();
             // SAFETY: live input sections occupy disjoint output ranges, and
             // this file's mapping-symbol ranges are processed sequentially.
             unsafe {
@@ -343,14 +338,9 @@ where
             0x0000_0000, //    (padding)
         ];
         write_code(buf, &INSN);
-        let gotplt = ctx
-            .gotplt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
-            .wrapping_sub(16);
+        let gotplt_addr = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
+        let gotplt = gotplt_addr.wrapping_sub(plt_addr).wrapping_sub(16);
         End::write_u32(&mut buf[16..], gotplt as u32);
     }
 

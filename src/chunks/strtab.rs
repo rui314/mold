@@ -57,11 +57,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         file.base.strtab_offset = offset;
         offset += file.base.strtab_size;
     }
-    ctx.strtab
-        .hdr
-        .shdr
-        .sh_size
-        .set(if offset == 1 { 0 } else { offset });
+    let size = if offset == 1 { 0 } else { offset };
+    ctx.strtab.hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

@@ -21,9 +21,8 @@ pub struct SymtabSection<E: Layout> {
 impl<E: Arch> SymtabSection<E> {
     pub fn new() -> SymtabSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
-        hdr.shdr
-            .sh_entsize
-            .set(std::mem::size_of::<ElfSym<E>>() as u64);
+        let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
+        hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         SymtabSection { hdr }
     }
@@ -68,17 +67,15 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         nsyms += file.base.num_global_symtab;
     }
 
-    ctx.symtab
-        .hdr
-        .shdr
-        .sh_info
-        .set(ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx));
-    ctx.symtab.hdr.shdr.sh_link.set(ctx.strtab.hdr.shndx);
-    ctx.symtab.hdr.shdr.sh_size.set(if nsyms == 1 {
+    let first_global = ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx);
+    let size = if nsyms == 1 {
         0
     } else {
         nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64
-    });
+    };
+    ctx.symtab.hdr.shdr.sh_info.set(first_global);
+    ctx.symtab.hdr.shdr.sh_link.set(ctx.strtab.hdr.shndx);
+    ctx.symtab.hdr.shdr.sh_size.set(size);
 }
 
 /// Writes `.symtab`, `.strtab` and `.symtab_shndx`.

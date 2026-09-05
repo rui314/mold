@@ -19,25 +19,20 @@ pub struct RelDynSection<E: Layout> {
 
 impl<E: Arch> RelDynSection<E> {
     pub fn new(args: &crate::cmdline::Args) -> RelDynSection<E> {
-        let name = if E::IS_RELA { ".rela.dyn" } else { ".rel.dyn" };
-        let mut hdr = ChunkHeader::<E>::new(name, 0, SHF_ALLOC as u64);
-        if args.pack_dyn_relocs_android {
-            hdr.shdr.sh_type.set(if E::IS_RELA {
-                SHT_ANDROID_RELA
-            } else {
-                SHT_ANDROID_REL
-            });
-            hdr.shdr.sh_entsize.set(0);
-            hdr.shdr.sh_addralign.set(1);
+        let (name, ty, android_ty) = if E::IS_RELA {
+            (".rela.dyn", SHT_RELA, SHT_ANDROID_RELA)
         } else {
-            hdr.shdr
-                .sh_type
-                .set(if E::IS_RELA { SHT_RELA } else { SHT_REL });
-            hdr.shdr
-                .sh_entsize
-                .set(std::mem::size_of::<ElfRel<E>>() as u64);
-            hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        }
+            (".rel.dyn", SHT_REL, SHT_ANDROID_REL)
+        };
+        let rel_size = std::mem::size_of::<ElfRel<E>>() as u64;
+        let (ty, entsize, align) = if args.pack_dyn_relocs_android {
+            (android_ty, 0, 1)
+        } else {
+            (ty, rel_size, E::WORD_SIZE as u64)
+        };
+        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
+        hdr.shdr.sh_entsize.set(entsize);
+        hdr.shdr.sh_addralign.set(align);
         RelDynSection {
             hdr,
             android_encoded: Vec::new(),
@@ -93,12 +88,8 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
         // --section-start can override a chunk's alignment. Conservatively use
         // .rel[a].dyn if the explicitly assigned address is not word-aligned.
         let name = String::from_utf8_lossy(hdr.name).into_owned();
-        if ctx
-            .args
-            .section_start
-            .get(&name)
-            .is_some_and(|&addr| addr % word != 0)
-        {
+        let addr = ctx.args.section_start.get(&name);
+        if addr.is_some_and(|&addr| addr % word != 0) {
             continue;
         }
         if n != 0 {
@@ -138,7 +129,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         num_relrs += hdr.num_relrs;
     }
 
-    if ctx.args.pack_dyn_relocs_android {
+    let size = if ctx.args.pack_dyn_relocs_android {
         let relocs = collect_relocs(ctx);
         // APS2 uses SLEB128-encoded deltas, so .rela.dyn size may oscillate
         // as addresses move. If a shrink is followed by a growth, stop
@@ -153,18 +144,11 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         if reldyn.keep_android_size && reldyn.android_encoded.len() < old_size {
             reldyn.android_encoded.resize(old_size, 0);
         }
-        reldyn
-            .hdr
-            .shdr
-            .sh_size
-            .set(reldyn.android_encoded.len() as u64);
+        reldyn.android_encoded.len() as u64
     } else {
-        ctx.reldyn
-            .hdr
-            .shdr
-            .sh_size
-            .set((num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64);
-    }
+        (num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64
+    };
+    ctx.reldyn.hdr.shdr.sh_size.set(size);
     ctx.reldyn.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 

@@ -33,10 +33,7 @@ impl<E: Layout> DynstrSection<E> {
         }
         let off = self.hdr.shdr.sh_size.get();
         self.strings.insert(s.to_vec(), off);
-        self.hdr
-            .shdr
-            .sh_size
-            .set(self.hdr.shdr.sh_size.get() + s.len() as u64 + 1);
+        self.hdr.shdr.sh_size.set(off + s.len() as u64 + 1);
         off
     }
 

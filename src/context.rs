@@ -400,9 +400,8 @@ impl<E: Arch> Context<E> {
     }
 
     pub fn fragment(&self, r: FragmentRef) -> &SectionFragment {
-        self.merged_sections[r.section.index()]
-            .fragments
-            .get(r.entry)
+        let msec = &self.merged_sections[r.section.index()];
+        msec.fragments.get(r.entry)
     }
 
     pub fn fragment_addr(&self, r: FragmentRef) -> u64 {

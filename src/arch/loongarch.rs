@@ -212,14 +212,12 @@ fn add_bits(loc: &mut [u8], size: u32, val: u64, subtract: bool) {
 
 fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
     let cur = read_uleb(&mut &*loc);
-    overwrite_uleb(
-        loc,
-        if subtract {
-            cur.wrapping_sub(val)
-        } else {
-            cur.wrapping_add(val)
-        },
-    );
+    let val = if subtract {
+        cur.wrapping_sub(val)
+    } else {
+        cur.wrapping_add(val)
+    };
+    overwrite_uleb(loc, val);
 }
 
 // Returns true if isec's i'th relocation refers to the following
@@ -712,14 +710,12 @@ where
                         // Rewrite PCADDU18I + JIRL to B or BL
                         debug_assert_eq!(removed, 4);
                         let jirl = insn(&contents[rel.r_offset() as usize + 4..]);
-                        set_insn(
-                            loc,
-                            if rd(jirl) == 0 {
-                                0x5000_0000
-                            } else {
-                                0x5400_0000
-                            },
-                        );
+                        let opcode = if rd(jirl) == 0 {
+                            0x5000_0000
+                        } else {
+                            0x5400_0000
+                        };
+                        set_insn(loc, opcode);
                         write_d10k16(loc, pcrel >> 2);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_B26);
@@ -833,14 +829,12 @@ where
                         }
                     } else {
                         let val = sa.wrapping_sub(ctx.tp_addr) as i64;
-                        set_insn(
-                            loc,
-                            if (0..0x1000).contains(&val) {
-                                0x0380_0004
-                            } else {
-                                0x0280_0084
-                            },
-                        ); // ori $a0, $zero, 0 / addi.w $a0, $a0, 0
+                        let opcode = if (0..0x1000).contains(&val) {
+                            0x0380_0004 // ori $a0, $zero, 0
+                        } else {
+                            0x0280_0084 // addi.w $a0, $a0, 0
+                        };
+                        set_insn(loc, opcode);
                         write_k12(loc, val as u64);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_TLS_LE_LO12);

@@ -64,6 +64,12 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     let mut vec: Vec<(u64, u64)> = Vec::new();
     let mut define = |tag: u32, val: u64| vec.push((tag as u64, val));
     let dynstr = &ctx.dynstr;
+    let plt = &ctx.plt;
+    let (rel, relsz, relent) = if E::IS_RELA {
+        (DT_RELA, DT_RELASZ, DT_RELAENT)
+    } else {
+        (DT_REL, DT_RELSZ, DT_RELENT)
+    };
 
     for dso in &ctx.dsos {
         define(DT_NEEDED, dynstr.find_string(dso.soname.as_bytes()));
@@ -97,59 +103,40 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
 
     if ctx.reldyn.hdr.shdr.sh_size.get() != 0 {
         if ctx.args.pack_dyn_relocs_android {
-            define(
-                if E::IS_RELA {
-                    DT_ANDROID_RELA
-                } else {
-                    DT_ANDROID_REL
-                },
-                ctx.reldyn.hdr.shdr.sh_addr.get(),
-            );
-            define(
-                if E::IS_RELA {
-                    DT_ANDROID_RELASZ
-                } else {
-                    DT_ANDROID_RELSZ
-                },
-                ctx.reldyn.hdr.shdr.sh_size.get(),
-            );
+            let (rel, relsz) = if E::IS_RELA {
+                (DT_ANDROID_RELA, DT_ANDROID_RELASZ)
+            } else {
+                (DT_ANDROID_REL, DT_ANDROID_RELSZ)
+            };
+            define(rel, ctx.reldyn.hdr.shdr.sh_addr.get());
+            define(relsz, ctx.reldyn.hdr.shdr.sh_size.get());
         } else {
-            define(
-                if E::IS_RELA { DT_RELA } else { DT_REL },
-                ctx.reldyn.hdr.shdr.sh_addr.get(),
-            );
-            define(
-                if E::IS_RELA { DT_RELASZ } else { DT_RELSZ },
-                ctx.reldyn.hdr.shdr.sh_size.get(),
-            );
-            define(
-                if E::IS_RELA { DT_RELAENT } else { DT_RELENT },
-                std::mem::size_of::<ElfRel<E>>() as u64,
-            );
+            define(rel, ctx.reldyn.hdr.shdr.sh_addr.get());
+            define(relsz, ctx.reldyn.hdr.shdr.sh_size.get());
+            define(relent, std::mem::size_of::<ElfRel<E>>() as u64);
         }
     }
 
     if let Some(relrdyn) = &ctx.relrdyn {
-        if ctx.args.use_android_relr_tags {
-            define(DT_ANDROID_RELR, relrdyn.hdr.shdr.sh_addr.get());
-            define(DT_ANDROID_RELRSZ, relrdyn.hdr.shdr.sh_size.get());
-            define(DT_ANDROID_RELRENT, relrdyn.hdr.shdr.sh_entsize.get());
+        let (relr, relrsz, relrent) = if ctx.args.use_android_relr_tags {
+            (DT_ANDROID_RELR, DT_ANDROID_RELRSZ, DT_ANDROID_RELRENT)
         } else {
-            define(DT_RELR, relrdyn.hdr.shdr.sh_addr.get());
-            define(DT_RELRSZ, relrdyn.hdr.shdr.sh_size.get());
-            define(DT_RELRENT, relrdyn.hdr.shdr.sh_entsize.get());
-        }
+            (DT_RELR, DT_RELRSZ, DT_RELRENT)
+        };
+        define(relr, relrdyn.hdr.shdr.sh_addr.get());
+        define(relrsz, relrdyn.hdr.shdr.sh_size.get());
+        define(relrent, relrdyn.hdr.shdr.sh_entsize.get());
     }
 
     if ctx.relplt.hdr.shdr.sh_size.get() != 0 {
         define(DT_JMPREL, ctx.relplt.hdr.shdr.sh_addr.get());
         define(DT_PLTRELSZ, ctx.relplt.hdr.shdr.sh_size.get());
-        define(DT_PLTREL, if E::IS_RELA { DT_RELA } else { DT_REL } as u64);
+        define(DT_PLTREL, rel as u64);
     }
 
     if E::IS_SPARC {
-        if ctx.plt.hdr.shdr.sh_size.get() != 0 {
-            define(DT_PLTGOT, ctx.plt.hdr.shdr.sh_addr.get());
+        if plt.hdr.shdr.sh_size.get() != 0 {
+            define(DT_PLTGOT, plt.hdr.shdr.sh_addr.get());
         }
     } else if E::FAMILY == Family::Ppc32 {
         if ctx.gotplt.hdr.shdr.sh_size.get() != 0 {
@@ -270,8 +257,7 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     }
     // RISC-V has the same feature but with a different name.
     if E::IS_RISCV
-        && ctx
-            .plt
+        && plt
             .symbols
             .iter()
             .any(|&id| ctx.symbols[id].esym(ctx).riscv_variant_cc())
@@ -287,7 +273,7 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
         // it's what it is.
         define(
             DT_PPC64_GLINK,
-            ctx.plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(0) - 32,
+            plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(0) - 32,
         );
     }
 
@@ -309,12 +295,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     let n = create_contents(ctx).len();
+    let size = (n * ElfDyn::<E>::size()) as u64;
     let dynamic = ctx.dynamic.as_mut().unwrap();
-    dynamic
-        .hdr
-        .shdr
-        .sh_size
-        .set((n * ElfDyn::<E>::size()) as u64);
+    dynamic.hdr.shdr.sh_size.set(size);
     dynamic.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
 }
 

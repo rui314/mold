@@ -21,9 +21,8 @@ impl<E: Arch> PltSection<E> {
         let mut hdr =
             ChunkHeader::<E>::new(".plt", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
         if E::IS_SPARC {
-            hdr.shdr
-                .sh_flags
-                .set(hdr.shdr.sh_flags.get() | SHF_WRITE as u64);
+            let flags = hdr.shdr.sh_flags.get() | SHF_WRITE as u64;
+            hdr.shdr.sh_flags.set(flags);
             hdr.shdr.sh_addralign.set(256);
         } else {
             hdr.shdr.sh_addralign.set(16);
@@ -105,19 +104,19 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
-    let n = ctx.plt.symbols.len() as u32;
-    let strtab_size: u64 = ctx
-        .plt
+    let plt = &mut ctx.plt;
+    let n = plt.symbols.len() as u32;
+    let strtab_size: u64 = plt
         .symbols
         .iter()
         .map(|&id| ctx.symbols[id].name().len() as u64 + "$plt".len() as u64 + 1)
         .sum();
-    ctx.plt.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 {
+    plt.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 {
         n * 3 + 2
     } else {
         n
     };
-    ctx.plt.hdr.strtab_size = strtab_size;
+    plt.hdr.strtab_size = strtab_size;
 }
 
 pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {

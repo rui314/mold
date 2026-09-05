@@ -38,11 +38,8 @@ impl<E: Layout> Default for VersymSection<E> {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-    ctx.versym
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.versym.contents.len() as u64 * 2);
+    let size = ctx.versym.contents.len() as u64 * 2;
+    ctx.versym.hdr.shdr.sh_size.set(size);
     ctx.versym.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 

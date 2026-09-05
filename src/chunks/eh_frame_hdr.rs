@@ -35,12 +35,10 @@ impl<E: Layout> Default for EhFrameHdrSection<E> {
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let num_fdes: u64 = ctx.objs.iter().map(|f| f.fdes.len() as u64).sum();
+    let size = EhFrameHdrSection::<E>::HEADER_SIZE + num_fdes * 8;
     let sec = ctx.eh_frame_hdr.as_mut().unwrap();
     sec.num_fdes = num_fdes;
-    sec.hdr
-        .shdr
-        .sh_size
-        .set(EhFrameHdrSection::<E>::HEADER_SIZE + num_fdes * 8);
+    sec.hdr.shdr.sh_size.set(size);
 }
 
 pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -51,15 +49,9 @@ pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[1] = (DW_EH_PE_pcrel | DW_EH_PE_sdata4) as u8;
     buf[2] = DW_EH_PE_udata4 as u8;
     buf[3] = (DW_EH_PE_datarel | DW_EH_PE_sdata4) as u8;
-    E::Endian::write_u32(
-        &mut buf[4..],
-        ctx.eh_frame
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(sec.hdr.shdr.sh_addr.get())
-            .wrapping_sub(4) as u32,
-    );
+    let eh_frame = ctx.eh_frame.hdr.shdr.sh_addr.get();
+    let hdr = sec.hdr.shdr.sh_addr.get();
+    let offset = eh_frame.wrapping_sub(hdr).wrapping_sub(4);
+    E::Endian::write_u32(&mut buf[4..], offset as u32);
     E::Endian::write_u32(&mut buf[8..], sec.num_fdes as u32);
 }

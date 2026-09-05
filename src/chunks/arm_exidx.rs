@@ -64,13 +64,8 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
     output_section::compute_section_size(ctx, osec);
     let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size.get();
     // +8 for sentinel
-    ctx.arm_exidx
-        .as_mut()
-        .unwrap()
-        .hdr
-        .shdr
-        .sh_size
-        .set(size + ENTRY_SIZE as u64);
+    let sec = ctx.arm_exidx.as_mut().unwrap();
+    sec.hdr.shdr.sh_size.set(size + ENTRY_SIZE as u64);
     // plus the sentinel
 }
 

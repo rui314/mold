@@ -304,11 +304,11 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
 fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
     // Symbols named on the command line pull in their files, and keep
     // their sections under --gc-sections; so does the entry point.
-    let names: Vec<String> = ctx
-        .args
+    let args = &ctx.args;
+    let names: Vec<String> = args
         .undefined
         .iter()
-        .chain(&ctx.args.require_defined)
+        .chain(&args.require_defined)
         .cloned()
         .collect();
     for name in names {
@@ -1386,9 +1386,8 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
                     let sh_type = if isec.is_nobits() {
                         SHT_NOBITS
                     } else if isec.shndx as usize >= num_elf_sections {
-                        extra_shdrs[isec.shndx as usize - num_elf_sections]
-                            .sh_type
-                            .get()
+                        let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
+                        shdr.sh_type.get()
                     } else {
                         shdrs[isec.shndx as usize].sh_type.get()
                     };
@@ -1650,22 +1649,13 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     ctx.syms.etext_ = Some(s(ctx, "_etext"));
     ctx.syms.edata_ = Some(s(ctx, "_edata"));
     ctx.syms.executable_start = Some(s(ctx, "__executable_start"));
-    ctx.syms.rel_iplt_start = Some(s(
-        ctx,
-        if E::IS_RELA {
-            "__rela_iplt_start"
-        } else {
-            "__rel_iplt_start"
-        },
-    ));
-    ctx.syms.rel_iplt_end = Some(s(
-        ctx,
-        if E::IS_RELA {
-            "__rela_iplt_end"
-        } else {
-            "__rel_iplt_end"
-        },
-    ));
+    let (start, end) = if E::IS_RELA {
+        ("__rela_iplt_start", "__rela_iplt_end")
+    } else {
+        ("__rel_iplt_start", "__rel_iplt_end")
+    };
+    ctx.syms.rel_iplt_start = Some(s(ctx, start));
+    ctx.syms.rel_iplt_end = Some(s(ctx, end));
 
     if ctx.args.eh_frame_hdr {
         ctx.syms.gnu_eh_frame_hdr = Some(s(ctx, "__GNU_EH_FRAME_HDR"));
@@ -1780,11 +1770,8 @@ pub fn apply_section_align<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     for osec in &mut ctx.output_sections {
-        if let Some(&align) = ctx
-            .args
-            .section_align
-            .get(&*String::from_utf8_lossy(osec.hdr.name))
-        {
+        let name = String::from_utf8_lossy(osec.hdr.name);
+        if let Some(&align) = ctx.args.section_align.get(&*name) {
             osec.hdr.shdr.sh_addralign.set(align);
         }
     }
@@ -2992,7 +2979,8 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     syms = locals.into_iter().chain(globals).collect();
 
     // Compute .dynstr size
-    ctx.dynsym.dynstr_offset = ctx.dynstr.hdr.shdr.sh_size.get();
+    let offset = ctx.dynstr.hdr.shdr.sh_size.get();
+    ctx.dynsym.dynstr_offset = offset;
     // SAFETY: .dynsym contains each symbol at most once. Every dynamic symbol
     // already has an auxiliary record.
     let size = unsafe {
@@ -3001,11 +2989,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
             sym.name().len() as u64 + 1
         })
     };
-    ctx.dynstr
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.dynstr.hdr.shdr.sh_size.get() + size);
+    ctx.dynstr.hdr.shdr.sh_size.set(offset + size);
     ctx.dynsym.symbols = std::iter::once(None)
         .chain(syms.into_iter().map(Some))
         .collect();
@@ -3137,13 +3121,13 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
-    if !ctx.args.shared {
+    let args = &ctx.args;
+    if !args.shared {
         return;
     }
     let _t = ctx.timer("parse_symbol_version");
 
-    let verdefs: HashMap<Vec<u8>, u16> = ctx
-        .args
+    let verdefs: HashMap<Vec<u8>, u16> = args
         .version_definitions
         .iter()
         .enumerate()
@@ -3635,38 +3619,37 @@ fn section_order_group<E: Arch>(ctx: &Context<E>, id: ChunkId) -> &'static str {
 
 // Sort sections according to a --section-order argument.
 fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
-    let rank =
-        |ctx: &Context<E>, id: ChunkId| -> i64 {
-            let hdr = ctx.chunk_header(id);
-            let flags = hdr.shdr.sh_flags.get();
-            match id {
-                ChunkId::Ehdr if flags & SHF_ALLOC as u64 == 0 => return -2,
-                ChunkId::Phdr if flags & SHF_ALLOC as u64 == 0 => return -1,
-                ChunkId::Shdr => return i32::MAX as i64,
-                _ if flags & SHF_ALLOC as u64 == 0 => return i32::MAX as i64 - 1,
-                _ => {}
-            }
-            let name = hdr.name;
-            if let Some(i) = ctx
-                .args
-                .section_order
-                .iter()
-                .position(|o| o.kind == SectionOrderKind::Section && o.name.as_bytes() == name)
-            {
-                return i as i64;
-            }
-            let group = section_order_group(ctx, id);
-            if let Some(i) = ctx.args.section_order.iter().position(|o| {
-                o.kind == SectionOrderKind::Group && o.name.eq_ignore_ascii_case(group)
-            }) {
-                return i as i64;
-            }
-            error!(
-                "--section-order: missing section specification for {}",
-                hdr.name
-            );
-            0
-        };
+    let rank = |ctx: &Context<E>, id: ChunkId| -> i64 {
+        let hdr = ctx.chunk_header(id);
+        let flags = hdr.shdr.sh_flags.get();
+        match id {
+            ChunkId::Ehdr if flags & SHF_ALLOC as u64 == 0 => return -2,
+            ChunkId::Phdr if flags & SHF_ALLOC as u64 == 0 => return -1,
+            ChunkId::Shdr => return i32::MAX as i64,
+            _ if flags & SHF_ALLOC as u64 == 0 => return i32::MAX as i64 - 1,
+            _ => {}
+        }
+        let name = hdr.name;
+        let order = &ctx.args.section_order;
+        if let Some(i) = order
+            .iter()
+            .position(|o| o.kind == SectionOrderKind::Section && o.name.as_bytes() == name)
+        {
+            return i as i64;
+        }
+        let group = section_order_group(ctx, id);
+        if let Some(i) = order
+            .iter()
+            .position(|o| o.kind == SectionOrderKind::Group && o.name.eq_ignore_ascii_case(group))
+        {
+            return i as i64;
+        }
+        error!(
+            "--section-order: missing section specification for {}",
+            hdr.name
+        );
+        0
+    };
     // It is an error if a section order cannot be determined by a given
     // section order list.
     for id in ctx.chunks.clone() {
@@ -3948,10 +3931,8 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         // are contiguous in memory.
         loop {
             let shdr = ctx.chunk_header(chunks[i]).shdr;
-            ctx.chunk_header_mut(chunks[i])
-                .shdr
-                .sh_offset
-                .set(fileoff + shdr.sh_addr.get() - first.sh_addr.get());
+            let offset = fileoff + shdr.sh_addr.get() - first.sh_addr.get();
+            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(offset);
             i += 1;
             if i >= chunks.len() {
                 break;
@@ -4050,10 +4031,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(shdr) = &mut ctx.shdr {
-        shdr.hdr
-            .shdr
-            .sh_size
-            .set(shndx as u64 * ElfShdr::<E>::size() as u64);
+        let size = shndx as u64 * ElfShdr::<E>::size() as u64;
+        shdr.hdr.shdr.sh_size.set(size);
     }
 
     // Some types of section header refer to other section by index.
@@ -4598,10 +4577,8 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         chunks::update_phdr(ctx);
         let phdr = ctx.phdr.as_mut().unwrap();
         phdr.phdrs.resize(n, ElfPhdr::<E>::default());
-        phdr.hdr
-            .shdr
-            .sh_size
-            .set((n * std::mem::size_of::<ElfPhdr<E>>()) as u64);
+        let size = (n * std::mem::size_of::<ElfPhdr<E>>()) as u64;
+        phdr.hdr.shdr.sh_size.set(size);
     }
 
     // Write to a separate debug file

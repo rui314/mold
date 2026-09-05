@@ -378,13 +378,9 @@ where
         for (i, &v) in insn.iter().enumerate() {
             write32(&mut buf[i * 4..], v);
         }
-        let disp = ctx
-            .gotplt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get());
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        let disp = gotplt.wrapping_sub(plt);
         write_utype(buf, disp);
         write_itype(&mut buf[8..], disp);
         write_itype(&mut buf[16..], disp);
@@ -830,14 +826,12 @@ where
                                     sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
                                 );
                             } else {
-                                write32(
-                                    loc,
-                                    if is_int(tprel as i64, 12) {
-                                        0x513 // addi a0,zero,<lo12>
-                                    } else {
-                                        0x50513 // addi a0,a0,<lo12>
-                                    },
-                                );
+                                let insn = if is_int(tprel as i64, 12) {
+                                    0x513 // addi a0,zero,<lo12>
+                                } else {
+                                    0x50513 // addi a0,a0,<lo12>
+                                };
+                                write32(loc, insn);
                                 write_itype(loc, tprel);
                             }
                         }

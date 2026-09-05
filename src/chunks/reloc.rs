@@ -21,21 +21,17 @@ pub struct RelocSection<E: Layout> {
 
 pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
     let osec = &ctx.output_sections[osec_id.index()];
-    let name = format!(
-        "{}{}",
-        if E::IS_RELA { ".rela" } else { ".rel" },
-        osec.hdr.name
-    );
+    let (prefix, ty) = if E::IS_RELA {
+        (".rela", SHT_RELA)
+    } else {
+        (".rel", SHT_REL)
+    };
+    let name = format!("{prefix}{}", osec.hdr.name);
     let name = BStr::new(crate::util::leak_bytes(name.into_bytes()));
-    let mut hdr = ChunkHeader::<E>::with_name(
-        name,
-        if E::IS_RELA { SHT_RELA } else { SHT_REL },
-        SHF_INFO_LINK as u64,
-    );
+    let mut hdr = ChunkHeader::<E>::with_name(name, ty, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-    hdr.shdr
-        .sh_entsize
-        .set(std::mem::size_of::<ElfRel<E>>() as u64);
+    let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+    hdr.shdr.sh_entsize.set(entsize);
 
     // Compute an offset for each input section
     let mut offsets = Vec::with_capacity(osec.members.len());
@@ -46,9 +42,7 @@ pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<
         let file = &ctx.objs[isec.file.index()];
         sum += isec.rels(file).len() as u64;
     }
-    hdr.shdr
-        .sh_size
-        .set(sum * std::mem::size_of::<ElfRel<E>>() as u64);
+    hdr.shdr.sh_size.set(sum * entsize);
     RelocSection {
         hdr,
         output_section: osec_id,

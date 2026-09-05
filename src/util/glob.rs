@@ -637,20 +637,21 @@ impl Glob {
                 Nfa::default()
             };
 
+            let aho_corasick = &self.aho_corasick;
+            let nodes = aho_corasick
+                .nodes
+                .iter()
+                .map(|n| TrieNode {
+                    value: n.value,
+                    suffix_link: n.suffix_link,
+                    first_child: n.first_child,
+                    next_sibling: n.next_sibling,
+                    ch: n.ch,
+                })
+                .collect();
             let mut aho_corasick = AhoCorasick {
-                root_children: self.aho_corasick.root_children.clone(),
-                nodes: self
-                    .aho_corasick
-                    .nodes
-                    .iter()
-                    .map(|n| TrieNode {
-                        value: n.value,
-                        suffix_link: n.suffix_link,
-                        first_child: n.first_child,
-                        next_sibling: n.next_sibling,
-                        ch: n.ch,
-                    })
-                    .collect(),
+                root_children: aho_corasick.root_children.clone(),
+                nodes,
             };
             aho_corasick.compile();
 

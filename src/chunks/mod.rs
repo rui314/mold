@@ -528,10 +528,10 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
                 && to_phdr_flags(ctx, chunks[i]) == flags
                 && {
                     let shdr = &ctx.chunk_header(chunks[i]).shdr;
-                    shdr.sh_offset
-                        .get()
-                        .wrapping_sub(first_shdr.sh_offset.get())
-                        == shdr.sh_addr.get().wrapping_sub(first_shdr.sh_addr.get())
+                    let offset = shdr.sh_offset.get();
+                    let addr = shdr.sh_addr.get();
+                    offset.wrapping_sub(first_shdr.sh_offset.get())
+                        == addr.wrapping_sub(first_shdr.sh_addr.get())
                 }
             {
                 append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
@@ -698,11 +698,9 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
         ctx.tp_addr = tls::tp_addr::<E>(phdr);
         ctx.dtp_addr = tls::dtp_addr::<E>(phdr);
     }
+    let size = (phdrs.len() * std::mem::size_of::<ElfPhdr<E>>()) as u64;
     let phdr = ctx.phdr.as_mut().unwrap();
-    phdr.hdr
-        .shdr
-        .sh_size
-        .set((phdrs.len() * std::mem::size_of::<ElfPhdr<E>>()) as u64);
+    phdr.hdr.shdr.sh_size.set(size);
     phdr.phdrs = phdrs;
 }
 

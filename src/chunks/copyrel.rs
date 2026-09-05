@@ -75,10 +75,8 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     sec.symbols.push(id);
     let offset = align_to(sec.hdr.shdr.sh_size.get(), alignment);
     sec.hdr.shdr.sh_size.set(offset + size);
-    sec.hdr
-        .shdr
-        .sh_addralign
-        .set(sec.hdr.shdr.sh_addralign.get().max(alignment));
+    let align = sec.hdr.shdr.sh_addralign.get().max(alignment);
+    sec.hdr.shdr.sh_addralign.set(align);
 
     for alias in aliases {
         ctx.symbols.aux_mut(alias);

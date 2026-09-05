@@ -60,7 +60,8 @@ fn word<E: Arch>() -> u64 {
 }
 
 pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-    let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
+    let size = ctx.got.hdr.shdr.sh_size.get();
+    let idx = (size / word::<E>()) as u32;
     let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
     ctx.symbols.aux_mut(sym).got_idx = Some(idx);
     // An IFUNC symbol uses two GOT slots in a position-dependent
@@ -70,33 +71,23 @@ pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     } else {
         word::<E>()
     };
-    ctx.got
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.got.hdr.shdr.sh_size.get().wrapping_add(increment));
+    ctx.got.hdr.shdr.sh_size.set(size.wrapping_add(increment));
     ctx.got.got_syms.push(sym);
 }
 
 pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-    let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
+    let size = ctx.got.hdr.shdr.sh_size.get();
+    let idx = (size / word::<E>()) as u32;
     ctx.symbols.aux_mut(sym).gottp_idx = Some(idx);
-    ctx.got
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.got.hdr.shdr.sh_size.get() + word::<E>());
+    ctx.got.hdr.shdr.sh_size.set(size + word::<E>());
     ctx.got.gottp_syms.push(sym);
 }
 
 pub fn add_tlsgd_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-    let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
+    let size = ctx.got.hdr.shdr.sh_size.get();
+    let idx = (size / word::<E>()) as u32;
     ctx.symbols.aux_mut(sym).tlsgd_idx = Some(idx);
-    ctx.got
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
+    ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsgd_syms.push(sym);
 }
 
@@ -109,24 +100,18 @@ pub fn add_tlsdesc_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     // so that no TLSDESC relocation exist at runtime.
     debug_assert!(E::SUPPORTS_TLSDESC);
     debug_assert!(!ctx.args.is_static);
-    let idx = (ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32;
+    let size = ctx.got.hdr.shdr.sh_size.get();
+    let idx = (size / word::<E>()) as u32;
     ctx.symbols.aux_mut(sym).tlsdesc_idx = Some(idx);
-    ctx.got
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
+    ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsdesc_syms.push(sym);
 }
 
 pub fn add_tlsld<E: Arch>(ctx: &mut Context<E>) {
     debug_assert!(ctx.got.tlsld_idx.is_none());
-    ctx.got.tlsld_idx = Some((ctx.got.hdr.shdr.sh_size.get() / word::<E>()) as u32);
-    ctx.got
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.got.hdr.shdr.sh_size.get() + 2 * word::<E>());
+    let size = ctx.got.hdr.shdr.sh_size.get();
+    ctx.got.tlsld_idx = Some((size / word::<E>()) as u32);
+    ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
 }
 
 struct GotEntry {

@@ -516,10 +516,8 @@ pub fn layout<E: Layout>(msec: &mut MergedSection<E>) {
         }
     });
 
-    msec.hdr
-        .shdr
-        .sh_size
-        .set(shard_offsets.last().copied().unwrap());
+    let size = shard_offsets.last().copied().unwrap();
+    msec.hdr.shdr.sh_size.set(size);
     msec.shards = shards;
     msec.shard_offsets = shard_offsets;
 }

@@ -796,14 +796,9 @@ fn pubnames_unit<'a>(
     field_offset: u64,
     units: &'a mut FileUnits,
 ) -> Option<&'a mut Vec<NameRecord>> {
-    let rel = input
-        .relocations
-        .get(
-            input
-                .relocations
-                .partition_point(|r| r.offset < field_offset),
-        )
-        .filter(|r| r.offset == field_offset)?;
+    let rels = &input.relocations;
+    let i = rels.partition_point(|r| r.offset < field_offset);
+    let rel = rels.get(i).filter(|r| r.offset == field_offset)?;
     let key = (rel.target_shndx, rel.unit_offset);
 
     // Units are appended in input section and contribution offset order, so both

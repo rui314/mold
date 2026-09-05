@@ -441,14 +441,9 @@ impl Arch for Ppc64V2 {
         for (i, &insn) in INSN.iter().enumerate() {
             w32(&mut buf[i * 4..], insn);
         }
-        let val = ctx
-            .gotplt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
-            .wrapping_sub(8);
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        let val = gotplt.wrapping_sub(plt).wrapping_sub(8);
         or32(&mut buf[28..], higha(val) as u32);
         or32(&mut buf[32..], lo(val) as u32);
     }
@@ -456,13 +451,8 @@ impl Arch for Ppc64V2 {
     // When the control is transferred to a PLT entry, the PLT entry's
     // address is already set to %r12 by the caller.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
-        let offset = ctx
-            .plt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(sym.plt_addr(ctx));
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        let offset = plt.wrapping_sub(sym.plt_addr(ctx));
         w32(buf, 0x4b00_0000 | (offset as u32 & 0x00ff_ffff)); // b plt0
     }
 
@@ -786,6 +776,11 @@ impl Arch for Ppc64V2 {
 
         let toc = toc(ctx);
         let power10 = is_power10(ctx);
+        let (plt, local) = if power10 {
+            (&PLT_THUNK_POWER10, &LOCAL_THUNK_POWER10)
+        } else {
+            (&PLT_THUNK, &LOCAL_THUNK)
+        };
 
         for (i, &id) in thunk.symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
@@ -798,23 +793,9 @@ impl Arch for Ppc64V2 {
                 } else {
                     sym.gotplt_addr(ctx)
                 };
-                (
-                    if power10 {
-                        &PLT_THUNK_POWER10
-                    } else {
-                        &PLT_THUNK
-                    },
-                    got,
-                )
+                (plt, got)
             } else {
-                (
-                    if power10 {
-                        &LOCAL_THUNK_POWER10
-                    } else {
-                        &LOCAL_THUNK
-                    },
-                    sym.addr(ctx),
-                )
+                (local, sym.addr(ctx))
             };
             for (j, &insn) in insns.iter().enumerate() {
                 w32(&mut entry[j * 4..], insn);

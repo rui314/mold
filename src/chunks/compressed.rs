@@ -48,23 +48,15 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
     chdr.ch_type_mut().set(ctx.args.compress_debug_sections);
     chdr.ch_size_mut().set(hdr.shdr.sh_size.get());
     chdr.ch_addralign_mut().set(hdr.shdr.sh_addralign.get());
-    let mut new_hdr = ChunkHeader::<E>::with_name(
-        hdr.name,
-        hdr.shdr.sh_type.get(),
-        hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64,
-    );
+    let flags = hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64;
+    let size = (std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64;
+    let mut new_hdr = ChunkHeader::<E>::with_name(hdr.name, hdr.shdr.sh_type.get(), flags);
     new_hdr.shndx = hdr.shndx;
     new_hdr.is_compressed = true;
     new_hdr.shdr = hdr.shdr;
-    new_hdr
-        .shdr
-        .sh_flags
-        .set(new_hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64);
+    new_hdr.shdr.sh_flags.set(flags);
     new_hdr.shdr.sh_addralign.set(1);
-    new_hdr
-        .shdr
-        .sh_size
-        .set((std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64);
+    new_hdr.shdr.sh_size.set(size);
 
     // We can discard the uncompressed contents unless --gdb-index is given
     CompressedSection {

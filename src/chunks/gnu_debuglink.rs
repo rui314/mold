@@ -37,11 +37,9 @@ impl<E: Layout> Default for GnuDebuglinkSection<E> {
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let filename = path_filename(&ctx.args.separate_debug_file);
+    let size = align_to(filename.len() as u64 + 1, 4) + 4;
     let sec = ctx.gnu_debuglink.as_mut().unwrap();
-    sec.hdr
-        .shdr
-        .sh_size
-        .set(align_to(filename.len() as u64 + 1, 4) + 4);
+    sec.hdr.shdr.sh_size.set(size);
     sec.filename = filename;
 }
 

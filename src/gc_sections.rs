@@ -310,13 +310,9 @@ pub fn gc_sections<E: Arch>(ctx: &mut Context<E>) {
             file.base.set_reachable(false);
         }
     }
-    for name in ctx
-        .args
-        .undefined
-        .clone()
-        .iter()
-        .chain(ctx.args.require_defined.clone().iter())
-    {
+    let undefined = ctx.args.undefined.clone();
+    let require_defined = ctx.args.require_defined.clone();
+    for name in undefined.iter().chain(&require_defined) {
         let id = ctx.get_symbol(name.as_bytes());
         if let Some(FileId::Dso(dso)) = ctx.symbols[id].file() {
             ctx.dsos[dso.index()].base.set_reachable(true);

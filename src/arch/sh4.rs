@@ -175,6 +175,7 @@ where
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
         if ctx.args.pic {
             const INSN: [u16; 6] = [
                 0xd202, //    mov.l   1f, r2
@@ -185,15 +186,8 @@ where
                 0xe000, //    mov     #0, r0
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(
-                &mut buf[12..],
-                ctx.gotplt
-                    .hdr
-                    .shdr
-                    .sh_addr
-                    .get()
-                    .wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
-            );
+            let got = ctx.got.hdr.shdr.sh_addr.get();
+            End::write_u32(&mut buf[12..], gotplt.wrapping_sub(got) as u32);
         } else {
             const INSN: [u16; 6] = [
                 0xd202, //    mov.l   1f, r2
@@ -204,7 +198,7 @@ where
                 0xfffd, //    (illegal)
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[12..], ctx.gotplt.hdr.shdr.sh_addr.get() as u32);
+            End::write_u32(&mut buf[12..], gotplt as u32);
         }
     }
 

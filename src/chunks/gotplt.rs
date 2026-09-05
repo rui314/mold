@@ -38,11 +38,8 @@ pub fn entry_size<E: Arch>() -> u64 {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-    ctx.gotplt
-        .hdr
-        .shdr
-        .sh_size
-        .set(header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>());
+    let size = header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>();
+    ctx.gotplt.hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

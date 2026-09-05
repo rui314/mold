@@ -60,8 +60,8 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("fill_verneed");
 
     // Create a list of versioned symbols and sort by file and version.
-    let mut syms: Vec<(DsoId, SymbolId)> = ctx
-        .dynsym
+    let dynsym = &ctx.dynsym;
+    let mut syms: Vec<(DsoId, SymbolId)> = dynsym
         .symbols
         .iter()
         .skip(1)
@@ -87,7 +87,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     });
 
     // Resize .gnu.version
-    let n = ctx.dynsym.symbols.len();
+    let n = dynsym.symbols.len();
     ctx.versym.contents.resize(n, VER_NDX_GLOBAL as u16);
     ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
 
@@ -189,11 +189,8 @@ impl<E: Arch> VerneedBuilder<E> {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-    ctx.verneed
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.verneed.contents.len() as u64);
+    let size = ctx.verneed.contents.len() as u64;
+    ctx.verneed.hdr.shdr.sh_size.set(size);
     ctx.verneed.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
 }
 

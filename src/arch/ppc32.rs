@@ -179,14 +179,9 @@ impl Arch for Ppc32 {
             0x6000_0000, //    nop
         ];
         write_insns(buf, &INSN);
-        let offset = ctx
-            .gotplt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get())
-            .wrapping_add(4);
+        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        let offset = gotplt.wrapping_sub(plt).wrapping_add(4);
         or32(&mut buf[16..], higha(u64::from(offset)));
         or32(&mut buf[20..], lo(u64::from(offset)));
     }

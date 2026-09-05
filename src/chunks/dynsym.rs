@@ -21,9 +21,8 @@ pub struct DynsymSection<E: Layout> {
 impl<E: Arch> DynsymSection<E> {
     pub fn new() -> DynsymSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
-        hdr.shdr
-            .sh_entsize
-            .set(std::mem::size_of::<ElfSym<E>>() as u64);
+        let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
+        hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         DynsymSection {
             hdr,
@@ -51,12 +50,9 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+    let size = std::mem::size_of::<ElfSym<E>>() as u64 * ctx.dynsym.symbols.len() as u64;
     ctx.dynsym.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
-    ctx.dynsym
-        .hdr
-        .shdr
-        .sh_size
-        .set(std::mem::size_of::<ElfSym<E>>() as u64 * ctx.dynsym.symbols.len() as u64);
+    ctx.dynsym.hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

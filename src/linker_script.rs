@@ -336,10 +336,8 @@ impl<'a, E: Arch> Script<'a, E> {
             } else if tok.len() > 3 && tok[1] == b"=" && tok[3] == b";" {
                 let name = String::from_utf8_lossy(unquote(tok[0])).into_owned();
                 let value = String::from_utf8_lossy(unquote(tok[2])).into_owned();
-                self.ctx
-                    .args
-                    .defsyms
-                    .push((name, DefsymValue::Symbol(value)));
+                let value = DefsymValue::Symbol(value);
+                self.ctx.args.defsyms.push((name, value));
                 tok = &tok[4..];
             } else if t == b";" {
                 tok = &tok[1..];
@@ -389,23 +387,20 @@ impl<'a, E: Arch> Script<'a, E> {
                 continue;
             }
 
+            let idx = if is_global {
+                ver_idx
+            } else {
+                VER_NDX_LOCAL as u16
+            };
             if t == b"*" {
-                self.ctx.default_version = if is_global {
-                    ver_idx
-                } else {
-                    VER_NDX_LOCAL as u16
-                };
+                self.ctx.default_version = idx;
             } else {
                 let pattern = self.unquote_pattern(t);
                 self.ctx.version_patterns.push(VersionPattern {
                     pattern,
                     source: self.mf.name.clone(),
                     ver_str,
-                    ver_idx: if is_global {
-                        ver_idx
-                    } else {
-                        VER_NDX_LOCAL as u16
-                    },
+                    ver_idx: idx,
                     is_cpp,
                 });
             }
@@ -433,10 +428,8 @@ impl<'a, E: Arch> Script<'a, E> {
             } else {
                 let idx = next_ver;
                 next_ver += 1;
-                self.ctx
-                    .args
-                    .version_definitions
-                    .push(String::from_utf8_lossy(t).into_owned());
+                let name = String::from_utf8_lossy(t).into_owned();
+                self.ctx.args.version_definitions.push(name);
                 tok = &tok[1..];
                 (t, idx)
             };

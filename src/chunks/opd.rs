@@ -63,10 +63,8 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
         .expect("PPC64 ELFv1 has an .opd section");
     ctx.symbols.aux_mut(sym).opd_idx = Some(opd.symbols.len() as u32);
     opd.symbols.push(sym);
-    opd.hdr
-        .shdr
-        .sh_size
-        .set(opd.hdr.shdr.sh_size.get() + ENTRY_SIZE);
+    let size = opd.hdr.shdr.sh_size.get() + ENTRY_SIZE;
+    opd.hdr.shdr.sh_size.set(size);
 }
 
 /// Position-independent output relocates both the entry point and the

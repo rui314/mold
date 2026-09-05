@@ -41,11 +41,8 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     let idx = ctx.pltgot.symbols.len() as u32;
     ctx.symbols.aux_mut(sym).pltgot_idx = Some(idx);
     ctx.pltgot.symbols.push(sym);
-    ctx.pltgot
-        .hdr
-        .shdr
-        .sh_size
-        .set(ctx.pltgot.symbols.len() as u64 * E::PLTGOT_SIZE);
+    let size = ctx.pltgot.symbols.len() as u64 * E::PLTGOT_SIZE;
+    ctx.pltgot.hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -56,15 +53,15 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
-    let n = ctx.pltgot.symbols.len() as u32;
-    let strtab_size: u64 = ctx
-        .pltgot
+    let pltgot = &mut ctx.pltgot;
+    let n = pltgot.symbols.len() as u32;
+    let strtab_size: u64 = pltgot
         .symbols
         .iter()
         .map(|&id| ctx.symbols[id].name().len() as u64 + "$pltgot".len() as u64 + 1)
         .sum();
-    ctx.pltgot.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 { n * 3 } else { n };
-    ctx.pltgot.hdr.strtab_size = strtab_size;
+    pltgot.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 { n * 3 } else { n };
+    pltgot.hdr.strtab_size = strtab_size;
 }
 
 pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {

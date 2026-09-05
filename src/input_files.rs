@@ -1210,11 +1210,8 @@ impl<E: Arch> ObjectFile<E> {
         let Some(relsec_idx) = relsec_idx else {
             return RelocationSpan::Input(&[]);
         };
-        if self
-            .decoded_crel
-            .get(relsec_idx as usize)
-            .is_some_and(Option::is_some)
-        {
+        let rels = self.decoded_crel.get(relsec_idx as usize);
+        if rels.is_some_and(Option::is_some) {
             RelocationSpan::SideTable(relsec_idx)
         } else {
             RelocationSpan::Input(self.input_relocation_data(relsec_idx))
@@ -1233,12 +1230,10 @@ impl<E: Arch> ObjectFile<E> {
             return self.decoded_crel[index].as_mut().unwrap().as_mut_slice();
         }
 
-        let shdr = &self.base.shdrs[index];
+        let base = &self.base;
+        let shdr = &base.shdrs[index];
         let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        let mf = self
-            .base
-            .mf
-            .expect("input relocations without a mapped file");
+        let mf = base.mf.expect("input relocations without a mapped file");
         // SAFETY: a mutable ObjectFile owns this relocation section for the
         // duration of the pass, and section parsing checked its range.
         let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
@@ -1271,12 +1266,10 @@ impl<E: Arch> ObjectFile<E> {
             return;
         }
 
-        let shdr = &self.base.shdrs[index];
+        let base = &self.base;
+        let shdr = &base.shdrs[index];
         let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        let mf = self
-            .base
-            .mf
-            .expect("input relocations without a mapped file");
+        let mf = base.mf.expect("input relocations without a mapped file");
         // SAFETY: the caller exclusively owns this checked relocation range.
         let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
         // SAFETY: the exclusive access lasts until f returns.
@@ -2495,12 +2488,10 @@ impl<E: Arch> ObjectFile<E> {
             let rels = match decoded.as_mut() {
                 Some(data) => data.as_mut_slice(),
                 None => {
-                    let shdr = &self.base.shdrs[relsec_idx];
+                    let base = &self.base;
+                    let shdr = &base.shdrs[relsec_idx];
                     let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-                    let mf = self
-                        .base
-                        .mf
-                        .expect("input relocations without a mapped file");
+                    let mf = base.mf.expect("input relocations without a mapped file");
                     // SAFETY: this file-parallel pass exclusively owns the
                     // relocation section, whose range was checked at parse
                     // time. No overlapping shared slice is used here.

@@ -24,9 +24,8 @@ impl<E: Arch> EhFrameRelocSection<E> {
         };
         let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        hdr.shdr
-            .sh_entsize
-            .set(std::mem::size_of::<ElfRel<E>>() as u64);
+        let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+        hdr.shdr.sh_entsize.set(entsize);
         EhFrameRelocSection { hdr }
     }
 }
@@ -52,11 +51,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
             cies + fdes
         })
         .sum();
+    let size = (count * std::mem::size_of::<ElfRel<E>>()) as u64;
     let sec = ctx.eh_frame_reloc.as_mut().unwrap();
-    sec.hdr
-        .shdr
-        .sh_size
-        .set((count * std::mem::size_of::<ElfRel<E>>()) as u64);
+    sec.hdr.shdr.sh_size.set(size);
     sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
     sec.hdr.shdr.sh_info.set(ctx.eh_frame.hdr.shndx);
 }

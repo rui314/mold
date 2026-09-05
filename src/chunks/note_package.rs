@@ -33,11 +33,8 @@ impl<E: Layout> Default for NotePackageSection<E> {
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     if !ctx.args.package_metadata.is_empty() {
         // +17 is for the header and the NUL terminator
-        ctx.note_package
-            .hdr
-            .shdr
-            .sh_size
-            .set(align_to(ctx.args.package_metadata.len() as u64 + 17, 4));
+        let size = align_to(ctx.args.package_metadata.len() as u64 + 17, 4);
+        ctx.note_package.hdr.shdr.sh_size.set(size);
     }
 }
 

@@ -73,13 +73,9 @@ impl Arch for M68k {
             0x4e, 0xfb, 0x01, 0x71, 0, 0, 0, 0, // jmp    ([GOTPLT+8, %pc])
         ];
         buf[..18].copy_from_slice(&INSN);
-        let gotplt = ctx
-            .gotplt
-            .hdr
-            .shdr
-            .sh_addr
-            .get()
-            .wrapping_sub(ctx.plt.hdr.shdr.sh_addr.get());
+        let gotplt_addr = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
+        let gotplt = gotplt_addr.wrapping_sub(plt_addr);
         w32(&mut buf[6..], gotplt);
         w32(&mut buf[14..], gotplt.wrapping_sub(4));
     }

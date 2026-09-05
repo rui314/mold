@@ -20,9 +20,8 @@ impl<E: Layout> Ppc64SaveRestoreSection<E> {
             (SHF_ALLOC | SHF_EXECINSTR) as u64,
         );
         hdr.shdr.sh_addralign.set(16);
-        hdr.shdr
-            .sh_size
-            .set((crate::arch::ppc64v2::SAVE_RESTORE_INSNS.len() * 4) as u64);
+        let size = (crate::arch::ppc64v2::SAVE_RESTORE_INSNS.len() * 4) as u64;
+        hdr.shdr.sh_size.set(size);
         Ppc64SaveRestoreSection { hdr }
     }
 }
