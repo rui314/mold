@@ -416,7 +416,7 @@ impl<T> ConcurrentMap<T> {
 
     /// Freezes the map for exclusive, mutable access to its values.
     pub fn freeze(self) -> FrozenMap<T> {
-        FrozenMap { map: self }
+        FrozenMap(self)
     }
 }
 
@@ -448,33 +448,29 @@ impl<T> std::fmt::Debug for ConcurrentMap<T> {
 /// A map after all insertions, whose values can be updated from a
 /// unique reference.
 #[derive(Debug)]
-pub struct FrozenMap<T> {
-    map: ConcurrentMap<T>,
-}
+pub struct FrozenMap<T>(ConcurrentMap<T>);
 
 impl<T> Default for FrozenMap<T> {
     fn default() -> Self {
-        FrozenMap {
-            map: ConcurrentMap::default(),
-        }
+        FrozenMap(ConcurrentMap::default())
     }
 }
 
 impl<T> FrozenMap<T> {
     pub fn get(&self, id: EntryId) -> &T {
-        self.map.value(id)
+        self.0.value(id)
     }
 
     pub fn key(&self, id: EntryId) -> &'static [u8] {
-        self.map.key(id)
+        self.0.key(id)
     }
 
     pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
-        self.map.sorted_entries(shard)
+        self.0.sorted_entries(shard)
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.map.len()
+        self.0.len()
     }
 }
 
