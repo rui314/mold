@@ -971,13 +971,12 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
+    let path = std::env::current_exe().expect("cannot get current executable path");
     #[cfg(not(windows))]
-    let err = std::process::Command::new(crate::util::self_path())
-        .args(&args[1..])
-        .exec();
+    let err = std::process::Command::new(path).args(&args[1..]).exec();
     #[cfg(windows)]
     let err = {
-        let path = CString::new(crate::util::self_path().to_string_lossy().as_bytes()).unwrap();
+        let path = CString::new(path.to_string_lossy().as_bytes()).unwrap();
         let args: Vec<CString> = args
             .iter()
             .map(|arg| CString::new(arg.as_bytes()).unwrap())

@@ -142,7 +142,7 @@ pub fn process_run_subcommand(argv: &[String]) -> ! {
     if argv.len() < 3 {
         fatal!("-run: argument missing");
     }
-    let self_path = crate::util::self_path();
+    let self_path = std::env::current_exe().expect("cannot get current executable path");
     let candidates = [
         // Look for mold-wrapper.so from the same directory as the executable is.
         self_path.parent().map(|p| p.join("mold-wrapper.so")),

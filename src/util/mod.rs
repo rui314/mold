@@ -241,11 +241,6 @@ pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
 }
 
-/// Returns the path of the mold executable itself.
-pub fn self_path() -> std::path::PathBuf {
-    std::env::current_exe().expect("cannot get current executable path")
-}
-
 /// Normalizes a path lexically, resolving `.` and `..` components without
 /// consulting the file system.
 pub fn path_clean(path: &str) -> String {
