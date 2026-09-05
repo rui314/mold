@@ -2161,6 +2161,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     // Linker-synthesized symbols
     shndx = osec->shndx;
     esym.st_value = sym.get_addr(ctx);
+    esym.st_visibility = sym.visibility;
   } else if (SectionFragment<E> *frag = sym.get_frag()) {
     // Section fragment
     shndx = frag->get_output_section(ctx).shndx;

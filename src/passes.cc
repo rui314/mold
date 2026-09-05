@@ -955,6 +955,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
     Symbol<E> *sym = get_symbol(ctx, name);
     sym->value = 0xdeadbeef; // unique dummy value
+    sym->visibility = STV_HIDDEN;
     obj.symbols.emplace_back(sym);
     return sym;
   };
@@ -997,8 +998,10 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   if constexpr (is_riscv<E>) {
     ctx.__global_pointer = add("__global_pointer$");
-    if (ctx.dynamic && !ctx.arg.shared)
+    if (ctx.dynamic && !ctx.arg.shared) {
       ctx.__global_pointer->is_exported = true;
+      ctx.__global_pointer->visibility = STV_DEFAULT;
+    }
   }
 
   if constexpr (is_arm32<E>) {
