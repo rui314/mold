@@ -15,24 +15,43 @@ use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
-use crate::output_chunks::dynamic::{DynamicSection, RelDynSection, RelrDynSection};
-use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection, EhFrameSection};
-use crate::output_chunks::got::{
-    GotPltSection, GotSection, PltGotSection, PltSection, RelPltSection,
-};
+use crate::output_chunks::build_id::BuildIdSection;
+use crate::output_chunks::comdat_group::ComdatGroupSection;
+use crate::output_chunks::compressed::CompressedSection;
+use crate::output_chunks::copyrel::CopyrelSection;
+use crate::output_chunks::dynamic::DynamicSection;
+use crate::output_chunks::dynstr::DynstrSection;
+use crate::output_chunks::dynsym::DynsymSection;
+use crate::output_chunks::eh_frame::EhFrameSection;
+use crate::output_chunks::eh_frame_hdr::EhFrameHdrSection;
+use crate::output_chunks::eh_frame_reloc::EhFrameRelocSection;
+use crate::output_chunks::gnu_debuglink::GnuDebuglinkSection;
+use crate::output_chunks::gnu_hash::GnuHashSection;
+use crate::output_chunks::got::GotSection;
+use crate::output_chunks::gotplt::GotPltSection;
+use crate::output_chunks::hash::HashSection;
+use crate::output_chunks::interp::InterpSection;
 use crate::output_chunks::merged::{MergedSection, MergedSectionId};
-use crate::output_chunks::misc::{
-    BuildIdSection, ComdatGroupSection, CompressedSection, CopyrelSection, GnuDebuglinkSection,
-    InterpSection, NotePackageSection, NotePropertySection, RelocSection, RelroPaddingSection,
-    RiscvAttributesSection,
-};
+use crate::output_chunks::note_package::NotePackageSection;
+use crate::output_chunks::note_property::NotePropertySection;
 use crate::output_chunks::output_section::OutputSection;
-use crate::output_chunks::sframe::{SFrameRelocSection, SFrameSection};
-use crate::output_chunks::symtab::{
-    DynstrSection, DynsymSection, GnuHashSection, HashSection, ShstrtabSection, StrtabSection,
-    SymtabSection, SymtabShndxSection,
-};
-use crate::output_chunks::version::{VerdefSection, VerneedSection, VersymSection};
+use crate::output_chunks::plt::PltSection;
+use crate::output_chunks::pltgot::PltGotSection;
+use crate::output_chunks::reldyn::RelDynSection;
+use crate::output_chunks::reloc::RelocSection;
+use crate::output_chunks::relplt::RelPltSection;
+use crate::output_chunks::relrdyn::RelrDynSection;
+use crate::output_chunks::relro_padding::RelroPaddingSection;
+use crate::output_chunks::riscv_attributes::RiscvAttributesSection;
+use crate::output_chunks::sframe::SFrameSection;
+use crate::output_chunks::sframe_reloc::SFrameRelocSection;
+use crate::output_chunks::shstrtab::ShstrtabSection;
+use crate::output_chunks::strtab::StrtabSection;
+use crate::output_chunks::symtab::SymtabSection;
+use crate::output_chunks::symtab_shndx::SymtabShndxSection;
+use crate::output_chunks::verdef::VerdefSection;
+use crate::output_chunks::verneed::VerneedSection;
+use crate::output_chunks::versym::VersymSection;
 use crate::output_chunks::{
     ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
 };
@@ -174,7 +193,8 @@ pub struct Context<E: Arch> {
     pub note_property: Option<NotePropertySection<E>>,
     pub riscv_attributes: Option<RiscvAttributesSection<E>>,
     pub arm_exidx: Option<crate::output_chunks::arm_exidx::ArmExidxSection<E>>,
-    pub ppc64_save_restore: Option<crate::output_chunks::misc::Ppc64SaveRestoreSection<E>>,
+    pub ppc64_save_restore:
+        Option<crate::output_chunks::ppc64_save_restore::Ppc64SaveRestoreSection<E>>,
     pub ppc64_opd: Option<crate::output_chunks::opd::Ppc64OpdSection<E>>,
     /// Whether any input uses Power10 PC-relative calls, which decides
     /// how thunks address their targets.

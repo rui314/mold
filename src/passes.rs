@@ -24,20 +24,24 @@ use crate::input_files::{
 };
 use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
-use crate::output_chunks::dynamic::{DynamicSection, RelrDynSection};
-use crate::output_chunks::eh_frame::{EhFrameHdrSection, EhFrameRelocSection};
-use crate::output_chunks::misc::{
-    self, BuildIdSection, GnuDebuglinkSection, InterpSection, NotePropertySection,
-    RelroPaddingSection,
-};
+use crate::output_chunks::build_id::{self, BuildIdSection};
+use crate::output_chunks::dynamic::DynamicSection;
+use crate::output_chunks::eh_frame_hdr::EhFrameHdrSection;
+use crate::output_chunks::eh_frame_reloc::EhFrameRelocSection;
+use crate::output_chunks::gnu_debuglink::{self, GnuDebuglinkSection};
+use crate::output_chunks::gnu_hash::{self, GnuHashSection};
+use crate::output_chunks::hash::HashSection;
+use crate::output_chunks::interp::InterpSection;
+use crate::output_chunks::note_property::NotePropertySection;
 use crate::output_chunks::output_section::OutputSection;
-use crate::output_chunks::symtab::{
-    self, GnuHashSection, HashSection, ShstrtabSection, SymtabShndxSection,
-};
-use crate::output_chunks::version::VerdefSection;
+use crate::output_chunks::relrdyn::RelrDynSection;
+use crate::output_chunks::relro_padding::RelroPaddingSection;
+use crate::output_chunks::shstrtab::ShstrtabSection;
+use crate::output_chunks::symtab_shndx::SymtabShndxSection;
+use crate::output_chunks::verdef::VerdefSection;
 use crate::output_chunks::{
-    self, ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId,
-    OutputShdr,
+    self, compressed, copyrel, dynsym, reloc, ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr,
+    OutputPhdr, OutputSectionId, OutputShdr,
 };
 use crate::output_file::OutputFile;
 use crate::symbol::{
@@ -198,11 +202,13 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::NoteProperty);
     }
     if E::IS_RISCV {
-        ctx.riscv_attributes = Some(crate::output_chunks::misc::RiscvAttributesSection::new());
+        ctx.riscv_attributes =
+            Some(crate::output_chunks::riscv_attributes::RiscvAttributesSection::new());
         chunks.push(ChunkId::RiscvAttributes);
     }
     if E::FAMILY == Family::Ppc64V2 {
-        ctx.ppc64_save_restore = Some(crate::output_chunks::misc::Ppc64SaveRestoreSection::new());
+        ctx.ppc64_save_restore =
+            Some(crate::output_chunks::ppc64_save_restore::Ppc64SaveRestoreSection::new());
         chunks.push(ChunkId::Ppc64SaveRestore);
     }
     if E::FAMILY == Family::Ppc64V1 {
@@ -2789,7 +2795,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     };
 
     if ctx.needs_tlsld.load(Ordering::Relaxed) {
-        crate::output_chunks::got::got::add_tlsld(ctx);
+        crate::output_chunks::got::add_tlsld(ctx);
     }
 
     // Every dynamic symbol gets its auxiliary record. The loop below
@@ -2811,10 +2817,10 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         };
 
         if is_imported || is_exported {
-            symtab::dynsym::add_symbol(ctx, id);
+            dynsym::add_symbol(ctx, id);
         }
         if flags & NEEDS_GOT != 0 {
-            crate::output_chunks::got::got::add_got_symbol(ctx, id);
+            crate::output_chunks::got::add_got_symbol(ctx, id);
         }
         if flags & NEEDS_CANONICAL != 0 && ty == STT_FUNC {
             let sym = &mut ctx.symbols[id];
@@ -2826,22 +2832,22 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
             // We can't use .plt.got for a canonical PLT because otherwise
             // .plt.got and .got would refer to each other, resulting in an
             // infinite loop at runtime.
-            crate::output_chunks::got::plt::add_symbol(ctx, id);
+            crate::output_chunks::plt::add_symbol(ctx, id);
         } else if flags & NEEDS_PLT != 0 {
             if flags & NEEDS_GOT != 0 {
-                crate::output_chunks::got::pltgot::add_symbol(ctx, id);
+                crate::output_chunks::pltgot::add_symbol(ctx, id);
             } else {
-                crate::output_chunks::got::plt::add_symbol(ctx, id);
+                crate::output_chunks::plt::add_symbol(ctx, id);
             }
         }
         if flags & NEEDS_GOTTP != 0 {
-            crate::output_chunks::got::got::add_gottp_symbol(ctx, id);
+            crate::output_chunks::got::add_gottp_symbol(ctx, id);
         }
         if flags & NEEDS_TLSGD != 0 {
-            crate::output_chunks::got::got::add_tlsgd_symbol(ctx, id);
+            crate::output_chunks::got::add_tlsgd_symbol(ctx, id);
         }
         if flags & NEEDS_TLSDESC != 0 {
-            crate::output_chunks::got::got::add_tlsdesc_symbol(ctx, id);
+            crate::output_chunks::got::add_tlsdesc_symbol(ctx, id);
         }
         if flags & NEEDS_CANONICAL != 0 && ty != STT_FUNC {
             let relro = ctx.args.z_relro
@@ -2849,7 +2855,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
                     Some(FileId::Dso(dso)) => ctx.dsos[dso.index()].is_readonly(&ctx.symbols[id]),
                     _ => false,
                 };
-            misc::copyrel::add_symbol(ctx, relro, id);
+            copyrel::add_symbol(ctx, relro, id);
         }
         if E::FAMILY == Family::Ppc64V1 && flags & NEEDS_PPC_OPD != 0 {
             crate::output_chunks::opd::add_symbol(ctx, id);
@@ -2931,11 +2937,9 @@ pub fn create_reloc_sections<E: Arch>(ctx: &mut Context<E>) {
         .iter()
         .filter_map(|c| c.as_output_section())
         .collect();
-    let secs: Vec<misc::RelocSection<E>> = {
+    let secs: Vec<reloc::RelocSection<E>> = {
         let ctx_ref: &Context<E> = ctx;
-        ids.par_iter()
-            .map(|&id| misc::reloc::new(ctx_ref, id))
-            .collect()
+        ids.par_iter().map(|&id| reloc::new(ctx_ref, id)).collect()
     };
     for (id, sec) in ids.into_iter().zip(secs) {
         ctx.reloc_sections.push(sec);
@@ -2972,7 +2976,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
         // subset of it. Every dynamic symbol already has an auxiliary record.
         unsafe {
             symbols.par_for_each_aux_mut(&exported, |_, sym, aux| {
-                aux.djb_hash = symtab::djb_hash(sym.name());
+                aux.djb_hash = gnu_hash::djb_hash(sym.name());
             });
         }
         exported.par_sort_unstable_by(|&a, &b| {
@@ -4077,7 +4081,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
 
         if ctx.args.pack_dyn_relocs_android {
             let before = ctx.reldyn.hdr.shdr.sh_size.get();
-            crate::output_chunks::dynamic::reldyn::update_shdr(ctx);
+            crate::output_chunks::reldyn::update_shdr(ctx);
             if before != ctx.reldyn.hdr.shdr.sh_size.get() {
                 continue;
             }
@@ -4382,11 +4386,11 @@ pub fn compress_debug_sections<E: Arch>(ctx: &mut Context<E>) {
         })
         .map(|(i, &id)| (i, id))
         .collect();
-    let compressed: Vec<misc::CompressedSection<E>> = {
+    let compressed: Vec<compressed::CompressedSection<E>> = {
         let ctx_ref: &Context<E> = ctx;
         targets
             .par_iter()
-            .map(|&(_, id)| misc::compressed::new(ctx_ref, id))
+            .map(|&(_, id)| compressed::new(ctx_ref, id))
             .collect()
     };
     for ((i, _), sec) in targets.into_iter().zip(compressed) {
@@ -4443,7 +4447,7 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
     let hdr = ctx.buildid.as_ref().unwrap().hdr.shdr;
     let start = hdr.sh_offset.get() as usize;
     let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
-    misc::build_id::copy_buf(ctx, &mut buf[start..end]);
+    build_id::copy_buf(ctx, &mut buf[start..end]);
 }
 
 // A .gnu_debuglink section contains a filename and a CRC32 checksum of a
@@ -4478,7 +4482,7 @@ pub fn write_gnu_debuglink<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8]) {
     let hdr = ctx.gnu_debuglink.as_ref().unwrap().hdr.shdr;
     let start = hdr.sh_offset.get() as usize;
     let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
-    misc::gnu_debuglink::copy_buf(ctx, &mut buf[start..end]);
+    gnu_debuglink::copy_buf(ctx, &mut buf[start..end]);
 }
 
 /// The CRC32 of a large buffer, computed in parallel.

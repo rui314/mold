@@ -1,18 +1,20 @@
-//! `.eh_frame`, `.eh_frame_hdr` and `.rela.eh_frame`.
+//! `.eh_frame`, reconstructed exception-handling records.
 //!
 //! `.eh_frame` is reconstructed rather than copied: FDEs of dead functions
 //! are dropped, identical CIEs are merged, and a sorted lookup table is
 //! emitted as `.eh_frame_hdr` so that the unwinder can find the FDE for a
 //! PC by binary search.
 
-use rayon::prelude::*;
 use std::ptr::NonNull;
+
+use rayon::prelude::*;
 
 use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
+use crate::output_chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::output_chunks::ChunkHeader;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
@@ -401,192 +403,6 @@ pub fn check_range<E: Arch>(
             isec.display(file),
             rel.type_name::<E>()
         );
-    }
-}
-
-// .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
-// are sorted by their dcorresponding function addresses, so tha the
-// runtime can quickly find an exception-handling record for the current
-// function by binary search. Without .eh_frame_hdr, the runtime would
-// have had to do linear search in .eh_frame.
-#[derive(Debug)]
-pub struct EhFrameHdrSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-    pub num_fdes: u64,
-}
-
-impl<E: Layout> EhFrameHdrSection<E> {
-    pub const HEADER_SIZE: u64 = 12;
-
-    pub fn new() -> EhFrameHdrSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".eh_frame_hdr", SHT_PROGBITS, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign.set(4);
-        hdr.shdr.sh_size.set(Self::HEADER_SIZE);
-        EhFrameHdrSection { hdr, num_fdes: 0 }
-    }
-}
-
-impl<E: Layout> Default for EhFrameHdrSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub mod eh_frame_hdr {
-    use super::*;
-
-    pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        let num_fdes: u64 = ctx.objs.iter().map(|f| f.fdes.len() as u64).sum();
-        let sec = ctx.eh_frame_hdr.as_mut().unwrap();
-        sec.num_fdes = num_fdes;
-        sec.hdr
-            .shdr
-            .sh_size
-            .set(EhFrameHdrSection::<E>::HEADER_SIZE + num_fdes * 8);
-    }
-
-    pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        let sec = ctx.eh_frame_hdr.as_ref().unwrap();
-
-        // Write a header. The actual table is written by EhFrameSection::copy_buf.
-        buf[0] = 1;
-        buf[1] = (DW_EH_PE_pcrel | DW_EH_PE_sdata4) as u8;
-        buf[2] = DW_EH_PE_udata4 as u8;
-        buf[3] = (DW_EH_PE_datarel | DW_EH_PE_sdata4) as u8;
-        E::Endian::write_u32(
-            &mut buf[4..],
-            ctx.eh_frame
-                .hdr
-                .shdr
-                .sh_addr
-                .get()
-                .wrapping_sub(sec.hdr.shdr.sh_addr.get())
-                .wrapping_sub(4) as u32,
-        );
-        E::Endian::write_u32(&mut buf[8..], sec.num_fdes as u32);
-    }
-}
-
-// EhFrameRelocSection contains relocation records for .eh_frame. It is used
-// only for relocatable outputs (an .o file rather than an executable or .so).
-#[derive(Debug)]
-pub struct EhFrameRelocSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> EhFrameRelocSection<E> {
-    pub fn new() -> EhFrameRelocSection<E> {
-        let (name, ty) = if E::IS_RELA {
-            (".rela.eh_frame", SHT_RELA)
-        } else {
-            (".rel.eh_frame", SHT_REL)
-        };
-        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        hdr.shdr
-            .sh_entsize
-            .set(std::mem::size_of::<ElfRel<E>>() as u64);
-        EhFrameRelocSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for EhFrameRelocSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub mod eh_frame_reloc {
-    use super::*;
-
-    pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        let count: usize = ctx
-            .objs
-            .par_iter()
-            .map(|file| {
-                let cies: usize = file
-                    .cies
-                    .iter()
-                    .filter(|c| c.is_leader)
-                    .map(|c| c.rels(file).len())
-                    .sum();
-                let fdes: usize = file.fdes.iter().map(|f| f.rels(file).len()).sum();
-                cies + fdes
-            })
-            .sum();
-        let sec = ctx.eh_frame_reloc.as_mut().unwrap();
-        sec.hdr
-            .shdr
-            .sh_size
-            .set((count * std::mem::size_of::<ElfRel<E>>()) as u64);
-        sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
-        sec.hdr.shdr.sh_info.set(ctx.eh_frame.hdr.shndx);
-    }
-
-    /// Writes the relocations; with REL and `-r`, addends are written into
-    /// `.eh_frame` itself, which is passed as `eh_frame_buf`.
-    pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
-        let out = rels_from_bytes_mut::<E>(buf);
-        let mut eh_frame_buf = eh_frame_buf;
-        let mut n = 0;
-
-        let mut copy = |file: &ObjectFile<E>,
-                        shndx: u32,
-                        r: &ElfRel<E>,
-                        offset: u64,
-                        eh_frame_buf: &mut Option<&mut [u8]>| {
-            let isec = file.section_at(shndx);
-            let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
-            let mut rel = ElfRel::<E>::new(
-                ctx.eh_frame.hdr.shdr.sh_addr.get() + offset,
-                r.r_type(),
-                0,
-                0,
-            );
-
-            if sym.st_type() == STT_SECTION {
-                // We discard section symbols in input files and re-create new
-                // ones for each output section. So we need to adjust relocations'
-                // addends if they refer a section symbol.
-                let target = sym.input_section_ref(ctx).unwrap();
-                rel.set_r_sym(ctx.output_section(target.output_section.unwrap()).hdr.shndx);
-                let addend = isec.rel_addend(r) + target.offset() as i64;
-                if E::IS_RELA {
-                    rel.set_r_addend(addend);
-                } else if ctx.args.relocatable {
-                    if let Some(eh) = eh_frame_buf {
-                        E::write_addend(&mut eh[offset as usize..], addend, r);
-                    }
-                }
-            } else {
-                rel.set_r_sym(sym.output_sym_idx(ctx));
-                if E::IS_RELA {
-                    rel.set_r_addend(isec.rel_addend(r));
-                }
-            }
-            out[n] = rel;
-            n += 1;
-        };
-
-        for file in &ctx.objs {
-            for cie in &file.cies {
-                if cie.is_leader {
-                    for rel in cie.rels(file) {
-                        let offset =
-                            cie.output_offset as u64 + rel.r_offset() - cie.input_offset as u64;
-                        copy(file, cie.section, rel, offset, &mut eh_frame_buf);
-                    }
-                }
-            }
-            for fde in &file.fdes {
-                let cie = &file.cies[fde.cie_idx as usize];
-                let base = file.fde_offset + fde.output_offset as u64;
-                for rel in fde.rels(file) {
-                    let offset = base + rel.r_offset() - fde.input_offset as u64;
-                    copy(file, cie.section, rel, offset, &mut eh_frame_buf);
-                }
-            }
-        }
     }
 }
 

@@ -7,16 +7,45 @@
 //! Operations common to all chunks dispatch on the id.
 
 pub mod arm_exidx;
+pub mod build_id;
+pub mod comdat_group;
+pub mod compressed;
+pub mod copyrel;
 pub mod dynamic;
+pub mod dynstr;
+pub mod dynsym;
 pub mod eh_frame;
+pub mod eh_frame_hdr;
+pub mod eh_frame_reloc;
+pub mod gnu_debuglink;
+pub mod gnu_hash;
 pub mod got;
+pub mod gotplt;
+pub mod hash;
+pub mod interp;
 pub mod merged;
-pub mod misc;
+pub mod note_package;
+pub mod note_property;
 pub mod opd;
 pub mod output_section;
+pub mod plt;
+pub mod pltgot;
+pub mod ppc64_save_restore;
+pub mod reldyn;
+pub mod reloc;
+pub mod relplt;
+pub mod relrdyn;
+pub mod relro_padding;
+pub mod riscv_attributes;
 pub mod sframe;
+pub mod sframe_reloc;
+pub mod shstrtab;
+pub mod strtab;
 pub mod symtab;
-pub mod version;
+pub mod symtab_shndx;
+pub mod verdef;
+pub mod verneed;
+pub mod versym;
 
 use std::num::NonZeroU32;
 
@@ -693,32 +722,32 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
         ChunkId::Phdr => update_phdr(ctx),
-        ChunkId::Interp => misc::interp::update_shdr(ctx),
-        ChunkId::GotPlt => got::gotplt::update_shdr(ctx),
-        ChunkId::RelPlt => got::relplt::update_shdr(ctx),
-        ChunkId::RelDyn => dynamic::reldyn::update_shdr(ctx),
-        ChunkId::Dynamic => dynamic::dynamic::update_shdr(ctx),
-        ChunkId::Strtab => symtab::strtab::update_shdr(ctx),
-        ChunkId::Shstrtab => symtab::shstrtab::update_shdr(ctx),
-        ChunkId::Plt => got::plt::update_shdr(ctx),
-        ChunkId::Symtab => symtab::symtab::update_shdr(ctx),
-        ChunkId::Dynsym => symtab::dynsym::update_shdr(ctx),
-        ChunkId::Hash => symtab::hash::update_shdr(ctx),
-        ChunkId::GnuHash => symtab::gnu_hash::update_shdr(ctx),
-        ChunkId::EhFrameHdr => eh_frame::eh_frame_hdr::update_shdr(ctx),
-        ChunkId::EhFrameReloc => eh_frame::eh_frame_reloc::update_shdr(ctx),
-        ChunkId::SFrameReloc => sframe::sframe_reloc::update_shdr(ctx),
-        ChunkId::Versym => version::versym::update_shdr(ctx),
-        ChunkId::Verneed => version::verneed::update_shdr(ctx),
-        ChunkId::Verdef => version::verdef::update_shdr(ctx),
-        ChunkId::BuildId => misc::build_id::update_shdr(ctx),
-        ChunkId::NotePackage => misc::note_package::update_shdr(ctx),
-        ChunkId::NoteProperty => misc::note_property::update_shdr(ctx),
-        ChunkId::RiscvAttributes => misc::riscv_attributes::update_shdr(ctx),
+        ChunkId::Interp => interp::update_shdr(ctx),
+        ChunkId::GotPlt => gotplt::update_shdr(ctx),
+        ChunkId::RelPlt => relplt::update_shdr(ctx),
+        ChunkId::RelDyn => reldyn::update_shdr(ctx),
+        ChunkId::Dynamic => dynamic::update_shdr(ctx),
+        ChunkId::Strtab => strtab::update_shdr(ctx),
+        ChunkId::Shstrtab => shstrtab::update_shdr(ctx),
+        ChunkId::Plt => plt::update_shdr(ctx),
+        ChunkId::Symtab => symtab::update_shdr(ctx),
+        ChunkId::Dynsym => dynsym::update_shdr(ctx),
+        ChunkId::Hash => hash::update_shdr(ctx),
+        ChunkId::GnuHash => gnu_hash::update_shdr(ctx),
+        ChunkId::EhFrameHdr => eh_frame_hdr::update_shdr(ctx),
+        ChunkId::EhFrameReloc => eh_frame_reloc::update_shdr(ctx),
+        ChunkId::SFrameReloc => sframe_reloc::update_shdr(ctx),
+        ChunkId::Versym => versym::update_shdr(ctx),
+        ChunkId::Verneed => verneed::update_shdr(ctx),
+        ChunkId::Verdef => verdef::update_shdr(ctx),
+        ChunkId::BuildId => build_id::update_shdr(ctx),
+        ChunkId::NotePackage => note_package::update_shdr(ctx),
+        ChunkId::NoteProperty => note_property::update_shdr(ctx),
+        ChunkId::RiscvAttributes => riscv_attributes::update_shdr(ctx),
         ChunkId::ArmExidx => arm_exidx::update_shdr(ctx),
-        ChunkId::GnuDebuglink => misc::gnu_debuglink::update_shdr(ctx),
-        ChunkId::Reloc(i) => misc::reloc::update_shdr(ctx, i),
-        ChunkId::ComdatGroup(i) => misc::comdat_group::update_shdr(ctx, i),
+        ChunkId::GnuDebuglink => gnu_debuglink::update_shdr(ctx),
+        ChunkId::Reloc(i) => reloc::update_shdr(ctx, i),
+        ChunkId::ComdatGroup(i) => comdat_group::update_shdr(ctx, i),
         _ => {}
     }
 }
@@ -738,7 +767,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
 pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u64 {
     match id {
         ChunkId::Output(id) => output_section::num_dynrels(ctx, id),
-        ChunkId::Got => got::got::num_dynrels(ctx),
+        ChunkId::Got => got::num_dynrels(ctx),
         ChunkId::Copyrel => ctx.copyrel.symbols.len() as u64,
         ChunkId::CopyrelRelro => ctx.copyrel_relro.symbols.len() as u64,
         ChunkId::Ppc64Opd => opd::num_dynrels(ctx),
@@ -751,7 +780,7 @@ pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u64 {
 pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
     match id {
         ChunkId::Output(id) => output_section::relr_offsets(ctx, id),
-        ChunkId::Got => got::got::relr_offsets(ctx),
+        ChunkId::Got => got::relr_offsets(ctx),
         ChunkId::Ppc64Opd => opd::relr_offsets(ctx),
         _ => Vec::new(),
     }
@@ -761,9 +790,9 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
 pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: &mut [E::Rel]) {
     match id {
         ChunkId::Output(id) => output_section::write_dynrels(ctx, id, out),
-        ChunkId::Got => got::got::write_dynrels(ctx, out),
-        ChunkId::Copyrel => misc::copyrel::write_dynrels(ctx, &ctx.copyrel, out),
-        ChunkId::CopyrelRelro => misc::copyrel::write_dynrels(ctx, &ctx.copyrel_relro, out),
+        ChunkId::Got => got::write_dynrels(ctx, out),
+        ChunkId::Copyrel => copyrel::write_dynrels(ctx, &ctx.copyrel, out),
+        ChunkId::CopyrelRelro => copyrel::write_dynrels(ctx, &ctx.copyrel_relro, out),
         ChunkId::Ppc64Opd => opd::write_dynrels(ctx, out),
         _ => {}
     }
@@ -773,9 +802,9 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: &mut [E::Rel])
 pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
         ChunkId::Output(id) => output_section::compute_symtab_size(ctx, id),
-        ChunkId::Got => got::got::compute_symtab_size(ctx),
-        ChunkId::Plt => got::plt::compute_symtab_size(ctx),
-        ChunkId::PltGot => got::pltgot::compute_symtab_size(ctx),
+        ChunkId::Got => got::compute_symtab_size(ctx),
+        ChunkId::Plt => plt::compute_symtab_size(ctx),
+        ChunkId::PltGot => pltgot::compute_symtab_size(ctx),
         _ => {}
     }
 }
@@ -784,9 +813,9 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
 pub fn populate_symtab<E: Arch>(ctx: &Context<E>, id: ChunkId, block: &mut SymtabBlock<'_>) {
     match id {
         ChunkId::Output(id) => output_section::populate_symtab(ctx, id, block),
-        ChunkId::Got => got::got::populate_symtab(ctx, block),
-        ChunkId::Plt => got::plt::populate_symtab(ctx, block),
-        ChunkId::PltGot => got::pltgot::populate_symtab(ctx, block),
+        ChunkId::Got => got::populate_symtab(ctx, block),
+        ChunkId::Plt => plt::populate_symtab(ctx, block),
+        ChunkId::PltGot => pltgot::populate_symtab(ctx, block),
         _ => {}
     }
 }
@@ -804,44 +833,44 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
             let phdrs = &ctx.phdr.as_ref().unwrap().phdrs;
             ElfPhdr::<E>::write_all(phdrs, buf);
         }
-        ChunkId::Interp => misc::interp::copy_buf(ctx, buf),
-        ChunkId::Got => got::got::copy_buf(ctx, buf),
-        ChunkId::GotPlt => got::gotplt::copy_buf(ctx, buf),
-        ChunkId::RelPlt => got::relplt::copy_buf(ctx, buf),
-        ChunkId::RelDyn => dynamic::reldyn::copy_buf(ctx, buf),
-        ChunkId::RelrDyn => dynamic::relrdyn::copy_buf(ctx, buf),
-        ChunkId::Dynamic => dynamic::dynamic::copy_buf(ctx, buf),
-        ChunkId::Strtab => symtab::strtab::copy_buf(ctx, buf),
-        ChunkId::Dynstr => symtab::dynstr::copy_buf(ctx, buf),
-        ChunkId::Hash => symtab::hash::copy_buf(ctx, buf),
-        ChunkId::GnuHash => symtab::gnu_hash::copy_buf(ctx, buf),
-        ChunkId::GnuDebuglink => misc::gnu_debuglink::copy_buf(ctx, buf),
-        ChunkId::Shstrtab => symtab::shstrtab::copy_buf(ctx, buf),
-        ChunkId::Plt => got::plt::copy_buf(ctx, buf),
-        ChunkId::PltGot => got::pltgot::copy_buf(ctx, buf),
+        ChunkId::Interp => interp::copy_buf(ctx, buf),
+        ChunkId::Got => got::copy_buf(ctx, buf),
+        ChunkId::GotPlt => gotplt::copy_buf(ctx, buf),
+        ChunkId::RelPlt => relplt::copy_buf(ctx, buf),
+        ChunkId::RelDyn => reldyn::copy_buf(ctx, buf),
+        ChunkId::RelrDyn => relrdyn::copy_buf(ctx, buf),
+        ChunkId::Dynamic => dynamic::copy_buf(ctx, buf),
+        ChunkId::Strtab => strtab::copy_buf(ctx, buf),
+        ChunkId::Dynstr => dynstr::copy_buf(ctx, buf),
+        ChunkId::Hash => hash::copy_buf(ctx, buf),
+        ChunkId::GnuHash => gnu_hash::copy_buf(ctx, buf),
+        ChunkId::GnuDebuglink => gnu_debuglink::copy_buf(ctx, buf),
+        ChunkId::Shstrtab => shstrtab::copy_buf(ctx, buf),
+        ChunkId::Plt => plt::copy_buf(ctx, buf),
+        ChunkId::PltGot => pltgot::copy_buf(ctx, buf),
         ChunkId::Symtab | ChunkId::SymtabShndx => {}
-        ChunkId::Dynsym => symtab::dynsym::copy_buf(ctx, buf),
+        ChunkId::Dynsym => dynsym::copy_buf(ctx, buf),
         ChunkId::EhFrame | ChunkId::EhFrameHdr => {}
         ChunkId::EhFrameReloc => {}
         ChunkId::SFrame => sframe::copy_buf(ctx, buf),
-        ChunkId::SFrameReloc => sframe::sframe_reloc::copy_buf(ctx, buf),
+        ChunkId::SFrameReloc => sframe_reloc::copy_buf(ctx, buf),
         ChunkId::Copyrel | ChunkId::CopyrelRelro => {}
-        ChunkId::Versym => version::versym::copy_buf(ctx, buf),
-        ChunkId::Verneed => version::verneed::copy_buf(ctx, buf),
-        ChunkId::Verdef => version::verdef::copy_buf(ctx, buf),
-        ChunkId::BuildId => misc::build_id::copy_buf(ctx, buf),
-        ChunkId::NotePackage => misc::note_package::copy_buf(ctx, buf),
-        ChunkId::NoteProperty => misc::note_property::copy_buf(ctx, buf),
-        ChunkId::RiscvAttributes => misc::riscv_attributes::copy_buf(ctx, buf),
+        ChunkId::Versym => versym::copy_buf(ctx, buf),
+        ChunkId::Verneed => verneed::copy_buf(ctx, buf),
+        ChunkId::Verdef => verdef::copy_buf(ctx, buf),
+        ChunkId::BuildId => build_id::copy_buf(ctx, buf),
+        ChunkId::NotePackage => note_package::copy_buf(ctx, buf),
+        ChunkId::NoteProperty => note_property::copy_buf(ctx, buf),
+        ChunkId::RiscvAttributes => riscv_attributes::copy_buf(ctx, buf),
         ChunkId::ArmExidx => arm_exidx::copy_buf(ctx, buf),
-        ChunkId::Ppc64SaveRestore => misc::ppc64_save_restore::copy_buf(ctx, buf),
+        ChunkId::Ppc64SaveRestore => ppc64_save_restore::copy_buf(ctx, buf),
         ChunkId::Ppc64Opd => opd::copy_buf(ctx, buf),
         ChunkId::GdbIndex | ChunkId::RelroPadding | ChunkId::Placeholder(_) => {}
         ChunkId::Output(id) => output_section::copy_buf(ctx, id, buf),
         ChunkId::Merged(id) => merged::copy_buf(ctx, id, buf),
         ChunkId::Reloc(_) => {}
-        ChunkId::ComdatGroup(i) => misc::comdat_group::copy_buf(ctx, i, buf),
-        ChunkId::Compressed(i) => misc::compressed::copy_buf(ctx, i, buf),
+        ChunkId::ComdatGroup(i) => comdat_group::copy_buf(ctx, i, buf),
+        ChunkId::Compressed(i) => compressed::copy_buf(ctx, i, buf),
     }
 }
 

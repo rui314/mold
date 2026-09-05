@@ -63,7 +63,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::output_chunks::eh_frame;
-use crate::output_chunks::got::plt::SPARC_NUM_SMALL_PLT;
+use crate::output_chunks::plt::SPARC_NUM_SMALL_PLT;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::{bit, bits};
 use crate::{error, fatal};

@@ -428,7 +428,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // RELR is encoded independently for each output chunk using offsets
     // relative to that chunk.
     if ctx.args.pack_dyn_relocs_relr {
-        output_chunks::dynamic::reldyn::construct_relr(&mut ctx);
+        output_chunks::reldyn::construct_relr(&mut ctx);
     }
     // Reserve a space for dynamic symbol strings in .dynstr and sort
     // .dynsym contents if necessary. Beyond this point, no symbol will
@@ -475,10 +475,10 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
 
     // Fill .gnu.version_d section contents.
     if ctx.verdef.is_some() {
-        output_chunks::version::verdef::construct(&mut ctx);
+        output_chunks::verdef::construct(&mut ctx);
     }
     // Fill .gnu.version_r section contents.
-    output_chunks::version::verneed::construct(&mut ctx);
+    output_chunks::verneed::construct(&mut ctx);
 
     // .eh_frame is a special section from the linker's point of view,
     // as its contents are parsed and reconstructed by the linker,
@@ -562,7 +562,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // At this point, both memory and file layouts are fixed.
 
     let t = ctx.timer("update_reldyn");
-    output_chunks::dynamic::reldyn::update_shdr(&mut ctx);
+    output_chunks::reldyn::update_shdr(&mut ctx);
     drop(t);
     ctx.filesize = filesize;
     t_before_copy.stop();
@@ -596,7 +596,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
         if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size.get() != 0 {
             let start = reldyn.sh_offset.get() as usize;
             let end = (reldyn.sh_offset.get() + reldyn.sh_size.get()) as usize;
-            output_chunks::dynamic::reldyn::sort(&ctx, &mut buf[start..end]);
+            output_chunks::reldyn::sort(&ctx, &mut buf[start..end]);
         }
 
         // The final stage reads address ranges, which requires relocated debug
@@ -825,12 +825,10 @@ fn run_tasks<E: Arch>(
             ChunkId::EhFrame => output_chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
             ChunkId::Symtab => {
                 let strtab = bufs.next().unwrap();
-                output_chunks::symtab::symtab::copy_buf(ctx, own, strtab, bufs.next());
+                output_chunks::symtab::copy_buf(ctx, own, strtab, bufs.next());
             }
-            ChunkId::Reloc(i) => output_chunks::misc::reloc::copy_buf(ctx, i, own, bufs.next()),
-            ChunkId::EhFrameReloc => {
-                output_chunks::eh_frame::eh_frame_reloc::copy_buf(ctx, own, bufs.next())
-            }
+            ChunkId::Reloc(i) => output_chunks::reloc::copy_buf(ctx, i, own, bufs.next()),
+            ChunkId::EhFrameReloc => output_chunks::eh_frame_reloc::copy_buf(ctx, own, bufs.next()),
             id => output_chunks::copy_buf(ctx, id, own),
         }
     });
@@ -838,7 +836,7 @@ fn run_tasks<E: Arch>(
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
-        output_chunks::eh_frame::eh_frame_hdr::write_header(
+        output_chunks::eh_frame_hdr::write_header(
             ctx,
             &mut buf[r.offset as usize..(r.offset + r.size) as usize],
         );

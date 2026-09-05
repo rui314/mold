@@ -1079,9 +1079,9 @@ impl Symbol {
 
     pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         ctx.gotplt.hdr.shdr.sh_addr.get()
-            + crate::output_chunks::got::gotplt::header_size::<E>()
+            + crate::output_chunks::gotplt::header_size::<E>()
             + self.plt_idx(&ctx.symbols).unwrap() as u64
-                * crate::output_chunks::got::gotplt::entry_size::<E>()
+                * crate::output_chunks::gotplt::entry_size::<E>()
     }
 
     pub fn gottp_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
@@ -1103,7 +1103,7 @@ impl Symbol {
     pub fn plt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         if let Some(idx) = self.plt_idx(&ctx.symbols) {
             return ctx.plt.hdr.shdr.sh_addr.get()
-                + crate::output_chunks::got::plt::entry_offset::<E>(idx);
+                + crate::output_chunks::plt::entry_offset::<E>(idx);
         }
         ctx.pltgot.hdr.shdr.sh_addr.get()
             + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE
