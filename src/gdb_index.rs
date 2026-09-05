@@ -1044,8 +1044,8 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
 
     // Lay out the constant pool: all type vectors, then all names, in a
     // deterministic order.
-    let entries = map.sorted_entry_refs_all();
     let names = map.freeze();
+    let entries = names.sorted_entry_refs_all();
 
     // The map may contain millions of names. Assign their type and string
     // ranges with a parallel prefix sum.

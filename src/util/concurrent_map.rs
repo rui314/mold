@@ -131,6 +131,8 @@ impl EntryId {
     }
 }
 
+/// A map under construction. Freeze it once concurrent insertion is complete
+/// to look up and traverse its entries.
 pub struct ConcurrentMap<T> {
     entries: *mut Entry<T>,
     nbuckets: usize,
@@ -172,7 +174,7 @@ impl<T> ConcurrentMap<T> {
     }
 
     /// The number of entries, counted.
-    pub(crate) fn len(&self) -> usize {
+    fn len(&self) -> usize {
         (0..self.nbuckets)
             .filter(|&idx| self.is_occupied(idx))
             .count()
@@ -184,25 +186,9 @@ impl<T> ConcurrentMap<T> {
         unsafe { &*self.entries.add(idx) }
     }
 
-    fn entry_ref(&self, id: EntryId) -> MapEntryRef<T> {
-        MapEntryRef(NonNull::from(self.entry(id.0 as usize)))
-    }
-
     fn is_occupied(&self, idx: usize) -> bool {
         let key = self.entry(idx).key.load(Ordering::Acquire);
         !key.is_null() && key != CLAIMED
-    }
-
-    /// The published key of a bucket, if any.
-    fn key_at(&self, idx: usize) -> Option<&'static [u8]> {
-        let ent = self.entry(idx);
-        let key = ent.key.load(Ordering::Acquire);
-        if key.is_null() || key == CLAIMED {
-            return None;
-        }
-        // SAFETY: a published key is a live 'static slice whose length was
-        // written before the key pointer.
-        Some(unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) })
     }
 
     fn value_at(&self, idx: usize) -> &T {
@@ -338,8 +324,67 @@ impl<T> ConcurrentMap<T> {
         }
     }
 
-    pub fn value(&self, id: EntryId) -> &T {
-        self.value_at(id.0 as usize)
+    /// Finishes insertion and returns the map for lookup and traversal.
+    pub fn freeze(self) -> FrozenMap<T> {
+        FrozenMap(self)
+    }
+}
+
+impl<T> Drop for ConcurrentMap<T> {
+    fn drop(&mut self) {
+        if self.entries.is_null() {
+            return;
+        }
+        if std::mem::needs_drop::<T>() {
+            for idx in 0..self.nbuckets {
+                if self.is_occupied(idx) {
+                    // SAFETY: the value of a published entry is initialized
+                    // and dropped exactly once, here.
+                    unsafe { (*self.entry(idx).value.get()).assume_init_drop() };
+                }
+            }
+        }
+        // SAFETY: allocated in with_capacity and not yet released.
+        unsafe { deallocate_entries(self.entries, Self::bufsize(self.nbuckets)) };
+    }
+}
+
+impl<T> std::fmt::Debug for ConcurrentMap<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ConcurrentMap({} entries)", self.len())
+    }
+}
+
+/// A map after all insertions, whose values can be updated from a
+/// unique reference.
+#[derive(Debug)]
+pub struct FrozenMap<T>(ConcurrentMap<T>);
+
+impl<T> Default for FrozenMap<T> {
+    fn default() -> Self {
+        FrozenMap(ConcurrentMap::default())
+    }
+}
+
+impl<T> FrozenMap<T> {
+    fn entry_ref(&self, id: EntryId) -> MapEntryRef<T> {
+        MapEntryRef(NonNull::from(self.0.entry(id.0 as usize)))
+    }
+
+    /// The published key of a bucket, if any.
+    fn key_at(&self, idx: usize) -> Option<&'static [u8]> {
+        let ent = self.0.entry(idx);
+        let key = ent.key.load(Ordering::Acquire);
+        if key.is_null() || key == CLAIMED {
+            return None;
+        }
+        // SAFETY: a published key is a live 'static slice whose length was
+        // written before the key pointer.
+        Some(unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) })
+    }
+
+    pub fn get(&self, id: EntryId) -> &T {
+        self.0.value_at(id.0 as usize)
     }
 
     pub fn key(&self, id: EntryId) -> &'static [u8] {
@@ -353,13 +398,13 @@ impl<T> ConcurrentMap<T> {
     /// earlier bucket depends on it, so each run of adjacent occupied
     /// buckets is sorted by key.
     pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
-        if self.nbuckets == 0 {
+        if self.0.nbuckets == 0 {
             return Vec::new();
         }
-        let shard_size = self.nbuckets / NUM_SHARDS;
+        let shard_size = self.0.nbuckets / NUM_SHARDS;
         let begin = shard * shard_size;
         let mut end = begin + shard_size;
-        let occupied = |idx: usize| self.is_occupied(idx);
+        let occupied = |idx: usize| self.0.is_occupied(idx);
 
         let size = (begin..end).filter(|&idx| occupied(idx)).count();
         let mut vec: Vec<EntryId> = Vec::with_capacity(size);
@@ -414,61 +459,6 @@ impl<T> ConcurrentMap<T> {
             .collect()
     }
 
-    /// Freezes the map for exclusive, mutable access to its values.
-    pub fn freeze(self) -> FrozenMap<T> {
-        FrozenMap(self)
-    }
-}
-
-impl<T> Drop for ConcurrentMap<T> {
-    fn drop(&mut self) {
-        if self.entries.is_null() {
-            return;
-        }
-        if std::mem::needs_drop::<T>() {
-            for idx in 0..self.nbuckets {
-                if self.is_occupied(idx) {
-                    // SAFETY: the value of a published entry is initialized
-                    // and dropped exactly once, here.
-                    unsafe { (*self.entry(idx).value.get()).assume_init_drop() };
-                }
-            }
-        }
-        // SAFETY: allocated in with_capacity and not yet released.
-        unsafe { deallocate_entries(self.entries, Self::bufsize(self.nbuckets)) };
-    }
-}
-
-impl<T> std::fmt::Debug for ConcurrentMap<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ConcurrentMap({} entries)", self.len())
-    }
-}
-
-/// A map after all insertions, whose values can be updated from a
-/// unique reference.
-#[derive(Debug)]
-pub struct FrozenMap<T>(ConcurrentMap<T>);
-
-impl<T> Default for FrozenMap<T> {
-    fn default() -> Self {
-        FrozenMap(ConcurrentMap::default())
-    }
-}
-
-impl<T> FrozenMap<T> {
-    pub fn get(&self, id: EntryId) -> &T {
-        self.0.value(id)
-    }
-
-    pub fn key(&self, id: EntryId) -> &'static [u8] {
-        self.0.key(id)
-    }
-
-    pub fn sorted_entries(&self, shard: usize) -> Vec<EntryId> {
-        self.0.sorted_entries(shard)
-    }
-
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
@@ -518,15 +508,23 @@ mod tests {
             .map(|i| &*Box::leak(format!("key{i}").into_bytes().into_boxed_slice()))
             .collect();
         let hash = |k: &[u8]| xxhash_rust::xxh3::xxh3_64(k);
+        let mut ids = Vec::with_capacity(keys.len());
         for (i, &k) in keys.iter().enumerate() {
-            let (_, v, inserted) = map.insert_with(k, hash(k), || i as u32);
+            let (id, v, inserted) = map.insert_with(k, hash(k), || i as u32);
             assert!(inserted);
             assert_eq!(*v, i as u32);
+            ids.push(id);
         }
         for (i, &k) in keys.iter().enumerate() {
-            let (_, v, inserted) = map.insert_with(k, hash(k), || 99999);
+            let (id, v, inserted) = map.insert_with(k, hash(k), || 99999);
             assert!(!inserted);
+            assert_eq!(id, ids[i]);
             assert_eq!(*v, i as u32);
+        }
+        let map = map.freeze();
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(map.key(id), keys[i]);
+            assert_eq!(*map.get(id), i as u32);
         }
         assert_eq!(map.len(), 1000);
         let sorted: usize = (0..NUM_SHARDS).map(|s| map.sorted_entries(s).len()).sum();
