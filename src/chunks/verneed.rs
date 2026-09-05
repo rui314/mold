@@ -8,6 +8,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{DsoId, FileId};
 use crate::symbol::SymbolId;
+use crate::util::endian::{U16, U32};
 
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.

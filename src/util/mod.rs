@@ -5,6 +5,7 @@
 pub mod compress;
 pub mod concurrent_map;
 pub mod demangle;
+pub mod endian;
 pub mod glob;
 pub mod hyperloglog;
 pub mod perf;

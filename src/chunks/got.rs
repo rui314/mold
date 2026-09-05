@@ -6,6 +6,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::{AddrFlags, SymbolId};
+use crate::util::endian::Endian;
 
 // .got is a linker-synthesized constant pool whose entry size is the same
 // as the pointer size. It is used to store runtime addresses of global

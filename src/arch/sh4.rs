@@ -68,6 +68,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ul32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]

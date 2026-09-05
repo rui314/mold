@@ -35,10 +35,11 @@ pub use sparc64::Sparc64;
 pub use x86_64::X86_64;
 
 use crate::context::Context;
-use crate::elf::{Endian, Layout, RelRecord};
+use crate::elf::{Layout, RelRecord};
 use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
+use crate::util::endian::Endian;
 
 /// Coarse target families, for the few places where generic code needs
 /// target-specific behavior that doesn't warrant a trait hook.

@@ -58,6 +58,7 @@ use crate::input_sections::{
 };
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
+use crate::util::endian::{write_ul32, BigEndian, Endian, LittleEndian, Ub32, Ul32};
 use crate::util::{align_to, bit, bits, is_int, sign_extend};
 use crate::{error, fatal};
 
@@ -190,7 +191,7 @@ const PLT_ENTRY: [u32; 4] = [
 /// Linker-synthesized code is little-endian whatever the data order.
 fn write_code(buf: &mut [u8], words: &[u32]) {
     for (i, &w) in words.iter().enumerate() {
-        LittleEndian::write_u32(&mut buf[i * 4..], w);
+        write_ul32(&mut buf[i * 4..], w);
     }
 }
 

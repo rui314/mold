@@ -7,6 +7,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::util::endian::{U16, U32};
 use crate::util::path_filename;
 
 // .gnu.version contains a parallel table for .dynsym to specify symbol

@@ -14,6 +14,7 @@ use crate::input_sections::{r_delta, InputSectionId};
 use crate::symbol::{AddrFlags, SymbolId, NEEDS_CANONICAL};
 use crate::thunks::Thunk;
 use crate::util::align_to;
+use crate::util::endian::Endian;
 use crate::{error, warn};
 
 /// How a word-size absolute relocation is resolved.

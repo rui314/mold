@@ -22,6 +22,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::util::endian::{write_ub16, write_ub32, BigEndian, Ub32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -37,7 +38,7 @@ impl Layout for M68k {
 }
 
 fn w32(loc: &mut [u8], v: u32) {
-    BigEndian::write_u32(loc, v);
+    write_ub32(loc, v);
 }
 
 impl Arch for M68k {
@@ -195,11 +196,11 @@ impl Arch for M68k {
             let write32 = |buf: &mut [u8], val: u64| w32(&mut buf[off..], val as u32);
             let write16 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 16);
-                BigEndian::write_u16(&mut buf[off..], val as u16);
+                write_ub16(&mut buf[off..], val as u16);
             };
             let write16s = |buf: &mut [u8], val: u64| {
                 check(val as i64, -(1 << 15), 1 << 15);
-                BigEndian::write_u16(&mut buf[off..], val as u16);
+                write_ub16(&mut buf[off..], val as u16);
             };
             let write8 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 8);

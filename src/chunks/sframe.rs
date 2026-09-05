@@ -7,6 +7,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjId;
+use crate::util::endian::{I64, U16, U32};
 
 // .sframe is a compact stack-unwinding format. Like .eh_frame, the linker
 // has to parse and reconstruct it: the output section is a single sorted

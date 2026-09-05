@@ -4,6 +4,7 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::util::endian::Endian;
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
 // are sorted by their dcorresponding function addresses, so tha the

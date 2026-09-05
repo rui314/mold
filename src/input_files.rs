@@ -30,6 +30,7 @@ use crate::symbol::{
     hash_key, Bins, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, NEEDS_PLT,
 };
+use crate::util::endian::Endian;
 use crate::util::perf::Counter;
 use crate::util::{
     self, align_to, bits, cstr_at, leak_bytes, path_clean, path_filename, read_uleb,

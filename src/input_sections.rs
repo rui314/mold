@@ -15,6 +15,7 @@ use crate::input_files::{ObjId, ObjectFile, RelocationIter};
 use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
+use crate::util::endian::Endian;
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Counter;
 use crate::util::{self, cstr_at, leak_bytes};

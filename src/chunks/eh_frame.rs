@@ -18,6 +18,7 @@ use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
+use crate::util::endian::Endian;
 use crate::util::is_int;
 use crate::{error, fatal};
 

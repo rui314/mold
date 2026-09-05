@@ -5,6 +5,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::SymbolId;
+use crate::util::endian::Endian;
 
 /// The hash function for `.gnu.hash`.
 // The hash function for .gnu.hash.

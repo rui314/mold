@@ -5,6 +5,7 @@ use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::SymbolId;
+use crate::util::endian::Endian;
 
 // ComdatGroupSection represents a comdat group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).

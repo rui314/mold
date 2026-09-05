@@ -92,6 +92,9 @@ use crate::elf::*;
 use crate::input_sections::{check_tlsle, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
+use crate::util::endian::{
+    read_ul16, read_ul32, write_ul16, write_ul32, write_ul64, LittleEndian, Ul64,
+};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -124,24 +127,24 @@ fn higha(x: u64) -> u64 {
 }
 
 fn r32(loc: &[u8]) -> u32 {
-    LittleEndian::read_u32(loc)
+    read_ul32(loc)
 }
 
 fn w16(loc: &mut [u8], v: u64) {
-    LittleEndian::write_u16(loc, v as u16);
+    write_ul16(loc, v as u16);
 }
 
 fn w32(loc: &mut [u8], v: u32) {
-    LittleEndian::write_u32(loc, v);
+    write_ul32(loc, v);
 }
 
 fn w64(loc: &mut [u8], v: u64) {
-    LittleEndian::write_u64(loc, v);
+    write_ul64(loc, v);
 }
 
 fn or16(loc: &mut [u8], v: u64) {
-    let cur = LittleEndian::read_u16(loc);
-    LittleEndian::write_u16(loc, cur | v as u16);
+    let cur = read_ul16(loc);
+    write_ul16(loc, cur | v as u16);
 }
 
 fn or32(loc: &mut [u8], v: u32) {

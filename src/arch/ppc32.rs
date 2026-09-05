@@ -49,6 +49,7 @@ use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
+use crate::util::endian::{read_ub32, write_ub16, write_ub32, BigEndian, Ub32};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -81,21 +82,21 @@ fn higha(x: u64) -> u64 {
 }
 
 fn w16(loc: &mut [u8], v: u64) {
-    BigEndian::write_u16(loc, v as u16);
+    write_ub16(loc, v as u16);
 }
 
 fn w32(loc: &mut [u8], v: u64) {
-    BigEndian::write_u32(loc, v as u32);
+    write_ub32(loc, v as u32);
 }
 
 fn or32(loc: &mut [u8], v: u64) {
-    let cur = BigEndian::read_u32(loc);
-    BigEndian::write_u32(loc, cur | v as u32);
+    let cur = read_ub32(loc);
+    write_ub32(loc, cur | v as u32);
 }
 
 fn write_insns(buf: &mut [u8], insns: &[u32]) {
     for (i, &insn) in insns.iter().enumerate() {
-        BigEndian::write_u32(&mut buf[i * 4..], insn);
+        write_ub32(&mut buf[i * 4..], insn);
     }
 }
 

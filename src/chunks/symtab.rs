@@ -9,6 +9,7 @@ use crate::elf::*;
 use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::{r_delta, InputSection};
 use crate::symbol::{AddrFlags, OriginValue, Symbol};
+use crate::util::endian::Endian;
 
 // .symtab contains non-dynamic symbols. The section is not needed at
 // runtime and can be stripped from an ELF file without affecting the

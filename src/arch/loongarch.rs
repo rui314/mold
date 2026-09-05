@@ -36,6 +36,9 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::util::endian::{
+    read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64, LittleEndian, Ul32, Ul64,
+};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
 use crate::{error, fatal};
 
@@ -119,11 +122,11 @@ fn highest12(val: u64, pc: u64) -> u64 {
 }
 
 fn insn(loc: &[u8]) -> u32 {
-    LittleEndian::read_u32(loc)
+    read_ul32(loc)
 }
 
 fn set_insn(loc: &mut [u8], v: u32) {
-    LittleEndian::write_u32(loc, v);
+    write_ul32(loc, v);
 }
 
 /// Instruction formats, named after their immediate fields.
@@ -203,9 +206,9 @@ fn add_bits(loc: &mut [u8], size: u32, val: u64, subtract: bool) {
     match size {
         6 => loc[0] = (loc[0] & 0b1100_0000) | (apply(loc[0] as u64) as u8 & 0b0011_1111),
         8 => loc[0] = apply(loc[0] as u64) as u8,
-        16 => LittleEndian::write_u16(loc, apply(LittleEndian::read_u16(loc) as u64) as u16),
-        32 => LittleEndian::write_u32(loc, apply(LittleEndian::read_u32(loc) as u64) as u32),
-        64 => LittleEndian::write_u64(loc, apply(LittleEndian::read_u64(loc))),
+        16 => write_ul16(loc, apply(read_ul16(loc) as u64) as u16),
+        32 => write_ul32(loc, apply(read_ul32(loc) as u64) as u32),
+        64 => write_ul64(loc, apply(read_ul64(loc))),
         _ => unreachable!(),
     }
 }
@@ -405,9 +408,9 @@ where
                     -(1 << 31),
                     1 << 31,
                 );
-                LittleEndian::write_u32(loc, val.wrapping_sub(p) as u32);
+                write_ul32(loc, val.wrapping_sub(p) as u32);
             }
-            R_LARCH_64_PCREL => LittleEndian::write_u64(loc, val.wrapping_sub(p)),
+            R_LARCH_64_PCREL => write_ul64(loc, val.wrapping_sub(p)),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -568,7 +571,7 @@ where
             match rel.r_type() {
                 R_LARCH_32 => {
                     debug_assert!(IS_64);
-                    LittleEndian::write_u32(loc, sa as u32);
+                    write_ul32(loc, sa as u32);
                 }
                 R_LARCH_B16 => {
                     check_branch(pcrel as i64, -(1 << 17), 1 << 17);
@@ -696,9 +699,9 @@ where
                 R_LARCH_SUB64 => add_bits(loc, 64, sa, true),
                 R_LARCH_32_PCREL => {
                     check(pcrel as i64, -(1 << 31), 1 << 31);
-                    LittleEndian::write_u32(loc, pcrel as u32);
+                    write_ul32(loc, pcrel as u32);
                 }
-                R_LARCH_64_PCREL => LittleEndian::write_u64(loc, pcrel),
+                R_LARCH_64_PCREL => write_ul64(loc, pcrel),
                 R_LARCH_CALL36 => {
                     if removed == 0 {
                         if !sym.is_remaining_undef_weak() {
@@ -889,8 +892,8 @@ where
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_LARCH_32 => LittleEndian::write_u32(loc, sa as u32),
-                R_LARCH_64 => LittleEndian::write_u64(loc, tombstone().unwrap_or(sa)),
+                R_LARCH_32 => write_ul32(loc, sa as u32),
+                R_LARCH_64 => write_ul64(loc, tombstone().unwrap_or(sa)),
                 R_LARCH_ADD6 => add_bits(loc, 6, sa, false),
                 R_LARCH_ADD8 => add_bits(loc, 8, sa, false),
                 R_LARCH_ADD16 => add_bits(loc, 16, sa, false),
@@ -901,14 +904,13 @@ where
                 R_LARCH_SUB16 => add_bits(loc, 16, sa, true),
                 R_LARCH_SUB32 => add_bits(loc, 32, sa, true),
                 R_LARCH_SUB64 => add_bits(loc, 64, sa, true),
-                R_LARCH_TLS_DTPREL32 => LittleEndian::write_u32(
+                R_LARCH_TLS_DTPREL32 => write_ul32(
                     loc,
                     tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
                 ),
-                R_LARCH_TLS_DTPREL64 => LittleEndian::write_u64(
-                    loc,
-                    tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)),
-                ),
+                R_LARCH_TLS_DTPREL64 => {
+                    write_ul64(loc, tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)))
+                }
                 R_LARCH_ADD_ULEB128 => add_uleb(loc, sa, false),
                 R_LARCH_SUB_ULEB128 => add_uleb(loc, sa, true),
                 _ => fatal!(

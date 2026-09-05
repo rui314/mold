@@ -5,6 +5,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::align_to;
+use crate::util::endian::Endian;
 use crate::util::write_cstr;
 
 // .note.package is an optional hint section that can contain arbitrary

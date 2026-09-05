@@ -41,6 +41,9 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::util::endian::{
+    read_ub16, read_ub32, write_ub16, write_ub32, write_ub64, BigEndian, Ub64,
+};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -57,23 +60,23 @@ impl Layout for S390x {
 }
 
 fn w16(loc: &mut [u8], v: u16) {
-    BigEndian::write_u16(loc, v);
+    write_ub16(loc, v);
 }
 
 fn w32(loc: &mut [u8], v: u32) {
-    BigEndian::write_u32(loc, v);
+    write_ub32(loc, v);
 }
 
 fn w64(loc: &mut [u8], v: u64) {
-    BigEndian::write_u64(loc, v);
+    write_ub64(loc, v);
 }
 
 fn r16(loc: &[u8]) -> u16 {
-    BigEndian::read_u16(loc)
+    read_ub16(loc)
 }
 
 fn r32(loc: &[u8]) -> u32 {
-    BigEndian::read_u32(loc)
+    read_ub32(loc)
 }
 
 /// Sets the 12-bit displacement field of a halfword.

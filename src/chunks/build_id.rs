@@ -4,6 +4,7 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::util::endian::Endian;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
 // contents of the section is usually a cryptogrpahic hash of the output

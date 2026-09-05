@@ -4,6 +4,7 @@ use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::util::endian::Endian;
 
 // The hash function for .hash.
 pub fn elf_hash(name: &[u8]) -> u32 {

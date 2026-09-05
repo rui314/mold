@@ -5,6 +5,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::align_to;
+use crate::util::endian::Endian;
 use crate::util::{path_filename, write_cstr};
 
 // .gnu_debuglink section contains a pathname and its CRC32 checksum for a

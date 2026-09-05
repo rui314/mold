@@ -5,8 +5,8 @@
 //! also be unaligned because archives align members to only two bytes. Creating
 //! ordinary integer references into such data would be invalid.
 //!
-//! The byte-backed integer fields below handle both target endianness and
-//! unaligned access.
+//! Integer fields use [`crate::util::endian`] to handle target endianness
+//! and unaligned access.
 //!
 //! Records whose ELF32 and ELF64 forms have the same field order are generic
 //! over the target word type. Symbols, program headers and compression
@@ -19,11 +19,14 @@
 mod consts;
 
 use std::fmt;
-use std::marker::PhantomData;
 
 pub use consts::*;
 
 use crate::arch::{Arch, I386, X86_64};
+use crate::util::endian::{
+    BigEndian, Endian, Ib32, Ib64, Il32, Il64, LittleEndian, Ub24, Ub32, Ub64, Ul24, Ul32, Ul64,
+    I32, I64, U16, U24, U32, U64,
+};
 
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
@@ -38,95 +41,6 @@ pub trait Layout: Copy + Default + Send + Sync + 'static {
     const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
-}
-
-/// Byte order of an ELF file, as a type-level marker.
-pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
-    const IS_LITTLE: bool;
-
-    fn read_u16(bytes: &[u8]) -> u16 {
-        let bytes = bytes[..2].try_into().unwrap();
-        if Self::IS_LITTLE {
-            u16::from_le_bytes(bytes)
-        } else {
-            u16::from_be_bytes(bytes)
-        }
-    }
-
-    fn read_u32(bytes: &[u8]) -> u32 {
-        let bytes = bytes[..4].try_into().unwrap();
-        if Self::IS_LITTLE {
-            u32::from_le_bytes(bytes)
-        } else {
-            u32::from_be_bytes(bytes)
-        }
-    }
-
-    fn read_u64(bytes: &[u8]) -> u64 {
-        let bytes = bytes[..8].try_into().unwrap();
-        if Self::IS_LITTLE {
-            u64::from_le_bytes(bytes)
-        } else {
-            u64::from_be_bytes(bytes)
-        }
-    }
-
-    fn read_i32(bytes: &[u8]) -> i32 {
-        Self::read_u32(bytes) as i32
-    }
-
-    fn read_i64(bytes: &[u8]) -> i64 {
-        Self::read_u64(bytes) as i64
-    }
-
-    fn write_u16(bytes: &mut [u8], value: u16) {
-        let encoded = if Self::IS_LITTLE {
-            value.to_le_bytes()
-        } else {
-            value.to_be_bytes()
-        };
-        bytes[..2].copy_from_slice(&encoded);
-    }
-
-    fn write_u32(bytes: &mut [u8], value: u32) {
-        let encoded = if Self::IS_LITTLE {
-            value.to_le_bytes()
-        } else {
-            value.to_be_bytes()
-        };
-        bytes[..4].copy_from_slice(&encoded);
-    }
-
-    fn write_u64(bytes: &mut [u8], value: u64) {
-        let encoded = if Self::IS_LITTLE {
-            value.to_le_bytes()
-        } else {
-            value.to_be_bytes()
-        };
-        bytes[..8].copy_from_slice(&encoded);
-    }
-
-    fn write_i32(bytes: &mut [u8], value: i32) {
-        Self::write_u32(bytes, value as u32);
-    }
-
-    fn write_i64(bytes: &mut [u8], value: i64) {
-        Self::write_u64(bytes, value as u64);
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LittleEndian;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct BigEndian;
-
-impl Endian for LittleEndian {
-    const IS_LITTLE: bool = true;
-}
-
-impl Endian for BigEndian {
-    const IS_LITTLE: bool = false;
 }
 
 /// A record stored in its target-dependent file representation.
@@ -538,82 +452,6 @@ impl<E: Endian> SymbolRecord for Elf32Sym<E> {
 
 pub type ElfSym<E> = <E as Layout>::Sym;
 
-macro_rules! endian_integer {
-    ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
-        #[repr(transparent)]
-        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-        pub struct $name<E: Endian> {
-            bytes: [u8; $size],
-            endian: PhantomData<E>,
-        }
-
-        impl<E: Endian> $name<E> {
-            #[inline(always)]
-            pub fn get(&self) -> $int {
-                E::$read(&self.bytes)
-            }
-
-            #[inline(always)]
-            pub fn set(&mut self, value: $int) {
-                E::$write(&mut self.bytes, value);
-            }
-        }
-    };
-}
-
-macro_rules! endian_integer_with_new {
-    ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
-        endian_integer!($name, $int, $size, $read, $write);
-
-        impl<E: Endian> $name<E> {
-            #[inline(always)]
-            pub fn new(value: $int) -> Self {
-                let mut result = Self::default();
-                result.set(value);
-                result
-            }
-        }
-    };
-}
-
-endian_integer_with_new!(U16, u16, 2, read_u16, write_u16);
-endian_integer_with_new!(U32, u32, 4, read_u32, write_u32);
-endian_integer_with_new!(U64, u64, 8, read_u64, write_u64);
-endian_integer!(I32, i32, 4, read_i32, write_i32);
-endian_integer_with_new!(I64, i64, 8, read_i64, write_i64);
-
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct U24<E: Endian> {
-    bytes: [u8; 3],
-    endian: PhantomData<E>,
-}
-
-impl<E: Endian> U24<E> {
-    #[inline(always)]
-    pub fn get(&self) -> u32 {
-        if E::IS_LITTLE {
-            u32::from_le_bytes([self.bytes[0], self.bytes[1], self.bytes[2], 0])
-        } else {
-            u32::from_be_bytes([0, self.bytes[0], self.bytes[1], self.bytes[2]])
-        }
-    }
-
-    #[inline(always)]
-    pub fn set(&mut self, value: u32) {
-        let bytes = if E::IS_LITTLE {
-            value.to_le_bytes()
-        } else {
-            value.to_be_bytes()
-        };
-        if E::IS_LITTLE {
-            self.bytes.copy_from_slice(&bytes[..3]);
-        } else {
-            self.bytes.copy_from_slice(&bytes[1..]);
-        }
-    }
-}
-
 /// A word-sized unsigned integer in an ELF file.
 ///
 /// # Safety
@@ -718,18 +556,6 @@ pub unsafe trait RelRecord:
 //
 // To keep target-independent code uniform, RelRecord::new always accepts an
 // addend. REL implementations ignore it.
-
-pub(crate) type Ul24 = U24<LittleEndian>;
-pub(crate) type Ul32 = U32<LittleEndian>;
-pub(crate) type Ul64 = U64<LittleEndian>;
-pub(crate) type Il32 = I32<LittleEndian>;
-pub(crate) type Il64 = I64<LittleEndian>;
-
-pub(crate) type Ub24 = U24<BigEndian>;
-pub(crate) type Ub32 = U32<BigEndian>;
-pub(crate) type Ub64 = U64<BigEndian>;
-pub(crate) type Ib32 = I32<BigEndian>;
-pub(crate) type Ib64 = I64<BigEndian>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -60,6 +60,9 @@ use crate::symbol::{
     AddrFlags, Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD,
 };
 use crate::thunks::Thunk;
+use crate::util::endian::{
+    read_ub16, read_ub32, write_ub16, write_ub32, write_ub64, BigEndian, Ub64,
+};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -96,34 +99,34 @@ fn higha(x: u64) -> u64 {
 }
 
 fn r32(loc: &[u8]) -> u32 {
-    BigEndian::read_u32(loc)
+    read_ub32(loc)
 }
 
 fn w16(loc: &mut [u8], v: u64) {
-    BigEndian::write_u16(loc, v as u16);
+    write_ub16(loc, v as u16);
 }
 
 fn w32(loc: &mut [u8], v: u64) {
-    BigEndian::write_u32(loc, v as u32);
+    write_ub32(loc, v as u32);
 }
 
 fn w64(loc: &mut [u8], v: u64) {
-    BigEndian::write_u64(loc, v);
+    write_ub64(loc, v);
 }
 
 fn or16(loc: &mut [u8], v: u64) {
-    let cur = BigEndian::read_u16(loc);
-    BigEndian::write_u16(loc, cur | v as u16);
+    let cur = read_ub16(loc);
+    write_ub16(loc, cur | v as u16);
 }
 
 fn or32(loc: &mut [u8], v: u64) {
     let cur = r32(loc);
-    BigEndian::write_u32(loc, cur | v as u32);
+    write_ub32(loc, cur | v as u32);
 }
 
 fn write_insns(buf: &mut [u8], insns: &[u32]) {
     for (i, &insn) in insns.iter().enumerate() {
-        BigEndian::write_u32(&mut buf[i * 4..], insn);
+        write_ub32(&mut buf[i * 4..], insn);
     }
 }
 

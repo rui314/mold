@@ -65,6 +65,9 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::util::endian::{
+    read_ub16, read_ub32, write_ub16, write_ub32, write_ub64, BigEndian, Ub64,
+};
 use crate::util::{bit, bits};
 use crate::{error, fatal};
 
@@ -81,24 +84,24 @@ impl Layout for Sparc64 {
 }
 
 fn r32(loc: &[u8]) -> u32 {
-    BigEndian::read_u32(loc)
+    read_ub32(loc)
 }
 
 fn w16(loc: &mut [u8], v: u64) {
-    BigEndian::write_u16(loc, v as u16);
+    write_ub16(loc, v as u16);
 }
 
 fn w32(loc: &mut [u8], v: u64) {
-    BigEndian::write_u32(loc, v as u32);
+    write_ub32(loc, v as u32);
 }
 
 fn w64(loc: &mut [u8], v: u64) {
-    BigEndian::write_u64(loc, v);
+    write_ub64(loc, v);
 }
 
 fn or32(loc: &mut [u8], v: u64) {
     let cur = r32(loc);
-    BigEndian::write_u32(loc, cur | v as u32);
+    write_ub32(loc, cur | v as u32);
 }
 
 /// The high 22 bits of a value, for `sethi`, with the one's complement
@@ -478,7 +481,7 @@ impl Arch for Sparc64 {
                 R_SPARC_WDISP16 => {
                     check(pcrel as i64, -(1 << 16), 1 << 16);
                     let field = (bit(pcrel, 16) << 21) | bits(pcrel, 15, 2);
-                    let cur = BigEndian::read_u16(loc);
+                    let cur = read_ub16(loc);
                     w16(loc, cur as u64 | field);
                 }
                 R_SPARC_WDISP19 => {

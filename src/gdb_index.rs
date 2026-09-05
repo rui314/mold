@@ -88,6 +88,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::output_file::{split_at_offsets, OutputFile};
+use crate::util::endian::Endian;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 

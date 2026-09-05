@@ -13,6 +13,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::{AddrFlags, SymbolId};
+use crate::util::endian::Endian;
 
 pub const ENTRY_SIZE: u64 = 24;
 

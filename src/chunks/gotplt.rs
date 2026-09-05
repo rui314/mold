@@ -4,6 +4,7 @@ use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::util::endian::Endian;
 
 // .got.plt is similar to .got in the sense that it is a table containing
 // pointers. The contents in .got.plt are function pointers used by .plt.

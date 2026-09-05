@@ -6,6 +6,7 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::util::endian::Endian;
 
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.
