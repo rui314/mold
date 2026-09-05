@@ -1900,12 +1900,27 @@ mod tests {
 
     #[test]
     fn input_section_origin_roundtrip() {
-        let section = InputSectionId::new(crate::input_files::ObjId((1 << 30) - 1), u32::MAX - 1);
-        let origin = Origin::new(OriginValue::InputSection(section));
-        let OriginValue::InputSection(decoded) = origin.get() else {
-            panic!("input-section origin decoded as another variant");
-        };
-        assert_eq!(decoded, section);
+        assert_eq!(InputSectionId::NONE.raw(), 0);
+        assert_eq!(InputSectionId::from_raw(0), InputSectionId::NONE);
+        assert!(matches!(Origin::NONE.get(), OriginValue::None));
+
+        for (file, index, raw) in [
+            (0, 0, 1),
+            (0, u32::MAX - 1, 0xffff_ffff),
+            (1, 0, 0x1_0000_0001),
+            ((1 << 30) - 1, u32::MAX - 1, 0x3fff_ffff_ffff_ffff),
+        ] {
+            let section = InputSectionId::new(crate::input_files::ObjId(file), index);
+            assert_eq!(section.raw(), raw);
+            let origin = Origin::new(OriginValue::InputSection(section));
+            assert_eq!(origin.0, raw << 2);
+            let OriginValue::InputSection(decoded) = origin.get() else {
+                panic!("input-section origin decoded as another variant");
+            };
+            assert_eq!(decoded, section);
+            assert_eq!(decoded.file(), crate::input_files::ObjId(file));
+            assert_eq!(decoded.index(), index as usize);
+        }
     }
 
     #[test]

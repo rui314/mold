@@ -44,15 +44,20 @@ impl SectionRef {
 
 /// Identifies an input section by its object file and dense index within that
 /// file's section storage.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct InputSectionId(u64);
+pub struct InputSectionId {
+    file: ObjId,
+    index: u32,
+}
 
 const _: () = assert!(std::mem::size_of::<InputSectionId>() == 8);
 
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
-    pub(crate) const NONE: InputSectionId = InputSectionId(0);
+    pub(crate) const NONE: InputSectionId = InputSectionId {
+        file: ObjId(0),
+        index: u32::MAX,
+    };
 
     #[inline]
     pub(crate) fn new(file: ObjId, index: u32) -> InputSectionId {
@@ -60,30 +65,32 @@ impl InputSectionId {
         // tag, leaving 62 bits for this ID.
         debug_assert!(file.0 < 1 << 30);
         debug_assert_ne!(index, u32::MAX);
-        let index = index.wrapping_add(1);
-        InputSectionId((u64::from(file.0) << 32) | u64::from(index))
+        InputSectionId { file, index }
     }
 
     #[inline]
     pub(crate) const fn from_raw(value: u64) -> InputSectionId {
-        InputSectionId(value)
+        InputSectionId {
+            file: ObjId((value >> 32) as u32),
+            index: (value as u32).wrapping_sub(1),
+        }
     }
 
     #[inline]
     pub(crate) const fn raw(self) -> u64 {
-        self.0
+        // Encode the index plus one so that NONE has a zero payload.
+        ((self.file.0 as u64) << 32) | self.index.wrapping_add(1) as u64
     }
 
     #[inline]
     pub(crate) const fn file(self) -> ObjId {
-        ObjId((self.0 >> 32) as u32)
+        self.file
     }
 
     #[inline]
     pub(crate) fn index(self) -> usize {
-        let index = self.0 as u32;
-        debug_assert_ne!(index, 0);
-        index.wrapping_sub(1) as usize
+        debug_assert_ne!(self.index, u32::MAX);
+        self.index as usize
     }
 }
 
