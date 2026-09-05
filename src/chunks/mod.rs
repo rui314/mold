@@ -424,8 +424,7 @@ pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
 fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     let mut vec: Vec<ElfPhdr<E>> = Vec::new();
 
-    let define = |vec: &mut Vec<ElfPhdr<E>>, p_type: u32, flags: u32, id: ChunkId| {
-        let shdr = &ctx.chunk_header(id).shdr;
+    let define = |vec: &mut Vec<ElfPhdr<E>>, p_type: u32, flags: u32, shdr: &ElfShdr<E>| {
         let mut phdr = ElfPhdr::<E>::default();
         phdr.p_type_mut().set(p_type);
         phdr.p_flags_mut().set(flags);
@@ -448,8 +447,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         vec.push(phdr);
     };
 
-    let append = |vec: &mut Vec<ElfPhdr<E>>, id: ChunkId| {
-        let shdr = &ctx.chunk_header(id).shdr;
+    let append = |vec: &mut Vec<ElfPhdr<E>>, shdr: &ElfShdr<E>| {
         let phdr = vec.last_mut().unwrap();
         let align = phdr.p_align().get().max(shdr.sh_addralign.get());
         phdr.p_align_mut().set(align);
@@ -484,13 +482,13 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // Create a PT_PHDR for the program header itself.
     if let Some(phdr) = &ctx.phdr {
         if phdr.hdr.is_alloc() {
-            define(&mut vec, PT_PHDR, PF_R, ChunkId::Phdr);
+            define(&mut vec, PT_PHDR, PF_R, &phdr.hdr.shdr);
         }
     }
 
     // Create a PT_INTERP.
-    if ctx.interp.is_some() {
-        define(&mut vec, PT_INTERP, PF_R, ChunkId::Interp);
+    if let Some(osec) = &ctx.interp {
+        define(&mut vec, PT_INTERP, PF_R, &osec.hdr.shdr);
     }
 
     // Create a PT_NOTE for SHF_NOTE sections.
@@ -500,9 +498,9 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         i += 1;
         if is_note(first) {
             let flags = to_phdr_flags(ctx, first);
-            define(&mut vec, PT_NOTE, flags, first);
+            define(&mut vec, PT_NOTE, flags, &ctx.chunk_header(first).shdr);
             while i < chunks.len() && is_note(chunks[i]) && to_phdr_flags(ctx, chunks[i]) == flags {
-                append(&mut vec, chunks[i]);
+                append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
                 i += 1;
             }
         }
@@ -514,7 +512,8 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         let first = chunks[i];
         i += 1;
         let flags = to_phdr_flags(ctx, first);
-        define(&mut vec, PT_LOAD, flags, first);
+        let first_shdr = &ctx.chunk_header(first).shdr;
+        define(&mut vec, PT_LOAD, flags, first_shdr);
         if !ctx.args.nmagic && !ctx.args.omagic {
             let last = vec.last_mut().unwrap();
             let align = last.p_align().get().max(ctx.page_size);
@@ -524,7 +523,6 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         // Add contiguous ALLOC sections as long as they have the same
         // section flags and there's no on-disk gap in between.
         if !is_bss(first) {
-            let first_shdr = ctx.chunk_header(first).shdr;
             while i < chunks.len()
                 && !is_bss(chunks[i])
                 && to_phdr_flags(ctx, chunks[i]) == flags
@@ -536,12 +534,12 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
                         == shdr.sh_addr.get().wrapping_sub(first_shdr.sh_addr.get())
                 }
             {
-                append(&mut vec, chunks[i]);
+                append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
                 i += 1;
             }
         }
         while i < chunks.len() && is_bss(chunks[i]) && to_phdr_flags(ctx, chunks[i]) == flags {
-            append(&mut vec, chunks[i]);
+            append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
             i += 1;
         }
     }
@@ -553,54 +551,47 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         let first = ctx.chunks[i];
         i += 1;
         if is_tls(first) {
-            define(&mut vec, PT_TLS, PF_R, first);
+            define(&mut vec, PT_TLS, PF_R, &ctx.chunk_header(first).shdr);
             while i < ctx.chunks.len() && is_tls(ctx.chunks[i]) {
-                append(&mut vec, ctx.chunks[i]);
+                append(&mut vec, &ctx.chunk_header(ctx.chunks[i]).shdr);
                 i += 1;
             }
         }
     }
 
     // Add PT_DYNAMIC
-    if let Some(dynamic) = &ctx.dynamic {
-        if dynamic.hdr.shdr.sh_size.get() != 0 {
+    if let Some(osec) = &ctx.dynamic {
+        if osec.hdr.shdr.sh_size.get() != 0 {
             let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
-            define(&mut vec, PT_DYNAMIC, flags, ChunkId::Dynamic);
+            define(&mut vec, PT_DYNAMIC, flags, &osec.hdr.shdr);
         }
     }
 
     // Add PT_GNU_EH_FRAME
-    if ctx.eh_frame_hdr.is_some() {
-        define(&mut vec, PT_GNU_EH_FRAME, PF_R, ChunkId::EhFrameHdr);
+    if let Some(osec) = &ctx.eh_frame_hdr {
+        define(&mut vec, PT_GNU_EH_FRAME, PF_R, &osec.hdr.shdr);
     }
 
     // Add PT_GNU_SFRAME
     if ctx.sframe.hdr.shdr.sh_size.get() != 0 && ctx.chunks.contains(&ChunkId::SFrame) {
-        define(&mut vec, PT_GNU_SFRAME, PF_R, ChunkId::SFrame);
+        define(&mut vec, PT_GNU_SFRAME, PF_R, &ctx.sframe.hdr.shdr);
     }
 
     // Add PT_GNU_PROPERTY
     if let Some(id) = ctx.find_chunk_by_name(b".note.gnu.property") {
-        define(&mut vec, PT_GNU_PROPERTY, PF_R, id);
+        define(&mut vec, PT_GNU_PROPERTY, PF_R, &ctx.chunk_header(id).shdr);
     }
 
     // Create a PT_RISCV_ATTRIBUTES
-    if ctx
-        .riscv_attributes
-        .as_ref()
-        .is_some_and(|sec| sec.hdr.shdr.sh_size.get() != 0)
-    {
-        define(
-            &mut vec,
-            PT_RISCV_ATTRIBUTES,
-            PF_R,
-            ChunkId::RiscvAttributes,
-        );
+    if let Some(osec) = &ctx.riscv_attributes {
+        if osec.hdr.shdr.sh_size.get() != 0 {
+            define(&mut vec, PT_RISCV_ATTRIBUTES, PF_R, &osec.hdr.shdr);
+        }
     }
 
     // Create a PT_ARM_EDXIDX
-    if ctx.arm_exidx.is_some() {
-        define(&mut vec, PT_ARM_EXIDX, PF_R, ChunkId::ArmExidx);
+    if let Some(osec) = &ctx.arm_exidx {
+        define(&mut vec, PT_ARM_EXIDX, PF_R, &osec.hdr.shdr);
     }
 
     // Add PT_GNU_STACK, which is a marker segment that doesn't really
@@ -622,10 +613,11 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         while i < chunks.len() {
             let first = chunks[i];
             i += 1;
-            if ctx.chunk_header(first).is_relro {
-                define(&mut vec, PT_GNU_RELRO, PF_R, first);
+            let hdr = ctx.chunk_header(first);
+            if hdr.is_relro {
+                define(&mut vec, PT_GNU_RELRO, PF_R, &hdr.shdr);
                 while i < chunks.len() && ctx.chunk_header(chunks[i]).is_relro {
-                    append(&mut vec, chunks[i]);
+                    append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
                     i += 1;
                 }
                 vec.last_mut().unwrap().p_align_mut().set(1);
@@ -635,8 +627,9 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
 
     // Create a PT_OPENBSD_RANDOMIZE
     for &id in &ctx.chunks {
-        if ctx.chunk_header(id).name == b".openbsd.randomdata" {
-            define(&mut vec, PT_OPENBSD_RANDOMIZE, PF_R | PF_W, id);
+        let hdr = ctx.chunk_header(id);
+        if hdr.name == b".openbsd.randomdata" {
+            define(&mut vec, PT_OPENBSD_RANDOMIZE, PF_R | PF_W, &hdr.shdr);
         }
     }
 
