@@ -696,8 +696,14 @@ public:
 
 private:
   void *allocate_global(u64 size, u64 alignment);
+  void commit(u64 end);
 
   u8 *data;
+
+  // The reserved range is made accessible in chunks as allocations advance.
+  // Bytes below `committed` are accessible.
+  std::atomic<u64> committed = 0;
+  std::mutex commit_mu;
 
   // Index into the per-thread array of allocation blocks. Slots are never
   // reused, so a new arena cannot inherit stale pointers from an old one.
