@@ -8,6 +8,46 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
+use crate::chunks::build_id::BuildIdSection;
+use crate::chunks::comdat_group::ComdatGroupSection;
+use crate::chunks::compressed::CompressedSection;
+use crate::chunks::copyrel::CopyrelSection;
+use crate::chunks::dynamic::DynamicSection;
+use crate::chunks::dynstr::DynstrSection;
+use crate::chunks::dynsym::DynsymSection;
+use crate::chunks::eh_frame::EhFrameSection;
+use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
+use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
+use crate::chunks::gnu_debuglink::GnuDebuglinkSection;
+use crate::chunks::gnu_hash::GnuHashSection;
+use crate::chunks::got::GotSection;
+use crate::chunks::gotplt::GotPltSection;
+use crate::chunks::hash::HashSection;
+use crate::chunks::interp::InterpSection;
+use crate::chunks::merged::{MergedSection, MergedSectionId};
+use crate::chunks::note_package::NotePackageSection;
+use crate::chunks::note_property::NotePropertySection;
+use crate::chunks::output_section::OutputSection;
+use crate::chunks::plt::PltSection;
+use crate::chunks::pltgot::PltGotSection;
+use crate::chunks::reldyn::RelDynSection;
+use crate::chunks::reloc::RelocSection;
+use crate::chunks::relplt::RelPltSection;
+use crate::chunks::relrdyn::RelrDynSection;
+use crate::chunks::relro_padding::RelroPaddingSection;
+use crate::chunks::riscv_attributes::RiscvAttributesSection;
+use crate::chunks::sframe::SFrameSection;
+use crate::chunks::sframe_reloc::SFrameRelocSection;
+use crate::chunks::shstrtab::ShstrtabSection;
+use crate::chunks::strtab::StrtabSection;
+use crate::chunks::symtab::SymtabSection;
+use crate::chunks::symtab_shndx::SymtabShndxSection;
+use crate::chunks::verdef::VerdefSection;
+use crate::chunks::verneed::VerneedSection;
+use crate::chunks::versym::VersymSection;
+use crate::chunks::{
+    ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
+};
 use crate::cmdline::Args;
 use crate::elf::{ElfSym, ElfWord};
 use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
@@ -15,46 +55,6 @@ use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
-use crate::output_chunks::build_id::BuildIdSection;
-use crate::output_chunks::comdat_group::ComdatGroupSection;
-use crate::output_chunks::compressed::CompressedSection;
-use crate::output_chunks::copyrel::CopyrelSection;
-use crate::output_chunks::dynamic::DynamicSection;
-use crate::output_chunks::dynstr::DynstrSection;
-use crate::output_chunks::dynsym::DynsymSection;
-use crate::output_chunks::eh_frame::EhFrameSection;
-use crate::output_chunks::eh_frame_hdr::EhFrameHdrSection;
-use crate::output_chunks::eh_frame_reloc::EhFrameRelocSection;
-use crate::output_chunks::gnu_debuglink::GnuDebuglinkSection;
-use crate::output_chunks::gnu_hash::GnuHashSection;
-use crate::output_chunks::got::GotSection;
-use crate::output_chunks::gotplt::GotPltSection;
-use crate::output_chunks::hash::HashSection;
-use crate::output_chunks::interp::InterpSection;
-use crate::output_chunks::merged::{MergedSection, MergedSectionId};
-use crate::output_chunks::note_package::NotePackageSection;
-use crate::output_chunks::note_property::NotePropertySection;
-use crate::output_chunks::output_section::OutputSection;
-use crate::output_chunks::plt::PltSection;
-use crate::output_chunks::pltgot::PltGotSection;
-use crate::output_chunks::reldyn::RelDynSection;
-use crate::output_chunks::reloc::RelocSection;
-use crate::output_chunks::relplt::RelPltSection;
-use crate::output_chunks::relrdyn::RelrDynSection;
-use crate::output_chunks::relro_padding::RelroPaddingSection;
-use crate::output_chunks::riscv_attributes::RiscvAttributesSection;
-use crate::output_chunks::sframe::SFrameSection;
-use crate::output_chunks::sframe_reloc::SFrameRelocSection;
-use crate::output_chunks::shstrtab::ShstrtabSection;
-use crate::output_chunks::strtab::StrtabSection;
-use crate::output_chunks::symtab::SymtabSection;
-use crate::output_chunks::symtab_shndx::SymtabShndxSection;
-use crate::output_chunks::verdef::VerdefSection;
-use crate::output_chunks::verneed::VerneedSection;
-use crate::output_chunks::versym::VersymSection;
-use crate::output_chunks::{
-    ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
-};
 use crate::symbol::{Bins, SymbolId, SymbolSlot, SymbolTable};
 use crate::util::perf::Timers;
 
@@ -192,10 +192,9 @@ pub struct Context<E: Arch> {
     // Target-specific context members
     pub note_property: Option<NotePropertySection<E>>,
     pub riscv_attributes: Option<RiscvAttributesSection<E>>,
-    pub arm_exidx: Option<crate::output_chunks::arm_exidx::ArmExidxSection<E>>,
-    pub ppc64_save_restore:
-        Option<crate::output_chunks::ppc64_save_restore::Ppc64SaveRestoreSection<E>>,
-    pub ppc64_opd: Option<crate::output_chunks::opd::Ppc64OpdSection<E>>,
+    pub arm_exidx: Option<crate::chunks::arm_exidx::ArmExidxSection<E>>,
+    pub ppc64_save_restore: Option<crate::chunks::ppc64_save_restore::Ppc64SaveRestoreSection<E>>,
+    pub ppc64_opd: Option<crate::chunks::opd::Ppc64OpdSection<E>>,
     /// Whether any input uses Power10 PC-relative calls, which decides
     /// how thunks address their targets.
     pub is_power10: AtomicBool,
@@ -421,7 +420,7 @@ impl<E: Arch> Context<E> {
             .ppc64_opd
             .as_ref()
             .expect("PPC64 ELFv1 has an .opd section");
-        opd.hdr.shdr.sh_addr.get() + idx as u64 * crate::output_chunks::opd::ENTRY_SIZE
+        opd.hdr.shdr.sh_addr.get() + idx as u64 * crate::chunks::opd::ENTRY_SIZE
     }
 
     /// Whether the file is the internal object holding synthesized symbols.

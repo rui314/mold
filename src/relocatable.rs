@@ -33,16 +33,16 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::chunks::comdat_group::ComdatGroupSection;
+use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
+use crate::chunks::note_property::NotePropertySection;
+use crate::chunks::riscv_attributes::RiscvAttributesSection;
+use crate::chunks::sframe_reloc::SFrameRelocSection;
+use crate::chunks::shstrtab::ShstrtabSection;
+use crate::chunks::{self, ChunkId, OutputEhdr, OutputShdr};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
-use crate::output_chunks::comdat_group::ComdatGroupSection;
-use crate::output_chunks::eh_frame_reloc::EhFrameRelocSection;
-use crate::output_chunks::note_property::NotePropertySection;
-use crate::output_chunks::riscv_attributes::RiscvAttributesSection;
-use crate::output_chunks::sframe_reloc::SFrameRelocSection;
-use crate::output_chunks::shstrtab::ShstrtabSection;
-use crate::output_chunks::{self, ChunkId, OutputEhdr, OutputShdr};
 use crate::output_file::OutputFile;
 use crate::passes;
 use crate::util::align_to;
@@ -175,8 +175,8 @@ pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
     passes::compute_section_sizes(ctx);
     passes::sort_output_sections(ctx);
     passes::create_output_symtab(ctx);
-    output_chunks::eh_frame::construct(ctx);
-    output_chunks::sframe::construct(ctx);
+    chunks::eh_frame::construct(ctx);
+    chunks::sframe::construct(ctx);
     passes::create_reloc_sections(ctx);
     create_comdat_group_sections(ctx);
     passes::compute_section_headers(ctx);

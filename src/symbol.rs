@@ -20,12 +20,12 @@ use hashbrown::{Equivalent, HashMap};
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
-use crate::output_chunks::ChunkHeader;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1079,9 +1079,8 @@ impl Symbol {
 
     pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         ctx.gotplt.hdr.shdr.sh_addr.get()
-            + crate::output_chunks::gotplt::header_size::<E>()
-            + self.plt_idx(&ctx.symbols).unwrap() as u64
-                * crate::output_chunks::gotplt::entry_size::<E>()
+            + crate::chunks::gotplt::header_size::<E>()
+            + self.plt_idx(&ctx.symbols).unwrap() as u64 * crate::chunks::gotplt::entry_size::<E>()
     }
 
     pub fn gottp_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
@@ -1102,8 +1101,7 @@ impl Symbol {
     #[inline]
     pub fn plt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
         if let Some(idx) = self.plt_idx(&ctx.symbols) {
-            return ctx.plt.hdr.shdr.sh_addr.get()
-                + crate::output_chunks::plt::entry_offset::<E>(idx);
+            return ctx.plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(idx);
         }
         ctx.pltgot.hdr.shdr.sh_addr.get()
             + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE

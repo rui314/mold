@@ -86,10 +86,10 @@
 use std::sync::atomic::Ordering;
 
 use crate::arch::{Arch, Family, ThunkLayout};
+use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{check_tlsle, InputSection};
-use crate::output_chunks::eh_frame;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
 use crate::util::{bits, is_int};

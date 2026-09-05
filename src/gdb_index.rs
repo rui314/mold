@@ -83,10 +83,10 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
-use crate::output_chunks::ChunkId;
 use crate::output_file::{split_at_offsets, OutputFile};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -1472,6 +1472,6 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         let buf = output.buf();
         let start = shdr.sh_offset.get() as usize;
         let end = (shdr.sh_offset.get() + shdr.sh_size.get()) as usize;
-        crate::output_chunks::copy_buf(ctx, ChunkId::Shdr, &mut buf[start..end]);
+        crate::chunks::copy_buf(ctx, ChunkId::Shdr, &mut buf[start..end]);
     }
 }

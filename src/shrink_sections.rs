@@ -78,11 +78,11 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::{r_delta, InputSection, RelocDelta};
-use crate::output_chunks::{self, ChunkId};
 use crate::symbol::Symbol;
 
 /// Returns the distance between a relocated place and a symbol.
@@ -184,7 +184,7 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
                         & SHF_EXECINSTR as u64
                         != 0 =>
                 {
-                    Some((osec, output_chunks::output_section::layout(ctx, osec)))
+                    Some((osec, chunks::output_section::layout(ctx, osec)))
                 }
                 _ => None,
             })

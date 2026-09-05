@@ -34,11 +34,11 @@ use std::cell::UnsafeCell;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
+use crate::chunks::output_section::OutputSection;
+use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::InputSection;
-use crate::output_chunks::output_section::OutputSection;
-use crate::output_chunks::{ChunkId, OutputSectionId};
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
 use crate::util::align_to;
 

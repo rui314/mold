@@ -27,13 +27,13 @@
 use std::marker::PhantomData;
 
 use crate::arch::{Arch, Family};
+use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::{
     check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, RelocDelta,
 };
-use crate::output_chunks::eh_frame;
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};

@@ -17,6 +17,7 @@ use std::sync::{OnceLock, RwLock};
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
+use crate::chunks::merged::MergedSection;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
@@ -25,7 +26,6 @@ use crate::input_sections::{
     SFrameFde, SectionList,
 };
 use crate::mapped_file::MappedFile;
-use crate::output_chunks::merged::MergedSection;
 use crate::symbol::{
     hash_key, Bins, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, NEEDS_PLT,
@@ -2900,13 +2900,13 @@ impl<'a> SymtabBlock<'a> {
 
     pub fn push_local<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
-        let (esym, xindex) = crate::output_chunks::symtab::to_output_esym(ctx, sym, st_name);
+        let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.locals.push::<E>(esym, xindex);
     }
 
     pub fn push_global<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
-        let (esym, xindex) = crate::output_chunks::symtab::to_output_esym(ctx, sym, st_name);
+        let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.globals.push::<E>(esym, xindex);
     }
 

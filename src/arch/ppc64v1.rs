@@ -51,11 +51,11 @@ use std::sync::atomic::Ordering;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family, ThunkLayout};
+use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::{check_tlsle, InputSection, SectionRef};
-use crate::output_chunks::eh_frame;
 use crate::symbol::{
     AddrFlags, Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD,
 };

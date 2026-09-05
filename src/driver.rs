@@ -6,11 +6,11 @@ use std::sync::mpsc;
 use rayon::prelude::*;
 
 use crate::arch::{self, Arch};
+use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
-use crate::output_chunks::{self, ChunkId};
 use crate::output_file::{split_ranges, OutputFile, Range};
 use crate::{error, fatal, passes};
 
@@ -331,7 +331,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
 
     // Convert an .ARM.exidx to a synthetic section.
     if E::FAMILY == arch::Family::Arm32 {
-        output_chunks::arm_exidx::create(&mut ctx);
+        chunks::arm_exidx::create(&mut ctx);
     }
 
     // Handle --section-align options.
@@ -428,7 +428,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // RELR is encoded independently for each output chunk using offsets
     // relative to that chunk.
     if ctx.args.pack_dyn_relocs_relr {
-        output_chunks::reldyn::construct_relr(&mut ctx);
+        chunks::reldyn::construct_relr(&mut ctx);
     }
     // Reserve a space for dynamic symbol strings in .dynstr and sort
     // .dynsym contents if necessary. Beyond this point, no symbol will
@@ -475,20 +475,20 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
 
     // Fill .gnu.version_d section contents.
     if ctx.verdef.is_some() {
-        output_chunks::verdef::construct(&mut ctx);
+        chunks::verdef::construct(&mut ctx);
     }
     // Fill .gnu.version_r section contents.
-    output_chunks::verneed::construct(&mut ctx);
+    chunks::verneed::construct(&mut ctx);
 
     // .eh_frame is a special section from the linker's point of view,
     // as its contents are parsed and reconstructed by the linker,
     // unlike other sections that are regarded as opaque bytes.
     // Here, we construct output .eh_frame contents.
-    output_chunks::eh_frame::construct(&mut ctx);
+    chunks::eh_frame::construct(&mut ctx);
 
     // .sframe is likewise parsed and reconstructed by the linker. Build
     // the merged, PC-sorted output .sframe.
-    output_chunks::sframe::construct(&mut ctx);
+    chunks::sframe::construct(&mut ctx);
 
     // If --emit-relocs is given, we'll copy relocation sections from input
     // files to an output file.
@@ -524,7 +524,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
         filesize = passes::set_osec_offsets(&mut ctx);
     }
     if ctx.arm_exidx.is_some() {
-        output_chunks::arm_exidx::remove_duplicate_entries(&mut ctx);
+        chunks::arm_exidx::remove_duplicate_entries(&mut ctx);
         filesize = passes::set_osec_offsets(&mut ctx);
     }
 
@@ -534,7 +534,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     let t = ctx.timer("fix_synthetic_symbols");
     passes::fix_synthetic_symbols(&mut ctx);
     drop(t);
-    output_chunks::sframe::sort(&mut ctx);
+    chunks::sframe::sort(&mut ctx);
 
     // Beyond this, you can assume that symbol addresses including their
     // GOT or PLT addresses have a correct final value.
@@ -562,7 +562,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     // At this point, both memory and file layouts are fixed.
 
     let t = ctx.timer("update_reldyn");
-    output_chunks::reldyn::update_shdr(&mut ctx);
+    chunks::reldyn::update_shdr(&mut ctx);
     drop(t);
     ctx.filesize = filesize;
     t_before_copy.stop();
@@ -596,7 +596,7 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
         if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size.get() != 0 {
             let start = reldyn.sh_offset.get() as usize;
             let end = (reldyn.sh_offset.get() + reldyn.sh_size.get()) as usize;
-            output_chunks::reldyn::sort(&ctx, &mut buf[start..end]);
+            chunks::reldyn::sort(&ctx, &mut buf[start..end]);
         }
 
         // The final stage reads address ranges, which requires relocated debug
@@ -822,21 +822,21 @@ fn run_tasks<E: Arch>(
         let mut bufs = bufs.drain(..);
         let own = bufs.next().unwrap();
         match task.chunk {
-            ChunkId::EhFrame => output_chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
+            ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
             ChunkId::Symtab => {
                 let strtab = bufs.next().unwrap();
-                output_chunks::symtab::copy_buf(ctx, own, strtab, bufs.next());
+                chunks::symtab::copy_buf(ctx, own, strtab, bufs.next());
             }
-            ChunkId::Reloc(i) => output_chunks::reloc::copy_buf(ctx, i, own, bufs.next()),
-            ChunkId::EhFrameReloc => output_chunks::eh_frame_reloc::copy_buf(ctx, own, bufs.next()),
-            id => output_chunks::copy_buf(ctx, id, own),
+            ChunkId::Reloc(i) => chunks::reloc::copy_buf(ctx, i, own, bufs.next()),
+            ChunkId::EhFrameReloc => chunks::eh_frame_reloc::copy_buf(ctx, own, bufs.next()),
+            id => chunks::copy_buf(ctx, id, own),
         }
     });
 
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
-        output_chunks::eh_frame_hdr::write_header(
+        chunks::eh_frame_hdr::write_header(
             ctx,
             &mut buf[r.offset as usize..(r.offset + r.size) as usize],
         );

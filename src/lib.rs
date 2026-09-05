@@ -2,6 +2,7 @@
 
 pub mod arch;
 pub mod archive_file;
+pub mod chunks;
 pub mod cmdline;
 pub mod context;
 pub mod driver;
@@ -22,7 +23,6 @@ pub mod lto;
 pub mod lto;
 pub mod mapfile;
 pub mod mapped_file;
-pub mod output_chunks;
 pub mod output_file;
 pub mod passes;
 pub mod reader;

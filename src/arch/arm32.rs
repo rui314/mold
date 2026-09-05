@@ -49,13 +49,13 @@ use std::marker::PhantomData;
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family, ThunkLayout};
+use crate::chunks::eh_frame;
+use crate::chunks::output_section::OutputBuffer;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
     check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, InputSectionId,
 };
-use crate::output_chunks::eh_frame;
-use crate::output_chunks::output_section::OutputBuffer;
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::thunks::Thunk;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};

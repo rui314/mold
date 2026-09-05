@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use bstr::BStr;
 
 use crate::arch::{Arch, Family};
+use crate::chunks::merged::{MergedSection, MergedSectionId};
+use crate::chunks::OutputSectionId;
 use crate::cmdline::UnresolvedKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile, RelocationIter};
-use crate::output_chunks::merged::{MergedSection, MergedSectionId};
-use crate::output_chunks::OutputSectionId;
 use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
@@ -1570,7 +1570,7 @@ impl MergeInfo {
     pub fn resolve_contents<E: Arch>(
         &mut self,
         section: &InputSection<E>,
-        parent: &crate::output_chunks::merged::MergedSection<E>,
+        parent: &crate::chunks::merged::MergedSection<E>,
         gc_sections: bool,
     ) {
         let n = self.frag_offsets.len();
