@@ -8,8 +8,11 @@ pub mod demangle;
 pub mod glob;
 pub mod hyperloglog;
 pub mod perf;
+mod prefetch;
 pub(crate) mod siphash;
 pub mod tar;
+
+pub(crate) use prefetch::prefetch;
 
 /// Requests transparent huge pages for a mapped byte range on Linux-based
 /// targets.

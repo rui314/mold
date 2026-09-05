@@ -328,16 +328,13 @@ impl<T> ConcurrentMap<T> {
     // probed first. Useful when a caller knows the hashes of upcoming
     // insertions, as probes into a large table miss the cache almost
     // every time.
-    pub fn prefetch(&self, _hash: u64) {
-        #[cfg(target_arch = "x86_64")]
+    #[inline]
+    pub fn prefetch(&self, hash: u64) {
         if self.nbuckets > 0 {
-            let idx = _hash as usize & (self.nbuckets - 1);
-            // SAFETY: prefetching is a hint that never faults; the address is
-            // within the table anyway.
-            unsafe {
-                use std::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-                _mm_prefetch(self.entries.add(idx) as *const i8, _MM_HINT_T0);
-            }
+            let idx = hash as usize & (self.nbuckets - 1);
+            // SAFETY: the masked index is within the allocated table.
+            let ptr = unsafe { self.entries.add(idx) };
+            crate::util::prefetch(ptr.cast());
         }
     }
 
