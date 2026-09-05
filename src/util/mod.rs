@@ -254,66 +254,9 @@ pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
 }
 
-// Returns the path of the mold executable itself
-#[cfg(target_os = "freebsd")]
+/// Returns the path of the mold executable itself.
 pub fn self_path() -> std::path::PathBuf {
-    // /proc may not be mounted on FreeBSD. The proper way to get the
-    // current executable's path is to use sysctl(2).
-    let mib = [
-        libc::CTL_KERN,
-        libc::KERN_PROC,
-        libc::KERN_PROC_PATHNAME,
-        -1,
-    ];
-    let mut size = 0;
-    // SAFETY: the MIB and output-size pointers are valid.
-    if unsafe {
-        libc::sysctl(
-            mib.as_ptr(),
-            mib.len() as u32,
-            std::ptr::null_mut(),
-            &mut size,
-            std::ptr::null(),
-            0,
-        )
-    } == -1
-    {
-        panic!(
-            "cannot get current executable path: {}",
-            std::io::Error::last_os_error()
-        );
-    }
-
-    let mut path = vec![0u8; size];
-    // SAFETY: sysctl writes at most `size` bytes to the allocated buffer.
-    if unsafe {
-        libc::sysctl(
-            mib.as_ptr(),
-            mib.len() as u32,
-            path.as_mut_ptr().cast(),
-            &mut size,
-            std::ptr::null(),
-            0,
-        )
-    } == -1
-    {
-        panic!(
-            "cannot get current executable path: {}",
-            std::io::Error::last_os_error()
-        );
-    }
-    path.truncate(size);
-    if path.last() == Some(&0) {
-        path.pop();
-    }
-
-    use std::os::unix::ffi::OsStringExt;
-    std::ffi::OsString::from_vec(path).into()
-}
-
-#[cfg(not(target_os = "freebsd"))]
-pub fn self_path() -> std::path::PathBuf {
-    std::fs::read_link("/proc/self/exe").expect("cannot read /proc/self/exe")
+    std::env::current_exe().expect("cannot get current executable path")
 }
 
 /// Normalizes a path lexically, resolving `.` and `..` components without
