@@ -1410,7 +1410,7 @@ impl<E: Arch> ObjectFile<E> {
 
             // Parse symbol version after atsign
             let mut ver_len = 0;
-            if let Some(pos) = util::find_byte(b'@', name) {
+            if let Some(pos) = memchr::memchr(b'@', name) {
                 let ver = &name[pos..];
                 name = &name[..pos];
                 if ver.starts_with(b"@@") {
@@ -1502,7 +1502,7 @@ impl<E: Arch> ObjectFile<E> {
             // Ordinary global signatures already have a Symbol. Local, section
             // and versioned signatures use the same symbol table through their
             // full name.
-            let version = util::find_byte(b'@', name);
+            let version = memchr::memchr(b'@', name);
             let is_own_global = esym.st_type() != STT_SECTION
                 && esym.st_bind() != STB_LOCAL
                 && !esym.is_undef()

@@ -142,19 +142,6 @@ pub fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
     &rest[..end]
 }
 
-/// Returns the position of `byte` in `data`.
-#[inline]
-pub fn find_byte(byte: u8, data: &[u8]) -> Option<usize> {
-    // SAFETY: memchr reads at most data.len() bytes from the slice. A
-    // non-null result therefore points into the same allocation.
-    let ptr = unsafe { libc::memchr(data.as_ptr().cast(), byte.into(), data.len()) }.cast::<u8>();
-    if ptr.is_null() {
-        None
-    } else {
-        Some(unsafe { ptr.offset_from(data.as_ptr()) as usize })
-    }
-}
-
 /// Appends `value` in unsigned LEB128 encoding.
 pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
     loop {

@@ -1197,7 +1197,7 @@ impl fmt::Display for Symbol {
 /// The length of the symbol name in a key, which may carry a version
 /// suffix (`foo@VER`).
 pub fn name_len(key: &[u8]) -> usize {
-    crate::util::find_byte(b'@', key).unwrap_or(key.len())
+    memchr::memchr(b'@', key).unwrap_or(key.len())
 }
 
 /// A map key with its precomputed hash.

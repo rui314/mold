@@ -3159,7 +3159,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
                 continue;
             }
             let name = file.base.symbol_name_in(i);
-            let at = crate::util::find_byte(b'@', name).unwrap();
+            let at = memchr::memchr(b'@', name).unwrap();
             let mut ver = &name[at + 1..];
             let mut is_default = false;
             if let Some(rest) = ver.strip_prefix(b"@") {
