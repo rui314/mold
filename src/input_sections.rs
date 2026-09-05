@@ -94,6 +94,21 @@ pub struct FragmentRef {
     pub entry: EntryId,
 }
 
+impl FragmentRef {
+    #[inline]
+    pub(crate) fn raw(self) -> u64 {
+        (u64::from(self.section.0) << 32) | u64::from(self.entry.raw())
+    }
+
+    #[inline]
+    pub(crate) fn from_raw(value: u64) -> FragmentRef {
+        FragmentRef {
+            section: MergedSectionId((value >> 32) as u32),
+            entry: EntryId::from_raw(value as u32),
+        }
+    }
+}
+
 // RISC-V and LoongArch support code-shrinking linker relaxation.
 //
 // r_deltas is used to manage the locations where instructions are removed

@@ -26,7 +26,6 @@ use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
 use crate::output_chunks::ChunkHeader;
-use crate::util::concurrent_map::EntryId;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -92,9 +91,7 @@ impl Origin {
                 // FragmentRef contains two u32 indices. One billion merged sections
                 // are enough to leave the low two bits available for the tag.
                 assert!(fragment.section.0 < 1 << 30, "too many merged sections");
-                let payload =
-                    (u64::from(fragment.section.0) << 32) | u64::from(fragment.entry.raw());
-                Origin(payload << 2 | FRAGMENT_TAG)
+                Origin(fragment.raw() << 2 | FRAGMENT_TAG)
             }
             OriginValue::Symbol(symbol) => Origin(u64::from(symbol.0) << 2 | SYMBOL_TAG),
         }
@@ -111,13 +108,7 @@ impl Origin {
             CHUNK_TAG => {
                 OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
             }
-            FRAGMENT_TAG => {
-                let payload = self.0 >> 2;
-                OriginValue::Fragment(FragmentRef {
-                    section: crate::output_chunks::MergedSectionId((payload >> 32) as u32),
-                    entry: EntryId::from_raw(payload as u32),
-                })
-            }
+            FRAGMENT_TAG => OriginValue::Fragment(FragmentRef::from_raw(self.0 >> 2)),
             SYMBOL_TAG => OriginValue::Symbol(SymbolId((self.0 >> 2) as u32)),
             _ => unreachable!(),
         }
