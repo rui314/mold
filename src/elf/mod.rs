@@ -23,10 +23,7 @@ use std::fmt;
 pub use consts::*;
 
 use crate::arch::{Arch, I386, X86_64};
-use crate::util::endian::{
-    BigEndian, Endian, Ib32, Ib64, Il32, Il64, LittleEndian, Ub24, Ub32, Ub64, Ul24, Ul32, Ul64,
-    I32, I64, U16, U24, U32, U64,
-};
+use crate::util::endian::*;
 
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and

@@ -120,11 +120,4 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     }
 }
 
-#[allow(dead_code)]
-pub(crate) type SipHash = SipHashTmpl<2, 4, 64>;
-#[allow(dead_code)]
-pub(crate) type SipHash128 = SipHashTmpl<2, 4, 128>;
-#[allow(dead_code)]
-pub(crate) type SipHash13 = SipHashTmpl<1, 3, 64>;
-#[allow(dead_code)]
 pub(crate) type SipHash13_128 = SipHashTmpl<1, 3, 128>;
