@@ -136,9 +136,9 @@ fn map_file(file: &File, size: u64) -> Storage {
     let map = unsafe { MmapMut::map_mut(file) };
     match map {
         Ok(map) => {
-            #[cfg(any(target_os = "android", target_os = "linux"))]
             let mut map = map;
-            // Enable transparent huge page for an output memory-mapped file.
+            // Enable transparent huge pages for an output memory-mapped file
+            // when the target provides the required advice.
             // Linking a Chromium debug build is ~20% faster with this madvise call.
             //
             // Without this, every 4 KiB page of the output takes its own
@@ -146,15 +146,8 @@ fn map_file(file: &File, size: u64) -> Storage {
             // many copying threads serialize on the file's page cache. With
             // it, the kernel backs the mapping with large folios and the
             // number of faults drops by an order of magnitude.
-            #[cfg(any(target_os = "android", target_os = "linux"))]
             // SAFETY: the range is the mapping; the advice is only a hint.
-            unsafe {
-                libc::madvise(
-                    map.as_mut_ptr() as *mut libc::c_void,
-                    map.len(),
-                    libc::MADV_HUGEPAGE,
-                )
-            };
+            unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
             Storage::Mmap {
                 map,
                 len: size as usize,

@@ -51,6 +51,54 @@ struct Entry<T> {
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
+#[cfg(not(windows))]
+fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
+    // SAFETY: this creates fresh private anonymous storage.
+    let entries = unsafe {
+        libc::mmap(
+            ptr::null_mut(),
+            bufsize,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+            -1,
+            0,
+        )
+    };
+    if entries == libc::MAP_FAILED {
+        panic!(
+            "mmap of {bufsize} bytes failed: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+    entries.cast()
+}
+
+#[cfg(windows)]
+fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
+    let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
+        .expect("invalid concurrent-map layout");
+    // SAFETY: the layout has nonzero size.
+    let entries = unsafe { alloc_zeroed(layout).cast() };
+    if entries.is_null() {
+        panic!("cannot allocate {bufsize} bytes for concurrent map");
+    }
+    entries
+}
+
+#[cfg(not(windows))]
+unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
+    // SAFETY: `entries` was mapped by `allocate_entries` with this size.
+    let _ = unsafe { libc::munmap(entries.cast(), bufsize) };
+}
+
+#[cfg(windows)]
+unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
+    let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
+        .expect("invalid concurrent-map layout");
+    // SAFETY: `entries` was allocated by `allocate_entries` with this layout.
+    unsafe { dealloc(entries.cast(), layout) };
+}
+
 /// A stable reference to an occupied map entry.
 pub(crate) struct MapEntryRef<T>(NonNull<Entry<T>>);
 
@@ -108,49 +156,12 @@ impl<T> ConcurrentMap<T> {
     pub fn with_capacity(nkeys: usize) -> Self {
         let nbuckets = nkeys.next_power_of_two().max(MIN_NBUCKETS);
         let bufsize = Self::bufsize(nbuckets);
-
-        // Allocate a zero-initialized buffer. mmap is faster than
-        // malloc + memset.
-        #[cfg(not(windows))]
-        // SAFETY: an anonymous private mapping, checked for failure below.
-        let entries = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                bufsize,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
-                -1,
-                0,
-            )
-        };
-        #[cfg(windows)]
-        let entries: *mut Entry<T> = {
-            let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
-                .expect("invalid concurrent-map layout");
-            // SAFETY: the layout has nonzero size and the returned allocation
-            // is owned by this map.
-            unsafe { alloc_zeroed(layout).cast() }
-        };
-
-        #[cfg(not(windows))]
-        if entries == libc::MAP_FAILED {
-            panic!(
-                "mmap of {bufsize} bytes failed: {}",
-                std::io::Error::last_os_error()
-            );
-        }
-        #[cfg(windows)]
-        if entries.is_null() {
-            panic!("cannot allocate {bufsize} bytes for concurrent map");
-        }
-
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        // SAFETY: the range is the fresh mapping; the advice is only a hint.
-        unsafe {
-            libc::madvise(entries, bufsize, libc::MADV_HUGEPAGE)
-        };
-        #[cfg(not(windows))]
-        let entries = entries.cast::<Entry<T>>();
+        // mmap is faster than malloc + memset on Unix; the platform allocator
+        // returns equivalently zeroed storage on Windows.
+        let entries = allocate_entries(bufsize);
+        // SAFETY: the range is the fresh allocation; the advice is only a
+        // hint on targets that support it.
+        unsafe { crate::util::madvise_hugepage(entries.cast(), bufsize) };
         ConcurrentMap { entries, nbuckets }
     }
 
@@ -426,24 +437,8 @@ impl<T> Drop for ConcurrentMap<T> {
                 }
             }
         }
-        #[cfg(not(windows))]
-        // SAFETY: mapped in with_capacity with the same size.
-        unsafe {
-            libc::munmap(
-                self.entries as *mut libc::c_void,
-                Self::bufsize(self.nbuckets),
-            )
-        };
-        #[cfg(windows)]
-        {
-            let layout = Layout::from_size_align(
-                Self::bufsize(self.nbuckets),
-                std::mem::align_of::<Entry<T>>(),
-            )
-            .expect("invalid concurrent-map layout");
-            // SAFETY: allocated in with_capacity with the same layout.
-            unsafe { dealloc(self.entries.cast(), layout) };
-        }
+        // SAFETY: allocated in with_capacity and not yet released.
+        unsafe { deallocate_entries(self.entries, Self::bufsize(self.nbuckets)) };
     }
 }
 

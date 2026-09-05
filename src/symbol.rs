@@ -1426,41 +1426,16 @@ impl SymbolBlockPtr {
     }
 }
 
-/// Asks Linux to back the interior pages of an allocation with transparent
-/// huge pages. The first and last partial pages stay untouched because they
-/// may contain allocator metadata or another small allocation.
-#[cfg(any(target_os = "android", target_os = "linux"))]
-fn advise_hugepage<T>(values: &Vec<T>) {
+/// Asks the operating system to back the interior pages of an allocation with
+/// transparent huge pages when that advice is available.
+fn madvise_hugepage<T>(values: &Vec<T>) {
     let Some(byte_len) = values.capacity().checked_mul(std::mem::size_of::<T>()) else {
         return;
     };
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    if byte_len == 0 || page_size <= 0 {
-        return;
-    }
-
-    let page_size = page_size as usize;
-    let start = values.as_ptr().addr();
-    let Some(end) = start.checked_add(byte_len) else {
-        return;
-    };
-    let first_page = start.div_ceil(page_size) * page_size;
-    let last_page = end / page_size * page_size;
-    if first_page < last_page {
-        // SAFETY: the advised range contains only whole pages strictly inside
-        // the vector allocation, and MADV_HUGEPAGE is only a kernel hint.
-        unsafe {
-            libc::madvise(
-                first_page as *mut libc::c_void,
-                last_page - first_page,
-                libc::MADV_HUGEPAGE,
-            )
-        };
-    }
+    // SAFETY: the vector's allocation covers its capacity; the helper leaves
+    // its possibly shared boundary pages untouched.
+    unsafe { crate::util::madvise_hugepage_interior(values.as_ptr().cast(), byte_len) };
 }
-
-#[cfg(not(any(target_os = "android", target_os = "linux")))]
-fn advise_hugepage<T>(_values: &Vec<T>) {}
 
 /// The vector of all symbols, and the index of global ones by name.
 ///
@@ -1604,7 +1579,7 @@ impl SymbolTable {
         let old_capacity = self.symbols.capacity();
         self.symbols.reserve(capacity);
         if self.symbols.capacity() != old_capacity {
-            advise_hugepage(&self.symbols);
+            madvise_hugepage(&self.symbols);
         }
         let capacity = self.symbols.capacity();
         let storage = AtomicPtr::new(self.symbols.as_mut_ptr());
@@ -1708,7 +1683,7 @@ impl SymbolTable {
         let old_capacity = self.symbols.capacity();
         self.symbols.reserve(n);
         if self.symbols.capacity() != old_capacity {
-            advise_hugepage(&self.symbols);
+            madvise_hugepage(&self.symbols);
         }
         let ptr = self.symbols.as_mut_ptr();
         // SAFETY: `first` is the initialized length and reserve made room for
@@ -1736,7 +1711,7 @@ impl SymbolTable {
         let old_capacity = self.symbols.capacity();
         self.symbols.reserve(maximum);
         if self.symbols.capacity() != old_capacity {
-            advise_hugepage(&self.symbols);
+            madvise_hugepage(&self.symbols);
         }
 
         let allocator = ParallelSymbolAllocator {
