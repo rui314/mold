@@ -37,10 +37,6 @@ impl Layout for M68k {
     type Rel = Elf32RelaBe;
 }
 
-fn w32(loc: &mut [u8], v: u32) {
-    write_ub32(loc, v);
-}
-
 impl Arch for M68k {
     type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
 
@@ -77,8 +73,8 @@ impl Arch for M68k {
         let gotplt_addr = ctx.gotplt.hdr.shdr.sh_addr.get();
         let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
         let gotplt = gotplt_addr.wrapping_sub(plt_addr);
-        w32(&mut buf[6..], gotplt);
-        w32(&mut buf[14..], gotplt.wrapping_sub(4));
+        write_ub32(&mut buf[6..], gotplt);
+        write_ub32(&mut buf[14..], gotplt.wrapping_sub(4));
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -87,11 +83,11 @@ impl Arch for M68k {
             0x4e, 0xfb, 0x01, 0x71, 0, 0, 0, 0, // jmp    ([GOTPLT_ENTRY, %pc])
         ];
         buf[..14].copy_from_slice(&INSN);
-        w32(
+        write_ub32(
             &mut buf[2..],
             sym.plt_idx(&ctx.symbols).unwrap() * std::mem::size_of::<ElfRel<Self>>() as u32,
         );
-        w32(
+        write_ub32(
             &mut buf[10..],
             sym.gotplt_addr(ctx)
                 .wrapping_sub(sym.plt_addr(ctx))
@@ -102,7 +98,7 @@ impl Arch for M68k {
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         const INSN: [u8; 8] = [0x4e, 0xfb, 0x01, 0x71, 0, 0, 0, 0]; // jmp ([GOT_ENTRY, %pc])
         buf[..8].copy_from_slice(&INSN);
-        w32(
+        write_ub32(
             &mut buf[4..],
             sym.got_pltgot_addr(ctx)
                 .wrapping_sub(sym.plt_addr(ctx))
@@ -120,8 +116,8 @@ impl Arch for M68k {
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_68K_32 => w32(loc, val as u32),
-            R_68K_PC32 => w32(loc, val.wrapping_sub(p) as u32),
+            R_68K_32 => write_ub32(loc, val as u32),
+            R_68K_PC32 => write_ub32(loc, val.wrapping_sub(p) as u32),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -193,7 +189,7 @@ impl Arch for M68k {
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
             // The narrower fields come in unsigned and signed flavors.
-            let write32 = |buf: &mut [u8], val: u64| w32(&mut buf[off..], val as u32);
+            let write32 = |buf: &mut [u8], val: u64| write_ub32(&mut buf[off..], val as u32);
             let write16 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 16);
                 write_ub16(&mut buf[off..], val as u16);
@@ -276,8 +272,8 @@ impl Arch for M68k {
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_68K_32 => w32(loc, tombstone.unwrap_or(sa) as u32),
-                R_68K_TLS_LDO32 => w32(
+                R_68K_32 => write_ub32(loc, tombstone.unwrap_or(sa) as u32),
+                R_68K_TLS_LDO32 => write_ub32(
                     loc,
                     tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
                 ),

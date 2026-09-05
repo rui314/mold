@@ -126,39 +126,23 @@ fn higha(x: u64) -> u64 {
     ha(x) & 0xffff
 }
 
-fn r32(loc: &[u8]) -> u32 {
-    read_ul32(loc)
-}
-
-fn w16(loc: &mut [u8], v: u64) {
-    write_ul16(loc, v as u16);
-}
-
-fn w32(loc: &mut [u8], v: u32) {
-    write_ul32(loc, v);
-}
-
-fn w64(loc: &mut [u8], v: u64) {
-    write_ul64(loc, v);
-}
-
 fn or16(loc: &mut [u8], v: u64) {
     let cur = read_ul16(loc);
     write_ul16(loc, cur | v as u16);
 }
 
 fn or32(loc: &mut [u8], v: u32) {
-    let cur = r32(loc);
-    w32(loc, cur | v);
+    let cur = read_ul32(loc);
+    write_ul32(loc, cur | v);
 }
 
 /// Writes the 34-bit immediate of a prefixed instruction, which is split
 /// between the prefix word and the instruction word.
 fn write34(loc: &mut [u8], x: u64) {
-    let prefix = (r32(loc) & 0xfffc_0000) | bits(x, 33, 16) as u32;
-    let insn = (r32(&loc[4..]) & 0xffff_0000) | bits(x, 15, 0) as u32;
-    w32(loc, prefix);
-    w32(&mut loc[4..], insn);
+    let prefix = (read_ul32(loc) & 0xfffc_0000) | bits(x, 33, 16) as u32;
+    let insn = (read_ul32(&loc[4..]) & 0xffff_0000) | bits(x, 15, 0) as u32;
+    write_ul32(loc, prefix);
+    write_ul32(&mut loc[4..], insn);
 }
 
 /// The 26-bit displacement field of a branch.
@@ -442,7 +426,7 @@ impl Arch for Ppc64V2 {
             0x4e80_0420, // bctr
         ];
         for (i, &insn) in INSN.iter().enumerate() {
-            w32(&mut buf[i * 4..], insn);
+            write_ul32(&mut buf[i * 4..], insn);
         }
         let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
@@ -456,7 +440,7 @@ impl Arch for Ppc64V2 {
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let offset = plt.wrapping_sub(sym.plt_addr(ctx));
-        w32(buf, 0x4b00_0000 | (offset as u32 & 0x00ff_ffff)); // b plt0
+        write_ul32(buf, 0x4b00_0000 | (offset as u32 & 0x00ff_ffff)); // b plt0
     }
 
     // .plt.got is not necessary on PPC64 because range extension thunks
@@ -473,7 +457,7 @@ impl Arch for Ppc64V2 {
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_PPC64_ADDR64 => w64(loc, val),
+            R_PPC64_ADDR64 => write_ul64(loc, val),
             R_PPC64_REL32 => {
                 eh_frame::check_range(
                     ctx,
@@ -483,9 +467,9 @@ impl Arch for Ppc64V2 {
                     -(1 << 31),
                     1 << 31,
                 );
-                w32(loc, val.wrapping_sub(p) as u32);
+                write_ul32(loc, val.wrapping_sub(p) as u32);
             }
-            R_PPC64_REL64 => w64(loc, val.wrapping_sub(p)),
+            R_PPC64_REL64 => write_ul64(loc, val.wrapping_sub(p)),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -604,8 +588,8 @@ impl Arch for Ppc64V2 {
             let no_r2save_thunk = || sym.thunk_addr(ctx, p) + 8;
 
             match rel.r_type() {
-                R_PPC64_TOC16_HA => w16(loc, ha(sa.wrapping_sub(toc))),
-                R_PPC64_TOC16_LO => w16(loc, lo(sa.wrapping_sub(toc))),
+                R_PPC64_TOC16_HA => write_ul16(loc, ha(sa.wrapping_sub(toc)) as u16),
+                R_PPC64_TOC16_LO => write_ul16(loc, lo(sa.wrapping_sub(toc)) as u16),
                 R_PPC64_TOC16_DS => {
                     isec.check_range(ctx, i, sa.wrapping_sub(toc) as i64, -(1 << 15), 1 << 15);
                     or16(loc, sa.wrapping_sub(toc) & 0xfffc);
@@ -619,8 +603,8 @@ impl Arch for Ppc64V2 {
                         // The thunk saves %r2 to the caller's r2 save slot. We need to
                         // restore it after function return. To do so, there's usually a
                         // NOP as a placeholder after a BL. 0x6000'0000 is a NOP.
-                        if loc.len() >= 8 && r32(&loc[4..]) == 0x6000_0000 {
-                            w32(&mut loc[4..], 0xe841_0018); // ld r2, 24(r1)
+                        if loc.len() >= 8 && read_ul32(&loc[4..]) == 0x6000_0000 {
+                            write_ul32(&mut loc[4..], 0xe841_0018); // ld r2, 24(r1)
                         }
                     } else {
                         let mut val = s
@@ -644,39 +628,49 @@ impl Arch for Ppc64V2 {
                     or32(loc, branch_field(val));
                 }
                 R_PPC64_REL14 => or32(loc, (bits(pcrel, 15, 2) << 2) as u32),
-                R_PPC64_REL32 => w32(loc, pcrel as u32),
-                R_PPC64_REL64 => w64(loc, pcrel),
-                R_PPC64_REL16_HA => w16(loc, ha(pcrel)),
-                R_PPC64_REL16_LO => w16(loc, lo(pcrel)),
-                R_PPC64_GOT16 => w16(loc, g().wrapping_sub(toc)),
-                R_PPC64_GOT16_LO => w16(loc, lo(g().wrapping_sub(toc))),
-                R_PPC64_GOT16_HI => w16(loc, hi(g().wrapping_sub(toc))),
-                R_PPC64_GOT16_HA => w16(loc, ha(g().wrapping_sub(toc))),
-                R_PPC64_PLT16_HA => w16(loc, ha(sym.got_addr(ctx).wrapping_sub(toc))),
-                R_PPC64_PLT16_HI => w16(loc, hi(sym.got_addr(ctx).wrapping_sub(toc))),
-                R_PPC64_PLT16_LO => w16(loc, lo(sym.got_addr(ctx).wrapping_sub(toc))),
+                R_PPC64_REL32 => write_ul32(loc, pcrel as u32),
+                R_PPC64_REL64 => write_ul64(loc, pcrel),
+                R_PPC64_REL16_HA => write_ul16(loc, ha(pcrel) as u16),
+                R_PPC64_REL16_LO => write_ul16(loc, lo(pcrel) as u16),
+                R_PPC64_GOT16 => write_ul16(loc, g().wrapping_sub(toc) as u16),
+                R_PPC64_GOT16_LO => write_ul16(loc, lo(g().wrapping_sub(toc)) as u16),
+                R_PPC64_GOT16_HI => write_ul16(loc, hi(g().wrapping_sub(toc)) as u16),
+                R_PPC64_GOT16_HA => write_ul16(loc, ha(g().wrapping_sub(toc)) as u16),
+                R_PPC64_PLT16_HA => write_ul16(loc, ha(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
+                R_PPC64_PLT16_HI => write_ul16(loc, hi(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
+                R_PPC64_PLT16_LO => write_ul16(loc, lo(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
                 R_PPC64_PLT16_LO_DS => or16(loc, sym.got_addr(ctx).wrapping_sub(toc) & 0xfffc),
                 R_PPC64_PLT_PCREL34 | R_PPC64_PLT_PCREL34_NOTOC | R_PPC64_GOT_PCREL34 => {
                     write34(loc, sym.got_addr(ctx).wrapping_sub(p))
                 }
                 R_PPC64_PCREL34 => write34(loc, pcrel),
-                R_PPC64_GOT_TPREL16_HA => w16(loc, ha(sym.gottp_addr(ctx).wrapping_sub(toc))),
+                R_PPC64_GOT_TPREL16_HA => {
+                    write_ul16(loc, ha(sym.gottp_addr(ctx).wrapping_sub(toc)) as u16)
+                }
                 R_PPC64_GOT_TPREL16_LO_DS => {
                     or16(loc, sym.gottp_addr(ctx).wrapping_sub(toc) & 0xfffc)
                 }
                 R_PPC64_GOT_TPREL_PCREL34 => write34(loc, sym.gottp_addr(ctx).wrapping_sub(p)),
-                R_PPC64_GOT_TLSGD16_HA => w16(loc, ha(sym.tlsgd_addr(ctx).wrapping_sub(toc))),
-                R_PPC64_GOT_TLSGD16_LO => w16(loc, lo(sym.tlsgd_addr(ctx).wrapping_sub(toc))),
+                R_PPC64_GOT_TLSGD16_HA => {
+                    write_ul16(loc, ha(sym.tlsgd_addr(ctx).wrapping_sub(toc)) as u16)
+                }
+                R_PPC64_GOT_TLSGD16_LO => {
+                    write_ul16(loc, lo(sym.tlsgd_addr(ctx).wrapping_sub(toc)) as u16)
+                }
                 R_PPC64_GOT_TLSGD_PCREL34 => write34(loc, sym.tlsgd_addr(ctx).wrapping_sub(p)),
-                R_PPC64_GOT_TLSLD16_HA => w16(loc, ha(ctx.got.tlsld_addr().wrapping_sub(toc))),
-                R_PPC64_GOT_TLSLD16_LO => w16(loc, lo(ctx.got.tlsld_addr().wrapping_sub(toc))),
+                R_PPC64_GOT_TLSLD16_HA => {
+                    write_ul16(loc, ha(ctx.got.tlsld_addr().wrapping_sub(toc)) as u16)
+                }
+                R_PPC64_GOT_TLSLD16_LO => {
+                    write_ul16(loc, lo(ctx.got.tlsld_addr().wrapping_sub(toc)) as u16)
+                }
                 R_PPC64_GOT_TLSLD_PCREL34 => write34(loc, ctx.got.tlsld_addr().wrapping_sub(p)),
-                R_PPC64_DTPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.dtp_addr))),
-                R_PPC64_DTPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.dtp_addr))),
+                R_PPC64_DTPREL16_HA => write_ul16(loc, ha(sa.wrapping_sub(ctx.dtp_addr)) as u16),
+                R_PPC64_DTPREL16_LO => write_ul16(loc, lo(sa.wrapping_sub(ctx.dtp_addr)) as u16),
                 R_PPC64_DTPREL16_LO_DS => or16(loc, sa.wrapping_sub(ctx.dtp_addr) & 0xfffc),
                 R_PPC64_DTPREL34 => write34(loc, sa.wrapping_sub(ctx.dtp_addr)),
-                R_PPC64_TPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.tp_addr))),
-                R_PPC64_TPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.tp_addr))),
+                R_PPC64_TPREL16_HA => write_ul16(loc, ha(sa.wrapping_sub(ctx.tp_addr)) as u16),
+                R_PPC64_TPREL16_LO => write_ul16(loc, lo(sa.wrapping_sub(ctx.tp_addr)) as u16),
                 R_PPC64_TPREL16_LO_DS => or16(loc, sa.wrapping_sub(ctx.tp_addr) & 0xfffc),
                 R_PPC64_TPREL34 => write34(loc, sa.wrapping_sub(ctx.tp_addr)),
                 R_PPC64_ADDR64
@@ -710,14 +704,14 @@ impl Arch for Ppc64V2 {
 
             match rel.r_type() {
                 R_PPC64_ADDR64 => match isec.tombstone(ctx, sym, frag.map(|(f, _)| f)) {
-                    Some(v) => w64(loc, v),
-                    None => w64(loc, sa),
+                    Some(v) => write_ul64(loc, v),
+                    None => write_ul64(loc, sa),
                 },
                 R_PPC64_ADDR32 => {
                     isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
-                    w32(loc, sa as u32);
+                    write_ul32(loc, sa as u32);
                 }
-                R_PPC64_DTPREL64 => w64(loc, sa.wrapping_sub(ctx.dtp_addr)),
+                R_PPC64_DTPREL64 => write_ul64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
@@ -801,7 +795,7 @@ impl Arch for Ppc64V2 {
                 (local, sym.addr(ctx))
             };
             for (j, &insn) in insns.iter().enumerate() {
-                w32(&mut entry[j * 4..], insn);
+                write_ul32(&mut entry[j * 4..], insn);
             }
             if power10 {
                 write34(&mut entry[8..], target.wrapping_sub(p).wrapping_sub(8));

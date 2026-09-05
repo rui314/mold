@@ -59,37 +59,17 @@ impl Layout for S390x {
     type Rel = Elf64RelaBe;
 }
 
-fn w16(loc: &mut [u8], v: u16) {
-    write_ub16(loc, v);
-}
-
-fn w32(loc: &mut [u8], v: u32) {
-    write_ub32(loc, v);
-}
-
-fn w64(loc: &mut [u8], v: u64) {
-    write_ub64(loc, v);
-}
-
-fn r16(loc: &[u8]) -> u16 {
-    read_ub16(loc)
-}
-
-fn r32(loc: &[u8]) -> u32 {
-    read_ub32(loc)
-}
-
 /// Sets the 12-bit displacement field of a halfword.
 fn or12(loc: &mut [u8], val: u64) {
-    w16(loc, r16(loc) | bits(val, 11, 0) as u16);
+    write_ub16(loc, read_ub16(loc) | bits(val, 11, 0) as u16);
 }
 
 /// Writes a 20-bit displacement, which is split into a 12-bit low part
 /// and an 8-bit high part.
 fn write_mid20(loc: &mut [u8], val: u64) {
-    w32(
+    write_ub32(
         loc,
-        r32(loc) | ((bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8)) as u32,
+        read_ub32(loc) | ((bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8)) as u32,
     );
 }
 
@@ -104,7 +84,7 @@ fn relaxes_gotent(
     if !ctx.args.relax || !sym.is_pcrel_linktime_const(ctx) || rel.r_offset() < 2 {
         return false;
     }
-    let op = r16(&isec.contents()[rel.r_offset() as usize - 2..]);
+    let op = read_ub16(&isec.contents()[rel.r_offset() as usize - 2..]);
     let val = sym
         .addr(ctx)
         .wrapping_add(rel.r_addend() as u64)
@@ -167,7 +147,7 @@ impl Arch for S390x {
         let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let offset = gotplt.wrapping_sub(plt).wrapping_sub(24);
-        w32(&mut buf[26..], (offset >> 1) as u32);
+        write_ub32(&mut buf[26..], (offset >> 1) as u32);
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -178,7 +158,7 @@ impl Arch for S390x {
             0x00, 0x00, // (filler)
         ];
         buf[..16].copy_from_slice(&INSN);
-        w32(
+        write_ub32(
             &mut buf[2..],
             (sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx)) >> 1) as u32,
         );
@@ -192,7 +172,7 @@ impl Arch for S390x {
             0x00, 0x00, // (filler)
         ];
         buf[..16].copy_from_slice(&INSN);
-        w32(
+        write_ub32(
             &mut buf[2..],
             (sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)) >> 1) as u32,
         );
@@ -211,9 +191,9 @@ impl Arch for S390x {
             R_NONE => {}
             R_390_PC32 => {
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
-                w32(loc, val.wrapping_sub(p) as u32);
+                write_ub32(loc, val.wrapping_sub(p) as u32);
             }
-            R_390_64 => w64(loc, val),
+            R_390_64 => write_ub64(loc, val),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -332,7 +312,7 @@ impl Arch for S390x {
                 }
                 R_390_16 => {
                     check(sa as i64, 0, 1 << 16);
-                    w16(&mut buf[off..], sa as u16);
+                    write_ub16(&mut buf[off..], sa as u16);
                 }
                 R_390_20 => {
                     check(sa as i64, 0, 1 << 20);
@@ -340,40 +320,40 @@ impl Arch for S390x {
                 }
                 R_390_32 | R_390_PLT32 => {
                     check(sa as i64, 0, 1 << 32);
-                    w32(&mut buf[off..], sa as u32);
+                    write_ub32(&mut buf[off..], sa as u32);
                 }
                 R_390_PC12DBL | R_390_PLT12DBL => {
                     check_dbl(pcrel as i64, -(1 << 12), 1 << 12);
-                    let v = r16(&buf[off..]) | bits(pcrel, 12, 1) as u16;
-                    w16(&mut buf[off..], v);
+                    let v = read_ub16(&buf[off..]) | bits(pcrel, 12, 1) as u16;
+                    write_ub16(&mut buf[off..], v);
                 }
                 R_390_PC16 => {
                     check(pcrel as i64, -(1 << 15), 1 << 15);
-                    w16(&mut buf[off..], pcrel as u16);
+                    write_ub16(&mut buf[off..], pcrel as u16);
                 }
                 R_390_PC32 => {
                     check(pcrel as i64, -(1 << 31), 1 << 31);
-                    w32(&mut buf[off..], pcrel as u32);
+                    write_ub32(&mut buf[off..], pcrel as u32);
                 }
-                R_390_PC64 | R_390_PLT64 => w64(&mut buf[off..], pcrel),
+                R_390_PC64 | R_390_PLT64 => write_ub64(&mut buf[off..], pcrel),
                 R_390_PC16DBL | R_390_PLT16DBL => {
                     check_dbl(pcrel as i64, -(1 << 16), 1 << 16);
-                    w16(&mut buf[off..], (pcrel >> 1) as u16);
+                    write_ub16(&mut buf[off..], (pcrel >> 1) as u16);
                 }
                 R_390_PC24DBL | R_390_PLT24DBL => {
                     check_dbl(pcrel as i64, -(1 << 24), 1 << 24);
-                    let v = r32(&buf[off..]) | bits(pcrel, 24, 1) as u32;
-                    w32(&mut buf[off..], v);
+                    let v = read_ub32(&buf[off..]) | bits(pcrel, 24, 1) as u32;
+                    write_ub32(&mut buf[off..], v);
                 }
                 R_390_PC32DBL => {
                     check_dbl(pcrel as i64, -(1 << 32), 1 << 32);
-                    w32(&mut buf[off..], (pcrel >> 1) as u32);
+                    write_ub32(&mut buf[off..], (pcrel >> 1) as u32);
                 }
                 R_390_PLT32DBL => {
                     if !sym.is_remaining_undef_weak() {
                         check_dbl(pcrel as i64, -(1 << 32), 1 << 32);
                     }
-                    w32(&mut buf[off..], (pcrel >> 1) as u32);
+                    write_ub32(&mut buf[off..], (pcrel >> 1) as u32);
                 }
                 R_390_GOT12 | R_390_GOTPLT12 => {
                     check(g().wrapping_add(a) as i64, 0, 1 << 12);
@@ -381,7 +361,7 @@ impl Arch for S390x {
                 }
                 R_390_GOT16 | R_390_GOTPLT16 => {
                     check(g().wrapping_add(a) as i64, 0, 1 << 16);
-                    w16(&mut buf[off..], g().wrapping_add(a) as u16);
+                    write_ub16(&mut buf[off..], g().wrapping_add(a) as u16);
                 }
                 R_390_GOT20 | R_390_GOTPLT20 => {
                     check(g().wrapping_add(a) as i64, 0, 1 << 20);
@@ -389,48 +369,50 @@ impl Arch for S390x {
                 }
                 R_390_GOT32 | R_390_GOTPLT32 => {
                     check(g().wrapping_add(a) as i64, 0, 1 << 32);
-                    w32(&mut buf[off..], g().wrapping_add(a) as u32);
+                    write_ub32(&mut buf[off..], g().wrapping_add(a) as u32);
                 }
-                R_390_GOT64 | R_390_GOTPLT64 => w64(&mut buf[off..], g().wrapping_add(a)),
+                R_390_GOT64 | R_390_GOTPLT64 => write_ub64(&mut buf[off..], g().wrapping_add(a)),
                 R_390_GOTOFF16 | R_390_PLTOFF16 => {
                     check(sa.wrapping_sub(got) as i64, -(1 << 15), 1 << 15);
-                    w16(&mut buf[off..], sa.wrapping_sub(got) as u16);
+                    write_ub16(&mut buf[off..], sa.wrapping_sub(got) as u16);
                 }
                 R_390_GOTOFF32 | R_390_PLTOFF32 => {
                     check(sa.wrapping_sub(got) as i64, -(1 << 31), 1 << 31);
-                    w32(&mut buf[off..], sa.wrapping_sub(got) as u32);
+                    write_ub32(&mut buf[off..], sa.wrapping_sub(got) as u32);
                 }
-                R_390_GOTOFF64 | R_390_PLTOFF64 => w64(&mut buf[off..], sa.wrapping_sub(got)),
-                R_390_GOTPC => w64(&mut buf[off..], got.wrapping_add(a).wrapping_sub(p)),
+                R_390_GOTOFF64 | R_390_PLTOFF64 => {
+                    write_ub64(&mut buf[off..], sa.wrapping_sub(got))
+                }
+                R_390_GOTPC => write_ub64(&mut buf[off..], got.wrapping_add(a).wrapping_sub(p)),
                 R_390_GOTPCDBL => {
                     let val = got.wrapping_add(a).wrapping_sub(p);
                     check_dbl(val as i64, -(1 << 32), 1 << 32);
-                    w32(&mut buf[off..], (val >> 1) as u32);
+                    write_ub32(&mut buf[off..], (val >> 1) as u32);
                 }
                 R_390_GOTENT => {
                     // If we can relax a GOT-loading LGRL to an address-materializing
                     // LARL, do that. The format of LGRL is 0xc 0x4 <reg> 0x8 followed
                     // by a 32-bit offset. LARL is 0xc 0x0 <reg> 0x0.
                     if relaxes_gotent(ctx, isec, &rel, sym) {
-                        let op = r16(&buf[off - 2..]);
-                        w16(&mut buf[off - 2..], 0xc000 | (op & 0x00f0));
-                        w32(&mut buf[off..], (pcrel >> 1) as u32);
+                        let op = read_ub16(&buf[off - 2..]);
+                        write_ub16(&mut buf[off - 2..], 0xc000 | (op & 0x00f0));
+                        write_ub32(&mut buf[off..], (pcrel >> 1) as u32);
                         if ctx.args.emit_relocs {
                             rel_mut.set_r_type(R_390_PC32DBL);
                         }
                     } else {
                         let val = got.wrapping_add(g()).wrapping_add(a).wrapping_sub(p);
                         check_dbl(val as i64, -(1 << 32), 1 << 32);
-                        w32(&mut buf[off..], (val >> 1) as u32);
+                        write_ub32(&mut buf[off..], (val >> 1) as u32);
                     }
                 }
-                R_390_TLS_LE32 => w32(&mut buf[off..], sa.wrapping_sub(ctx.tp_addr) as u32),
-                R_390_TLS_LE64 => w64(&mut buf[off..], sa.wrapping_sub(ctx.tp_addr)),
+                R_390_TLS_LE32 => write_ub32(&mut buf[off..], sa.wrapping_sub(ctx.tp_addr) as u32),
+                R_390_TLS_LE64 => write_ub64(&mut buf[off..], sa.wrapping_sub(ctx.tp_addr)),
                 R_390_TLS_GOTIE20 => write_mid20(
                     &mut buf[off..],
                     sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got),
                 ),
-                R_390_TLS_IEENT => w32(
+                R_390_TLS_IEENT => write_ub32(
                     &mut buf[off..],
                     (sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p) >> 1) as u32,
                 ),
@@ -443,9 +425,9 @@ impl Arch for S390x {
                         sa.wrapping_sub(ctx.tp_addr)
                     };
                     if rel.r_type() == R_390_TLS_GD32 {
-                        w32(&mut buf[off..], val as u32);
+                        write_ub32(&mut buf[off..], val as u32);
                     } else {
-                        w64(&mut buf[off..], val);
+                        write_ub64(&mut buf[off..], val);
                     }
                 }
                 R_390_TLS_GDCALL => {
@@ -466,9 +448,9 @@ impl Arch for S390x {
                         ctx.dtp_addr.wrapping_sub(ctx.tp_addr)
                     };
                     if rel.r_type() == R_390_TLS_LDM32 {
-                        w32(&mut buf[off..], val as u32);
+                        write_ub32(&mut buf[off..], val as u32);
                     } else {
-                        w64(&mut buf[off..], val);
+                        write_ub64(&mut buf[off..], val);
                     }
                 }
                 R_390_TLS_LDCALL => {
@@ -477,8 +459,10 @@ impl Arch for S390x {
                         // nop
                     }
                 }
-                R_390_TLS_LDO32 => w32(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr) as u32),
-                R_390_TLS_LDO64 => w64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
+                R_390_TLS_LDO32 => {
+                    write_ub32(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr) as u32)
+                }
+                R_390_TLS_LDO64 => write_ub64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }
@@ -504,15 +488,15 @@ impl Arch for S390x {
             match rel.r_type() {
                 R_390_32 => {
                     check(sa as i64, 0, 1 << 32);
-                    w32(&mut buf[off..], sa as u32);
+                    write_ub32(&mut buf[off..], sa as u32);
                 }
                 R_390_64 => match isec.tombstone(ctx, sym, frag_ref) {
-                    Some(v) => w64(&mut buf[off..], v),
-                    None => w64(&mut buf[off..], sa),
+                    Some(v) => write_ub64(&mut buf[off..], v),
+                    None => write_ub64(&mut buf[off..], sa),
                 },
                 R_390_TLS_LDO64 => match isec.tombstone(ctx, sym, frag_ref) {
-                    Some(v) => w64(&mut buf[off..], v),
-                    None => w64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
+                    Some(v) => write_ub64(&mut buf[off..], v),
+                    None => write_ub64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
                 },
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",

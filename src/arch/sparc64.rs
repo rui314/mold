@@ -83,24 +83,8 @@ impl Layout for Sparc64 {
     type Rel = Sparc64Rela;
 }
 
-fn r32(loc: &[u8]) -> u32 {
-    read_ub32(loc)
-}
-
-fn w16(loc: &mut [u8], v: u64) {
-    write_ub16(loc, v as u16);
-}
-
-fn w32(loc: &mut [u8], v: u64) {
-    write_ub32(loc, v as u32);
-}
-
-fn w64(loc: &mut [u8], v: u64) {
-    write_ub64(loc, v);
-}
-
 fn or32(loc: &mut [u8], v: u64) {
-    let cur = r32(loc);
+    let cur = read_ub32(loc);
     write_ub32(loc, cur | v as u32);
 }
 
@@ -202,7 +186,7 @@ impl Arch for Sparc64 {
                 0x0100_0000, // nop
             ];
             for (i, &insn) in INSN.iter().enumerate() {
-                w32(&mut buf[i * 4..], insn as u64);
+                write_ub32(&mut buf[i * 4..], insn);
             }
             let plt1 = plt + Self::PLT_SIZE;
             or32(buf, bits(entry - plt, 21, 0));
@@ -220,7 +204,7 @@ impl Arch for Sparc64 {
                 0x9e10_0005, // mov  %g5, %o7
             ];
             for (i, &insn) in INSN.iter().enumerate() {
-                w32(&mut buf[i * 4..], insn as u64);
+                write_ub32(&mut buf[i * 4..], insn);
             }
             let call = entry + 4;
             let ptroff = plt_ptr_offset(ctx.plt.symbols.len(), idx);
@@ -233,7 +217,7 @@ impl Arch for Sparc64 {
             // jumps to .PLT0, where the loader's lazy resolver lives. The resolver
             // later overwrites it with (target - call).
             let ptr = (ptroff - (entry - plt)) as usize;
-            w64(&mut buf[ptr..], plt.wrapping_sub(call));
+            write_ub64(&mut buf[ptr..], plt.wrapping_sub(call));
         }
     }
 
@@ -247,9 +231,9 @@ impl Arch for Sparc64 {
             0x9e10_0005, // mov  %g5, %o7
         ]; // .quad $plt_entry - $got_entry
         for (i, &insn) in INSN.iter().enumerate() {
-            w32(&mut buf[i * 4..], insn as u64);
+            write_ub32(&mut buf[i * 4..], insn);
         }
-        w64(
+        write_ub64(
             &mut buf[24..],
             sym.got_pltgot_addr(ctx)
                 .wrapping_sub(sym.plt_addr(ctx))
@@ -267,7 +251,7 @@ impl Arch for Sparc64 {
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_SPARC_64 | R_SPARC_UA64 => w64(loc, val),
+            R_SPARC_64 | R_SPARC_UA64 => write_ub64(loc, val),
             R_SPARC_DISP32 => {
                 eh_frame::check_range(
                     ctx,
@@ -277,7 +261,7 @@ impl Arch for Sparc64 {
                     -(1 << 31),
                     1 << 31,
                 );
-                w32(loc, val.wrapping_sub(p));
+                write_ub32(loc, val.wrapping_sub(p) as u32);
             }
             _ => eh_frame::unsupported::<Self>(rel),
         }
@@ -416,7 +400,7 @@ impl Arch for Sparc64 {
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
             // Register fields of the instruction being rewritten.
-            let insn = r32(&buf[off..]);
+            let insn = read_ub32(&buf[off..]);
             let rs1 = insn & (0b11111 << 14);
             let rs2 = insn & 0b11111;
             let rd = insn & (0b11111 << 25);
@@ -454,7 +438,7 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_16 | R_SPARC_UA16 => {
                     check(sa as i64, 0, 1 << 16);
-                    w16(loc, sa);
+                    write_ub16(loc, sa as u16);
                 }
                 R_SPARC_22 => {
                     check(sa as i64, 0, 1 << 22);
@@ -462,27 +446,27 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_32 | R_SPARC_UA32 | R_SPARC_PLT32 => {
                     check(sa as i64, 0, 1 << 32);
-                    w32(loc, sa);
+                    write_ub32(loc, sa as u32);
                 }
-                R_SPARC_PLT64 | R_SPARC_REGISTER => w64(loc, sa),
+                R_SPARC_PLT64 | R_SPARC_REGISTER => write_ub64(loc, sa),
                 R_SPARC_DISP8 => {
                     check(pcrel as i64, -(1 << 7), 1 << 7);
                     loc[0] = pcrel as u8;
                 }
                 R_SPARC_DISP16 => {
                     check(pcrel as i64, -(1 << 15), 1 << 15);
-                    w16(loc, pcrel);
+                    write_ub16(loc, pcrel as u16);
                 }
                 R_SPARC_DISP32 | R_SPARC_PCPLT32 => {
                     check(pcrel as i64, -(1 << 31), 1 << 31);
-                    w32(loc, pcrel);
+                    write_ub32(loc, pcrel as u32);
                 }
-                R_SPARC_DISP64 => w64(loc, pcrel),
+                R_SPARC_DISP64 => write_ub64(loc, pcrel),
                 R_SPARC_WDISP16 => {
                     check(pcrel as i64, -(1 << 16), 1 << 16);
                     let field = (bit(pcrel, 16) << 21) | bits(pcrel, 15, 2);
                     let cur = read_ub16(loc);
-                    w16(loc, cur as u64 | field);
+                    write_ub16(loc, (cur as u64 | field) as u16);
                 }
                 R_SPARC_WDISP19 => {
                     check(pcrel as i64, -(1 << 20), 1 << 20);
@@ -531,10 +515,10 @@ impl Arch for Sparc64 {
                 R_SPARC_GOTDATA_OP => {
                     if sym.is_absolute() {
                         // ldx [ %rs1 + %rs2 ], %rd  →  mov %rs2, %rd
-                        w32(loc, (0x8010_0000 | rs2 | rd) as u64);
+                        write_ub32(loc, 0x8010_0000 | rs2 | rd);
                     } else if sym.is_pcrel_linktime_const(ctx) {
                         // ldx [ %rs1 + %rs2 ], %rd  →  add %rs1, %rs2, %rd
-                        w32(loc, (0x8000_0000 | rs1 | rs2 | rd) as u64);
+                        write_ub32(loc, 0x8000_0000 | rs1 | rs2 | rd);
                     }
                 }
                 R_SPARC_PC10 | R_SPARC_PCPLT10 => or32(loc, bits(pcrel, 9, 0)),
@@ -587,14 +571,14 @@ impl Arch for Sparc64 {
                         );
                     } else if sym.has_gottp(&ctx.symbols) {
                         // add %rs1, %rs2, %rd → or %rs1, $imm, %rd
-                        w32(loc, (0x8010_2000 | rs1 | rd) as u64);
+                        write_ub32(loc, 0x8010_2000 | rs1 | rd);
                         or32(
                             loc,
                             bits(sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got), 9, 0),
                         );
                     } else {
                         // add %rs1, %rs2, %rd → xor %rs1, $imm, %rd
-                        w32(loc, (0x8018_2000 | rs1 | rd) as u64);
+                        write_ub32(loc, 0x8018_2000 | rs1 | rd);
                         or32(
                             loc,
                             bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000,
@@ -606,10 +590,10 @@ impl Arch for Sparc64 {
                         // do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
                         // add %rs1, %rs2, %rd → ldx [ %rs1 + %rs2 ], %rd
-                        w32(loc, (0xc058_0000 | rs1 | rs2 | rd) as u64);
+                        write_ub32(loc, 0xc058_0000 | rs1 | rs2 | rd);
                     } else {
                         // add %rs1, %rs2, %rd → add %g7, %rs2, %rd
-                        w32(loc, (0x8001_c000 | rs2 | rd) as u64);
+                        write_ub32(loc, 0x8001_c000 | rs2 | rd);
                     }
                 }
                 R_SPARC_TLS_GD_CALL => {
@@ -626,11 +610,11 @@ impl Arch for Sparc64 {
                         //
                         // Since we apply relocations from the end to the beginning,
                         // the instruction at loc + 4 is already complete.
-                        let next = r32(&loc[4..]);
-                        w32(loc, next as u64);
-                        w32(&mut loc[4..], 0x9001_c008); // add %g7, %o0, %o0
+                        let next = read_ub32(&loc[4..]);
+                        write_ub32(loc, next);
+                        write_ub32(&mut loc[4..], 0x9001_c008); // add %g7, %o0, %o0
                     } else {
-                        w32(loc, 0x0100_0000); // call → nop
+                        write_ub32(loc, 0x0100_0000); // call → nop
                     }
                 }
                 R_SPARC_TLS_LDM_HI22 => {
@@ -659,7 +643,7 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_TLS_LDM_ADD => {
                     if !ctx.got.has_tlsld() {
-                        w32(loc, (0x8021_c000 | rs2 | rd) as u64); // sub %g7, %rs2, %rd
+                        write_ub32(loc, 0x8021_c000 | rs2 | rd); // sub %g7, %rs2, %rd
                     }
                 }
                 R_SPARC_TLS_LDM_CALL => {
@@ -669,7 +653,7 @@ impl Arch for Sparc64 {
                             bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2),
                         );
                     } else {
-                        w32(loc, 0x0100_0000); // nop
+                        write_ub32(loc, 0x0100_0000); // nop
                     }
                 }
                 R_SPARC_TLS_LDO_HIX22 => or32(loc, bits(sa.wrapping_sub(ctx.dtp_addr), 31, 10)),
@@ -691,7 +675,9 @@ impl Arch for Sparc64 {
                     loc,
                     bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000,
                 ),
-                R_SPARC_SIZE32 => w32(loc, sym.esym(ctx).st_size().get().wrapping_add(a)),
+                R_SPARC_SIZE32 => {
+                    write_ub32(loc, sym.esym(ctx).st_size().get().wrapping_add(a) as u32)
+                }
                 R_SPARC_64 | R_SPARC_UA64 | R_SPARC_TLS_LDO_ADD | R_SPARC_TLS_IE_LD
                 | R_SPARC_TLS_IE_LDX | R_SPARC_TLS_IE_ADD => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
@@ -715,16 +701,16 @@ impl Arch for Sparc64 {
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_SPARC_64 | R_SPARC_UA64 => w64(
+                R_SPARC_64 | R_SPARC_UA64 => write_ub64(
                     loc,
                     isec.tombstone(ctx, sym, frag.map(|(f, _)| f)).unwrap_or(sa),
                 ),
                 R_SPARC_32 | R_SPARC_UA32 => {
                     isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
-                    w32(loc, sa);
+                    write_ub32(loc, sa as u32);
                 }
-                R_SPARC_TLS_DTPOFF32 => w32(loc, sa.wrapping_sub(ctx.dtp_addr)),
-                R_SPARC_TLS_DTPOFF64 => w64(loc, sa.wrapping_sub(ctx.dtp_addr)),
+                R_SPARC_TLS_DTPOFF32 => write_ub32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
+                R_SPARC_TLS_DTPOFF64 => write_ub64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

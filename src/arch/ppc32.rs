@@ -81,14 +81,6 @@ fn higha(x: u64) -> u64 {
     ha(x) & 0xffff
 }
 
-fn w16(loc: &mut [u8], v: u64) {
-    write_ub16(loc, v as u16);
-}
-
-fn w32(loc: &mut [u8], v: u64) {
-    write_ub32(loc, v as u32);
-}
-
 fn or32(loc: &mut [u8], v: u64) {
     let cur = read_ub32(loc);
     write_ub32(loc, cur | v as u32);
@@ -205,8 +197,8 @@ impl Arch for Ppc32 {
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_PPC_ADDR32 => w32(loc, val),
-            R_PPC_REL32 => w32(loc, val.wrapping_sub(p)),
+            R_PPC_ADDR32 => write_ub32(loc, val as u32),
+            R_PPC_REL32 => write_ub32(loc, val.wrapping_sub(p) as u32),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -289,19 +281,19 @@ impl Arch for Ppc32 {
 
             match rel.r_type() {
                 R_PPC_ADDR14 => or32(loc, bits(sa, 15, 2) << 2),
-                R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO => w16(loc, lo(sa)),
-                R_PPC_ADDR16_HI => w16(loc, hi(sa)),
-                R_PPC_ADDR16_HA => w16(loc, ha(sa)),
+                R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO => write_ub16(loc, lo(sa) as u16),
+                R_PPC_ADDR16_HI => write_ub16(loc, hi(sa) as u16),
+                R_PPC_ADDR16_HA => write_ub16(loc, ha(sa) as u16),
                 R_PPC_ADDR24 => or32(loc, bits(sa, 25, 2) << 2),
                 R_PPC_ADDR30 => or32(loc, bits(sa, 31, 2) << 2),
-                R_PPC_PLT16_LO => w16(loc, lo(plt())),
-                R_PPC_PLT16_HI => w16(loc, hi(plt())),
-                R_PPC_PLT16_HA => w16(loc, ha(plt())),
-                R_PPC_PLT32 => w32(loc, plt()),
+                R_PPC_PLT16_LO => write_ub16(loc, lo(plt()) as u16),
+                R_PPC_PLT16_HI => write_ub16(loc, hi(plt()) as u16),
+                R_PPC_PLT16_HA => write_ub16(loc, ha(plt()) as u16),
+                R_PPC_PLT32 => write_ub32(loc, plt() as u32),
                 R_PPC_REL14 => or32(loc, bits(pcrel, 15, 2) << 2),
-                R_PPC_REL16 | R_PPC_REL16_LO => w16(loc, lo(pcrel)),
-                R_PPC_REL16_HI => w16(loc, hi(pcrel)),
-                R_PPC_REL16_HA => w16(loc, ha(pcrel)),
+                R_PPC_REL16 | R_PPC_REL16_LO => write_ub16(loc, lo(pcrel) as u16),
+                R_PPC_REL16_HI => write_ub16(loc, hi(pcrel) as u16),
+                R_PPC_REL16_HA => write_ub16(loc, ha(pcrel) as u16),
                 R_PPC_REL24 | R_PPC_LOCAL24PC => {
                     let mut val = pcrel as i64;
                     if !is_int(val, 26) {
@@ -316,19 +308,19 @@ impl Arch for Ppc32 {
                     }
                     or32(loc, bits(val as u64, 25, 2) << 2);
                 }
-                R_PPC_REL32 | R_PPC_PLTREL32 => w32(loc, pcrel),
-                R_PPC_GOT16 | R_PPC_GOT16_LO => w16(loc, lo(g().wrapping_add(a))),
-                R_PPC_GOT16_HI => w16(loc, hi(g().wrapping_add(a))),
-                R_PPC_GOT16_HA => w16(loc, ha(g().wrapping_add(a))),
-                R_PPC_TPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.tp_addr))),
-                R_PPC_TPREL16_HI => w16(loc, hi(sa.wrapping_sub(ctx.tp_addr))),
-                R_PPC_TPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.tp_addr))),
-                R_PPC_DTPREL16_LO => w16(loc, lo(sa.wrapping_sub(ctx.dtp_addr))),
-                R_PPC_DTPREL16_HI => w16(loc, hi(sa.wrapping_sub(ctx.dtp_addr))),
-                R_PPC_DTPREL16_HA => w16(loc, ha(sa.wrapping_sub(ctx.dtp_addr))),
-                R_PPC_GOT_TLSGD16 => w16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got)),
-                R_PPC_GOT_TLSLD16 => w16(loc, ctx.got.tlsld_addr().wrapping_sub(got)),
-                R_PPC_GOT_TPREL16 => w16(loc, sym.gottp_addr(ctx).wrapping_sub(got)),
+                R_PPC_REL32 | R_PPC_PLTREL32 => write_ub32(loc, pcrel as u32),
+                R_PPC_GOT16 | R_PPC_GOT16_LO => write_ub16(loc, lo(g().wrapping_add(a)) as u16),
+                R_PPC_GOT16_HI => write_ub16(loc, hi(g().wrapping_add(a)) as u16),
+                R_PPC_GOT16_HA => write_ub16(loc, ha(g().wrapping_add(a)) as u16),
+                R_PPC_TPREL16_LO => write_ub16(loc, lo(sa.wrapping_sub(ctx.tp_addr)) as u16),
+                R_PPC_TPREL16_HI => write_ub16(loc, hi(sa.wrapping_sub(ctx.tp_addr)) as u16),
+                R_PPC_TPREL16_HA => write_ub16(loc, ha(sa.wrapping_sub(ctx.tp_addr)) as u16),
+                R_PPC_DTPREL16_LO => write_ub16(loc, lo(sa.wrapping_sub(ctx.dtp_addr)) as u16),
+                R_PPC_DTPREL16_HI => write_ub16(loc, hi(sa.wrapping_sub(ctx.dtp_addr)) as u16),
+                R_PPC_DTPREL16_HA => write_ub16(loc, ha(sa.wrapping_sub(ctx.dtp_addr)) as u16),
+                R_PPC_GOT_TLSGD16 => write_ub16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got) as u16),
+                R_PPC_GOT_TLSLD16 => write_ub16(loc, ctx.got.tlsld_addr().wrapping_sub(got) as u16),
+                R_PPC_GOT_TPREL16 => write_ub16(loc, sym.gottp_addr(ctx).wrapping_sub(got) as u16),
                 R_PPC_ADDR32 | R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD
                 | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
@@ -353,8 +345,11 @@ impl Arch for Ppc32 {
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_PPC_ADDR32 => w32(loc, tombstone.unwrap_or(sa)),
-                R_PPC_DTPREL32 => w32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr))),
+                R_PPC_ADDR32 => write_ub32(loc, tombstone.unwrap_or(sa) as u32),
+                R_PPC_DTPREL32 => write_ub32(
+                    loc,
+                    tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
+                ),
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),
