@@ -123,8 +123,6 @@ impl fmt::Debug for Origin {
 
 const _: () = assert!(std::mem::size_of::<Origin>() == 8);
 
-pub(crate) type OriginState = Origin;
-
 /// Symbol flags set while scanning relocations.
 pub const NEEDS_GOT: u8 = 1 << 0;
 pub const NEEDS_PLT: u8 = 1 << 1;
@@ -832,12 +830,12 @@ impl Symbol {
     }
 
     #[inline]
-    pub(crate) fn origin_state(&self) -> OriginState {
+    pub(crate) fn origin_state(&self) -> Origin {
         self.origin
     }
 
     #[inline]
-    pub(crate) fn set_origin_state(&mut self, state: OriginState) {
+    pub(crate) fn set_origin_state(&mut self, state: Origin) {
         self.origin = state;
     }
 
