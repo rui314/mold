@@ -2178,9 +2178,12 @@ struct ReaderContext {
 // A file to read along with the reader state at its command line
 // position. parse_nonpositional_args() creates one ReaderJob per
 // input file argument; `name` is a path or, if `is_lib` is set, a
-// library name to search for. read_input_files() additionally
-// enqueues archive members as jobs in an already-opened form, with
-// `mf` and `archive_name` set instead.
+// library name to search for.
+//
+// read_input_files() also enqueues archive members, with `archive_name`
+// set and either `mf` for a regular archive or `name` and `thin_parent`
+// for a thin archive. Deferred IR files have `mf` set and, for archive
+// members, `archive_name`, so the LTO plugin can claim them later.
 struct ReaderJob {
   ReaderContext rctx;
   std::string name;
@@ -2836,6 +2839,11 @@ struct Context {
   // them. read_input_files() sorts them by position to construct
   // `objs` and `dsos`.
   tbb::concurrent_vector<std::pair<std::vector<u32>, InputFile<E> *>> unsorted_input_files;
+
+  // IR files for LTO found by the file reader. read_input_files()
+  // hands them to the LTO plugin in the command line order once all
+  // input files have been found.
+  tbb::concurrent_vector<ReaderJob> lto_jobs;
 
   // Symbol table. Object file parsing records each global symbol with add(),
   // together with the file's slot for the resulting Symbol pointer.

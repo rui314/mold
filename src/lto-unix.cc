@@ -446,74 +446,71 @@ get_api_version(const char *plugin_identifier,
 // dlopen the linker plugin file
 template <typename E>
 static void load_lto_plugin(Context<E> &ctx) {
-  static std::once_flag flag;
+  if (phase != 0)
+    return;
+  phase = 1;
+  gctx<E> = &ctx;
 
-  std::call_once(flag, [&] {
-    assert(phase == 0);
-    phase = 1;
-    gctx<E> = &ctx;
+  void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!handle)
+    Fatal(ctx) << "could not open plugin file: " << dlerror();
 
-    void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-      Fatal(ctx) << "could not open plugin file: " << dlerror();
+  OnloadFn *onload = (OnloadFn *)dlsym(handle, "onload");
+  if (!onload)
+    Fatal(ctx) << "failed to load plugin " << ctx.arg.plugin << ": "
+               << dlerror();
 
-    OnloadFn *onload = (OnloadFn *)dlsym(handle, "onload");
-    if (!onload)
-      Fatal(ctx) << "failed to load plugin " << ctx.arg.plugin << ": "
-                 << dlerror();
+  auto save = [&](std::string_view str) {
+    return save_string(ctx, std::string(str).c_str()).data();
+  };
 
-    auto save = [&](std::string_view str) {
-      return save_string(ctx, std::string(str).c_str()).data();
-    };
+  std::vector<PluginTagValue> tv;
+  tv.emplace_back(LDPT_MESSAGE, message<E>);
 
-    std::vector<PluginTagValue> tv;
-    tv.emplace_back(LDPT_MESSAGE, message<E>);
+  if (ctx.arg.shared)
+    tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_DYN);
+  else if (ctx.arg.pie)
+    tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_PIE);
+  else
+    tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_EXEC);
 
-    if (ctx.arg.shared)
-      tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_DYN);
-    else if (ctx.arg.pie)
-      tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_PIE);
-    else
-      tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_EXEC);
+  for (std::string_view opt : ctx.arg.plugin_opt)
+    tv.emplace_back(LDPT_OPTION, save(opt));
 
-    for (std::string_view opt : ctx.arg.plugin_opt)
-      tv.emplace_back(LDPT_OPTION, save(opt));
+  tv.emplace_back(LDPT_REGISTER_CLAIM_FILE_HOOK, register_claim_file_hook<E>);
+  tv.emplace_back(LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
+                  register_all_symbols_read_hook<E>);
+  tv.emplace_back(LDPT_REGISTER_CLEANUP_HOOK, register_cleanup_hook<E>);
+  tv.emplace_back(LDPT_ADD_SYMBOLS, add_symbols);
+  tv.emplace_back(LDPT_GET_SYMBOLS, get_symbols_v1);
+  tv.emplace_back(LDPT_ADD_INPUT_FILE, add_input_file<E>);
+  tv.emplace_back(LDPT_GET_INPUT_FILE, get_input_file);
+  tv.emplace_back(LDPT_RELEASE_INPUT_FILE, release_input_file<E>);
+  tv.emplace_back(LDPT_ADD_INPUT_LIBRARY, add_input_library);
+  tv.emplace_back(LDPT_OUTPUT_NAME, save(ctx.arg.output));
+  tv.emplace_back(LDPT_SET_EXTRA_LIBRARY_PATH, set_extra_library_path);
+  tv.emplace_back(LDPT_GET_VIEW, get_view<E>);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_COUNT, get_input_section_count);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_TYPE, get_input_section_type);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_NAME, get_input_section_name);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_CONTENTS, get_input_section_contents);
+  tv.emplace_back(LDPT_UPDATE_SECTION_ORDER, update_section_order);
+  tv.emplace_back(LDPT_ALLOW_SECTION_ORDERING, allow_section_ordering);
+  tv.emplace_back(LDPT_ADD_SYMBOLS_V2, add_symbols);
+  tv.emplace_back(LDPT_GET_SYMBOLS_V2, get_symbols_v2<E>);
+  tv.emplace_back(LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
+                  allow_unique_segment_for_sections);
+  tv.emplace_back(LDPT_UNIQUE_SEGMENT_FOR_SECTIONS, unique_segment_for_sections);
+  tv.emplace_back(LDPT_GET_SYMBOLS_V3, get_symbols_v3<E>);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_ALIGNMENT, get_input_section_alignment);
+  tv.emplace_back(LDPT_GET_INPUT_SECTION_SIZE, get_input_section_size);
+  tv.emplace_back(LDPT_REGISTER_NEW_INPUT_HOOK, register_new_input_hook<E>);
+  tv.emplace_back(LDPT_GET_WRAP_SYMBOLS, get_wrap_symbols);
+  tv.emplace_back(LDPT_GET_API_VERSION, get_api_version<E>);
+  tv.emplace_back(LDPT_NULL, 0);
 
-    tv.emplace_back(LDPT_REGISTER_CLAIM_FILE_HOOK, register_claim_file_hook<E>);
-    tv.emplace_back(LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
-                    register_all_symbols_read_hook<E>);
-    tv.emplace_back(LDPT_REGISTER_CLEANUP_HOOK, register_cleanup_hook<E>);
-    tv.emplace_back(LDPT_ADD_SYMBOLS, add_symbols);
-    tv.emplace_back(LDPT_GET_SYMBOLS, get_symbols_v1);
-    tv.emplace_back(LDPT_ADD_INPUT_FILE, add_input_file<E>);
-    tv.emplace_back(LDPT_GET_INPUT_FILE, get_input_file);
-    tv.emplace_back(LDPT_RELEASE_INPUT_FILE, release_input_file<E>);
-    tv.emplace_back(LDPT_ADD_INPUT_LIBRARY, add_input_library);
-    tv.emplace_back(LDPT_OUTPUT_NAME, save(ctx.arg.output));
-    tv.emplace_back(LDPT_SET_EXTRA_LIBRARY_PATH, set_extra_library_path);
-    tv.emplace_back(LDPT_GET_VIEW, get_view<E>);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_COUNT, get_input_section_count);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_TYPE, get_input_section_type);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_NAME, get_input_section_name);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_CONTENTS, get_input_section_contents);
-    tv.emplace_back(LDPT_UPDATE_SECTION_ORDER, update_section_order);
-    tv.emplace_back(LDPT_ALLOW_SECTION_ORDERING, allow_section_ordering);
-    tv.emplace_back(LDPT_ADD_SYMBOLS_V2, add_symbols);
-    tv.emplace_back(LDPT_GET_SYMBOLS_V2, get_symbols_v2<E>);
-    tv.emplace_back(LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
-                    allow_unique_segment_for_sections);
-    tv.emplace_back(LDPT_UNIQUE_SEGMENT_FOR_SECTIONS, unique_segment_for_sections);
-    tv.emplace_back(LDPT_GET_SYMBOLS_V3, get_symbols_v3<E>);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_ALIGNMENT, get_input_section_alignment);
-    tv.emplace_back(LDPT_GET_INPUT_SECTION_SIZE, get_input_section_size);
-    tv.emplace_back(LDPT_REGISTER_NEW_INPUT_HOOK, register_new_input_hook<E>);
-    tv.emplace_back(LDPT_GET_WRAP_SYMBOLS, get_wrap_symbols);
-    tv.emplace_back(LDPT_GET_API_VERSION, get_api_version<E>);
-    tv.emplace_back(LDPT_NULL, 0);
-
-    [[maybe_unused]] PluginStatus status = onload(tv.data());
-    assert(status == LDPS_OK);
-  });
+  [[maybe_unused]] PluginStatus status = onload(tv.data());
+  assert(status == LDPS_OK);
 }
 
 template <typename E>
@@ -608,15 +605,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
                << "when linking the final executable.";
 
   load_lto_plugin(ctx);
-
-  // We read input files in parallel, but the plugin interface is not
-  // ready for concurrent claims: claim_file_hook() returns a file's
-  // symbol table through the add_symbols() callback into a global
-  // buffer, and members of the same archive share their parent's file
-  // descriptor, which we close after each claim. Serialize the whole
-  // claim sequence.
-  static std::mutex mu;
-  std::scoped_lock lock(mu);
 
   // Create mold's object instance
   ObjectFile<E> *obj =
