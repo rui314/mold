@@ -2003,7 +2003,15 @@ void scan_relocations(Context<E> &ctx) {
     ctx.got->add_tlsld(ctx);
 
   // Assign offsets in additional tables for each dynamic symbol.
-  for (Symbol<E> *sym : syms) {
+  for (i64 i = 0; i < syms.size(); i++) {
+#ifdef __GNUC__
+    // Fetch symbols before their auxiliary records to hide both pointer loads.
+    if (i + 64 < syms.size())
+      __builtin_prefetch(syms[i + 64]);
+    if (i + 16 < syms.size())
+      __builtin_prefetch((SymbolAux<E> *)syms[i + 16]->aux);
+#endif
+    Symbol<E> *sym = syms[i];
     if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
 
