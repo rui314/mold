@@ -3246,16 +3246,16 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
   ctx.versym->contents[0] = VER_NDX_LOCAL;
 
-  for (Symbol<E> *sym : ctx.dynsym->symbols) {
+  tbb::parallel_for_each(ctx.dynsym->symbols, [&](Symbol<E> *sym) {
     if (!sym || sym->file->is_dso)
-      continue;
+      return;
 
     // An unversioned undefined symbol takes version index 0.
     if (sym->ver_idx != VER_NDX_UNSPECIFIED)
       ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
     else if (sym->esym().is_undef())
       ctx.versym->contents[sym->get_dynsym_idx(ctx)] = VER_NDX_LOCAL;
-  }
+  });
 
   // Allocate a buffer for .gnu.version_d and write to it
   contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
