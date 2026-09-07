@@ -371,9 +371,11 @@ impl ReaderContext {
 // A file to read along with the reader state at its command line
 // position. parse_nonpositional_args() creates one ReaderJob per
 // input file argument; `name` is a path or, if `is_lib` is set, a
-// library name to search for. read_input_files() additionally
-// enqueues archive members as jobs in an already-opened form, with
-// `mf` and `archive_name` set instead.
+// library name to search for.
+//
+// read_input_files() also records linker scripts and deferred IR files
+// with `mf` set. Deferred IR archive members also have `archive_name`
+// set, so the LTO plugin can claim them later.
 #[derive(Clone, Debug, Default)]
 pub struct ReaderJob {
     pub rctx: ReaderContext,

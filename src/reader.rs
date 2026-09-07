@@ -136,11 +136,30 @@ fn new_shared_file<E: Arch>(
     file
 }
 
+// IR files for LTO are not read in place. We only record them here,
+// and read_input_files() hands them to the LTO plugin once all input
+// files have been found. We do this because LTO object file reading
+// is order-dependent.
+fn defer_lto_object<E: Arch>(
+    ctx: &Context<E>,
+    rctx: &ReaderContext,
+    mf: &'static MappedFile,
+    archive_name: &str,
+) {
+    let job = ReaderJob {
+        rctx: rctx.clone(),
+        mf: Some(mf),
+        archive_name: archive_name.to_string(),
+        ..ReaderJob::default()
+    };
+    ctx.lto_jobs.lock().unwrap().push(job);
+}
+
 /// Reads an IR object through the LTO plugin. An object listed by
 /// `--:ignore-ir-file` is an archive member a previous pass found
 /// unneeded.
 fn new_lto_object<E: Arch>(
-    ctx: &Context<E>,
+    ctx: &mut Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
     archive_name: &str,
@@ -170,8 +189,8 @@ fn read_archive_member<E: Arch>(
             Some(Loaded::Obj(rctx.pos.clone(), Box::new(file)))
         }
         FileType::GccLtoObj | FileType::LlvmBitcode => {
-            let file = new_lto_object(ctx, rctx, mf, archive_name)?;
-            Some(Loaded::Obj(rctx.pos.clone(), Box::new(file)))
+            defer_lto_object(ctx, rctx, mf, archive_name);
+            None
         }
         FileType::ElfDso => {
             warn!(
@@ -186,7 +205,8 @@ fn read_archive_member<E: Arch>(
 
 // Reads the given file, which is located at rctx.pos in the command
 // line. If the file is a container, i.e. an archive file or a linker
-// script, the files in it are read in place, recursively.
+// script, the files in it are read in place, recursively. IR files
+// for LTO are only recorded; see defer_lto_object().
 //
 // read_input_files() reads top-level files with this function too but
 // overrides the container cases to read archive members in parallel.
@@ -210,9 +230,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
         }
         FileType::Text => Script::new(ctx, rctx, mf).parse_linker_script(),
         FileType::GccLtoObj | FileType::LlvmBitcode => {
-            if let Some(file) = new_lto_object(ctx, rctx, mf, "") {
-                push_loaded(ctx, Loaded::Obj(rctx.pos.clone(), Box::new(file)));
-            }
+            defer_lto_object(ctx, rctx, mf, "");
         }
         _ => fatal!("{}: unknown file type", mf.name),
     }
@@ -327,13 +345,17 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     // Open and read files in parallel. Archive files are expanded into
     // one job per member so that members are read in parallel too.
     //
-    // Linker scripts are the exception to the parallelism: they can
+    // Linker scripts are one exception to the parallelism: they can
     // modify the context, e.g. by defining symbol versions, so we only
     // collect them here and parse them after this loop, one at a time
     // and in the command line order, to keep their effects
     // deterministic. Scripts given as input files are rare and small,
     // such as the GROUP file that glibc installs as libc.so, so the
     // lost parallelism doesn't matter.
+    //
+    // IR files for LTO are the other exception. This loop only records
+    // them, and we hand them to the LTO plugin after the scripts have
+    // been parsed, also in the command line order.
     //
     // Parsing scripts late assumes that no script directive affects how
     // command line arguments after the script are read. That holds for
@@ -422,9 +444,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                     loaded.push(Loaded::Dso(rctx.pos, Box::new(file)));
                 }
                 FileType::GccLtoObj | FileType::LlvmBitcode => {
-                    if let Some(file) = new_lto_object(ctx_ref, &rctx, mf, "") {
-                        loaded.push(Loaded::Obj(rctx.pos, Box::new(file)));
-                    }
+                    defer_lto_object(ctx_ref, &rctx, mf, "");
                 }
                 _ => fatal!("{}: unknown file type", mf.name),
             }
@@ -441,6 +461,21 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     for job in scripts {
         let mut rctx = job.rctx.clone();
         Script::new(ctx, &mut rctx, job.mf.unwrap()).parse_linker_script();
+    }
+
+    // Hand IR files to the LTO plugin, in the command line order. The
+    // plugin keeps global state, so claims can't run in parallel anyway,
+    // and LLVM's LTO assumes that the module holding the prevailing copy
+    // of a COMDAT group arrives before the modules holding the other
+    // copies, as it does with a serial linker. Otherwise the losing
+    // copies' internal symbols become undefined references in the LTO
+    // result.
+    let mut lto_jobs = std::mem::take(ctx.lto_jobs.get_mut().unwrap());
+    lto_jobs.sort_by(|a, b| a.rctx.pos.cmp(&b.rctx.pos));
+    for job in lto_jobs {
+        if let Some(file) = new_lto_object(ctx, &job.rctx, job.mf.unwrap(), &job.archive_name) {
+            push_loaded(ctx, Loaded::Obj(job.rctx.pos, Box::new(file)));
+        }
     }
 
     // Sort the files into the command line order and assign priorities.

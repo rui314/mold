@@ -109,7 +109,7 @@ use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use rayon::prelude::*;
@@ -355,7 +355,7 @@ impl ClaimedSymbol {
 // Global variables
 // We store LTO-related information to global variables,
 // as the LTO plugin is not thread-safe by design anyway.
-static LOADED: OnceLock<()> = OnceLock::new();
+static LOADED: AtomicBool = AtomicBool::new(false);
 static HOOKS: Mutex<Hooks> = Mutex::new(Hooks {
     claim_file: None,
     all_symbols_read: None,
@@ -363,9 +363,8 @@ static HOOKS: Mutex<Hooks> = Mutex::new(Hooks {
     gcc_api_v1: false,
 });
 
-/// Claims are serialized: the plugin hands back the symbols of the file
-/// being claimed through this buffer.
-static CLAIM_LOCK: Mutex<()> = Mutex::new(());
+/// The plugin hands back the symbols of the file being claimed through
+/// this buffer.
 static CLAIMED_SYMBOLS: Mutex<Vec<ClaimedSymbol>> = Mutex::new(Vec::new());
 
 /// The linker's state, for callbacks. `CONTEXT` is set only while the plugin
@@ -693,150 +692,152 @@ fn dlerror_string() -> String {
 
 /// dlopen the linker plugin file
 fn load_plugin<E: Arch>(ctx: &Context<E>) {
-    LOADED.get_or_init(|| {
-        let path = CString::new(ctx.args.plugin.as_str()).unwrap();
-        // SAFETY: plain dlopen/dlsym calls.
-        let onload: OnloadFn = unsafe {
-            let handle = dynamic_open(path.as_ptr());
-            if handle.is_null() {
-                fatal!("could not open plugin file: {}", dlerror_string());
-            }
-            let onload = dynamic_symbol(handle, c"onload".as_ptr());
-            if onload.is_null() {
-                fatal!(
-                    "failed to load plugin {}: {}",
-                    ctx.args.plugin,
-                    dlerror_string()
-                );
-            }
-            std::mem::transmute::<*mut c_void, OnloadFn>(onload)
-        };
-
-        // Strings in the transfer vector must outlive the plugin.
-        let cstr = |s: &str| CString::new(s).unwrap().into_raw() as *const c_void;
-        let func = |f: usize| f as *const c_void;
-        let output = if ctx.args.shared {
-            LDPO_DYN
-        } else if ctx.args.pie {
-            LDPO_PIE
-        } else {
-            LDPO_EXEC
-        };
-
-        let mut tv = vec![
-            TagValue::ptr(LDPT_MESSAGE, func(mold_lto_message as *const () as usize)),
-            TagValue::int(LDPT_LINKER_OUTPUT, output),
-        ];
-        for opt in &ctx.args.plugin_opt {
-            tv.push(TagValue::ptr(LDPT_OPTION, cstr(opt)));
+    // The file reader claims IR files serially in the command line order.
+    if LOADED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let path = CString::new(ctx.args.plugin.as_str()).unwrap();
+    // SAFETY: plain dlopen/dlsym calls.
+    let onload: OnloadFn = unsafe {
+        let handle = dynamic_open(path.as_ptr());
+        if handle.is_null() {
+            fatal!("could not open plugin file: {}", dlerror_string());
         }
-        tv.extend([
-            TagValue::ptr(
-                LDPT_REGISTER_CLAIM_FILE_HOOK,
-                func(register_claim_file_hook as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
-                func(register_all_symbols_read_hook as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_REGISTER_CLEANUP_HOOK,
-                func(register_cleanup_hook as *const () as usize),
-            ),
-            TagValue::ptr(LDPT_ADD_SYMBOLS, func(add_symbols as *const () as usize)),
-            TagValue::ptr(LDPT_GET_SYMBOLS, func(get_symbols_v1 as *const () as usize)),
-            TagValue::ptr(
-                LDPT_ADD_INPUT_FILE,
-                func(add_input_file::<E> as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_FILE,
-                func(get_input_file as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_RELEASE_INPUT_FILE,
-                func(release_input_file as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_ADD_INPUT_LIBRARY,
-                func(add_input_library as *const () as usize),
-            ),
-            TagValue::ptr(LDPT_OUTPUT_NAME, cstr(&ctx.args.output)),
-            TagValue::ptr(
-                LDPT_SET_EXTRA_LIBRARY_PATH,
-                func(set_extra_library_path as *const () as usize),
-            ),
-            TagValue::ptr(LDPT_GET_VIEW, func(get_view as *const () as usize)),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_COUNT,
-                func(get_input_section_count as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_TYPE,
-                func(get_input_section_type as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_NAME,
-                func(get_input_section_name as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_CONTENTS,
-                func(get_input_section_contents as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_UPDATE_SECTION_ORDER,
-                func(update_section_order as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_ALLOW_SECTION_ORDERING,
-                func(allow_section_ordering as *const () as usize),
-            ),
-            TagValue::ptr(LDPT_ADD_SYMBOLS_V2, func(add_symbols as *const () as usize)),
-            TagValue::ptr(
-                LDPT_GET_SYMBOLS_V2,
-                func(get_symbols_v2::<E> as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
-                func(allow_unique_segment_for_sections as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_UNIQUE_SEGMENT_FOR_SECTIONS,
-                func(unique_segment_for_sections as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_SYMBOLS_V3,
-                func(get_symbols_v3::<E> as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_ALIGNMENT,
-                func(get_input_section_alignment as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_INPUT_SECTION_SIZE,
-                func(get_input_section_size as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_REGISTER_NEW_INPUT_HOOK,
-                func(register_new_input_hook as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_WRAP_SYMBOLS,
-                func(get_wrap_symbols as *const () as usize),
-            ),
-            TagValue::ptr(
-                LDPT_GET_API_VERSION,
-                func(get_api_version as *const () as usize),
-            ),
-            TagValue::int(LDPT_NULL, 0),
-        ]);
-
-        // SAFETY: the transfer vector is terminated by LDPT_NULL.
-        let status = unsafe { onload(tv.as_ptr()) };
-        if status != LDPS_OK {
-            fatal!("LTO plugin's onload failed: {status}");
+        let onload = dynamic_symbol(handle, c"onload".as_ptr());
+        if onload.is_null() {
+            fatal!(
+                "failed to load plugin {}: {}",
+                ctx.args.plugin,
+                dlerror_string()
+            );
         }
-    });
+        std::mem::transmute::<*mut c_void, OnloadFn>(onload)
+    };
+
+    // Strings in the transfer vector must outlive the plugin.
+    let cstr = |s: &str| CString::new(s).unwrap().into_raw() as *const c_void;
+    let func = |f: usize| f as *const c_void;
+    let output = if ctx.args.shared {
+        LDPO_DYN
+    } else if ctx.args.pie {
+        LDPO_PIE
+    } else {
+        LDPO_EXEC
+    };
+
+    let mut tv = vec![
+        TagValue::ptr(LDPT_MESSAGE, func(mold_lto_message as *const () as usize)),
+        TagValue::int(LDPT_LINKER_OUTPUT, output),
+    ];
+    for opt in &ctx.args.plugin_opt {
+        tv.push(TagValue::ptr(LDPT_OPTION, cstr(opt)));
+    }
+    tv.extend([
+        TagValue::ptr(
+            LDPT_REGISTER_CLAIM_FILE_HOOK,
+            func(register_claim_file_hook as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
+            func(register_all_symbols_read_hook as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_REGISTER_CLEANUP_HOOK,
+            func(register_cleanup_hook as *const () as usize),
+        ),
+        TagValue::ptr(LDPT_ADD_SYMBOLS, func(add_symbols as *const () as usize)),
+        TagValue::ptr(LDPT_GET_SYMBOLS, func(get_symbols_v1 as *const () as usize)),
+        TagValue::ptr(
+            LDPT_ADD_INPUT_FILE,
+            func(add_input_file::<E> as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_FILE,
+            func(get_input_file as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_RELEASE_INPUT_FILE,
+            func(release_input_file as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_ADD_INPUT_LIBRARY,
+            func(add_input_library as *const () as usize),
+        ),
+        TagValue::ptr(LDPT_OUTPUT_NAME, cstr(&ctx.args.output)),
+        TagValue::ptr(
+            LDPT_SET_EXTRA_LIBRARY_PATH,
+            func(set_extra_library_path as *const () as usize),
+        ),
+        TagValue::ptr(LDPT_GET_VIEW, func(get_view as *const () as usize)),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_COUNT,
+            func(get_input_section_count as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_TYPE,
+            func(get_input_section_type as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_NAME,
+            func(get_input_section_name as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_CONTENTS,
+            func(get_input_section_contents as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_UPDATE_SECTION_ORDER,
+            func(update_section_order as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_ALLOW_SECTION_ORDERING,
+            func(allow_section_ordering as *const () as usize),
+        ),
+        TagValue::ptr(LDPT_ADD_SYMBOLS_V2, func(add_symbols as *const () as usize)),
+        TagValue::ptr(
+            LDPT_GET_SYMBOLS_V2,
+            func(get_symbols_v2::<E> as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
+            func(allow_unique_segment_for_sections as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_UNIQUE_SEGMENT_FOR_SECTIONS,
+            func(unique_segment_for_sections as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_SYMBOLS_V3,
+            func(get_symbols_v3::<E> as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_ALIGNMENT,
+            func(get_input_section_alignment as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_INPUT_SECTION_SIZE,
+            func(get_input_section_size as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_REGISTER_NEW_INPUT_HOOK,
+            func(register_new_input_hook as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_WRAP_SYMBOLS,
+            func(get_wrap_symbols as *const () as usize),
+        ),
+        TagValue::ptr(
+            LDPT_GET_API_VERSION,
+            func(get_api_version as *const () as usize),
+        ),
+        TagValue::int(LDPT_NULL, 0),
+    ]);
+
+    // SAFETY: the transfer vector is terminated by LDPT_NULL.
+    let status = unsafe { onload(tv.as_ptr()) };
+    if status != LDPS_OK {
+        fatal!("LTO plugin's onload failed: {status}");
+    }
 }
 
 /// Returns true if a given linker plugin looks like LLVM's one.
@@ -874,7 +875,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
 /// Reads the symbols of an IR object through the plugin. Returns `None`
 /// for an archive member the plugin declines.
 pub fn read_lto_object<E: Arch>(
-    ctx: &Context<E>,
+    ctx: &mut Context<E>,
     mf: &'static MappedFile,
     archive_name: String,
 ) -> Option<ObjectFile<E>> {
@@ -890,13 +891,6 @@ pub fn read_lto_object<E: Arch>(
         fatal!("LTO plugin did not register a claim_file hook");
     };
 
-    // We read input files in parallel, but the plugin interface is not
-    // ready for concurrent claims: claim_file_hook() returns a file's
-    // symbol table through the add_symbols() callback into a global
-    // buffer, and members of the same archive share their parent's file
-    // descriptor, which we close after each claim. Serialize the whole
-    // claim sequence.
-    let _claim = CLAIM_LOCK.lock().unwrap();
     // Create plugin's object instance
     let (input, file) = plugin_input_file(mf);
     let mut claimed: c_int = 0;

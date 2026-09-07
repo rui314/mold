@@ -7,7 +7,7 @@ use crate::input_files::ObjectFile;
 use crate::mapped_file::MappedFile;
 
 pub fn read_lto_object<E: Arch>(
-    ctx: &Context<E>,
+    ctx: &mut Context<E>,
     _mf: &'static MappedFile,
     _archive_name: String,
 ) -> Option<ObjectFile<E>> {
