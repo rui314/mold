@@ -430,14 +430,22 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
     Fatal(ctx) << *input_section << ": mergeable section too large";
 
   i64 entsize = parent.shdr.sh_entsize;
+  HyperLogLog::Sketch &sketch = parent.estimator.local();
 
-  // Split sections
+  auto add_fragment = [&](i64 pos, i64 size) {
+    frag_offsets.push_back(pos);
+    u64 hash = hash_string(data.substr(pos, size));
+    hashes.push_back(hash);
+    sketch.insert(hash);
+  };
+
+  // Hash each fragment while its contents are still in the cache.
   if (parent.shdr.sh_flags & SHF_STRINGS) {
     for (i64 pos = 0; pos < data.size();) {
-      frag_offsets.push_back(pos);
       size_t end = find_null(data, pos, entsize);
       if (end == data.npos)
         Fatal(ctx) << *input_section << ": string is not null terminated";
+      add_fragment(pos, end + entsize - pos);
       pos = end + entsize;
     }
   } else {
@@ -445,19 +453,10 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
       Fatal(ctx) << *input_section
                  << ": section size is not multiple of sh_entsize";
     frag_offsets.reserve(data.size() / entsize);
+    hashes.reserve(data.size() / entsize);
 
     for (i64 pos = 0; pos < data.size(); pos += entsize)
-      frag_offsets.push_back(pos);
-  }
-
-  // Compute hashes for section pieces
-  HyperLogLog::Sketch &sketch = parent.estimator.local();
-  hashes.reserve(frag_offsets.size());
-
-  for (i64 i = 0; i < frag_offsets.size(); i++) {
-    u64 hash = hash_string(get_contents(i));
-    hashes.push_back(hash);
-    sketch.insert(hash);
+      add_fragment(pos, entsize);
   }
 
   static Counter counter("string_fragments");
