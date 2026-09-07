@@ -1810,7 +1810,8 @@ public:
 
   void split_contents(Context<E> &ctx);
   void resolve_contents(Context<E> &ctx);
-  std::pair<SectionFragment<E> *, i64> get_fragment(i64 offset);
+  std::pair<SectionFragment<E> *, i64>
+  get_fragment(i64 offset, i64 *hint = nullptr);
   std::string_view get_contents(i64 idx);
 
   MergedSection<E> &parent;
@@ -3454,23 +3455,42 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
 }
 
 template <typename E>
-std::pair<SectionFragment<E> *, i64>
+inline std::pair<SectionFragment<E> *, i64>
 InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   assert(!(shdr().sh_flags & SHF_ALLOC));
 
-  const ElfSym<E> &esym = file->elf_syms[rel.r_sym];
-  if (esym.is_abs() || esym.is_common() || esym.is_undef())
-    return {nullptr, 0};
+  struct Cache {
+    InputSection<E> *isec = nullptr;
+    i64 sym_idx = -1;
+    const ElfSym<E> *sym = nullptr;
+    MergeableSection<E> *section = nullptr;
+    i64 next = 0;
+  };
+  static thread_local Cache cache;
 
-  i64 shndx = file->get_shndx(esym);
-  MergeableSection<E> *m = file->sections.get_mergeable(shndx);
+  // Consecutive debug relocations often refer to the same section symbol.
+  if (cache.isec != this || cache.sym_idx != rel.r_sym) {
+    cache.isec = this;
+    cache.sym_idx = rel.r_sym;
+    cache.sym = &file->elf_syms[rel.r_sym];
+    cache.section = nullptr;
+    cache.next = 0;
+    const ElfSym<E> &esym = *cache.sym;
+    if (!esym.is_abs() && !esym.is_common() && !esym.is_undef())
+      cache.section = file->sections.get_mergeable(file->get_shndx(esym));
+  }
+
+  MergeableSection<E> *m = cache.section;
   if (!m)
     return {nullptr, 0};
 
+  const ElfSym<E> &esym = *cache.sym;
   if (esym.st_type == STT_SECTION)
-    return m->get_fragment(esym.st_value + get_addend(*this, rel));
+    return m->get_fragment(esym.st_value + get_addend(*this, rel),
+                           &cache.next);
 
-  std::pair<SectionFragment<E> *, i64> p = m->get_fragment(esym.st_value);
+  std::pair<SectionFragment<E> *, i64> p =
+    m->get_fragment(esym.st_value, &cache.next);
   return {p.first, p.second + get_addend(*this, rel)};
 }
 
@@ -3526,10 +3546,19 @@ InputSection<E>::check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi) {
 }
 
 template <typename E>
-std::pair<SectionFragment<E> *, i64>
-MergeableSection<E>::get_fragment(i64 offset) {
-  auto it = ranges::upper_bound(frag_offsets, offset);
-  i64 idx = it - 1 - frag_offsets.begin();
+inline std::pair<SectionFragment<E> *, i64>
+MergeableSection<E>::get_fragment(i64 offset, i64 *hint) {
+  // Relocations such as .debug_str_offsets usually visit consecutive strings.
+  // Try the next fragment before falling back to a binary search.
+  i64 idx = hint ? *hint : frag_offsets.size();
+  if (idx >= frag_offsets.size() || offset < frag_offsets[idx] ||
+      (idx + 1 < frag_offsets.size() && frag_offsets[idx + 1] <= offset))
+    idx = ranges::upper_bound(frag_offsets, offset) - 1 - frag_offsets.begin();
+  if (hint) {
+    *hint = idx + 1;
+    if (idx + 8 < fragments.size())
+      parent.map.prefetch(fragments[idx + 8]);
+  }
   return {&parent.map.entries[fragments[idx]].value, offset - frag_offsets[idx]};
 }
 
