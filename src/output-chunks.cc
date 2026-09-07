@@ -1942,10 +1942,12 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void PltSection<E>::compute_symtab_size(Context<E> &ctx) {
   this->num_local_symtab = symbols.size();
-  this->strtab_size = 0;
 
-  for (Symbol<E> *sym : symbols)
-    this->strtab_size += sym->name().size() + sizeof("$plt");
+  tbb::enumerable_thread_specific<i64> size;
+  tbb::parallel_for((i64)0, (i64)symbols.size(), [&](i64 i) {
+    size.local() += symbols[i]->name().size() + sizeof("$plt");
+  });
+  this->strtab_size = size.combine(std::plus());
 
   if constexpr (is_arm32<E>)
     this->num_local_symtab += symbols.size() * 2 + 2;
