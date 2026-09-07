@@ -2218,13 +2218,29 @@ void sort_dynsyms(Context<E> &ctx) {
     i64 num_exported = exported_syms.size();
     u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
 
-    tbb::parallel_for_each(exported_syms, [&](Symbol<E> *sym) {
-      sym->aux->djb_hash = djb_hash(sym->name());
+    // Keep the sort keys together so comparisons don't have to chase
+    // symbol pointers or recompute name lengths and bucket indices.
+    struct Entry {
+      u32 bucket;
+      std::string_view name;
+      Symbol<E> *sym;
+    };
+    std::vector<Entry> entries(num_exported);
+
+    tbb::parallel_for((i64)0, num_exported, [&](i64 i) {
+      Symbol<E> *sym = exported_syms[i];
+      std::string_view name = sym->name();
+      u32 hash = djb_hash(name);
+      sym->aux->djb_hash = hash;
+      entries[i] = {hash % num_buckets, name, sym};
     });
 
-    tbb::parallel_sort(exported_syms, [&](Symbol<E> *a, Symbol<E> *b) {
-      return std::tuple(a->aux->djb_hash % num_buckets, a->name()) <
-             std::tuple(b->aux->djb_hash % num_buckets, b->name());
+    tbb::parallel_sort(entries, [](const Entry &a, const Entry &b) {
+      return std::tie(a.bucket, a.name) < std::tie(b.bucket, b.name);
+    });
+
+    tbb::parallel_for((i64)0, num_exported, [&](i64 i) {
+      exported_syms[i] = entries[i].sym;
     });
 
     ctx.gnu_hash->num_buckets = num_buckets;
