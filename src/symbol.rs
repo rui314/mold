@@ -932,7 +932,8 @@ impl Symbol {
     // output symbol table. Note that a symbol that is merely not exported to
     // the dynamic symbol table is still a global symbol; besides symbols that
     // are local in the input file, only ones hidden by symbol visibility or
-    // localized by a version script are demoted.
+    // localized by a version script are demoted. Linker-synthesized symbols
+    // are the exception; they are local unless we export them.
     #[inline]
     pub fn is_local<E: Arch>(&self, ctx: &Context<E>) -> bool {
         if self.st_bind() == STB_LOCAL {
@@ -940,6 +941,9 @@ impl Symbol {
         }
         if ctx.args.relocatable {
             return false;
+        }
+        if self.file() == ctx.internal_obj.map(FileId::Obj) {
+            return !self.is_exported();
         }
         let vis = self.visibility();
         vis == STV_HIDDEN || vis == STV_INTERNAL || self.ver_idx as u32 == VER_NDX_LOCAL

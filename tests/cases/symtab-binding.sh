@@ -19,6 +19,11 @@ grep -E 'FUNC    GLOBAL DEFAULT .* global_fn$' $t/log1
 grep -E 'FUNC    WEAK   DEFAULT .* weak_fn$' $t/log1
 grep -E 'FUNC    LOCAL  HIDDEN .* hidden_fn$' $t/log1
 
+# Linker-synthesized symbols are local unless they are exported.
+grep -E 'NOTYPE  LOCAL  DEFAULT .* _DYNAMIC$' $t/log1
+grep -E 'NOTYPE  LOCAL  DEFAULT .* __ehdr_start$' $t/log1
+grep -E 'NOTYPE  LOCAL  DEFAULT .* _end$' $t/log1
+
 # A symbol localized by a version script becomes local.
 echo '{ global: global_fn; local: *; };' > $t/b.ver
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
