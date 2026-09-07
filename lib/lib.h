@@ -1106,6 +1106,7 @@ private:
   // it is visited for almost every input byte; other edges are stored sparsely.
   std::array<i32, 256> root_children;
   std::vector<TrieNode> nodes;
+  i64 max_value = -1;
 };
 
 class Glob {
@@ -1118,6 +1119,7 @@ private:
   std::once_flag once;
   bool is_empty = true;
   bool is_compiled = false;
+  i64 max_value = -1;
 
   // Patterns that need only a literal string comparison are kept out
   // of the automaton-based matchers below, which scan the entire input

@@ -2332,13 +2332,18 @@ void apply_version_script(Context<E> &ctx) {
     return str.find_first_of("*?[") != str.npos;
   };
 
+  // Consecutive patterns assigning the same version have the same outcome.
+  // Give them one priority so the matcher can stop at a definitive result.
+  i64 priority = 0;
   for (i64 i = 0; i < patterns.size(); i++) {
     VersionPattern &v = patterns[i];
+    if (i > 0 && v.ver_idx != patterns[i - 1].ver_idx)
+      priority = i;
     if (v.is_cpp) {
-      if (!cpp_matcher.add(v.pattern, i))
+      if (!cpp_matcher.add(v.pattern, priority))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     } else if (has_wildcard(v.pattern)) {
-      if (!matcher.add(v.pattern, i))
+      if (!matcher.add(v.pattern, priority))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     }
   }

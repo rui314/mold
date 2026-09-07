@@ -272,6 +272,7 @@ bool Glob::add(std::string_view pat, i64 val) {
   assert(val >= 0);
   assert(!is_compiled);
   is_empty = false;
+  max_value = std::max(max_value, val);
 
   // Match-all, exact, prefix and suffix patterns are handled with
   // plain string comparisons instead of the matchers below, which
@@ -331,6 +332,8 @@ i64 Glob::find(std::string_view str) {
   });
 
   i64 val = match_all;
+  if (val == max_value)
+    return val;
 
   auto it = ranges::lower_bound(exacts, str, {}, &LiteralPattern::pat);
   if (it != exacts.end() && it->pat == str)
@@ -344,6 +347,13 @@ i64 Glob::find(std::string_view str) {
     if (val < p.value && str.ends_with(p.pat))
       val = p.value;
 
+  if (val == max_value)
+    return val;
+
+  val = std::max(val, aho_corasick.find(str));
+  if (val == max_value)
+    return val;
+
   if (!nfa.empty())
     val = std::max(val, nfa.match(str));
 
@@ -351,7 +361,7 @@ i64 Glob::find(std::string_view str) {
     if (val < p.value && p.match(str))
       val = p.value;
 
-  return std::max(val, aho_corasick.find(str));
+  return val;
 }
 
 } // namespace mold

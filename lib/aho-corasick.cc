@@ -74,14 +74,18 @@ i64 AhoCorasick::find(std::string_view str) {
   };
 
   walk('\0');
-  for (u8 c : str)
+  for (u8 c : str) {
     walk(c);
+    if (val == max_value)
+      return val;
+  }
   walk('\0');
   return val;
 }
 
 bool AhoCorasick::add(std::string_view pat, i64 val) {
   assert(can_handle(pat));
+  max_value = std::max(max_value, val);
   if (nodes.empty()) {
     root_children.fill(-1);
     nodes.emplace_back();
