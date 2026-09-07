@@ -604,10 +604,22 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
   for (std::pair<std::string_view, i64> p : strings)
     write_string(base + p.second, p.first);
 
-  i64 off = ctx.dynsym->dynstr_offset;
-  for (Symbol<E> *sym : ctx.dynsym->symbols)
-    if (sym)
-      off += write_string(base + off, sym->name());
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
+  if (syms.size() <= 1)
+    return;
+
+  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
+    for (i64 i = r.begin(); i < r.end(); i++) {
+      std::string_view name = syms[i]->name();
+      if (is_final)
+        write_string(base + ctx.dynsym->dynstr_offset + sum, name);
+      sum += name.size() + 1;
+    }
+    return sum;
+  };
+
+  tbb::parallel_scan(tbb::blocked_range<i64>(1, syms.size(), 1024),
+                     (i64)0, scan, std::plus());
 }
 
 template <typename E>
@@ -2246,25 +2258,36 @@ void DynsymSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void DynsymSection<E>::copy_buf(Context<E> &ctx) {
   ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
-  i64 offset = dynstr_offset;
-
   memset(buf, 0, sizeof(ElfSym<E>));
+  if (symbols.size() <= 1)
+    return;
 
-  for (i64 i = 1; i < symbols.size(); i++) {
-    Symbol<E> &sym = *symbols[i];
-
-    std::optional<ElfSym<E>> esym = to_output_esym(ctx, sym, offset, nullptr);
-    if (!esym) {
-      Error(ctx) << ctx.arg.output
-                 << ": .dynsym: too many output sections: "
-                 << (ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>))
-                 << " requested, but ELF allows at most 65279";
-      return;
+  // The string offsets are prefix sums of symbol name lengths. Compute
+  // them while writing independent ranges of symbols in parallel.
+  std::atomic<bool> overflow = false;
+  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
+    for (i64 i = r.begin(); i < r.end(); i++) {
+      Symbol<E> &sym = *symbols[i];
+      if (is_final) {
+        if (std::optional<ElfSym<E>> esym =
+              to_output_esym(ctx, sym, dynstr_offset + sum, nullptr))
+          buf[sym.get_dynsym_idx(ctx)] = *esym;
+        else
+          overflow.store(true, std::memory_order_relaxed);
+      }
+      sum += sym.name().size() + 1;
     }
+    return sum;
+  };
 
-    buf[sym.get_dynsym_idx(ctx)] = *esym;
-    offset += sym.name().size() + 1;
-  }
+  tbb::parallel_scan(tbb::blocked_range<i64>(1, symbols.size(), 1024),
+                     (i64)0, scan, std::plus());
+
+  if (overflow)
+    Error(ctx) << ctx.arg.output
+               << ": .dynsym: too many output sections: "
+               << (ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>))
+               << " requested, but ELF allows at most 65279";
 }
 
 template <typename E>
