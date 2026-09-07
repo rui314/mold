@@ -3249,7 +3249,8 @@ public:
   bool is_fragment_dummy : 1 = false;
 
   // The name bytes live in the surrounding map entry or the owner file.
-  NameLen namelen;
+  // Cache exact lengths, with a suffix-scanning fallback for INT32_MAX.
+  i32 namelen = 0;
 };
 
 template <typename E>
@@ -4090,16 +4091,16 @@ inline const ElfSym<E> &Symbol<E>::esym() const {
 
 template <typename E>
 inline void Symbol<E>::set_name(std::string_view name) {
-  namelen = name.size();
+  namelen = std::min<i64>(name.size(), INT32_MAX);
 }
 
 template <typename E>
 inline std::string_view Symbol<E>::name() const {
   if (has_map_name) {
     std::string_view key = get_sharded_map_key(*this);
-    if (namelen.is_long())
-      return key.substr(0, key.find('@', namelen.lower_bound()));
-    return key.substr(0, namelen.lower_bound());
+    if (namelen == INT32_MAX)
+      return key.substr(0, key.find('@', namelen));
+    return key.substr(0, namelen);
   }
 
   if (is_fragment_dummy)
@@ -4118,7 +4119,10 @@ inline std::string_view Symbol<E>::name() const {
     nameptr = file->symbol_strtab.data() + esym.st_name;
   }
 
-  return namelen.get_string(nameptr);
+  i64 len = namelen;
+  if (namelen == INT32_MAX)
+    len += strlen(nameptr + len);
+  return std::string_view(nameptr, len);
 }
 
 inline bool is_c_identifier(std::string_view s) {
