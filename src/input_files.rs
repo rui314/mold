@@ -2250,6 +2250,12 @@ impl<E: Arch> ObjectFile<E> {
             let isec = self.section_at(shndx);
             let data = isec.contents();
 
+            // GNU assembler emits an empty .sframe section for an input file that
+            // needs no unwind info (e.g. glibc's Scrt1.o assembled by gas 2.45).
+            if data.is_empty() {
+                continue;
+            }
+
             if data.len() < SFrameHeader::<E>::size() {
                 fatal!("{}: corrupted .sframe section", isec.display(self));
             }
