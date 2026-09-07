@@ -5,6 +5,7 @@
 #include <shared_mutex>
 #include <span>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_invoke.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
 
@@ -675,19 +676,23 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     }
   }
 
-  // Populate linker-synthesized symbols
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    chunk->populate_symtab(ctx);
-  });
-
-  // Copy symbols from input files
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->populate_symtab(ctx);
-  });
-
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->populate_symtab(ctx);
-  });
+  // These groups write disjoint symbol and string-table ranges.
+  tbb::parallel_invoke(
+    [&] {
+      tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+        chunk->populate_symtab(ctx);
+      });
+    },
+    [&] {
+      tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+        file->populate_symtab(ctx);
+      });
+    },
+    [&] {
+      tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+        file->populate_symtab(ctx);
+      });
+    });
 }
 
 // An ARM64 function with a non-standard calling convention is marked with
