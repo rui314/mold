@@ -1224,6 +1224,12 @@ public:
 
   std::vector<Symbol<E> *> symbols;
   i64 dynstr_offset = -1;
+
+  struct DynstrEntry {
+    std::string_view name;
+    i64 offset = 0;
+  };
+  std::vector<DynstrEntry> dynstr_entries;
 };
 
 // .hash contains an on-disk hash table for .dynsym so that the runtime

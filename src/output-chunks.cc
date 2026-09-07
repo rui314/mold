@@ -604,22 +604,10 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
   for (std::pair<std::string_view, i64> p : strings)
     write_string(base + p.second, p.first);
 
-  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
-  if (syms.size() <= 1)
-    return;
-
-  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
-    for (i64 i = r.begin(); i < r.end(); i++) {
-      std::string_view name = syms[i]->name();
-      if (is_final)
-        write_string(base + ctx.dynsym->dynstr_offset + sum, name);
-      sum += name.size() + 1;
-    }
-    return sum;
-  };
-
-  tbb::parallel_scan(tbb::blocked_range<i64>(1, syms.size(), 1024),
-                     (i64)0, scan, std::plus());
+  auto &entries = ctx.dynsym->dynstr_entries;
+  tbb::parallel_for((i64)1, (i64)entries.size(), [&](i64 i) {
+    write_string(base + entries[i].offset, entries[i].name);
+  });
 }
 
 template <typename E>
@@ -2264,26 +2252,15 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
   if (symbols.size() <= 1)
     return;
 
-  // The string offsets are prefix sums of symbol name lengths. Compute
-  // them while writing independent ranges of symbols in parallel.
   std::atomic<bool> overflow = false;
-  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
-    for (i64 i = r.begin(); i < r.end(); i++) {
-      Symbol<E> &sym = *symbols[i];
-      if (is_final) {
-        if (std::optional<ElfSym<E>> esym =
-              to_output_esym(ctx, sym, dynstr_offset + sum, nullptr))
-          buf[sym.get_dynsym_idx(ctx)] = *esym;
-        else
-          overflow.store(true, std::memory_order_relaxed);
-      }
-      sum += sym.name().size() + 1;
-    }
-    return sum;
-  };
-
-  tbb::parallel_scan(tbb::blocked_range<i64>(1, symbols.size(), 1024),
-                     (i64)0, scan, std::plus());
+  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
+    Symbol<E> &sym = *symbols[i];
+    if (std::optional<ElfSym<E>> esym =
+          to_output_esym(ctx, sym, dynstr_entries[i].offset, nullptr))
+      buf[sym.get_dynsym_idx(ctx)] = *esym;
+    else
+      overflow.store(true, std::memory_order_relaxed);
+  });
 
   if (overflow)
     Error(ctx) << ctx.arg.output

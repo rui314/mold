@@ -2227,6 +2227,10 @@ void sort_dynsyms(Context<E> &ctx) {
     return sym->is_local(ctx);
   });
 
+  auto &dynstr_entries = ctx.dynsym->dynstr_entries;
+  dynstr_entries.resize(syms.size());
+  i64 first_exported = syms.size();
+
   // .gnu.hash imposes more restrictions on the order of the symbols in
   // .dynsym.
   if (ctx.gnu_hash) {
@@ -2259,8 +2263,10 @@ void sort_dynsyms(Context<E> &ctx) {
       return std::tie(a.bucket, a.name) < std::tie(b.bucket, b.name);
     });
 
+    first_exported = exported_syms.data() - syms.data();
     tbb::parallel_for((i64)0, num_exported, [&](i64 i) {
       exported_syms[i] = entries[i].sym;
+      dynstr_entries[first_exported + i].name = entries[i].name;
     });
 
     ctx.gnu_hash->num_buckets = num_buckets;
@@ -2270,13 +2276,25 @@ void sort_dynsyms(Context<E> &ctx) {
   // Compute .dynstr size
   ctx.dynsym->dynstr_offset = ctx.dynstr->shdr.sh_size;
 
-  tbb::enumerable_thread_specific<i64> size;
+  // Keep names and string offsets for both dynamic-table output passes.
+  // Exported names are already available from the GNU hash sort keys.
   tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
     syms[i]->aux->dynsym_idx = i;
-    size.local() += syms[i]->name().size() + 1;
+    if (i < first_exported)
+      dynstr_entries[i].name = syms[i]->name();
   });
 
-  ctx.dynstr->shdr.sh_size += size.combine(std::plus());
+  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
+    for (i64 i = r.begin(); i < r.end(); i++) {
+      if (is_final)
+        dynstr_entries[i].offset = ctx.dynsym->dynstr_offset + sum;
+      sum += dynstr_entries[i].name.size() + 1;
+    }
+    return sum;
+  };
+
+  ctx.dynstr->shdr.sh_size += tbb::parallel_scan(
+    tbb::blocked_range<i64>(1, syms.size(), 1024), (i64)0, scan, std::plus());
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
   ctx.dynsym->shdr.sh_info = globals.begin() - syms.begin();
