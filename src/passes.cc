@@ -1978,7 +1978,7 @@ void scan_relocations(Context<E> &ctx) {
   // Exit if the absolute-relocation pass reported an error.
   ctx.checkpoint();
 
-  // Aggregate dynamic symbols to a single vector.
+  // Allocate auxiliary data and collect dynamic symbols in parallel.
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
   append(files, ctx.dsos);
@@ -1986,10 +1986,15 @@ void scan_relocations(Context<E> &ctx) {
   std::vector<std::vector<Symbol<E> *>> vec(files.size());
 
   tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
-    for (Symbol<E> *sym : files[i]->symbols)
-      if (sym->file == files[i])
-        if (sym->flags || sym->is_imported || sym->is_exported)
+    for (Symbol<E> *sym : files[i]->symbols) {
+      if (sym->file == files[i]) {
+        if (sym->flags || sym->is_imported || sym->is_exported) {
+          if (!sym->aux)
+            sym->aux = ctx.arena.template make<SymbolAux<E>>();
           vec[i].push_back(sym);
+        }
+      }
+    }
   });
 
   std::vector<Symbol<E> *> syms = flatten(vec);
@@ -1999,9 +2004,6 @@ void scan_relocations(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    if (!sym->aux)
-      sym->aux = ctx.arena.template make<SymbolAux<E>>();
-
     if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
 
