@@ -193,13 +193,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_package = push(new NotePackageSection<E>);
 
-  if (!ctx.arg.oformat_binary) {
-    ElfShdr<E> shdr = {};
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
-    ctx.comment = MergedSection<E>::get_instance(ctx, ".comment", shdr);
-  }
-
   if constexpr (is_x86<E>)
     ctx.extra.note_property = push(new NotePropertySection<E>);
 
@@ -565,6 +558,14 @@ void parse_sframe_sections(Context<E> &ctx) {
 template <typename E>
 void create_merged_sections(Context<E> &ctx) {
   Timer t(ctx, "create_merged_sections");
+
+  // Create the linker identification section before resolving merged sections.
+  if (!ctx.arg.oformat_binary && !ctx.arg.relocatable) {
+    ElfShdr<E> shdr = {};
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
+    ctx.comment = MergedSection<E>::get_instance(ctx, ".comment", shdr);
+  }
 
   // Convert InputSections to MergeableSections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -1692,7 +1693,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
   });
 
   tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
-    osec->compute_section_size(ctx);
+    osec->assign_offsets(ctx);
   });
 }
 

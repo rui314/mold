@@ -493,6 +493,21 @@ int mold_main(int argc, char **argv) {
     return 0;
   }
 
+  // Non-allocated merged sections are independent of symbol and relocation
+  // processing. Resolve them while the remaining foreground passes run.
+  tbb::task_arena merge_arena(tbb::task_arena::automatic, 1,
+                              tbb::task_arena::priority::low);
+  tbb::task_group merge_task;
+  merge_arena.execute([&] {
+    merge_task.run([&] {
+      tbb::parallel_for_each(ctx.merged_sections,
+                             [&](ArenaObjectPtr<MergedSection<E>> &sec) {
+        if (!(sec->shdr.sh_flags & SHF_ALLOC))
+          sec->resolve(ctx);
+      });
+    });
+  });
+
   // Create .bss sections for common symbols.
   convert_common_symbols(ctx);
 
@@ -619,6 +634,8 @@ int mold_main(int argc, char **argv) {
 
   // Compute the is_weak bit for each imported symbol.
   compute_imported_symbol_weakness(ctx);
+
+  merge_arena.execute([&] { merge_task.wait(); });
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.

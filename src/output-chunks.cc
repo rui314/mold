@@ -2544,6 +2544,11 @@ void MergedSection<E>::resolve(Context<E> &ctx) {
   this->shdr.sh_addralign = 1 << p2align;
 
   resolved = true;
+
+  // Non-allocated fragments are never garbage-collected, so their layout
+  // can be completed in the same background task as string merging.
+  if (!(this->shdr.sh_flags & SHF_ALLOC))
+    assign_offsets(ctx);
 }
 
 template <typename E>
@@ -2551,6 +2556,12 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
   if (!resolved)
     resolve(ctx);
 
+  if (this->shdr.sh_flags & SHF_ALLOC)
+    assign_offsets(ctx);
+}
+
+template <typename E>
+void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   std::vector<i64> sizes(map.NUM_SHARDS * 2);
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
