@@ -1906,14 +1906,6 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(!sym->has_plt(ctx));
-  sym->aux->plt_idx = symbols.size();
-  symbols.push_back(sym);
-  ctx.dynsym->add_symbol(ctx, sym);
-}
-
-template <typename E>
 void PltSection<E>::update_shdr(Context<E> &ctx) {
   if (symbols.empty())
     this->shdr.sh_size = 0;
@@ -1983,16 +1975,6 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
       write_esym(addr + 12, ctx.strtab->DATA);
     }
   }
-}
-
-template <typename E>
-void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(!sym->has_plt(ctx));
-  assert(sym->has_got(ctx));
-
-  sym->aux->pltgot_idx = symbols.size();
-  symbols.push_back(sym);
-  this->shdr.sh_size = symbols.size() * E::pltgot_size;
 }
 
 template <typename E>
@@ -2231,17 +2213,6 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
   }
 
   return esym;
-}
-
-template <typename E>
-void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  if (symbols.empty())
-    symbols.resize(1);
-
-  if (sym->get_dynsym_idx(ctx) == -1) {
-    sym->aux->dynsym_idx = -2;
-    symbols.push_back(sym);
-  }
 }
 
 template <typename E>

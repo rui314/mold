@@ -959,7 +959,13 @@ public:
     }
   }
 
-  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+    assert(!sym->has_plt(ctx));
+    sym->aux->plt_idx = symbols.size();
+    symbols.push_back(sym);
+    ctx.dynsym->add_symbol(ctx, sym);
+  }
+
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -983,7 +989,15 @@ public:
     this->shdr.sh_addralign = 16;
   }
 
-  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+    assert(!sym->has_plt(ctx));
+    assert(sym->has_got(ctx));
+
+    sym->aux->pltgot_idx = symbols.size();
+    symbols.push_back(sym);
+    this->shdr.sh_size = symbols.size() * E::pltgot_size;
+  }
+
   void copy_buf(Context<E> &ctx) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
@@ -1218,7 +1232,16 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+    if (symbols.empty())
+      symbols.resize(1);
+
+    if (sym->get_dynsym_idx(ctx) == -1) {
+      sym->aux->dynsym_idx = -2;
+      symbols.push_back(sym);
+    }
+  }
+
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
