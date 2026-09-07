@@ -2213,14 +2213,14 @@ void sort_dynsyms(Context<E> &ctx) {
     return;
 
   // In any symtab, local symbols must precede global symbols.
-  auto globals = ranges::stable_partition(syms.subspan(1), [&](Symbol<E> *sym) {
+  auto globals = parallel_stable_partition(syms.subspan(1), [&](Symbol<E> *sym) {
     return sym->is_local(ctx);
   });
 
   // .gnu.hash imposes more restrictions on the order of the symbols in
   // .dynsym.
   if (ctx.gnu_hash) {
-    auto exported_syms = ranges::stable_partition(globals, [](Symbol<E> *sym) {
+    auto exported_syms = parallel_stable_partition(globals, [](Symbol<E> *sym) {
       return !sym->is_exported;
     });
 

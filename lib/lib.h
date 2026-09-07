@@ -3,6 +3,7 @@
 #include "atomics.h"
 #include "integers.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -27,6 +29,8 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
+#include <tbb/parallel_reduce.h>
+#include <tbb/parallel_scan.h>
 #include <vector>
 
 #ifdef _WIN32
@@ -331,6 +335,50 @@ template <typename T>
 inline void write_vector(void *buf, const std::vector<T> &vec) {
   if (!vec.empty())
     memcpy(buf, vec.data(), vec.size() * sizeof(T));
+}
+
+// Return the suffix that doesn't satisfy pred, preserving both groups' order.
+// A prefix sum gives each element a destination without a serial merge.
+template <typename T, typename Pred>
+std::span<T> parallel_stable_partition(std::span<T> span, Pred pred) {
+  if (span.size() <= 16384) {
+    auto tail = ranges::stable_partition(span, pred);
+    return {tail.begin(), tail.end()};
+  }
+
+  tbb::blocked_range<i64> range(0, span.size(), 16384);
+  ExactArray<u8> matches(span.size());
+  i64 num_matches = tbb::parallel_reduce(range, (i64)0,
+    [&](const auto &r, i64 count) {
+      for (i64 i = r.begin(); i < r.end(); i++) {
+        matches[i] = bool(pred(span[i]));
+        count += matches[i];
+      }
+      return count;
+    }, std::plus());
+
+  if (num_matches == 0 || num_matches == span.size())
+    return span.subspan(num_matches);
+
+  ExactArray<T> buf(span.size());
+  tbb::parallel_scan(range, (i64)0,
+    [&](const auto &r, i64 count, bool is_final) {
+      for (i64 i = r.begin(); i < r.end(); i++) {
+        if (is_final) {
+          // count matches and i - count non-matches precede this element.
+          i64 dst = matches[i] ? count : num_matches + i - count;
+          buf[dst] = std::move(span[i]);
+        }
+        count += matches[i];
+      }
+      return count;
+    }, std::plus());
+
+  tbb::parallel_for(range, [&](const auto &r) {
+    std::move(buf.data() + r.begin(), buf.data() + r.end(),
+              span.begin() + r.begin());
+  });
+  return span.subspan(num_matches);
 }
 
 inline void parallel_memcpy(void *dst, const void *src, i64 size) {
