@@ -314,11 +314,13 @@ void ObjectFile<E>::read_section_metadata(Context<E> &ctx) {
     if (entries[0] != GRP_COMDAT)
       Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-    // Ordinary global signatures already have a Symbol. Local, section and
-    // versioned signatures use the same symbol table through their full name.
+    // Ordinary global signatures already have a Symbol. The cached version
+    // flag excludes a bare trailing '@', which still needs the full name.
+    // Local and section signatures also use their full names.
     Symbol<E> *signature;
     if (esym.st_type != STT_SECTION && esym.st_bind != STB_LOCAL &&
-        !esym.is_undef() && name.find('@') == name.npos)
+        !esym.is_undef() && !has_symver[shdr.sh_info - this->first_global] &&
+        !name.ends_with('@'))
       signature = this->symbols[shdr.sh_info];
     else
       signature = get_symbol(ctx, name);
