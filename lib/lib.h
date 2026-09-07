@@ -979,16 +979,12 @@ private:
     i64 capacity;
   };
 
-  // add() already computed the string hash. Store it in the map key so that
-  // unordered_map does not scan the string again.
-  struct PassThroughHash {
-    size_t operator()(const std::pair<u64, std::string_view> &key) const {
-      return key.first;
-    }
+  // Shards are built by one thread at a time. Keep only a cached hash and
+  // an entry pointer in each bucket; keys and values remain in the arena.
+  struct Slot {
+    u64 hash = 0;
+    Entry *entry = nullptr;
   };
-
-  using Map = std::unordered_map<std::pair<u64, std::string_view>, Entry *,
-                                 PassThroughHash>;
 
   struct Shard {
     Shard() = default;
@@ -996,24 +992,50 @@ private:
     Shard &operator=(const Shard &) = delete;
 
     T *insert(std::string_view key, u64 hash, auto on_create) {
-      auto [it, inserted] = map.try_emplace({hash, key}, nullptr);
-      if (!inserted)
-        return it->second;
+      if (size * 4 >= slots.size() * 3)
+        rehash(std::max<i64>(16, slots.size() * 2));
+
+      u64 mask = slots.size() - 1;
+      // The low hash bits already selected the shard.
+      u64 idx = (hash / NUM_SHARDS) & mask;
+      while (slots[idx].entry) {
+        Slot &slot = slots[idx];
+        if (slot.hash == hash && slot.entry->key == key)
+          return slot.entry;
+        idx = (idx + 1) & mask;
+      }
 
       if (blocks.empty() || blocks.back().size == blocks.back().capacity)
         add_block(INSERT_BLOCK_SIZE);
 
       Entry *entry = emplace(blocks.back(), key);
-      it->second = entry;
+      slots[idx] = {hash, entry};
+      size++;
       on_create(key, *entry);
       return entry;
     }
 
     void reserve(i64 count) {
-      map.reserve(map.size() + count);
+      i64 capacity = std::max<i64>(16, bit_ceil((size + count) * 4 / 3 + 1));
+      if (slots.size() < capacity)
+        rehash(capacity);
       if (blocks.empty() ||
           blocks.back().capacity - blocks.back().size < count)
         add_block(std::max<i64>(INSERT_BLOCK_SIZE, count));
+    }
+
+    void rehash(i64 capacity) {
+      std::vector<Slot> vec(capacity);
+      u64 mask = capacity - 1;
+      for (Slot slot : slots) {
+        if (!slot.entry)
+          continue;
+        u64 idx = (slot.hash / NUM_SHARDS) & mask;
+        while (vec[idx].entry)
+          idx = (idx + 1) & mask;
+        vec[idx] = slot;
+      }
+      slots = std::move(vec);
     }
 
     static constexpr i64 INSERT_BLOCK_SIZE = 256;
@@ -1032,7 +1054,8 @@ private:
     std::mutex mu;
     ArenaResource *arena = nullptr;
     std::vector<Block> blocks;
-    Map map;
+    std::vector<Slot> slots;
+    i64 size = 0;
   };
 
   Shard shards[NUM_SHARDS];
