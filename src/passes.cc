@@ -1283,12 +1283,12 @@ void check_symbol_version_conflicts(Context<E> &ctx) {
 
   Timer t(ctx, "check_symbol_version_conflicts");
 
-  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
+  tbb::parallel_for((i64)1, (i64)ctx.dynsym->symbols.size(), [&](i64 i) {
     Symbol<E> *sym = ctx.dynsym->symbols[i];
     if (sym->file->is_dso || sym->is_weak ||
         sym->ver_idx == VER_NDX_UNSPECIFIED ||
         !(sym->ver_idx & VERSYM_HIDDEN))
-      continue;
+      return;
 
     Symbol<E> *sym2 = get_symbol(ctx, sym->name());
     if (sym2 != sym && sym2->file && !sym2->file->is_dso && !sym2->is_weak &&
@@ -1297,7 +1297,7 @@ void check_symbol_version_conflicts(Context<E> &ctx) {
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym2->file
                  << ": " << file->get_symbol_name(sym->sym_idx);
     }
-  }
+  });
 
   ctx.checkpoint();
 }
