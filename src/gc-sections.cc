@@ -61,14 +61,14 @@ static bool mark_section(InputSection<E> *isec) {
 }
 
 template <typename E>
-static tbb::concurrent_vector<InputSection<E> *>
+static std::vector<InputSection<E> *>
 collect_root_set(Context<E> &ctx) {
   Timer t(ctx, "collect_root_set");
-  tbb::concurrent_vector<InputSection<E> *> rootset;
+  tbb::enumerable_thread_specific<std::vector<InputSection<E> *>> rootset;
 
   auto enqueue_section = [&](InputSection<E> *isec) {
     if (mark_section(isec))
-      rootset.push_back(isec);
+      rootset.local().push_back(isec);
   };
 
   auto enqueue_symbol = [&](Symbol<E> *sym) {
@@ -116,7 +116,10 @@ collect_root_set(Context<E> &ctx) {
         enqueue_symbol(file->symbols[rel.r_sym]);
   });
 
-  return rootset;
+  std::vector<std::vector<InputSection<E> *>> vec;
+  for (std::vector<InputSection<E> *> &v : rootset)
+    vec.push_back(std::move(v));
+  return flatten(vec);
 }
 
 static std::string_view start_stop_name(std::string_view sym) {
@@ -196,7 +199,7 @@ static void visit_section(Context<E> &ctx, InputSection<E> *isec,
 // Mark all reachable sections
 template <typename E>
 static void mark(Context<E> &ctx,
-                 tbb::concurrent_vector<InputSection<E> *> &rootset,
+                 std::vector<InputSection<E> *> &rootset,
                  const StartStopMap<E> &start_stop_map) {
   Timer t(ctx, "mark");
 
@@ -263,7 +266,7 @@ void gc_sections(Context<E> &ctx) {
     if (sym->file && sym->file->is_dso)
       sym->file->is_reachable = true;
 
-  tbb::concurrent_vector<InputSection<E> *> rootset = collect_root_set(ctx);
+  std::vector<InputSection<E> *> rootset = collect_root_set(ctx);
   StartStopMap<E> start_stop_map = build_start_stop_map(ctx);
   mark(ctx, rootset, start_stop_map);
   sweep(ctx);
