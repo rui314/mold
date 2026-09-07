@@ -113,15 +113,6 @@ InputFile<E>::InputFile(Context<E> &ctx)
     filename("<internal>") {}
 
 template <typename E>
-void InputFile<E>::populate_symbol_name_lengths() {
-  symname_lens.reserve(elf_syms.size());
-  for (const ElfSym<E> &esym : elf_syms) {
-    const char *p = symbol_strtab.data() + esym.st_name;
-    symname_lens.emplace_back(strlen(p));
-  }
-}
-
-template <typename E>
 ElfShdr<E> *InputFile<E>::find_section(i64 type) {
   for (ElfShdr<E> &sec : elf_sections)
     if (sec.sh_type == type)
@@ -852,6 +843,13 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
 
   this->symbols.resize(this->elf_syms.size());
 
+  // Cache local names here and global names while registering them below.
+  this->symname_lens.reserve(this->elf_syms.size());
+  for (const ElfSym<E> &esym : this->elf_syms.first(this->first_global)) {
+    const char *name = this->symbol_strtab.data() + esym.st_name;
+    this->symname_lens.emplace_back(strlen(name));
+  }
+
   i64 num_globals = this->elf_syms.size() - this->first_global;
   has_symver.resize(num_globals);
 
@@ -864,14 +862,19 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
     if (esym.is_common())
       has_common_symbol = true;
 
-    // Get a symbol name
-    std::string_view key = this->get_symbol_name(i);
-    std::string_view name = key;
+    // Find the name length and version separator in one scan.
+    const char *str = this->symbol_strtab.data() + esym.st_name;
+    i64 pos = 0;
+    while (str[pos] && str[pos] != '@')
+      pos++;
+    i64 len = pos + (str[pos] ? strlen(str + pos) : 0);
+    std::string_view key(str, len);
+    std::string_view name(str, pos);
+    this->symname_lens.emplace_back(len);
 
     // Parse symbol version after atsign
-    if (i64 pos = name.find('@'); pos != name.npos) {
-      std::string_view ver = name.substr(pos);
-      name = name.substr(0, pos);
+    if (pos != len) {
+      std::string_view ver = key.substr(pos);
 
       if (ver != "@") {
         if (ver.starts_with("@@"))
@@ -1123,7 +1126,6 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
     this->first_global = symtab_sec->sh_info;
     this->elf_syms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
     this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
-    this->populate_symbol_name_lengths();
 
     if (ElfShdr<E> *shdr = this->find_section(SHT_SYMTAB_SHNDX))
       symtab_shndx_sec = this->template get_data<U32<E>>(ctx, *shdr);

@@ -1990,8 +1990,6 @@ public:
   // Parallel to elf_syms; avoids rescanning complete symbol names.
   std::vector<NameLen> symname_lens;
 
-  void populate_symbol_name_lengths();
-
   std::string_view get_symbol_name(i64 i) const {
     const char *p = symbol_strtab.data() + elf_syms[i].st_name;
     return symname_lens[i].get_string(p);
