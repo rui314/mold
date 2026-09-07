@@ -162,7 +162,7 @@ fn new_lto_object<E: Arch>(
     ctx: &mut Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-    archive_name: &str,
+    archive_name: String,
 ) -> Option<ObjectFile<E>> {
     static COUNT: Counter = Counter::new("parsed_lto_objs");
     COUNT.increment();
@@ -170,8 +170,8 @@ fn new_lto_object<E: Arch>(
     if ctx.args.ignore_ir_file.contains(&mf.identifier()) {
         return None;
     }
-    let mut file = crate::lto::read_lto_object(ctx, mf, archive_name.to_string())?;
-    file.base.as_needed = rctx.in_lib || (!archive_name.is_empty() && !rctx.whole_archive);
+    let mut file = crate::lto::read_lto_object(ctx, mf, archive_name)?;
+    file.base.as_needed = rctx.in_lib || (!file.archive_name.is_empty() && !rctx.whole_archive);
     file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     Some(file)
 }
@@ -473,7 +473,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     let mut lto_jobs = std::mem::take(ctx.lto_jobs.get_mut().unwrap());
     lto_jobs.sort_by(|a, b| a.rctx.pos.cmp(&b.rctx.pos));
     for job in lto_jobs {
-        if let Some(file) = new_lto_object(ctx, &job.rctx, job.mf.unwrap(), &job.archive_name) {
+        if let Some(file) = new_lto_object(ctx, &job.rctx, job.mf.unwrap(), job.archive_name) {
             push_loaded(ctx, Loaded::Obj(job.rctx.pos, Box::new(file)));
         }
     }
