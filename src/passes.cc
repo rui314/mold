@@ -2198,9 +2198,18 @@ void copy_chunks(Context<E> &ctx) {
 
 // The hash function for .gnu.hash.
 static u32 djb_hash(std::string_view name) {
+  // Evaluate four bytes at a time to shorten the dependency chain.
+  // Factor the polynomial into pairs to reduce the number of multiplies.
+  const u8 *p = (const u8 *)name.data();
   u32 h = 5381;
-  for (u8 c : name)
-    h = (h << 5) + h + c;
+  i64 i = 0;
+  for (; i + 4 <= name.size(); i += 4) {
+    u32 a = p[i] * 33 + p[i + 1];
+    u32 b = p[i + 2] * 33 + p[i + 3];
+    h = h * 1185921 + a * 1089 + b;
+  }
+  for (; i < name.size(); i++)
+    h = (h << 5) + h + p[i];
   return h;
 }
 
