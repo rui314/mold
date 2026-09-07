@@ -327,20 +327,6 @@ void ObjectFile<E>::read_section_metadata(Context<E> &ctx) {
   }
 }
 
-// Returns the number of relocations referring to the section symbol of
-// a mergeable section. reattach_section_pieces() replaces each of them
-// with a symbol for the section piece it refers to.
-template <typename E>
-i64 ObjectFile<E>::count_frag_syms(std::span<const ElfRel<E>> rels) {
-  i64 n = 0;
-  for (const ElfRel<E> &r : rels)
-    if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
-        esym.st_type == STT_SECTION &&
-        (this->elf_sections[get_shndx(esym)].sh_flags & SHF_MERGE))
-      n++;
-  return n;
-}
-
 template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
@@ -378,19 +364,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if ((this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) ||
           ctx.arg.relocatable || ctx.arg.emit_relocs)
         decoded_crel[i] = decode_crel(ctx, *this, shdr);
-
-      // Count the relocations just decoded while they are in cache.
-      if (this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) {
-        std::span<const ElfRel<E>> rels(decoded_crel[i].data(), decoded_crel[i].size());
-        this->num_frag_syms += count_frag_syms(rels);
-      }
       break;
     case SHT_REL:
     case SHT_RELA:
-      if (this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC)
-        this->num_frag_syms +=
-          count_frag_syms(this->template get_data<ElfRel<E>>(ctx, shdr));
-      break;
     case SHT_SYMTAB:
     case SHT_SYMTAB_SHNDX:
     case SHT_STRTAB:
@@ -1088,17 +1064,10 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
     sym.value = frag_offset;
   }
 
-  // Arena allocations cannot be reclaimed, so grow this vector only once.
-  // num_frag_syms, counted when the sections were parsed, may include
-  // references to mergeable sections that were not converted; the extra
-  // symbols stay unused.
-  this->symbols.reserve(this->symbols.size() + this->num_frag_syms);
-  this->frag_syms = allocate_symbols<E>(ctx, this->num_frag_syms);
-
   // For each relocation referring to a mergeable section symbol, we
   // create a new dummy non-section symbol and redirect the relocation
   // to the newly created symbol.
-  i64 idx = 0;
+  std::vector<Symbol<E> *> frag_syms;
   for (InputSection<E> *isec : sections) {
     if (isec && (isec->shdr().sh_flags & SHF_ALLOC)) {
       for (ElfRel<E> &r : isec->get_rels(ctx)) {
@@ -1121,23 +1090,23 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
         if (!frag)
           Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
 
-        Symbol<E> &sym = this->frag_syms[idx];
+        Symbol<E> &sym = *ctx.arena.template make<Symbol<E>>();
         sym.file = this;
         sym.is_fragment_dummy = true;
         sym.sym_idx = r.r_sym;
         sym.visibility = STV_HIDDEN;
         sym.set_frag(frag);
         sym.value = in_frag_offset - r_addend;
-        r.r_sym = this->elf_syms.size() + idx;
-        idx++;
+        r.r_sym = this->elf_syms.size() + frag_syms.size();
+        frag_syms.push_back(&sym);
       }
     }
   }
 
-  assert(idx == this->frag_syms.size());
-
-  for (Symbol<E> &sym : this->frag_syms)
-    this->symbols.emplace_back(&sym);
+  // Arena allocations cannot be reclaimed, so grow this vector only once.
+  this->symbols.reserve(this->symbols.size() + frag_syms.size());
+  for (Symbol<E> *sym : frag_syms)
+    this->symbols.emplace_back(sym);
 }
 
 // Read global symbols before archive extraction so they can participate in
