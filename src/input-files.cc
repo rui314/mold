@@ -353,7 +353,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_GROUP:
       break;
     case SHT_CREL:
-      decoded_crel.resize(i + 1);
+      if (decoded_crel.empty())
+        decoded_crel.resize(this->elf_sections.size());
       if ((this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) ||
           ctx.arg.relocatable || ctx.arg.emit_relocs)
         decoded_crel[i] = decode_crel(ctx, *this, shdr);
