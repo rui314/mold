@@ -6,7 +6,7 @@
 
 namespace mold {
 
-static constexpr u32 BLOCK_SIZE = 64 * 1024;
+static constexpr u32 BLOCK_SIZE = 1024 * 1024;
 static constexpr u32 BLOCK_ALIGNMENT = 64;
 static constexpr u32 MAX_LOCAL_ALLOC = BLOCK_SIZE / 4;
 static constexpr u32 NUM_ARENA_SLOTS = 10;
