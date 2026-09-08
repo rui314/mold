@@ -397,23 +397,29 @@ static void parse_input_sections(Context<E> &ctx) {
     });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->is_reachable && file->mf && !file->is_lto_input &&
-        !file->sections_parsed)
-      file->parse_sections(ctx, keep_discarded_comdat);
-  });
+    if (!file->is_reachable)
+      return;
 
-  // Apply the selection to all group members. This also updates sections
-  // parsed before LTO if ownership has changed.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->is_reachable)
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        for (u32 i : ref.members(*file))
-          if (InputSection<E> *isec = file->sections[i]) {
-            if (ref.is_owner)
-              isec->flags |= InputSection<E>::IS_ALIVE;
-            else
-              isec->kill();
-          }
+    if (file->mf && !file->is_lto_input && !file->sections_parsed) {
+      file->parse_sections(ctx, keep_discarded_comdat);
+      // Parsing already omitted losing groups and constructed the rest alive.
+      // --gdb-index can separately kill group members while parsing.
+      if (!keep_discarded_comdat && !ctx.arg.gdb_index)
+        return;
+    }
+
+    // Apply the selection to all group members. This also updates sections
+    // parsed before LTO if ownership has changed.
+    for (ComdatGroupRef<E> &ref : file->comdat_groups) {
+      for (u32 i : ref.members(*file)) {
+        if (InputSection<E> *isec = file->sections[i]) {
+          if (ref.is_owner)
+            isec->flags |= InputSection<E>::IS_ALIVE;
+          else
+            isec->kill();
+        }
+      }
+    }
   });
 }
 
