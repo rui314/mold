@@ -46,8 +46,7 @@ public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
     : OutputFile<E>(path, filesize, true) {
     std::string pid = std::to_string(getpid());
-    std::string tmpfile =
-      path_dirname(path) / ("." + path_filename(path) + "." + pid);
+    std::string tmpfile = path_dirname(path) / ("."s + path_filename(path) + "." + pid);
 
     this->fd = open_or_create_file(ctx, path, tmpfile, perm);
 
