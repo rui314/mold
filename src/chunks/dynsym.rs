@@ -20,6 +20,13 @@ pub struct DynsymSection<E: Layout> {
     /// Index 0 is the null symbol.
     pub symbols: Vec<Option<SymbolId>>,
     pub dynstr_offset: u64,
+    pub dynstr_entries: Vec<DynstrEntry>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DynstrEntry {
+    pub name: &'static [u8],
+    pub offset: u64,
 }
 
 impl<E: Arch> DynsymSection<E> {
@@ -32,6 +39,7 @@ impl<E: Arch> DynsymSection<E> {
             hdr,
             symbols: Vec::new(),
             dynstr_offset: 0,
+            dynstr_entries: Vec::new(),
         }
     }
 }
@@ -62,17 +70,16 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let size = std::mem::size_of::<ElfSym<E>>();
     buf[..size].fill(0);
-    let offsets = crate::chunks::dynstr::symbol_offsets(ctx);
     let overflow = AtomicBool::new(false);
     buf.par_chunks_exact_mut(size)
         .zip(&ctx.dynsym.symbols)
-        .zip(&offsets)
+        .zip(&ctx.dynsym.dynstr_entries)
         .enumerate()
         .skip(1)
-        .for_each(|(i, ((out, id), offset))| {
+        .for_each(|(i, ((out, id), entry))| {
             let sym = &ctx.symbols[id.unwrap()];
             debug_assert_eq!(sym.dynsym_idx(&ctx.symbols), Some(i as u32));
-            let (esym, xindex) = to_output_esym(ctx, sym, *offset as u32);
+            let (esym, xindex) = to_output_esym(ctx, sym, entry.offset as u32);
             if xindex != 0 {
                 overflow.store(true, Ordering::Relaxed);
             } else {

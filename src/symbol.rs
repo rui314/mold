@@ -1841,34 +1841,6 @@ impl SymbolTable {
         });
     }
 
-    /// Applies `f` as above and sums its per-symbol results in parallel.
-    ///
-    /// # Safety
-    ///
-    /// `ids` must contain no duplicates, since each invocation receives mutable
-    /// access to the corresponding auxiliary record.
-    pub(crate) unsafe fn par_sum_aux_mut(
-        &mut self,
-        ids: &[SymbolId],
-        f: impl Fn(usize, &Symbol, &mut SymbolAux) -> u64 + Send + Sync,
-    ) -> u64 {
-        let symbols = &self.symbols;
-        let aux = SymbolAuxPtr(self.aux.as_mut_ptr());
-        let aux_len = self.aux.len();
-        ids.par_iter()
-            .enumerate()
-            .map(|(i, &id)| {
-                let sym = &symbols[id.index()];
-                debug_assert_ne!(sym.aux_idx, NO_AUX);
-                debug_assert!((sym.aux_idx as usize) < aux_len);
-                // SAFETY: the caller guarantees that ids, and hence aux_idx
-                // values, are distinct, and the exclusive table borrow keeps
-                // the vector fixed.
-                unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) }
-            })
-            .sum()
-    }
-
     /// Finds named symbols satisfying `predicate` in deterministic shard
     /// order, while examining all of the symbol-map blocks in parallel.
     pub fn par_find_globals(

@@ -2952,11 +2952,13 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     // In any symtab, local symbols must precede global symbols.
     let num_locals =
         crate::util::parallel::stable_partition(&mut syms, |&id| ctx.symbols[id].is_local(ctx));
+    let mut first_exported = syms.len();
+    let mut dynstr_entries = vec![dynsym::DynstrEntry::default(); syms.len() + 1];
 
     // Cache contiguous sort keys instead of chasing symbol pointers in each
-    // comparison.
+    // comparison. The names are reused by both dynamic-table output passes.
     if let Some(gnu_hash) = &mut ctx.gnu_hash {
-        let first_exported = num_locals
+        first_exported = num_locals
             + crate::util::parallel::stable_partition(&mut syms[num_locals..], |&id| {
                 !ctx.symbols[id].is_exported()
             });
@@ -2991,27 +2993,55 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
         entries.par_sort_unstable_by(|a, b| (a.bucket, a.name).cmp(&(b.bucket, b.name)));
         exported
             .par_iter_mut()
+            .zip(&mut dynstr_entries[first_exported + 1..])
             .zip(entries)
-            .for_each(|(id, entry)| *id = entry.id);
+            .for_each(|((id, string), entry)| {
+                *id = entry.id;
+                string.name = entry.name;
+            });
         gnu_hash.num_buckets = num_buckets;
         gnu_hash.num_exported = num_exported;
     }
 
-    // Compute .dynstr size
     let offset = ctx.dynstr.hdr.shdr.sh_size.get();
     ctx.dynsym.dynstr_offset = offset;
-    // SAFETY: .dynsym contains each symbol at most once. Every dynamic symbol
-    // already has an auxiliary record.
-    let size = unsafe {
-        ctx.symbols.par_sum_aux_mut(&syms, |i, sym, aux| {
+    // SAFETY: .dynsym contains each symbol once and every symbol has aux.
+    unsafe {
+        ctx.symbols.par_for_each_aux_mut(&syms, |i, _, aux| {
             aux.dynsym_idx = Some(i as u32 + 1);
-            sym.name().len() as u64 + 1
-        })
-    };
-    ctx.dynstr.hdr.shdr.sh_size.set(offset + size);
-    ctx.dynsym.symbols = std::iter::once(None)
-        .chain(syms.into_iter().map(Some))
+        });
+    }
+    dynstr_entries[1..first_exported + 1]
+        .par_iter_mut()
+        .zip(&syms[..first_exported])
+        .for_each(|(entry, &id)| entry.name = ctx.symbols[id].name());
+
+    // Scan block totals, then assign individual offsets in parallel.
+    let mut offsets: Vec<u64> = dynstr_entries[1..]
+        .par_chunks(1024)
+        .map(|entries| entries.iter().map(|e| e.name.len() as u64 + 1).sum())
         .collect();
+    let mut end = offset;
+    for total in &mut offsets {
+        let size = *total;
+        *total = end;
+        end += size;
+    }
+    dynstr_entries[1..]
+        .par_chunks_mut(1024)
+        .zip(offsets)
+        .for_each(|(entries, mut off)| {
+            for entry in entries {
+                entry.offset = off;
+                off += entry.name.len() as u64 + 1;
+            }
+        });
+    ctx.dynstr.hdr.shdr.sh_size.set(end);
+    ctx.dynsym.dynstr_entries = dynstr_entries;
+    ctx.dynsym.symbols[1..]
+        .par_iter_mut()
+        .zip(syms)
+        .for_each(|(slot, id)| *slot = Some(id));
 
     // ELF's symbol table sh_info holds the offset of the first global symbol.
     ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
