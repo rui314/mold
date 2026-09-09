@@ -82,7 +82,7 @@ pub fn entry_offset<E: Arch>(idx: u32) -> u64 {
 pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     let idx = ctx.plt.symbols.len() as u32;
-    ctx.symbols.aux_mut(sym).plt_idx = Some(idx);
+    ctx.symbols.aux_mut(sym).plt_idx.set(idx);
     ctx.plt.symbols.push(sym);
     crate::chunks::dynsym::add_symbol(ctx, sym);
 }

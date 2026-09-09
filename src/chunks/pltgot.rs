@@ -40,7 +40,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     debug_assert!(ctx.symbols[sym].has_got(&ctx.symbols));
     let idx = ctx.pltgot.symbols.len() as u32;
-    ctx.symbols.aux_mut(sym).pltgot_idx = Some(idx);
+    ctx.symbols.aux_mut(sym).pltgot_idx.set(idx);
     ctx.pltgot.symbols.push(sym);
     let size = ctx.pltgot.symbols.len() as u64 * E::PLTGOT_SIZE;
     ctx.pltgot.hdr.shdr.sh_size.set(size);

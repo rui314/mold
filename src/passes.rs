@@ -3012,7 +3012,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     // SAFETY: .dynsym contains each symbol once and every symbol has aux.
     unsafe {
         ctx.symbols.par_for_each_aux_mut(&syms, |i, _, aux| {
-            aux.dynsym_idx = Some(i as u32 + 1);
+            aux.dynsym_idx.set(i as u32 + 1);
         });
     }
     dynstr_entries[1..first_exported + 1]
