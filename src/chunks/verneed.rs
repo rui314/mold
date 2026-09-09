@@ -50,7 +50,7 @@ impl<E: Layout> Default for VerneedSection<E> {
 // `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
 // about this dummy version name and simply ignores it.
 fn is_glibc2<E: Layout>(dso: &crate::input_files::SharedFile<E>) -> bool {
-    dso.soname.starts_with("libc.so.")
+    dso.soname.starts_with(b"libc.so.")
         && dso
             .version_strings
             .iter()
@@ -110,7 +110,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         let start_group = i == 0 || syms[i - 1].0 != dso;
         if start_group {
             let soname = ctx.dsos[dso.index()].soname.clone();
-            let vn_file = ctx.dynstr.find_string(soname.as_bytes()) as u32;
+            let vn_file = ctx.dynstr.find_string(&soname) as u32;
             builder.start_group(vn_file);
             if ctx.args.pack_dyn_relocs_relr && is_glibc2(&ctx.dsos[dso.index()]) {
                 builder.add_entry(&mut ctx.dynstr, b"GLIBC_ABI_DT_RELR");

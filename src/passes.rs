@@ -2078,7 +2078,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     let complete = ctx.dsos.iter().all(|dso| {
         dso.dt_needed()
             .iter()
-            .all(|needed| ctx.dso_sonames.contains(&*String::from_utf8_lossy(needed)))
+            .all(|needed| ctx.dso_sonames.contains(*needed))
     });
 
     if complete {
@@ -2489,7 +2489,7 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
     let mut strings: Vec<Vec<u8>> = ctx
         .dsos
         .iter()
-        .map(|d| d.soname.clone().into_bytes())
+        .map(|d| d.soname.clone())
         .collect();
     strings.extend(ctx.args.auxiliary.iter().map(|s| s.clone().into_bytes()));
     strings.extend(ctx.args.filter.iter().map(|s| s.clone().into_bytes()));

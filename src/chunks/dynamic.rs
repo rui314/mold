@@ -72,7 +72,7 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     };
 
     for dso in &ctx.dsos {
-        define(DT_NEEDED, dynstr.find_string(dso.soname.as_bytes()));
+        define(DT_NEEDED, dynstr.find_string(&dso.soname));
     }
     if !ctx.args.rpaths.is_empty() {
         let tag = if ctx.args.enable_new_dtags {

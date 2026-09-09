@@ -3015,7 +3015,7 @@ fn sframe_fre_block_size<E: Arch>(data: &[u8], offset: usize) -> usize {
 #[derive(Debug)]
 pub struct SharedFile<E: Layout> {
     pub base: InputFile<E>,
-    pub soname: String,
+    pub soname: Vec<u8>,
     pub version_strings: Vec<&'static [u8]>,
 
     /// For each symbol, the `foo@VERSION` alias of a default-versioned
@@ -3053,7 +3053,7 @@ impl<E: Arch> SharedFile<E> {
         let base = InputFile::<E>::parse(mf, &FileName(&mf.name, ""));
         let mut file = SharedFile {
             base,
-            soname: String::new(),
+            soname: Vec::new(),
             version_strings: Vec::new(),
             symbols2: Vec::new(),
             versyms: Vec::new(),
@@ -3080,14 +3080,14 @@ impl<E: Arch> SharedFile<E> {
             .collect()
     }
 
-    fn get_soname(&self) -> String {
+    fn get_soname(&self) -> Vec<u8> {
         if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).first() {
-            return String::from_utf8_lossy(soname).into_owned();
+            return soname.to_vec();
         }
         if self.base.mf.is_none_or(|mf| mf.given_fullpath) {
-            return self.base.filename.clone();
+            return self.base.filename.as_bytes().to_vec();
         }
-        path_filename(&self.base.filename)
+        path_filename(&self.base.filename).into_bytes()
     }
 
     fn parse(&mut self) {

@@ -140,7 +140,7 @@ pub struct Context<E: Arch> {
     /// Sonames of all shared libraries given to the linker, including
     /// ones later dropped as unneeded; --no-allow-shlib-undefined can
     /// only be checked if the set of libraries is complete.
-    pub dso_sonames: HashSet<String>,
+    pub dso_sonames: HashSet<Vec<u8>>,
 
     pub lto_file_priority: u32,
 
