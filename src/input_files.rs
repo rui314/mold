@@ -1509,14 +1509,13 @@ impl<E: Arch> ObjectFile<E> {
                 fatal!("{self}: unsupported SHT_GROUP format");
             }
 
-            // Ordinary global signatures already have a Symbol. Local, section
-            // and versioned signatures use the same symbol table through their
-            // full name.
-            let version = memchr::memchr(b'@', name);
+            // Reuse the version flag from registration. A bare trailing '@'
+            // has no version flag but still needs its complete signature name.
             let is_own_global = esym.st_type() != STT_SECTION
                 && esym.st_bind() != STB_LOCAL
                 && !esym.is_undef()
-                && version.is_none();
+                && !self.has_symver[shdr.sh_info.get() as usize - self.base.first_global]
+                && !name.ends_with(b"@");
 
             let signature = if is_own_global {
                 self.base.symbols[shdr.sh_info.get() as usize]
@@ -1530,7 +1529,7 @@ impl<E: Arch> ObjectFile<E> {
                 self.pending_comdat_signatures.push(PendingComdatSignature {
                     key: name,
                     group_idx,
-                    name_len: version.unwrap_or(name.len()) as u32,
+                    name_len: crate::symbol::name_len(name) as u32,
                 });
             }
         }
