@@ -8,6 +8,7 @@ pub mod demangle;
 pub mod endian;
 pub mod glob;
 pub mod hyperloglog;
+pub(crate) mod parallel;
 pub mod perf;
 mod prefetch;
 pub(crate) mod siphash;

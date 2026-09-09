@@ -2950,16 +2950,17 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     let mut syms: Vec<SymbolId> = ctx.dynsym.symbols[1..].iter().flatten().copied().collect();
 
     // In any symtab, local symbols must precede global symbols.
-    let (locals, mut globals): (Vec<SymbolId>, Vec<SymbolId>) =
-        syms.iter().partition(|&&id| ctx.symbols[id].is_local(ctx));
-    let num_locals = locals.len();
+    let num_locals =
+        crate::util::parallel::stable_partition(&mut syms, |&id| ctx.symbols[id].is_local(ctx));
 
     // Cache contiguous sort keys instead of chasing symbol pointers in each
     // comparison.
     if let Some(gnu_hash) = &mut ctx.gnu_hash {
-        let (unexported, mut exported): (Vec<SymbolId>, Vec<SymbolId>) = globals
-            .iter()
-            .partition(|&&id| !ctx.symbols[id].is_exported());
+        let first_exported = num_locals
+            + crate::util::parallel::stable_partition(&mut syms[num_locals..], |&id| {
+                !ctx.symbols[id].is_exported()
+            });
+        let exported = &mut syms[first_exported..];
         let num_exported = exported.len() as u32;
         let num_buckets = num_exported / GnuHashSection::<E>::LOAD_FACTOR + 1;
         struct Entry {
@@ -2983,7 +2984,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
             .collect();
         // SAFETY: .dynsym contains each symbol once and every symbol has aux.
         unsafe {
-            ctx.symbols.par_for_each_aux_mut(&exported, |i, _, aux| {
+            ctx.symbols.par_for_each_aux_mut(exported, |i, _, aux| {
                 aux.djb_hash = entries[i].hash;
             });
         }
@@ -2994,10 +2995,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|(id, entry)| *id = entry.id);
         gnu_hash.num_buckets = num_buckets;
         gnu_hash.num_exported = num_exported;
-        globals = unexported.into_iter().chain(exported).collect();
     }
-
-    syms = locals.into_iter().chain(globals).collect();
 
     // Compute .dynstr size
     let offset = ctx.dynstr.hdr.shdr.sh_size.get();
