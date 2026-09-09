@@ -89,6 +89,30 @@ pub struct ObjId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DsoId(pub u32);
 
+/// A fragment symbol awaiting its slot in the central symbol vector.
+/// Keep only the varying fields here so that growing file-local vectors does
+/// not repeatedly copy full Symbols.
+pub(crate) struct FragmentSymbol {
+    fragment: FragmentRef,
+    value: u64,
+    sym_idx: u32,
+}
+
+impl FragmentSymbol {
+    #[inline]
+    pub(crate) fn into_symbol<E: Arch>(self, file: &ObjectFile<E>) -> Symbol {
+        let mut sym = Symbol::new(BStr::new(b"<fragment>"));
+        sym.set_file(FileId::Obj(file.id()));
+        sym.set_fragment_dummy(true);
+        sym.sym_idx = self.sym_idx;
+        sym.set_esym(&file.base.elf_syms[self.sym_idx as usize]);
+        sym.set_visibility(STV_HIDDEN);
+        sym.set_fragment(self.fragment);
+        sym.value = self.value;
+        sym
+    }
+}
+
 impl ObjId {
     pub fn index(self) -> usize {
         self.0 as usize
@@ -744,7 +768,6 @@ pub struct ObjectFile<E: Arch> {
     pub got2: Option<u32>,
 
     symtab_shndx: Vec<u32>,
-    num_frag_syms: usize,
     num_common_symbols: u32,
 }
 
@@ -802,18 +825,6 @@ impl<E: Arch> ObjectFile<E> {
         let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
         &self.base.data()[offset as usize..(offset + size) as usize]
     }
-}
-
-#[cold]
-#[inline(never)]
-fn invalid_relocation_symbol<E: Arch>(file: &ObjectFile<E>, r_sym: usize) -> ! {
-    panic!("{file}: invalid relocation symbol index {r_sym}")
-}
-
-#[cold]
-#[inline(never)]
-fn invalid_relocation_section<E: Arch>(file: &ObjectFile<E>, r_sym: usize, shndx: usize) -> ! {
-    panic!("{file}: relocation symbol {r_sym} has invalid section index {shndx}")
 }
 
 /// Formats a file the way it appears in diagnostics before the file
@@ -1084,7 +1095,6 @@ impl<E: Arch> ObjectFile<E> {
             riscv_attributes: RiscvAttributes::default(),
             got2: None,
             symtab_shndx: Vec::new(),
-            num_frag_syms: 0,
             num_common_symbols: 0,
         }
     }
@@ -1526,31 +1536,6 @@ impl<E: Arch> ObjectFile<E> {
         }
     }
 
-    // Returns the number of relocations referring to the section symbol of
-    // a mergeable section. reattach_section_pieces() replaces each of them
-    // with a symbol for the section piece it refers to.
-    fn count_frag_syms(&self, rels: &[E::Rel]) -> usize {
-        let mut count = 0;
-        // Iterate over symbol indices without decoding the other relocation
-        // fields.
-        for r_sym in rels.iter().map(|rel| rel.r_sym() as usize) {
-            let Some(esym) = self.base.elf_syms.get(r_sym) else {
-                invalid_relocation_symbol(self, r_sym);
-            };
-            if esym.st_type() != STT_SECTION {
-                continue;
-            }
-
-            let st_shndx = esym.st_shndx().get();
-            let shndx = self.shndx_from(r_sym, st_shndx);
-            let Some(flags) = self.base.shdrs.get(shndx).map(|shdr| shdr.sh_flags.get()) else {
-                invalid_relocation_section(self, r_sym, shndx);
-            };
-            count += usize::from(flags & SHF_MERGE as u64 != 0);
-        }
-        count
-    }
-
     fn parse_note_gnu_property(&mut self, mut data: &'static [u8]) {
         while data.len() >= ElfNhdr::<E>::size() {
             let hdr = ElfNhdr::<E>::parse(data);
@@ -1676,25 +1661,6 @@ impl<E: Arch> ObjectFile<E> {
             match sh_type {
                 SHT_GROUP | SHT_SYMTAB | SHT_SYMTAB_SHNDX | SHT_STRTAB | SHT_NULL => {}
                 SHT_REL | SHT_RELA => {
-                    if sh_type != expected_reloc_type {
-                        continue;
-                    }
-                    let target = shdr.sh_info.get() as usize;
-                    let Some(target_flags) =
-                        self.base.shdrs.get(target).map(|shdr| shdr.sh_flags.get())
-                    else {
-                        continue;
-                    };
-                    if target_flags & SHF_ALLOC as u64 != 0 {
-                        let contents = self.base.section_contents_from_shdr(shdr);
-                        if !contents
-                            .len()
-                            .is_multiple_of(std::mem::size_of::<ElfRel<E>>())
-                        {
-                            fatal!("{self}: corrupted section");
-                        }
-                        self.num_frag_syms += self.count_frag_syms(rels_from_bytes::<E>(contents));
-                    }
                     // Relocations are attached to their sections below.
                 }
                 SHT_CREL => {
@@ -1709,10 +1675,6 @@ impl<E: Arch> ObjectFile<E> {
                         let contents = self.base.section_contents_from_shdr(shdr);
                         let decoded = decode_crel::<E>(self, contents);
 
-                        // Count the relocations just decoded while they are in cache.
-                        if target_is_alloc {
-                            self.num_frag_syms += self.count_frag_syms(&decoded);
-                        }
                         self.set_decoded_crel(i, decoded);
                     }
                     // Relocations are attached to their sections below.
@@ -2434,13 +2396,9 @@ impl<E: Arch> ObjectFile<E> {
         }
     }
 
-    pub(crate) fn num_fragment_dummies(&self) -> usize {
-        self.num_frag_syms
-    }
-
     /// Reads only CREL headers to estimate fragment-symbol demand before
-    /// archive extraction. Ordinary relocation tables are counted later,
-    /// while selected files are already being prepared for section parsing.
+    /// archive extraction. This cheap upper bound avoids relocating the entire
+    /// central symbol vector when actual fragment symbols are appended later.
     pub(crate) fn crel_fragment_dummy_upper_bound(&self) -> usize {
         self.base
             .shdrs
@@ -2459,18 +2417,9 @@ impl<E: Arch> ObjectFile<E> {
     // to the newly created symbol.
     pub(crate) fn reattach_fragment_relocations(
         &mut self,
-        id: ObjId,
         merged: &[MergedSection<E>],
-        base_id: SymbolId,
-        slots: &mut [MaybeUninit<Symbol>],
-    ) {
-        debug_assert_eq!(slots.len(), self.num_frag_syms);
-
-        // Reserve once before appending. num_frag_syms, counted when the
-        // sections were parsed, may include references to mergeable sections
-        // that were not converted; the extra capacity then stays unused.
-        self.base.symbols.reserve(slots.len());
-        let mut next = 0;
+    ) -> Vec<FragmentSymbol> {
+        let mut fragments = Vec::new();
 
         for shndx in 0..self.sections.len() {
             let (relsec_idx, contents) = {
@@ -2544,19 +2493,13 @@ impl<E: Arch> ObjectFile<E> {
                     continue;
                 };
 
-                let dummy_idx = self.base.symbols.len() as u32;
-                self.base.symbols.push(SymbolId(base_id.0 + next as u32));
+                let dummy_idx = (self.base.elf_syms.len() + fragments.len()) as u32;
 
-                let mut sym = Symbol::new(BStr::new(b"<fragment>"));
-                sym.set_file(FileId::Obj(id));
-                sym.set_fragment_dummy(true);
-                sym.sym_idx = record.r_sym();
-                sym.set_esym(&self.base.elf_syms[record.r_sym() as usize]);
-                sym.set_visibility(STV_HIDDEN);
-                sym.set_fragment(frag);
-                sym.value = value;
-                slots[next].write(sym);
-                next += 1;
+                fragments.push(FragmentSymbol {
+                    fragment: frag,
+                    value,
+                    sym_idx: record.r_sym(),
+                });
 
                 rel.set_r_sym(dummy_idx);
             }
@@ -2567,13 +2510,7 @@ impl<E: Arch> ObjectFile<E> {
             }
         }
 
-        // num_frag_syms may include references to mergeable sections that
-        // were not converted; the extra symbols stay unused.
-        for slot in &mut slots[next..] {
-            self.base.symbols.push(SymbolId(base_id.0 + next as u32));
-            slot.write(Symbol::new(BStr::new(b"")));
-            next += 1;
-        }
+        fragments
     }
 
     pub fn scan_relocations(&self, ctx: &Context<E>) {

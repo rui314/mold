@@ -423,18 +423,14 @@ fn clear_symbols<E: Arch>(ctx: &mut Context<E>) {
 pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_symbols");
     let bins = ctx.take_symbol_bins();
-    // Local and fragment dummy symbols are appended after global resolution.
-    // Reserve all local symbols and the CREL upper bound of direct inputs now,
-    // before constructing globals. CREL-heavy inputs otherwise grow the symbol
-    // vector after millions of globals have been created. Ordinary relocation
-    // tables and selected archive members are counted after COMDAT selection.
-    let additional_capacity: usize = ctx
+    // Reserve local symbols and a cheap CREL-header bound before constructing
+    // globals. Unlike C++ arena storage, the central Rust vector would copy all
+    // existing symbols if fragment dummies forced it to grow later.
+    let additional_capacity = ctx
         .objs
         .par_iter()
-        .filter_map(|file| {
-            if file.base.mf.is_none() || file.is_lto_input || file.sections_parsed {
-                return None;
-            }
+        .filter(|file| file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed)
+        .map(|file| {
             let locals = if file.base.elf_syms.is_empty() {
                 0
             } else {
@@ -445,7 +441,7 @@ pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
             } else {
                 0
             };
-            Some(locals.saturating_add(fragments))
+            locals.saturating_add(fragments)
         })
         .reduce(|| 0, usize::saturating_add);
     let Context { symbols, .. } = ctx;
@@ -1064,35 +1060,42 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         ..
     } = ctx;
 
-    // Grow the symbol table once. num_frag_syms, counted when the sections
-    // were parsed, may include references to mergeable sections that were not
-    // converted; the extra symbols stay unused.
-    let counts: Vec<usize> = objs
-        .iter()
-        .map(|file| file.num_fragment_dummies())
+    let editor = SymbolEditor::new(symbols.as_mut_slice());
+    let fragments: Vec<_> = objs
+        .par_iter_mut()
+        .map(|file| {
+            let id = file.id();
+            file.reattach_section_symbols(id, &editor, merged_sections);
+            file.reattach_fragment_relocations(merged_sections)
+        })
         .collect();
+
+    // Relocations already name the new file-local slots. Publish their global
+    // ids after reserving exactly the number of symbols that were needed.
     let base = symbols.len();
-    // SAFETY: the new slots are split among the files exactly, and each file
-    // initializes every slot in its slice. The editor covers only the
-    // disjoint, initialized prefix.
+    // SAFETY: each task initializes all of its disjoint new slots.
     unsafe {
-        symbols.add_many_with_existing(counts.iter().sum(), |existing, slots| {
-            let editor = SymbolEditor::new(existing);
+        symbols.add_many_with_existing(fragments.iter().map(Vec::len).sum(), |_, slots| {
             let mut rest = slots;
-            let mut slices = Vec::with_capacity(counts.len());
             let mut offset = base;
-            for &count in &counts {
-                let (head, tail) = rest.split_at_mut(count);
-                slices.push((SymbolId(offset as u32), head));
-                rest = tail;
-                offset += count;
-            }
+            let parts: Vec<_> = fragments
+                .into_iter()
+                .map(|fragments| {
+                    let (head, tail) = std::mem::take(&mut rest).split_at_mut(fragments.len());
+                    rest = tail;
+                    let first = offset;
+                    offset += fragments.len();
+                    (first, head, fragments)
+                })
+                .collect();
             objs.par_iter_mut()
-                .zip(slices)
-                .for_each(|(file, (base_id, slots))| {
-                    let id = file.id();
-                    file.reattach_section_symbols(id, &editor, merged_sections);
-                    file.reattach_fragment_relocations(id, merged_sections, base_id, slots);
+                .zip(parts)
+                .for_each(|(file, (first, slots, fragments))| {
+                    file.base.symbols.reserve(fragments.len());
+                    for (i, (slot, fragment)) in slots.iter_mut().zip(fragments).enumerate() {
+                        slot.write(fragment.into_symbol(file));
+                        file.base.symbols.push(SymbolId((first + i) as u32));
+                    }
                 });
         });
     }
