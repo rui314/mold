@@ -1,5 +1,9 @@
 //! `.dynsym`, the dynamic symbol table.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use rayon::prelude::*;
+
 use crate::arch::Arch;
 use crate::chunks::symtab::to_output_esym;
 use crate::chunks::ChunkHeader;
@@ -58,20 +62,29 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let size = std::mem::size_of::<ElfSym<E>>();
     buf[..size].fill(0);
-    let mut offset = ctx.dynsym.dynstr_offset as u32;
-    for &id in ctx.dynsym.symbols.iter().skip(1).flatten() {
-        let sym = &ctx.symbols[id];
-        let (esym, xindex) = to_output_esym(ctx, sym, offset);
-        if xindex != 0 {
-            let nshdrs = ctx.shdr.as_ref().map_or(0, |s| {
-                s.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64
-            });
-            error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
-                ctx.args.output
-            );
-            return;
-        }
-        esym.write(&mut buf[sym.dynsym_idx(&ctx.symbols).unwrap() as usize * size..]);
-        offset += sym.name().len() as u32 + 1;
+    let offsets = crate::chunks::dynstr::symbol_offsets(ctx);
+    let overflow = AtomicBool::new(false);
+    buf.par_chunks_exact_mut(size)
+        .zip(&ctx.dynsym.symbols)
+        .zip(&offsets)
+        .enumerate()
+        .skip(1)
+        .for_each(|(i, ((out, id), offset))| {
+            let sym = &ctx.symbols[id.unwrap()];
+            debug_assert_eq!(sym.dynsym_idx(&ctx.symbols), Some(i as u32));
+            let (esym, xindex) = to_output_esym(ctx, sym, *offset as u32);
+            if xindex != 0 {
+                overflow.store(true, Ordering::Relaxed);
+            } else {
+                esym.write(out);
+            }
+        });
+    if overflow.load(Ordering::Relaxed) {
+        let nshdrs = ctx.shdr.as_ref().map_or(0, |s| {
+            s.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64
+        });
+        error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
+            ctx.args.output
+        );
     }
 }
