@@ -539,17 +539,6 @@ impl<E: Layout> InputFile<E> {
         }
     }
 
-    fn populate_symbol_name_lengths(&mut self) {
-        self.symbol_name_lengths = self
-            .elf_syms
-            .iter()
-            .map(|esym| {
-                let offset = esym.st_name().get() as usize;
-                NameLen::new(cstr_at(self.symbol_strtab, offset).len())
-            })
-            .collect();
-    }
-
     pub fn global_symbols(&self) -> &[SymbolId] {
         &self.symbols[self.first_global.min(self.symbols.len())..]
     }
@@ -1123,7 +1112,6 @@ impl<E: Arch> ObjectFile<E> {
         base.mf = Some(mf);
         base.elf_syms = Cow::Owned(elf_syms);
         base.symbol_strtab = strtab;
-        base.populate_symbol_name_lengths();
         base.first_global = 1;
         let mut file = ObjectFile::with_base(base, archive_name);
         file.is_lto_input = true;
@@ -1386,7 +1374,6 @@ impl<E: Arch> ObjectFile<E> {
             }
             self.base.elf_syms = Cow::Borrowed(records_from_bytes::<ElfSym<E>>(contents));
             self.base.symbol_strtab = self.base.section_contents(shdr.sh_link.get() as usize);
-            self.base.populate_symbol_name_lengths();
 
             if let Some(idx) = self.base.find_section(SHT_SYMTAB_SHNDX) {
                 let bytes = self.base.section_contents(idx);
@@ -1406,6 +1393,12 @@ impl<E: Arch> ObjectFile<E> {
         self.base.symbols = vec![SymbolId::DISCARDED_COMDAT; n];
         let num_globals = n.saturating_sub(self.base.first_global);
         self.has_symver = vec![false; num_globals];
+        self.base.symbol_name_lengths.clear();
+        self.base.symbol_name_lengths.reserve(n);
+        for esym in self.base.elf_syms.iter().take(self.base.first_global) {
+            let name = cstr_at(self.base.symbol_strtab, esym.st_name().get() as usize);
+            self.base.symbol_name_lengths.push(NameLen::new(name.len()));
+        }
 
         // Register global symbols
         for i in self.base.first_global..n {
@@ -1414,15 +1407,27 @@ impl<E: Arch> ObjectFile<E> {
                 self.num_common_symbols += 1;
             }
 
-            // Get a symbol name
-            let mut key = self.base.symbol_name_in(i);
-            let mut name = key;
+            // Find the name length and version separator in one scan.
+            let strtab = self
+                .base
+                .symbol_strtab
+                .get(esym.st_name().get() as usize..)
+                .unwrap_or_default();
+            let pos = memchr::memchr2(0, b'@', strtab).unwrap_or(strtab.len());
+            let len = pos
+                + if strtab.get(pos) == Some(&b'@') {
+                    cstr_at(strtab, pos).len()
+                } else {
+                    0
+                };
+            self.base.symbol_name_lengths.push(NameLen::new(len));
+            let mut key = &strtab[..len];
+            let name = &key[..pos];
 
             // Parse symbol version after atsign
             let mut ver_len = 0;
-            if let Some(pos) = memchr::memchr(b'@', name) {
-                let ver = &name[pos..];
-                name = &name[..pos];
+            if pos != len {
+                let ver = &key[pos..];
                 if ver.starts_with(b"@@") {
                     key = name;
                 } else {
