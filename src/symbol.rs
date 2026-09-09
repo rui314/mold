@@ -708,6 +708,7 @@ impl Symbol {
         self.clear_flags();
     }
 
+    #[inline]
     pub fn aux<'a>(&self, symbols: &'a SymbolTable) -> Option<&'a SymbolAux> {
         (self.aux_idx != NO_AUX).then(|| &symbols.aux[self.aux_idx as usize])
     }
@@ -728,10 +729,12 @@ impl Symbol {
         self.aux(symbols).and_then(|a| a.tlsdesc_idx.get())
     }
 
+    #[inline]
     pub fn plt_idx(&self, symbols: &SymbolTable) -> Option<u32> {
         self.aux(symbols).and_then(|a| a.plt_idx.get())
     }
 
+    #[inline]
     pub fn pltgot_idx(&self, symbols: &SymbolTable) -> Option<u32> {
         self.aux(symbols).and_then(|a| a.pltgot_idx.get())
     }
@@ -746,7 +749,8 @@ impl Symbol {
 
     #[inline]
     pub fn has_plt(&self, symbols: &SymbolTable) -> bool {
-        self.plt_idx(symbols).is_some() || self.pltgot_idx(symbols).is_some()
+        self.aux(symbols)
+            .is_some_and(|a| a.plt_idx.get().is_some() || a.pltgot_idx.get().is_some())
     }
 
     #[inline]
@@ -1007,6 +1011,7 @@ impl Symbol {
         self.addr_with(ctx, AddrFlags::default())
     }
 
+    #[inline(always)]
     pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
         let origin = self.origin::<E>();
 
@@ -1049,47 +1054,7 @@ impl Symbol {
                         return ctx.section(leader).addr(ctx) + self.value;
                     }
 
-                    if isec.name(&ctx.objs[isec.file.index()]) == b".eh_frame" {
-                        // .eh_frame contents are parsed and reconstructed by the linker,
-                        // so pointing to a specific location in a source .eh_frame
-                        // section doesn't make much sense. However, CRT files contain
-                        // symbols pointing to the very beginning and ending of the section.
-                        //
-                        // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
-                        // suffix. That's why we use starts_with() instead of `==` here.
-                        let name = self.name();
-                        let eh_frame = &ctx.eh_frame.hdr.shdr;
-                        if name.starts_with(b"__EH_FRAME_BEGIN__")
-                            || name.starts_with(b"__EH_FRAME_LIST__")
-                            || name.starts_with(b".eh_frame_seg")
-                            || self.st_type() == STT_SECTION
-                        {
-                            return eh_frame.sh_addr.get();
-                        }
-                        if name.starts_with(b"__FRAME_END__")
-                            || name.starts_with(b"__EH_FRAME_LIST_END__")
-                        {
-                            return eh_frame.sh_addr.get() + eh_frame.sh_size.get();
-                        }
-                        // ARM object files contain "$d" local symbol at the beginning
-                        // of data sections. Their values are not significant for .eh_frame,
-                        // so we just treat them as offset 0.
-                        if name == b"$d" || name.starts_with(b"$d.") {
-                            return eh_frame.sh_addr.get();
-                        }
-                        crate::fatal!(
-                            "symbol referring to .eh_frame is not supported: {} {}",
-                            self,
-                            ctx.file_display(self.file().unwrap())
-                        );
-                    }
-
-                    // The control can reach here if there's a relocation that refers
-                    // a local symbol belonging to a comdat group section. This is a
-                    // violation of the spec, as all relocations should use only global
-                    // symbols of comdat members. However, .eh_frame tends to have such
-                    // relocations.
-                    return 0;
+                    return self.dead_section_addr(ctx, isec);
                 }
                 isec.addr(ctx).wrapping_add(self.value)
             }
@@ -1097,6 +1062,51 @@ impl Symbol {
             // absolute ones.
             _ => self.value,
         }
+    }
+
+    // Keep rare discarded-section diagnostics out of the address hot path.
+    #[cold]
+    #[inline(never)]
+    fn dead_section_addr<E: Arch>(&self, ctx: &Context<E>, isec: &InputSection<E>) -> u64 {
+        if isec.name(&ctx.objs[isec.file.index()]) == b".eh_frame" {
+            // .eh_frame contents are parsed and reconstructed by the linker,
+            // so pointing to a specific location in a source .eh_frame
+            // section doesn't make much sense. However, CRT files contain
+            // symbols pointing to the very beginning and ending of the section.
+            //
+            // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
+            // suffix. That's why we use starts_with() instead of `==` here.
+            let name = self.name();
+            let eh_frame = &ctx.eh_frame.hdr.shdr;
+            if name.starts_with(b"__EH_FRAME_BEGIN__")
+                || name.starts_with(b"__EH_FRAME_LIST__")
+                || name.starts_with(b".eh_frame_seg")
+                || self.st_type() == STT_SECTION
+            {
+                return eh_frame.sh_addr.get();
+            }
+            if name.starts_with(b"__FRAME_END__") || name.starts_with(b"__EH_FRAME_LIST_END__") {
+                return eh_frame.sh_addr.get() + eh_frame.sh_size.get();
+            }
+            // ARM object files contain "$d" local symbol at the beginning
+            // of data sections. Their values are not significant for .eh_frame,
+            // so we just treat them as offset 0.
+            if name == b"$d" || name.starts_with(b"$d.") {
+                return eh_frame.sh_addr.get();
+            }
+            crate::fatal!(
+                "symbol referring to .eh_frame is not supported: {} {}",
+                self,
+                ctx.file_display(self.file().unwrap())
+            );
+        }
+
+        // The control can reach here if there's a relocation that refers
+        // a local symbol belonging to a comdat group section. This is a
+        // violation of the spec, as all relocations should use only global
+        // symbols of comdat members. However, .eh_frame tends to have such
+        // relocations.
+        0
     }
 
     #[inline]
