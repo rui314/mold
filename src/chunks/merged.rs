@@ -18,7 +18,7 @@ use crate::chunks::ChunkHeader;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::{InputSection, MergeInfo, SectionFragment, SectionRef};
+use crate::input_sections::{MergeInfo, SectionFragment, SectionRef};
 use crate::out;
 use crate::output_file::split_at_offsets;
 use crate::util::align_to;
@@ -74,9 +74,9 @@ pub struct MergedSection<E: Layout> {
 /// are resolved in parallel. C++ mold keeps the same pointers in
 /// `MergedSection::members`; Rust keeps the durable section references there
 /// and borrows the stable objects directly for this phase.
-pub struct ResolveMember<'a, E: Arch> {
+pub struct ResolveMember<'a> {
     pub merge_info: &'a mut MergeInfo,
-    pub section: &'a InputSection<E>,
+    pub data: &'static [u8],
     pub filename: &'a str,
     pub archive_name: &'a str,
     pub name: &'static BStr,
@@ -88,6 +88,112 @@ pub struct ResolveOptions<'a> {
     pub comment: Option<MergedSectionId>,
     pub cmdline_args: &'a [String],
     pub timers: &'a Timers,
+}
+
+struct BackgroundMember {
+    reference: SectionRef,
+    info: MergeInfo,
+    data: &'static [u8],
+    filename: std::sync::Arc<str>,
+    archive_name: std::sync::Arc<str>,
+    name: &'static BStr,
+}
+
+/// Owns non-allocated merging state while foreground passes use the context.
+/// Input bytes are immutable and remain mapped for the entire link.
+pub struct BackgroundMerge<E: Layout> {
+    sections: Vec<MergedSection<E>>,
+    members: Vec<Vec<BackgroundMember>>,
+}
+
+impl<E: Arch> BackgroundMerge<E> {
+    pub fn prepare(ctx: &Context<E>) -> Self {
+        let sections: Vec<_> = ctx
+            .merged_sections
+            .iter()
+            .map(|section| {
+                let hdr = &section.hdr;
+                let mut copy = MergedSection::new(
+                    hdr.name,
+                    hdr.shdr.sh_flags.get(),
+                    hdr.shdr.sh_type.get(),
+                    hdr.shdr.sh_entsize.get(),
+                );
+                copy.members = section.members.clone();
+                // Allocated sections have already been resolved in the foreground.
+                copy.resolved = section.resolved;
+                copy
+            })
+            .collect();
+        let mut members: Vec<Vec<BackgroundMember>> =
+            (0..sections.len()).map(|_| Vec::new()).collect();
+        for file in &ctx.objs {
+            let filename: std::sync::Arc<str> = file.base.filename.as_str().into();
+            let archive_name: std::sync::Arc<str> = file.archive_name.as_str().into();
+            for info in file.merge_infos() {
+                if sections[info.parent.index()].resolved {
+                    continue;
+                }
+                let input = file.section_at(info.shndx);
+                members[info.parent.index()].push(BackgroundMember {
+                    reference: SectionRef {
+                        file: file.id(),
+                        shndx: info.shndx,
+                    },
+                    info: info.clone(),
+                    data: input.contents(),
+                    filename: filename.clone(),
+                    archive_name: archive_name.clone(),
+                    name: input.name(file),
+                });
+            }
+        }
+        Self { sections, members }
+    }
+
+    pub fn run(mut self, options: ResolveOptions<'_>) -> Self {
+        let mut members: Vec<Vec<_>> = self
+            .members
+            .iter_mut()
+            .map(|members| {
+                members
+                    .iter_mut()
+                    .map(|member| ResolveMember {
+                        merge_info: &mut member.info,
+                        data: member.data,
+                        filename: &member.filename,
+                        archive_name: &member.archive_name,
+                        name: member.name,
+                    })
+                    .collect()
+            })
+            .collect();
+        resolve_sections(&mut self.sections, &mut members, options);
+        self
+    }
+
+    pub fn finish(self, ctx: &mut Context<E>) {
+        for (i, (mut section, members)) in self.sections.into_iter().zip(self.members).enumerate() {
+            if section.is_alloc() {
+                continue;
+            }
+            let size = section.hdr.shdr.sh_size.get();
+            let align = section.hdr.shdr.sh_addralign.get();
+            // Preserve header bookkeeping done by foreground passes.
+            std::mem::swap(&mut section.hdr, &mut ctx.merged_sections[i].hdr);
+            section.hdr.shdr.sh_size.set(size);
+            section.hdr.shdr.sh_addralign.set(align);
+            ctx.merged_sections[i] = section;
+            for member in members {
+                let file = &mut ctx.objs[member.reference.file.index()];
+                let (info, _) = file
+                    .sections
+                    .merge_info_with_section_mut(member.reference.shndx as usize)
+                    .unwrap();
+                *info = member.info;
+            }
+        }
+    }
 }
 
 struct FileName<'a> {
@@ -273,7 +379,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
                     .merge_info_with_section_mut(i as usize)
                     .expect("a mergeable section");
                 let name = isec.name(file);
-                m.split_contents::<E>(file, isec, name, msec, &mut sketch);
+                m.split_contents::<E>(file, isec.contents(), name, msec, &mut sketch);
             }
             file.sections = slots;
             sketch
@@ -301,7 +407,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
                     .sections
                     .merge_info_with_section_mut(i as usize)
                     .expect("a mergeable section");
-                m.resolve_contents(isec, msec, gc_sections);
+                m.resolve_contents(isec.contents(), msec, gc_sections);
             }
         });
     drop(t);
@@ -325,6 +431,9 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     msec.hdr.shdr.sh_addralign.set(1 << p2align);
     msec.fragments = std::mem::take(&mut msec.map).freeze();
     msec.resolved = true;
+    if !msec.is_alloc() {
+        layout(msec);
+    }
 }
 
 /// Resolves selected merged sections concurrently, as C++ mold does.
@@ -332,7 +441,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 /// `MergeInfo`s even when they belong to the same object file.
 pub fn resolve_sections<E: Arch>(
     sections: &mut [MergedSection<E>],
-    members: &mut [Vec<ResolveMember<'_, E>>],
+    members: &mut [Vec<ResolveMember<'_>>],
     options: ResolveOptions<'_>,
 ) {
     let ResolveOptions {
@@ -356,7 +465,7 @@ pub fn resolve_sections<E: Arch>(
                                 filename: member.filename,
                                 archive_name: member.archive_name,
                             },
-                            member.section,
+                            member.data,
                             member.name,
                             section,
                             &mut sketch,
@@ -391,7 +500,7 @@ pub fn resolve_sections<E: Arch>(
             members.par_iter_mut().for_each(|member| {
                 member
                     .merge_info
-                    .resolve_contents(member.section, section, gc_sections);
+                    .resolve_contents(member.data, section, gc_sections);
             });
         });
     drop(t);
@@ -415,6 +524,9 @@ pub fn resolve_sections<E: Arch>(
             section.hdr.shdr.sh_addralign.set(1 << p2align);
             section.fragments = std::mem::take(&mut section.map).freeze();
             section.resolved = true;
+            if !section.is_alloc() {
+                layout(section);
+            }
         });
 }
 
@@ -447,7 +559,9 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) 
     if !ctx.merged_sections[id.index()].resolved {
         resolve(ctx, id);
     }
-    layout(&mut ctx.merged_sections[id.index()]);
+    if ctx.merged_sections[id.index()].is_alloc() {
+        layout(&mut ctx.merged_sections[id.index()]);
+    }
 }
 
 /// Lays out one resolved merged section. Different merged sections have no

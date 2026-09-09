@@ -1473,7 +1473,7 @@ impl SectionFragment {
 }
 
 /// Fragment metadata for an input section with the `SHF_MERGE` flag.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MergeInfo {
     pub parent: MergedSectionId,
     pub p2align: u8,
@@ -1537,12 +1537,11 @@ impl MergeInfo {
     pub fn split_contents<E: Arch>(
         &mut self,
         file: &dyn fmt::Display,
-        section: &InputSection<E>,
+        data: &'static [u8],
         name: &BStr,
         parent: &MergedSection<E>,
         sketch: &mut HyperLogLog,
     ) {
-        let data = section.contents();
         if data.len() > u32::MAX as usize {
             fatal!(
                 "{}: mergeable section too large",
@@ -1593,7 +1592,7 @@ impl MergeInfo {
     /// Inserts the pieces into the parent section's fragment map.
     pub fn resolve_contents<E: Arch>(
         &mut self,
-        section: &InputSection<E>,
+        data: &'static [u8],
         parent: &crate::chunks::merged::MergedSection<E>,
         gc_sections: bool,
     ) {
@@ -1610,7 +1609,7 @@ impl MergeInfo {
                 parent.map.prefetch(hash);
             }
             let id = parent.insert(
-                self.contents(section, i),
+                self.contents(data, i),
                 self.hashes[i],
                 self.p2align,
                 gc_sections,
@@ -1658,8 +1657,7 @@ impl MergeInfo {
     }
 
     #[inline]
-    fn contents<E: Arch>(&self, section: &InputSection<E>, i: usize) -> &'static [u8] {
-        let contents = section.contents();
+    fn contents(&self, contents: &'static [u8], i: usize) -> &'static [u8] {
         let start = self.frag_offsets[i] as usize;
         match self.frag_offsets.get(i + 1) {
             Some(&end) => &contents[start..end as usize],

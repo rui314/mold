@@ -183,20 +183,6 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::Verneed);
     chunks.push(ChunkId::NotePackage);
 
-    if !ctx.args.oformat_binary {
-        let mut shdr = ElfShdr::<E>::default();
-        shdr.sh_type.set(SHT_PROGBITS);
-        shdr.sh_flags.set((SHF_MERGE | SHF_STRINGS) as u64);
-        let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
-        ctx.comment = crate::chunks::merged::MergedSection::get_instance(
-            &ctx.args,
-            &merged,
-            BStr::new(b".comment"),
-            &shdr,
-        );
-        ctx.merged_sections = merged.into_inner().unwrap();
-    }
-
     if E::IS_X86 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         chunks.push(ChunkId::NoteProperty);
@@ -983,8 +969,8 @@ pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
 fn merged_resolve_members<E: Arch>(
     objs: &mut FileList<ObjectFile<E>>,
     count: usize,
-) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_, E>>> {
-    let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_, E>>> =
+) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
+    let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
         let filename = file.base.filename.as_str();
@@ -995,7 +981,7 @@ fn merged_resolve_members<E: Arch>(
             let parent = merge_info.parent.index();
             members[parent].push(crate::chunks::merged::ResolveMember {
                 merge_info,
-                section: input,
+                data: input.contents(),
                 filename,
                 archive_name,
                 name: input.name_in(shstrtab, num_elf_sections),
@@ -1007,6 +993,20 @@ fn merged_resolve_members<E: Arch>(
 
 pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_merged_sections");
+
+    if !ctx.args.oformat_binary && !ctx.args.relocatable {
+        let mut shdr = ElfShdr::<E>::default();
+        shdr.sh_type.set(SHT_PROGBITS);
+        shdr.sh_flags.set((SHF_MERGE | SHF_STRINGS) as u64);
+        let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
+        ctx.comment = crate::chunks::merged::MergedSection::get_instance(
+            &ctx.args,
+            &merged,
+            BStr::new(b".comment"),
+            &shdr,
+        );
+        ctx.merged_sections = merged.into_inner().unwrap();
+    }
 
     // Create fragment metadata for eligible SHF_MERGE input sections. The
     // original InputSections remain stored but are marked dead.
@@ -2356,7 +2356,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     for id in vec2 {
-        chunks::compute_section_size(ctx, ChunkId::Merged(id));
+        crate::chunks::merged::layout(&mut ctx.merged_sections[id.index()]);
     }
 }
 
@@ -2524,10 +2524,9 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    // Merged sections without SHF_ALLOC are resolved lazily here. C++ mold
-    // processes all chunks in one parallel loop, so resolve their independent
-    // parent sections concurrently too.
-    {
+    // Relocatable links resolve non-allocated sections here; ordinary links
+    // already completed that work in the background.
+    if ctx.merged_sections.iter().any(|section| !section.resolved) {
         let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
         crate::chunks::merged::resolve_sections::<E>(
             &mut ctx.merged_sections,
@@ -2564,6 +2563,7 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     // layout, just as each C++ Chunk does in the parallel chunk loop.
     ctx.merged_sections
         .par_iter_mut()
+        .filter(|section| section.is_alloc())
         .for_each(crate::chunks::merged::layout);
 
     for id in ctx.chunks.clone() {

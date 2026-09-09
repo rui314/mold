@@ -272,6 +272,24 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
         return Ok(0);
     }
 
+    // Non-allocated strings are independent of symbol and relocation passes.
+    // Give the background task owned metadata and publish it before layout.
+    let merge_input = chunks::merged::BackgroundMerge::prepare(&ctx);
+    let merge_timers = ctx.timers.clone();
+    let merge_comment = ctx.comment;
+    let merge_cmdline = ctx.cmdline_args.clone();
+    let (merge_sender, merge_receiver) = mpsc::sync_channel(1);
+    rayon::spawn(move || {
+        let result = merge_input.run(chunks::merged::ResolveOptions {
+            allocated_only: false,
+            gc_sections: false,
+            comment: merge_comment,
+            cmdline_args: &merge_cmdline,
+            timers: &merge_timers,
+        });
+        let _ = merge_sender.send(result);
+    });
+
     // Create .bss sections for common symbols.
     passes::convert_common_symbols(&mut ctx);
 
@@ -410,6 +428,8 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
 
     // Compute the is_weak bit for each imported symbol.
     passes::compute_imported_symbol_weakness(&mut ctx);
+
+    wait_for_background(merge_receiver, "non-allocated string merging").finish(&mut ctx);
 
     // Sort sections by section attributes so that we'll have to
     // create as few segments as possible.
