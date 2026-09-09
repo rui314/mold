@@ -155,7 +155,7 @@ fn resolve_path<E: Arch>(
     let open = |path: &str| -> Option<&'static MappedFile> {
         let mf = open_file(chroot, path)?;
         if check_target {
-            if let Some(target) = crate::filetype::get_machine_type(&ctx.args.plugin, mf, || None) {
+            if let Some(target) = reader::get_machine_type(ctx, rctx, mf) {
                 if target != E::NAME {
                     warn!(
                         "{path}: skipping incompatible file: {target} (e_machine {})",
