@@ -348,6 +348,7 @@ struct AhoCorasick {
     // it is visited for almost every input byte; other edges are stored sparsely.
     root_children: Vec<i32>,
     nodes: Vec<TrieNode>,
+    max_value: i64,
 }
 
 #[derive(Debug)]
@@ -413,6 +414,7 @@ impl AhoCorasick {
 
     fn add(&mut self, pat: &[u8], value: i64) {
         debug_assert!(Self::can_handle(pat));
+        self.max_value = self.max_value.max(value);
         if self.nodes.is_empty() {
             self.root_children = vec![-1; 256];
             self.nodes.push(TrieNode::default());
@@ -475,6 +477,21 @@ impl AhoCorasick {
         }
     }
 
+    fn walk(&self, c: u8, idx: &mut i32, value: &mut i64) -> i64 {
+        let mut j = *idx;
+        while j != -1 {
+            let child = self.find_child(j, c);
+            if child != -1 {
+                *idx = child;
+                *value = (*value).max(self.nodes[child as usize].value);
+                return *value;
+            }
+            j = self.nodes[j as usize].suffix_link;
+        }
+        *idx = 0;
+        *value
+    }
+
     fn find(&self, s: &[u8]) -> i64 {
         if self.nodes.is_empty() {
             return -1;
@@ -482,26 +499,13 @@ impl AhoCorasick {
 
         let mut idx = 0;
         let mut value = -1;
-        let mut walk = |c: u8| {
-            let mut j = idx;
-            while j != -1 {
-                let child = self.find_child(j, c);
-                if child != -1 {
-                    idx = child;
-                    value = value.max(self.nodes[child as usize].value);
-                    return;
-                }
-                j = self.nodes[j as usize].suffix_link;
-            }
-            idx = 0;
-        };
-
-        walk(0);
+        self.walk(0, &mut idx, &mut value);
         for &c in s {
-            walk(c);
+            if self.walk(c, &mut idx, &mut value) == self.max_value {
+                return self.max_value;
+            }
         }
-        walk(0);
-        value
+        self.walk(0, &mut idx, &mut value)
     }
 }
 
@@ -521,6 +525,7 @@ pub struct Glob {
     // such patterns (e.g. `local: *;` or `v8dbg_*;`), and we match them
     // against every defined symbol name.
     match_all: i64, // "*"
+    max_value: i64,
     exacts: Vec<Literal>,
     prefixes: Vec<Literal>,
     suffixes: Vec<Literal>,
@@ -546,6 +551,7 @@ impl Glob {
     pub fn new() -> Self {
         Glob {
             match_all: -1,
+            max_value: -1,
             is_empty: true,
             ..Default::default()
         }
@@ -560,6 +566,7 @@ impl Glob {
         debug_assert!(value >= 0);
         debug_assert!(self.compiled.get().is_none());
         self.is_empty = false;
+        self.max_value = self.max_value.max(value);
 
         // Match-all, exact, prefix and suffix patterns are handled with
         // plain string comparisons instead of the matchers below, which
@@ -651,6 +658,7 @@ impl Glob {
                 .collect();
             let mut aho_corasick = AhoCorasick {
                 root_children: aho_corasick.root_children.clone(),
+                max_value: aho_corasick.max_value,
                 nodes,
             };
             aho_corasick.compile();
@@ -668,6 +676,9 @@ impl Glob {
     pub fn find(&self, s: &[u8]) -> i64 {
         let compiled = self.compiled();
         let mut value = self.match_all;
+        if value == self.max_value {
+            return value;
+        }
 
         if let Ok(i) = compiled
             .exacts
@@ -685,6 +696,13 @@ impl Glob {
                 value = p.value;
             }
         }
+        if value == self.max_value {
+            return value;
+        }
+        value = value.max(compiled.aho_corasick.find(s));
+        if value == self.max_value {
+            return value;
+        }
         if !compiled.nfa.is_empty() {
             value = value.max(compiled.nfa.matches(s));
         }
@@ -693,7 +711,7 @@ impl Glob {
                 value = p.value;
             }
         }
-        value.max(compiled.aho_corasick.find(s))
+        value
     }
 }
 
@@ -707,6 +725,35 @@ mod tests {
             assert!(g.add(p.as_bytes(), i as i64));
         }
         g
+    }
+
+    #[test]
+    fn shared_priorities_preserve_highest_match() {
+        let mut g = Glob::new();
+        for (pattern, priority) in [
+            ("*", 0),
+            ("*inner*", 2),
+            ("prefix*", 2),
+            ("*suffix", 2),
+            ("exact", 3),
+            ("p?efix*", 4),
+        ] {
+            assert!(g.add(pattern.as_bytes(), priority));
+        }
+        for (name, expected) in [
+            ("none", 0),
+            ("hasinnersuffix", 2),
+            ("suffix", 2),
+            ("exact", 3),
+            ("prefixsuffix", 4),
+        ] {
+            assert_eq!(g.find(name.as_bytes()), expected);
+        }
+        let mut g = Glob::new();
+        assert!(g.add(b"*inner*", 0));
+        assert!(g.add(b"*suffix", 0));
+        assert_eq!(g.find(b"innersuffix"), 0);
+        assert_eq!(g.find(b"none"), -1);
     }
 
     #[test]

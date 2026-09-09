@@ -3080,15 +3080,19 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
     patterns = local.into_iter().chain(other).collect();
 
     let has_wildcard = |s: &[u8]| s.iter().any(|&c| matches!(c, b'*' | b'?' | b'['));
+    let mut priority = 0;
     for (i, v) in patterns.iter().enumerate() {
+        if i > 0 && v.ver_idx != patterns[i - 1].ver_idx {
+            priority = i as i64;
+        }
         if v.is_cpp {
-            if !cpp_matcher.add(v.pattern, i as i64) {
+            if !cpp_matcher.add(v.pattern, priority) {
                 fatal!(
                     "invalid version pattern: {}",
                     crate::util::display(v.pattern)
                 );
             }
-        } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, i as i64) {
+        } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, priority) {
             fatal!(
                 "invalid version pattern: {}",
                 crate::util::display(v.pattern)
