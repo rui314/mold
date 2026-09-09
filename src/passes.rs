@@ -780,37 +780,33 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
         } = ctx;
         symbols.with_parallel_appender(maximum, |allocator| {
             objs.par_iter_mut().for_each(|file| {
-                if file.base.is_reachable()
-                    && file.base.mf.is_some()
-                    && !file.is_lto_input
-                    && !file.sections_parsed
-                {
+                if !file.base.is_reachable() {
+                    return;
+                }
+                if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
                     file.parse_sections(args, file.id(), allocator, keep_discarded_comdat);
+                    // Parsing already omitted losing groups and constructed
+                    // the others alive. --gdb-index may kill group members.
+                    if !keep_discarded_comdat && !args.gdb_index {
+                        return;
+                    }
+                }
+                // Reapply ownership to groups parsed before LTO as well.
+                for group in &file.comdat_groups {
+                    for member in file.comdat_members(group) {
+                        if let Some(isec) = file.section(member as usize) {
+                            if group.is_owner() {
+                                isec.revive();
+                            } else {
+                                file.kill_section(member as usize);
+                            }
+                        }
+                    }
                 }
             });
         });
     }
     drop(t);
-
-    // Apply the selection to all group members. This also updates sections
-    // parsed before LTO if ownership has changed.
-    let _t = ctx.timer("comdat_members");
-    ctx.objs.par_iter().for_each(|file| {
-        if !file.base.is_reachable() {
-            return;
-        }
-        for group in &file.comdat_groups {
-            for member in file.comdat_members(group) {
-                if let Some(isec) = file.section(member as usize) {
-                    if group.is_owner() {
-                        isec.revive();
-                    } else {
-                        file.kill_section(member as usize);
-                    }
-                }
-            }
-        }
-    });
 }
 
 pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
