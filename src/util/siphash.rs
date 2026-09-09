@@ -39,7 +39,9 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
         hasher
     }
 
-    #[inline]
+    // ICF repeatedly hashes fixed-size digests. Inlining lets the optimizer
+    // remove the buffering paths for these word-aligned updates.
+    #[inline(always)]
     pub(crate) fn update(&mut self, mut msg: &[u8]) {
         self.sum = self.sum.wrapping_add(msg.len() as u8);
 
@@ -65,6 +67,18 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
 
         self.buf[..msg.len()].copy_from_slice(msg);
         self.buflen = msg.len() as u8;
+    }
+
+    /// Hashes a word in little-endian byte order. The common aligned case
+    /// bypasses the byte buffer, including in loops of fixed-size updates.
+    #[inline(always)]
+    pub(crate) fn update_u64(&mut self, word: u64) {
+        if self.buflen != 0 {
+            self.update(&word.to_le_bytes());
+            return;
+        }
+        self.sum = self.sum.wrapping_add(8);
+        self.compress(word);
     }
 
     #[inline]
@@ -121,3 +135,32 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
 }
 
 pub(crate) type SipHash13_128 = SipHashTmpl<1, 3, 128>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn word_updates_match_bytes_with_partial_buffers_and_length_wraparound() {
+        let key = std::array::from_fn(|i| i as u8);
+        let data: Vec<u8> = (0..1040).map(|i| (i * 97) as u8).collect();
+        for prefix in 0..8 {
+            for words in 0..128 {
+                let end = prefix + words * 8;
+                let mut bytes = SipHash13_128::new(&key);
+                bytes.update(&data[..end + 3]);
+
+                let mut mixed = SipHash13_128::new(&key);
+                mixed.update(&data[..prefix]);
+                for word in data[prefix..end].chunks_exact(8) {
+                    mixed.update_u64(u64::from_le_bytes(word.try_into().unwrap()));
+                }
+                mixed.update(&data[end..end + 3]);
+                let (mut expected, mut actual) = ([0; 16], [0; 16]);
+                bytes.finish(&mut expected);
+                mixed.finish(&mut actual);
+                assert_eq!(actual, expected, "prefix={prefix}, words={words}");
+            }
+        }
+    }
+}

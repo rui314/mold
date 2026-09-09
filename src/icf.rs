@@ -101,11 +101,11 @@ struct Digest {
 }
 
 impl Digest {
-    fn to_ne_bytes(self) -> [u8; 16] {
-        let mut bytes = [0; 16];
-        bytes[..8].copy_from_slice(&self.hi.to_ne_bytes());
-        bytes[8..].copy_from_slice(&self.lo.to_ne_bytes());
-        bytes
+    #[inline]
+    fn update(self, hasher: &mut SipHash13_128) {
+        // Match hashing the native Digest representation, as C++ does.
+        hasher.update_u64(u64::from_le(self.hi));
+        hasher.update_u64(u64::from_le(self.lo));
     }
 
     fn from_ne_bytes(bytes: [u8; 16]) -> Digest {
@@ -116,6 +116,7 @@ impl Digest {
     }
 }
 
+#[inline(always)]
 fn finish_digest(hasher: SipHash13_128) -> Digest {
     let mut bytes = [0; 16];
     hasher.finish(&mut bytes);
@@ -581,11 +582,11 @@ fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
 fn propagate(key: &[u8; 16], cur: &mut Vec<Digest>, next: &mut Vec<Digest>, edges: &Edges) {
     next.par_iter_mut().enumerate().for_each(|(i, out)| {
         let mut h = SipHash13_128::new(key);
-        h.update(&cur[i].to_ne_bytes());
+        cur[i].update(&mut h);
         let begin = edges.indices[i] as usize;
         let end = edges.indices[i + 1] as usize;
         for &j in &edges.values[begin..end] {
-            h.update(&cur[j as usize].to_ne_bytes());
+            cur[j as usize].update(&mut h);
         }
         *out = finish_digest(h);
     });
