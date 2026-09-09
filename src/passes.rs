@@ -2791,8 +2791,18 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     let mut syms = Vec::with_capacity(groups.iter().map(Vec::len).sum());
     syms.extend(groups.into_iter().flatten());
 
-    // Assign offsets in additional tables for each dynamic symbol.
-    for id in syms {
+    // Fetch symbols before their auxiliary records to hide both loads.
+    // Assign table entries in command-line order.
+    for (i, &id) in syms.iter().enumerate() {
+        if let Some(&next) = syms.get(i + 64) {
+            crate::util::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
+        }
+        if let Some(aux) = syms
+            .get(i + 16)
+            .and_then(|&id| ctx.symbols[id].aux(&ctx.symbols))
+        {
+            crate::util::prefetch(std::ptr::from_ref(aux).cast());
+        }
         let flags = ctx.symbols[id].flags();
         let (is_imported, is_exported, ty) = {
             let sym = &ctx.symbols[id];
