@@ -1551,17 +1551,27 @@ impl MergeInfo {
         }
         let entsize = parent.hdr.shdr.sh_entsize.get() as usize;
 
-        // Split sections
+        if parent.hdr.shdr.sh_flags.get() & SHF_STRINGS as u64 == 0 {
+            self.frag_offsets.reserve(data.len() / entsize);
+            self.hashes.reserve(data.len() / entsize);
+        }
+        // Hash each piece while its contents are still in the cache.
+        let mut add_fragment = |pos: usize, size: usize| {
+            self.frag_offsets.push(pos as u32);
+            let hash = xxhash_rust::xxh3::xxh3_64(&data[pos..pos + size]);
+            self.hashes.push(hash);
+            sketch.insert(hash);
+        };
         if parent.hdr.shdr.sh_flags.get() & SHF_STRINGS as u64 != 0 {
             let mut pos = 0;
             while pos < data.len() {
-                self.frag_offsets.push(pos as u32);
                 let Some(end) = find_null(data, pos, entsize) else {
                     fatal!(
                         "{}: string is not null terminated",
                         format_args!("{file}:({name})")
                     );
                 };
+                add_fragment(pos, end + entsize - pos);
                 pos = end + entsize;
             }
         } else {
@@ -1571,15 +1581,9 @@ impl MergeInfo {
                     format_args!("{file}:({name})")
                 );
             }
-            self.frag_offsets = (0..data.len()).step_by(entsize).map(|p| p as u32).collect();
-        }
-
-        // Compute hashes for section pieces
-        self.hashes.reserve(self.frag_offsets.len());
-        for i in 0..self.frag_offsets.len() {
-            let hash = xxhash_rust::xxh3::xxh3_64(self.contents(section, i));
-            self.hashes.push(hash);
-            sketch.insert(hash);
+            for pos in (0..data.len()).step_by(entsize) {
+                add_fragment(pos, entsize);
+            }
         }
 
         static COUNTER: Counter = Counter::new("string_fragments");
