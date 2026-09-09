@@ -2738,8 +2738,8 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     // Exit if the absolute-relocation pass reported an error.
     crate::error::checkpoint();
 
-    // Aggregate dynamic symbols to a single vector.
-    let syms: Vec<SymbolId> = {
+    // Group dynamic symbols by their owning file.
+    let groups: Vec<Vec<SymbolId>> = {
         let ctx_ref: &Context<E> = ctx;
         let objs: Vec<Vec<SymbolId>> = ctx_ref
             .objs
@@ -2775,9 +2775,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
                     .collect()
             })
             .collect();
-        let mut syms = Vec::with_capacity(objs.iter().chain(&dsos).map(Vec::len).sum());
-        syms.extend(objs.into_iter().chain(dsos).flatten());
-        syms
+        objs.into_iter().chain(dsos).collect()
     };
 
     if ctx.needs_tlsld.load(Ordering::Relaxed) {
@@ -2787,12 +2785,11 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     // Every dynamic symbol gets its auxiliary record. The loop below
     // assigns table entries in order and so runs on one thread; the
     // records are allocated beforehand in the side vector.
-    {
-        let mut ids = syms.clone();
-        ids.par_sort_unstable();
-        ids.dedup();
-        ctx.symbols.allocate_aux(&ids);
-    }
+    // SAFETY: every group was filtered to symbols owned by its input file,
+    // and each input file has a unique id.
+    unsafe { ctx.symbols.allocate_aux(&groups) };
+    let mut syms = Vec::with_capacity(groups.iter().map(Vec::len).sum());
+    syms.extend(groups.into_iter().flatten());
 
     // Assign offsets in additional tables for each dynamic symbol.
     for id in syms {

@@ -1385,11 +1385,11 @@ impl ParallelSymbolAllocator<'_> {
     }
 }
 
-/// Mutable access to the stable symbol blocks owned by map shards.
+/// Mutable access to stable symbol storage during a parallel pass.
 struct SymbolBlockPtr(*mut Symbol);
 
-// SAFETY: `SymbolTable::par_for_each_global_mut` gives each parallel task the
-// non-overlapping blocks owned by one shard while holding the vector exclusively.
+// SAFETY: the table holds the vector exclusively and gives each task either
+// non-overlapping shard blocks or symbol ids owned by one input file.
 unsafe impl Sync for SymbolBlockPtr {}
 
 /// A pointer to the auxiliary vector during a parallel scatter to unique symbols.
@@ -1411,6 +1411,16 @@ impl SymbolAuxPtr {
 }
 
 impl SymbolBlockPtr {
+    /// Mutates only a symbol's auxiliary index.
+    ///
+    /// # Safety
+    ///
+    /// `id` must be valid, and no other task may access that symbol's index.
+    unsafe fn with_aux_index<R>(&self, id: SymbolId, f: impl FnOnce(&mut u32) -> R) -> R {
+        // SAFETY: the caller provides an exclusive, valid symbol id.
+        unsafe { f(&mut (*self.0.add(id.index())).aux_idx) }
+    }
+
     /// Applies `f` to the symbols in non-overlapping vector ranges.
     ///
     /// # Safety
@@ -1527,21 +1537,61 @@ impl SymbolTable {
         &mut self.aux[index as usize]
     }
 
-    /// Allocates auxiliary records for the sorted, unique symbol ids that
-    /// do not already have one.
-    pub fn allocate_aux(&mut self, ids: &[SymbolId]) {
-        let ids: Vec<SymbolId> = ids
-            .iter()
-            .copied()
-            .filter(|id| self.symbols[id.index()].aux_idx == NO_AUX)
-            .collect();
+    /// Allocates records in each file's first-use order, without a global
+    /// symbol sort. Each group contains symbols owned by that file, so new
+    /// symbols cannot occur in two groups. Repeated ids within a group share
+    /// one record, and existing auxiliary data is preserved.
+    ///
+    /// # Safety
+    ///
+    /// All ids must be valid and no symbol may occur in more than one group.
+    pub(crate) unsafe fn allocate_aux(&mut self, groups: &[Vec<SymbolId>]) {
         let first = self.aux.len();
-        let records: Vec<SymbolAux> = ids.par_iter().map(|_| SymbolAux::default()).collect();
-        self.aux.extend(records);
-        assert!(self.aux.len() < NO_AUX as usize);
-        for (i, id) in ids.into_iter().enumerate() {
-            self.symbols[id.index()].aux_idx = (first + i) as u32;
-        }
+        let count: usize = groups.iter().map(Vec::len).sum();
+        assert!(first + count < NO_AUX as usize);
+        let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
+        let fresh: Vec<Vec<SymbolId>> = groups
+            .par_iter()
+            .map(|ids| {
+                let mut fresh = Vec::new();
+                for &id in ids {
+                    // SAFETY: this group is the only task accessing these ids.
+                    unsafe {
+                        symbols.with_aux_index(id, |index| {
+                            if *index == NO_AUX {
+                                // Suppress repeats within the file. Records are
+                                // read only after final indices are assigned.
+                                *index = 0;
+                                fresh.push(id);
+                            }
+                        });
+                    }
+                }
+                fresh
+            })
+            .collect();
+
+        let count: usize = fresh.iter().map(Vec::len).sum();
+        self.aux
+            .par_extend((0..count).into_par_iter().map(|_| SymbolAux::default()));
+        let mut next = first;
+        let parts: Vec<_> = fresh
+            .into_iter()
+            .map(|ids| {
+                let start = next;
+                next += ids.len();
+                (start, ids)
+            })
+            .collect();
+        parts.into_par_iter().for_each(|(first, ids)| {
+            for (i, id) in ids.into_iter().enumerate() {
+                // SAFETY: groups own disjoint ids, and each fresh id was
+                // recorded only once within its group.
+                unsafe {
+                    symbols.with_aux_index(id, |index| *index = (first + i) as u32);
+                }
+            }
+        });
     }
 
     /// Records a range extension thunk address. Thunks are created in
@@ -1779,11 +1829,12 @@ impl SymbolTable {
         let aux_len = self.aux.len();
         ids.par_iter().enumerate().for_each(|(i, &id)| {
             let sym = &symbols[id.index()];
-            debug_assert_ne!(sym.aux_idx, NO_AUX);
-            debug_assert!((sym.aux_idx as usize) < aux_len);
+            let index = sym.aux_idx;
+            debug_assert_ne!(index, NO_AUX);
+            debug_assert!((index as usize) < aux_len);
             // SAFETY: the caller guarantees that ids, and hence aux_idx values,
             // are distinct, and the exclusive table borrow keeps the vector fixed.
-            unsafe { aux.with_mut(sym.aux_idx as usize, |record| f(i, sym, record)) };
+            unsafe { aux.with_mut(index as usize, |record| f(i, sym, record)) };
         });
     }
 
@@ -1872,6 +1923,30 @@ pub fn is_c_identifier(s: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auxiliary_records_follow_first_use_and_preserve_existing_data() {
+        let mut table = SymbolTable::new();
+        let a = table.intern(b"a");
+        let b = table.intern(b"b");
+        let c = table.intern(b"c");
+        let old = table.intern(b"old");
+        table.aux_mut(old).got_idx = Some(17);
+
+        // SAFETY: the groups contain disjoint, valid symbol ids.
+        unsafe { table.allocate_aux(&[vec![b, a, b], vec![old, c, c]]) };
+        assert_eq!(table[old].aux_idx, 0);
+        assert_eq!(table[b].aux_idx, 1);
+        assert_eq!(table[a].aux_idx, 2);
+        assert_eq!(table[c].aux_idx, 3);
+        assert_eq!(table.aux.len(), 4);
+        assert_eq!(table[old].got_idx(&table), Some(17));
+
+        // SAFETY: the groups contain disjoint, valid symbol ids.
+        unsafe { table.allocate_aux(&[vec![a, b], vec![old, c]]) };
+        assert_eq!(table.aux.len(), 4);
+        assert_eq!(table[old].got_idx(&table), Some(17));
+    }
 
     #[test]
     fn input_section_origin_roundtrip() {
