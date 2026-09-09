@@ -8,11 +8,17 @@ use crate::symbol::SymbolId;
 use crate::util::endian::Endian;
 
 /// The hash function for `.gnu.hash`.
-// The hash function for .gnu.hash.
+#[inline]
 pub fn djb_hash(name: &[u8]) -> u32 {
     let mut h: u32 = 5381;
-    for &c in name {
-        h = (h << 5).wrapping_add(h).wrapping_add(c as u32);
+    let mut chunks = name.chunks_exact(4);
+    for p in &mut chunks {
+        let a = p[0] as u32 * 33 + p[1] as u32;
+        let b = p[2] as u32 * 33 + p[3] as u32;
+        h = h.wrapping_mul(1185921).wrapping_add(a * 1089 + b);
+    }
+    for &c in chunks.remainder() {
+        h = h.wrapping_mul(33).wrapping_add(c as u32);
     }
     h
 }
@@ -128,5 +134,21 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             &mut buf[table_off + i * 4..],
             if last { h | 1 } else { h & !1 },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_bytewise_hash_including_overflow_and_tails() {
+        let bytes: Vec<u8> = (0..1024).map(|i| (i * 173) as u8).collect();
+        for len in 0..=bytes.len() {
+            let expected = bytes[..len]
+                .iter()
+                .fold(5381u32, |h, &c| h.wrapping_mul(33).wrapping_add(c as u32));
+            assert_eq!(djb_hash(&bytes[..len]), expected);
+        }
     }
 }
