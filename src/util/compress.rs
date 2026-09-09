@@ -14,6 +14,7 @@
 //! a little bit. However, if a shard size is large enough, that loss
 //! is negligible in practice.
 
+use std::io::{ErrorKind, Read};
 use std::mem::MaybeUninit;
 
 use flate2::FlushDecompress;
@@ -251,11 +252,15 @@ pub fn zlib_decompress(input: &[u8], out: &mut [u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Decompresses a zstd stream into a buffer of known size.
+/// Decompresses a zstd stream, stopping when the requested output is full.
+/// DWARF classification uses this to read just the unit header.
 pub fn zstd_decompress(input: &[u8], out: &mut [u8]) -> Result<(), String> {
-    let n = zstd::bulk::decompress_to_buffer(input, out).map_err(|e| e.to_string())?;
-    if n < out.len() {
-        return Err("premature end of input".to_string());
-    }
-    Ok(())
+    let mut decoder = zstd::stream::read::Decoder::with_buffer(input).map_err(|e| e.to_string())?;
+    decoder.read_exact(out).map_err(|e| {
+        if e.kind() == ErrorKind::UnexpectedEof {
+            "premature end of input".to_string()
+        } else {
+            e.to_string()
+        }
+    })
 }
