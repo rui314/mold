@@ -41,7 +41,12 @@ struct Atomic : std::atomic<T> {
     return std::atomic<T>::fetch_and(val, order);
   }
 
-  T operator|=(T val) { return fetch_or(val); }
+  T operator|=(T val) {
+    // Avoid exclusive cache-line ownership if all requested bits are set.
+    T old = load();
+    return (old & val) == val ? old : fetch_or(val);
+  }
+
   T operator++() { return std::atomic<T>::fetch_add(1, relaxed) + 1; }
   T operator--() { return std::atomic<T>::fetch_sub(1, relaxed) - 1; }
   T operator++(int) { return std::atomic<T>::fetch_add(1, relaxed); }
