@@ -465,6 +465,7 @@ impl Arch for I386 {
     }
 
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<I386>, buf: &mut [u8]) {
+        let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
@@ -472,7 +473,7 @@ impl Arch for I386 {
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let off = rel.r_offset() as usize;
-            let frag = isec.fragment(ctx, &rel);
+            let frag = isec.fragment(ctx, &rel, &mut fragment_cache);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
                 None => (sym.addr(ctx), isec.rel_addend(&rel) as u64),

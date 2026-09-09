@@ -750,51 +750,58 @@ impl<E: Arch> InputSection<E> {
     /// For a relocation in a non-allocated section, finds the section
     /// fragment it refers to, if it refers to a mergeable section.
     #[inline]
-    pub fn fragment(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> Option<(FragmentRef, i64)> {
-        debug_assert!(!self.is_alloc());
-        let file = &ctx.objs[self.file.index()];
-        self.fragment_with_file(file, rel)
+    pub(crate) fn fragment<'a>(
+        &self,
+        ctx: &'a Context<E>,
+        rel: &ElfRel<E>,
+        cache: &mut FragmentLookup<'a>,
+    ) -> Option<(FragmentRef, i64)> {
+        self.fragment_with_file(ctx, &ctx.objs[self.file.index()], rel, cache)
     }
 
     /// Like [`Self::fragment`], using an owner the caller already loaded.
     #[inline]
-    pub fn fragment_with_file(
+    pub(crate) fn fragment_with_file<'a>(
         &self,
-        file: &ObjectFile<E>,
+        ctx: &'a Context<E>,
+        file: &'a ObjectFile<E>,
         rel: &ElfRel<E>,
+        cache: &mut FragmentLookup<'a>,
     ) -> Option<(FragmentRef, i64)> {
         debug_assert!(!self.is_alloc());
-        let sym_idx = rel.r_sym() as usize;
-        if sym_idx >= file.base.elf_syms.len() {
-            return None;
+        if cache.sym_idx != Some(rel.r_sym()) {
+            cache.sym_idx = Some(rel.r_sym());
+            cache.section = None;
+            cache.next = 0;
+            if let Some(esym) = file.base.elf_syms.get(rel.r_sym() as usize) {
+                let shndx = esym.st_shndx().get();
+                if !matches!(shndx as u32, SHN_UNDEF | SHN_ABS | SHN_COMMON) {
+                    cache.section = file.merge_info(file.shndx_from(rel.r_sym() as usize, shndx));
+                    cache.value = esym.st_value().get();
+                    cache.is_section = esym.st_type() == STT_SECTION;
+                }
+            }
         }
-        let st_shndx = file.base.elf_syms[sym_idx].st_shndx().get();
-        if matches!(st_shndx as u32, SHN_UNDEF | SHN_ABS | SHN_COMMON) {
-            return None;
-        }
-        let shndx = file.shndx_from(sym_idx, st_shndx);
-        let m = file.merge_info(shndx)?;
-        let esym = &file.base.elf_syms[sym_idx];
+        let m = cache.section?;
         let addend = self.rel_addend(rel);
-        if esym.st_type() == STT_SECTION {
-            let (frag, offset) = m.fragment(esym.st_value().get().wrapping_add(addend as u64))?;
-            Some((
-                FragmentRef {
-                    section: m.parent,
-                    entry: frag,
-                },
-                offset,
-            ))
+        let value = if cache.is_section {
+            cache.value.wrapping_add(addend as u64)
         } else {
-            let (frag, offset) = m.fragment(esym.st_value().get())?;
-            Some((
-                FragmentRef {
-                    section: m.parent,
-                    entry: frag,
-                },
-                offset + addend,
-            ))
+            cache.value
+        };
+        let (frag, offset) = m.fragment_with_hint(value, &mut cache.next)?;
+        if let Some(&entry) = m.fragments.get(cache.next + 7) {
+            ctx.merged_sections[m.parent.index()]
+                .fragments
+                .prefetch(entry);
         }
+        Some((
+            FragmentRef {
+                section: m.parent,
+                entry: frag,
+            },
+            offset + if cache.is_section { 0 } else { addend },
+        ))
     }
 
     // Input object files may contain duplicate code for inline functions
@@ -1478,6 +1485,18 @@ pub struct MergeInfo {
     hashes: Vec<u64>,
 }
 
+/// Cached section-symbol lookup for one non-allocated relocation stream.
+/// Keeping this on the caller's stack avoids sharing state between sections
+/// or retaining references across separate links.
+#[derive(Default)]
+pub(crate) struct FragmentLookup<'a> {
+    sym_idx: Option<u32>,
+    section: Option<&'a MergeInfo>,
+    value: u64,
+    is_section: bool,
+    next: usize,
+}
+
 impl MergeInfo {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
@@ -1606,6 +1625,28 @@ impl MergeInfo {
             .frag_offsets
             .partition_point(|&o| o as u64 <= offset)
             .checked_sub(1)?;
+        Some((
+            self.fragments[idx],
+            offset as i64 - self.frag_offsets[idx] as i64,
+        ))
+    }
+
+    #[inline]
+    fn fragment_with_hint(&self, offset: u64, next: &mut usize) -> Option<(EntryId, i64)> {
+        let mut idx = *next;
+        if idx >= self.frag_offsets.len()
+            || offset < self.frag_offsets[idx] as u64
+            || self
+                .frag_offsets
+                .get(idx + 1)
+                .is_some_and(|&o| o as u64 <= offset)
+        {
+            idx = self
+                .frag_offsets
+                .partition_point(|&o| o as u64 <= offset)
+                .checked_sub(1)?;
+        }
+        *next = idx + 1;
         Some((
             self.fragments[idx],
             offset as i64 - self.frag_offsets[idx] as i64,
@@ -1829,5 +1870,43 @@ impl<E: Arch> SectionList<E> {
             let input = &inputs[m.input_index as usize];
             (m, input)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fragment_hint_handles_sequential_repeated_and_backward_offsets() {
+        let map = crate::util::concurrent_map::ConcurrentMap::with_capacity(12);
+        let fragments = (0..12)
+            .map(|i| {
+                map.insert_with(&b"abcdefghijkl"[i..i + 1], i as u64, || ())
+                    .0
+            })
+            .collect();
+        let info = MergeInfo {
+            parent: MergedSectionId(0),
+            p2align: 0,
+            shndx: 1,
+            input_index: 0,
+            fragments,
+            frag_offsets: (0..12).map(|i| 5 + i * 3).collect(),
+            hashes: Vec::new(),
+        };
+        let mut next = 0;
+        for offset in [0, 5, 8, 11, 11, 6, 35, 38, 35, 5, 4, 8] {
+            assert_eq!(
+                info.fragment_with_hint(offset, &mut next),
+                info.fragment(offset)
+            );
+        }
+        let empty = MergeInfo {
+            fragments: Vec::new(),
+            frag_offsets: Vec::new(),
+            ..info
+        };
+        assert_eq!(empty.fragment_with_hint(0, &mut next), None);
     }
 }

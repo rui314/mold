@@ -6,7 +6,7 @@ use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::{r_delta, InputSection};
+use crate::input_sections::{r_delta, FragmentLookup, InputSection};
 use crate::symbol::OriginValue;
 
 // RelocSection represents a relocation table for an output file.
@@ -62,12 +62,17 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
 // Translates an input relocation's symbol reference into the {r_sym, addend}
 // pair that is valid in the output file. The returned r_sym is either an output
 // section index (for section-relative relocs) or an output symbol table index.
-fn symidx_addend<E: Arch>(ctx: &Context<E>, isec: &InputSection<E>, rel: &ElfRel<E>) -> (u32, i64) {
+fn symidx_addend<'a, E: Arch>(
+    ctx: &'a Context<E>,
+    isec: &InputSection<E>,
+    rel: &ElfRel<E>,
+    cache: &mut FragmentLookup<'a>,
+) -> (u32, i64) {
     let file = &ctx.objs[isec.file.index()];
     let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
 
     if !isec.is_alloc() {
-        if let Some((frag, addend)) = isec.fragment(ctx, rel) {
+        if let Some((frag, addend)) = isec.fragment(ctx, rel, cache) {
             let msec = &ctx.merged_sections[frag.section.index()];
             return (
                 msec.hdr.shndx,
@@ -121,8 +126,9 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Opt
         let isec = ctx.input_section(m);
         let file = &ctx.objs[isec.file.index()];
         let base = sec.offsets[mi] as usize;
+        let mut cache = FragmentLookup::default();
         for (j, rel) in isec.rels(file).iter().enumerate() {
-            let (symidx, addend) = symidx_addend(ctx, isec, rel);
+            let (symidx, addend) = symidx_addend(ctx, isec, rel, &mut cache);
             let mut r_offset = osec.hdr.shdr.sh_addr.get() + isec.offset() + rel.r_offset();
             if E::IS_RISCV || E::IS_LOONGARCH {
                 // On RISC-V and LoongArch, relaxation may have deleted instructions,

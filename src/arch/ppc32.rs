@@ -329,13 +329,14 @@ impl Arch for Ppc32 {
     }
 
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
+        let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels(file) {
             if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let frag = isec.fragment(ctx, rel);
+            let frag = isec.fragment(ctx, rel, &mut fragment_cache);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
                 None => (sym.addr(ctx), rel.r_addend() as u64),

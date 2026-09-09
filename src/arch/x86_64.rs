@@ -544,6 +544,7 @@ impl Arch for X86_64 {
     // Relocations against non-SHF_ALLOC sections are not scanned by
     // scan_relocations.
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<X86_64>, buf: &mut [u8]) {
+        let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {
             if rel.r_type() == R_NONE || isec.record_undef_error_with_file(ctx, file, &rel) {
@@ -551,7 +552,7 @@ impl Arch for X86_64 {
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let off = rel.r_offset() as usize;
-            let frag = isec.fragment_with_file(file, &rel);
+            let frag = isec.fragment_with_file(ctx, file, &rel, &mut fragment_cache);
             let (s, a) = match frag {
                 Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
                 None => (sym.addr(ctx), rel.r_addend() as u64),

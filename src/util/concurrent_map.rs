@@ -387,6 +387,11 @@ impl<T> FrozenMap<T> {
         self.0.value_at(id.0 as usize)
     }
 
+    #[inline]
+    pub(crate) fn prefetch(&self, id: EntryId) {
+        crate::util::prefetch(std::ptr::from_ref(self.0.entry(id.0 as usize)).cast());
+    }
+
     pub fn key(&self, id: EntryId) -> &'static [u8] {
         self.key_at(id.0 as usize).expect("an occupied bucket")
     }
