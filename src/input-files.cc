@@ -1553,6 +1553,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_GNU_VERSYM))
     vers = this->template get_data<U16<E>>(ctx, *sec);
 
+  // Gather unversioned names in parallel, just like object-file symbols.
+  // The reservation above keeps the recorded slots stable until gather.
+  auto &bin = ctx.symbol_map.get_bin();
+  auto add_symbol = [&](std::string_view name) {
+    auto &slot = this->symbols.emplace_back(nullptr);
+    ctx.symbol_map.add(bin, name, slot);
+  };
+
   for (i64 i = symtab_sec->sh_info; i < esyms.size(); i++) {
     u16 ver = vers.empty() ? VER_NDX_GLOBAL : (vers[i] & ~VERSYM_HIDDEN);
 
@@ -1616,7 +1624,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     // visit all symbol references to redirect `foo@VERSION` to `foo`.
     if (!has_version) {
       // Unversioned symbol
-      this->symbols.emplace_back(get_symbol(ctx, name));
+      add_symbol(name);
       this->symbols2.push_back(nullptr);
     } else if (esyms[i].is_undef() || (vers[i] & VERSYM_HIDDEN)) {
       // Versioned non-default symbol, or undefined reference whose
@@ -1625,7 +1633,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       this->symbols2.push_back(nullptr);
     } else {
       // Versioned default symbol
-      this->symbols.emplace_back(get_symbol(ctx, name));
+      add_symbol(name);
       this->symbols2.push_back(get_versioned_sym());
     }
   }
