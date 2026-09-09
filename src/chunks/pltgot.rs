@@ -35,6 +35,7 @@ impl<E: Layout> Default for PltGotSection<E> {
     }
 }
 
+#[inline]
 pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     debug_assert!(ctx.symbols[sym].has_got(&ctx.symbols));

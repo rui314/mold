@@ -78,6 +78,7 @@ pub fn entry_offset<E: Arch>(idx: u32) -> u64 {
     }
 }
 
+#[inline]
 pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     let idx = ctx.plt.symbols.len() as u32;

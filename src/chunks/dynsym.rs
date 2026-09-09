@@ -50,6 +50,7 @@ impl<E: Arch> Default for DynsymSection<E> {
     }
 }
 
+#[inline]
 pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     if ctx.dynsym.symbols.is_empty() {
         ctx.dynsym.symbols.push(None);
