@@ -1,5 +1,7 @@
 //! `.gnu.version_d`, defined symbol versions.
 
+use rayon::prelude::*;
+
 use crate::arch::Arch;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::hash::elf_hash;
@@ -60,19 +62,23 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     ctx.versym.contents.resize(n, VER_NDX_GLOBAL as u16);
     ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
 
-    for &id in ctx.dynsym.symbols.iter().flatten() {
-        let sym = &ctx.symbols[id];
-        if !matches!(sym.file(), Some(FileId::Obj(_))) {
-            continue;
-        }
-        let idx = sym.dynsym_idx(&ctx.symbols).unwrap() as usize;
-        // An unversioned undefined symbol takes version index 0.
-        if sym.ver_idx as u32 != VER_NDX_UNSPECIFIED {
-            ctx.versym.contents[idx] = sym.ver_idx;
-        } else if sym.is_undef() {
-            ctx.versym.contents[idx] = VER_NDX_LOCAL as u16;
-        }
-    }
+    ctx.versym
+        .contents
+        .par_iter_mut()
+        .zip(&ctx.dynsym.symbols)
+        .for_each(|(ver, &id)| {
+            let Some(id) = id else { return };
+            let sym = &ctx.symbols[id];
+            if !matches!(sym.file(), Some(FileId::Obj(_))) {
+                return;
+            }
+            // An unversioned undefined symbol takes version index 0.
+            if sym.ver_idx as u32 != VER_NDX_UNSPECIFIED {
+                *ver = sym.ver_idx;
+            } else if sym.is_undef() {
+                *ver = VER_NDX_LOCAL as u16;
+            }
+        });
 
     // Allocate a buffer for .gnu.version_d and write to it
     let verdef_size = ElfVerdef::<E>::size();
