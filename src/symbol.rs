@@ -1215,7 +1215,7 @@ struct Key {
 
 impl PartialEq for Key {
     fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
+        self.hash == other.hash && self.key == other.key
     }
 }
 
@@ -1241,17 +1241,20 @@ impl Hash for Query<'_> {
 
 impl Equivalent<Key> for Query<'_> {
     fn equivalent(&self, key: &Key) -> bool {
-        self.key == key.key
+        self.hash == key.hash && self.key == key.key
     }
 }
 
-/// Passes a key's precomputed hash through.
+/// Reuses a key's precomputed hash for a shard-local table.
 #[derive(Default)]
-struct PassThroughHasher(u64);
+struct ShardHasher(u64);
 
-impl Hasher for PassThroughHasher {
+impl Hasher for ShardHasher {
     fn finish(&self) -> u64 {
-        self.0
+        // The low bits already selected the shard and are constant within it.
+        // Fold in the remaining bits for bucket placement. A plain right
+        // shift would erase entropy from hashbrown's high-bit lookup tags.
+        self.0 ^ (self.0 >> NUM_SHARDS.trailing_zeros())
     }
 
     fn write(&mut self, _: &[u8]) {
@@ -1263,7 +1266,7 @@ impl Hasher for PassThroughHasher {
     }
 }
 
-type ShardMap = HashMap<Key, SymbolId, BuildHasherDefault<PassThroughHasher>>;
+type ShardMap = HashMap<Key, SymbolId, BuildHasherDefault<ShardHasher>>;
 
 const NUM_SHARDS: usize = 64;
 
@@ -1946,6 +1949,27 @@ mod tests {
         unsafe { table.allocate_aux(&[vec![a, b], vec![old, c]]) };
         assert_eq!(table.aux.len(), 4);
         assert_eq!(table[old].got_idx(&table), Some(17));
+    }
+
+    #[test]
+    fn shard_hash_distributes_buckets_and_lookup_tags() {
+        for shard in 0..NUM_SHARDS as u64 {
+            let mut buckets = std::collections::HashSet::new();
+            for i in 0..64 {
+                let mut hasher = ShardHasher::default();
+                hasher.write_u64(i * NUM_SHARDS as u64 + shard);
+                buckets.insert(hasher.finish() & 63);
+            }
+            assert_eq!(buckets.len(), 64);
+
+            let mut tags = std::collections::HashSet::new();
+            for i in 0..128 {
+                let mut hasher = ShardHasher::default();
+                hasher.write_u64((i << 57) | shard);
+                tags.insert(hasher.finish() >> 57);
+            }
+            assert_eq!(tags.len(), 128);
+        }
     }
 
     #[test]
