@@ -1908,10 +1908,10 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
             // We reopen a file because we may have modified the contents of mf
             // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
             let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
-            let abs = std::fs::canonicalize(&mf.name)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or(mf.name.clone());
-            write(&mut tar, &abs, reopened.data());
+            // Keep the name used by response.txt, including symlink components.
+            let abs = std::path::absolute(&mf.name)
+                .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name));
+            write(&mut tar, &abs.to_string_lossy(), reopened.data());
         }
     }
 }
