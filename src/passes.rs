@@ -1981,35 +1981,40 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
         return;
     }
     let _t = ctx.timer("check_symbol_version_conflicts");
-    for &id in ctx.dynsym.symbols.iter().skip(1).flatten() {
-        let sym = &ctx.symbols[id];
-        let Some(FileId::Obj(obj)) = sym.file() else {
-            continue;
-        };
-        if sym.is_weak()
-            || sym.ver_idx as u32 == VER_NDX_UNSPECIFIED
-            || sym.ver_idx as u32 & VERSYM_HIDDEN == 0
-        {
-            continue;
-        }
-        let Some(id2) = ctx.symbols.lookup(sym.name()) else {
-            continue;
-        };
-        if id2 == id {
-            continue;
-        }
-        let sym2 = &ctx.symbols[id2];
-        if let Some(FileId::Obj(_)) = sym2.file() {
-            if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
-                let file = &ctx.objs[obj.index()];
-                error!(
-                    "duplicate symbol: {file}: {}: {}",
-                    ctx.file_display(sym2.file().unwrap()),
-                    crate::util::display(file.base.symbol_name_in(sym.sym_idx as usize))
-                );
+    ctx.dynsym
+        .symbols
+        .par_iter()
+        .skip(1)
+        .flatten()
+        .for_each(|&id| {
+            let sym = &ctx.symbols[id];
+            let Some(FileId::Obj(obj)) = sym.file() else {
+                return;
+            };
+            if sym.is_weak()
+                || sym.ver_idx as u32 == VER_NDX_UNSPECIFIED
+                || sym.ver_idx as u32 & VERSYM_HIDDEN == 0
+            {
+                return;
             }
-        }
-    }
+            let Some(id2) = ctx.symbols.lookup(sym.name()) else {
+                return;
+            };
+            if id2 == id {
+                return;
+            }
+            let sym2 = &ctx.symbols[id2];
+            if let Some(FileId::Obj(_)) = sym2.file() {
+                if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
+                    let file = &ctx.objs[obj.index()];
+                    error!(
+                        "duplicate symbol: {file}: {}: {}",
+                        ctx.file_display(sym2.file().unwrap()),
+                        crate::util::display(file.base.symbol_name_in(sym.sym_idx as usize))
+                    );
+                }
+            }
+        });
     crate::error::checkpoint();
 }
 
