@@ -371,6 +371,25 @@ impl<'a, E: Arch> Script<'a, E> {
                 continue;
             }
 
+            // Colons remain in tokens for C++ names and input paths. Strip
+            // attached labels only while parsing version commands.
+            let mut t = t;
+            loop {
+                if let Some(rest) = t.strip_prefix(b"global:") {
+                    is_global = true;
+                    t = rest;
+                } else if let Some(rest) = t.strip_prefix(b"local:") {
+                    is_global = false;
+                    t = rest;
+                } else {
+                    break;
+                }
+            }
+            if t.is_empty() {
+                tok = &tok[1..];
+                continue;
+            }
+
             if t == b"extern" {
                 tok = &tok[1..];
                 if tok.first() == Some(&&b"\"C\""[..]) {
@@ -449,7 +468,7 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 
     pub fn parse_version_script(&mut self) {
-        let tokens = split_labels(&self.tokens);
+        let tokens = self.tokens.clone();
         let tok = self.read_version_script(&tokens);
         if let Some(&t) = tok.first() {
             self.error(t, "trailing garbage token");
@@ -505,25 +524,6 @@ impl<'a, E: Arch> Script<'a, E> {
         }
         result
     }
-}
-
-/// The tokenizer keeps a colon in a token because of the C++ scope
-/// operator, so `local:*` is a single token. Split the pattern off.
-fn split_labels(tokens: &[&'static [u8]]) -> Vec<&'static [u8]> {
-    let mut out = Vec::with_capacity(tokens.len());
-    for &tok in tokens {
-        let glued = [&b"global:"[..], b"local:"].into_iter().find(|label| {
-            tok.starts_with(label) && tok.len() > label.len() && tok[label.len()] != b':'
-        });
-        match glued {
-            Some(label) => {
-                let colon = label.len() - 1;
-                out.extend([&tok[..colon], &tok[colon..colon + 1], &tok[colon + 1..]]);
-            }
-            None => out.push(tok),
-        }
-    }
-    out
 }
 
 /// Matches a `global:` or `local:` label.

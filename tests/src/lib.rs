@@ -524,13 +524,17 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
 }
 
 fn make_jobs(
-    cases_dir: &Path,
+    cases_dirs: &[PathBuf],
     work_dir: &Path,
     targets: Vec<Target>,
     patterns: &[String],
     clean: bool,
 ) -> io::Result<Vec<TestJob>> {
-    let scripts = discover_scripts(cases_dir)?;
+    let mut scripts = Vec::new();
+    for dir in cases_dirs {
+        scripts.extend(discover_scripts(dir)?);
+    }
+    scripts.sort_by(|a, b| a.0.cmp(&b.0));
     let mut jobs = Vec::new();
 
     for target in targets {
@@ -784,7 +788,7 @@ fn print_summary(results: &[TestResult]) -> bool {
     total.fail == 0
 }
 
-pub fn run(cases_dir: &Path, mold: &Path) -> ExitCode {
+pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     let options = parse_options();
     let work_dir = prepare_work_dir(mold).unwrap_or_else(|err| {
         eprintln!("mold-tests: {err}");
@@ -792,7 +796,7 @@ pub fn run(cases_dir: &Path, mold: &Path) -> ExitCode {
     });
     let (targets, unavailable) = selected_targets(&options);
     let jobs = make_jobs(
-        cases_dir,
+        cases_dirs,
         &work_dir,
         targets,
         &options.patterns,
