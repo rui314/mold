@@ -2947,30 +2947,44 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
         syms.iter().partition(|&&id| ctx.symbols[id].is_local(ctx));
     let num_locals = locals.len();
 
-    // .gnu.hash imposes more restrictions on the order of the symbols in
-    // .dynsym.
+    // Cache contiguous sort keys instead of chasing symbol pointers in each
+    // comparison.
     if let Some(gnu_hash) = &mut ctx.gnu_hash {
         let (unexported, mut exported): (Vec<SymbolId>, Vec<SymbolId>) = globals
             .iter()
             .partition(|&&id| !ctx.symbols[id].is_exported());
-
-        // Count the number of exported symbols to compute the size of .gnu.hash.
         let num_exported = exported.len() as u32;
         let num_buckets = num_exported / GnuHashSection::<E>::LOAD_FACTOR + 1;
-        let symbols = &mut ctx.symbols;
-        // SAFETY: .dynsym contains each symbol at most once, and exported is a
-        // subset of it. Every dynamic symbol already has an auxiliary record.
+        struct Entry {
+            bucket: u32,
+            name: &'static [u8],
+            id: SymbolId,
+            hash: u32,
+        }
+        let mut entries: Vec<_> = exported
+            .par_iter()
+            .map(|&id| {
+                let name: &'static [u8] = ctx.symbols[id].name();
+                let hash = gnu_hash::djb_hash(name);
+                Entry {
+                    bucket: hash % num_buckets,
+                    name,
+                    id,
+                    hash,
+                }
+            })
+            .collect();
+        // SAFETY: .dynsym contains each symbol once and every symbol has aux.
         unsafe {
-            symbols.par_for_each_aux_mut(&exported, |_, sym, aux| {
-                aux.djb_hash = gnu_hash::djb_hash(sym.name());
+            ctx.symbols.par_for_each_aux_mut(&exported, |i, _, aux| {
+                aux.djb_hash = entries[i].hash;
             });
         }
-        exported.par_sort_unstable_by(|&a, &b| {
-            let a = &symbols[a];
-            let b = &symbols[b];
-            (a.aux(symbols).unwrap().djb_hash % num_buckets, a.name())
-                .cmp(&(b.aux(symbols).unwrap().djb_hash % num_buckets, b.name()))
-        });
+        entries.par_sort_unstable_by(|a, b| (a.bucket, a.name).cmp(&(b.bucket, b.name)));
+        exported
+            .par_iter_mut()
+            .zip(entries)
+            .for_each(|(id, entry)| *id = entry.id);
         gnu_hash.num_buckets = num_buckets;
         gnu_hash.num_exported = num_exported;
         globals = unexported.into_iter().chain(exported).collect();
