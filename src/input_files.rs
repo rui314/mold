@@ -32,9 +32,7 @@ use crate::symbol::{
 };
 use crate::util::endian::Endian;
 use crate::util::perf::Counter;
-use crate::util::{
-    self, align_to, bits, cstr_at, leak_bytes, path_clean, path_filename, read_uleb,
-};
+use crate::util::{self, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb};
 use crate::{error, fatal, out, warn};
 use bstr::BStr;
 
@@ -425,7 +423,7 @@ impl<E: Layout> InputFile<E> {
         let Some(shdr_bytes) = data.get(shoff..shoff + num_sections * shdr_size) else {
             fatal!(
                 "{}: e_shoff or e_shnum corrupted: {} {num_sections}",
-                mf.name,
+                mf.name.display(),
                 data.len()
             );
         };
@@ -436,7 +434,7 @@ impl<E: Layout> InputFile<E> {
             is_little_endian: E::Endian::IS_LITTLE,
             e_flags: ehdr.e_flags.get(),
             shdrs,
-            ..InputFile::empty(&mf.name)
+            ..InputFile::empty(&mf.name.to_string_lossy())
         };
 
         // e_shstrndx is a 16-bit field. If .shstrtab's section index is
@@ -1091,7 +1089,7 @@ impl<E: Arch> ObjectFile<E> {
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
     pub fn new(mf: &'static MappedFile, archive_name: String) -> ObjectFile<E> {
-        let display = FileName(&mf.name, &archive_name);
+        let display = FileName(&mf.name.to_string_lossy(), &archive_name);
         let base = InputFile::<E>::parse(mf, &display);
         let mut file = ObjectFile::with_base(base, archive_name);
         file.parse_symbols();
@@ -1108,7 +1106,7 @@ impl<E: Arch> ObjectFile<E> {
         strtab: &'static [u8],
         comdat_keys: Vec<Option<&'static [u8]>>,
     ) -> ObjectFile<E> {
-        let mut base = InputFile::<E>::empty(&mf.name);
+        let mut base = InputFile::<E>::empty(&mf.name.to_string_lossy());
         base.mf = Some(mf);
         base.elf_syms = Cow::Owned(elf_syms);
         base.symbol_strtab = strtab;
@@ -3050,7 +3048,7 @@ impl<E: Arch> SharedFile<E> {
     }
 
     pub fn new(mf: &'static MappedFile) -> SharedFile<E> {
-        let base = InputFile::<E>::parse(mf, &FileName(&mf.name, ""));
+        let base = InputFile::<E>::parse(mf, &FileName(&mf.name.to_string_lossy(), ""));
         let mut file = SharedFile {
             base,
             soname: Vec::new(),
@@ -3084,10 +3082,15 @@ impl<E: Arch> SharedFile<E> {
         if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).first() {
             return soname.to_vec();
         }
-        if self.base.mf.is_none_or(|mf| mf.given_fullpath) {
-            return self.base.filename.as_bytes().to_vec();
+        if let Some(mf) = self.base.mf {
+            let name = if mf.given_fullpath {
+                mf.name.as_os_str()
+            } else {
+                mf.name.file_name().unwrap_or_default()
+            };
+            return name.as_encoded_bytes().to_vec();
         }
-        path_filename(&self.base.filename).into_bytes()
+        self.base.filename.as_bytes().to_vec()
     }
 
     fn parse(&mut self) {

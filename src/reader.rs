@@ -95,11 +95,11 @@ fn new_object_file<E: Arch>(
 
     let target = filetype::get_machine_type(&ctx.args.plugin, mf, || None);
     match target {
-        None => fatal!("{}: unknown machine type", mf.name),
+        None => fatal!("{}: unknown machine type", mf.name.display()),
         Some(t) if t != ctx.args.emulation => {
             fatal!(
                 "{}: incompatible file type: {} is expected but got {t}",
-                mf.name,
+                mf.name.display(),
                 ctx.args.emulation
             )
         }
@@ -117,15 +117,15 @@ fn new_shared_file<E: Arch>(
     mf: &'static MappedFile,
 ) -> SharedFile<E> {
     if rctx.is_static {
-        fatal!("{}: attempted static link of a dynamic object", mf.name);
+        fatal!("{}: attempted static link of a dynamic object", mf.name.display());
     }
     let target = filetype::get_machine_type(&ctx.args.plugin, mf, || None);
     match target {
-        None => fatal!("{}: unknown machine type", mf.name),
+        None => fatal!("{}: unknown machine type", mf.name.display()),
         Some(t) if t != ctx.args.emulation => {
             fatal!(
                 "{}: incompatible file type: {} is expected but got {t}",
-                mf.name,
+                mf.name.display(),
                 ctx.args.emulation
             )
         }
@@ -195,7 +195,7 @@ fn read_archive_member<E: Arch>(
         FileType::ElfDso => {
             warn!(
                 "{archive_name}({}): shared object file in an archive is ignored",
-                mf.name
+                mf.name.display()
             );
             None
         }
@@ -223,7 +223,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
         FileType::Ar | FileType::ThinAr => {
             for child in archive_file::read_archive_members(mf) {
                 let child_rctx = rctx.next_child();
-                if let Some(loaded) = read_archive_member(ctx, &child_rctx, child, &mf.name) {
+                if let Some(loaded) = read_archive_member(ctx, &child_rctx, child, &mf.name.to_string_lossy()) {
                     push_loaded(ctx, loaded);
                 }
             }
@@ -232,7 +232,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
         FileType::GccLtoObj | FileType::LlvmBitcode => {
             defer_lto_object(ctx, rctx, mf, "");
         }
-        _ => fatal!("{}: unknown file type", mf.name),
+        _ => fatal!("{}: unknown file type", mf.name.display()),
     }
 }
 
@@ -281,14 +281,14 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
 fn open_library<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
-    path: &str,
+    path: &std::path::Path,
 ) -> Option<&'static MappedFile> {
     let mf = open_file(&ctx.args.chroot, path)?;
     if let Some(target) = get_machine_type(ctx, rctx, mf) {
         if target != E::NAME {
             warn!(
-                "{path}: skipping incompatible file: {target} (e_machine {})",
-                E::E_MACHINE
+                "{}: skipping incompatible file: {target} (e_machine {})",
+                path.display(), E::E_MACHINE
             );
             return None;
         }
@@ -300,29 +300,34 @@ fn open_library<E: Arch>(
 pub fn find_library<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
-    name: &str,
+    name: &std::ffi::OsStr,
 ) -> &'static MappedFile {
-    if let Some(name) = name.strip_prefix(':') {
+    if let Some(exact) = name.as_encoded_bytes().strip_prefix(b":") {
+        let exact = std::path::Path::new(crate::util::os_str(exact));
+        let exact = exact.strip_prefix("/").unwrap_or(exact);
         for dir in &ctx.args.library_paths {
-            if let Some(mf) = open_library(ctx, rctx, &format!("{dir}/{name}")) {
+            if let Some(mf) = open_library(ctx, rctx, &dir.join(exact)) {
                 return mf;
             }
         }
-        fatal!("library not found: :{name}");
-    }
-
-    for dir in &ctx.args.library_paths {
-        let stem = format!("{dir}/lib{name}");
-        if !rctx.is_static {
-            if let Some(mf) = open_library(ctx, rctx, &format!("{stem}.so")) {
-                return mf;
+    } else {
+        let mut stem = std::ffi::OsString::from("lib");
+        stem.push(name);
+        for dir in &ctx.args.library_paths {
+            for suffix in if rctx.is_static {
+                &[".a"][..]
+            } else {
+                &[".so", ".a"][..]
+            } {
+                let mut filename = stem.clone();
+                filename.push(suffix);
+                if let Some(mf) = open_library(ctx, rctx, &dir.join(filename)) {
+                    return mf;
+                }
             }
         }
-        if let Some(mf) = open_library(ctx, rctx, &format!("{stem}.a")) {
-            return mf;
-        }
     }
-    fatal!("library not found: {name}");
+    fatal!("library not found: {}", name.to_string_lossy());
 }
 
 // Reads all input files.
@@ -375,7 +380,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
             // Everything else is a command line argument that we need to open.
             let mf = if job.is_lib {
-                let mf = find_library(ctx_ref, &rctx, &job.name);
+                let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
                 crate::util::leak(MappedFile {
                     name: mf.name.clone(),
                     data: mf.data,
@@ -396,7 +401,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 FileType::Ar => {
                     for child in archive_file::read_fat_archive_members(mf) {
                         let child_rctx = rctx.next_child();
-                        let archive_name = mf.name.clone();
+                        let archive_name = mf.name.to_string_lossy().into_owned();
                         let loaded = &loaded;
                         scope.spawn(move |_| {
                             if let Some(file) =
@@ -410,7 +415,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 FileType::ThinAr => {
                     for path in archive_file::get_thin_archive_member_paths(mf) {
                         let child_rctx = rctx.next_child();
-                        let archive_name = mf.name.clone();
+                        let archive_name = mf.name.to_string_lossy().into_owned();
                         let loaded = &loaded;
                         scope.spawn(move |_| {
                             let child = must_open_file(&ctx_ref.args.chroot, &path);
@@ -446,7 +451,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 FileType::GccLtoObj | FileType::LlvmBitcode => {
                     defer_lto_object(ctx_ref, &rctx, mf, "");
                 }
-                _ => fatal!("{}: unknown file type", mf.name),
+                _ => fatal!("{}: unknown file type", mf.name.display()),
             }
         });
     });

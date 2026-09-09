@@ -16,7 +16,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // Each target has its own monomorphized link function. Start with x86-64 and,
 // if the inputs use another machine type, run the matching function instead.
-fn link_for_target(target: &str, cmdline: &[String]) -> Result<i32, String> {
+fn link_for_target(target: &str, cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     match target {
         #[cfg(feature = "x86_64")]
         "x86_64" => mold_target_x86_64::link(cmdline),
@@ -66,7 +66,7 @@ fn link_for_target(target: &str, cmdline: &[String]) -> Result<i32, String> {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let args = std::env::args_os().collect();
     let status = mold::driver::main(args, link_for_target);
     std::process::exit(status);
 }

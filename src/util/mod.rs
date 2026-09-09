@@ -245,9 +245,25 @@ pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
 /// Normalizes a path lexically, resolving `.` and `..` components without
 /// consulting the file system.
 pub fn path_clean(path: &str) -> String {
-    use std::path::{Component, Path, PathBuf};
+    clean_path(std::path::Path::new(path))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Converts bytes from a response file or linker script to an OS string.
+/// Unix paths can contain arbitrary non-NUL bytes.
+pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
+    use bstr::ByteSlice;
+    bytes
+        .to_os_str()
+        .unwrap_or_else(|_| crate::fatal!("invalid OS string: {}", display(bytes)))
+}
+
+/// Normalizes an OS path without resolving symlinks.
+pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::{Component, PathBuf};
     let mut out = PathBuf::new();
-    for component in Path::new(path).components() {
+    for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => match out.components().next_back() {
@@ -260,11 +276,10 @@ pub fn path_clean(path: &str) -> String {
             other => out.push(other),
         }
     }
-    let s = out.to_string_lossy().into_owned();
-    if s.is_empty() {
-        ".".to_string()
+    if out.as_os_str().is_empty() {
+        PathBuf::from(".")
     } else {
-        s
+        out
     }
 }
 

@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -106,7 +106,7 @@ impl MappedBytes {
 // memory. Either way, its contents are accessible through `data`.
 #[derive(Debug)]
 pub struct MappedFile {
-    pub name: String,
+    pub name: PathBuf,
     pub(crate) data: MappedBytes,
 
     /// False if the file was found by searching library paths (`-l`),
@@ -129,12 +129,13 @@ unsafe impl Send for MappedFile {}
 unsafe impl Sync for MappedFile {}
 
 impl MappedFile {
-    fn open_impl(path: &str) -> io::Result<&'static MappedFile> {
+    fn open_impl(path: &Path) -> io::Result<&'static MappedFile> {
         let file = File::open(path)?;
 
+        let display = path.display();
         let metadata = file
             .metadata()
-            .unwrap_or_else(|e| fatal!("{path}: fstat failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{display}: fstat failed: {e}"));
         let size = metadata.len();
 
         // True if `data` is a memory mapping of the file rather than a copy of
@@ -147,9 +148,9 @@ impl MappedFile {
             (&file)
                 .take(size)
                 .read_to_end(&mut buf)
-                .unwrap_or_else(|e| fatal!("{path}: read failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{display}: read failed: {e}"));
             if buf.len() as u64 != size {
-                fatal!("{path}: file is shorter than its reported size");
+                fatal!("{display}: file is shorter than its reported size");
             }
             MappedBytes::from_mut(Vec::leak(buf))
         } else {
@@ -161,15 +162,15 @@ impl MappedFile {
             // process. Input files are not expected to change while the
             // linker runs.
             let map_len = usize::try_from(size)
-                .unwrap_or_else(|_| fatal!("{path}: file is too large to map"));
+                .unwrap_or_else(|_| fatal!("{display}: file is too large to map"));
             let map = unsafe { memmap2::MmapOptions::new().len(map_len).map_copy(&file) }
-                .unwrap_or_else(|e| fatal!("{path}: mmap failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
             is_mmapped = true;
             MappedBytes::from_mut(Box::leak(Box::new(map)).as_mut())
         };
 
         let mf = util::leak(MappedFile {
-            name: path.to_string(),
+            name: path.to_path_buf(),
             data,
             given_fullpath: true,
             parent: None,
@@ -184,21 +185,23 @@ impl MappedFile {
     }
 
     /// Opens a file, returning `None` if it doesn't exist.
-    pub fn open(path: &str) -> Option<&'static MappedFile> {
+    pub fn open(path: impl AsRef<Path>) -> Option<&'static MappedFile> {
+        let path = path.as_ref();
         match Self::open_impl(path) {
             Ok(mf) => Some(mf),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-            Err(e) => fatal!("opening {path} failed: {e}"),
+            Err(e) => fatal!("opening {} failed: {e}", path.display()),
         }
     }
 
     /// Opens a file that must exist.
-    pub fn must_open(path: &str) -> &'static MappedFile {
-        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {path}: {e}"))
+    pub fn must_open(path: impl AsRef<Path>) -> &'static MappedFile {
+        let path = path.as_ref();
+        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
     }
 
     /// Returns a view of a member of this archive.
-    pub fn slice(&'static self, name: String, start: usize, size: usize) -> &'static MappedFile {
+    pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static MappedFile {
         let mf = util::leak(MappedFile {
             name,
             data: self.data.slice(start, size),
@@ -255,18 +258,21 @@ impl MappedFile {
 
     // Returns a string that uniquely identify a file that is possibly
     // in an archive.
-    pub fn identifier(&self) -> String {
+    pub fn identifier(&self) -> std::ffi::OsString {
         if let Some(parent) = self.parent {
-            // We use the file offset within an archive as an identifier
-            // because archive members may have the same name.
-            return format!("{}:{}", parent.name, self.offset());
+            // Archive members may have the same name, so use the file offset.
+            let mut name = parent.name.as_os_str().to_os_string();
+            name.push(format!(":{}", self.offset()));
+            return name;
         }
-        if let Some(thin_parent) = self.thin_parent {
-            // If this is a thin archive member, the filename part is
-            // guaranteed to be unique.
-            return format!("{}:{}", thin_parent.name, self.name);
+        if let Some(parent) = self.thin_parent {
+            // Thin archive members have unique filenames.
+            let mut name = parent.name.as_os_str().to_os_string();
+            name.push(":");
+            name.push(&self.name);
+            return name;
         }
-        self.name.clone()
+        self.name.as_os_str().to_os_string()
     }
 
     pub fn is_dependency(&self) -> bool {
@@ -278,26 +284,27 @@ impl MappedFile {
     }
 }
 
-fn apply_chroot<'a>(chroot: &str, path: &'a str) -> Cow<'a, str> {
-    if path.starts_with('/') && !chroot.is_empty() {
-        Cow::Owned(format!("{chroot}/{}", util::path_clean(path)))
+fn apply_chroot<'a>(chroot: &Path, path: &'a Path) -> Cow<'a, Path> {
+    if path.is_absolute() && !chroot.as_os_str().is_empty() {
+        Cow::Owned(chroot.join(util::clean_path(path).strip_prefix("/").unwrap_or(path)))
     } else {
         Cow::Borrowed(path)
     }
 }
 
 /// Opens an input file, applying `--chroot` to absolute paths.
-pub fn open_file(chroot: &str, path: &str) -> Option<&'static MappedFile> {
-    MappedFile::open(&apply_chroot(chroot, path))
+pub fn open_file(chroot: &Path, path: impl AsRef<Path>) -> Option<&'static MappedFile> {
+    MappedFile::open(apply_chroot(chroot, path.as_ref()))
 }
 
 /// Opens an input file that must exist, applying `--chroot` to absolute paths.
-pub fn must_open_file(chroot: &str, path: &str) -> &'static MappedFile {
+pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedFile {
+    let path = path.as_ref();
     MappedFile::open_impl(&apply_chroot(chroot, path))
-        .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"))
+        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
 }
 
 /// Whether a path refers to something that is not a directory.
-pub fn is_file(path: &str) -> bool {
-    Path::new(path).is_file()
+pub fn is_file(path: impl AsRef<Path>) -> bool {
+    path.as_ref().is_file()
 }

@@ -23,6 +23,8 @@
 //! see the contents of libc.a by running `ar t
 //! /usr/lib/x86_64-linux-gnu/libc.a`.
 
+use std::path::{Path, PathBuf};
+
 use crate::fatal;
 use crate::mapped_file::MappedFile;
 use crate::util;
@@ -55,14 +57,14 @@ impl<'a> ArHeader<'a> {
 
     /// Returns the member's file name. A BSD-style long name is stored
     /// right after the header, so `body` is advanced past it.
-    fn read_name(&self, strtab: &[u8], body: &mut &'a [u8]) -> String {
+    fn read_name(&self, strtab: &[u8], body: &mut &'a [u8]) -> PathBuf {
         // BSD-style long filename
         if let Some(rest) = self.name.strip_prefix(b"#1/") {
             let len = parse_decimal(rest);
             let (name, remaining) = body.split_at(len.min(body.len()));
             *body = remaining;
             let name = name.split(|&b| b == 0).next().unwrap_or(&[]);
-            return String::from_utf8_lossy(name).into_owned();
+            return PathBuf::from(util::os_str(name));
         }
 
         // SysV-style long filename
@@ -73,7 +75,7 @@ impl<'a> ArHeader<'a> {
                 .windows(2)
                 .position(|w| w == b"/\n")
                 .unwrap_or(start.len());
-            return String::from_utf8_lossy(&start[..end]).into_owned();
+            return PathBuf::from(util::os_str(&start[..end]));
         }
 
         // Short fileanme
@@ -82,7 +84,7 @@ impl<'a> ArHeader<'a> {
             .iter()
             .position(|&b| b == b'/')
             .unwrap_or(self.name.len());
-        String::from_utf8_lossy(&self.name[..end]).into_owned()
+        PathBuf::from(util::os_str(&self.name[..end]))
     }
 }
 
@@ -100,7 +102,7 @@ fn parse_decimal(bytes: &[u8]) -> usize {
 fn archive_members(
     mf: &'static MappedFile,
     thin: bool,
-) -> impl Iterator<Item = (String, &'static [u8])> {
+) -> impl Iterator<Item = (PathBuf, &'static [u8])> {
     let data = mf.data();
     let mut pos = 8;
     let mut strtab: &'static [u8] = &[];
@@ -136,7 +138,7 @@ fn archive_members(
             }
 
             if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-                fatal!("{}: filename is not stored as a long filename", mf.name);
+                fatal!("{}: filename is not stored as a long filename", mf.name.display());
             }
 
             // Read the name field
@@ -151,7 +153,7 @@ fn archive_members(
             }
 
             // Skip BSD archive symbol tables.
-            if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" {
+            if name == Path::new("__.SYMDEF") || name == Path::new("__.SYMDEF SORTED") {
                 pos = body_end;
                 continue;
             }
@@ -163,13 +165,13 @@ fn archive_members(
 
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
-pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<String> {
+pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<PathBuf> {
     archive_members(mf, true)
         .map(|(name, _)| {
-            if name.starts_with('/') {
+            if name.is_absolute() {
                 name
             } else {
-                format!("{}/{}", util::path_dirname(&mf.name), name)
+                mf.name.parent().unwrap_or(Path::new(".")).join(name)
             }
         })
         .collect()

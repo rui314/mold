@@ -89,9 +89,9 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
         }
     }
 
-    if !ctx.args.map.is_empty() && ctx.args.map != "-" {
+    if !ctx.args.map.as_os_str().is_empty() && ctx.args.map != std::path::Path::new("-") {
         std::fs::write(&ctx.args.map, out)
-            .unwrap_or_else(|e| fatal!("--print-map: cannot open {}: {e}", ctx.args.map));
+            .unwrap_or_else(|e| fatal!("--print-map: cannot open {}: {e}", ctx.args.map.display()));
     } else {
         let _ = std::io::stdout().write_all(out.as_bytes());
     }

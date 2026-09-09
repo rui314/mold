@@ -80,10 +80,10 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
         } else {
             DT_RPATH
         };
-        define(tag, dynstr.find_string(ctx.args.rpaths.as_bytes()));
+        define(tag, dynstr.find_string(ctx.args.rpaths.as_encoded_bytes()));
     }
     if !ctx.args.soname.is_empty() {
-        define(DT_SONAME, dynstr.find_string(ctx.args.soname.as_bytes()));
+        define(DT_SONAME, dynstr.find_string(ctx.args.soname.as_encoded_bytes()));
     }
     for s in &ctx.args.auxiliary {
         define(DT_AUXILIARY, dynstr.find_string(s.as_bytes()));

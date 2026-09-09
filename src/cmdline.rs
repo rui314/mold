@@ -1,14 +1,16 @@
 //! Command-line argument parsing.
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::{OsStr, OsString};
 use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
 
 use crate::arch;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::Glob;
 use crate::util::perf::Counter;
-use crate::util::{self, align_down, path_clean, path_filename};
+use crate::util::{self, align_down};
 use crate::{fatal, out, warn};
 
 const HELP: &str = "
@@ -326,7 +328,7 @@ pub enum DefsymValue {
 /// A source of dynamic-list patterns, kept in command line order.
 #[derive(Clone, Debug)]
 pub enum DynamicListSource {
-    File(String),
+    File(PathBuf),
     Pattern(String),
 }
 
@@ -379,7 +381,7 @@ impl ReaderContext {
 #[derive(Clone, Debug, Default)]
 pub struct ReaderJob {
     pub rctx: ReaderContext,
-    pub name: String,
+    pub name: PathBuf,
     pub is_lib: bool,
     pub mf: Option<&'static MappedFile>,
 
@@ -492,37 +494,37 @@ pub struct Args {
     pub retain_symbols_file: Option<Vec<String>>,
     pub physical_image_base: Option<u64>,
     pub ttext_segment: Option<u64>,
-    pub map: String,
+    pub map: PathBuf,
     pub audit: String,
-    pub chroot: String,
+    pub chroot: PathBuf,
     pub depaudit: String,
-    pub dependency_file: String,
-    pub directory: String,
-    pub dynamic_linker: String,
-    pub output: String,
+    pub dependency_file: PathBuf,
+    pub directory: PathBuf,
+    pub dynamic_linker: PathBuf,
+    pub output: PathBuf,
     pub package_metadata: String,
-    pub plugin: String,
-    pub print_gc_sections: String,
-    pub print_icf_sections: String,
-    pub rpaths: String,
-    pub separate_debug_file: String,
-    pub soname: String,
-    pub sysroot: String,
+    pub plugin: PathBuf,
+    pub print_gc_sections: PathBuf,
+    pub print_icf_sections: PathBuf,
+    pub rpaths: OsString,
+    pub separate_debug_file: PathBuf,
+    pub soname: OsString,
+    pub sysroot: PathBuf,
     pub emulation: String,
     pub section_align: HashMap<String, u64>,
     pub section_start: HashMap<String, u64>,
     pub discard_section: HashSet<String>,
     pub exclude_libs: HashSet<String>,
-    pub ignore_ir_file: HashSet<String>,
+    pub ignore_ir_file: HashSet<OsString>,
     pub wrap: HashSet<String>,
     pub section_order: Vec<SectionOrder>,
     pub require_defined: Vec<String>,
     pub undefined: Vec<String>,
     pub defsyms: Vec<(String, DefsymValue)>,
-    pub library_paths: Vec<String>,
+    pub library_paths: Vec<PathBuf>,
     pub plugin_opt: Vec<String>,
-    pub version_definitions: Vec<String>,
-    pub version_scripts: Vec<String>,
+    pub version_definitions: Vec<Vec<u8>>,
+    pub version_scripts: Vec<PathBuf>,
     pub dynamic_list: Vec<DynamicListSource>,
     pub auxiliary: Vec<String>,
     pub filter: Vec<String>,
@@ -638,22 +640,22 @@ impl Default for Args {
             retain_symbols_file: None,
             physical_image_base: None,
             ttext_segment: None,
-            map: String::new(),
+            map: PathBuf::new(),
             audit: String::new(),
-            chroot: String::new(),
+            chroot: PathBuf::new(),
             depaudit: String::new(),
-            dependency_file: String::new(),
-            directory: String::new(),
-            dynamic_linker: String::new(),
-            output: "a.out".to_string(),
+            dependency_file: PathBuf::new(),
+            directory: PathBuf::new(),
+            dynamic_linker: PathBuf::new(),
+            output: PathBuf::from("a.out"),
             package_metadata: String::new(),
-            plugin: String::new(),
-            print_gc_sections: String::new(),
-            print_icf_sections: String::new(),
-            rpaths: String::new(),
-            separate_debug_file: String::new(),
-            soname: String::new(),
-            sysroot: String::new(),
+            plugin: PathBuf::new(),
+            print_gc_sections: PathBuf::new(),
+            print_icf_sections: PathBuf::new(),
+            rpaths: OsString::new(),
+            separate_debug_file: PathBuf::new(),
+            soname: OsString::new(),
+            sysroot: PathBuf::new(),
             emulation: String::new(),
             section_align: HashMap::new(),
             section_start: HashMap::new(),
@@ -714,9 +716,9 @@ fn is_space(c: u8) -> bool {
 //
 // This function opens a given file, tokenizes its contents, and returns a
 // list of tokens.
-fn read_response_file(path: &str, depth: usize) -> Vec<String> {
+fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
     if depth > 10 {
-        fatal!("{path}: response file nesting too deep");
+        fatal!("{}: response file nesting too deep", path.display());
     }
 
     let mf = MappedFile::must_open(path);
@@ -742,7 +744,7 @@ fn read_response_file(path: &str, depth: usize) -> Vec<String> {
             let c = data[i];
             if c == b'\\' {
                 if i + 1 == data.len() {
-                    fatal!("{path}: premature end of input");
+                    fatal!("{}: premature end of input", path.display());
                 }
                 tok.push(data[i + 1]);
                 i += 2;
@@ -764,15 +766,15 @@ fn read_response_file(path: &str, depth: usize) -> Vec<String> {
             }
         }
         if quote.is_some() {
-            fatal!("{path}: premature end of input");
+            fatal!("{}: premature end of input", path.display());
         }
-        tokens.push(String::from_utf8_lossy(&tok).into_owned());
+        tokens.push(util::os_str(&tok).to_os_string());
     }
 
     let mut expanded = Vec::new();
     for tok in tokens {
-        if let Some(nested) = tok.strip_prefix('@') {
-            expanded.extend(read_response_file(nested, depth + 1));
+        if let Some(nested) = tok.as_encoded_bytes().strip_prefix(b"@") {
+            expanded.extend(read_response_file(Path::new(util::os_str(nested)), depth + 1));
         } else {
             expanded.push(tok);
         }
@@ -781,11 +783,11 @@ fn read_response_file(path: &str, depth: usize) -> Vec<String> {
 }
 
 // Replace "@path/to/some/text/file" with its file contents.
-pub fn expand_response_files(argv: &[String]) -> Vec<String> {
+pub fn expand_response_files(argv: &[OsString]) -> Vec<OsString> {
     let mut args = Vec::new();
     for arg in argv {
-        if let Some(path) = arg.strip_prefix('@') {
-            args.extend(read_response_file(path, 1));
+        if let Some(path) = arg.as_encoded_bytes().strip_prefix(b"@") {
+            args.extend(read_response_file(Path::new(util::os_str(path)), 1));
         } else {
             args.push(arg.clone());
         }
@@ -805,18 +807,19 @@ pub fn expand_response_files(argv: &[String]) -> Vec<String> {
 // as "-o magic". If you really want to specify the "omagic" option,
 // you have to pass "--omagic". Single-letter option names take a
 // single dash.
-fn match_option<'a>(arg: &'a str, name: &str) -> Option<&'a str> {
-    let arg = arg.strip_prefix('-')?;
-
+fn match_option<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
+    let arg = arg.as_encoded_bytes().strip_prefix(b"-")?;
     if name.len() == 1 {
-        return arg.strip_prefix(name);
+        return arg.strip_prefix(name.as_bytes()).map(util::os_str);
     }
-    // Options beginning with "o" require double dashes
-    if name.starts_with('o') && !arg.starts_with('-') {
+    // Options beginning with "o" require double dashes.
+    if name.starts_with('o') && !arg.starts_with(b"-") {
         return None;
     }
-    let arg = arg.strip_prefix('-').unwrap_or(arg);
-    arg.strip_prefix(name)
+    arg.strip_prefix(b"-")
+        .unwrap_or(arg)
+        .strip_prefix(name.as_bytes())
+        .map(util::os_str)
 }
 
 fn parse_hex(opt: &str, value: &str) -> u64 {
@@ -899,7 +902,7 @@ fn parse_package_metadata(arg: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn read_retain_symbols_file(path: &str) -> Vec<String> {
+fn read_retain_symbols_file(path: &Path) -> Vec<String> {
     let mf = MappedFile::must_open(path);
     String::from_utf8_lossy(mf.data())
         .lines()
@@ -1014,7 +1017,13 @@ pub struct ParsedArgs {
 }
 
 /// Parses all options. `cmdline` includes the program name.
-pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
+pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs {
+    // Option names and numeric arguments are text; file arguments retain
+    // their OS representation through the raw argument readers below.
+    let cmdline: Vec<&str> = raw_cmdline
+        .iter()
+        .map(|s| s.to_str().unwrap_or(""))
+        .collect();
     // Input file arguments are turned into ReaderJobs for
     // read_input_files(). rctx tracks the reader state options, such as
     // --as-needed, that apply to the files after them; each job gets a
@@ -1023,7 +1032,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     let mut jobs: Vec<ReaderJob> = Vec::new();
     let mut rctx = ReaderContext::default();
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
-    let mut visited_libs: HashSet<String> = HashSet::new();
+    let mut visited_libs: HashSet<OsString> = HashSet::new();
 
     a.color_diagnostics = std::io::stderr().is_terminal();
     crate::error::set_color(a.color_diagnostics);
@@ -1041,9 +1050,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     let mut report_undefined: Option<bool> = None;
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
-    let mut separate_debug_file: Option<String> = None;
+    let mut separate_debug_file: Option<PathBuf> = None;
     let mut shuffle_sections_seed: Option<u64> = None;
-    let mut rpaths: HashSet<String> = HashSet::new();
+    let mut rpaths: HashSet<OsString> = HashSet::new();
 
     // We generally don't need to write addends to relocated places if the
     // relocation type is RELA because RELA records contain addends.
@@ -1061,45 +1070,63 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
 
     let mut i = 1;
     let mut arg = String::new();
+    let mut raw_arg = OsString::new();
 
     // An option and its argument are either separate command line
     // arguments or a single one, as in "-o foo" vs. "-ofoo" or
     // "--output foo" vs. "--output=foo".
     macro_rules! read_arg {
-        ($name:expr) => {{
+        ($name:expr) => {
+            read_arg!($name, false)
+        };
+        ($name:expr, $raw:expr) => {{
             let name: &str = $name;
-            match match_option(&cmdline[i], name) {
-                None => false,
+            let value = match match_option(&raw_cmdline[i], name) {
+                None => None,
                 Some(rest) if rest.is_empty() => {
                     if i + 1 == cmdline.len() {
                         fatal!("option -{name}: argument missing");
                     }
-                    arg = cmdline[i + 1].clone();
                     i += 2;
-                    true
+                    Some(raw_cmdline[i - 1].as_os_str())
                 }
                 Some(rest) if name.len() == 1 => {
-                    arg = rest.to_string();
                     i += 1;
-                    true
+                    Some(rest)
                 }
-                Some(rest) => match rest.strip_prefix('=') {
-                    Some(value) => {
-                        arg = value.to_string();
-                        i += 1;
-                        true
-                    }
-                    None => false,
-                },
+                Some(rest) => rest.as_encoded_bytes().strip_prefix(b"=").map(|value| {
+                    i += 1;
+                    util::os_str(value)
+                }),
+            };
+            if let Some(value) = value {
+                raw_arg = value.to_os_string();
+                if !$raw {
+                    arg = value.to_str().unwrap_or_else(||
+                        fatal!("option -{name}: expected a UTF-8 argument")
+                    ).to_string();
+                }
+                true
+            } else {
+                false
             }
         }};
     }
 
     macro_rules! read_eq {
-        ($name:expr) => {{
-            match match_option(&cmdline[i], $name).and_then(|rest| rest.strip_prefix('=')) {
+        ($name:expr) => {
+            read_eq!($name, false)
+        };
+        ($name:expr, $raw:expr) => {{
+            match match_option(&raw_cmdline[i], $name)
+                .and_then(|rest| rest.as_encoded_bytes().strip_prefix(b"=")) {
                 Some(value) => {
-                    arg = value.to_string();
+                    raw_arg = util::os_str(value).to_os_string();
+                    if !$raw {
+                        arg = raw_arg.to_str().unwrap_or_else(||
+                            fatal!("option -{}: expected a UTF-8 argument", $name)
+                        ).to_string();
+                    }
                     i += 1;
                     true
                 }
@@ -1110,7 +1137,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
 
     macro_rules! read_flag {
         ($name:expr) => {{
-            if match_option(&cmdline[i], $name) == Some("") {
+            if match_option(&raw_cmdline[i], $name) == Some(OsStr::new("")) {
                 i += 1;
                 true
             } else {
@@ -1156,10 +1183,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     }
 
     while i < cmdline.len() {
-        if !cmdline[i].starts_with('-') {
+        if !raw_cmdline[i].as_encoded_bytes().starts_with(b"-") {
             let mut job = ReaderJob {
                 rctx: rctx.clone(),
-                name: cmdline[i].clone(),
+                name: PathBuf::from(&raw_cmdline[i]),
                 ..Default::default()
             };
             job.rctx.pos = vec![jobs.len() as u32];
@@ -1169,14 +1196,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
         }
 
         if read_flag!("help") {
-            out!("Usage: {} [options] file...\n{}", cmdline[0], HELP);
+            out!("Usage: {} [options] file...\n{}", raw_cmdline[0].to_string_lossy(), HELP);
             std::process::exit(0);
         }
 
-        if read_arg!("o") || read_arg!("output") {
-            a.output = arg.clone();
-        } else if read_arg!("dynamic-linker") || read_arg!("I") {
-            a.dynamic_linker = arg.clone();
+        if read_arg!("o", true) || read_arg!("output", true) {
+            a.output = PathBuf::from(&raw_arg);
+        } else if read_arg!("dynamic-linker", true) || read_arg!("I", true) {
+            a.dynamic_linker = PathBuf::from(&raw_arg);
         } else if read_flag!("no-dynamic-linker") {
             a.dynamic_linker.clear();
         } else if read_flag!("v") {
@@ -1225,8 +1252,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             a.discard_locals = false;
         } else if read_arg!("e") || read_arg!("entry") {
             a.entry = arg.clone();
-        } else if read_arg!("Map") {
-            a.map = arg.clone();
+        } else if read_arg!("Map", true) {
+            a.map = PathBuf::from(&raw_arg);
             a.print_map = true;
         } else if read_flag!("print-dependencies") {
             a.print_dependencies = true;
@@ -1246,8 +1273,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             rctx.in_lib = true;
         } else if read_flag!("start-stop") {
             a.start_stop = true;
-        } else if read_arg!("dependency-file") {
-            a.dependency_file = arg.clone();
+        } else if read_arg!("dependency-file", true) {
+            a.dependency_file = PathBuf::from(&raw_arg);
         } else if read_arg!("defsym") {
             let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
                 fatal!("-defsym: syntax error: {arg}");
@@ -1256,8 +1283,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
                 .push((name.to_string(), parse_defsym_value(value)));
         } else if read_flag!(":lto-pass2") {
             a.lto_pass2 = true;
-        } else if read_arg!(":ignore-ir-file") {
-            a.ignore_ir_file.insert(arg.clone());
+        } else if read_arg!(":ignore-ir-file", true) {
+            a.ignore_ir_file.insert(raw_arg.clone());
         } else if read_flag!("demangle") {
             a.demangle = true;
             crate::error::set_demangle(true);
@@ -1288,10 +1315,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             a.trace_symbol.push(arg.clone());
         } else if read_arg!("filler") {
             a.filler = Some(parse_hex("filler", &arg) as u8);
-        } else if read_arg!("L") || read_arg!("library-path") {
-            a.library_paths.push(arg.clone());
-        } else if read_arg!("sysroot") {
-            a.sysroot = arg.clone();
+        } else if read_arg!("L", true) || read_arg!("library-path", true) {
+            a.library_paths.push(PathBuf::from(&raw_arg));
+        } else if read_arg!("sysroot", true) {
+            a.sysroot = PathBuf::from(&raw_arg);
         } else if read_arg!("unique") {
             if !a.unique.add(arg.as_bytes(), 1) {
                 fatal!("-unique: invalid glob pattern: {arg}");
@@ -1334,8 +1361,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
                 }
                 _ => fatal!("invalid --hash-style argument: {arg}"),
             }
-        } else if read_arg!("soname") || read_arg!("h") {
-            a.soname = arg.clone();
+        } else if read_arg!("soname", true) || read_arg!("h", true) {
+            a.soname = raw_arg.clone();
         } else if read_arg!("audit") {
             if !a.audit.is_empty() {
                 a.audit.push(':');
@@ -1401,10 +1428,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
         } else if read_flag!("stats") {
             a.stats = true;
             Counter::enable();
-        } else if read_arg!("C") || read_arg!("directory") {
-            a.directory = arg.clone();
-        } else if read_arg!("chroot") {
-            a.chroot = arg.clone();
+        } else if read_arg!("C", true) || read_arg!("directory", true) {
+            a.directory = PathBuf::from(&raw_arg);
+        } else if read_arg!("chroot", true) {
+            a.chroot = PathBuf::from(&raw_arg);
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
             a.color_diagnostics = std::io::stderr().is_terminal();
             crate::error::set_color(a.color_diagnostics);
@@ -1475,8 +1502,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
                 fatal!("-oformat: {arg} is not supported");
             }
             a.oformat_binary = true;
-        } else if read_arg!("retain-symbols-file") {
-            a.retain_symbols_file = Some(read_retain_symbols_file(&arg));
+        } else if read_arg!("retain-symbols-file", true) {
+            a.retain_symbols_file = Some(read_retain_symbols_file(Path::new(&raw_arg)));
         } else if read_arg!("section-align") {
             let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
                 fatal!("--section-align: syntax error: {arg}");
@@ -1571,10 +1598,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             a.z_origin = true;
         } else if read_z_flag!("nodefaultlib") {
             a.z_nodefaultlib = true;
-        } else if read_eq!("separate-debug-file") {
-            separate_debug_file = Some(arg.clone());
+        } else if read_eq!("separate-debug-file", true) {
+            separate_debug_file = Some(PathBuf::from(&raw_arg));
         } else if read_flag!("separate-debug-file") {
-            separate_debug_file = Some(String::new());
+            separate_debug_file = Some(PathBuf::new());
         } else if read_flag!("no-separate-debug-file") {
             separate_debug_file = None;
         } else if read_z_flag!("separate-loadable-segments") {
@@ -1630,9 +1657,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
         } else if read_flag!("no-gc-sections") {
             a.gc_sections = false;
         } else if read_flag!("print-gc-sections") {
-            a.print_gc_sections = "-".to_string();
-        } else if read_eq!("print-gc-sections") {
-            a.print_gc_sections = arg.clone();
+            a.print_gc_sections = PathBuf::from("-");
+        } else if read_eq!("print-gc-sections", true) {
+            a.print_gc_sections = PathBuf::from(&raw_arg);
         } else if read_flag!("no-print-gc-sections") {
             a.print_gc_sections.clear();
         } else if read_arg!("discard-section") {
@@ -1658,17 +1685,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
         } else if read_arg!("physical-image-base") {
             a.physical_image_base = Some(parse_number("physical-image-base", &arg) as u64);
         } else if read_flag!("print-icf-sections") {
-            a.print_icf_sections = "-".to_string();
-        } else if read_eq!("print-icf-sections") {
-            a.print_icf_sections = arg.clone();
+            a.print_icf_sections = PathBuf::from("-");
+        } else if read_eq!("print-icf-sections", true) {
+            a.print_icf_sections = PathBuf::from(&raw_arg);
         } else if read_flag!("no-print-icf-sections") {
             a.print_icf_sections.clear();
         } else if read_flag!("quick-exit") {
             a.quick_exit = true;
         } else if read_flag!("no-quick-exit") {
             a.quick_exit = false;
-        } else if read_arg!("plugin") {
-            a.plugin = arg.clone();
+        } else if read_arg!("plugin", true) {
+            a.plugin = PathBuf::from(&raw_arg);
         } else if read_arg!("plugin-opt") {
             a.plugin_opt.push(arg.clone());
         } else if read_flag!("lto-cs-profile-generate") {
@@ -1753,13 +1780,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             error_unresolved_symbols = false;
         } else if read_flag!("error-unresolved-symbols") {
             error_unresolved_symbols = true;
-        } else if read_arg!("rpath") {
-            add_rpath(&mut a, &mut rpaths, &arg);
-        } else if read_arg!("R") {
-            if crate::mapped_file::is_file(&arg) {
-                fatal!("-R{arg}: -R as an alias for --just-symbols is not supported");
+        } else if read_arg!("rpath", true) {
+            add_rpath(&mut a, &mut rpaths, &raw_arg);
+        } else if read_arg!("R", true) {
+            if crate::mapped_file::is_file(&raw_arg) {
+                fatal!("-R{}: -R as an alias for --just-symbols is not supported", raw_arg.to_string_lossy());
             }
-            add_rpath(&mut a, &mut rpaths, &arg);
+            add_rpath(&mut a, &mut rpaths, &raw_arg);
         } else if read_flag!("undefined-version") {
             a.undefined_version = true;
         } else if read_flag!("no-undefined-version") {
@@ -1854,17 +1881,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             || read_flag!("no-mmap-output-file")
         {
             // Ignored for compatibility.
-        } else if read_arg!("version-script") {
-            a.version_scripts.push(arg.clone());
-        } else if read_arg!("dynamic-list") {
+        } else if read_arg!("version-script", true) {
+            a.version_scripts.push(PathBuf::from(&raw_arg));
+        } else if read_arg!("dynamic-list", true) {
             a.bsymbolic = BsymbolicKind::All;
-            a.dynamic_list.push(DynamicListSource::File(arg.clone()));
+            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
         } else if read_arg!("dynamic-list-data") {
             a.dynamic_list_data = true;
         } else if read_arg!("export-dynamic-symbol") {
             a.dynamic_list.push(DynamicListSource::Pattern(arg.clone()));
-        } else if read_arg!("export-dynamic-symbol-list") {
-            a.dynamic_list.push(DynamicListSource::File(arg.clone()));
+        } else if read_arg!("export-dynamic-symbol-list", true) {
+            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
         } else if read_flag!("as-needed") {
             rctx.as_needed = true;
         } else if read_flag!("no-as-needed") {
@@ -1873,21 +1900,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             rctx.whole_archive = true;
         } else if read_flag!("no-whole-archive") {
             rctx.whole_archive = false;
-        } else if read_arg!("l") || read_arg!("library") {
-            if visited_libs.insert(arg.clone()) {
+        } else if read_arg!("l", true) || read_arg!("library", true) {
+            if visited_libs.insert(raw_arg.clone()) {
                 let mut job = ReaderJob {
                     rctx: rctx.clone(),
-                    name: arg.clone(),
+                    name: PathBuf::from(&raw_arg),
                     is_lib: true,
                     ..Default::default()
                 };
                 job.rctx.pos = vec![jobs.len() as u32];
                 jobs.push(job);
             }
-        } else if read_arg!("script") || read_arg!("T") {
+        } else if read_arg!("script", true) || read_arg!("T", true) {
             let mut job = ReaderJob {
                 rctx: rctx.clone(),
-                name: arg.clone(),
+                name: PathBuf::from(&raw_arg),
                 ..Default::default()
             };
             job.rctx.pos = vec![jobs.len() as u32];
@@ -1908,31 +1935,36 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
             fatal!("unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
         } else {
-            fatal!("unknown command line option: {}", cmdline[i]);
+            fatal!("unknown command line option: {}", raw_cmdline[i].to_string_lossy());
         }
     }
 
-    if !a.chroot.is_empty() {
-        if !a.map.is_empty() {
-            a.map = format!("{}/{}", a.chroot, a.map);
+    if !a.chroot.as_os_str().is_empty() {
+        if !a.map.as_os_str().is_empty() {
+            a.map = a.chroot.join(a.map.strip_prefix("/").unwrap_or(&a.map));
         }
-        if !a.dependency_file.is_empty() {
-            a.dependency_file = format!("{}/{}", a.chroot, a.dependency_file);
+        if !a.dependency_file.as_os_str().is_empty() {
+            a.dependency_file = a.chroot.join(
+                a.dependency_file
+                    .strip_prefix("/")
+                    .unwrap_or(&a.dependency_file),
+            );
         }
     }
 
-    if !a.directory.is_empty() {
+    if !a.directory.as_os_str().is_empty() {
         if let Err(e) = std::env::set_current_dir(&a.directory) {
-            fatal!("chdir failed: {}: {e}", a.directory);
+            fatal!("chdir failed: {}: {e}", a.directory.display());
         }
     }
 
-    if !a.sysroot.is_empty() {
+    if !a.sysroot.as_os_str().is_empty() {
         for path in &mut a.library_paths {
-            if let Some(rest) = path.strip_prefix('=') {
-                *path = format!("{}{rest}", a.sysroot);
-            } else if let Some(rest) = path.strip_prefix("$SYSROOT") {
-                *path = format!("{}{rest}", a.sysroot);
+            let bytes = path.as_os_str().as_encoded_bytes();
+            if let Some(rest) = bytes.strip_prefix(b"=").or_else(|| bytes.strip_prefix(b"$SYSROOT")) {
+                let mut full = a.sysroot.as_os_str().to_os_string();
+                full.push(util::os_str(rest));
+                *path = PathBuf::from(full);
             }
         }
     }
@@ -1940,7 +1972,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     // Clean library paths by removing redundant `/..` and `/.` so that
     // they are easier to read in log messages.
     for path in &mut a.library_paths {
-        *path = path_clean(path);
+        *path = util::clean_path(path);
     }
 
     if a.shared {
@@ -2042,16 +2074,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
 
     if a.default_symver {
         let ver = if a.soname.is_empty() {
-            path_filename(&a.output)
+            a.output.file_name().unwrap_or_default().as_encoded_bytes().to_vec()
         } else {
-            a.soname.clone()
+            a.soname.as_encoded_bytes().to_vec()
         };
         a.version_definitions.push(ver);
     }
 
     if let Some(file) = separate_debug_file {
-        a.separate_debug_file = if file.is_empty() {
-            format!("{}.dbg", a.output)
+        a.separate_debug_file = if file.as_os_str().is_empty() {
+            let mut name = a.output.as_os_str().to_os_string();
+            name.push(".dbg");
+            PathBuf::from(name)
         } else {
             file
         };
@@ -2109,11 +2143,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
     }
 }
 
-fn add_rpath(a: &mut Args, seen: &mut HashSet<String>, path: &str) {
-    if seen.insert(path.to_string()) {
+fn add_rpath(a: &mut Args, seen: &mut HashSet<OsString>, path: &OsStr) {
+    if seen.insert(path.to_os_string()) {
         if !a.rpaths.is_empty() {
-            a.rpaths.push(':');
+            a.rpaths.push(":");
         }
-        a.rpaths.push_str(path);
+        a.rpaths.push(path);
     }
 }

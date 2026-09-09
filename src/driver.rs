@@ -20,8 +20,8 @@ use crate::{error, fatal, passes};
 /// inputs are actually for; the executable provides it, as the targets
 /// are instantiated in crates of their own.
 pub fn main(
-    argv: Vec<String>,
-    link_for_target: impl Fn(&str, &[String]) -> Result<i32, String>,
+    argv: Vec<std::ffi::OsString>,
+    link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, String>,
 ) -> i32 {
     // Process -run option first. process_run_subcommand() does not return.
     if argv.get(1).is_some_and(|a| a == "-run" || a == "--run") {
@@ -88,7 +88,7 @@ fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
 
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
-pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
+pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     let parsed = cmdline::parse_args(&target_traits::<E>(), cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     let mut ctx = Context::<E>::new(args, cmdline.to_vec());
@@ -141,13 +141,13 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     for path in ctx.args.version_scripts.clone() {
         let chroot = ctx.args.chroot.clone();
         let mf = crate::mapped_file::open_file(&chroot, &path).or_else(|| {
-            ctx.args
-                .library_paths
-                .iter()
-                .find_map(|dir| crate::mapped_file::open_file(&chroot, &format!("{dir}/{path}")))
+            ctx.args.library_paths.iter().find_map(|dir| {
+                let name = path.strip_prefix("/").unwrap_or(&path);
+                crate::mapped_file::open_file(&chroot, dir.join(name))
+            })
         });
         let Some(mf) = mf else {
-            fatal!("--version-script: file not found: {path}");
+            fatal!("--version-script: file not found: {}", path.display());
         };
         let mut rctx = cmdline::ReaderContext::default();
         crate::linker_script::Script::new(&mut ctx, &mut rctx, mf).parse_version_script();
@@ -648,10 +648,10 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     drop(t_close);
 
     // Handle --dependency-file
-    if !ctx.args.dependency_file.is_empty() {
+    if !ctx.args.dependency_file.as_os_str().is_empty() {
         passes::write_dependency_file(&ctx);
     }
-    if !ctx.args.plugin.is_empty() {
+    if !ctx.args.plugin.as_os_str().is_empty() {
         crate::lto::cleanup();
     }
     drop(t_all);

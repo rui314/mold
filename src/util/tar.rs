@@ -3,7 +3,10 @@
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom, Write};
 
-use super::{align_to, path_clean};
+use std::ffi::{OsStr, OsString};
+use std::path::Path;
+
+use super::{align_to, clean_path};
 
 const BLOCK_SIZE: u64 = 512;
 
@@ -23,7 +26,7 @@ const BLOCK_SIZE: u64 = 512;
 /// For simplicity, we always emit a PAX header even for a short filename.
 pub struct TarWriter {
     out: File,
-    basedir: String,
+    basedir: OsString,
 }
 
 fn ustar_header(name: &[u8], mode: &[u8], size: u64, typeflag: u8) -> [u8; 512] {
@@ -48,29 +51,36 @@ fn ustar_header(name: &[u8], mode: &[u8], size: u64, typeflag: u8) -> [u8; 512] 
 /// Construct a string which contains something like
 /// "16 path=foo/bar\n" where 16 is the size of the string
 /// including the size string itself.
-fn encode_path(basedir: &str, path: &str) -> String {
-    let path = path_clean(&format!("{basedir}/{path}"));
-    let len = " path=\n".len() + path.len();
+fn encode_path(basedir: &OsStr, path: &Path) -> Vec<u8> {
+    let mut name = basedir.to_os_string();
+    name.push("/");
+    name.push(path);
+    let path = clean_path(Path::new(&name));
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let len = b" path=\n".len() + bytes.len();
     let total = len + len.to_string().len();
     let total = len + total.to_string().len();
-    format!("{total} path={path}\n")
+    let mut out = format!("{total} path=").into_bytes();
+    out.extend_from_slice(bytes);
+    out.push(b'\n');
+    out
 }
 
 impl TarWriter {
-    pub fn open(output_path: &str, basedir: &str) -> io::Result<TarWriter> {
+    pub fn open(output_path: &Path, basedir: &OsStr) -> io::Result<TarWriter> {
         Ok(TarWriter {
             out: File::create(output_path)?,
-            basedir: basedir.to_string(),
+            basedir: basedir.to_os_string(),
         })
     }
 
-    pub fn append(&mut self, path: &str, data: &[u8]) -> io::Result<()> {
+    pub fn append(&mut self, path: &Path, data: &[u8]) -> io::Result<()> {
         let attr = encode_path(&self.basedir, path);
         // Write PAX header
         self.out
             .write_all(&ustar_header(b"/", b"", attr.len() as u64, b'x'))?;
         // Write pathname
-        self.out.write_all(attr.as_bytes())?;
+        self.out.write_all(&attr)?;
         self.pad()?;
 
         // Write Ustar header

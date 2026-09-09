@@ -104,7 +104,7 @@ pub struct Context<E: Arch> {
     pub args: Args,
 
     // Fully-expanded command line args
-    pub cmdline_args: Vec<String>,
+    pub cmdline_args: Vec<std::ffi::OsString>,
     pub timers: Timers,
 
     // Symbol table. Object file parsing records each global symbol with add(),
@@ -239,7 +239,7 @@ pub struct Context<E: Arch> {
 }
 
 impl<E: Arch> Context<E> {
-    pub fn new(args: Args, cmdline_args: Vec<String>) -> Context<E> {
+    pub fn new(args: Args, cmdline_args: Vec<std::ffi::OsString>) -> Context<E> {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
             entry: symbols.intern(crate::util::leak_bytes(args.entry.clone().into_bytes())),

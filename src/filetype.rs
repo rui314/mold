@@ -134,7 +134,7 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
 }
 
 /// Classifies a file by its contents.
-pub fn get_file_type(plugin: &str, mf: &MappedFile) -> FileType {
+pub fn get_file_type(plugin: &std::path::Path, mf: &MappedFile) -> FileType {
     let data = mf.data();
     if data.is_empty() {
         return FileType::Empty;
@@ -143,7 +143,12 @@ pub fn get_file_type(plugin: &str, mf: &MappedFile) -> FileType {
     // GCC FAT LTO objects can be linked as regular ELF objects. If the active
     // plugin is LLVM's, treat them as regular objects so that we can fall back
     // to native code instead of routing them through GCC LTO handling.
-    let has_gcc_plugin = !plugin.is_empty() && !plugin.contains("LLVMgold.");
+    let has_gcc_plugin = !plugin.as_os_str().is_empty()
+        && !plugin
+            .as_os_str()
+            .as_encoded_bytes()
+            .windows(9)
+            .any(|s| s == b"LLVMgold.");
 
     if data.starts_with(b"\x7fELF") && data.len() >= 20 {
         let is_le = data[EI_DATA as usize] == ELFDATA2LSB as u8;
@@ -280,7 +285,7 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 pub fn get_machine_type(
-    plugin: &str,
+    plugin: &std::path::Path,
     mf: &'static MappedFile,
     script_target: impl FnOnce() -> Option<&'static str>,
 ) -> Option<&'static str> {

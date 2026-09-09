@@ -10,7 +10,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::util::endian::{U16, U32};
-use crate::util::path_filename;
 
 // .gnu.version contains a parallel table for .dynsym to specify symbol
 // versions of defined symbols. This section appears only in .so files,
@@ -120,14 +119,14 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     };
 
     let soname = if ctx.args.soname.is_empty() {
-        path_filename(&ctx.args.output)
+        ctx.args.output.file_name().unwrap_or_default().as_encoded_bytes().to_vec()
     } else {
-        ctx.args.soname.clone()
+        ctx.args.soname.as_encoded_bytes().to_vec()
     };
     write(
         &mut contents,
         &mut ctx.dynstr,
-        soname.as_bytes(),
+        &soname,
         1,
         VER_FLG_BASE as u16,
     );
@@ -137,7 +136,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         write(
             &mut contents,
             &mut ctx.dynstr,
-            verstr.as_bytes(),
+            verstr,
             VER_NDX_LAST_RESERVED as u16 + 1 + i as u16,
             0,
         );

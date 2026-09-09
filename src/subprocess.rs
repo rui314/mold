@@ -138,7 +138,7 @@ pub fn install_signal_handler() {}
 /// `mold -run COMMAND ARGS...` runs a command with mold interposed as the
 /// linker, which requires the `mold-wrapper.so` preload library.
 #[cfg(not(windows))]
-pub fn process_run_subcommand(argv: &[String]) -> ! {
+pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
     if argv.len() < 3 {
         fatal!("-run: argument missing");
     }
@@ -166,7 +166,9 @@ pub fn process_run_subcommand(argv: &[String]) -> ! {
     std::env::set_var("MOLD_PATH", &self_path);
 
     use std::os::unix::process::CommandExt;
-    let cmd = crate::util::path_filename(&argv[2]);
+    let cmd = std::path::Path::new(&argv[2])
+        .file_name()
+        .unwrap_or_default();
     // If ld, ld.lld or ld.gold is specified, run mold instead
     let err = if cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold" {
         std::process::Command::new(&self_path)
@@ -176,10 +178,10 @@ pub fn process_run_subcommand(argv: &[String]) -> ! {
         std::process::Command::new(&argv[2]).args(&argv[3..]).exec()
     };
     // Execute a given command
-    fatal!("mold -run failed: {}: {err}", argv[2]);
+    fatal!("mold -run failed: {}: {err}", argv[2].to_string_lossy());
 }
 
 #[cfg(windows)]
-pub fn process_run_subcommand(_argv: &[String]) -> ! {
+pub fn process_run_subcommand(_argv: &[std::ffi::OsString]) -> ! {
     fatal!("-run is supported only on Unix");
 }

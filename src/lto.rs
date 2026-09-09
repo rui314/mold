@@ -415,8 +415,8 @@ unsafe extern "C" fn add_symbols(
 /// Receives an object file the plugin compiled.
 unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     let ctx = &mut *(CONTEXT.load(Ordering::Acquire) as *mut Context<E>);
-    let path = CStr::from_ptr(path).to_string_lossy().into_owned();
-    let mf = must_open_file("", &path);
+    let path = crate::util::os_str(CStr::from_ptr(path).to_bytes());
+    let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
 
     let mut file = ObjectFile::<E>::new(mf, String::new());
@@ -696,7 +696,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
     if LOADED.swap(true, Ordering::Relaxed) {
         return;
     }
-    let path = CString::new(ctx.args.plugin.as_str()).unwrap();
+    let path = CString::new(ctx.args.plugin.as_os_str().as_encoded_bytes()).unwrap();
     // SAFETY: plain dlopen/dlsym calls.
     let onload: OnloadFn = unsafe {
         let handle = dynamic_open(path.as_ptr());
@@ -707,7 +707,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         if onload.is_null() {
             fatal!(
                 "failed to load plugin {}: {}",
-                ctx.args.plugin,
+                ctx.args.plugin.display(),
                 dlerror_string()
             );
         }
@@ -763,7 +763,12 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
             LDPT_ADD_INPUT_LIBRARY,
             func(add_input_library as *const () as usize),
         ),
-        TagValue::ptr(LDPT_OUTPUT_NAME, cstr(&ctx.args.output)),
+        TagValue::ptr(
+            LDPT_OUTPUT_NAME,
+            CString::new(ctx.args.output.as_os_str().as_encoded_bytes())
+                .unwrap()
+                .into_raw() as *const c_void,
+        ),
         TagValue::ptr(
             LDPT_SET_EXTRA_LIBRARY_PATH,
             func(set_extra_library_path as *const () as usize),
@@ -843,7 +848,12 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
 /// Returns true if a given linker plugin looks like LLVM's one.
 /// Returns false if it's GCC.
 fn is_llvm<E: Arch>(ctx: &Context<E>) -> bool {
-    ctx.args.plugin.contains("LLVMgold.")
+    ctx.args
+        .plugin
+        .as_os_str()
+        .as_encoded_bytes()
+        .windows(9)
+        .any(|s| s == b"LLVMgold.")
 }
 
 /// Returns true if a given linker plugin supports the get_symbols_v3 API.
@@ -858,9 +868,9 @@ fn supports_v3_api<E: Arch>(ctx: &Context<E>) -> bool {
 fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
     let container = mf.parent.unwrap_or(mf);
     let file = File::open(&container.name)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name.display()));
     let input = PluginInputFile {
-        name: CString::new(container.name.as_str()).unwrap().into_raw(),
+        name: CString::new(container.name.as_os_str().as_encoded_bytes()).unwrap().into_raw(),
         #[cfg(not(windows))]
         fd: file.as_raw_fd(),
         #[cfg(windows)]
@@ -879,11 +889,11 @@ pub fn read_lto_object<E: Arch>(
     mf: &'static MappedFile,
     archive_name: String,
 ) -> Option<ObjectFile<E>> {
-    if ctx.args.plugin.is_empty() {
+    if ctx.args.plugin.as_os_str().is_empty() {
         fatal!("{}: unable to handle this LTO object file because the -plugin option was not provided. \
              Please make sure you added -flto not only when creating object files but also when linking \
              the final executable.",
-            mf.name
+            mf.name.display()
         );
     }
     load_plugin(ctx);
@@ -903,7 +913,7 @@ pub fn read_lto_object<E: Arch>(
         if mf.parent.is_none() && mf.thin_parent.is_none() {
             fatal!("{}: not claimed by the LTO plugin; please make sure you are using the same compiler of the \
                  same version for all object files",
-                mf.name
+                mf.name.display()
             );
         }
         return None;
@@ -952,16 +962,15 @@ pub fn read_lto_object<E: Arch>(
 ///
 /// This is an ugly hack and should be removed once GCC adopts the v3 API.
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
-    let mut args: Vec<String> = ctx.cmdline_args.clone();
+    let mut args = ctx.cmdline_args.clone();
     for file in &ctx.objs {
         if file.is_lto_input && !file.base.is_reachable() {
-            args.push(format!(
-                "--:ignore-ir-file={}",
-                file.base.mf.unwrap().identifier()
-            ));
+            let mut arg = std::ffi::OsString::from("--:ignore-ir-file=");
+            arg.push(file.base.mf.unwrap().identifier());
+            args.push(arg);
         }
     }
-    args.push("--:lto-pass2".to_string());
+    args.push("--:lto-pass2".into());
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
@@ -970,10 +979,10 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
     let err = std::process::Command::new(path).args(&args[1..]).exec();
     #[cfg(windows)]
     let err = {
-        let path = CString::new(path.to_string_lossy().as_bytes()).unwrap();
+        let path = CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
         let args: Vec<CString> = args
             .iter()
-            .map(|arg| CString::new(arg.as_bytes()).unwrap())
+            .map(|arg| CString::new(arg.as_encoded_bytes()).unwrap())
             .collect();
         let mut argv: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
         argv.push(ptr::null());

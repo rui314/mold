@@ -6,13 +6,15 @@
 //! The supported subset also includes `OUTPUT_FORMAT`, symbol assignments,
 //! version scripts and dynamic lists.
 
+use std::path::{Path, PathBuf};
+
 use crate::arch::Arch;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
 use crate::mapped_file::{must_open_file, open_file, MappedFile};
 use crate::reader;
-use crate::util::{self, path_clean};
+use crate::util;
 use crate::{fatal, warn};
 
 /// A version script pattern.
@@ -70,7 +72,7 @@ fn syntax_error(mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
     let pos = offset_of(input, tok).min(input.len().saturating_sub(1));
     let (line_start, line) = get_line(input, pos);
     let lineno = input[..line_start].iter().filter(|&&b| b == b'\n').count() + 1;
-    let label = format!("{}:{}: ", mf.name, lineno);
+    let label = format!("{}:{}: ", mf.name.display(), lineno);
     let indent = "mold: fatal: ".len() + label.len();
     let column = pos - line_start;
     fatal!(
@@ -115,7 +117,7 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
             continue;
         }
 
-        let is_word_char = |b: u8| b.is_ascii_alphanumeric() || b"_.$/\\~=+[]*?-!^:".contains(&b);
+        let is_word_char = |b: u8| b >= 0x80 || b.is_ascii_alphanumeric() || b"_.$/\\~=+[]*?-!^:".contains(&b);
         let len = match input.iter().position(|&b| !is_word_char(b)) {
             Some(0) => 1,
             Some(pos) => pos,
@@ -127,21 +129,21 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
     tokens
 }
 
-fn is_in_sysroot<E: Arch>(ctx: &Context<E>, path: &str) -> bool {
+fn is_in_sysroot<E: Arch>(ctx: &Context<E>, path: &Path) -> bool {
     let mut sysroot = ctx.args.sysroot.clone();
-    if sysroot.starts_with('/') && !ctx.args.chroot.is_empty() {
-        sysroot = format!("{}/{}", ctx.args.chroot, path_clean(&sysroot));
+    if sysroot.is_absolute() && !ctx.args.chroot.as_os_str().is_empty() {
+        sysroot = ctx
+            .args
+            .chroot
+            .join(util::clean_path(&sysroot).strip_prefix("/").unwrap());
     }
-    let path = std::path::Path::new(path);
-    let sysroot = std::path::Path::new(&sysroot);
     let (Ok(path), Ok(sysroot)) = (path.canonicalize(), sysroot.canonicalize()) else {
         return false;
     };
     path != sysroot && path.starts_with(&sysroot)
 }
 
-/// Opens a file named by the script `mf`, resolving relative names
-/// against the script's directory and the library search paths.
+/// Opens a file named by a script, retaining the pathname's original bytes.
 fn resolve_path<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
@@ -149,63 +151,53 @@ fn resolve_path<E: Arch>(
     tok: &'static [u8],
     check_target: bool,
 ) -> &'static MappedFile {
-    let s = String::from_utf8_lossy(unquote(tok)).into_owned();
+    let s = unquote(tok);
+    let name = Path::new(util::os_str(s));
     let chroot = &ctx.args.chroot;
-
-    let open = |path: &str| -> Option<&'static MappedFile> {
+    let open = |path: &Path| -> Option<&'static MappedFile> {
         let mf = open_file(chroot, path)?;
         if check_target {
             if let Some(target) = reader::get_machine_type(ctx, rctx, mf) {
                 if target != E::NAME {
-                    warn!(
-                        "{path}: skipping incompatible file: {target} (e_machine {})",
-                        E::E_MACHINE
-                    );
+                    warn!("{}: skipping incompatible file: {target} (e_machine {})",
+                        path.display(), E::E_MACHINE);
                     return None;
                 }
             }
         }
         Some(mf)
     };
+    let in_sysroot = |suffix: &[u8]| {
+        let mut path = ctx.args.sysroot.as_os_str().to_os_string();
+        path.push(util::os_str(suffix));
+        PathBuf::from(path)
+    };
 
-    // GNU ld prepends the sysroot if a pathname starts with '/' and the
-    // script being processed is in the sysroot. We do the same.
-    if s.starts_with('/') && is_in_sysroot(ctx, &mf.name) {
-        let path = format!("{}{s}", ctx.args.sysroot);
-        return must_open_file(chroot, &path);
+    // Absolute names in a script within the sysroot are relative to that root.
+    if name.is_absolute() && is_in_sysroot(ctx, &mf.name) {
+        return must_open_file(chroot, in_sysroot(s));
     }
-
-    if let Some(rest) = s.strip_prefix('=') {
-        let path = if ctx.args.sysroot.is_empty() {
-            rest.to_string()
-        } else {
-            format!("{}{rest}", ctx.args.sysroot)
-        };
-        return must_open_file(chroot, &path);
+    if let Some(rest) = s.strip_prefix(b"=") {
+        return must_open_file(chroot, in_sysroot(rest));
     }
-
-    if let Some(lib) = s.strip_prefix("-l") {
-        return reader::find_library(ctx, rctx, lib);
+    if let Some(lib) = s.strip_prefix(b"-l") {
+        return reader::find_library(ctx, rctx, util::os_str(lib));
     }
-
-    if !s.starts_with('/') {
-        let path = path_clean(&format!("{}/../{s}", mf.name));
+    if !name.is_absolute() {
+        let path = util::clean_path(&mf.name.parent().unwrap_or(Path::new(".")).join(name));
         if let Some(mf) = open(&path) {
             return mf;
         }
     }
-
-    if let Some(mf) = open(&s) {
+    if let Some(mf) = open(name) {
         return mf;
     }
-
     for dir in &ctx.args.library_paths {
-        if let Some(mf) = open(&format!("{dir}/{s}")) {
+        if let Some(mf) = open(&dir.join(name.strip_prefix("/").unwrap_or(name))) {
             return mf;
         }
     }
-
-    syntax_error(mf, tok, &format!("library not found: {s}"));
+    syntax_error(mf, tok, &format!("library not found: {}", util::display(s)));
 }
 
 /// The target a script produces output for: the one `OUTPUT_FORMAT`
@@ -258,7 +250,7 @@ impl<'a, E: Arch> Script<'a, E> {
 
     fn skip<'t>(&self, tok: &'t [&'static [u8]], expected: &str) -> &'t [&'static [u8]] {
         match tok.first() {
-            None => fatal!("{}: expected '{expected}', but got EOF", self.mf.name),
+            None => fatal!("{}: expected '{expected}', but got EOF", self.mf.name.display()),
             Some(t) if *t == expected.as_bytes() => &tok[1..],
             Some(t) => self.error(t, &format!("expected '{expected}'")),
         }
@@ -289,7 +281,7 @@ impl<'a, E: Arch> Script<'a, E> {
         let tok = self.skip(tok, "(");
         match tok.iter().position(|t| *t == b")") {
             Some(pos) => &tok[pos + 1..],
-            None => fatal!("{}: expected ')', but got EOF", self.mf.name),
+            None => fatal!("{}: expected ')', but got EOF", self.mf.name.display()),
         }
     }
 
@@ -315,7 +307,7 @@ impl<'a, E: Arch> Script<'a, E> {
         }
 
         if tok.is_empty() {
-            fatal!("{}: expected ')', but got EOF", self.mf.name);
+            fatal!("{}: expected ')', but got EOF", self.mf.name.display());
         }
         &tok[1..]
     }
@@ -417,7 +409,7 @@ impl<'a, E: Arch> Script<'a, E> {
                 let pattern = self.unquote_pattern(t);
                 self.ctx.version_patterns.push(VersionPattern {
                     pattern,
-                    source: self.mf.name.clone(),
+                    source: self.mf.name.display().to_string(),
                     ver_str,
                     ver_idx: idx,
                     is_cpp,
@@ -447,8 +439,7 @@ impl<'a, E: Arch> Script<'a, E> {
             } else {
                 let idx = next_ver;
                 next_ver += 1;
-                let name = String::from_utf8_lossy(t).into_owned();
-                self.ctx.args.version_definitions.push(name);
+                self.ctx.args.version_definitions.push(t.to_vec());
                 tok = &tok[1..];
                 (t, idx)
             };
@@ -503,7 +494,7 @@ impl<'a, E: Arch> Script<'a, E> {
 
             result.push(DynamicPattern {
                 pattern: self.unquote_pattern(t),
-                source: self.mf.name.clone(),
+                source: self.mf.name.display().to_string(),
                 is_cpp,
             });
             tok = self.skip(&tok[1..], ";");
@@ -539,7 +530,7 @@ fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'stati
     None
 }
 
-pub fn parse_dynamic_list<E: Arch>(ctx: &mut Context<E>, path: &str) -> Vec<DynamicPattern> {
+pub fn parse_dynamic_list<E: Arch>(ctx: &mut Context<E>, path: &Path) -> Vec<DynamicPattern> {
     let mf = must_open_file(&ctx.args.chroot.clone(), path);
     let mut rctx = ReaderContext::default();
     Script::new(ctx, &mut rctx, mf).parse_dynamic_list()

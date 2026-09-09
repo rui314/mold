@@ -3,6 +3,6 @@
 
 /// Links for this target, or reports the target the inputs are actually
 /// for.
-pub fn link(cmdline: &[String]) -> Result<i32, String> {
+pub fn link(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     mold::driver::link::<mold::arch::LoongArch32>(cmdline)
 }

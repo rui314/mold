@@ -89,7 +89,7 @@ enum Storage {
 
 /// An output file, either memory-mapped or buffered in memory.
 pub struct OutputFile {
-    path: String,
+    path: PathBuf,
     tmp_path: Option<PathBuf>,
     /// The file being written, if it is a real file.
     file: Option<File>,
@@ -176,11 +176,12 @@ impl OutputFile {
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
     /// at the end.
-    pub fn open(path: &str, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
-        let is_special = path == "-" || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
+    pub fn open(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
+        let is_special =
+            path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
         if is_special {
             return OutputFile {
-                path: path.to_string(),
+                path: path.to_path_buf(),
                 tmp_path: None,
                 file: None,
                 storage: Storage::Memory(vec![0; size as usize]),
@@ -192,10 +193,10 @@ impl OutputFile {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
-        let name = Path::new(path)
-            .file_name()
-            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-        let tmp = dir.join(format!(".{name}.{}", std::process::id()));
+        let mut name = std::ffi::OsString::from(".");
+        name.push(path.file_name().unwrap_or_default());
+        name.push(format!(".{}", std::process::id()));
+        let tmp = dir.join(name);
 
         // Reuse an existing file if exists and writable because on Linux,
         // writing to an existing file is much faster than creating a fresh
@@ -236,7 +237,7 @@ impl OutputFile {
 
         let storage = map_file(&file, size);
         let output = OutputFile {
-            path: path.to_string(),
+            path: path.to_path_buf(),
             tmp_path: Some(tmp),
             file: Some(file),
             storage,
@@ -253,13 +254,13 @@ impl OutputFile {
     /// stale one is not picked up by accident; [`Self::resize`] gives it its
     /// size.
     #[cfg(not(windows))]
-    pub fn open_locked(path: &str, perm: u32) -> OutputFile {
+    pub fn open_locked(path: &Path, perm: u32) -> OutputFile {
         let mut file = open_options(perm)
             .read(true)
             .write(true)
             .create(true)
             .open(path)
-            .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
         // SAFETY: flock on a valid descriptor.
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_EX);
@@ -268,9 +269,9 @@ impl OutputFile {
         // make the file unusable so that gdb won't use it by accident until
         // it's ready.
         file.write_all(&[0; 256])
-            .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
         OutputFile {
-            path: path.to_string(),
+            path: path.to_path_buf(),
             tmp_path: None,
             file: Some(file),
             storage: Storage::Memory(Vec::new()),
@@ -279,7 +280,7 @@ impl OutputFile {
     }
 
     #[cfg(windows)]
-    pub fn open_locked(_path: &str, _perm: u32) -> OutputFile {
+    pub fn open_locked(_path: &Path, _perm: u32) -> OutputFile {
         fatal!("LockingOutputFile is not supported on Windows");
     }
 
@@ -290,7 +291,7 @@ impl OutputFile {
             .as_ref()
             .expect("resizing an output file that isn't a file");
         file.set_len(size)
-            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path));
+            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
         // Reserve twice as much address space as the file needs so that
         // extend() can grow it into the mapping in place.
         self.storage = map_file(file, size);
@@ -328,7 +329,7 @@ impl OutputFile {
             (Storage::Memory(vec), _) => vec.resize(new_len, 0),
             (Storage::Mmap { map, len }, Some(file)) => {
                 file.set_len(new_len as u64)
-                    .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path));
+                    .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
                 preallocate(file, new_len as u64);
                 if new_len <= map.len() {
                     *len = new_len;
@@ -352,7 +353,7 @@ impl OutputFile {
         match self.storage {
             Storage::Mmap { map, .. } => drop(map),
             Storage::Memory(vec) => {
-                if self.path == "-" {
+                if self.path == Path::new("-") {
                     let mut stdout = std::io::stdout().lock();
                     stdout
                         .write_all(&vec)
@@ -376,10 +377,10 @@ impl OutputFile {
                         .create(true)
                         .truncate(true)
                         .open(&self.path)
-                        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path)),
+                        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path.display())),
                 };
                 file.write_all(&vec)
-                    .unwrap_or_else(|e| fatal!("{}: write failed: {e}", self.path));
+                    .unwrap_or_else(|e| fatal!("{}: write failed: {e}", self.path.display()));
             }
         }
         if let Some(tmp) = self.tmp_path {
@@ -392,7 +393,7 @@ impl OutputFile {
                 std::mem::forget(old);
             }
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path)
+                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path.display())
             });
             *TMPFILE.lock().unwrap() = None;
         }

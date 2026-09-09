@@ -127,7 +127,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         ctx.shstrtab = Some(ShstrtabSection::new());
         chunks.push(ChunkId::Shstrtab);
     }
-    if !ctx.args.dynamic_linker.is_empty() {
+    if !ctx.args.dynamic_linker.as_os_str().is_empty() {
         ctx.interp = Some(InterpSection::new());
         chunks.push(ChunkId::Interp);
     }
@@ -163,7 +163,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         ctx.eh_frame_reloc = Some(EhFrameRelocSection::<E>::new());
         chunks.push(ChunkId::EhFrameReloc);
     }
-    if !ctx.args.separate_debug_file.is_empty() {
+    if !ctx.args.separate_debug_file.as_os_str().is_empty() {
         ctx.gnu_debuglink = Some(GnuDebuglinkSection::new());
         chunks.push(ChunkId::GnuDebuglink);
     }
@@ -1842,23 +1842,32 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
     }
 }
 
-fn create_response_file<E: Arch>(ctx: &Context<E>) -> String {
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut out = format!("-C {}\n", cwd.strip_prefix('/').unwrap_or(&cwd));
-    if cwd != "/" {
-        out.push_str("--chroot ..");
-        let depth = cwd.matches('/').count();
-        for _ in 1..depth {
-            out.push_str("/..");
+fn create_response_file<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
+    fn argument(out: &mut Vec<u8>, bytes: &[u8]) {
+        out.push(b'"');
+        for &byte in bytes {
+            if byte == b'"' || byte == b'\\' {
+                out.push(b'\\');
+            }
+            out.push(byte);
         }
-        out.push('\n');
+        out.extend_from_slice(b"\"\n");
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let bytes = cwd.as_os_str().as_encoded_bytes();
+    let mut out = b"-C\n".to_vec();
+    argument(&mut out, bytes.strip_prefix(b"/").unwrap_or(bytes));
+    if bytes != b"/" {
+        out.extend_from_slice(b"--chroot ..");
+        for _ in 1..bytes.iter().filter(|&&b| b == b'/').count() {
+            out.extend_from_slice(b"/..");
+        }
+        out.push(b'\n');
     }
     for arg in &ctx.cmdline_args[1..] {
         if arg != "-repro" && arg != "--repro" {
-            out.push_str(arg);
-            out.push('\n');
+            argument(&mut out, arg.as_encoded_bytes());
         }
     }
     out
@@ -1866,36 +1875,43 @@ fn create_response_file<E: Arch>(ctx: &Context<E>) -> String {
 
 pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
     let _t = ctx.timer("write_repro_file");
-    let path = format!("{}.repro.tar", ctx.args.output);
-    let basedir = format!("{}.repro", path_filename(&ctx.args.output));
+    let mut name = ctx.args.output.as_os_str().to_os_string();
+    name.push(".repro.tar");
+    let path = std::path::PathBuf::from(name);
+    let mut basedir = ctx
+        .args
+        .output
+        .file_name()
+        .unwrap_or_default()
+        .to_os_string();
+    basedir.push(".repro");
     let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
-        .unwrap_or_else(|e| fatal!("cannot open {path}: {e}"));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
 
-    let write = |tar: &mut crate::util::tar::TarWriter, name: &str, data: &[u8]| {
+    let write = |tar: &mut crate::util::tar::TarWriter, name: &std::path::Path, data: &[u8]| {
         tar.append(name, data)
-            .unwrap_or_else(|e| fatal!("{path}: write failed: {e}"));
+            .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
     };
     write(
         &mut tar,
-        "response.txt",
-        create_response_file(ctx).as_bytes(),
+        std::path::Path::new("response.txt"),
+        &create_response_file(ctx),
     );
     write(
         &mut tar,
-        "version.txt",
+        std::path::Path::new("version.txt"),
         format!("{}\n", crate::cmdline::VERSION).as_bytes(),
     );
 
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen = HashSet::new();
     for mf in crate::mapped_file::file_pool() {
         if mf.parent.is_none() && seen.insert(mf.name.clone()) {
-            // We reopen a file because we may have modified the contents of mf
-            // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
+            // Reopen the original contents because private mappings may have
+            // been modified. Preserve the symlink name used in response.txt.
             let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
-            // Keep the name used by response.txt, including symlink components.
             let abs = std::path::absolute(&mf.name)
-                .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name));
-            write(&mut tar, &abs.to_string_lossy(), reopened.data());
+                .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name.display()));
+            write(&mut tar, &abs, reopened.data());
         }
     }
 }
@@ -2479,8 +2495,8 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
     strings.extend(ctx.args.filter.iter().map(|s| s.clone().into_bytes()));
     strings.push(ctx.args.audit.clone().into_bytes());
     strings.push(ctx.args.depaudit.clone().into_bytes());
-    strings.push(ctx.args.rpaths.clone().into_bytes());
-    strings.push(ctx.args.soname.clone().into_bytes());
+    strings.push(ctx.args.rpaths.as_encoded_bytes().to_vec());
+    strings.push(ctx.args.soname.as_encoded_bytes().to_vec());
     for s in strings {
         if !s.is_empty() {
             ctx.dynstr.add_string(&s);
@@ -3174,7 +3190,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
         .enumerate()
         .map(|(i, v)| {
             (
-                v.clone().into_bytes(),
+                v.clone(),
                 i as u16 + VER_NDX_LAST_RESERVED as u16 + 1,
             )
         })
@@ -4647,33 +4663,36 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
 // Write Makefile-style dependency rules to a file specified by
 // --dependency-file. This is analogous to the compiler's -M flag.
 pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
-    let mut deps: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut deps = Vec::new();
+    let mut seen = HashSet::new();
     for mf in crate::mapped_file::file_pool() {
         if mf.is_dependency() && mf.parent.is_none() {
-            let path = crate::util::path_clean(&mf.name);
+            let path = crate::util::clean_path(&mf.name);
             if seen.insert(path.clone()) {
                 deps.push(path);
             }
         }
     }
 
-    let mut out = format!("{}:", ctx.args.output);
+    let mut out = ctx.args.output.as_os_str().as_encoded_bytes().to_vec();
+    out.push(b':');
     for d in &deps {
-        out.push(' ');
-        out.push_str(d);
+        out.push(b' ');
+        out.extend_from_slice(d.as_os_str().as_encoded_bytes());
     }
-    out.push('\n');
+    out.push(b'\n');
     for d in &deps {
-        out.push_str(&format!("\n{d}:\n"));
+        out.push(b'\n');
+        out.extend_from_slice(d.as_os_str().as_encoded_bytes());
+        out.extend_from_slice(b":\n");
     }
 
     let path = &ctx.args.dependency_file;
-    if path == "-" {
-        let _ = std::io::stdout().write_all(out.as_bytes());
+    if path == std::path::Path::new("-") {
+        let _ = std::io::stdout().write_all(&out);
     } else {
         std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--dependency-file: cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("--dependency-file: cannot open {}: {e}", path.display()));
     }
 }
 

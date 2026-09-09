@@ -285,7 +285,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
         .collect();
 
     let path = &ctx.args.print_gc_sections;
-    if path.is_empty() {
+    if path.as_os_str().is_empty() {
         return;
     }
     let mut out = String::new();
@@ -296,11 +296,11 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
         ));
     }
     out.push_str("GC saved 0 bytes\n");
-    if path == "-" {
+    if path == std::path::Path::new("-") {
         let _ = std::io::stdout().write_all(out.as_bytes());
     } else {
         std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--print-gc-sections: cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("--print-gc-sections: cannot open {}: {e}", path.display()));
     }
 }
 

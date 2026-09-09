@@ -30,10 +30,10 @@ impl<E: Layout> Default for InterpSection<E> {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-    let size = ctx.args.dynamic_linker.len() as u64 + 1;
+    let size = ctx.args.dynamic_linker.as_os_str().len() as u64 + 1;
     ctx.interp.as_mut().unwrap().hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-    write_cstr(buf, ctx.args.dynamic_linker.as_bytes());
+    write_cstr(buf, ctx.args.dynamic_linker.as_os_str().as_encoded_bytes());
 }

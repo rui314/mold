@@ -655,11 +655,11 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) {
     out.push_str(&format!("ICF saved {saved} bytes\n"));
 
     let path = &ctx.args.print_icf_sections;
-    if path == "-" {
+    if path == std::path::Path::new("-") {
         let _ = std::io::stdout().write_all(out.as_bytes());
     } else {
         std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--print-icf-sections: cannot open {path}: {e}"));
+            .unwrap_or_else(|e| fatal!("--print-icf-sections: cannot open {}: {e}", path.display()));
     }
 }
 
@@ -733,7 +733,7 @@ pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|(&r, &digest)| ctx.section(r).set_icf_leader(map.find(digest)));
     }
 
-    if !ctx.args.print_icf_sections.is_empty() {
+    if !ctx.args.print_icf_sections.as_os_str().is_empty() {
         print_icf_sections(ctx, &sections);
     }
 

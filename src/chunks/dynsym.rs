@@ -93,7 +93,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             s.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64
         });
         error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
-            ctx.args.output
+            ctx.args.output.display()
         );
     }
 }

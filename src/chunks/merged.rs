@@ -86,7 +86,7 @@ pub struct ResolveOptions<'a> {
     pub allocated_only: bool,
     pub gc_sections: bool,
     pub comment: Option<MergedSectionId>,
-    pub cmdline_args: &'a [String],
+    pub cmdline_args: &'a [std::ffi::OsString],
     pub timers: &'a Timers,
 }
 
@@ -534,7 +534,7 @@ pub fn resolve_sections<E: Arch>(
 fn add_comment_strings<E: Layout>(
     msec: &MergedSection<E>,
     gc_sections: bool,
-    cmdline_args: &[String],
+    cmdline_args: &[std::ffi::OsString],
 ) {
     let add = |s: String| {
         let mut bytes = s.into_bytes();
@@ -549,7 +549,7 @@ fn add_comment_strings<E: Layout>(
     if std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty()) {
         add(format!(
             "mold command line: {}",
-            cmdline_args[1..].join(" ")
+            cmdline_args[1..].iter().map(|s| s.to_string_lossy()).collect::<Vec<_>>().join(" ")
         ));
     }
 }
