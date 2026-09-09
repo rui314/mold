@@ -348,7 +348,7 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
             h.update(b"1");
             hash_u64(h, id.0 as u64);
         } else {
-            match sym.origin::<E>() {
+            match sym.origin() {
                 OriginValue::Fragment(frag) => {
                     h.update(b"2");
                     hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);

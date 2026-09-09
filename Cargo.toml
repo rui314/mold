@@ -5,6 +5,10 @@ edition = "2021"
 description = "A high-performance ELF linker, rewritten in Rust"
 license = "MIT"
 
+[[test]]
+name = "symbol_output_chunk"
+path = "test/symbol-output-chunk.rs"
+
 # The linker is generic over the target. Instantiating it for all twenty
 # targets in one crate keeps the compiler on a single core for minutes, so
 # each target is instantiated in a crate of its own under targets/, and the

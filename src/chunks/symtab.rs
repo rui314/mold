@@ -291,7 +291,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     };
 
     let mut shndx: Option<u32> = None;
-    let origin = sym.origin::<E>();
+    let origin = sym.origin();
 
     if sym.has_copyrel() {
         // Symbol in .copyrel
@@ -312,7 +312,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         match origin {
             OriginValue::OutputChunk(chunk) => {
                 // Linker-synthesized symbol
-                shndx = Some(chunk.shndx);
+                shndx = Some(ctx.symbol_chunk_header(chunk).shndx);
                 esym.st_value_mut().set(sym.addr(ctx));
             }
             OriginValue::Fragment(frag) => {

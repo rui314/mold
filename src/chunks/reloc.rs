@@ -82,7 +82,7 @@ fn symidx_addend<'a, E: Arch>(
     }
 
     if sym.st_type() == STT_SECTION {
-        match sym.origin::<E>() {
+        match sym.origin() {
             OriginValue::Fragment(frag) => {
                 let msec = &ctx.merged_sections[frag.section.index()];
                 return (

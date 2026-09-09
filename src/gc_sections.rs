@@ -73,7 +73,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection<E>
 
     let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection<E>>| {
         let sym = &ctx.symbols[id];
-        match sym.origin::<E>() {
+        match sym.origin() {
             OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
             OriginValue::InputSection(section) => {
                 let isec = ctx.input_section(section);
@@ -180,7 +180,7 @@ fn visit_section<'scope, E: Arch>(
             continue;
         }
         // Symbol can refer to either a section fragment or an input section.
-        match sym.origin::<E>() {
+        match sym.origin() {
             OriginValue::Fragment(frag) => {
                 ctx.fragment(frag).set_alive();
                 continue;

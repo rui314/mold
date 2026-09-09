@@ -44,7 +44,11 @@ impl SymbolId {
     }
 }
 
-// Origin stores an input-section id, an output-chunk pointer, or compact
+/// Index into the owning context's append-only output-chunk registry.
+#[derive(Clone, Copy)]
+pub(crate) struct SymbolChunkId(pub(crate) u32);
+
+// Origin stores an input-section id, an output-chunk id, or compact
 // ids for section fragments and symbols in one word. The low two bits identify
 // which representation it contains.
 #[repr(transparent)]
@@ -57,27 +61,17 @@ const CHUNK_TAG: u64 = 1;
 const FRAGMENT_TAG: u64 = 2;
 const SYMBOL_TAG: u64 = 3;
 
-// Origin::{new, get} use the default raw chunk pointer. Symbol::origin
-// substitutes a reference so callers can match without unsafe code.
 #[derive(Clone, Copy)]
-pub(crate) enum OriginValue<C = *const ()> {
+pub(crate) enum OriginValue {
     None,
     InputSection(InputSectionId),
-    OutputChunk(C),
+    OutputChunk(SymbolChunkId),
     Fragment(FragmentRef),
     Symbol(SymbolId),
 }
 
 impl Origin {
     const NONE: Origin = Origin(0);
-
-    #[inline]
-    fn pointer<T>(ptr: *const T, tag: u64) -> Origin {
-        let ptr = ptr as usize as u64;
-        debug_assert_ne!(ptr, 0);
-        debug_assert_eq!(ptr & ORIGIN_TAG_MASK, 0);
-        Origin(ptr | tag)
-    }
 
     fn new(value: OriginValue) -> Origin {
         match value {
@@ -86,7 +80,7 @@ impl Origin {
                 debug_assert_ne!(section, InputSectionId::NONE);
                 Origin(section.raw() << 2 | SECTION_TAG)
             }
-            OriginValue::OutputChunk(chunk) => Origin::pointer(chunk, CHUNK_TAG),
+            OriginValue::OutputChunk(chunk) => Origin(u64::from(chunk.0) << 2 | CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
                 // FragmentRef contains two u32 indices. One billion merged sections
                 // are enough to leave the low two bits available for the tag.
@@ -105,9 +99,7 @@ impl Origin {
 
         match self.0 & ORIGIN_TAG_MASK {
             SECTION_TAG => OriginValue::InputSection(InputSectionId::from_raw(self.0 >> 2)),
-            CHUNK_TAG => {
-                OriginValue::OutputChunk((self.0 & !ORIGIN_TAG_MASK) as usize as *const ())
-            }
+            CHUNK_TAG => OriginValue::OutputChunk(SymbolChunkId((self.0 >> 2) as u32)),
             FRAGMENT_TAG => OriginValue::Fragment(FragmentRef::from_raw(self.0 >> 2)),
             SYMBOL_TAG => OriginValue::Symbol(SymbolId((self.0 >> 2) as u32)),
             _ => unreachable!(),
@@ -785,21 +777,10 @@ impl Symbol {
         }
     }
 
-    /// Returns the decoded origin with the chunk pointer restored to a
-    /// reference for the current target.
+    /// Returns the origin's ID, resolved through its owning context when needed.
     #[inline]
-    pub(crate) fn origin<E: Layout>(&self) -> OriginValue<&ChunkHeader<E>> {
-        match self.origin.get() {
-            OriginValue::None => OriginValue::None,
-            OriginValue::InputSection(section) => OriginValue::InputSection(section),
-            // SAFETY: linker-synthesized symbols receive a pointer to a chunk
-            // header of the current target after chunk storage becomes stable.
-            OriginValue::OutputChunk(ptr) => {
-                OriginValue::OutputChunk(unsafe { &*ptr.cast::<ChunkHeader<E>>() })
-            }
-            OriginValue::Fragment(fragment) => OriginValue::Fragment(fragment),
-            OriginValue::Symbol(symbol) => OriginValue::Symbol(symbol),
-        }
+    pub(crate) fn origin(&self) -> OriginValue {
+        self.origin.get()
     }
 
     /// Resolves the symbol's input-section reference in `ctx`.
@@ -820,9 +801,11 @@ impl Symbol {
         }
     }
 
-    pub fn output_chunk<E: Layout>(&self) -> Option<&ChunkHeader<E>> {
-        match self.origin::<E>() {
-            OriginValue::OutputChunk(chunk) => Some(chunk),
+    /// Resolves the output chunk through its owning context.
+    #[doc = include_str!("../test/symbol-output-chunk.md")]
+    pub fn output_chunk<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a ChunkHeader<E>> {
+        match self.origin.get() {
+            OriginValue::OutputChunk(chunk) => Some(ctx.symbol_chunk_header(chunk)),
             _ => None,
         }
     }
@@ -850,8 +833,8 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn set_output_chunk<E: Layout>(&mut self, chunk: &ChunkHeader<E>) {
-        self.origin = Origin::new(OriginValue::OutputChunk(std::ptr::from_ref(chunk).cast()));
+    pub(crate) fn set_output_chunk(&mut self, chunk: SymbolChunkId) {
+        self.origin = Origin::new(OriginValue::OutputChunk(chunk));
     }
 
     #[inline]
@@ -1013,7 +996,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
-        let origin = self.origin::<E>();
+        let origin = self.origin();
 
         if let OriginValue::Fragment(frag_ref) = origin {
             let frag = ctx.fragment(frag_ref);

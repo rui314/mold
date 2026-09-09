@@ -55,7 +55,7 @@ use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
-use crate::symbol::{Bins, SymbolId, SymbolSlot, SymbolTable};
+use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
 use crate::util::perf::Timers;
 
 /// Linker-synthesized symbols with well-known names.
@@ -113,6 +113,10 @@ pub struct Context<E: Arch> {
     // ones and shared library symbols, are interned directly through insert() in
     // get_symbol().
     pub symbols: SymbolTable,
+
+    // Append-only registry for synthetic symbol origins. The output chunk
+    // list can be reordered, and the context and chunk vectors can move.
+    symbol_chunks: Vec<ChunkId>,
 
     /// Global symbol keys recorded while input files are parsed, one bin per
     /// Rayon worker plus one for callers outside the pool.
@@ -267,6 +271,7 @@ impl<E: Arch> Context<E> {
             cmdline_args,
             timers: Timers::new(),
             symbols,
+            symbol_chunks: Vec::new(),
             symbol_bins: OnceLock::new(),
             objs: FileList::default(),
             dsos: FileList::default(),
@@ -434,6 +439,21 @@ impl<E: Arch> Context<E> {
     }
 
     /// The header of any chunk. Panics if the chunk does not exist.
+    /// Associates a synthetic symbol with an output chunk of this context.
+    pub fn set_symbol_output_chunk(&mut self, sym: SymbolId, chunk: ChunkId) -> &mut Symbol {
+        let id = SymbolChunkId(
+            u32::try_from(self.symbol_chunks.len()).expect("too many symbol output chunks"),
+        );
+        self.symbol_chunks.push(chunk);
+        let sym = &mut self.symbols[sym];
+        sym.set_output_chunk(id);
+        sym
+    }
+
+    pub(crate) fn symbol_chunk_header(&self, id: SymbolChunkId) -> &ChunkHeader<E> {
+        self.chunk_header(self.symbol_chunks[id.0 as usize])
+    }
+
     pub fn chunk_header(&self, id: ChunkId) -> &ChunkHeader<E> {
         macro_rules! opt {
             ($e:expr) => {

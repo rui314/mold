@@ -1555,22 +1555,6 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     ctx.file_by_priority[0] = Some(FileId::Obj(id));
 }
 
-/// Associates a symbol with a linker-created output chunk. Chunk vectors are
-/// complete before synthetic symbols are attached, so their headers have
-/// stable addresses for the remainder of the link.
-fn set_symbol_output_chunk<E: Arch>(
-    ctx: &mut Context<E>,
-    sym: SymbolId,
-    chunk: ChunkId,
-) -> &mut Symbol {
-    let header = ctx.chunk_header(chunk) as *const ChunkHeader<E>;
-    // SAFETY: the header belongs to stable Context storage and is not removed
-    // after synthetic symbols are attached.
-    let sym = &mut ctx.symbols[sym];
-    sym.set_output_chunk(unsafe { &*header });
-    sym
-}
-
 fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<String> {
     let hdr = ctx.chunk_header(id);
     if !hdr.is_alloc() || hdr.name.is_empty() {
@@ -1730,7 +1714,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     let syms = ctx.objs[obj_id.index()].base.symbols.clone();
     for id in &syms {
         if ctx.symbols[*id].file() == Some(FileId::Obj(obj_id)) {
-            set_symbol_output_chunk(ctx, *id, ChunkId::Symtab).set_imported(false);
+            ctx.set_symbol_output_chunk(*id, ChunkId::Symtab).set_imported(false);
         }
     }
 
@@ -4171,7 +4155,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     ) {
         if let (Some(sym), Some(chunk)) = (sym, chunk) {
             let addr = ctx.chunk_header(chunk).shdr.sh_addr.get();
-            let s = set_symbol_output_chunk(ctx, sym, chunk);
+            let s = ctx.set_symbol_output_chunk(sym, chunk);
             s.value = addr.wrapping_add(bias as u64);
         }
     }
@@ -4183,7 +4167,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     ) {
         if let (Some(sym), Some(chunk)) = (sym, chunk) {
             let shdr = ctx.chunk_header(chunk).shdr;
-            let s = set_symbol_output_chunk(ctx, sym, chunk);
+            let s = ctx.set_symbol_output_chunk(sym, chunk);
             s.value = (shdr.sh_addr.get() + shdr.sh_size.get()).wrapping_add(bias as u64);
         }
     }
@@ -4212,7 +4196,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
             let addr = ehdr.hdr.shdr.sh_addr.get();
             for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
                 if let (Some(sym), Some(first)) = (sym, first) {
-                    let s = set_symbol_output_chunk(ctx, sym, first);
+                    let s = ctx.set_symbol_output_chunk(sym, first);
                     s.value = addr;
                 }
             }
@@ -4221,7 +4205,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     if let (Some(sym), Some(first)) = (ctx.syms.dso_handle, first) {
         let addr = ctx.chunk_header(first).shdr.sh_addr.get();
-        let s = set_symbol_output_chunk(ctx, sym, first);
+        let s = ctx.set_symbol_output_chunk(sym, first);
         s.value = addr;
     }
 
@@ -4303,7 +4287,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // this symbol.
     if let (Some(sym), Some(first)) = (ctx.syms.tls_module_base, first) {
         let dtp = ctx.dtp_addr;
-        let s = set_symbol_output_chunk(ctx, sym, first);
+        let s = ctx.set_symbol_output_chunk(sym, first);
         s.value = dtp;
     }
 
@@ -4330,7 +4314,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         if let Some(c) = find(ctx, b".got").or_else(|| find(ctx, b".toc")) {
             start(ctx, ctx.syms.toc, Some(c), 0x8000);
         } else if let (Some(sym), Some(first)) = (ctx.syms.toc, first) {
-            let s = set_symbol_output_chunk(ctx, sym, first);
+            let s = ctx.set_symbol_output_chunk(sym, first);
             s.value = 0;
         }
     }
@@ -4365,9 +4349,9 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
                 let shdr = ctx.chunk_header(chunk).shdr;
                 let paddr = to_paddr(ctx, shdr.sh_addr.get());
                 let x = ctx.get_symbol(format!("__phys_start_{name}").as_bytes());
-                set_symbol_output_chunk(ctx, x, chunk).value = paddr;
+                ctx.set_symbol_output_chunk(x, chunk).value = paddr;
                 let y = ctx.get_symbol(format!("__phys_stop_{name}").as_bytes());
-                set_symbol_output_chunk(ctx, y, chunk).value = paddr + shdr.sh_size.get();
+                ctx.set_symbol_output_chunk(y, chunk).value = paddr + shdr.sh_size.get();
             }
         }
     }
@@ -4400,7 +4384,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         if ord.kind == SectionOrderKind::Symbol {
             let sym = ctx.get_symbol(ord.name.as_bytes());
             if let Some(first) = first {
-                let _ = set_symbol_output_chunk(ctx, sym, first);
+                let _ = ctx.set_symbol_output_chunk(sym, first);
             }
         }
     }

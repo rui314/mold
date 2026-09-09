@@ -2628,7 +2628,7 @@ impl<E: Arch> ObjectFile<E> {
 
         // Symbols in dead sections and fragments are dropped along with them.
         let is_alive = |sym: &Symbol| -> bool {
-            match sym.origin::<E>() {
+            match sym.origin() {
                 OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
                 OriginValue::InputSection(section) => ctx.input_section(section).is_alive(),
                 _ => true,
