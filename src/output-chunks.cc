@@ -2388,7 +2388,8 @@ MergedSection<E>::MergedSection(std::string_view name, i64 flags, i64 type,
 template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
-                               const ElfShdr<E> &shdr) {
+                               const ElfShdr<E> &shdr,
+                               std::vector<MergedSection<E> *> *cache) {
   if (!(shdr.sh_flags & SHF_MERGE))
     return nullptr;
 
@@ -2403,11 +2404,29 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 
   name = get_merged_output_name(ctx, name, flags, entsize, addralign);
 
+  auto matches = [&](MergedSection *osec) {
+    return name == osec->name && flags == osec->shdr.sh_flags &&
+           shdr.sh_type == osec->shdr.sh_type &&
+           entsize == osec->shdr.sh_entsize;
+  };
+
+  // These fields are immutable while inputs are being converted. Reuse
+  // output sections found by this worker without touching the shared lock.
+  if (cache)
+    for (MergedSection *osec : *cache)
+      if (matches(osec))
+        return osec;
+
+  auto remember = [&](MergedSection *osec) {
+    // Keep lookup bounded even if --unique creates many output sections.
+    if (cache && cache->size() < 32)
+      cache->push_back(osec);
+    return osec;
+  };
+
   auto find = [&]() -> MergedSection * {
     for (ArenaObjectPtr<MergedSection<E>> &osec : ctx.merged_sections)
-      if (name == osec->name && flags == osec->shdr.sh_flags &&
-          shdr.sh_type == osec->shdr.sh_type &&
-          entsize == osec->shdr.sh_entsize)
+      if (matches(osec.get()))
         return osec.get();
     return nullptr;
   };
@@ -2417,19 +2436,19 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   {
     std::shared_lock lock(mu);
     if (MergedSection *osec = find())
-      return osec;
+      return remember(osec);
   }
 
   // Create a new output section.
   std::unique_lock lock(mu);
   if (MergedSection *osec = find())
-    return osec;
+    return remember(osec);
 
   void *buf = ctx.arena.template allocate<MergedSection>(1);
   MergedSection *osec =
     new (buf) MergedSection(name, flags, shdr.sh_type, entsize);
   ctx.merged_sections.emplace_back(osec);
-  return osec;
+  return remember(osec);
 }
 
 template <typename E>

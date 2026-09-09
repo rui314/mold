@@ -970,7 +970,8 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
+void ObjectFile<E>::convert_mergeable_sections(
+  Context<E> &ctx, std::vector<MergedSection<E> *> &cache) {
   // Convert InputSections to MergeableSections
   for (i64 i = 0; i < this->sections.size(); i++) {
     InputSection<E> *isec = this->sections[i];
@@ -982,7 +983,7 @@ void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
       continue;
 
     MergedSection<E> *parent =
-      MergedSection<E>::get_instance(ctx, isec->name(), shdr);
+      MergedSection<E>::get_instance(ctx, isec->name(), shdr, &cache);
 
     if (parent) {
       std::unique_ptr<MergeableSection<E>> m =

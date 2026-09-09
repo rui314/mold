@@ -574,8 +574,9 @@ void create_merged_sections(Context<E> &ctx) {
   }
 
   // Convert InputSections to MergeableSections.
+  tbb::enumerable_thread_specific<std::vector<MergedSection<E> *>> caches;
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->convert_mergeable_sections(ctx);
+    file->convert_mergeable_sections(ctx, caches.local());
   });
 
   // Register each mergeable section with its merged section. There are

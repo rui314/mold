@@ -1317,7 +1317,8 @@ template <typename E>
 class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
-  get_instance(Context<E> &ctx, std::string_view name, const ElfShdr<E> &shdr);
+  get_instance(Context<E> &ctx, std::string_view name, const ElfShdr<E> &shdr,
+               std::vector<MergedSection<E> *> *cache = nullptr);
 
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
@@ -2048,7 +2049,8 @@ public:
   void register_global_symbols(Context<E> &ctx);
   void parse_ehframe(Context<E> &ctx);
   void parse_sframe(Context<E> &ctx) requires supports_sframe<E>;
-  void convert_mergeable_sections(Context<E> &ctx);
+  void convert_mergeable_sections(Context<E> &ctx,
+                                   std::vector<MergedSection<E> *> &cache);
   void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   void resolve_symbol(Context<E> &ctx, i64 idx);
