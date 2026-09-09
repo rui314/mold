@@ -1277,7 +1277,8 @@ impl<E: Arch> ObjectFile<E> {
 
     fn set_decoded_crel(&mut self, index: usize, rels: Box<[E::Rel]>) {
         if self.decoded_crel.len() <= index {
-            self.decoded_crel.resize_with(index + 1, || None);
+            self.decoded_crel
+                .resize_with(self.num_elf_sections, || None);
         }
         debug_assert!(self.decoded_crel[index].is_none());
         self.decoded_crel[index] = Some(DecodedRelocations::new(rels));
