@@ -477,6 +477,9 @@ impl AhoCorasick {
         }
     }
 
+    // This runs once per byte while matching symbol names. Keep the state
+    // in the caller's registers instead of outlining the loop body.
+    #[inline(always)]
     fn walk(&self, c: u8, idx: &mut i32, value: &mut i64) -> i64 {
         let mut j = *idx;
         while j != -1 {
