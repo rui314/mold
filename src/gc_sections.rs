@@ -176,7 +176,7 @@ fn visit_section<'scope, E: Arch>(
     for rel in isec.rels(file) {
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         if let Some(FileId::Dso(dso)) = sym.file() {
-            ctx.dsos[dso.index()].base.set_reachable(true);
+            ctx.dsos[dso.index()].base.mark_reachable();
             continue;
         }
         // Symbol can refer to either a section fragment or an input section.
@@ -233,11 +233,13 @@ fn visit_batch<'scope, E: Arch>(
     map: &'scope StartStopMap<'scope, E>,
     scope: &rayon::Scope<'scope>,
 ) {
-    let mut next = Vec::with_capacity(GC_BATCH);
+    // Exported symbols can make most sections roots already. Such batches
+    // discover no new work and do not need a heap allocation.
+    let mut next = Vec::new();
     for &isec in batch {
         visit_section(ctx, isec, 0, map, scope, &mut next);
         if next.len() >= GC_BATCH {
-            let found = std::mem::replace(&mut next, Vec::with_capacity(GC_BATCH));
+            let found = std::mem::take(&mut next);
             scope.spawn(move |scope| visit_batch(ctx, &found, map, scope));
         }
     }
