@@ -632,9 +632,6 @@ int mold_main(int argc, char **argv) {
   // name is defined twice.
   check_symbol_version_conflicts(ctx);
 
-  // Compute the is_weak bit for each imported symbol.
-  compute_imported_symbol_weakness(ctx);
-
   merge_arena.execute([&] { merge_task.wait(); });
 
   // Sort sections by section attributes so that we'll have to
