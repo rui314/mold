@@ -36,6 +36,7 @@ static void new_object_file(Context<E> &ctx, ReaderContext &rctx,
   ctx.obj_pool.emplace_back(file);
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
+  file->is_reachable = !file->as_needed;
 
   file->parse_symbols(ctx);
   ctx.unsorted_input_files.push_back({rctx.pos, file});
@@ -71,6 +72,7 @@ static void new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
   file->archive_name = archive_name;
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
+  file->is_reachable = !file->as_needed;
 
   ctx.unsorted_input_files.push_back({rctx.pos, file});
 }
@@ -86,6 +88,7 @@ static void new_shared_file(Context<E> &ctx, ReaderContext &rctx,
   SharedFile<E> *file = ctx.arena.template make<SharedFile<E>>(ctx, mf);
   ctx.dso_pool.emplace_back(file);
   file->as_needed = rctx.as_needed;
+  file->is_reachable = !file->as_needed;
 
   file->parse(ctx);
   ctx.unsorted_input_files.push_back({rctx.pos, file});

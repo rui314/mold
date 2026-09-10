@@ -1984,7 +1984,15 @@ public:
   std::string filename;
   bool is_dso = false;
   i64 priority;
+
+  // A file is reachable if it is to be included in the output. Files
+  // given directly on the command line are reachable from the start.
+  // Archive members and --as-needed shared libraries are `as_needed`;
+  // they become reachable when a reachable file refers to them. Symbol
+  // resolution ranks definitions in unreachable files below others, so
+  // this must be correct before the first resolution round.
   Atomic<bool> is_reachable = false;
+
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 

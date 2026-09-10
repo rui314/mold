@@ -228,14 +228,11 @@ static void mark_live_objects(Context<E> &ctx) {
 
   if (!ctx.arg.undefined_glob.empty()) {
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (!file->is_reachable) {
-        for (Symbol<E> *sym : file->get_global_syms()) {
-          if (sym->file == file &&
-              ctx.arg.undefined_glob.find(sym->name()) != -1) {
-            file->is_reachable = true;
-            sym->gc_root = true;
-            break;
-          }
+      for (Symbol<E> *sym : file->get_global_syms()) {
+        if (sym->file == file &&
+            ctx.arg.undefined_glob.find(sym->name()) != -1) {
+          file->is_reachable = true;
+          sym->gc_root = true;
         }
       }
     });
@@ -244,11 +241,6 @@ static void mark_live_objects(Context<E> &ctx) {
   std::vector<InputFile<E> *> roots;
   append(roots, ctx.objs);
   append(roots, ctx.dsos);
-
-  for (InputFile<E> *file : roots)
-    if (!file->as_needed)
-      file->is_reachable = true;
-
   std::erase_if(roots, [](InputFile<E> *file) { return !file->is_reachable; });
   mark_live_objects(ctx, roots);
 }

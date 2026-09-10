@@ -3,8 +3,10 @@
 
 test_cflags -static || skip
 
-cat <<EOF | $CC -o $t/a.o -c -xc -
+cat <<EOF | $CC -o $t/a.o -c -xc - -fdata-sections
 int foo = 1;
+int foo2 = 1;
+int bar = 1;
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -22,8 +24,19 @@ cat <<EOF | $CC -o $t/e.o -c -xc -
 int main() {}
 EOF
 
-$CC -B. -o $t/exe2 $t/d.a $t/e.o -Wl,--undefined-glob='foo*' -Wl,--gc-sections
+$CC -B. -o $t/exe1 $t/d.a $t/e.o -Wl,--undefined-glob='foo*' -Wl,--gc-sections
+readelf -W --symbols $t/exe1 > $t/log1
+grep ' foo$' $t/log1
+grep ' foo2$' $t/log1
+grep ' foobar$' $t/log1
+not grep ' bar$' $t/log1
+not grep ' baz$' $t/log1
+
+$CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o $t/e.o \
+  -Wl,--undefined-glob='foo*' -Wl,--gc-sections
 readelf -W --symbols $t/exe2 > $t/log2
-grep foo $t/log2
-grep foobar $t/log2
-not grep baz $t/log2
+grep ' foo$' $t/log2
+grep ' foo2$' $t/log2
+grep ' foobar$' $t/log2
+not grep ' bar$' $t/log2
+not grep ' baz$' $t/log2
