@@ -3739,7 +3739,7 @@ inline bool ObjectFile<E>::is_discarded_comdat(const ElfSym<E> &esym) {
 template <typename E>
 u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (SectionFragment<E> *frag = get_frag()) {
-    if (!frag->is_alive) {
+    if (!frag->is_alive) [[unlikely]] {
       // This condition is met if a non-alloc section refers an
       // alloc section and if the referenced piece of data is
       // garbage-collected. Typically, this condition occurs if a
@@ -3750,7 +3750,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     return frag->get_addr(ctx) + value;
   }
 
-  if (has_copyrel) {
+  if (has_copyrel) [[unlikely]] {
     return is_copyrel_readonly
       ? ctx.copyrel_relro->shdr.sh_addr + value
       : ctx.copyrel->shdr.sh_addr + value;
@@ -3769,7 +3769,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (!isec)
     return value; // absolute symbol
 
-  if (!isec->is_alive()) {
+  if (!isec->is_alive()) [[unlikely]] {
     if (isec->is_icf_removed())
       return isec->icf_leader->get_addr() + value;
 
