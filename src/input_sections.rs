@@ -382,7 +382,7 @@ impl<E: Arch> InputSection<E> {
 
     #[inline]
     pub fn set_nobits(&self) {
-        self.flags.fetch_or(IS_NOBITS, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_NOBITS);
     }
 
     #[inline]
@@ -408,17 +408,17 @@ impl<E: Arch> InputSection<E> {
 
     #[inline]
     pub fn set_visited(&self) {
-        self.flags.fetch_or(IS_VISITED, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_VISITED);
     }
 
     #[inline]
     pub fn set_address_taken(&self) {
-        self.flags.fetch_or(IS_ADDRESS_TAKEN, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_ADDRESS_TAKEN);
     }
 
     #[inline]
     pub fn set_icf_removed(&self) {
-        self.flags.fetch_or(IS_ICF_REMOVED, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_ICF_REMOVED);
     }
 
     /// Marks the section dead. Returns true if it was alive; the caller is
@@ -430,7 +430,7 @@ impl<E: Arch> InputSection<E> {
 
     #[inline]
     pub fn revive(&self) {
-        self.flags.fetch_or(IS_ALIVE, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_ALIVE);
     }
 
     /// The section contents, decompressed if [`Self::uncompress`] has run.
@@ -541,7 +541,7 @@ impl<E: Arch> InputSection<E> {
         let mut buf = vec![0u8; self.sh_size as usize];
         self.copy_contents_to(file, name, input_size, &mut buf);
         self.contents = leak_bytes(buf).as_ptr() as usize;
-        self.flags.fetch_or(IS_UNCOMPRESSED, Ordering::Relaxed);
+        util::atomic_or(&self.flags, IS_UNCOMPRESSED);
     }
 
     /// Copies the (decompressed) contents into `buf`, which must be
@@ -664,7 +664,7 @@ impl<E: Arch> InputSection<E> {
         debug_assert_ne!(relsec_idx, NO_RELSEC);
         self.relsec_idx = relsec_idx;
         if has_relocs {
-            self.flags.fetch_or(HAS_RELOCS, Ordering::Relaxed);
+            util::atomic_or(&self.flags, HAS_RELOCS);
         }
     }
 

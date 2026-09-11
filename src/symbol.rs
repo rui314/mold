@@ -520,7 +520,7 @@ impl Symbol {
     #[inline]
     pub fn set_skip_dso(&self, on: bool) {
         if on {
-            self.mu.fetch_or(SYMBOL_SKIP_DSO, Ordering::Relaxed);
+            crate::util::atomic_or(&self.mu, SYMBOL_SKIP_DSO);
         } else {
             self.mu.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
         }
@@ -657,7 +657,7 @@ impl Symbol {
     #[inline]
     pub fn add_flags(&self, flags: u8) {
         debug_assert_eq!(flags & WRITE_TO_SYMTAB, 0);
-        self.flags.fetch_or(flags, Ordering::Relaxed);
+        crate::util::atomic_or(&self.flags, flags);
     }
 
     #[inline]
@@ -667,7 +667,7 @@ impl Symbol {
 
     #[inline]
     pub fn set_write_to_symtab(&self) {
-        self.flags.fetch_or(WRITE_TO_SYMTAB, Ordering::Relaxed);
+        crate::util::atomic_or(&self.flags, WRITE_TO_SYMTAB);
     }
 
     #[inline]

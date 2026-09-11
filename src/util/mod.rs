@@ -16,6 +16,17 @@ pub mod tar;
 
 pub(crate) use prefetch::prefetch;
 
+/// Sets flag bits without taking exclusive ownership of a cache line when
+/// all requested bits are already set. Callers needing the previous value
+/// must use `fetch_or` directly.
+#[inline]
+pub(crate) fn atomic_or(atomic: &std::sync::atomic::AtomicU8, bits: u8) {
+    use std::sync::atomic::Ordering::Relaxed;
+    if atomic.load(Relaxed) & bits != bits {
+        atomic.fetch_or(bits, Relaxed);
+    }
+}
+
 /// Requests transparent huge pages for a mapped byte range on Linux-based
 /// targets.
 ///
