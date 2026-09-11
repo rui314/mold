@@ -1001,6 +1001,7 @@ impl Symbol {
         if let OriginValue::Fragment(frag_ref) = origin {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
+                std::hint::cold_path();
                 // This condition is met if a non-alloc section refers an
                 // alloc section and if the referenced piece of data is
                 // garbage-collected. Typically, this condition occurs if a
@@ -1011,6 +1012,7 @@ impl Symbol {
         }
 
         if self.has_copyrel() {
+            std::hint::cold_path();
             let chunk = if self.is_copyrel_readonly() {
                 &ctx.copyrel_relro
             } else {
@@ -1033,6 +1035,7 @@ impl Symbol {
             OriginValue::InputSection(section) => {
                 let isec = ctx.input_section(section);
                 if !isec.is_alive() {
+                    std::hint::cold_path();
                     if let Some(leader) = isec.icf_leader() {
                         return ctx.section(leader).addr(ctx) + self.value;
                     }
