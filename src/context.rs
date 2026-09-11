@@ -248,6 +248,11 @@ impl<E: Arch> Context<E> {
             ..SyntheticSymbols::default()
         };
         let page_size = args.page_size;
+        let timers = if args.perf {
+            Timers::new()
+        } else {
+            Timers::disabled()
+        };
 
         Context {
             reldyn: RelDynSection::<E>::new(&args),
@@ -269,7 +274,7 @@ impl<E: Arch> Context<E> {
             note_package: NotePackageSection::new(),
             args,
             cmdline_args,
-            timers: Timers::new(),
+            timers,
             symbols,
             symbol_chunks: Vec::new(),
             symbol_bins: OnceLock::new(),

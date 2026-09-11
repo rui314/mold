@@ -74,9 +74,9 @@ struct Record {
 
 /// Collects wall-clock and CPU timing records for the passes of a link.
 /// Cloning shares the underlying records.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Timers {
-    records: Arc<Mutex<Vec<Record>>>,
+    records: Option<Arc<Mutex<Vec<Record>>>>,
 }
 
 /// A running timer, stopped when dropped.
@@ -146,22 +146,49 @@ fn rusage() -> (f64, f64) {
     (to_secs(user), to_secs(kernel))
 }
 
+impl Default for Timers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Timers {
     pub fn new() -> Self {
-        Timers::default()
+        Timers {
+            records: Some(Arc::new(Mutex::new(Vec::new()))),
+        }
+    }
+
+    /// Skips clock reads, system calls and shared recording when --perf is off.
+    pub fn disabled() -> Self {
+        Timers { records: None }
+    }
+
+    fn inactive(&self) -> Timer {
+        Timer {
+            timers: self.clone(),
+            index: 0,
+            stopped: true,
+        }
     }
 
     /// Starts a timer, nested in the timer still running that started last.
     pub fn start(&self, name: &str) -> Timer {
-        let records = self.records.lock().unwrap();
+        let Some(records) = &self.records else {
+            return self.inactive();
+        };
+        let records = records.lock().unwrap();
         let parent = records.iter().rposition(|r| r.end.is_none());
         drop(records);
         self.start_child(name, parent)
     }
 
     fn start_child(&self, name: &str, parent: Option<usize>) -> Timer {
+        let Some(records) = &self.records else {
+            return self.inactive();
+        };
         let (user, sys) = rusage();
-        let mut records = self.records.lock().unwrap();
+        let mut records = records.lock().unwrap();
         let index = records.len();
         records.push(Record {
             name: name.to_string(),
@@ -186,7 +213,7 @@ impl Timers {
 
     fn stop(&self, index: usize) {
         let (user, sys) = rusage();
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.as_ref().unwrap().lock().unwrap();
         let record = &mut records[index];
         if record.end.is_none() {
             record.end = Some(Instant::now());
@@ -196,7 +223,10 @@ impl Timers {
     }
 
     pub fn print(&self) {
-        let mut records = self.records.lock().unwrap();
+        let Some(records) = &self.records else {
+            return;
+        };
+        let mut records = records.lock().unwrap();
         let now = Instant::now();
         for r in records.iter_mut() {
             if r.end.is_none() {
@@ -263,5 +293,33 @@ impl TimerHandle {
 impl Drop for Timer {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_recording_includes_nested_and_background_timers() {
+        for timers in [Timers::new(), Timers::disabled()] {
+            let mut root = timers.start("root");
+            let child = root.child("child");
+            let handle = root.handle();
+            std::thread::spawn(move || drop(handle.child("background")))
+                .join()
+                .unwrap();
+            drop(child);
+            root.stop();
+            root.stop();
+            if let Some(records) = &timers.records {
+                let records = records.lock().unwrap();
+                assert_eq!(records.len(), 3);
+                assert!(records.iter().all(|record| record.end.is_some()));
+                assert_eq!(records[0].children, [1, 2]);
+            } else {
+                assert!(root.timers.records.is_none());
+            }
+        }
     }
 }
