@@ -316,9 +316,8 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
                 ..
             } = &*ctx;
             objs.par_iter()
-                .filter(|file| !file.base.is_reachable())
-                .filter_map(|file| {
-                    file.base.global_symbols().iter().copied().find(|&id| {
+                .flat_map_iter(|file| {
+                    file.base.global_symbols().iter().copied().filter(|&id| {
                         let sym = &symbols[id];
                         sym.file() == Some(FileId::Obj(file.id()))
                             && args.undefined_glob.find(sym.name()) != -1
@@ -335,17 +334,11 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
 
     let mut roots: Vec<FileId> = Vec::new();
     for file in &ctx.objs {
-        if !file.base.as_needed {
-            file.base.set_reachable(true);
-        }
         if file.base.is_reachable() {
             roots.push(FileId::Obj(file.id()));
         }
     }
     for file in &ctx.dsos {
-        if !file.base.as_needed {
-            file.base.set_reachable(true);
-        }
         if file.base.is_reachable() {
             roots.push(FileId::Dso(file.id()));
         }

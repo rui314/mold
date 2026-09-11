@@ -107,6 +107,7 @@ fn new_object_file<E: Arch>(
     }
     let mut file = ObjectFile::<E>::new(mf, archive_name.to_string());
     file.base.as_needed = rctx.in_lib || (!archive_name.is_empty() && !rctx.whole_archive);
+    file.base.set_reachable(!file.base.as_needed);
     file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     file
 }
@@ -133,6 +134,7 @@ fn new_shared_file<E: Arch>(
     }
     let mut file = SharedFile::<E>::new(mf, &mut ctx.symbol_bin());
     file.base.as_needed = rctx.as_needed;
+    file.base.set_reachable(!file.base.as_needed);
     file
 }
 
@@ -172,6 +174,7 @@ fn new_lto_object<E: Arch>(
     }
     let mut file = crate::lto::read_lto_object(ctx, mf, archive_name)?;
     file.base.as_needed = rctx.in_lib || (!file.archive_name.is_empty() && !rctx.whole_archive);
+    file.base.set_reachable(!file.base.as_needed);
     file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     Some(file)
 }

@@ -333,6 +333,10 @@ pub struct InputFile<E: Layout> {
     /// breaks ties in favor of earlier files.
     pub priority: u32,
     file_index: u32,
+    /// Files explicitly included in the output are reachable from creation.
+    /// Archive members and --as-needed DSOs become reachable when referenced.
+    /// Resolution ranks unreachable definitions lower, so this must be set
+    /// before the first symbol resolution pass.
     pub is_reachable: AtomicBool,
     pub is_little_endian: bool,
     pub e_flags: u32,
