@@ -103,19 +103,19 @@ pub struct OutputFile {
 /// the range inside the syscall, on one thread, which takes ~1.8 s for a
 /// 5 GiB file.
 #[cfg(any(target_os = "android", target_os = "linux"))]
-fn preallocate(file: &File, size: u64) {
+fn preallocate(file: &File, offset: u64, size: u64) {
     // SAFETY: fstatfs and fallocate only inspect and act on a valid open
     // descriptor; the statfs buffer is fully written before it is read.
     unsafe {
         let mut fs: libc::statfs = std::mem::zeroed();
         if libc::fstatfs(file.as_raw_fd(), &mut fs) != 0 || fs.f_type != libc::TMPFS_MAGIC as _ {
-            libc::fallocate(file.as_raw_fd(), 0, 0, size as libc::off_t);
+            libc::fallocate(file.as_raw_fd(), 0, offset as libc::off_t, size as libc::off_t);
         }
     }
 }
 
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
-fn preallocate(_file: &File, _size: u64) {}
+fn preallocate(_file: &File, _offset: u64, _size: u64) {}
 
 fn map_file(file: &File, size: u64) -> Storage {
     if size == 0 {
@@ -233,7 +233,7 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: fchmod failed: {e}", tmp.display()));
         file.set_len(size)
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
-        preallocate(&file, size);
+        preallocate(&file, 0, size);
 
         let storage = map_file(&file, size);
         let output = OutputFile {
@@ -330,7 +330,10 @@ impl OutputFile {
             (Storage::Mmap { map, len }, Some(file)) => {
                 file.set_len(new_len as u64)
                     .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
-                preallocate(file, new_len as u64);
+                // Allocate only the appended range. Reallocating the already
+                // written prefix can flush dirty extents on filesystems such
+                // as btrfs and serialize a large part of .gdb_index output.
+                preallocate(file, *len as u64, size as u64);
                 if new_len <= map.len() {
                     *len = new_len;
                 } else {
