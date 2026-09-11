@@ -131,7 +131,7 @@ fn new_shared_file<E: Arch>(
         }
         _ => {}
     }
-    let mut file = SharedFile::<E>::new(mf);
+    let mut file = SharedFile::<E>::new(mf, &mut ctx.symbol_bin());
     file.base.as_needed = rctx.as_needed;
     file
 }

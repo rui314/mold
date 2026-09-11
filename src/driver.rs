@@ -188,15 +188,8 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
             }
         }
 
-        // Bins keep pointers to the files' SymbolId slots until gather.
-        // Register only the DSOs retained above, so every slot outlives that
-        // gather even when duplicate sonames were present on the command line.
-        {
-            let mut bin = ctx.symbol_bin();
-            for file in &mut dsos {
-                file.record_global_symbols(&mut bin);
-            }
-        }
+        // FileList keeps even discarded DSOs in its backing pool, so the
+        // symbol slots recorded during parsing remain valid until gather.
         ctx.dsos = dsos;
     }
 

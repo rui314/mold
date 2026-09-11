@@ -3021,11 +3021,6 @@ pub struct SharedFile<E: Layout> {
     pub symbols2: Vec<SymbolId>,
     pub versyms: Vec<u16>,
 
-    /// Symbol table keys for `base.symbols` and `symbols2`, interned by
-    /// `gather_symbols`.
-    pub symbol_keys: Vec<(&'static [u8], &'static [u8])>,
-    pub symbol2_keys: Vec<Option<(&'static [u8], &'static [u8])>>,
-
     // Used by get_symbols_at()
     sorted_syms: OnceLock<Vec<SymbolId>>,
 }
@@ -3047,7 +3042,7 @@ impl<E: Arch> SharedFile<E> {
         DsoId(self.base.file_index)
     }
 
-    pub fn new(mf: &'static MappedFile) -> SharedFile<E> {
+    pub(crate) fn new(mf: &'static MappedFile, bins: &mut Bins<SymbolSlot>) -> SharedFile<E> {
         let base = InputFile::<E>::parse(mf, &FileName(&mf.name.to_string_lossy(), ""));
         let mut file = SharedFile {
             base,
@@ -3055,11 +3050,9 @@ impl<E: Arch> SharedFile<E> {
             version_strings: Vec::new(),
             symbols2: Vec::new(),
             versyms: Vec::new(),
-            symbol_keys: Vec::new(),
-            symbol2_keys: Vec::new(),
             sorted_syms: OnceLock::new(),
         };
-        file.parse();
+        file.parse(bins);
         file
     }
 
@@ -3093,7 +3086,7 @@ impl<E: Arch> SharedFile<E> {
         self.base.filename.as_bytes().to_vec()
     }
 
-    fn parse(&mut self) {
+    fn parse(&mut self, bins: &mut Bins<SymbolSlot>) {
         let Some(symtab_idx) = self.base.find_section(SHT_DYNSYM) else {
             return;
         };
@@ -3112,7 +3105,14 @@ impl<E: Arch> SharedFile<E> {
         }
         // Only the symbols this file exports are kept, so the table is
         // rebuilt rather than read in place.
-        self.base.elf_syms = Cow::Owned(Vec::new());
+        let num_syms = esyms.len() - first;
+        self.base.elf_syms = Cow::Owned(Vec::with_capacity(num_syms));
+        self.versyms.reserve(num_syms);
+        // These reservations keep recorded slots stable until gather, even
+        // while parsing appends symbols. FileList retains the backing files
+        // when duplicate SONAMEs are removed from its live list.
+        self.base.symbols.reserve(num_syms);
+        self.symbols2.reserve(num_syms);
 
         let vers: Vec<u16> = match self.base.find_section(SHT_GNU_VERSYM) {
             Some(idx) => self
@@ -3182,9 +3182,8 @@ impl<E: Arch> SharedFile<E> {
                 && (ver as usize) < self.version_strings.len()
                 && !self.version_strings[ver as usize].is_empty();
 
-            let versioned_key = || -> (&'static [u8], &'static [u8]) {
-                let key = leak_bytes([name, b"@", self.version_strings[ver as usize]].concat());
-                (key, name)
+            let versioned_key = || {
+                leak_bytes([name, b"@", self.version_strings[ver as usize]].concat())
             };
 
             // Symbol resolution involving symbol versioning is tricky because one
@@ -3201,47 +3200,37 @@ impl<E: Arch> SharedFile<E> {
             // and `foo@VERSION` as usual, but with information to forward
             // references to `foo@VERSION` to `foo`. After name resolution, we
             // visit all symbol references to redirect `foo@VERSION` to `foo`.
-            if !has_version {
+            let (key, alias) = if !has_version {
                 // Unversioned symbol
-                self.symbol_keys.push((name, name));
-                self.symbol2_keys.push(None);
+                (name, None)
             } else if esym.is_undef() || vers[i] & VERSYM_HIDDEN as u16 != 0 {
                 // Versioned non-default symbol, or undefined reference whose
                 // version comes from .gnu.version_r.
-                self.symbol_keys.push(versioned_key());
-                self.symbol2_keys.push(None);
+                (versioned_key(), None)
             } else {
                 // Versioned default symbol
-                self.symbol_keys.push((name, name));
-                self.symbol2_keys.push(Some(versioned_key()));
+                (name, Some(versioned_key()))
+            };
+            self.base.symbols.push(SymbolId::DISCARDED_COMDAT);
+            self.symbols2.push(SymbolId::NONE);
+            bins.record(
+                key,
+                name.len(),
+                SymbolSlot::new(self.base.symbols.last_mut().unwrap()),
+            );
+            if let Some(key) = alias {
+                bins.record(
+                    key,
+                    name.len(),
+                    SymbolSlot::new(self.symbols2.last_mut().unwrap()),
+                );
             }
         }
 
         self.base.first_global = 0;
-        self.base.symbols = vec![SymbolId::DISCARDED_COMDAT; self.base.elf_syms.len()];
-        self.symbols2 = vec![SymbolId::NONE; self.base.elf_syms.len()];
 
         static COUNTER: Counter = Counter::new("dso_syms");
         COUNTER.add(self.base.elf_syms.len() as i64);
-    }
-
-    /// Records symbols and default-version aliases in this worker's bin.
-    /// Both slot arrays are complete and stable until gather.
-    pub(crate) fn record_global_symbols(&mut self, bins: &mut Bins<SymbolSlot>) {
-        for (i, (key, name)) in std::mem::take(&mut self.symbol_keys)
-            .into_iter()
-            .enumerate()
-        {
-            bins.record(key, name.len(), SymbolSlot::new(&mut self.base.symbols[i]));
-        }
-        for (i, alias) in std::mem::take(&mut self.symbol2_keys)
-            .into_iter()
-            .enumerate()
-        {
-            if let Some((key, name)) = alias {
-                bins.record(key, name.len(), SymbolSlot::new(&mut self.symbols2[i]));
-            }
-        }
     }
 
     pub fn dt_needed(&self) -> Vec<&'static [u8]> {
