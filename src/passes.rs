@@ -2875,31 +2875,6 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-// Compute the is_weak bit for each imported symbol.
-//
-// If all references to a shared symbol is weak, the symbol is marked
-// as weak in .dynsym.
-pub fn compute_imported_symbol_weakness<E: Arch>(ctx: &mut Context<E>) {
-    let _t = ctx.timer("compute_imported_symbol_weakness");
-    let strong: Vec<SymbolId> = ctx
-        .objs
-        .par_iter()
-        .flat_map_iter(|file| {
-            (file.base.first_global..file.base.elf_syms.len()).filter_map(|i| {
-                let esym = &file.base.elf_syms[i];
-                let id = file.base.symbols[i];
-                (esym.is_undef()
-                    && !esym.is_weak()
-                    && matches!(ctx.symbols[id].file(), Some(FileId::Dso(_))))
-                .then_some(id)
-            })
-        })
-        .collect();
-    for id in strong {
-        ctx.symbols[id].set_weak(false);
-    }
-}
-
 // Report all undefined symbols, grouped by symbol.
 pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
     const MAX_ERRORS: usize = 3;
@@ -3344,7 +3319,7 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
 
     // Export symbols that are not hidden or marked as local.
     // We also want to mark imported symbols as such.
-    let updates: Vec<(SymbolId, bool, bool)> = {
+    let updates: Vec<(SymbolId, bool, bool, bool)> = {
         let ctx_ref: &Context<E> = ctx;
         ctx_ref
             .objs
@@ -3355,12 +3330,20 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
                     .global_symbols()
                     .iter()
                     .copied()
-                    .filter_map(move |id| {
+                    .enumerate()
+                    .filter_map(move |(i, id)| {
                         let sym = &ctx_ref.symbols[id];
 
                         // If we are using a symbol in a DSO, we need to import it.
                         if let Some(FileId::Dso(_)) = sym.file() {
-                            return Some((id, true, false));
+                            // Shared symbols remain weak only if every undefined
+                            // reference is weak. Fragment dummies have no ElfSym.
+                            let strong = file
+                                .base
+                                .elf_syms
+                                .get(file.base.first_global + i)
+                                .is_some_and(|esym| esym.is_undef() && !esym.is_weak());
+                            return Some((id, true, false, strong));
                         }
 
                         // If we have a definition of a symbol, we may want to export it.
@@ -3368,20 +3351,23 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
                             // Exported symbols are marked as imported as well by default
                             // for DSOs.
                             let imported = ctx_ref.args.shared && !is_protected(ctx_ref, sym);
-                            return Some((id, imported, true));
+                            return Some((id, imported, true, false));
                         }
                         None
                     })
             })
             .collect()
     };
-    for (id, imported, exported) in updates {
+    for (id, imported, exported, strong) in updates {
         let sym = &mut ctx.symbols[id];
         if imported {
             sym.set_imported(true);
         }
         if exported {
             sym.set_exported(true);
+        }
+        if strong {
+            sym.set_weak(false);
         }
     }
 

@@ -419,9 +419,6 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     // name is defined twice.
     passes::check_symbol_version_conflicts(&ctx);
 
-    // Compute the is_weak bit for each imported symbol.
-    passes::compute_imported_symbol_weakness(&mut ctx);
-
     wait_for_background(merge_receiver, "non-allocated string merging").finish(&mut ctx);
 
     // Sort sections by section attributes so that we'll have to
