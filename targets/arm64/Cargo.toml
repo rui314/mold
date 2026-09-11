@@ -1,6 +1,6 @@
 [package]
 name = "mold-target-arm64"
-version = "2.42.0"
+version = "2.42.1"
 edition = "2021"
 description = "The mold linker instantiated for arm64"
 license = "MIT"

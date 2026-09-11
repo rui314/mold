@@ -1,6 +1,6 @@
 [package]
 name = "mold"
-version = "2.42.0"
+version = "2.42.1"
 edition = "2021"
 description = "A high-performance ELF linker, rewritten in Rust"
 license = "MIT"

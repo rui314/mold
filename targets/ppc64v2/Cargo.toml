@@ -1,6 +1,6 @@
 [package]
 name = "mold-target-ppc64v2"
-version = "2.42.0"
+version = "2.42.1"
 edition = "2021"
 description = "The mold linker instantiated for ppc64v2"
 license = "MIT"

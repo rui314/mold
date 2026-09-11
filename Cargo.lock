@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "mold"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "blake3",
  "bstr",
@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "mold-cli"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mimalloc",
  "mold",
@@ -298,147 +298,147 @@ dependencies = [
 
 [[package]]
 name = "mold-target-arm32"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-arm32be"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-arm64"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-arm64be"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-i386"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-loongarch32"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-loongarch64"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-m68k"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-ppc32"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-ppc64v1"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-ppc64v2"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-riscv32"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-riscv32be"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-riscv64"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-riscv64be"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-s390x"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-sh4"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-sh4be"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-sparc64"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-target-x86_64"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "mold",
 ]
 
 [[package]]
 name = "mold-tests"
-version = "2.42.0"
+version = "2.42.1"
 dependencies = [
  "libc",
 ]
