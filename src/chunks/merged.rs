@@ -36,6 +36,21 @@ impl MergedSectionId {
     }
 }
 
+/// A conversion worker's bounded cache. Keys are copied because the shared
+/// section vector can move as other workers add sections; IDs remain stable.
+#[derive(Default)]
+pub struct MergedSectionCache {
+    entries: Vec<(MergedSectionKey, MergedSectionId)>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct MergedSectionKey {
+    name: &'static BStr,
+    flags: u64,
+    sh_type: u32,
+    entsize: u64,
+}
+
 /// The deterministically ordered fragments and the two output sizes of one
 /// hash-table shard.
 #[derive(Debug)]
@@ -271,6 +286,7 @@ impl<E: Layout> MergedSection<E> {
         sections: &RwLock<Vec<MergedSection<E>>>,
         name: &'static BStr,
         shdr: &ElfShdr<E>,
+        cache: &mut MergedSectionCache,
     ) -> Option<MergedSectionId> {
         let sh_flags = shdr.sh_flags.get();
         if sh_flags & SHF_MERGE as u64 == 0 {
@@ -291,6 +307,22 @@ impl<E: Layout> MergedSection<E> {
         }
 
         let name = merged_output_name(args, name, flags, entsize, addralign);
+        let key = MergedSectionKey {
+            name,
+            flags,
+            sh_type: shdr.sh_type.get(),
+            entsize,
+        };
+        if let Some((_, id)) = cache.entries.iter().find(|(k, _)| *k == key) {
+            return Some(*id);
+        }
+        let mut remember = |id| {
+            // Bound lookup cost even when --unique creates many sections.
+            if cache.entries.len() < 32 {
+                cache.entries.push((key, id));
+            }
+            Some(id)
+        };
         let find = |sections: &[MergedSection<E>]| {
             sections
                 .iter()
@@ -303,18 +335,18 @@ impl<E: Layout> MergedSection<E> {
                 .map(|i| MergedSectionId(i as u32))
         };
 
-        // Search for an exiting output section.
+        // Search for an existing output section.
         if let Some(id) = find(&sections.read().unwrap()) {
-            return Some(id);
+            return remember(id);
         }
 
         // Create a new output section.
         let mut sections = sections.write().unwrap();
         if let Some(id) = find(&sections) {
-            return Some(id);
+            return remember(id);
         }
         sections.push(MergedSection::new(name, flags, shdr.sh_type.get(), entsize));
-        Some(MergedSectionId(sections.len() as u32 - 1))
+        remember(MergedSectionId(sections.len() as u32 - 1))
     }
 
     pub fn insert(

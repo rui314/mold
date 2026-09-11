@@ -996,6 +996,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
             &merged,
             BStr::new(b".comment"),
             &shdr,
+            &mut crate::chunks::merged::MergedSectionCache::default(),
         );
         ctx.merged_sections = merged.into_inner().unwrap();
     }
@@ -1011,8 +1012,17 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
             ..
         } = ctx;
         let merged = RwLock::new(std::mem::take(merged_sections));
-        objs.par_iter_mut()
-            .for_each(|file| file.convert_mergeable_sections(args, &merged));
+        // Keep a cache for each actual worker, including across Rayon jobs.
+        // Padding keeps independent workers' mutexes off the same cache line.
+        #[repr(align(128))]
+        struct Cache(Mutex<crate::chunks::merged::MergedSectionCache>);
+        let workers = rayon::current_num_threads();
+        let caches: Vec<_> = (0..=workers).map(|_| Cache(Mutex::default())).collect();
+        objs.par_iter_mut().for_each(|file| {
+            let worker = rayon::current_thread_index().unwrap_or(workers);
+            let mut cache = caches[worker].0.lock().unwrap();
+            file.convert_mergeable_sections(args, &merged, &mut cache);
+        });
         *merged_sections = merged.into_inner().unwrap();
     }
     drop(t);

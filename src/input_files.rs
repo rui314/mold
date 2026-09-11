@@ -17,7 +17,7 @@ use std::sync::{OnceLock, RwLock};
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::merged::MergedSection;
+use crate::chunks::merged::{MergedSection, MergedSectionCache};
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
@@ -2289,6 +2289,7 @@ impl<E: Arch> ObjectFile<E> {
         &mut self,
         ctx_args: &Args,
         merged: &RwLock<Vec<MergedSection<E>>>,
+        cache: &mut MergedSectionCache,
     ) {
         let mut sections = std::mem::take(&mut self.sections);
         for i in 0..sections.len() {
@@ -2300,7 +2301,7 @@ impl<E: Arch> ObjectFile<E> {
             }
             let name = isec.name(self);
             let Some(parent) =
-                MergedSection::get_instance(ctx_args, merged, name, &self.base.shdrs[i])
+                MergedSection::get_instance(ctx_args, merged, name, &self.base.shdrs[i], cache)
             else {
                 continue;
             };
