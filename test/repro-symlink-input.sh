@@ -23,5 +23,5 @@ for name in relative absolute; do
     test -f $t/$name.o.repro$PWD/$t/alias-dir/b.o
   fi
   (cd $t/$name.o.repro; "$ld" @response.txt)
-  nm $t/$name.o.repro$PWD/$t/$name.o | grep -E ' T foo$'
+  readelf -Ws "$t/$name.o.repro$PWD/$t/$name.o" | grep -E ' FUNC +GLOBAL +DEFAULT .* [0-9]+ +foo$'
 done

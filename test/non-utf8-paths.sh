@@ -29,7 +29,7 @@ printf '"--output=%s" "%s"\n' "$t/$output" "$t/$input" > $t/output.rsp
 ./mold -r --repro @$t/output.rsp
 
 for file in argv.o response.o library.o script.o thin.o "$output"; do
-  nm "$t/$file" | grep -E ' T foo$'
+  readelf -Ws "$t/$file" | grep -E ' FUNC +GLOBAL +DEFAULT .* [0-9]+ +foo$'
 done
 
 # Replaying a reproduction must retain the raw names and spaces too.
@@ -37,4 +37,4 @@ ld=$PWD/mold
 rm -rf "$t/$output.repro"
 tar -C $t -xf "$t/$output.repro.tar"
 (cd "$t/$output.repro"; "$ld" @response.txt)
-nm "$t/$output.repro$PWD/$t/$output" | grep -E ' T foo$'
+readelf -Ws "$t/$output.repro$PWD/$t/$output" | grep -E ' FUNC +GLOBAL +DEFAULT .* [0-9]+ +foo$'
