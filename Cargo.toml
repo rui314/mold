@@ -37,6 +37,7 @@ zstd = "0.13"
 [profile.release]
 debug = 1
 codegen-units = 16
+panic = "abort"
 
 [profile.dev]
 opt-level = 1
