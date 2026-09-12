@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: rui314/setup-mold@staging
     - run: sudo ./install-build-deps.sh
     - name: build
@@ -39,8 +39,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
-    - uses: redhat-actions/podman-login@v1
+    - uses: actions/checkout@v7
+    - uses: redhat-actions/podman-login@v2
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: install-build-deps
       run: |
         sudo ./install-build-deps.sh
@@ -89,7 +89,7 @@ jobs:
     timeout-minutes: 60
     container: ${{ matrix.distro }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: ./install-build-deps.sh
     - name: build
       run: |
@@ -115,7 +115,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: build
       run: |
         mkdir build
@@ -127,7 +127,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: build
       run: |
         mkdir build
@@ -139,7 +139,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -158,7 +158,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Build and test
       uses: vmactions/freebsd-vm@v1
       with:

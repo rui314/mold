@@ -43,13 +43,13 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Install Podman
       run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
 
     - name: Login to GitHub Container Registry
-      uses: redhat-actions/podman-login@v1
+      uses: redhat-actions/podman-login@v2
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
@@ -71,7 +71,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Build and Archive
       shell: pwsh
