@@ -1280,39 +1280,6 @@ impl OutputSectionBuilder {
     }
 }
 
-/// The output-section map cached by each Rayon worker. This is the equivalent
-/// of C++ mold's `enumerable_thread_specific<MapType>`.
-struct OutputSectionCaches(Vec<UnsafeCell<HashMap<OutputSectionKey, Arc<OutputSectionBuilder>>>>);
-
-// SAFETY: a Rayon worker has a unique index and executes at most one closure
-// at a time. The only caller does not invoke nested parallel work while using
-// its cache, and the caches are dropped after the parallel traversal joins.
-unsafe impl Sync for OutputSectionCaches {}
-
-impl OutputSectionCaches {
-    fn new() -> OutputSectionCaches {
-        OutputSectionCaches(
-            (0..=rayon::current_num_threads())
-                .map(|_| UnsafeCell::new(HashMap::new()))
-                .collect(),
-        )
-    }
-
-    #[inline]
-    fn with_local<R>(
-        &self,
-        f: impl FnOnce(&mut HashMap<OutputSectionKey, Arc<OutputSectionBuilder>>) -> R,
-    ) -> R {
-        let fallback = self.0.len() - 1;
-        let i = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
-        // SAFETY: the Sync invariant above gives this worker exclusive access
-        // to its indexed map for the duration of this non-nested closure.
-        f(unsafe { &mut *self.0[i].get() })
-    }
-}
-
 // PT_GNU_RELRO segment is a security mechanism to make more pages
 // read-only than we could have done without it.
 //
@@ -1348,85 +1315,86 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     let ctors_in_init_array = has_ctors_and_init_array(ctx);
     let first_new = ctx.output_sections.len();
 
-    // Make a per-thread cache of the main map to avoid lock contention.
+    // Keep a cache per worker so it is reused across Rayon jobs. Each mutex
+    // is locked once per file, without contention between workers.
     // It makes a noticeable difference if we have millions of input sections.
     let num_files = ctx.objs.len();
     let shared: Mutex<OutputSectionShared<E>> =
         Mutex::new((HashMap::new(), std::mem::take(&mut ctx.output_sections)));
-    let caches = OutputSectionCaches::new();
+    let workers = rayon::current_num_threads();
+    let caches: Vec<_> = (0..=workers).map(|_| Mutex::new(HashMap::new())).collect();
 
     // Instantiate output sections and assign input sections to them
     {
         let Context { objs, args, .. } = ctx;
         objs.par_iter_mut().enumerate().for_each(|(fi, file)| {
-            caches.with_local(|cache| {
-                let file_id = file.id();
-                let shstrtab = file.base.shstrtab;
-                let num_elf_sections = file.num_elf_sections;
-                let shdrs = &file.base.shdrs;
-                let extra_shdrs = &file.elf_sections2;
-                for (member, isec) in file
-                    .sections
-                    .regular_ids_mut(file_id)
-                    .filter(|(_, isec)| isec.is_alive())
-                {
-                    let name = isec.name_in(shstrtab, num_elf_sections);
-                    let sh_type = if isec.is_nobits() {
-                        SHT_NOBITS
-                    } else if isec.shndx as usize >= num_elf_sections {
-                        let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
-                        shdr.sh_type.get()
-                    } else {
-                        shdrs[isec.shndx as usize].sh_type.get()
-                    };
-                    let sh_flags = isec.sh_flags
-                        & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
+            let worker = rayon::current_thread_index().unwrap_or(workers);
+            let mut cache = caches[worker].lock().unwrap();
+            let file_id = file.id();
+            let shstrtab = file.base.shstrtab;
+            let num_elf_sections = file.num_elf_sections;
+            let shdrs = &file.base.shdrs;
+            let extra_shdrs = &file.elf_sections2;
+            for (member, isec) in file
+                .sections
+                .regular_ids_mut(file_id)
+                .filter(|(_, isec)| isec.is_alive())
+            {
+                let name = isec.name_in(shstrtab, num_elf_sections);
+                let sh_type = if isec.is_nobits() {
+                    SHT_NOBITS
+                } else if isec.shndx as usize >= num_elf_sections {
+                    let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
+                    shdr.sh_type.get()
+                } else {
+                    shdrs[isec.shndx as usize].sh_type.get()
+                };
+                let sh_flags = isec.sh_flags
+                    & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
 
-                    if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
-                        // COMDAT group members keep their own output sections
-                        // in a relocatable output.
-                        let mut osec = OutputSection::<E>::new(name, sh_type);
-                        osec.hdr.shdr.sh_flags.set(sh_flags);
-                        osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
-                        osec.hdr.is_relro = is_relro(&osec);
-                        osec.members.push(member);
-                        let mut shared = shared.lock().unwrap();
-                        shared.1.push(osec);
-                        isec.output_section = Some(OutputSectionId::new(shared.1.len() as u32 - 1));
-                        continue;
-                    }
-
-                    let key =
-                        output_section_key::<E>(args, isec, name, sh_type, ctors_in_init_array);
-                    let builder = match cache.entry(key) {
-                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            let mut shared = shared.lock().unwrap();
-                            let (map, sections) = &mut *shared;
-                            let builder = map
-                                .entry(key)
-                                .or_insert_with(|| {
-                                    sections.push(OutputSection::<E>::new(key.0, key.1));
-                                    let id = OutputSectionId::new(sections.len() as u32 - 1);
-                                    Arc::new(OutputSectionBuilder::new(id, num_files))
-                                })
-                                .clone();
-                            entry.insert(builder)
-                        }
-                    };
-                    isec.output_section = Some(builder.section);
-
-                    // SAFETY: this closure is the only task for file fi;
-                    // flattening starts after the parallel traversal joins.
-                    unsafe {
-                        builder.with_file_mut(fi, |file| {
-                            file.members.push(member);
-                            file.sh_flags |= sh_flags & !(SHF_GROUP as u64);
-                            file.p2align = file.p2align.max(isec.p2align());
-                        });
-                    }
+                if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
+                    // COMDAT group members keep their own output sections
+                    // in a relocatable output.
+                    let mut osec = OutputSection::<E>::new(name, sh_type);
+                    osec.hdr.shdr.sh_flags.set(sh_flags);
+                    osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
+                    osec.hdr.is_relro = is_relro(&osec);
+                    osec.members.push(member);
+                    let mut shared = shared.lock().unwrap();
+                    shared.1.push(osec);
+                    isec.output_section = Some(OutputSectionId::new(shared.1.len() as u32 - 1));
+                    continue;
                 }
-            })
+
+                let key = output_section_key::<E>(args, isec, name, sh_type, ctors_in_init_array);
+                let builder = match cache.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let mut shared = shared.lock().unwrap();
+                        let (map, sections) = &mut *shared;
+                        let builder = map
+                            .entry(key)
+                            .or_insert_with(|| {
+                                sections.push(OutputSection::<E>::new(key.0, key.1));
+                                let id = OutputSectionId::new(sections.len() as u32 - 1);
+                                Arc::new(OutputSectionBuilder::new(id, num_files))
+                            })
+                            .clone();
+                        entry.insert(builder)
+                    }
+                };
+                isec.output_section = Some(builder.section);
+
+                // SAFETY: this closure is the only task for file fi;
+                // flattening starts after the parallel traversal joins.
+                unsafe {
+                    builder.with_file_mut(fi, |file| {
+                        file.members.push(member);
+                        file.sh_flags |= sh_flags & !(SHF_GROUP as u64);
+                        file.p2align = file.p2align.max(isec.p2align());
+                    });
+                }
+            }
         });
     }
     let (map, sections) = shared.into_inner().unwrap();
