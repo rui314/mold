@@ -122,19 +122,19 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
         .expect("failed to build linker thread pool");
 
     // Handle --wrap options if any.
-    for name in ctx.args.wrap.clone() {
-        let id = ctx.get_symbol(&name);
+    for name in &ctx.args.wrap {
+        let id = ctx.symbols.get_or_intern(name);
         ctx.symbols[id].set_wrapped(true);
     }
     // Handle --retain-symbols-file options if any.
-    if let Some(names) = ctx.args.retain_symbols_file.clone() {
+    if let Some(names) = &ctx.args.retain_symbols_file {
         for name in names {
-            let id = ctx.get_symbol(&name);
+            let id = ctx.symbols.get_or_intern(name);
             ctx.symbols[id].set_write_to_symtab();
         }
     }
-    for name in ctx.args.trace_symbol.clone() {
-        let id = ctx.get_symbol(&name);
+    for name in &ctx.args.trace_symbol {
+        let id = ctx.symbols.get_or_intern(name);
         ctx.symbols[id].set_traced(true);
     }
 

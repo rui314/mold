@@ -1554,6 +1554,15 @@ impl SymbolTable {
         self.intern_with_name(key, &key[..name_len(key)])
     }
 
+    /// Returns the global symbol for `key`, copying it into permanent storage
+    /// only if the key is new.
+    pub fn get_or_intern(&mut self, key: &[u8]) -> SymbolId {
+        if let Some(id) = self.lookup(key) {
+            return id;
+        }
+        self.intern(crate::util::leak_bytes(key.to_vec()))
+    }
+
     /// Interns `key` for a symbol named `name`, a prefix of the key.
     pub fn intern_with_name(&mut self, key: &'static [u8], name: &'static [u8]) -> SymbolId {
         debug_assert!(key.starts_with(name));

@@ -362,14 +362,8 @@ impl<E: Arch> Context<E> {
             .unwrap_or_default()
     }
 
-    // If we haven't seen the same `key` before, create a new instance
-    // of Symbol and returns it. Otherwise, returns the previously-
-    // instantiated object. `key` is usually the same as `name`.
     pub fn get_symbol(&mut self, name: &[u8]) -> SymbolId {
-        if let Some(id) = self.symbols.lookup(name) {
-            return id;
-        }
-        self.symbols.intern(crate::util::leak_bytes(name.to_vec()))
+        self.symbols.get_or_intern(name)
     }
 
     /// The common part of a file.
