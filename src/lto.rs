@@ -716,7 +716,6 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
 
     // Strings in the transfer vector must outlive the plugin.
     let cstr = |s: &[u8]| CString::new(s).unwrap().into_raw() as *const c_void;
-    let func = |f: usize| f as *const c_void;
     let output = if ctx.args.shared {
         LDPO_DYN
     } else if ctx.args.pie {
@@ -726,7 +725,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
     };
 
     let mut tv = vec![
-        TagValue::ptr(LDPT_MESSAGE, func(mold_lto_message as *const () as usize)),
+        TagValue::ptr(LDPT_MESSAGE, mold_lto_message as *const c_void),
         TagValue::int(LDPT_LINKER_OUTPUT, output),
     ];
     for opt in &ctx.args.plugin_opt {
@@ -735,34 +734,22 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
     tv.extend([
         TagValue::ptr(
             LDPT_REGISTER_CLAIM_FILE_HOOK,
-            func(register_claim_file_hook as *const () as usize),
+            register_claim_file_hook as *const c_void,
         ),
         TagValue::ptr(
             LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
-            func(register_all_symbols_read_hook as *const () as usize),
+            register_all_symbols_read_hook as *const c_void,
         ),
         TagValue::ptr(
             LDPT_REGISTER_CLEANUP_HOOK,
-            func(register_cleanup_hook as *const () as usize),
+            register_cleanup_hook as *const c_void,
         ),
-        TagValue::ptr(LDPT_ADD_SYMBOLS, func(add_symbols as *const () as usize)),
-        TagValue::ptr(LDPT_GET_SYMBOLS, func(get_symbols_v1 as *const () as usize)),
-        TagValue::ptr(
-            LDPT_ADD_INPUT_FILE,
-            func(add_input_file::<E> as *const () as usize),
-        ),
-        TagValue::ptr(
-            LDPT_GET_INPUT_FILE,
-            func(get_input_file as *const () as usize),
-        ),
-        TagValue::ptr(
-            LDPT_RELEASE_INPUT_FILE,
-            func(release_input_file as *const () as usize),
-        ),
-        TagValue::ptr(
-            LDPT_ADD_INPUT_LIBRARY,
-            func(add_input_library as *const () as usize),
-        ),
+        TagValue::ptr(LDPT_ADD_SYMBOLS, add_symbols as *const c_void),
+        TagValue::ptr(LDPT_GET_SYMBOLS, get_symbols_v1 as *const c_void),
+        TagValue::ptr(LDPT_ADD_INPUT_FILE, add_input_file::<E> as *const c_void),
+        TagValue::ptr(LDPT_GET_INPUT_FILE, get_input_file as *const c_void),
+        TagValue::ptr(LDPT_RELEASE_INPUT_FILE, release_input_file as *const c_void),
+        TagValue::ptr(LDPT_ADD_INPUT_LIBRARY, add_input_library as *const c_void),
         TagValue::ptr(
             LDPT_OUTPUT_NAME,
             CString::new(ctx.args.output.as_os_str().as_encoded_bytes())
@@ -771,70 +758,58 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         ),
         TagValue::ptr(
             LDPT_SET_EXTRA_LIBRARY_PATH,
-            func(set_extra_library_path as *const () as usize),
+            set_extra_library_path as *const c_void,
         ),
-        TagValue::ptr(LDPT_GET_VIEW, func(get_view as *const () as usize)),
+        TagValue::ptr(LDPT_GET_VIEW, get_view as *const c_void),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_COUNT,
-            func(get_input_section_count as *const () as usize),
+            get_input_section_count as *const c_void,
         ),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_TYPE,
-            func(get_input_section_type as *const () as usize),
+            get_input_section_type as *const c_void,
         ),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_NAME,
-            func(get_input_section_name as *const () as usize),
+            get_input_section_name as *const c_void,
         ),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_CONTENTS,
-            func(get_input_section_contents as *const () as usize),
+            get_input_section_contents as *const c_void,
         ),
         TagValue::ptr(
             LDPT_UPDATE_SECTION_ORDER,
-            func(update_section_order as *const () as usize),
+            update_section_order as *const c_void,
         ),
         TagValue::ptr(
             LDPT_ALLOW_SECTION_ORDERING,
-            func(allow_section_ordering as *const () as usize),
+            allow_section_ordering as *const c_void,
         ),
-        TagValue::ptr(LDPT_ADD_SYMBOLS_V2, func(add_symbols as *const () as usize)),
-        TagValue::ptr(
-            LDPT_GET_SYMBOLS_V2,
-            func(get_symbols_v2::<E> as *const () as usize),
-        ),
+        TagValue::ptr(LDPT_ADD_SYMBOLS_V2, add_symbols as *const c_void),
+        TagValue::ptr(LDPT_GET_SYMBOLS_V2, get_symbols_v2::<E> as *const c_void),
         TagValue::ptr(
             LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
-            func(allow_unique_segment_for_sections as *const () as usize),
+            allow_unique_segment_for_sections as *const c_void,
         ),
         TagValue::ptr(
             LDPT_UNIQUE_SEGMENT_FOR_SECTIONS,
-            func(unique_segment_for_sections as *const () as usize),
+            unique_segment_for_sections as *const c_void,
         ),
-        TagValue::ptr(
-            LDPT_GET_SYMBOLS_V3,
-            func(get_symbols_v3::<E> as *const () as usize),
-        ),
+        TagValue::ptr(LDPT_GET_SYMBOLS_V3, get_symbols_v3::<E> as *const c_void),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_ALIGNMENT,
-            func(get_input_section_alignment as *const () as usize),
+            get_input_section_alignment as *const c_void,
         ),
         TagValue::ptr(
             LDPT_GET_INPUT_SECTION_SIZE,
-            func(get_input_section_size as *const () as usize),
+            get_input_section_size as *const c_void,
         ),
         TagValue::ptr(
             LDPT_REGISTER_NEW_INPUT_HOOK,
-            func(register_new_input_hook as *const () as usize),
+            register_new_input_hook as *const c_void,
         ),
-        TagValue::ptr(
-            LDPT_GET_WRAP_SYMBOLS,
-            func(get_wrap_symbols as *const () as usize),
-        ),
-        TagValue::ptr(
-            LDPT_GET_API_VERSION,
-            func(get_api_version as *const () as usize),
-        ),
+        TagValue::ptr(LDPT_GET_WRAP_SYMBOLS, get_wrap_symbols as *const c_void),
+        TagValue::ptr(LDPT_GET_API_VERSION, get_api_version as *const c_void),
         TagValue::int(LDPT_NULL, 0),
     ]);
 
