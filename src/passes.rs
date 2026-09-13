@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
@@ -2810,10 +2811,12 @@ pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
             msg.push_str(m);
         }
         if messages.len() > MAX_ERRORS {
-            msg.push_str(&format!(
-                ">>> referenced {} more times\n",
+            writeln!(
+                msg,
+                ">>> referenced {} more times",
                 messages.len() - MAX_ERRORS
-            ));
+            )
+            .unwrap();
         }
         // Remove the trailing '\n' because Error/Warn adds it automatically
         msg.pop();

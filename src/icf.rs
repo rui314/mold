@@ -79,6 +79,7 @@
 //! can only grow, so once two rounds produce the same count the partition
 //! into equivalence classes has converged.
 
+use std::fmt::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
@@ -637,19 +638,18 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
         if members.is_empty() {
             continue;
         }
-        out.push_str(&format!(
-            "selected section {}\n",
-            ctx.section_display(*leader)
-        ));
+        writeln!(out, "selected section {}", ctx.section_display(*leader)).unwrap();
         for m in members {
-            out.push_str(&format!(
-                "  removing identical section {}\n",
+            writeln!(
+                out,
+                "  removing identical section {}",
                 ctx.section_display(*m)
-            ));
+            )
+            .unwrap();
             saved += ctx.section(*leader).contents().len();
         }
     }
-    out.push_str(&format!("ICF saved {saved} bytes\n"));
+    writeln!(out, "ICF saved {saved} bytes").unwrap();
 
     output.write("--print-icf-sections", out.as_bytes());
 }

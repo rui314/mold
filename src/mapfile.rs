@@ -2,6 +2,7 @@
 //! sections and symbols.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use rayon::prelude::*;
 
@@ -42,13 +43,15 @@ pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
     let mut out = String::from("               VMA       Size Align Out     In      Symbol\n");
     for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
-        out.push_str(&format!(
-            "{:>18}{:>11}{:>6} {}\n",
-            format!("{:#x}", hdr.shdr.sh_addr.get()),
+        writeln!(
+            out,
+            "{:#18x}{:>11}{:>6} {}",
+            hdr.shdr.sh_addr.get(),
             hdr.shdr.sh_size.get(),
             hdr.shdr.sh_addralign.get(),
             hdr.name
-        ));
+        )
+        .unwrap();
 
         let ChunkId::Output(osec_id) = id else {
             continue;
@@ -65,8 +68,7 @@ pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
                     0
                 };
                 let mut s = format!(
-                    "{:>18}{:>11}{:>6}         {}\n",
-                    format!("{addr:#x}"),
+                    "{addr:#18x}{:>11}{:>6}         {}\n",
                     isec.sh_size,
                     1u64 << isec.p2align(),
                     isec.display(&ctx.objs[isec.file.index()])
@@ -74,10 +76,12 @@ pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
                 if let Some(syms) = map.get(&member) {
                     for &id in syms {
                         let sym = &ctx.symbols[id];
-                        s.push_str(&format!(
-                            "{:>18}          0     0                 {sym}\n",
-                            format!("{:#x}", sym.addr(ctx))
-                        ));
+                        writeln!(
+                            s,
+                            "{:#18x}          0     0                 {sym}",
+                            sym.addr(ctx)
+                        )
+                        .unwrap();
                     }
                 }
                 s

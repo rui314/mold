@@ -3,6 +3,7 @@
 //! Any section that is reachable from a root section is considered alive.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use rayon::prelude::*;
 
@@ -287,10 +288,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
     };
     let mut out = String::new();
     for r in removed.iter().flatten() {
-        out.push_str(&format!(
-            "removing unused section {}\n",
-            ctx.section_display(*r)
-        ));
+        writeln!(out, "removing unused section {}", ctx.section_display(*r)).unwrap();
     }
     out.push_str("GC saved 0 bytes\n");
     output.write("--print-gc-sections", out.as_bytes());
