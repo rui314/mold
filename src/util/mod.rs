@@ -234,9 +234,7 @@ pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
 
 /// Fills `buf` with random bytes from the operating system.
 pub fn random_bytes(buf: &mut [u8]) {
-    use std::io::Read;
-    let mut file = std::fs::File::open("/dev/urandom").expect("cannot open /dev/urandom");
-    file.read_exact(buf).expect("cannot read /dev/urandom");
+    getrandom::fill(buf).unwrap_or_else(|err| crate::fatal!("cannot get random bytes: {err}"));
 }
 
 /// Leaks a value for the rest of the process's lifetime.

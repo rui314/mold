@@ -255,6 +255,7 @@ dependencies = [
  "cpp_demangle",
  "crc32fast",
  "flate2",
+ "getrandom",
  "hashbrown",
  "libc",
  "libz-sys",
