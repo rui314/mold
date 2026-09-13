@@ -507,9 +507,9 @@ pub struct Args {
     pub physical_image_base: Option<u64>,
     pub ttext_segment: Option<u64>,
     pub map: Option<ReportOutput>,
-    pub audit: String,
+    pub audit: Vec<u8>,
     pub chroot: PathBuf,
-    pub depaudit: String,
+    pub depaudit: Vec<u8>,
     pub dependency_file: PathBuf,
     pub directory: PathBuf,
     pub dynamic_linker: PathBuf,
@@ -538,8 +538,8 @@ pub struct Args {
     pub version_definitions: Vec<Vec<u8>>,
     pub version_scripts: Vec<PathBuf>,
     pub dynamic_list: Vec<DynamicListSource>,
-    pub auxiliary: Vec<String>,
-    pub filter: Vec<String>,
+    pub auxiliary: Vec<Vec<u8>>,
+    pub filter: Vec<Vec<u8>>,
     pub trace_symbol: Vec<Vec<u8>>,
     pub z_x86_64_isa_level: u32,
     pub image_base: u64,
@@ -650,9 +650,9 @@ impl Default for Args {
             physical_image_base: None,
             ttext_segment: None,
             map: None,
-            audit: String::new(),
+            audit: Vec::new(),
             chroot: PathBuf::new(),
-            depaudit: String::new(),
+            depaudit: Vec::new(),
             dependency_file: PathBuf::new(),
             directory: PathBuf::new(),
             dynamic_linker: PathBuf::new(),
@@ -1388,16 +1388,16 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             }
         } else if read_arg!("soname", true) || read_arg!("h", true) {
             a.soname = raw_arg.clone();
-        } else if read_arg!("audit") {
+        } else if read_arg!("audit", true) {
             if !a.audit.is_empty() {
-                a.audit.push(':');
+                a.audit.push(b':');
             }
-            a.audit.push_str(&arg);
-        } else if read_arg!("depaudit") || read_arg!("P") {
+            a.audit.extend_from_slice(raw_arg.as_encoded_bytes());
+        } else if read_arg!("depaudit", true) || read_arg!("P", true) {
             if !a.depaudit.is_empty() {
-                a.depaudit.push(':');
+                a.depaudit.push(b':');
             }
-            a.depaudit.push_str(&arg);
+            a.depaudit.extend_from_slice(raw_arg.as_encoded_bytes());
         } else if read_flag!("allow-multiple-definition") {
             a.allow_multiple_definition = true;
         } else if read_flag!("apply-dynamic-relocs") {
@@ -1848,10 +1848,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             }
             fatal!("unknown command line option: -b {arg}");
         } else if read_arg!("fuse-ld") {
-        } else if read_arg!("auxiliary") || read_arg!("f") {
-            a.auxiliary.push(arg.clone());
-        } else if read_arg!("filter") || read_arg!("F") {
-            a.filter.push(arg.clone());
+        } else if read_arg!("auxiliary", true) || read_arg!("f", true) {
+            a.auxiliary.push(raw_arg.as_encoded_bytes().to_vec());
+        } else if read_arg!("filter", true) || read_arg!("F", true) {
+            a.filter.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_flag!("allow-shlib-undefined") {
             allow_shlib_undefined = Some(true);
         } else if read_flag!("no-allow-shlib-undefined") {

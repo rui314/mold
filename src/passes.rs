@@ -2405,9 +2405,9 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
         let audit = ctx.dsos[id.index()].dt_audit();
         if !audit.is_empty() {
             if !ctx.args.depaudit.is_empty() {
-                ctx.args.depaudit.push(':');
+                ctx.args.depaudit.push(b':');
             }
-            ctx.args.depaudit.push_str(&String::from_utf8_lossy(audit));
+            ctx.args.depaudit.extend_from_slice(audit);
         }
     }
     let mut strings: Vec<Vec<u8>> = ctx
@@ -2415,10 +2415,10 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
         .iter()
         .map(|d| d.soname.clone())
         .collect();
-    strings.extend(ctx.args.auxiliary.iter().map(|s| s.clone().into_bytes()));
-    strings.extend(ctx.args.filter.iter().map(|s| s.clone().into_bytes()));
-    strings.push(ctx.args.audit.clone().into_bytes());
-    strings.push(ctx.args.depaudit.clone().into_bytes());
+    strings.extend(ctx.args.auxiliary.iter().cloned());
+    strings.extend(ctx.args.filter.iter().cloned());
+    strings.push(ctx.args.audit.clone());
+    strings.push(ctx.args.depaudit.clone());
     strings.push(ctx.args.rpaths.as_encoded_bytes().to_vec());
     strings.push(ctx.args.soname.as_encoded_bytes().to_vec());
     for s in strings {

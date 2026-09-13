@@ -86,19 +86,16 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
         define(DT_SONAME, dynstr.find_string(ctx.args.soname.as_encoded_bytes()));
     }
     for s in &ctx.args.auxiliary {
-        define(DT_AUXILIARY, dynstr.find_string(s.as_bytes()));
+        define(DT_AUXILIARY, dynstr.find_string(s));
     }
     if !ctx.args.audit.is_empty() {
-        define(DT_AUDIT, dynstr.find_string(ctx.args.audit.as_bytes()));
+        define(DT_AUDIT, dynstr.find_string(&ctx.args.audit));
     }
     if !ctx.args.depaudit.is_empty() {
-        define(
-            DT_DEPAUDIT,
-            dynstr.find_string(ctx.args.depaudit.as_bytes()),
-        );
+        define(DT_DEPAUDIT, dynstr.find_string(&ctx.args.depaudit));
     }
     for s in &ctx.args.filter {
-        define(DT_FILTER, dynstr.find_string(s.as_bytes()));
+        define(DT_FILTER, dynstr.find_string(s));
     }
 
     if ctx.reldyn.hdr.shdr.sh_size.get() != 0 {
