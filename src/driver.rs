@@ -587,12 +587,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
     // Create an output file
     // Output buffer
     let t_open = ctx.timer("open_file");
-    let mut output = OutputFile::open(
-        &ctx.args.output,
-        filesize,
-        0o777,
-        ctx.args.overwrite_output_file,
-    );
+    let mut output = OutputFile::open(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file);
     drop(t_open);
     {
         let mut t_copy = ctx.timer("copy");

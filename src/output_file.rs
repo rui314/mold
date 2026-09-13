@@ -205,7 +205,17 @@ impl OutputFile {
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
     /// at the end.
-    pub fn open(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
+    pub fn open(
+        args: &crate::cmdline::Args,
+        size: u64,
+        perm: u32,
+        overwrite_in_place: bool,
+    ) -> OutputFile {
+        let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
+        Self::open_impl(&path, size, perm, overwrite_in_place)
+    }
+
+    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
         if is_special {
