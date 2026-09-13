@@ -11,7 +11,7 @@ use crate::chunks::OutputSectionId;
 use crate::cmdline::UnresolvedKind;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::{ObjId, ObjectFile, RelocationIter};
+use crate::input_files::{ObjId, ObjectFile};
 use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
@@ -675,7 +675,10 @@ impl<E: Arch> InputSection<E> {
     // pass has already decoded it. The hot path must be always-inline because
     // this function may yield millions of entries.
     #[inline(always)]
-    pub(crate) fn relocations<'a>(&self, ctx: &'a Context<E>) -> RelocationIter<'a, E> {
+    pub(crate) fn relocations<'a>(
+        &self,
+        ctx: &'a Context<E>,
+    ) -> impl ExactSizeIterator<Item = ElfRel<E>> + 'a {
         let file = &ctx.objs[self.file.index()];
         file.relocation_iter(self.relsec_idx())
     }

@@ -1064,27 +1064,11 @@ impl<E: Layout> Iterator for CrelReader<'_, E> {
 
 impl<E: Layout> ExactSizeIterator for CrelReader<'_, E> {}
 
-enum RelocationIterInner<'a, E: Layout> {
+// Keep next() always-inline: using rayon::iter::Either here can add a
+// function call per relocation in hot loops.
+enum RelocationIter<'a, E: Layout> {
     Ordinary(std::iter::Copied<std::slice::Iter<'a, E::Rel>>),
     Crel(CrelReader<'a, E>),
-}
-
-pub(crate) struct RelocationIter<'a, E: Layout> {
-    inner: RelocationIterInner<'a, E>,
-}
-
-impl<'a, E: Layout> RelocationIter<'a, E> {
-    fn ordinary(rels: &'a [E::Rel]) -> Self {
-        RelocationIter {
-            inner: RelocationIterInner::Ordinary(rels.iter().copied()),
-        }
-    }
-
-    fn crel(reader: CrelReader<'a, E>) -> Self {
-        RelocationIter {
-            inner: RelocationIterInner::Crel(reader),
-        }
-    }
 }
 
 impl<E: Layout> Iterator for RelocationIter<'_, E> {
@@ -1092,17 +1076,17 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
 
     #[inline(always)]
     fn next(&mut self) -> Option<ElfRel<E>> {
-        match &mut self.inner {
-            RelocationIterInner::Ordinary(iter) => iter.next(),
-            RelocationIterInner::Crel(iter) => iter.next(),
+        match self {
+            RelocationIter::Ordinary(iter) => iter.next(),
+            RelocationIter::Crel(iter) => iter.next(),
         }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.inner {
-            RelocationIterInner::Ordinary(iter) => iter.size_hint(),
-            RelocationIterInner::Crel(iter) => iter.size_hint(),
+        match self {
+            RelocationIter::Ordinary(iter) => iter.size_hint(),
+            RelocationIter::Crel(iter) => iter.size_hint(),
         }
     }
 
@@ -1111,9 +1095,9 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
     where
         F: FnMut(B, ElfRel<E>) -> B,
     {
-        match self.inner {
-            RelocationIterInner::Ordinary(iter) => iter.fold(init, f),
-            RelocationIterInner::Crel(iter) => iter.fold(init, f),
+        match self {
+            RelocationIter::Ordinary(iter) => iter.fold(init, f),
+            RelocationIter::Crel(iter) => iter.fold(init, f),
         }
     }
 }
@@ -1298,19 +1282,22 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Iterates over relocations without materializing a deferred CREL table.
     #[inline(always)]
-    pub(crate) fn relocation_iter<'a>(&'a self, relsec_idx: Option<u32>) -> RelocationIter<'a, E> {
+    pub(crate) fn relocation_iter(
+        &self,
+        relsec_idx: Option<u32>,
+    ) -> impl ExactSizeIterator<Item = ElfRel<E>> + '_ {
         let Some(relsec_idx) = relsec_idx else {
-            return RelocationIter::ordinary(&[]);
+            return RelocationIter::Ordinary([].iter().copied());
         };
         let index = relsec_idx as usize;
         if self.base.shdrs[index].sh_type.get() == SHT_CREL
             && !self.decoded_crel.get(index).is_some_and(Option::is_some)
         {
             let data = self.input_relocation_data(relsec_idx);
-            return RelocationIter::crel(CrelReader::<E>::new(self, data));
+            return RelocationIter::Crel(CrelReader::<E>::new(self, data));
         }
 
-        RelocationIter::ordinary(self.relocations(Some(relsec_idx)))
+        RelocationIter::Ordinary(self.relocations(Some(relsec_idx)).iter().copied())
     }
 
     fn relocation_span(&self, relsec_idx: Option<u32>) -> RelocationSpan {
