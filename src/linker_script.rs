@@ -39,7 +39,6 @@ pub struct Script<'a, E: Arch> {
     ctx: &'a mut Context<E>,
     rctx: &'a mut ReaderContext,
     mf: &'static MappedFile,
-    tokens: Vec<&'static [u8]>,
 }
 
 fn get_line(input: &[u8], pos: usize) -> (usize, &[u8]) {
@@ -236,13 +235,7 @@ impl<'a, E: Arch> Script<'a, E> {
         rctx: &'a mut ReaderContext,
         mf: &'static MappedFile,
     ) -> Self {
-        let tokens = tokenize(mf);
-        Script {
-            ctx,
-            rctx,
-            mf,
-            tokens,
-        }
+        Script { ctx, rctx, mf }
     }
 
     fn error(&self, tok: &[u8], msg: &str) -> ! {
@@ -314,7 +307,7 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 
     pub fn parse_linker_script(&mut self) {
-        let tokens = self.tokens.clone();
+        let tokens = tokenize(self.mf);
         let mut tok: &[&'static [u8]] = &tokens;
 
         while let Some(&t) = tok.first() {
@@ -460,7 +453,7 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 
     pub fn parse_version_script(&mut self) {
-        let tokens = self.tokens.clone();
+        let tokens = tokenize(self.mf);
         let tok = self.read_version_script(&tokens);
         if let Some(&t) = tok.first() {
             self.error(t, "trailing garbage token");
@@ -504,7 +497,7 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 
     pub fn parse_dynamic_list(&mut self) -> Vec<DynamicPattern> {
-        let tokens = self.tokens.clone();
+        let tokens = tokenize(self.mf);
         let mut result = Vec::new();
 
         let tok = self.skip(&tokens, "{");
@@ -521,8 +514,7 @@ impl<'a, E: Arch> Script<'a, E> {
 /// Matches a `global:` or `local:` label.
 fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'static [u8]]> {
     let first = *tok.first()?;
-    let with_colon = [label, b":"].concat();
-    if first == with_colon.as_slice() {
+    if first.strip_suffix(b":") == Some(label) {
         return Some(&tok[1..]);
     }
     if first == label && tok.get(1) == Some(&&b":"[..]) {
