@@ -524,7 +524,7 @@ fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'stati
 }
 
 pub fn parse_dynamic_list<E: Arch>(ctx: &mut Context<E>, path: &Path) -> Vec<DynamicPattern> {
-    let mf = must_open_file(&ctx.args.chroot.clone(), path);
+    let mf = must_open_file(&ctx.args.chroot, path);
     let mut rctx = ReaderContext::default();
     Script::new(ctx, &mut rctx, mf).parse_dynamic_list()
 }

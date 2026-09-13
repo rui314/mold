@@ -145,12 +145,12 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
     }
 
     // Version scripts and dynamic lists given on the command line.
-    for path in ctx.args.version_scripts.clone() {
-        let chroot = ctx.args.chroot.clone();
-        let mf = crate::mapped_file::open_file(&chroot, &path).or_else(|| {
+    for path in std::mem::take(&mut ctx.args.version_scripts) {
+        let chroot = &ctx.args.chroot;
+        let mf = crate::mapped_file::open_file(chroot, &path).or_else(|| {
             ctx.args.library_paths.iter().find_map(|dir| {
                 let name = path.strip_prefix("/").unwrap_or(&path);
-                crate::mapped_file::open_file(&chroot, dir.join(name))
+                crate::mapped_file::open_file(chroot, dir.join(name))
             })
         });
         let Some(mf) = mf else {
@@ -159,7 +159,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
         let mut rctx = cmdline::ReaderContext::default();
         crate::linker_script::Script::new(&mut ctx, &mut rctx, mf).parse_version_script();
     }
-    for source in ctx.args.dynamic_list.clone() {
+    for source in std::mem::take(&mut ctx.args.dynamic_list) {
         match source {
             cmdline::DynamicListSource::File(path) => {
                 let patterns = crate::linker_script::parse_dynamic_list(&mut ctx, &path);
