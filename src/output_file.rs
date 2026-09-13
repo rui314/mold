@@ -212,7 +212,11 @@ impl OutputFile {
         overwrite_in_place: bool,
     ) -> OutputFile {
         let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
-        Self::open_impl(&path, size, perm, overwrite_in_place)
+        let mut output = Self::open_impl(&path, size, perm, overwrite_in_place);
+        if let Some(filler) = args.filler {
+            output.buf().fill(filler);
+        }
+        output
     }
 
     fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
@@ -501,12 +505,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recognizes_output_buffer_addresses() {
+    fn initializes_output_buffer_and_tracks_its_addresses() {
         set_output_buffer_range(0x1000, 0x100);
         assert!(!output_buffer_contains(0x0fff));
         assert!(output_buffer_contains(0x1000));
         assert!(output_buffer_contains(0x10ff));
         assert!(!output_buffer_contains(0x1100));
         set_output_buffer_range(0, 0);
+
+        // Finished ELF files should have no filler left. Check initialization
+        // here so the end-to-end filler test cannot pass by ignoring the flag.
+        let path = std::env::temp_dir().join(format!("mold-filler-{}", std::process::id()));
+        for output in [PathBuf::from("-"), path.clone()] {
+            for filler in [0xfe, 0x00] {
+                let args = crate::cmdline::Args {
+                    output: output.clone(),
+                    filler: Some(filler),
+                    ..Default::default()
+                };
+                let mut file = OutputFile::open(&args, 8192, 0o600, true);
+                assert!(file.buf().iter().all(|&byte| byte == filler));
+                if output != Path::new("-") {
+                    let start = file.buf().as_ptr() as usize;
+                    assert!(output_buffer_contains(start));
+                    assert!(output_buffer_contains(start + 8191));
+                    assert!(!output_buffer_contains(start + 8192));
+                    file.close();
+                    assert!(!output_buffer_contains(start));
+                }
+            }
+        }
+        std::fs::remove_file(path).unwrap();
     }
 }

@@ -24,4 +24,7 @@ od -x $t/exe1 > $t/txt1
 $CC -B. -static -Wl,--filler,0x00 -o $t/exe2 $t/a.o
 od -x $t/exe2 > $t/txt2
 
+# This checks that the writers overwrite all initially poisoned bytes.
+# output_file's Rust unit test also checks the buffer before those writes,
+# so ignoring --filler cannot make the tests pass vacuously.
 diff -q $t/txt1 $t/txt2

@@ -608,4 +608,8 @@ pub fn populate_symtab<E: Arch>(
             }
         }
     }
+
+    // Thunks can be removed after their symbol-table space is reserved.
+    // Zero the unused entries and names, as C++ mold does.
+    block.zero_unused::<E>();
 }
