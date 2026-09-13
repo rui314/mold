@@ -148,7 +148,7 @@ pub fn install_signal_handler() {}
 
 /// `mold -run COMMAND ARGS...` runs a command with mold interposed as the
 /// linker, which requires the `mold-wrapper.so` preload library.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
     if argv.len() < 3 {
         fatal!("-run: argument missing");
@@ -190,6 +190,11 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
     };
     // Execute a given command
     fatal!("mold -run failed: {}: {err}", argv[2].to_string_lossy());
+}
+
+#[cfg(target_os = "macos")]
+pub fn process_run_subcommand(_argv: &[std::ffi::OsString]) -> ! {
+    fatal!("-run is not supported on macOS");
 }
 
 #[cfg(windows)]
