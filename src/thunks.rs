@@ -375,7 +375,7 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
         }
 
         // Recompute section sizes
-        let members = ctx.output_sections[id.index()].members.clone();
+        let members = &ctx.output_sections[id.index()].members;
         let (mut mi, mut ti) = (0, 0);
         let mut offset = 0;
         while mi < members.len() || ti < thunks.len() {

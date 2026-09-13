@@ -2311,8 +2311,8 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
         let Some(ChunkId::Output(id)) = ctx.find_chunk_by_name(osec_name) else {
             continue;
         };
-        let members = ctx.output_sections[id.index()].members.clone();
-        for m in members {
+        let members = &ctx.output_sections[id.index()].members;
+        for &m in members {
             let section_ref = ctx.input_section(m).section_ref();
             if !ctx
                 .input_section(m)

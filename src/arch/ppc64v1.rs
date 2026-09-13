@@ -178,7 +178,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         let opd_id = file.section_id(opd.shndx as usize).unwrap();
         file.kill_section(opd.shndx as usize);
 
-        let local_symbols = file.base.symbols.clone();
+        let local_symbols = &file.base.symbols;
         let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = file
             .section_at(opd.shndx)
             .rels(file)

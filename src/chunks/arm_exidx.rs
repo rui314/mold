@@ -54,7 +54,7 @@ pub fn create<E: Arch>(ctx: &mut Context<E>) {
     ctx.chunks[i] = ChunkId::ArmExidx;
 
     // The input sections are consumed here rather than copied.
-    for m in ctx.output_sections[osec.index()].members.clone() {
+    for &m in &ctx.output_sections[osec.index()].members {
         let section = ctx.input_section(m).section_ref();
         ctx.objs[section.file.index()].kill_section(section.shndx as usize);
     }
