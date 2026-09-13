@@ -287,7 +287,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64>
 where
     Self: Layout<Endian = End>,
 {
-    type InputSectionExtra = crate::input_sections::RelaxationInputSectionExtra;
+    type InputSectionExtra = Box<[RelocDelta]>;
 
     const NAME: &'static str = match (IS_64, End::IS_LITTLE) {
         (true, true) => "riscv64",

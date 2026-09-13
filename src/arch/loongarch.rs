@@ -295,7 +295,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64>
 where
     Self: Layout<Endian = LittleEndian>,
 {
-    type InputSectionExtra = crate::input_sections::RelaxationInputSectionExtra;
+    type InputSectionExtra = Box<[RelocDelta]>;
 
     const NAME: &'static str = if IS_64 { "loongarch64" } else { "loongarch32" };
     const FAMILY: Family = Family::LoongArch;

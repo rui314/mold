@@ -192,20 +192,15 @@ impl InputSectionExtra for Arm32InputSectionExtra {
 const _: () = assert!(std::mem::size_of::<Arm32InputSectionExtra>() == 4);
 
 /// Relaxation bookkeeping embedded only for RISC-V and LoongArch.
-#[derive(Debug, Default)]
-pub struct RelaxationInputSectionExtra {
-    r_deltas: Box<[RelocDelta]>,
-}
-
-impl InputSectionExtra for RelaxationInputSectionExtra {
+impl InputSectionExtra for Box<[RelocDelta]> {
     #[inline]
     fn r_deltas(&self) -> &[RelocDelta] {
-        &self.r_deltas
+        self
     }
 
     #[inline]
     fn r_deltas_mut(&mut self) -> &mut Box<[RelocDelta]> {
-        &mut self.r_deltas
+        self
     }
 }
 
