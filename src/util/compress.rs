@@ -136,17 +136,16 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
 
 impl Compressor {
     pub fn zlib(input: &[u8], level: u32) -> Compressor {
-        let inputs: Vec<&[u8]> = input.chunks(SHARD_SIZE).collect();
 
         // Compress each shard
-        let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = inputs
-            .par_iter()
+        let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
+            .par_chunks(SHARD_SIZE)
             .map(|shard| (zlib_compress(shard, level), adler32(shard)))
             .unzip();
 
         // Combine checksums
         let mut checksum = adlers.first().copied().unwrap_or(1);
-        for (adler, shard) in adlers.iter().zip(&inputs).skip(1) {
+        for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
             checksum = adler32_combine(checksum, *adler, shard.len() as u64);
         }
         Compressor::Zlib { shards, checksum }
