@@ -24,7 +24,7 @@ use crate::{error, fatal, passes};
 pub fn main(
     argv: Vec<std::ffi::OsString>,
     initial_target: &str,
-    link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, String>,
+    link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, &'static str>,
 ) -> i32 {
     // A parent's transparent huge page disable flag is inherited. Restore
     // the system's default policy so large links can use huge pages.
@@ -49,12 +49,12 @@ pub fn main(
 
     // Parse with an enabled target's defaults; if the target turns out to
     // be different, start over with the right one.
-    let mut target = initial_target.to_string();
+    let mut target = initial_target;
     loop {
         if let Some(cwd) = &orig_cwd {
             let _ = std::env::set_current_dir(cwd);
         }
-        match link_for_target(&target, &cmdline) {
+        match link_for_target(target, &cmdline) {
             Ok(status) => return status,
             Err(actual) => target = actual,
         }
@@ -99,7 +99,7 @@ fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
 
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
-pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
+pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str> {
     let parsed = cmdline::parse_args(&target_traits::<E>(), cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     let mut ctx = Context::<E>::new(args, cmdline.to_vec());
@@ -111,7 +111,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
 
     // Redo if -m does not match with our speculation.
     if ctx.args.emulation != E::NAME {
-        return Err(ctx.args.emulation.clone());
+        return Err(ctx.args.emulation);
     }
 
     let t_all = ctx.timer("all");

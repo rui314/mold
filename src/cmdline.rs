@@ -522,7 +522,7 @@ pub struct Args {
     pub separate_debug_file: PathBuf,
     pub soname: OsString,
     pub sysroot: PathBuf,
-    pub emulation: String,
+    pub emulation: &'static str,
     pub section_align: HashMap<Vec<u8>, u64>,
     pub section_start: HashMap<Vec<u8>, u64>,
     pub discard_section: HashSet<Vec<u8>>,
@@ -665,7 +665,7 @@ impl Default for Args {
             separate_debug_file: PathBuf::new(),
             soname: OsString::new(),
             sysroot: PathBuf::new(),
-            emulation: String::new(),
+            emulation: "",
             section_align: HashMap::new(),
             section_start: HashMap::new(),
             discard_section: HashSet::new(),
@@ -1239,7 +1239,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("m") {
             match arch::emulation_to_target(&arg) {
-                Some(name) => a.emulation = name.to_string(),
+                Some(name) => a.emulation = name,
                 None => fatal!("unknown -m argument: {arg}"),
             }
         } else if read_flag!("end-lib") {

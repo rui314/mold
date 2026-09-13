@@ -221,7 +221,7 @@ fn push_loaded<E: Arch>(ctx: &mut Context<E>, loaded: Loaded<E>) {
 }
 
 /// Deduces the target from the first recognizable input file.
-pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) -> String {
+pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) -> &'static str {
     for job in jobs {
         if job.is_lib {
             continue;
@@ -229,7 +229,7 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
         if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
             if get_file_type(ctx, mf) != FileType::Text {
                 if let Some(target) = filetype::get_machine_type(&ctx.args.plugin, mf, || None) {
-                    return target.to_string();
+                    return target;
                 }
             }
         }
@@ -241,7 +241,7 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
         if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
             if get_file_type(ctx, mf) == FileType::Text {
                 if let Some(target) = crate::linker_script::output_target(ctx, &job.rctx, mf) {
-                    return target.to_string();
+                    return target;
                 }
             }
         }
