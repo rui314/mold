@@ -145,17 +145,16 @@ impl Target {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Mode {
     Native,
     All,
-    Triple,
+    Triple(String),
 }
 
 struct Options {
     jobs: usize,
     mode: Mode,
-    triple: Option<String>,
     cpu: Option<String>,
     patterns: Vec<String>,
     timeout: Duration,
@@ -239,7 +238,6 @@ fn parse_options() -> Options {
     let mut jobs = thread::available_parallelism().map_or(1, usize::from);
     let mut mode = Mode::All;
     let mut mode_was_set = false;
-    let mut triple = None;
     let mut cpu = None;
     let mut patterns = Vec::new();
     let mut timeout = DEFAULT_TIMEOUT;
@@ -252,20 +250,14 @@ fn parse_options() -> Options {
             "--native" => {
                 mode = Mode::Native;
                 mode_was_set = true;
-                triple = None;
             }
             "--all" => {
                 mode = Mode::All;
                 mode_was_set = true;
-                triple = None;
             }
             "--triple" => {
-                mode = Mode::Triple;
+                mode = Mode::Triple(args.next().unwrap_or_else(|| usage()));
                 mode_was_set = true;
-                triple = args.next();
-                if triple.is_none() {
-                    usage();
-                }
             }
             "--cpu" => {
                 cpu = args.next();
@@ -292,8 +284,7 @@ fn parse_options() -> Options {
     // the cross target in the environment.
     if !mode_was_set {
         if let Some(value) = env::var_os("TRIPLE").filter(|s| !s.is_empty()) {
-            mode = Mode::Triple;
-            triple = Some(value.to_string_lossy().into_owned());
+            mode = Mode::Triple(value.to_string_lossy().into_owned());
         }
         if cpu.is_none() {
             cpu = env::var_os("CPU")
@@ -305,7 +296,6 @@ fn parse_options() -> Options {
     Options {
         jobs,
         mode,
-        triple,
         cpu,
         patterns,
         timeout,
@@ -421,13 +411,12 @@ fn all_targets(native: &str) -> (Vec<Target>, Vec<&'static TargetSpec>) {
 
 fn selected_targets(options: &Options) -> (Vec<Target>, Vec<&'static TargetSpec>) {
     let native = native_machine();
-    match options.mode {
+    match &options.mode {
         Mode::Native => (vec![Target::native(native)], Vec::new()),
         Mode::All => all_targets(&native),
-        Mode::Triple => {
-            let triple = options.triple.clone().unwrap_or_else(|| usage());
-            let machine = machine_from_triple(&triple);
-            let mut target = Target::cross(machine, triple);
+        Mode::Triple(triple) => {
+            let machine = machine_from_triple(triple);
+            let mut target = Target::cross(machine, triple.clone());
             target.cpu.clone_from(&options.cpu);
             if let Some(cpu) = &target.cpu {
                 target.label = format!("{}-{cpu}", target.machine);
