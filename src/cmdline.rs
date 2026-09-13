@@ -5,6 +5,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
+use bstr::ByteSlice;
+
 use crate::arch;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
@@ -322,7 +324,7 @@ pub struct SectionOrder {
 #[derive(Clone, Debug)]
 pub enum DefsymValue {
     Addr(u64),
-    Symbol(String),
+    Symbol(Vec<u8>),
 }
 
 /// A source of dynamic-list patterns, kept in command line order.
@@ -491,7 +493,7 @@ pub struct Args {
     pub spare_program_headers: i64,
     pub z_stack_size: u64,
     pub thread_count: Option<usize>,
-    pub retain_symbols_file: Option<Vec<String>>,
+    pub retain_symbols_file: Option<Vec<Vec<u8>>>,
     pub physical_image_base: Option<u64>,
     pub ttext_segment: Option<u64>,
     pub map: PathBuf,
@@ -518,9 +520,9 @@ pub struct Args {
     pub ignore_ir_file: HashSet<OsString>,
     pub wrap: HashSet<String>,
     pub section_order: Vec<SectionOrder>,
-    pub require_defined: Vec<String>,
-    pub undefined: Vec<String>,
-    pub defsyms: Vec<(String, DefsymValue)>,
+    pub require_defined: Vec<Vec<u8>>,
+    pub undefined: Vec<Vec<u8>>,
+    pub defsyms: Vec<(Vec<u8>, DefsymValue)>,
     pub library_paths: Vec<PathBuf>,
     pub plugin_opt: Vec<String>,
     pub version_definitions: Vec<Vec<u8>>,
@@ -902,13 +904,13 @@ fn parse_package_metadata(arg: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn read_retain_symbols_file(path: &Path) -> Vec<String> {
+fn read_retain_symbols_file(path: &Path) -> Vec<Vec<u8>> {
     let mf = MappedFile::must_open(path);
-    String::from_utf8_lossy(mf.data())
-        .lines()
-        .map(|line| line.trim_matches(|c| c == ' ' || c == '\t'))
+    mf.data()
+        .split(|&b| b == b'\n')
+        .map(|line| line.trim_with(|c| c == ' ' || c == '\t'))
         .filter(|line| !line.is_empty())
-        .map(str::to_string)
+        .map(<[u8]>::to_vec)
         .collect()
 }
 
@@ -973,17 +975,20 @@ fn parse_section_order(arg: &str) -> Vec<SectionOrder> {
     orders
 }
 
-fn parse_defsym_value(s: &str) -> DefsymValue {
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        let Ok(v) = u64::from_str_radix(hex, 16) else {
-            fatal!("-defsym: not a number: {s}");
+fn parse_defsym_value(s: &[u8]) -> DefsymValue {
+    if let Some(hex) = s.strip_prefix(b"0x").or_else(|| s.strip_prefix(b"0X")) {
+        let Some(v) = std::str::from_utf8(hex)
+            .ok()
+            .and_then(|hex| u64::from_str_radix(hex, 16).ok())
+        else {
+            fatal!("-defsym: not a number: {}", util::display(s));
         };
         return DefsymValue::Addr(v);
     }
-    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
-        return DefsymValue::Addr(s.parse().unwrap_or(0));
+    if !s.is_empty() && s.iter().all(u8::is_ascii_digit) {
+        return DefsymValue::Addr(std::str::from_utf8(s).unwrap().parse().unwrap_or(0));
     }
-    DefsymValue::Symbol(s.to_string())
+    DefsymValue::Symbol(s.to_vec())
 }
 
 // Version 6.11 and 6.12 of the Linux kernel does not return ETXTBSY for
@@ -1275,12 +1280,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.start_stop = true;
         } else if read_arg!("dependency-file", true) {
             a.dependency_file = PathBuf::from(&raw_arg);
-        } else if read_arg!("defsym") {
-            let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!("-defsym: syntax error: {arg}");
+        } else if read_arg!("defsym", true) {
+            let Some((name, value)) = raw_arg
+                .as_encoded_bytes()
+                .split_once_str(b"=")
+                .filter(|(_, v)| !v.is_empty())
+            else {
+                fatal!("-defsym: syntax error: {}", raw_arg.to_string_lossy());
             };
-            a.defsyms
-                .push((name.to_string(), parse_defsym_value(value)));
+            a.defsyms.push((name.to_vec(), parse_defsym_value(value)));
         } else if read_flag!(":lto-pass2") {
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file", true) {
@@ -1329,14 +1337,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 "ignore-all" | "ignore-in-object-files" => report_undefined = Some(false),
                 _ => fatal!("unknown --unresolved-symbols argument: {arg}"),
             }
-        } else if read_arg!("undefined") || read_arg!("u") {
-            a.undefined.push(arg.clone());
+        } else if read_arg!("undefined", true) || read_arg!("u", true) {
+            a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("undefined-glob") {
             if !a.undefined_glob.add(arg.as_bytes(), 0) {
                 fatal!("--undefined-glob: invalid pattern: {arg}");
             }
-        } else if read_arg!("require-defined") {
-            a.require_defined.push(arg.clone());
+        } else if read_arg!("require-defined", true) {
+            a.require_defined.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("init") {
             a.init = arg.clone();
         } else if read_arg!("fini") {
@@ -2101,7 +2109,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     }
 
     // Mark GC root symbols
-    a.undefined.push(a.entry.clone());
+    a.undefined.push(a.entry.as_bytes().to_vec());
     for (_, value) in &a.defsyms {
         if let DefsymValue::Symbol(sym) = value {
             a.undefined.push(sym.clone());

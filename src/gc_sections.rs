@@ -315,7 +315,7 @@ pub fn gc_sections<E: Arch>(ctx: &mut Context<E>) {
     let undefined = ctx.args.undefined.clone();
     let require_defined = ctx.args.require_defined.clone();
     for name in undefined.iter().chain(&require_defined) {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(name);
         if let Some(FileId::Dso(dso)) = ctx.symbols[id].file() {
             ctx.dsos[dso.index()].base.set_reachable(true);
         }

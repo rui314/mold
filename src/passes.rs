@@ -291,14 +291,14 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
     // Symbols named on the command line pull in their files, and keep
     // their sections under --gc-sections; so does the entry point.
     let args = &ctx.args;
-    let names: Vec<String> = args
+    let names: Vec<Vec<u8>> = args
         .undefined
         .iter()
         .chain(&args.require_defined)
         .cloned()
         .collect();
     for name in names {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(&name);
         ctx.symbols[id].set_gc_root(true);
         if let Some(file) = ctx.symbols[id].file() {
             ctx.file(file).set_reachable(true);
@@ -1508,8 +1508,8 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     obj.base.symbols.push(dummy);
     obj.base.first_global = 1;
 
-    let add = |ctx: &mut Context<E>, obj: &mut ObjectFile<E>, name: &str| {
-        let id = ctx.get_symbol(name.as_bytes());
+    let add = |ctx: &mut Context<E>, obj: &mut ObjectFile<E>, name: &[u8]| {
+        let id = ctx.get_symbol(name);
         obj.base.symbols.push(id);
         // An actual value will be set to a linker-synthesized symbol by
         // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
@@ -1531,7 +1531,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     // Add --section-order symbols
     for order in ctx.args.section_order.clone() {
         if order.kind == SectionOrderKind::Symbol {
-            add(ctx, &mut obj, &order.name);
+            add(ctx, &mut obj, order.name.as_bytes());
         }
     }
 
@@ -1709,10 +1709,10 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // Handle --defsym symbols.
     for (i, (name, value)) in ctx.args.defsyms.clone().iter().enumerate() {
-        let sym1 = ctx.get_symbol(name.as_bytes());
+        let sym1 = ctx.get_symbol(name);
         match value {
             DefsymValue::Symbol(target) => {
-                let sym2 = ctx.get_symbol(target.as_bytes());
+                let sym2 = ctx.get_symbol(target);
                 if ctx.symbols[sym2].file().is_none() {
                     error!("--defsym: undefined symbol: {}", ctx.symbols[sym2]);
                     continue;
@@ -4349,7 +4349,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // --defsym=sym=value symbols
     for (name, value) in ctx.args.defsyms.clone() {
-        let sym = ctx.get_symbol(name.as_bytes());
+        let sym = ctx.get_symbol(&name);
         match value {
             DefsymValue::Addr(addr) => {
                 let s = &mut ctx.symbols[sym];
@@ -4357,7 +4357,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
                 s.value = addr;
             }
             DefsymValue::Symbol(target) => {
-                let sym2 = ctx.get_symbol(target.as_bytes());
+                let sym2 = ctx.get_symbol(&target);
                 let (value, origin, vis) = {
                     let s2 = &ctx.symbols[sym2];
                     (s2.value, s2.origin_state(), s2.visibility())

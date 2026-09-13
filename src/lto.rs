@@ -1024,18 +1024,19 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
 
     // Symbols specified by the --wrap option needs to be visible from
     // regular object files.
-    let mut names: Vec<String> = Vec::new();
+    let mut names: Vec<Vec<u8>> = Vec::new();
     for name in &ctx.args.wrap {
+        let name = name.as_bytes();
         names.extend([
-            name.clone(),
-            format!("__wrap_{name}"),
-            format!("__real_{name}"),
+            name.to_vec(),
+            [b"__wrap_", name].concat(),
+            [b"__real_", name].concat(),
         ]);
     }
     // Keep some symbols
     names.extend(ctx.args.undefined.iter().cloned());
     for name in names {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(&name);
         ctx.symbols[id].set_referenced_by_regular_obj(true);
     }
 

@@ -326,8 +326,8 @@ impl<'a, E: Arch> Script<'a, E> {
                 tok = self.read_version_script(tok);
                 tok = self.skip(tok, "}");
             } else if tok.len() > 3 && tok[1] == b"=" && tok[3] == b";" {
-                let name = String::from_utf8_lossy(unquote(tok[0])).into_owned();
-                let value = String::from_utf8_lossy(unquote(tok[2])).into_owned();
+                let name = unquote(tok[0]).to_vec();
+                let value = unquote(tok[2]).to_vec();
                 let value = DefsymValue::Symbol(value);
                 self.ctx.args.defsyms.push((name, value));
                 tok = &tok[4..];

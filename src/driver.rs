@@ -128,7 +128,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     // Handle --retain-symbols-file options if any.
     if let Some(names) = ctx.args.retain_symbols_file.clone() {
         for name in names {
-            let id = ctx.get_symbol(name.as_bytes());
+            let id = ctx.get_symbol(&name);
             ctx.symbols[id].set_write_to_symtab();
         }
     }
@@ -383,7 +383,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     }
     // Handle --require-defined
     for name in ctx.args.require_defined.clone() {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(&name);
         if ctx.symbols[id].file().is_none() {
             error!("--require-defined: undefined symbol: {}", ctx.symbols[id]);
         }
