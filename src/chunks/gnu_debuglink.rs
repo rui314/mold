@@ -14,7 +14,6 @@ use crate::util::write_cstr;
 #[derive(Debug)]
 pub struct GnuDebuglinkSection<E: Layout> {
     pub hdr: ChunkHeader<E>,
-    pub filename: Vec<u8>,
     pub crc32: u32,
 }
 
@@ -22,11 +21,7 @@ impl<E: Layout> GnuDebuglinkSection<E> {
     pub fn new() -> GnuDebuglinkSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".gnu_debuglink", SHT_PROGBITS, 0);
         hdr.shdr.sh_addralign.set(4);
-        GnuDebuglinkSection {
-            hdr,
-            filename: Vec::new(),
-            crc32: 0,
-        }
+        GnuDebuglinkSection { hdr, crc32: 0 }
     }
 }
 
@@ -42,18 +37,17 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         .separate_debug_file
         .file_name()
         .unwrap_or_default()
-        .as_encoded_bytes()
-        .to_vec();
+        .as_encoded_bytes();
     let size = align_to(filename.len() as u64 + 1, 4) + 4;
     let sec = ctx.gnu_debuglink.as_mut().unwrap();
     sec.hdr.shdr.sh_size.set(size);
-    sec.filename = filename;
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.gnu_debuglink.as_ref().unwrap();
     buf.fill(0);
-    write_cstr(buf, &sec.filename);
+    let filename = ctx.args.separate_debug_file.file_name().unwrap_or_default();
+    write_cstr(buf, filename.as_encoded_bytes());
     let n = buf.len();
     E::Endian::write_u32(&mut buf[n - 4..], sec.crc32);
 }
