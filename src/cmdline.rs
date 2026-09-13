@@ -840,13 +840,27 @@ fn parse_hex(opt: &str, value: &str) -> u64 {
 
 /// Parses an integer in C syntax (decimal, `0x` hex or leading-zero octal).
 fn parse_c_number(s: &str) -> Option<u64> {
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16).ok()
-    } else if s.len() > 1 && s.starts_with('0') {
-        u64::from_str_radix(&s[1..], 8).ok()
+    let s = s.trim_start_matches(|c: char| c.is_ascii() && is_space(c as u8));
+    let (negative, digits) = if let Some(rest) = s.strip_prefix('-') {
+        (true, rest)
     } else {
-        s.parse().ok()
+        (false, s.strip_prefix('+').unwrap_or(s))
+    };
+    let (digits, radix) = if let Some(hex) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        (hex, 16)
+    } else if digits.starts_with('0') {
+        (digits, 8)
+    } else {
+        (digits, 10)
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+        return None;
     }
+    let n = u64::from_str_radix(digits, radix).ok()?;
+    Some(if negative { n.wrapping_neg() } else { n })
 }
 
 fn parse_number(opt: &str, value: &str) -> i64 {
@@ -857,7 +871,7 @@ fn parse_number(opt: &str, value: &str) -> i64 {
     let n = parse_c_number(digits).unwrap_or_else(|| fatal!("option -{opt}: not a number: {value}"))
         as i64;
     if negative {
-        -n
+        n.wrapping_neg()
     } else {
         n
     }
@@ -2196,5 +2210,43 @@ fn add_rpath(a: &mut Args, seen: &mut HashSet<OsString>, path: &OsStr) {
             a.rpaths.push(":");
         }
         a.rpaths.push(path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_c_number, parse_number};
+
+    #[test]
+    fn numeric_options_use_c_integer_syntax() {
+        for (text, expected) in [
+            ("0", 0),
+            ("32", 32),
+            ("040", 32),
+            ("0x20", 32),
+            ("+0X20", 32),
+            ("+040", 32),
+            (" \t\n\r\x0b\x0c+040", 32),
+            (" -0x20", -32),
+            ("- 040", -32),
+            ("--1", 1),
+            ("18446744073709551615", -1),
+            ("-9223372036854775808", i64::MIN),
+        ] {
+            assert_eq!(parse_number("test", text), expected, "{text:?}");
+        }
+        for text in [
+            "",
+            " ",
+            "+",
+            "08",
+            "0x",
+            "0x+1",
+            "1 ",
+            "1x",
+            "18446744073709551616",
+        ] {
+            assert_eq!(parse_c_number(text), None, "{text:?}");
+        }
     }
 }
