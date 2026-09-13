@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -139,7 +140,7 @@ pub struct Context<E: Arch> {
     // Deferred IR files with their reader contexts and archive names.
     // read_input_files() hands them to the LTO plugin in command line
     // order once all input files have been found.
-    pub lto_jobs: Mutex<Vec<(ReaderContext, &'static MappedFile, String)>>,
+    pub lto_jobs: Mutex<Vec<(ReaderContext, &'static MappedFile, PathBuf)>>,
 
     /// Sonames of all shared libraries given to the linker, including
     /// ones later dropped as unneeded; --no-allow-shlib-undefined can

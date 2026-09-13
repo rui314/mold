@@ -526,7 +526,7 @@ pub struct Args {
     pub section_align: HashMap<Vec<u8>, u64>,
     pub section_start: HashMap<Vec<u8>, u64>,
     pub discard_section: HashSet<Vec<u8>>,
-    pub exclude_libs: HashSet<String>,
+    pub exclude_libs: HashSet<Vec<u8>>,
     pub ignore_ir_file: HashSet<OsString>,
     pub wrap: HashSet<Vec<u8>>,
     pub section_order: Vec<SectionOrder>,
@@ -1258,9 +1258,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.bsymbolic = BsymbolicKind::NonWeakFunctions;
         } else if read_flag!("Bno-symbolic") {
             a.bsymbolic = BsymbolicKind::None;
-        } else if read_arg!("exclude-libs") {
-            for lib in arg.split([',', ':']) {
-                a.exclude_libs.insert(lib.to_string());
+        } else if read_arg!("exclude-libs", true) {
+            for lib in raw_arg
+                .as_encoded_bytes()
+                .split(|b| matches!(b, b',' | b':'))
+            {
+                a.exclude_libs.insert(lib.to_vec());
             }
         } else if read_flag!("q") || read_flag!("emit-relocs") {
             a.emit_relocs = true;

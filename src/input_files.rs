@@ -10,6 +10,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
@@ -801,7 +802,7 @@ unsafe impl<R: Send + Sync> Sync for DecodedRelocations<R> {}
 #[derive(Debug)]
 pub struct ObjectFile<E: Arch> {
     pub base: InputFile<E>,
-    pub archive_name: String,
+    pub archive_name: PathBuf,
 
     /// The sections by section header index, plus sections synthesized
     /// for common symbols.
@@ -872,13 +873,13 @@ pub struct ObjectFile<E: Arch> {
 
 impl<E: Arch> fmt::Display for ObjectFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.archive_name.is_empty() {
+        if self.archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(&self.base.filename))
         } else {
             write!(
                 f,
                 "{}({})",
-                path_clean(&self.archive_name),
+                crate::util::clean_path(&self.archive_name).display(),
                 self.base.filename
             )
         }
@@ -928,12 +929,20 @@ impl<E: Arch> ObjectFile<E> {
 
 /// Formats a file the way it appears in diagnostics before the file
 /// object exists.
-pub(crate) fn display_file<'a>(filename: &'a str, archive_name: &'a str) -> impl fmt::Display + 'a {
+pub(crate) fn display_file<'a>(
+    filename: &'a str,
+    archive_name: &'a Path,
+) -> impl fmt::Display + 'a {
     fmt::from_fn(move |f| {
-        if archive_name.is_empty() {
+        if archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(filename))
         } else {
-            write!(f, "{}({})", path_clean(archive_name), filename)
+            write!(
+                f,
+                "{}({})",
+                crate::util::clean_path(archive_name).display(),
+                filename
+            )
         }
     })
 }
@@ -1129,13 +1138,13 @@ impl<E: Arch> ObjectFile<E> {
     /// Creates the internal object file that holds linker-synthesized
     /// symbols.
     pub fn internal() -> ObjectFile<E> {
-        let mut file = ObjectFile::with_base(InputFile::<E>::empty("<internal>"), String::new());
+        let mut file = ObjectFile::with_base(InputFile::<E>::empty("<internal>"), PathBuf::new());
         file.sections_parsed = true;
         file.base.set_reachable(true);
         file
     }
 
-    fn with_base(base: InputFile<E>, archive_name: String) -> ObjectFile<E> {
+    fn with_base(base: InputFile<E>, archive_name: PathBuf) -> ObjectFile<E> {
         ObjectFile {
             num_elf_sections: base.shdrs.len(),
             base,
@@ -1182,7 +1191,7 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
-    pub fn new(mf: &'static MappedFile, archive_name: String) -> ObjectFile<E> {
+    pub fn new(mf: &'static MappedFile, archive_name: PathBuf) -> ObjectFile<E> {
         let base =
             InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), &archive_name));
         let mut file = ObjectFile::with_base(base, archive_name);
@@ -1195,7 +1204,7 @@ impl<E: Arch> ObjectFile<E> {
     /// and it has no sections.
     pub fn lto_input(
         mf: &'static MappedFile,
-        archive_name: String,
+        archive_name: PathBuf,
         elf_syms: Vec<ElfSym<E>>,
         strtab: &'static [u8],
         comdat_keys: Vec<Option<&'static [u8]>>,
@@ -3136,7 +3145,8 @@ impl<E: Arch> SharedFile<E> {
     }
 
     pub(crate) fn new(mf: &'static MappedFile, bins: &mut Bins<SymbolSlot>) -> SharedFile<E> {
-        let base = InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), ""));
+        let base =
+            InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), Path::new("")));
         let mut file = SharedFile {
             base,
             soname: Vec::new(),

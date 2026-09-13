@@ -300,14 +300,6 @@ pub fn path_dirname(path: &str) -> String {
     }
 }
 
-/// Returns the file name part of a path.
-pub fn path_filename(path: &str) -> String {
-    std::path::Path::new(path)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.
 pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)

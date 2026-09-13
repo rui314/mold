@@ -50,7 +50,7 @@ use crate::symbol::{
 };
 use crate::util::glob::Glob;
 use crate::util::perf::Counter;
-use crate::util::{align_to, leak_bytes, path_filename};
+use crate::util::{align_to, leak_bytes};
 use crate::{error, fatal, out, warn};
 
 pub fn apply_exclude_libs<E: Arch>(ctx: &mut Context<E>) {
@@ -60,8 +60,13 @@ pub fn apply_exclude_libs<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     for file in &mut ctx.objs {
-        if !file.archive_name.is_empty()
-            && (set.contains(&path_filename(&file.archive_name)) || set.contains("ALL"))
+        if !file.archive_name.as_os_str().is_empty()
+            && (set.contains(
+                file.archive_name
+                    .file_name()
+                    .unwrap_or_default()
+                    .as_encoded_bytes(),
+            ) || set.contains(b"ALL".as_slice()))
         {
             file.exclude_libs = true;
         }
@@ -429,7 +434,8 @@ pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
             } else {
                 file.base.first_global.max(1)
             };
-            let fragments = if file.archive_name.is_empty() || file.base.is_reachable() {
+            let fragments = if file.archive_name.as_os_str().is_empty() || file.base.is_reachable()
+            {
                 file.crel_fragment_dummy_upper_bound()
             } else {
                 0
@@ -915,7 +921,7 @@ fn merged_resolve_members<E: Arch>(
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
         let filename = file.base.filename.as_str();
-        let archive_name = file.archive_name.as_str();
+        let archive_name = file.archive_name.as_path();
         let shstrtab = file.base.shstrtab;
         let num_elf_sections = file.num_elf_sections;
         for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {

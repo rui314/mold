@@ -7,9 +7,9 @@ use crate::input_files::ObjectFile;
 use crate::mapped_file::MappedFile;
 
 pub fn read_lto_object<E: Arch>(
-    ctx: &mut Context<E>,
+    _ctx: &mut Context<E>,
     _mf: &'static MappedFile,
-    _archive_name: String,
+    _archive_name: std::path::PathBuf,
 ) -> Option<ObjectFile<E>> {
     fatal!("LTO is not supported on Windows");
 }

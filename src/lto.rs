@@ -419,7 +419,7 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
 
-    let mut file = ObjectFile::<E>::new(mf, String::new());
+    let mut file = ObjectFile::<E>::new(mf, std::path::PathBuf::new());
     file.is_lto_output = true;
     file.base.set_reachable(true);
     file.base.priority = ctx.lto_file_priority;
@@ -887,7 +887,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
 pub fn read_lto_object<E: Arch>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
-    archive_name: String,
+    archive_name: std::path::PathBuf,
 ) -> Option<ObjectFile<E>> {
     if ctx.args.plugin.as_os_str().is_empty() {
         fatal!("{}: unable to handle this LTO object file because the -plugin option was not provided. \

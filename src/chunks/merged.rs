@@ -93,7 +93,7 @@ pub struct ResolveMember<'a> {
     pub merge_info: &'a mut MergeInfo,
     pub data: &'static [u8],
     pub filename: &'a str,
-    pub archive_name: &'a str,
+    pub archive_name: &'a std::path::Path,
     pub name: &'static BStr,
 }
 
@@ -110,7 +110,7 @@ struct BackgroundMember {
     info: MergeInfo,
     data: &'static [u8],
     filename: std::sync::Arc<str>,
-    archive_name: std::sync::Arc<str>,
+    archive_name: std::sync::Arc<std::path::Path>,
     name: &'static BStr,
 }
 
@@ -144,7 +144,7 @@ impl<E: Arch> BackgroundMerge<E> {
             (0..sections.len()).map(|_| Vec::new()).collect();
         for file in &ctx.objs {
             let filename: std::sync::Arc<str> = file.base.filename.as_str().into();
-            let archive_name: std::sync::Arc<str> = file.archive_name.as_str().into();
+            let archive_name: std::sync::Arc<std::path::Path> = file.archive_name.as_path().into();
             for info in file.merge_infos() {
                 if sections[info.parent.index()].resolved {
                     continue;
