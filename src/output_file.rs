@@ -151,9 +151,9 @@ fn preallocate(file: &File, offset: u64, size: u64) {
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn preallocate(_file: &File, _offset: u64, _size: u64) {}
 
-fn map_file(file: &File, size: u64) -> Storage {
+fn map_file(file: &File, size: u64) -> io::Result<Storage> {
     if size == 0 {
-        return Storage::Memory(Vec::new());
+        return Ok(Storage::Memory(Vec::new()));
     }
     // We map the file with twice as much address space as its size, so
     // that extend() can grow the file into the mapping in place. Touching
@@ -168,27 +168,22 @@ fn map_file(file: &File, size: u64) -> Storage {
         .or_else(|_| unsafe { MmapMut::map_mut(file) });
     #[cfg(windows)]
     let map = unsafe { MmapMut::map_mut(file) };
-    match map {
-        Ok(map) => {
-            let mut map = map;
-            // Enable transparent huge pages for an output memory-mapped file
-            // when the target provides the required advice.
-            // Linking a Chromium debug build is ~20% faster with this madvise call.
-            //
-            // Without this, every 4 KiB page of the output takes its own
-            // page fault when it is first written, and the faults of the
-            // many copying threads serialize on the file's page cache. With
-            // it, the kernel backs the mapping with large folios and the
-            // number of faults drops by an order of magnitude.
-            // SAFETY: the range is the mapping; the advice is only a hint.
-            unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
-            Storage::Mmap {
-                map,
-                len: size as usize,
-            }
-        }
-        Err(_) => Storage::Memory(vec![0; size as usize]),
-    }
+    let mut map = map?;
+    // Enable transparent huge pages for an output memory-mapped file
+    // when the target provides the required advice.
+    // Linking a Chromium debug build is ~20% faster with this madvise call.
+    //
+    // Without this, every 4 KiB page of the output takes its own
+    // page fault when it is first written, and the faults of the
+    // many copying threads serialize on the file's page cache. With
+    // it, the kernel backs the mapping with large folios and the
+    // number of faults drops by an order of magnitude.
+    // SAFETY: the range is the mapping; the advice is only a hint.
+    unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
+    Ok(Storage::Mmap {
+        map,
+        len: size as usize,
+    })
 }
 
 impl OutputFile {
@@ -269,7 +264,8 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
         preallocate(&file, 0, size);
 
-        let storage = map_file(&file, size);
+        let storage = map_file(&file, size)
+            .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", path.display()));
         let output = OutputFile {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
@@ -328,7 +324,8 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
         // Reserve twice as much address space as the file needs so that
         // extend() can grow it into the mapping in place.
-        self.storage = map_file(file, size);
+        self.storage = map_file(file, size)
+            .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
         #[cfg(not(windows))]
         self.publish_output_buffer();
     }
@@ -373,7 +370,8 @@ impl OutputFile {
                 } else {
                     // The appended data does not fit in the existing mapping, so map
                     // the grown file again.
-                    self.storage = map_file(file, new_len as u64);
+                    self.storage = map_file(file, new_len as u64)
+                        .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
                 }
             }
             (Storage::Mmap { .. }, None) => unreachable!("a mapping always has a file"),
