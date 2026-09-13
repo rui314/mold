@@ -33,7 +33,7 @@ enum Token {
     Bracket(Box<[bool; 256]>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Pattern {
     tokens: Vec<Token>,
     value: i64,
@@ -326,7 +326,7 @@ impl Nfa {
 /// An Aho-Corasick automaton for patterns that are plain substring
 /// searches, such as `*foo*`, `foo*` or `*foo`. Anchors are represented by
 /// a NUL byte at the beginning or end of the pattern.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct AhoCorasick {
     // Most trie nodes have only one child. The root uses a dense table because
     // it is visited for almost every input byte; other edges are stored sparsely.
@@ -335,7 +335,7 @@ struct AhoCorasick {
     max_value: i64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct TrieNode {
     value: i64,
     suffix_link: i32,
@@ -496,7 +496,7 @@ impl AhoCorasick {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Literal {
     pat: Vec<u8>,
     value: i64,
@@ -615,25 +615,11 @@ impl Glob {
             // with the largest value, as find() returns the largest match.
             // Sorting by (name, negated value) places that entry first in
             // each run of duplicates, which is the one unique() keeps.
-            let mut exacts: Vec<Literal> = self
-                .exacts
-                .iter()
-                .map(|l| Literal {
-                    pat: l.pat.clone(),
-                    value: l.value,
-                })
-                .collect();
+            let mut exacts = self.exacts.clone();
             exacts.sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
             exacts.dedup_by(|a, b| a.pat == b.pat);
 
-            let mut patterns: Vec<Pattern> = self
-                .patterns
-                .iter()
-                .map(|p| Pattern {
-                    tokens: p.tokens.clone(),
-                    value: p.value,
-                })
-                .collect();
+            let mut patterns = self.patterns.clone();
             let nfa = if patterns.len() >= 64 {
                 let nfa = Nfa::compile(&patterns);
                 patterns.clear();
@@ -642,23 +628,7 @@ impl Glob {
                 Nfa::default()
             };
 
-            let aho_corasick = &self.aho_corasick;
-            let nodes = aho_corasick
-                .nodes
-                .iter()
-                .map(|n| TrieNode {
-                    value: n.value,
-                    suffix_link: n.suffix_link,
-                    first_child: n.first_child,
-                    next_sibling: n.next_sibling,
-                    ch: n.ch,
-                })
-                .collect();
-            let mut aho_corasick = AhoCorasick {
-                root_children: aho_corasick.root_children.clone(),
-                max_value: aho_corasick.max_value,
-                nodes,
-            };
+            let mut aho_corasick = self.aho_corasick.clone();
             aho_corasick.compile();
 
             Compiled {
