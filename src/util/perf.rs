@@ -3,7 +3,7 @@
 // Counter is used to collect statistics numbers.
 
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Instant;
 
 use crate::out;
@@ -14,7 +14,7 @@ static COUNTERS: Mutex<Vec<&'static Counter>> = Mutex::new(Vec::new());
 pub struct Counter {
     name: &'static str,
     value: AtomicI64,
-    registered: AtomicBool,
+    registered: Once,
 }
 
 impl Counter {
@@ -22,7 +22,7 @@ impl Counter {
         Counter {
             name,
             value: AtomicI64::new(0),
-            registered: AtomicBool::new(false),
+            registered: Once::new(),
         }
     }
 
@@ -40,9 +40,9 @@ impl Counter {
         if !COUNTERS_ENABLED.load(Ordering::Relaxed) {
             return;
         }
-        if !self.registered.swap(true, Ordering::Relaxed) {
+        self.registered.call_once(|| {
             COUNTERS.lock().unwrap().push(self);
-        }
+        });
         self.value.fetch_add(delta, Ordering::Relaxed);
     }
 
