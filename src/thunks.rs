@@ -29,8 +29,6 @@
 //! removed. Sections only shrink in the second pass, so no existing
 //! reference to a thunk goes out of range because of it.
 
-use std::cell::UnsafeCell;
-
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
@@ -94,45 +92,6 @@ fn max_thunk_size<E: Arch>() -> u64 {
 /// Power10 prefixed instructions must not cross a 64-byte boundary.
 /// Aligning each thunk group to a 8-byte boundary guarantees that.
 const THUNK_ALIGN: u64 = 8;
-
-/// The thunk symbols collected by each Rayon worker. This is the equivalent
-/// of C++ mold's `enumerable_thread_specific<std::vector<Symbol *>>`.
-struct ThunkSymbolBins(Vec<UnsafeCell<Vec<SymbolId>>>);
-
-// SAFETY: a Rayon worker has a unique index and executes at most one closure
-// at a time. The only caller does not invoke nested parallel work while using
-// its bin; the final merge happens after the parallel traversal has joined.
-unsafe impl Sync for ThunkSymbolBins {}
-
-impl ThunkSymbolBins {
-    fn new() -> ThunkSymbolBins {
-        ThunkSymbolBins(
-            (0..=rayon::current_num_threads())
-                .map(|_| UnsafeCell::new(Vec::new()))
-                .collect(),
-        )
-    }
-
-    #[inline]
-    fn push(&self, sym: SymbolId) {
-        let fallback = self.0.len() - 1;
-        let i = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
-        // SAFETY: the Sync invariant above gives this worker exclusive access
-        // to its indexed vector for the duration of this non-nested closure.
-        unsafe { &mut *self.0[i].get() }.push(sym);
-    }
-
-    fn into_vec(self) -> Vec<SymbolId> {
-        let mut bins: Vec<Vec<SymbolId>> = self.0.into_iter().map(UnsafeCell::into_inner).collect();
-        let mut symbols = Vec::with_capacity(bins.iter().map(Vec::len).sum());
-        for bin in &mut bins {
-            symbols.append(bin);
-        }
-        symbols
-    }
-}
 
 /// Whether a call needs a thunk. On the first pass, before addresses are
 /// known, every call out of the section is assumed to need one.
@@ -290,30 +249,36 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
 
         // Create a new thunk and place it at D.
         offset = align_to(offset, THUNK_ALIGN);
-        let symbol_bins = ThunkSymbolBins::new();
-        {
+        let symbols = {
             let ctx: &Context<E> = ctx;
             // Scan relocations between B and C to collect symbols that need
             // entries in the new thunk.
-            members[b..c].par_iter().for_each(|&member| {
-                let isec = ctx.input_section(member);
-                let file = &ctx.objs[isec.file.index()];
-                for rel in isec.rels(file) {
-                    if !rel.is_func_call::<E>() {
-                        continue;
+            members[b..c]
+                .par_iter()
+                .fold(Vec::new, |mut symbols, &member| {
+                    let isec = ctx.input_section(member);
+                    let file = &ctx.objs[isec.file.index()];
+                    for rel in isec.rels(file) {
+                        if !rel.is_func_call::<E>() {
+                            continue;
+                        }
+                        let id = file.base.symbols[rel.r_sym() as usize];
+                        let sym = &ctx.symbols[id];
+                        if requires_thunk(ctx, isec, rel, sym, true) && sym.mark() {
+                            symbols.push(id);
+                        }
                     }
-                    let id = file.base.symbols[rel.r_sym() as usize];
-                    let sym = &ctx.symbols[id];
-                    if requires_thunk(ctx, isec, rel, sym, true) && sym.mark() {
-                        symbol_bins.push(id);
-                    }
-                }
-            });
-        }
+                    symbols
+                })
+                .reduce(Vec::new, |mut symbols, mut other| {
+                    symbols.append(&mut other);
+                    symbols
+                })
+        };
         // Add symbols to the thunk
         let mut thunk = Thunk {
             offset,
-            symbols: symbol_bins.into_vec(),
+            symbols,
             offsets: Vec::new(),
             name: String::new(),
         };
