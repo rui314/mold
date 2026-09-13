@@ -506,22 +506,6 @@ struct Edges {
     indices: Vec<u32>,
 }
 
-/// The pre-sized edge array filled in parallel at disjoint prefix-sum ranges.
-struct EdgeBuffer(*mut u32);
-
-// SAFETY: `gather_edges` assigns each parallel vertex its own range from
-// `indices[i]` to `indices[i + 1]`, exactly as C++ mold does.
-unsafe impl Sync for EdgeBuffer {}
-
-impl EdgeBuffer {
-    /// # Safety
-    /// `index` must belong exclusively to the calling vertex's edge range.
-    unsafe fn write(&self, index: usize, edge: u32) {
-        // SAFETY: guaranteed by the caller and the prefix-sum ranges above.
-        unsafe { self.0.add(index).write(edge) };
-    }
-}
-
 // Build a graph, treating every function as a vertex and every function call
 // as an edge. See the description at the top for a more detailed formulation.
 // We use u32 indices here to improve cache locality.
@@ -561,15 +545,29 @@ fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
     }
 
     let mut values = vec![0; *indices.last().unwrap() as usize];
-    let out = EdgeBuffer(values.as_mut_ptr());
-    sections.par_iter().enumerate().for_each(|(vertex, &r)| {
-        let mut i = indices[vertex] as usize;
-        for_each_edge::<E>(ctx, r, |edge| {
-            // SAFETY: this vertex alone owns its prefix-sum range.
-            unsafe { out.write(i, edge) };
-            i += 1;
-        });
-        debug_assert_eq!(i, indices[vertex + 1] as usize);
+    // Split at vertex boundaries so each task owns a disjoint slice of
+    // the edge array.
+    rayon::iter::split(
+        (0..sections.len(), values.as_mut_slice()),
+        |(range, out)| {
+            if range.len() <= 1 {
+                return ((range, out), None);
+            }
+            let mid = range.start + range.len() / 2;
+            let (left, right) = out.split_at_mut((indices[mid] - indices[range.start]) as usize);
+            ((range.start..mid, left), Some((mid..range.end, right)))
+        },
+    )
+    .for_each(|(range, out)| {
+        let base = indices[range.start] as usize;
+        let mut i = 0;
+        for vertex in range {
+            for_each_edge::<E>(ctx, sections[vertex], |edge| {
+                out[i] = edge;
+                i += 1;
+            });
+            debug_assert_eq!(base + i, indices[vertex + 1] as usize);
+        }
     });
 
     Edges { values, indices }
