@@ -169,7 +169,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
                 ctx.dynamic_list_patterns
                     .push(crate::linker_script::DynamicPattern {
                         pattern: crate::util::leak_bytes(pattern),
-                        source: "<command line>".to_string(),
+                        source: std::path::Path::new("<command line>"),
                         is_cpp: false,
                     });
             }

@@ -3013,11 +3013,8 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
     //
     // If two or more non-local patterns match to the same symbol, the
     // last one takes precedence.
-    let mut patterns: Vec<VersionPattern> = ctx.version_patterns.clone();
-    let (local, other): (Vec<VersionPattern>, Vec<VersionPattern>) = patterns
-        .drain(..)
-        .partition(|p| p.ver_idx as u32 == VER_NDX_LOCAL);
-    patterns = local.into_iter().chain(other).collect();
+    let mut patterns: Vec<&VersionPattern> = ctx.version_patterns.iter().collect();
+    patterns.sort_by_key(|p| p.ver_idx as u32 != VER_NDX_LOCAL);
 
     let has_wildcard = |s: &[u8]| s.iter().any(|&c| matches!(c, b'*' | b'?' | b'['));
     let mut priority = 0;
@@ -3067,12 +3064,12 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
     // wildcard or `extern "C++"` patterns.
     for v in &patterns {
         if !v.is_cpp && !has_wildcard(v.pattern) {
-            let id = ctx.get_symbol(v.pattern);
+            let id = ctx.symbols.get_or_intern(v.pattern);
             let sym = &ctx.symbols[id];
             if sym.file().is_none() && !ctx.args.undefined_version {
                 warn!(
                     "{}: cannot assign version `{}` to symbol `{sym}`: symbol not found",
-                    v.source,
+                    v.source.display(),
                     crate::util::display(v.ver_str)
                 );
             }
@@ -3090,16 +3087,11 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
     }
     let _t = ctx.timer("parse_symbol_version");
 
-    let verdefs: HashMap<Vec<u8>, u16> = args
+    let verdefs: HashMap<&[u8], u16> = args
         .version_definitions
         .iter()
         .enumerate()
-        .map(|(i, v)| {
-            (
-                v.clone(),
-                i as u16 + VER_NDX_LAST_RESERVED as u16 + 1,
-            )
-        })
+        .map(|(i, v)| (v.as_slice(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
         .collect();
 
     let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
@@ -3323,7 +3315,7 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
             if !cpp_matcher.add(p.pattern, 1) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
-                    p.source,
+                    p.source.display(),
                     crate::util::display(p.pattern)
                 );
             }
@@ -3333,7 +3325,7 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
             if !matcher.add(p.pattern, 1) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
-                    p.source,
+                    p.source.display(),
                     crate::util::display(p.pattern)
                 );
             }

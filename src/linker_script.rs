@@ -21,7 +21,7 @@ use crate::{fatal, warn};
 #[derive(Clone, Debug)]
 pub struct VersionPattern {
     pub pattern: &'static [u8],
-    pub source: String,
+    pub source: &'static Path,
     pub ver_str: &'static [u8],
     pub ver_idx: u16,
     pub is_cpp: bool,
@@ -31,7 +31,7 @@ pub struct VersionPattern {
 #[derive(Clone, Debug)]
 pub struct DynamicPattern {
     pub pattern: &'static [u8],
-    pub source: String,
+    pub source: &'static Path,
     pub is_cpp: bool,
 }
 
@@ -403,7 +403,7 @@ impl<'a, E: Arch> Script<'a, E> {
                 let pattern = self.unquote_pattern(t);
                 self.ctx.version_patterns.push(VersionPattern {
                     pattern,
-                    source: self.mf.name.display().to_string(),
+                    source: &self.mf.name,
                     ver_str,
                     ver_idx: idx,
                     is_cpp,
@@ -488,7 +488,7 @@ impl<'a, E: Arch> Script<'a, E> {
 
             result.push(DynamicPattern {
                 pattern: self.unquote_pattern(t),
-                source: self.mf.name.display().to_string(),
+                source: &self.mf.name,
                 is_cpp,
             });
             tok = self.skip(&tok[1..], ";");
