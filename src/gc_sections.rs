@@ -3,14 +3,12 @@
 //! Any section that is reachable from a root section is considered alive.
 
 use std::collections::HashMap;
-use std::io::Write;
 
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
-use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, OriginValue, SymbolId};
@@ -284,10 +282,9 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
         })
         .collect();
 
-    let path = &ctx.args.print_gc_sections;
-    if path.as_os_str().is_empty() {
+    let Some(output) = &ctx.args.print_gc_sections else {
         return;
-    }
+    };
     let mut out = String::new();
     for r in removed.iter().flatten() {
         out.push_str(&format!(
@@ -296,12 +293,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
         ));
     }
     out.push_str("GC saved 0 bytes\n");
-    if path == std::path::Path::new("-") {
-        let _ = std::io::stdout().write_all(out.as_bytes());
-    } else {
-        std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--print-gc-sections: cannot open {}: {e}", path.display()));
-    }
+    output.write("--print-gc-sections", out.as_bytes());
 }
 
 pub fn gc_sections<E: Arch>(ctx: &mut Context<E>) {

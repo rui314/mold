@@ -79,15 +79,14 @@
 //! can only grow, so once two rounds produce the same count the partition
 //! into equivalence classes has converged.
 
-use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
-use crate::fatal;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{is_c_identifier, OriginValue, Symbol};
@@ -608,7 +607,7 @@ fn count_num_classes<E: Arch>(
     count
 }
 
-fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) {
+fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output: &ReportOutput) {
     let mut leaders: Vec<(SectionRef, Vec<SectionRef>)> = Vec::new();
     let mut map: std::collections::HashMap<SectionRef, usize> = std::collections::HashMap::new();
     for &r in sections {
@@ -652,13 +651,7 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) {
     }
     out.push_str(&format!("ICF saved {saved} bytes\n"));
 
-    let path = &ctx.args.print_icf_sections;
-    if path == std::path::Path::new("-") {
-        let _ = std::io::stdout().write_all(out.as_bytes());
-    } else {
-        std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--print-icf-sections: cannot open {}: {e}", path.display()));
-    }
+    output.write("--print-icf-sections", out.as_bytes());
 }
 
 pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
@@ -731,8 +724,8 @@ pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|(&r, &digest)| ctx.section(r).set_icf_leader(map.find(digest)));
     }
 
-    if !ctx.args.print_icf_sections.as_os_str().is_empty() {
-        print_icf_sections(ctx, &sections);
+    if let Some(output) = &ctx.args.print_icf_sections {
+        print_icf_sections(ctx, &sections, output);
     }
 
     // Update alignment of leaders.

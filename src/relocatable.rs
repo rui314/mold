@@ -187,8 +187,8 @@ pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
     output.close();
     crate::error::checkpoint();
 
-    if ctx.args.print_map {
-        crate::mapfile::print_map(ctx);
+    if let Some(output) = &ctx.args.map {
+        crate::mapfile::print_map(ctx, output);
     }
     if ctx.args.stats {
         passes::show_stats(ctx);

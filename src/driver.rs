@@ -647,8 +647,8 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     }
     drop(t_all);
 
-    if ctx.args.print_map {
-        crate::mapfile::print_map(&ctx);
+    if let Some(output) = &ctx.args.map {
+        crate::mapfile::print_map(&ctx, output);
     }
     if ctx.gnu_debuglink.is_some() {
         passes::write_separate_debug_file(&mut ctx);

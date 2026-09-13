@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use bstr::ByteSlice;
@@ -303,6 +303,36 @@ pub enum DebugCompression {
     Zstd(i32),
 }
 
+#[derive(Debug)]
+pub enum ReportOutput {
+    Stdout,
+    File(PathBuf),
+}
+
+impl ReportOutput {
+    pub fn write(&self, option: &str, contents: &[u8]) {
+        match self {
+            Self::Stdout => {
+                let _ = std::io::stdout().write_all(contents);
+            }
+            Self::File(path) => {
+                std::fs::write(path, contents)
+                    .unwrap_or_else(|e| fatal!("{option}: cannot open {}: {e}", path.display()));
+            }
+        }
+    }
+}
+
+fn parse_report_output(path: &OsStr) -> Option<ReportOutput> {
+    if path.is_empty() {
+        None
+    } else if path == "-" {
+        Some(ReportOutput::Stdout)
+    } else {
+        Some(ReportOutput::File(path.into()))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum SectionOrder {
     Section(Vec<u8>),
@@ -426,7 +456,6 @@ pub struct Args {
     pub pic: bool,
     pub pie: bool,
     pub print_dependencies: bool,
-    pub print_map: bool,
     pub quick_exit: bool,
     pub relax: bool,
     pub relocatable: bool,
@@ -477,7 +506,7 @@ pub struct Args {
     pub retain_symbols_file: Option<Vec<Vec<u8>>>,
     pub physical_image_base: Option<u64>,
     pub ttext_segment: Option<u64>,
-    pub map: PathBuf,
+    pub map: Option<ReportOutput>,
     pub audit: String,
     pub chroot: PathBuf,
     pub depaudit: String,
@@ -487,8 +516,8 @@ pub struct Args {
     pub output: PathBuf,
     pub package_metadata: String,
     pub plugin: PathBuf,
-    pub print_gc_sections: PathBuf,
-    pub print_icf_sections: PathBuf,
+    pub print_gc_sections: Option<ReportOutput>,
+    pub print_icf_sections: Option<ReportOutput>,
     pub rpaths: OsString,
     pub separate_debug_file: PathBuf,
     pub soname: OsString,
@@ -570,7 +599,6 @@ impl Default for Args {
             pic: false,
             pie: false,
             print_dependencies: false,
-            print_map: false,
             quick_exit: true,
             relax: true,
             relocatable: false,
@@ -621,7 +649,7 @@ impl Default for Args {
             retain_symbols_file: None,
             physical_image_base: None,
             ttext_segment: None,
-            map: PathBuf::new(),
+            map: None,
             audit: String::new(),
             chroot: PathBuf::new(),
             depaudit: String::new(),
@@ -631,8 +659,8 @@ impl Default for Args {
             output: PathBuf::from("a.out"),
             package_metadata: String::new(),
             plugin: PathBuf::new(),
-            print_gc_sections: PathBuf::new(),
-            print_icf_sections: PathBuf::new(),
+            print_gc_sections: None,
+            print_icf_sections: None,
             rpaths: OsString::new(),
             separate_debug_file: PathBuf::new(),
             soname: OsString::new(),
@@ -1038,6 +1066,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
+    let mut map_path: Option<PathBuf> = None;
     let mut rpaths: HashSet<OsString> = HashSet::new();
 
     // We generally don't need to write addends to relocated places if the
@@ -1239,12 +1268,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("e", true) || read_arg!("entry", true) {
             a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("Map", true) {
-            a.map = PathBuf::from(&raw_arg);
-            a.print_map = true;
+            map_path = Some(PathBuf::from(&raw_arg));
         } else if read_flag!("print-dependencies") {
             a.print_dependencies = true;
         } else if read_flag!("print-map") || read_flag!("M") {
-            a.print_map = true;
+            map_path.get_or_insert_with(PathBuf::new);
         } else if read_flag!("Bstatic") || read_flag!("dn") || read_flag!("static") {
             rctx.is_static = true;
         } else if read_flag!("Bdynamic") || read_flag!("dy") {
@@ -1657,11 +1685,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-gc-sections") {
             a.gc_sections = false;
         } else if read_flag!("print-gc-sections") {
-            a.print_gc_sections = PathBuf::from("-");
+            a.print_gc_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-gc-sections", true) {
-            a.print_gc_sections = PathBuf::from(&raw_arg);
+            a.print_gc_sections = parse_report_output(&raw_arg);
         } else if read_flag!("no-print-gc-sections") {
-            a.print_gc_sections.clear();
+            a.print_gc_sections = None;
         } else if read_arg!("discard-section", true) {
             a.discard_section
                 .insert(raw_arg.as_encoded_bytes().to_vec());
@@ -1686,11 +1714,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("physical-image-base") {
             a.physical_image_base = Some(parse_number("physical-image-base", &arg) as u64);
         } else if read_flag!("print-icf-sections") {
-            a.print_icf_sections = PathBuf::from("-");
+            a.print_icf_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-icf-sections", true) {
-            a.print_icf_sections = PathBuf::from(&raw_arg);
+            a.print_icf_sections = parse_report_output(&raw_arg);
         } else if read_flag!("no-print-icf-sections") {
-            a.print_icf_sections.clear();
+            a.print_icf_sections = None;
         } else if read_flag!("quick-exit") {
             a.quick_exit = true;
         } else if read_flag!("no-quick-exit") {
@@ -1932,9 +1960,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     }
 
     if !a.chroot.as_os_str().is_empty() {
-        if !a.map.as_os_str().is_empty() {
-            a.map = a.chroot.join(a.map.strip_prefix("/").unwrap_or(&a.map));
-        }
         if !a.dependency_file.as_os_str().is_empty() {
             a.dependency_file = a.chroot.join(
                 a.dependency_file
@@ -1943,6 +1968,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             );
         }
     }
+
+    a.map = map_path.map(|mut path| {
+        // Keep the raw spelling until after chroot: "-" names a file there,
+        // while an empty path (including plain -M) still selects stdout.
+        if !a.chroot.as_os_str().is_empty() && !path.as_os_str().is_empty() {
+            path = a.chroot.join(path.strip_prefix("/").unwrap_or(&path));
+        }
+        parse_report_output(path.as_os_str()).unwrap_or(ReportOutput::Stdout)
+    });
 
     if !a.directory.as_os_str().is_empty() {
         if let Err(e) = std::env::set_current_dir(&a.directory) {

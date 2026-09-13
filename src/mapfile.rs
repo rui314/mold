@@ -2,15 +2,14 @@
 //! sections and symbols.
 
 use std::collections::HashMap;
-use std::io::Write;
 
 use rayon::prelude::*;
 
 use crate::arch::Arch;
 use crate::chunks::ChunkId;
+use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
-use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::symbol::SymbolId;
@@ -35,7 +34,7 @@ fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<Sym
     map
 }
 
-pub fn print_map<E: Arch>(ctx: &Context<E>) {
+pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
     // Print a mapfile.
     let _t = ctx.timer("print_map");
     let map = section_symbols(ctx);
@@ -89,10 +88,5 @@ pub fn print_map<E: Arch>(ctx: &Context<E>) {
         }
     }
 
-    if !ctx.args.map.as_os_str().is_empty() && ctx.args.map != std::path::Path::new("-") {
-        std::fs::write(&ctx.args.map, out)
-            .unwrap_or_else(|e| fatal!("--print-map: cannot open {}: {e}", ctx.args.map.display()));
-    } else {
-        let _ = std::io::stdout().write_all(out.as_bytes());
-    }
+    output.write("--print-map", out.as_bytes());
 }
