@@ -134,7 +134,9 @@ impl<E: Arch> BackgroundMerge<E> {
                     hdr.shdr.sh_type.get(),
                     hdr.shdr.sh_entsize.get(),
                 );
-                copy.members = section.members.clone();
+                if !section.resolved {
+                    copy.members = section.members.clone();
+                }
                 // Allocated sections have already been resolved in the foreground.
                 copy.resolved = section.resolved;
                 copy
@@ -143,12 +145,17 @@ impl<E: Arch> BackgroundMerge<E> {
         let mut members: Vec<Vec<BackgroundMember>> =
             (0..sections.len()).map(|_| Vec::new()).collect();
         for file in &ctx.objs {
-            let filename: std::sync::Arc<str> = file.base.filename.as_str().into();
-            let archive_name: std::sync::Arc<std::path::Path> = file.archive_name.as_path().into();
+            let mut names = None;
             for info in file.merge_infos() {
                 if sections[info.parent.index()].resolved {
                     continue;
                 }
+                let (filename, archive_name) = names.get_or_insert_with(|| {
+                    (
+                        std::sync::Arc::<str>::from(file.base.filename.as_str()),
+                        std::sync::Arc::<std::path::Path>::from(file.archive_name.as_path()),
+                    )
+                });
                 let input = file.section_at(info.shndx);
                 members[info.parent.index()].push(BackgroundMember {
                     reference: SectionRef {
@@ -189,7 +196,7 @@ impl<E: Arch> BackgroundMerge<E> {
 
     pub fn finish(self, ctx: &mut Context<E>) {
         for (i, (mut section, members)) in self.sections.into_iter().zip(self.members).enumerate() {
-            if section.is_alloc() {
+            if ctx.merged_sections[i].resolved {
                 continue;
             }
             let size = section.hdr.shdr.sh_size.get();
