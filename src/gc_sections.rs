@@ -40,10 +40,10 @@ fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
 type StartStopMap<'a, E> = HashMap<&'static [u8], Vec<&'a InputSection<E>>>;
 
 fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a, E> {
-    let per_file: Vec<Vec<(&'static [u8], &'a InputSection<E>)>> = ctx
+    let sections: Vec<(&'static [u8], &'a InputSection<E>)> = ctx
         .objs
         .par_iter()
-        .map(|file| {
+        .flat_map_iter(|file| {
             file.input_sections()
                 .filter(|isec| {
                     isec.is_alive() && isec.is_alloc() && is_c_identifier(isec.name(file))
@@ -52,11 +52,10 @@ fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a, E>
                     let name: &'static [u8] = isec.name(file);
                     (name, isec)
                 })
-                .collect()
         })
         .collect();
     let mut map: StartStopMap<'a, E> = HashMap::new();
-    for (name, isec) in per_file.into_iter().flatten() {
+    for (name, isec) in sections {
         map.entry(name).or_default().push(isec);
     }
     map

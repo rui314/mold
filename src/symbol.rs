@@ -1911,22 +1911,16 @@ impl SymbolTable {
     ) -> Vec<SymbolId> {
         self.globals
             .par_iter()
-            .map(|ranges| {
-                ranges
-                    .iter()
-                    .flat_map(|range| {
-                        self.symbols[range.start as usize..range.end as usize]
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(i, sym)| {
-                                predicate(sym).then_some(SymbolId(range.start + i as u32))
-                            })
-                    })
-                    .collect::<Vec<_>>()
+            .flat_map_iter(|ranges| {
+                ranges.iter().flat_map(|range| {
+                    self.symbols[range.start as usize..range.end as usize]
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, sym)| {
+                            predicate(sym).then_some(SymbolId(range.start + i as u32))
+                        })
+                })
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
             .collect()
     }
 }

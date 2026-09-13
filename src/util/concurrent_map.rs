@@ -457,15 +457,11 @@ impl<T> FrozenMap<T> {
     {
         (0..NUM_SHARDS)
             .into_par_iter()
-            .map(|shard| {
+            .flat_map_iter(|shard| {
                 self.sorted_entries(shard)
                     .into_iter()
                     .map(|id| self.entry_ref(id))
-                    .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
             .collect()
     }
 
