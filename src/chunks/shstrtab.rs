@@ -35,7 +35,8 @@ impl<E: Layout> Default for ShstrtabSection<E> {
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let mut map: HashMap<&'static BStr, u64> = HashMap::new();
     let mut offset = 1u64;
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if id.is_header() {
             continue;
         }

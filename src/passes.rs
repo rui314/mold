@@ -1622,7 +1622,8 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
             ctx.symbols[id].set_exported(true);
         }
     };
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if let Some(name) = start_stop_name(ctx, id) {
             let name = name.as_slice();
             add_start_stop(ctx, [b"__start_", name].concat());
@@ -2440,7 +2441,8 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     };
 
     // create_range_extension_thunks is not thread-safe
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if let ChunkId::Output(osec) = id {
             if needs_thunks(ctx, id) {
                 crate::thunks::create_range_extension_thunks(ctx, osec);
@@ -2490,7 +2492,8 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
         .filter(|section| section.is_alloc())
         .for_each(crate::chunks::merged::layout);
 
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         match id {
             ChunkId::Output(_) => {}
             ChunkId::Merged(_) => {}
@@ -2954,7 +2957,7 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("compute_symtab_size");
     if E::NEEDS_THUNK {
         let mut n = 0;
-        for id in ctx.chunks.clone() {
+        for &id in &ctx.chunks {
             if let ChunkId::Output(osec) = id {
                 for thunk in &mut ctx.output_sections[osec.index()].thunks {
                     thunk.name = format!("thunk{n}");
@@ -2963,7 +2966,8 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
             }
         }
     }
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         chunks::compute_symtab_size(ctx, id);
     }
 
@@ -3592,7 +3596,8 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
     };
     // It is an error if a section order cannot be determined by a given
     // section order list.
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let r = rank(ctx, id);
         ctx.chunk_header_mut(id).sect_order = r;
     }
@@ -3669,12 +3674,11 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
     };
 
     // Assign virtual addresses
-    let chunks = ctx.chunks.clone();
     let mut addr = ctx.args.image_base;
     let page_size = ctx.page_size;
     let mut i = 0;
-    while i < chunks.len() {
-        let id = chunks[i];
+    while i < ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if !ctx.chunk_header(id).is_alloc() {
             i += 1;
             continue;
@@ -3709,8 +3713,8 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         // Memory protection works at page size granularity. We need to
         // put sections with different memory attributes into different
         // pages. We do it by inserting paddings here.
-        if i > 0 && chunks[i - 1] != ChunkId::RelroPadding {
-            let flags1 = flags_of(ctx, chunks[i - 1]);
+        if i > 0 && ctx.chunks[i - 1] != ChunkId::RelroPadding {
+            let flags1 = flags_of(ctx, ctx.chunks[i - 1]);
             let flags2 = flags_of(ctx, id);
             if !ctx.args.nmagic && flags1 != flags2 {
                 match ctx.args.z_separate_code {
@@ -3732,7 +3736,7 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         // TLS sections are included only in PT_LOAD but also in PT_TLS.
         // We align the first TLS section so that the PT_TLS segment starts
         // at an address that meets the segment's alignment requirement.
-        if is_tls(ctx, id) && (i == 0 || !is_tls(ctx, chunks[i - 1])) {
+        if is_tls(ctx, id) && (i == 0 || !is_tls(ctx, ctx.chunks[i - 1])) {
             addr = align_to(addr, tls_segment_alignment(ctx));
         }
 
@@ -3749,11 +3753,11 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
         if is_tbss(ctx, id) {
             let mut addr2 = addr;
             loop {
-                let hdr = ctx.chunk_header_mut(chunks[i]);
+                let hdr = ctx.chunk_header_mut(ctx.chunks[i]);
                 addr2 = align_to(addr2, hdr.shdr.sh_addralign.get());
                 hdr.shdr.sh_addr.set(addr2);
                 addr2 += hdr.shdr.sh_size.get();
-                if i + 2 == chunks.len() || !is_tbss(ctx, chunks[i + 1]) {
+                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, ctx.chunks[i + 1]) {
                     break;
                 }
                 i += 1;
@@ -3842,22 +3846,27 @@ fn align_with_skew(val: u64, align: u64, skew: u64) -> u64 {
 
 // Assign file offsets to output sections.
 fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
-    let chunks = ctx.chunks.clone();
     let page_size = ctx.page_size;
     let mut fileoff = 0u64;
     let mut i = 0;
 
-    while i < chunks.len() {
-        let first = ctx.chunk_header(chunks[i]).shdr;
+    while i < ctx.chunks.len() {
+        let first = ctx.chunk_header(ctx.chunks[i]).shdr;
         if first.sh_flags.get() & SHF_ALLOC as u64 == 0 {
             fileoff = align_to(fileoff, first.sh_addralign.get());
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
             fileoff += first.sh_size.get();
             i += 1;
             continue;
         }
         if first.sh_type.get() == SHT_NOBITS {
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
             i += 1;
             continue;
         }
@@ -3871,14 +3880,17 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         // Assign ALLOC sections contiguous file offsets as long as they
         // are contiguous in memory.
         loop {
-            let shdr = ctx.chunk_header(chunks[i]).shdr;
+            let shdr = ctx.chunk_header(ctx.chunks[i]).shdr;
             let offset = fileoff + shdr.sh_addr.get() - first.sh_addr.get();
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(offset);
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(offset);
             i += 1;
-            if i >= chunks.len() {
+            if i >= ctx.chunks.len() {
                 break;
             }
-            let next = ctx.chunk_header(chunks[i]).shdr;
+            let next = ctx.chunk_header(ctx.chunks[i]).shdr;
             if next.sh_flags.get() & SHF_ALLOC as u64 == 0 || next.sh_type.get() == SHT_NOBITS {
                 break;
             }
@@ -3887,7 +3899,7 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
             if next.sh_addr.get() < first.sh_addr.get() {
                 break;
             }
-            let prev = ctx.chunk_header(chunks[i - 1]).shdr;
+            let prev = ctx.chunk_header(ctx.chunks[i - 1]).shdr;
             // This section requires larger alignment, we need to adjust the
             // offset to ensure offset % align == vaddr % align.
             if next.sh_addralign.get() > page_size
@@ -3904,15 +3916,18 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
             }
         }
 
-        let last = ctx.chunk_header(chunks[i - 1]).shdr;
+        let last = ctx.chunk_header(ctx.chunks[i - 1]).shdr;
         fileoff = last.sh_offset.get() + last.sh_size.get();
 
-        while i < chunks.len() {
-            let shdr = ctx.chunk_header(chunks[i]).shdr;
+        while i < ctx.chunks.len() {
+            let shdr = ctx.chunk_header(ctx.chunks[i]).shdr;
             if shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 || shdr.sh_type.get() != SHT_NOBITS {
                 break;
             }
-            ctx.chunk_header_mut(chunks[i]).shdr.sh_offset.set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
             i += 1;
         }
     }
@@ -3936,7 +3951,8 @@ pub fn separate_debug_sections<E: Arch>(ctx: &mut Context<E>) {
 
 pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     // Update sh_size for each chunk.
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         chunks::update_shdr(ctx, id);
     }
 
@@ -3954,7 +3970,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
 
     // Set section indices.
     let mut shndx = 1u32;
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if !id.is_header() {
             ctx.chunk_header_mut(id).shndx = shndx;
             shndx += 1;
@@ -3978,7 +3995,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
 
     // Some types of section header refer to other section by index.
     // Recompute all section headers to fill such fields with correct values.
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         chunks::update_shdr(ctx, id);
     }
 
@@ -4482,8 +4500,8 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         ctx.chunks[i] = ChunkId::Placeholder(ctx.placeholders.len() as u32 - 1);
     }
 
-    let new_chunks = ctx.chunks[num_chunks..].to_vec();
-    for id in new_chunks {
+    for i in num_chunks..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         chunks::compute_section_size(ctx, id);
     }
     sort_debug_info_sections(ctx);
@@ -4499,7 +4517,8 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     // Assign file offsets to sections
     let page_size = ctx.page_size;
     let mut fileoff = 0;
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let shdr = &mut ctx.chunk_header_mut(id).shdr;
         if shdr.sh_type.get() == SHT_NOBITS {
             shdr.sh_offset.set(fileoff);

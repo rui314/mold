@@ -159,7 +159,8 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
 /// are left as zero.
 fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
     let mut offset = 0;
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let hdr = ctx.chunk_header_mut(id);
         offset = align_to(offset, hdr.shdr.sh_addralign.get());
         hdr.shdr.sh_offset.set(offset);

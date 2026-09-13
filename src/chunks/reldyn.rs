@@ -70,9 +70,9 @@ pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
 pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
     debug_assert!(ctx.args.pack_dyn_relocs_relr);
     let word = E::WORD_SIZE as u64;
-    let ids = ctx.chunks.clone();
 
-    for &id in &ids {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let n = chunks::num_dynrels(ctx, id);
         let hdr = ctx.chunk_header_mut(id);
         hdr.num_dynrels = n;
@@ -100,7 +100,8 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    let size: u64 = ids
+    let size: u64 = ctx
+        .chunks
         .iter()
         .map(|&id| ctx.chunk_header(id).relr.len() as u64 * word)
         .sum();
@@ -110,9 +111,9 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-    let ids = ctx.chunks.clone();
     if !ctx.args.pack_dyn_relocs_relr {
-        for &id in &ids {
+        for i in 0..ctx.chunks.len() {
+            let id = ctx.chunks[i];
             let n = chunks::num_dynrels(ctx, id);
             let hdr = ctx.chunk_header_mut(id);
             hdr.num_dynrels = n;
@@ -122,7 +123,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 
     let mut num_relocs = 0;
     let mut num_relrs = 0;
-    for &id in &ids {
+    for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
         num_relocs += hdr.num_dynrels;
         num_relrs += hdr.num_relrs;
