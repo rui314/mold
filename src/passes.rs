@@ -535,43 +535,6 @@ impl ComdatSymbolSlot {
     }
 }
 
-/// COMDAT signature keys and owners collected by each Rayon worker.
-struct ComdatWorkBins(Vec<UnsafeCell<(Bins<ComdatSymbolSlot>, Vec<PendingComdatOwner>)>>);
-
-// SAFETY: a Rayon worker has a unique index and executes at most one closure
-// at a time. The only caller does not invoke nested parallel work while using
-// its bin, and the bins are consumed after the traversal has joined.
-unsafe impl Sync for ComdatWorkBins {}
-
-impl ComdatWorkBins {
-    fn new() -> ComdatWorkBins {
-        ComdatWorkBins(
-            (0..=rayon::current_num_threads())
-                .map(|_| UnsafeCell::new((Bins::new(), Vec::new())))
-                .collect(),
-        )
-    }
-
-    #[inline]
-    fn with_local(
-        &self,
-        f: impl FnOnce(&mut Bins<ComdatSymbolSlot>, &mut Vec<PendingComdatOwner>),
-    ) {
-        let fallback = self.0.len() - 1;
-        let i = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
-        // SAFETY: the Sync invariant above gives this worker exclusive access
-        // to its indexed buffers for the duration of this non-nested closure.
-        let (bins, pending) = unsafe { &mut *self.0[i].get() };
-        f(bins, pending);
-    }
-
-    fn into_parts(self) -> (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) {
-        self.0.into_iter().map(UnsafeCell::into_inner).unzip()
-    }
-}
-
 // Select COMDAT groups and construct input sections. If LTO will run,
 // the first invocation also constructs the losing copies of COMDAT
 // members because this function runs again after LTO and may then
@@ -587,45 +550,52 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     let t = ctx.timer("read_section_metadata");
     let (bins, pending): (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) = {
         let Context { objs, symbols, .. } = ctx;
-        let work = ComdatWorkBins::new();
+        // Reuse each worker's buffers across jobs, locking once per file.
+        let workers = rayon::current_num_threads();
+        let work: Vec<_> = (0..=workers)
+            .map(|_| Mutex::new((Bins::new(), Vec::new())))
+            .collect();
         objs.par_iter_mut().for_each(|file| {
-            work.with_local(|bins, pending| {
-                if file.base.is_reachable() {
-                    if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
-                        file.read_section_metadata();
-                    }
-                    let priority = file.base.priority;
-                    let is_lto_output = file.is_lto_output;
-                    for group in &mut file.comdat_groups {
-                        if group.signature() != SymbolId::DISCARDED_COMDAT {
-                            let sym = &symbols[group.signature()];
-                            // A group claimed by an IR file belongs to the LTO result, so only an
-                            // LTO-generated file may own it. LLVM keeps claimed groups in its output;
-                            // GCC emits their contents without a group, so no file owns them.
-                            if !sym.comdat_claimed_by_ir() || is_lto_output {
-                                sym.record_comdat_owner(priority);
-                            }
+            let worker = rayon::current_thread_index().unwrap_or(workers);
+            let mut local = work[worker].lock().unwrap();
+            let (bins, pending) = &mut *local;
+            if file.base.is_reachable() {
+                if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
+                    file.read_section_metadata();
+                }
+                let priority = file.base.priority;
+                let is_lto_output = file.is_lto_output;
+                for group in &mut file.comdat_groups {
+                    if group.signature() != SymbolId::DISCARDED_COMDAT {
+                        let sym = &symbols[group.signature()];
+                        // A group claimed by an IR file belongs to the LTO result, so only an
+                        // LTO-generated file may own it. LLVM keeps claimed groups in its output;
+                        // GCC emits their contents without a group, so no file owns them.
+                        if !sym.comdat_claimed_by_ir() || is_lto_output {
+                            sym.record_comdat_owner(priority);
                         }
                     }
-                    let signatures = &file.pending_comdat_signatures;
-                    let groups = &mut file.comdat_groups;
-                    for signature in signatures {
-                        let group = &mut groups[signature.group_idx as usize];
-                        bins.record(
-                            signature.key,
-                            signature.name_len as usize,
-                            ComdatSymbolSlot::new(group),
-                        );
-                        pending.push(PendingComdatOwner {
-                            group: NonNull::from(group),
-                            priority,
-                            is_lto_output,
-                        });
-                    }
                 }
-            });
+                let signatures = &file.pending_comdat_signatures;
+                let groups = &mut file.comdat_groups;
+                for signature in signatures {
+                    let group = &mut groups[signature.group_idx as usize];
+                    bins.record(
+                        signature.key,
+                        signature.name_len as usize,
+                        ComdatSymbolSlot::new(group),
+                    );
+                    pending.push(PendingComdatOwner {
+                        group: NonNull::from(group),
+                        priority,
+                        is_lto_output,
+                    });
+                }
+            }
         });
-        work.into_parts()
+        work.into_iter()
+            .map(|bin| bin.into_inner().unwrap())
+            .unzip()
     };
 
     drop(t);
