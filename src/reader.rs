@@ -48,7 +48,7 @@ pub fn get_machine_type<E: Arch>(
 ) -> Option<&'static str> {
     match get_file_type(ctx, mf) {
         FileType::Text => crate::linker_script::output_target(ctx, rctx, mf),
-        _ => filetype::get_machine_type(&ctx.args.plugin, mf, || None),
+        _ => filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None),
     }
 }
 
@@ -61,7 +61,7 @@ fn new_object_file<E: Arch>(
     static COUNT: Counter = Counter::new("parsed_objs");
     COUNT.increment();
 
-    let target = filetype::get_machine_type(&ctx.args.plugin, mf, || None);
+    let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None);
     match target {
         None => fatal!("{}: unknown machine type", mf.name.display()),
         Some(t) if t != ctx.args.emulation => {
@@ -89,7 +89,7 @@ fn new_shared_file<E: Arch>(
     if rctx.is_static {
         fatal!("{}: attempted static link of a dynamic object", mf.name.display());
     }
-    let target = filetype::get_machine_type(&ctx.args.plugin, mf, || None);
+    let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None);
     match target {
         None => fatal!("{}: unknown machine type", mf.name.display()),
         Some(t) if t != ctx.args.emulation => {
@@ -192,7 +192,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
             push_loaded(ctx, Loaded::Dso(rctx.pos.clone(), Box::new(file)));
         }
         FileType::Ar | FileType::ThinAr => {
-            for child in archive_file::read_archive_members(mf) {
+            for child in archive_file::read_archive_members(&ctx.args.chroot, mf) {
                 let child_rctx = rctx.next_child();
                 if let Some(loaded) = read_archive_member(ctx, &child_rctx, child, &mf.name) {
                     push_loaded(ctx, loaded);
@@ -228,7 +228,9 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
         }
         if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
             if get_file_type(ctx, mf) != FileType::Text {
-                if let Some(target) = filetype::get_machine_type(&ctx.args.plugin, mf, || None) {
+                if let Some(target) =
+                    filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None)
+                {
                     return target;
                 }
             }

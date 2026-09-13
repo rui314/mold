@@ -177,11 +177,14 @@ pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn read_thin_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
+pub fn read_thin_archive_members(
+    chroot: &Path,
+    mf: &'static MappedFile,
+) -> Vec<&'static MappedFile> {
     get_thin_archive_member_paths(mf)
         .into_iter()
         .map(|path| {
-            let member = MappedFile::must_open(&path);
+            let member = crate::mapped_file::must_open_file(chroot, &path);
             util::leak(MappedFile {
                 name: member.name.clone(),
                 data: member.data,
@@ -204,11 +207,11 @@ pub fn read_fat_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedF
         .collect()
 }
 
-pub fn read_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
+pub fn read_archive_members(chroot: &Path, mf: &'static MappedFile) -> Vec<&'static MappedFile> {
     if mf.data().starts_with(b"!<arch>\n") {
         read_fat_archive_members(mf)
     } else {
         debug_assert!(mf.data().starts_with(b"!<thin>\n"));
-        read_thin_archive_members(mf)
+        read_thin_archive_members(chroot, mf)
     }
 }

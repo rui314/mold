@@ -286,6 +286,7 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
 // (e.g. EM_X86_64 or EM_386).
 pub fn get_machine_type(
     plugin: &std::path::Path,
+    chroot: &std::path::Path,
     mf: &'static MappedFile,
     script_target: impl FnOnce() -> Option<&'static str>,
 ) -> Option<&'static str> {
@@ -300,7 +301,7 @@ pub fn get_machine_type(
                 )
             })
             .and_then(|child| get_elf_target(child.data())),
-        FileType::ThinAr => archive_file::read_thin_archive_members(mf)
+        FileType::ThinAr => archive_file::read_thin_archive_members(chroot, mf)
             .into_iter()
             .find(|child| {
                 matches!(
