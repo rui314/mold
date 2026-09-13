@@ -276,5 +276,5 @@ pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedF
 
 /// Whether a path refers to something that is not a directory.
 pub fn is_file(path: impl AsRef<Path>) -> bool {
-    path.as_ref().is_file()
+    path.as_ref().metadata().is_ok_and(|m| !m.is_dir())
 }
