@@ -1,6 +1,6 @@
 //! Input sections and the records the linker parses out of them.
 
-use std::fmt;
+use std::fmt::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use bstr::BStr;
@@ -620,8 +620,8 @@ impl<E: Arch> InputSection<E> {
         fmt::from_fn(move |f| write!(f, "{}:({})", file, self.name(file)))
     }
 
-    /// Get the name of a function containin a given offset.
-    pub fn func_name(&self, ctx: &Context<E>, offset: u64) -> Option<String> {
+    /// Returns the function containing a given offset.
+    pub fn func_symbol<'a>(&self, ctx: &'a Context<E>, offset: u64) -> Option<&'a Symbol> {
         let file = &ctx.objs[self.file.index()];
         for &id in &file.base.symbols {
             let sym = &ctx.symbols[id];
@@ -634,7 +634,7 @@ impl<E: Arch> InputSection<E> {
                 && esym.st_value().get() <= offset
                 && offset < esym.st_value().get() + esym.st_size().get()
             {
-                return Some(sym.to_string());
+                return Some(sym);
             }
         }
         None
@@ -936,10 +936,12 @@ impl<E: Arch> InputSection<E> {
             sym
         );
         if let Some(owner) = find_comdat_owner(ctx, file, rel.r_sym() as usize) {
-            msg += &format!(
+            write!(
+                msg,
                 "\n>>> prevailing definition is in {}",
                 ctx.objs[owner.index()]
-            );
+            )
+            .unwrap();
         }
         error!("{msg}");
     }
@@ -954,12 +956,12 @@ impl<E: Arch> InputSection<E> {
     ) {
         let mut msg = String::new();
         match file.base.source_name(&ctx.symbols) {
-            Some(source) => msg += &format!(">>> referenced by {}\n", util::display(source)),
-            None => msg += &format!(">>> referenced by {}\n", self.display(file)),
+            Some(source) => writeln!(msg, ">>> referenced by {}", util::display(source)).unwrap(),
+            None => writeln!(msg, ">>> referenced by {}", self.display(file)).unwrap(),
         }
-        msg += &format!(">>>               {file}");
-        if let Some(func) = self.func_name(ctx, rel.r_offset()) {
-            msg += &format!(":({func})");
+        write!(msg, ">>>               {file}").unwrap();
+        if let Some(func) = self.func_symbol(ctx, rel.r_offset()) {
+            write!(msg, ":({func})").unwrap();
         }
         msg.push('\n');
         ctx.undef_errors
