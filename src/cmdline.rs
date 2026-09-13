@@ -534,7 +534,7 @@ pub struct Args {
     pub undefined: Vec<Vec<u8>>,
     pub defsyms: Vec<(Vec<u8>, DefsymValue)>,
     pub library_paths: Vec<PathBuf>,
-    pub plugin_opt: Vec<String>,
+    pub plugin_opt: Vec<Vec<u8>>,
     pub version_definitions: Vec<Vec<u8>>,
     pub version_scripts: Vec<PathBuf>,
     pub dynamic_list: Vec<DynamicListSource>,
@@ -1235,8 +1235,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                  elf64loongarch\n   elf32loongarch"
             );
             version_shown = true;
-        } else if read_arg!("mllvm") {
-            a.plugin_opt.push(arg.clone());
+        } else if read_arg!("mllvm", true) {
+            a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("m") {
             match arch::emulation_to_target(&arg) {
                 Some(name) => a.emulation = name.to_string(),
@@ -1728,67 +1728,89 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.quick_exit = false;
         } else if read_arg!("plugin", true) {
             a.plugin = PathBuf::from(&raw_arg);
-        } else if read_arg!("plugin-opt") {
-            a.plugin_opt.push(arg.clone());
+        } else if read_arg!("plugin-opt", true) {
+            a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_flag!("lto-cs-profile-generate") {
-            a.plugin_opt.push("cs-profile-generate".to_string());
-        } else if read_arg!("lto-cs-profile-file") {
-            a.plugin_opt.push(format!("cs-profile-path={arg}"));
+            a.plugin_opt.push(b"cs-profile-generate".to_vec());
+        } else if read_arg!("lto-cs-profile-file", true) {
+            a.plugin_opt
+                .push([b"cs-profile-path=", raw_arg.as_encoded_bytes()].concat());
         } else if read_flag!("lto-debug-pass-manager") {
-            a.plugin_opt.push("debug-pass-manager".to_string());
+            a.plugin_opt.push(b"debug-pass-manager".to_vec());
         } else if read_flag!("disable-verify") {
-            a.plugin_opt.push("disable-verify".to_string());
+            a.plugin_opt.push(b"disable-verify".to_vec());
         } else if read_flag!("lto-emit-asm") {
-            a.plugin_opt.push("emit-asm".to_string());
+            a.plugin_opt.push(b"emit-asm".to_vec());
         } else if read_flag!("no-legacy-pass-manager") {
-            a.plugin_opt.push("legacy-pass-manager".to_string());
-        } else if read_arg!("lto-partitions") {
-            a.plugin_opt.push(format!("lto-partitions={arg}"));
+            a.plugin_opt.push(b"legacy-pass-manager".to_vec());
+        } else if read_arg!("lto-partitions", true) {
+            a.plugin_opt
+                .push([b"lto-partitions=", raw_arg.as_encoded_bytes()].concat());
         } else if read_flag!("no-lto-legacy-pass-manager") {
-            a.plugin_opt.push("new-pass-manager".to_string());
-        } else if read_arg!("lto-obj-path") {
-            a.plugin_opt.push(format!("obj-path={arg}"));
-        } else if read_arg!("opt-remarks-filename") {
-            a.plugin_opt.push(format!("opt-remarks-filename={arg}"));
-        } else if read_arg!("opt-remarks-format") {
-            a.plugin_opt.push(format!("opt-remarks-format={arg}"));
-        } else if read_arg!("opt-remarks-hotness-threshold") {
+            a.plugin_opt.push(b"new-pass-manager".to_vec());
+        } else if read_arg!("lto-obj-path", true) {
             a.plugin_opt
-                .push(format!("opt-remarks-hotness-threshold={arg}"));
-        } else if read_arg!("opt-remarks-passes") {
-            a.plugin_opt.push(format!("opt-remarks-passes={arg}"));
+                .push([b"obj-path=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("opt-remarks-filename", true) {
+            a.plugin_opt
+                .push([b"opt-remarks-filename=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("opt-remarks-format", true) {
+            a.plugin_opt
+                .push([b"opt-remarks-format=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("opt-remarks-hotness-threshold", true) {
+            a.plugin_opt.push(
+                [
+                    b"opt-remarks-hotness-threshold=",
+                    raw_arg.as_encoded_bytes(),
+                ]
+                .concat(),
+            );
+        } else if read_arg!("opt-remarks-passes", true) {
+            a.plugin_opt
+                .push([b"opt-remarks-passes=", raw_arg.as_encoded_bytes()].concat());
         } else if read_flag!("opt-remarks-with-hotness") {
-            a.plugin_opt.push("opt-remarks-with-hotness".to_string());
-        } else if let Some(level) = cmdline[i].strip_prefix("-lto-O") {
-            a.plugin_opt.push(format!("O{level}"));
+            a.plugin_opt.push(b"opt-remarks-with-hotness".to_vec());
+        } else if let Some(level) = raw_cmdline[i].as_encoded_bytes().strip_prefix(b"-lto-O") {
+            a.plugin_opt.push([b"O", level].concat());
             i += 1;
-        } else if let Some(level) = cmdline[i].strip_prefix("--lto-O") {
-            a.plugin_opt.push(format!("O{level}"));
+        } else if let Some(level) = raw_cmdline[i].as_encoded_bytes().strip_prefix(b"--lto-O") {
+            a.plugin_opt.push([b"O", level].concat());
             i += 1;
-        } else if read_arg!("lto-pseudo-probe-for-profiling") {
+        } else if read_arg!("lto-pseudo-probe-for-profiling", true) {
             a.plugin_opt
-                .push(format!("pseudo-probe-for-profiling={arg}"));
-        } else if read_arg!("lto-sample-profile") {
-            a.plugin_opt.push(format!("sample-profile={arg}"));
+                .push([b"pseudo-probe-for-profiling=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("lto-sample-profile", true) {
+            a.plugin_opt
+                .push([b"sample-profile=", raw_arg.as_encoded_bytes()].concat());
         } else if read_flag!("save-temps") {
-            a.plugin_opt.push("save-temps".to_string());
+            a.plugin_opt.push(b"save-temps".to_vec());
         } else if read_flag!("thinlto-emit-imports-files") {
-            a.plugin_opt.push("thinlto-emit-imports-files".to_string());
-        } else if read_arg!("thinlto-index-only") {
-            a.plugin_opt.push(format!("thinlto-index-only={arg}"));
-        } else if read_flag!("thinlto-index-only") {
-            a.plugin_opt.push("thinlto-index-only".to_string());
-        } else if read_arg!("thinlto-object-suffix-replace") {
+            a.plugin_opt.push(b"thinlto-emit-imports-files".to_vec());
+        } else if read_arg!("thinlto-index-only", true) {
             a.plugin_opt
-                .push(format!("thinlto-object-suffix-replace={arg}"));
-        } else if read_arg!("thinlto-prefix-replace") {
-            a.plugin_opt.push(format!("thinlto-prefix-replace={arg}"));
-        } else if read_arg!("thinlto-cache-dir") {
-            a.plugin_opt.push(format!("cache-dir={arg}"));
-        } else if read_arg!("thinlto-cache-policy") {
-            a.plugin_opt.push(format!("cache-policy={arg}"));
-        } else if read_arg!("thinlto-jobs") {
-            a.plugin_opt.push(format!("jobs={arg}"));
+                .push([b"thinlto-index-only=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_flag!("thinlto-index-only") {
+            a.plugin_opt.push(b"thinlto-index-only".to_vec());
+        } else if read_arg!("thinlto-object-suffix-replace", true) {
+            a.plugin_opt.push(
+                [
+                    b"thinlto-object-suffix-replace=",
+                    raw_arg.as_encoded_bytes(),
+                ]
+                .concat(),
+            );
+        } else if read_arg!("thinlto-prefix-replace", true) {
+            a.plugin_opt
+                .push([b"thinlto-prefix-replace=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("thinlto-cache-dir", true) {
+            a.plugin_opt
+                .push([b"cache-dir=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("thinlto-cache-policy", true) {
+            a.plugin_opt
+                .push([b"cache-policy=", raw_arg.as_encoded_bytes()].concat());
+        } else if read_arg!("thinlto-jobs", true) {
+            a.plugin_opt
+                .push([b"jobs=", raw_arg.as_encoded_bytes()].concat());
         } else if read_arg!("thread-count") {
             a.thread_count = Some(parse_number("thread-count", &arg).max(1) as usize);
         } else if read_flag!("threads") {

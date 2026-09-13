@@ -715,7 +715,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
     };
 
     // Strings in the transfer vector must outlive the plugin.
-    let cstr = |s: &str| CString::new(s).unwrap().into_raw() as *const c_void;
+    let cstr = |s: &[u8]| CString::new(s).unwrap().into_raw() as *const c_void;
     let func = |f: usize| f as *const c_void;
     let output = if ctx.args.shared {
         LDPO_DYN
