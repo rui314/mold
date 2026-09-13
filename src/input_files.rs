@@ -874,7 +874,7 @@ pub struct ObjectFile<E: Arch> {
     /// `.got2` for PPC32.
     pub got2: Option<u32>,
 
-    symtab_shndx: Vec<u32>,
+    symtab_shndx: &'static [[u8; 4]],
     num_common_symbols: u32,
 }
 
@@ -1198,7 +1198,7 @@ impl<E: Arch> ObjectFile<E> {
             lto_comdat_discarded: Vec::new(),
             riscv_attributes: RiscvAttributes::default(),
             got2: None,
-            symtab_shndx: Vec::new(),
+            symtab_shndx: &[],
             num_common_symbols: 0,
         }
     }
@@ -1255,7 +1255,9 @@ impl<E: Arch> ObjectFile<E> {
     #[inline]
     pub(crate) fn shndx_from(&self, idx: usize, st_shndx: u16) -> usize {
         if st_shndx as u32 == SHN_XINDEX {
-            self.symtab_shndx.get(idx).copied().unwrap_or(0) as usize
+            self.symtab_shndx
+                .get(idx)
+                .map_or(0, |bytes| E::Endian::read_u32(bytes)) as usize
         } else if st_shndx as u32 >= SHN_LORESERVE {
             0
         } else {
@@ -1496,7 +1498,7 @@ impl<E: Arch> ObjectFile<E> {
 
             if let Some(idx) = self.base.find_section(SHT_SYMTAB_SHNDX) {
                 let bytes = self.base.section_contents(idx);
-                self.symtab_shndx = bytes.chunks_exact(4).map(E::Endian::read_u32).collect();
+                self.symtab_shndx = bytes.as_chunks::<4>().0;
             }
         }
     }
@@ -3242,14 +3244,9 @@ impl<E: Arch> SharedFile<E> {
         self.base.symbols.reserve(num_syms);
         self.symbols2.reserve(num_syms);
 
-        let vers: Vec<u16> = match self.base.find_section(SHT_GNU_VERSYM) {
-            Some(idx) => self
-                .base
-                .section_contents(idx)
-                .chunks_exact(2)
-                .map(E::Endian::read_u16)
-                .collect(),
-            None => Vec::new(),
+        let vers: &[[u8; 2]] = match self.base.find_section(SHT_GNU_VERSYM) {
+            Some(idx) => self.base.section_contents(idx).as_chunks::<2>().0,
+            None => &[],
         };
 
         for i in first..esyms.len() {
@@ -3257,7 +3254,7 @@ impl<E: Arch> SharedFile<E> {
             let mut ver = if vers.is_empty() {
                 VER_NDX_GLOBAL as u16
             } else {
-                vers[i] & !(VERSYM_HIDDEN as u16)
+                E::Endian::read_u16(&vers[i]) & !(VERSYM_HIDDEN as u16)
             };
 
             // A version index of 0 (VER_NDX_LOCAL) is valid only for unversioned
@@ -3289,7 +3286,7 @@ impl<E: Arch> SharedFile<E> {
             // `foo@@VERSION` definition instead. Versyms of undefined symbols
             // encode required versions, so they are exempt.
             if !vers.is_empty()
-                && vers[i] == (VERSYM_HIDDEN | VER_NDX_GLOBAL) as u16
+                && E::Endian::read_u16(&vers[i]) == (VERSYM_HIDDEN | VER_NDX_GLOBAL) as u16
                 && !esym.is_undef()
             {
                 continue;
@@ -3331,7 +3328,7 @@ impl<E: Arch> SharedFile<E> {
             let (key, alias) = if !has_version {
                 // Unversioned symbol
                 (name, None)
-            } else if esym.is_undef() || vers[i] & VERSYM_HIDDEN as u16 != 0 {
+            } else if esym.is_undef() || E::Endian::read_u16(&vers[i]) & VERSYM_HIDDEN as u16 != 0 {
                 // Versioned non-default symbol, or undefined reference whose
                 // version comes from .gnu.version_r.
                 (versioned_key(), None)
