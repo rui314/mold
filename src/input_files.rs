@@ -2788,8 +2788,9 @@ impl<E: Arch> ObjectFile<E> {
     // Returns true if a given section contains a DWARF32 debug record.
     // `isec` must be a .debug_info section.
     pub fn is_dwarf32(&mut self) -> bool {
-        let name = self.to_string();
-        for shndx in self.debug_info_sections.clone() {
+        let name = display_file(&self.base.filename, &self.archive_name);
+        for i in 0..self.debug_info_sections.len() {
+            let shndx = self.debug_info_sections[i];
             let isec = self.section_at(shndx);
             let section_name = isec.name(self);
             if isec.sh_size < 12 {
@@ -2824,7 +2825,7 @@ impl<E: Arch> ObjectFile<E> {
             //
             // An input .debug_info section may be compressed using zlib or zstd, so
             // we need to uncompress it before accessing `isec->contents`.
-            let isec = self.section_mut(shndx as usize).unwrap();
+            let isec = self.sections.section_mut(shndx as usize).unwrap();
             isec.uncompress(&name, section_name, input_size);
             let contents = isec.contents();
             let mut p = first_size;

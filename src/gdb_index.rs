@@ -685,7 +685,8 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
             let file_id = file.id().0;
             let name = file.to_string();
             let mut debug_info = Vec::new();
-            for shndx in file.debug_info_sections.clone() {
+            for i in 0..file.debug_info_sections.len() {
+                let shndx = file.debug_info_sections[i];
                 let Some(section_name) = file.section(shndx as usize).map(|isec| isec.name(file))
                 else {
                     continue;
