@@ -2335,16 +2335,15 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
                 }
             }
             let size = isec.sh_size;
-            let mut rels = isec.rels(file).to_vec();
-            for r in &mut rels {
+            let file = &mut ctx.objs[section_ref.file.index()];
+            let rels = file.rels_mut(section_ref.shndx);
+            for r in rels.iter_mut() {
                 r.set_r_offset(size - r.r_offset() - word as u64);
             }
             rels.sort_by_key(|r| r.r_offset());
-            let file = &mut ctx.objs[section_ref.file.index()];
             file.section_mut(section_ref.shndx as usize)
                 .unwrap()
                 .set_contents(leak_bytes(contents));
-            file.rels_mut(section_ref.shndx).copy_from_slice(&rels);
         }
     }
 }

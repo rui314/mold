@@ -2008,9 +2008,7 @@ impl<E: Arch> ObjectFile<E> {
             }
             let rels = isec.rels(self);
             if !rels.iter().map(|r| r.r_offset()).is_sorted() {
-                let mut sorted = rels.to_vec();
-                sorted.sort_by_key(|r| r.r_offset());
-                self.rels_mut(shndx).copy_from_slice(&sorted);
+                self.rels_mut(shndx).sort_by_key(|r| r.r_offset());
             }
         }
     }
