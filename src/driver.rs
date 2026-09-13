@@ -17,11 +17,13 @@ use crate::{error, fatal, passes};
 
 /// Runs the linker with the given command line. Returns the exit status.
 ///
-/// `link_for_target` links for a named target, or reports the target the
-/// inputs are actually for; the executable provides it, as the targets
-/// are instantiated in crates of their own.
+/// `initial_target` is an enabled target used for the initial argument
+/// parsing. `link_for_target` links for a named target, or reports the
+/// target the inputs are actually for; the executable provides both, as
+/// the targets are instantiated in crates of their own.
 pub fn main(
     argv: Vec<std::ffi::OsString>,
+    initial_target: &str,
     link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, String>,
 ) -> i32 {
     // Process -run option first. process_run_subcommand() does not return.
@@ -37,9 +39,9 @@ pub fn main(
     // Parse non-positional command line options
     let cmdline = cmdline::expand_response_files(&argv);
 
-    // Parse with x86-64 defaults; if the target turns out to be different,
-    // start over with the right one.
-    let mut target = "x86_64".to_string();
+    // Parse with an enabled target's defaults; if the target turns out to
+    // be different, start over with the right one.
+    let mut target = initial_target.to_string();
     loop {
         if let Some(cwd) = &orig_cwd {
             let _ = std::env::set_current_dir(cwd);
