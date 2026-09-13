@@ -25,29 +25,12 @@
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
-    Str,
+#[derive(Clone, Debug)]
+enum Token {
+    Str(Vec<u8>),
     Star,
     Question,
-    Bracket,
-}
-
-#[derive(Clone, Debug)]
-struct Token {
-    kind: Kind,
-    str: Vec<u8>,
-    chars: Box<[bool; 256]>,
-}
-
-impl Token {
-    fn new(kind: Kind) -> Self {
-        Token {
-            kind,
-            str: Vec::new(),
-            chars: Box::new([false; 256]),
-        }
-    }
+    Bracket(Box<[bool; 256]>),
 }
 
 #[derive(Debug)]
@@ -74,7 +57,7 @@ impl Pattern {
                     // Both `!` and `^` are accepted as negation markers. `!` is the
                     // POSIX/shell convention used by other linkers. `^` was mold's
                     // original syntax and is kept for backward compatibility.
-                    let mut tok = Token::new(Kind::Bracket);
+                    let mut chars = Box::new([false; 256]);
                     let mut negate = false;
                     let mut closed = false;
 
@@ -109,10 +92,10 @@ impl Pattern {
                                 return None;
                             }
                             for i in start..=end {
-                                tok.chars[i as usize] = true;
+                                chars[i as usize] = true;
                             }
                         } else {
-                            tok.chars[pat[0] as usize] = true;
+                            chars[pat[0] as usize] = true;
                             pat = &pat[1..];
                         }
                     }
@@ -121,16 +104,16 @@ impl Pattern {
                         return None;
                     }
                     if negate {
-                        for flag in tok.chars.iter_mut() {
+                        for flag in chars.iter_mut() {
                             *flag = !*flag;
                         }
                     }
-                    tokens.push(tok);
+                    tokens.push(Token::Bracket(chars));
                 }
-                b'?' => tokens.push(Token::new(Kind::Question)),
+                b'?' => tokens.push(Token::Question),
                 b'*' => {
-                    if tokens.last().is_none_or(|t| t.kind != Kind::Star) {
-                        tokens.push(Token::new(Kind::Star));
+                    if !matches!(tokens.last(), Some(Token::Star)) {
+                        tokens.push(Token::Star);
                     }
                 }
                 b'\\' => {
@@ -145,8 +128,8 @@ impl Pattern {
     }
 
     fn matches(&self, s: &[u8]) -> bool {
-        if let Some(last) = self.tokens.last() {
-            if last.kind == Kind::Str && !s.ends_with(&last.str) {
+        if let Some(Token::Str(suffix)) = self.tokens.last() {
+            if !s.ends_with(suffix) {
                 return false;
             }
         }
@@ -158,37 +141,37 @@ impl Pattern {
         while x < s.len() || y < self.tokens.len() {
             if y < self.tokens.len() {
                 let tok = &self.tokens[y];
-                match tok.kind {
-                    Kind::Str => {
-                        if s[x..].starts_with(&tok.str) {
-                            x += tok.str.len();
+                match tok {
+                    Token::Str(literal) => {
+                        if s[x..].starts_with(literal) {
+                            x += literal.len();
                             y += 1;
                             continue;
                         }
                     }
-                    Kind::Star => {
+                    Token::Star => {
                         next = Some((x + 1, y));
                         y += 1;
-                        if let Some(tok) = self.tokens.get(y).filter(|t| t.kind == Kind::Str) {
-                            let Some(pos) = find(&s[x..], &tok.str) else {
+                        if let Some(Token::Str(literal)) = self.tokens.get(y) {
+                            let Some(pos) = find(&s[x..], literal) else {
                                 return false;
                             };
                             let pos = x + pos;
                             next = Some((pos + 1, y - 1));
-                            x = pos + tok.str.len();
+                            x = pos + literal.len();
                             y += 1;
                         }
                         continue;
                     }
-                    Kind::Question => {
+                    Token::Question => {
                         if x < s.len() {
                             x += 1;
                             y += 1;
                             continue;
                         }
                     }
-                    Kind::Bracket => {
-                        if x < s.len() && tok.chars[s[x] as usize] {
+                    Token::Bracket(chars) => {
+                        if x < s.len() && chars[s[x] as usize] {
                             x += 1;
                             y += 1;
                             continue;
@@ -211,10 +194,11 @@ impl Pattern {
 }
 
 fn push_char(tokens: &mut Vec<Token>, c: u8) {
-    if tokens.last().is_none_or(|t| t.kind != Kind::Str) {
-        tokens.push(Token::new(Kind::Str));
+    if let Some(Token::Str(literal)) = tokens.last_mut() {
+        literal.push(c);
+    } else {
+        tokens.push(Token::Str(vec![c]));
     }
-    tokens.last_mut().unwrap().str.push(c);
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -252,9 +236,9 @@ impl Nfa {
         for pattern in patterns {
             num_states += 1;
             for tok in &pattern.tokens {
-                match tok.kind {
-                    Kind::Str => num_states += tok.str.len(),
-                    Kind::Star => {}
+                match tok {
+                    Token::Str(literal) => num_states += literal.len(),
+                    Token::Star => {}
                     _ => num_states += 1,
                 }
             }
@@ -275,25 +259,25 @@ impl Nfa {
         for pattern in patterns {
             set_bit(&mut nfa.initial_states, state);
             for tok in &pattern.tokens {
-                match tok.kind {
-                    Kind::Str => {
-                        for &c in &tok.str {
+                match tok {
+                    Token::Str(literal) => {
+                        for &c in literal {
                             state += 1;
                             nfa.char_masks[c as usize * num_words + state / 64] |=
                                 1 << (state % 64);
                         }
                     }
-                    Kind::Star => set_bit(&mut nfa.star_states, state),
-                    Kind::Question => {
+                    Token::Star => set_bit(&mut nfa.star_states, state),
+                    Token::Question => {
                         state += 1;
                         for c in 0..256 {
                             nfa.char_masks[c * num_words + state / 64] |= 1 << (state % 64);
                         }
                     }
-                    Kind::Bracket => {
+                    Token::Bracket(chars) => {
                         state += 1;
                         for c in 0..256 {
-                            if tok.chars[c] {
+                            if chars[c] {
                                 nfa.char_masks[c * num_words + state / 64] |= 1 << (state % 64);
                             }
                         }
