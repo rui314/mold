@@ -40,7 +40,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{
     resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, FileList, ObjId,
-    ObjectFile, SymbolEditor, SymbolResolver,
+    ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
 };
 use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
@@ -428,7 +428,7 @@ pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
     let additional_capacity = ctx
         .objs
         .par_iter()
-        .filter(|file| file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed)
+        .filter(|file| file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed)
         .map(|file| {
             let locals = if file.base.elf_syms.is_empty() {
                 0
@@ -567,11 +567,11 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             let mut local = work[worker].lock().unwrap();
             let (bins, pending) = &mut *local;
             if file.base.is_reachable() {
-                if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
+                if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
                     file.read_section_metadata();
                 }
                 let priority = file.base.priority;
-                let is_lto_output = file.is_lto_output;
+                let is_lto_output = file.origin == ObjectOrigin::LtoOutput;
                 for group in &mut file.comdat_groups {
                     if group.signature() != SymbolId::DISCARDED_COMDAT {
                         let sym = &symbols[group.signature()];
@@ -707,7 +707,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     let keep_discarded_comdat = ctx
         .objs
         .iter()
-        .any(|f| f.base.is_reachable() && (f.is_lto_input || f.is_gcc_offload_obj));
+        .any(|f| f.base.is_reachable() && (f.is_lto_input() || f.is_gcc_offload_obj));
 
     let t = ctx.timer("parse_sections");
     let maximum: usize = ctx
@@ -716,7 +716,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
         .filter(|file| {
             file.base.is_reachable()
                 && file.base.mf.is_some()
-                && !file.is_lto_input
+                && !file.is_lto_input()
                 && !file.sections_parsed
         })
         .map(|file| {
@@ -739,7 +739,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                 if !file.base.is_reachable() {
                     return;
                 }
-                if file.base.mf.is_some() && !file.is_lto_input && !file.sections_parsed {
+                if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
                     file.parse_sections(args, file.id(), allocator, keep_discarded_comdat);
                     // Parsing already omitted losing groups and constructed
                     // the others alive. --gdb-index may kill group members.
@@ -855,7 +855,7 @@ fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile<E>)
 pub fn has_lto_obj<E: Arch>(ctx: &Context<E>) -> bool {
     ctx.objs
         .iter()
-        .any(|file| file.base.is_reachable() && (file.is_lto_input || file.is_gcc_offload_obj))
+        .any(|file| file.base.is_reachable() && (file.is_lto_input() || file.is_gcc_offload_obj))
 }
 
 // Do link-time optimization. We pass all IR object files to the compiler
@@ -889,11 +889,11 @@ pub fn do_lto<E: Arch>(ctx: &mut Context<E>) {
     // symbols. Reset their reachability so that resolve_symbols() below can
     // re-derive which archive members are actually needed.
     for file in &ctx.objs {
-        if file.is_lto_input || file.base.as_needed {
+        if file.is_lto_input() || file.base.as_needed {
             file.base.set_reachable(false);
         }
     }
-    remove_objects(ctx, |file| file.is_lto_input);
+    remove_objects(ctx, |file| file.is_lto_input());
     resolve_symbols(ctx);
 }
 
@@ -1879,14 +1879,14 @@ pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
             }
             // Skip if the symbol is a deduplicated comdat symbol that is in
             // an IR file.
-            if file.is_lto_input && file.lto_comdat_discarded[i] {
+            if file.is_lto_input() && file.lto_comdat_discarded[i] {
                 continue;
             }
             // Skip if one side is an LTO IR object and the other is not.
             // The LTO backend resolves conflicts between IR and regular objects
             // on its own; only IR-vs-IR duplicates need to be caught here.
             if let FileId::Obj(o) = owner {
-                if ctx.objs[o.index()].is_lto_input != file.is_lto_input {
+                if ctx.objs[o.index()].is_lto_input() != file.is_lto_input() {
                     continue;
                 }
             }

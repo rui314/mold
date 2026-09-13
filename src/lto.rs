@@ -118,7 +118,7 @@ use crate::arch::Arch;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::{FileId, ObjId, ObjectFile};
+use crate::input_files::{FileId, ObjId, ObjectFile, ObjectOrigin};
 use crate::mapped_file::{must_open_file, MappedFile};
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
@@ -420,7 +420,7 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     mf.set_dependency(false);
 
     let mut file = ObjectFile::<E>::new(mf, std::path::PathBuf::new());
-    file.is_lto_output = true;
+    file.origin = ObjectOrigin::LtoOutput;
     file.base.set_reachable(true);
     file.base.priority = ctx.lto_file_priority;
     ctx.lto_file_priority += 1;
@@ -603,7 +603,7 @@ unsafe fn get_symbols<E: Arch>(
             }
             Some(FileId::Dso(_)) => LDPR_RESOLVED_DYN,
             Some(FileId::Obj(owner)) => {
-                let in_ir = ctx.objs[owner.index()].is_lto_input && !sym.is_wrapped();
+                let in_ir = ctx.objs[owner.index()].is_lto_input() && !sym.is_wrapped();
                 match (in_ir, esym.is_undef()) {
                     (true, true) => LDPR_RESOLVED_IR,
                     (true, false) => LDPR_PREEMPTED_IR,
@@ -939,7 +939,7 @@ pub fn read_lto_object<E: Arch>(
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
     let mut args = ctx.cmdline_args.clone();
     for file in &ctx.objs {
-        if file.is_lto_input && !file.base.is_reachable() {
+        if file.is_lto_input() && !file.base.is_reachable() {
             let mut arg = std::ffi::OsString::from("--:ignore-ir-file=");
             arg.push(file.base.mf.unwrap().identifier());
             args.push(arg);
@@ -985,10 +985,10 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         let ctx: &Context<E> = ctx;
         ctx.objs
             .par_iter()
-            .filter(|file| !file.is_lto_input)
+            .filter(|file| !file.is_lto_input())
             .flat_map_iter(|file| {
                 file.base.global_symbols().iter().copied().filter(|&id| {
-                    matches!(ctx.symbols[id].file(), Some(FileId::Obj(owner)) if ctx.objs[owner.index()].is_lto_input)
+                    matches!(ctx.symbols[id].file(), Some(FileId::Obj(owner)) if ctx.objs[owner.index()].is_lto_input())
                 })
             })
             .collect()
@@ -1024,7 +1024,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         .claim_file
         .expect("the plugin registered a claim_file hook");
     for file in &ctx.objs {
-        if file.base.is_reachable() && !file.is_lto_input && file.is_gcc_offload_obj {
+        if file.base.is_reachable() && !file.is_lto_input() && file.is_gcc_offload_obj {
             let (input, _file) = plugin_input_file(file.base.mf.unwrap());
             let mut claimed: c_int = 0;
             // SAFETY: `input` describes an open file.
