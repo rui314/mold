@@ -80,12 +80,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     if syms.is_empty() {
         return;
     }
-    syms.sort_by_key(|&(dso, id)| {
-        (
-            ctx.dsos[dso.index()].soname.as_slice(),
-            ctx.symbols[id].ver_idx,
-        )
-    });
+    syms.sort_by_key(|&(dso, id)| (ctx.dsos[dso.index()].soname, ctx.symbols[id].ver_idx));
 
     // Resize .gnu.version
     let n = dynsym.symbols.len();
@@ -109,7 +104,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         let (dso, id) = syms[i];
         let start_group = i == 0 || syms[i - 1].0 != dso;
         if start_group {
-            let soname = ctx.dsos[dso.index()].soname.clone();
+            let soname = ctx.dsos[dso.index()].soname;
             let vn_file = ctx.dynstr.find_string(&soname) as u32;
             builder.start_group(vn_file);
             if ctx.args.pack_dyn_relocs_relr && is_glibc2(&ctx.dsos[dso.index()]) {

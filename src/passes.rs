@@ -2407,7 +2407,7 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
     let strings = ctx
         .dsos
         .iter()
-        .map(|dso| dso.soname.as_slice())
+        .map(|dso| dso.soname)
         .chain(ctx.args.auxiliary.iter().map(Vec::as_slice))
         .chain(ctx.args.filter.iter().map(Vec::as_slice))
         .chain([

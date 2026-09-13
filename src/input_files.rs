@@ -3136,7 +3136,7 @@ fn sframe_fre_block_size<E: Arch>(data: &[u8], offset: usize) -> usize {
 #[derive(Debug)]
 pub struct SharedFile<E: Layout> {
     pub base: InputFile<E>,
-    pub soname: Vec<u8>,
+    pub soname: &'static [u8],
     pub version_strings: Vec<&'static [u8]>,
 
     /// For each symbol, the `foo@VERSION` alias of a default-versioned
@@ -3170,7 +3170,7 @@ impl<E: Arch> SharedFile<E> {
             InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), Path::new("")));
         let mut file = SharedFile {
             base,
-            soname: Vec::new(),
+            soname: b"",
             version_strings: Vec::new(),
             symbols2: Vec::new(),
             versyms: Vec::new(),
@@ -3198,19 +3198,20 @@ impl<E: Arch> SharedFile<E> {
             })
     }
 
-    fn get_soname(&self) -> Vec<u8> {
+    fn get_soname(&self) -> &'static [u8] {
         if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).next() {
-            return soname.to_vec();
+            return soname;
         }
-        if let Some(mf) = self.base.mf {
-            let name = if mf.given_fullpath {
-                mf.name.as_os_str()
-            } else {
-                mf.name.file_name().unwrap_or_default()
-            };
-            return name.as_encoded_bytes().to_vec();
-        }
-        self.base.filename.as_bytes().to_vec()
+        let mf = self
+            .base
+            .mf
+            .expect("a shared object is backed by an input mapping");
+        let name = if mf.given_fullpath {
+            mf.name.as_os_str()
+        } else {
+            mf.name.file_name().unwrap_or_default()
+        };
+        name.as_encoded_bytes()
     }
 
     fn parse(&mut self, bins: &mut Bins<SymbolSlot>) {

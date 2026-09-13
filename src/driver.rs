@@ -184,7 +184,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
         let mut dsos = std::mem::take(&mut ctx.dsos);
         let mut keep = vec![false; dsos.len()];
         for file in &dsos {
-            keep[file.id().index()] = ctx.dso_sonames.insert(file.soname.clone());
+            keep[file.id().index()] = ctx.dso_sonames.insert(file.soname);
         }
         dsos.retain(|file| keep[file.id().index()]);
         for slot in &mut ctx.file_by_priority {
