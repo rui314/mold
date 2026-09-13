@@ -39,41 +39,19 @@ pub enum Compressor {
 }
 
 fn adler32(data: &[u8]) -> u32 {
-    let mut a: u32 = 1;
-    let mut b: u32 = 0;
-    for chunk in data.chunks(5552) {
-        for &byte in chunk {
-            a += byte as u32;
-            b += a;
-        }
-        a %= 65521;
-        b %= 65521;
-    }
-    (b << 16) | a
+    let len = data.len().try_into().unwrap();
+    // SAFETY: data is readable for len bytes. Each caller passes one shard,
+    // whose size fits zlib's uInt length argument.
+    unsafe { libz_sys::adler32(1, data.as_ptr(), len) as u32 }
 }
 
 /// Combines two Adler-32 checksums, where `len2` is the length of the
 /// second input.
 fn adler32_combine(adler1: u32, adler2: u32, len2: u64) -> u32 {
-    const BASE: u64 = 65521;
-    let rem = len2 % BASE;
-    let mut sum1 = (adler1 & 0xffff) as u64;
-    let mut sum2 = rem * sum1 % BASE;
-    sum1 += (adler2 & 0xffff) as u64 + BASE - 1;
-    sum2 += ((adler1 >> 16) & 0xffff) as u64 + ((adler2 >> 16) & 0xffff) as u64 + BASE - rem;
-    if sum1 >= BASE {
-        sum1 -= BASE;
-    }
-    if sum1 >= BASE {
-        sum1 -= BASE;
-    }
-    if sum2 >= BASE << 1 {
-        sum2 -= BASE << 1;
-    }
-    if sum2 >= BASE {
-        sum2 -= BASE;
-    }
-    (sum1 | (sum2 << 16)) as u32
+    let len2 = len2.try_into().unwrap();
+    // SAFETY: the checksums are 32-bit values and len2 is nonnegative and
+    // representable in z_off_t. All callers combine one shard at a time.
+    unsafe { libz_sys::adler32_combine(adler1.into(), adler2.into(), len2) as u32 }
 }
 
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
