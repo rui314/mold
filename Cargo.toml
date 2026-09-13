@@ -35,6 +35,9 @@ rustc-hash = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zstd = "0.13"
 
+[build-dependencies]
+cc = "1"
+
 [profile.release]
 debug = 1
 codegen-units = 16

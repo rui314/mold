@@ -84,32 +84,13 @@ fn main() {
         return;
     }
 
-    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let sanitizer = std::env::var("CARGO_CFG_SANITIZE")
-        .ok()
-        .map(|value| format!("-fsanitize={value}"));
-
-    let object = out_dir.join("lto-message.o");
-    let mut command = Command::new(&cc);
-    command.args(["-c", "-O2", "-fPIC", "-o"]);
-    command.arg(&object).arg("c/lto-message.c");
-    command.args(&sanitizer);
-    let status = command.status();
-    if !matches!(status, Ok(s) if s.success()) {
-        panic!("could not compile c/lto-message.c with {cc}");
+    let mut build = cc::Build::new();
+    build.opt_level(2).pic(true);
+    if let Ok(sanitizer) = std::env::var("CARGO_CFG_SANITIZE") {
+        build.flag(format!("-fsanitize={sanitizer}"));
     }
-    let archive = out_dir.join("libltomessage.a");
-    let status = Command::new("ar")
-        .arg("rcs")
-        .arg(&archive)
-        .arg(&object)
-        .status();
-    if !matches!(status, Ok(s) if s.success()) {
-        panic!("could not create {}", archive.display());
-    }
-    println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=ltomessage");
+    build.file("c/lto-message.c").compile("ltomessage");
 
     if target_os == "windows" || target_os == "macos" {
         return;
@@ -123,13 +104,12 @@ fn main() {
         .and_then(Path::parent)
         .expect("OUT_DIR must be inside Cargo's build directory");
     let wrapper = profile_dir.join("mold-wrapper.so");
-    let mut command = Command::new(&cc);
-    command.args(["-shared", "-fPIC", "-O2", "-o"]);
+    let mut command = build.get_compiler().to_command();
+    command.args(["-shared", "-o"]);
     command.arg(&wrapper).arg("c/mold-wrapper.c");
     if target_os == "android" || target_os == "linux" {
         command.arg("-ldl");
     }
-    command.args(&sanitizer);
     let status = command.status();
     if !matches!(status, Ok(s) if s.success()) {
         println!("cargo:warning=could not build mold-wrapper.so; `mold -run` will not work");
