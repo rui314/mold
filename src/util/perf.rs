@@ -183,7 +183,7 @@ impl Timers {
         self.start_child(name, parent)
     }
 
-    fn start_child(&self, name: &str, parent: Option<usize>) -> Timer {
+    fn start_child(&self, name: impl std::fmt::Display, parent: Option<usize>) -> Timer {
         let Some(records) = &self.records else {
             return self.inactive();
         };
@@ -265,7 +265,7 @@ impl Timer {
     /// Starts a timer nested in this one. Timers started from parallel
     /// tasks name their parent this way, since which timer started last
     /// says nothing about nesting then.
-    pub fn child(&self, name: &str) -> Timer {
+    pub fn child(&self, name: impl std::fmt::Display) -> Timer {
         self.timers.start_child(name, Some(self.index))
     }
 
@@ -285,7 +285,7 @@ impl Timer {
 }
 
 impl TimerHandle {
-    pub fn child(&self, name: &str) -> Timer {
+    pub fn child(&self, name: impl std::fmt::Display) -> Timer {
         self.timers.start_child(name, Some(self.parent))
     }
 }

@@ -823,11 +823,12 @@ fn run_tasks<E: Arch>(
 
     work.into_par_iter().for_each(|(task, mut bufs)| {
         let name = ctx.chunk_header(task.chunk).name;
-        let _t = timer.child(&if name.is_empty() {
-            "(header)".to_string()
+        let name = if name.is_empty() {
+            bstr::BStr::new("(header)")
         } else {
-            name.to_string()
-        });
+            name
+        };
+        let _t = timer.child(name);
         let mut bufs = bufs.drain(..);
         let own = bufs.next().unwrap();
         match task.chunk {
