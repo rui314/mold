@@ -64,7 +64,8 @@ pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
-    ctx.symbols.aux_mut(sym).got_idx.set(idx);
+    assert_ne!(idx, u32::MAX);
+    ctx.symbols.aux_mut(sym).got_idx = idx;
     // An IFUNC symbol uses two GOT slots in a position-dependent
     // executable.
     let increment = if is_pde_ifunc {
@@ -79,7 +80,8 @@ pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
 pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
-    ctx.symbols.aux_mut(sym).gottp_idx.set(idx);
+    assert_ne!(idx, u32::MAX);
+    ctx.symbols.aux_mut(sym).gottp_idx = idx;
     ctx.got.hdr.shdr.sh_size.set(size + word::<E>());
     ctx.got.gottp_syms.push(sym);
 }
@@ -87,7 +89,8 @@ pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
 pub fn add_tlsgd_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
-    ctx.symbols.aux_mut(sym).tlsgd_idx.set(idx);
+    assert_ne!(idx, u32::MAX);
+    ctx.symbols.aux_mut(sym).tlsgd_idx = idx;
     ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsgd_syms.push(sym);
 }
@@ -103,7 +106,8 @@ pub fn add_tlsdesc_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.args.is_static);
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
-    ctx.symbols.aux_mut(sym).tlsdesc_idx.set(idx);
+    assert_ne!(idx, u32::MAX);
+    ctx.symbols.aux_mut(sym).tlsdesc_idx = idx;
     ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsdesc_syms.push(sym);
 }

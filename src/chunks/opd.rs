@@ -62,10 +62,9 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
         .ppc64_opd
         .as_mut()
         .expect("PPC64 ELFv1 has an .opd section");
-    ctx.symbols
-        .aux_mut(sym)
-        .opd_idx
-        .set(opd.symbols.len() as u32);
+    let idx = opd.symbols.len() as u32;
+    assert_ne!(idx, u32::MAX);
+    ctx.symbols.aux_mut(sym).opd_idx = idx;
     opd.symbols.push(sym);
     let size = opd.hdr.shdr.sh_size.get() + ENTRY_SIZE;
     opd.hdr.shdr.sh_size.set(size);

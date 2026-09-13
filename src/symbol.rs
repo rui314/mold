@@ -148,16 +148,17 @@ impl AddrFlags {
 // Rarely used fields for dynamic symbols. Because mold allocates tens of
 // millions of symbols for large programs, keeping these fields separate from
 // Symbol saves memory.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SymbolAux {
-    pub got_idx: OptionalIndex,
-    pub gottp_idx: OptionalIndex,
-    pub tlsgd_idx: OptionalIndex,
-    pub tlsdesc_idx: OptionalIndex,
-    pub plt_idx: OptionalIndex,
-    pub pltgot_idx: OptionalIndex,
-    pub dynsym_idx: OptionalIndex,
-    pub opd_idx: OptionalIndex,
+    // Zero-based table indices, with u32::MAX meaning no entry.
+    pub got_idx: u32,
+    pub gottp_idx: u32,
+    pub tlsgd_idx: u32,
+    pub tlsdesc_idx: u32,
+    pub plt_idx: u32,
+    pub pltgot_idx: u32,
+    pub dynsym_idx: u32,
+    pub opd_idx: u32,
     pub djb_hash: u32,
     // For range extension thunks
     pub thunk_addrs: Vec<u64>,
@@ -165,27 +166,20 @@ pub struct SymbolAux {
 
 const _: () = assert!(std::mem::size_of::<SymbolAux>() == 64);
 
-/// An optional table index, with the all-ones value reserved for no entry.
-/// Avoids the separate discriminant that Option<u32> would require.
-#[derive(Clone, Copy, Debug)]
-pub struct OptionalIndex(u32);
-
-impl Default for OptionalIndex {
+impl Default for SymbolAux {
     fn default() -> Self {
-        Self(u32::MAX)
-    }
-}
-
-impl OptionalIndex {
-    #[inline]
-    pub fn set(&mut self, index: u32) {
-        assert_ne!(index, u32::MAX);
-        self.0 = index;
-    }
-
-    #[inline]
-    fn get(self) -> Option<u32> {
-        (self.0 != u32::MAX).then_some(self.0)
+        Self {
+            got_idx: u32::MAX,
+            gottp_idx: u32::MAX,
+            tlsgd_idx: u32::MAX,
+            tlsdesc_idx: u32::MAX,
+            plt_idx: u32::MAX,
+            pltgot_idx: u32::MAX,
+            dynsym_idx: u32::MAX,
+            opd_idx: u32::MAX,
+            djb_hash: 0,
+            thunk_addrs: Vec::new(),
+        }
     }
 }
 
@@ -735,43 +729,51 @@ impl Symbol {
     }
 
     pub fn got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.got_idx.get())
+        let idx = self.aux(symbols)?.got_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     pub fn gottp_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.gottp_idx.get())
+        let idx = self.aux(symbols)?.gottp_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     pub fn tlsgd_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.tlsgd_idx.get())
+        let idx = self.aux(symbols)?.tlsgd_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     pub fn tlsdesc_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.tlsdesc_idx.get())
+        let idx = self.aux(symbols)?.tlsdesc_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     #[inline]
     pub fn plt_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.plt_idx.get())
+        let idx = self.aux(symbols)?.plt_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     #[inline]
     pub fn pltgot_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.pltgot_idx.get())
+        let idx = self.aux(symbols)?.pltgot_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     pub fn dynsym_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.dynsym_idx.get())
+        let idx = self.aux(symbols)?.dynsym_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     pub fn opd_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        self.aux(symbols).and_then(|a| a.opd_idx.get())
+        let idx = self.aux(symbols)?.opd_idx;
+        (idx != u32::MAX).then_some(idx)
     }
 
     #[inline]
     pub fn has_plt(&self, symbols: &SymbolTable) -> bool {
         self.aux(symbols)
-            .is_some_and(|a| a.plt_idx.get().is_some() || a.pltgot_idx.get().is_some())
+            .is_some_and(|a| a.plt_idx != u32::MAX || a.pltgot_idx != u32::MAX)
     }
 
     #[inline]
@@ -1973,7 +1975,7 @@ mod tests {
         let b = table.intern(b"b");
         let c = table.intern(b"c");
         let old = table.intern(b"old");
-        table.aux_mut(old).got_idx.set(17);
+        table.aux_mut(old).got_idx = 17;
 
         // SAFETY: the groups contain disjoint, valid symbol ids.
         unsafe { table.allocate_aux(&[vec![b, a, b], vec![old, c, c]]) };
@@ -1988,17 +1990,6 @@ mod tests {
         unsafe { table.allocate_aux(&[vec![a, b], vec![old, c]]) };
         assert_eq!(table.aux.len(), 4);
         assert_eq!(table[old].got_idx(&table), Some(17));
-    }
-
-    #[test]
-    fn optional_symbol_indices() {
-        assert_eq!(std::mem::size_of::<OptionalIndex>(), 4);
-        let mut index = OptionalIndex::default();
-        assert_eq!(index.get(), None);
-        for value in [0, 1, u32::MAX - 1, 17] {
-            index.set(value);
-            assert_eq!(index.get(), Some(value));
-        }
     }
 
     #[test]

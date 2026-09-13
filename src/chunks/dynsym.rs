@@ -56,9 +56,8 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
         ctx.dynsym.symbols.push(None);
     }
     if ctx.symbols[sym].dynsym_idx(&ctx.symbols).is_none() {
-        // A placeholder distinct from the all-ones missing index; the real
-        // index is assigned by sort_dynsyms.
-        ctx.symbols.aux_mut(sym).dynsym_idx.set(u32::MAX - 1);
+        // Mark the symbol as queued before sort_dynsyms assigns its real index.
+        ctx.symbols.aux_mut(sym).dynsym_idx = u32::MAX - 1;
         ctx.dynsym.symbols.push(Some(sym));
     }
 }
