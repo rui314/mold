@@ -24,8 +24,6 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
-use std::marker::PhantomData;
-
 use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -43,7 +41,7 @@ use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct LoongArchTarget<const IS_64: bool>(PhantomData<()>);
+pub struct LoongArchTarget<const IS_64: bool>;
 
 pub type LoongArch64 = LoongArchTarget<true>;
 pub type LoongArch32 = LoongArchTarget<false>;
