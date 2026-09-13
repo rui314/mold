@@ -1055,7 +1055,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     let mut jobs: Vec<ReaderJob> = Vec::new();
     let mut rctx = ReaderContext::default();
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
-    let mut visited_libs: HashSet<OsString> = HashSet::new();
+    let mut visited_libs: HashSet<&OsStr> = HashSet::new();
 
     a.color_diagnostics = std::io::stderr().is_terminal();
     crate::error::set_color(a.color_diagnostics);
@@ -1077,7 +1077,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
     let mut map_path: Option<PathBuf> = None;
-    let mut rpaths: HashSet<OsString> = HashSet::new();
+    let mut rpaths: HashSet<&OsStr> = HashSet::new();
 
     // We generally don't need to write addends to relocated places if the
     // relocation type is RELA because RELA records contain addends.
@@ -1094,8 +1094,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     a.apply_dynamic_relocs = !matches!(target.family, arch::Family::Sparc64 | arch::Family::RiscV);
 
     let mut i = 1;
-    let mut arg = String::new();
-    let mut raw_arg = OsString::new();
+    let mut arg = "";
+    let mut raw_arg = OsStr::new("");
 
     // An option and its argument are either separate command line
     // arguments or a single one, as in "-o foo" vs. "-ofoo" or
@@ -1125,11 +1125,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 }),
             };
             if let Some(value) = value {
-                raw_arg = value.to_os_string();
+                raw_arg = value;
                 if !$raw {
-                    arg = value.to_str().unwrap_or_else(||
-                        fatal!("option -{name}: expected a UTF-8 argument")
-                    ).to_string();
+                    arg = value
+                        .to_str()
+                        .unwrap_or_else(|| fatal!("option -{name}: expected a UTF-8 argument"));
                 }
                 true
             } else {
@@ -1146,11 +1146,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             match match_option(&raw_cmdline[i], $name)
                 .and_then(|rest| rest.as_encoded_bytes().strip_prefix(b"=")) {
                 Some(value) => {
-                    raw_arg = util::os_str(value).to_os_string();
+                    raw_arg = util::os_str(value);
                     if !$raw {
-                        arg = raw_arg.to_str().unwrap_or_else(||
+                        arg = raw_arg.to_str().unwrap_or_else(|| {
                             fatal!("option -{}: expected a UTF-8 argument", $name)
-                        ).to_string();
+                        });
                     }
                     i += 1;
                     true
@@ -1189,17 +1189,17 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     macro_rules! read_z_arg {
         ($name:expr) => {{
             let name: &str = $name;
-            let prefix = format!("{name}=");
-            if i + 1 < cmdline.len() && cmdline[i] == "-z" && cmdline[i + 1].starts_with(&prefix) {
-                arg = cmdline[i + 1][prefix.len()..].to_string();
-                i += 2;
-                true
-            } else if let Some(value) = cmdline[i]
-                .strip_prefix("-z")
-                .and_then(|s| s.strip_prefix(prefix.as_str()))
+            let (candidate, count) = if cmdline[i] == "-z" {
+                (cmdline.get(i + 1).map(|s| s.as_ref()), 2)
+            } else {
+                (cmdline[i].strip_prefix("-z"), 1)
+            };
+            if let Some(value) = candidate
+                .and_then(|s| s.strip_prefix(name))
+                .and_then(|s| s.strip_prefix('='))
             {
-                arg = value.to_string();
-                i += 1;
+                arg = value;
+                i += count;
                 true
             } else {
                 false
@@ -1226,9 +1226,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         }
 
         if read_arg!("o", true) || read_arg!("output", true) {
-            a.output = PathBuf::from(&raw_arg);
+            a.output = PathBuf::from(raw_arg);
         } else if read_arg!("dynamic-linker", true) || read_arg!("I", true) {
-            a.dynamic_linker = PathBuf::from(&raw_arg);
+            a.dynamic_linker = PathBuf::from(raw_arg);
         } else if read_flag!("no-dynamic-linker") {
             a.dynamic_linker.clear();
         } else if read_flag!("v") {
@@ -1248,7 +1248,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("mllvm", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("m") {
-            match arch::emulation_to_target(&arg) {
+            match arch::emulation_to_target(arg) {
                 Some(name) => a.emulation = name,
                 None => fatal!("unknown -m argument: {arg}"),
             }
@@ -1281,7 +1281,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("e", true) || read_arg!("entry", true) {
             a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("Map", true) {
-            map_path = Some(PathBuf::from(&raw_arg));
+            map_path = Some(PathBuf::from(raw_arg));
         } else if read_flag!("print-dependencies") {
             a.print_dependencies = true;
         } else if read_flag!("print-map") || read_flag!("M") {
@@ -1293,15 +1293,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("shared") || read_flag!("Bshareable") {
             a.shared = true;
         } else if read_arg!("spare-dynamic-tags") {
-            a.spare_dynamic_tags = parse_number("spare-dynamic-tags", &arg);
+            a.spare_dynamic_tags = parse_number("spare-dynamic-tags", arg);
         } else if read_arg!("spare-program-headers") {
-            a.spare_program_headers = parse_number("spare-program-headers", &arg);
+            a.spare_program_headers = parse_number("spare-program-headers", arg);
         } else if read_flag!("start-lib") {
             rctx.in_lib = true;
         } else if read_flag!("start-stop") {
             a.start_stop = true;
         } else if read_arg!("dependency-file", true) {
-            a.dependency_file = PathBuf::from(&raw_arg);
+            a.dependency_file = PathBuf::from(raw_arg);
         } else if read_arg!("defsym", true) {
             let Some((name, value)) = raw_arg
                 .as_encoded_bytes()
@@ -1314,7 +1314,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!(":lto-pass2") {
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file", true) {
-            a.ignore_ir_file.insert(raw_arg.clone());
+            a.ignore_ir_file.insert(raw_arg.to_os_string());
         } else if read_flag!("demangle") {
             a.demangle = true;
             crate::error::set_demangle(true);
@@ -1334,7 +1334,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             // Resolve the seed after parsing all options.
             a.shuffle_sections = ShuffleSections::Shuffle(0);
         } else if read_eq!("shuffle-sections") {
-            let seed = parse_number("shuffle-sections", &arg) as u64;
+            let seed = parse_number("shuffle-sections", arg) as u64;
             a.shuffle_sections = ShuffleSections::Shuffle(seed);
             shuffle_sections_seed = Some(seed);
         } else if read_flag!("reverse-sections") {
@@ -1346,11 +1346,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("y", true) || read_arg!("trace-symbol", true) {
             a.trace_symbol.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("filler") {
-            a.filler = Some(parse_hex("filler", &arg) as u8);
+            a.filler = Some(parse_hex("filler", arg) as u8);
         } else if read_arg!("L", true) || read_arg!("library-path", true) {
-            a.library_paths.push(PathBuf::from(&raw_arg));
+            a.library_paths.push(PathBuf::from(raw_arg));
         } else if read_arg!("sysroot", true) {
-            a.sysroot = PathBuf::from(&raw_arg);
+            a.sysroot = PathBuf::from(raw_arg);
         } else if read_arg!("unique", true) {
             if !a.unique.add(raw_arg.as_encoded_bytes(), 1) {
                 fatal!(
@@ -1359,7 +1359,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 );
             }
         } else if read_arg!("unresolved-symbols") {
-            match arg.as_str() {
+            match arg {
                 "report-all" | "ignore-in-shared-libs" => report_undefined = Some(true),
                 "ignore-all" | "ignore-in-object-files" => report_undefined = Some(false),
                 _ => fatal!("unknown --unresolved-symbols argument: {arg}"),
@@ -1380,7 +1380,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("fini", true) {
             a.fini = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("hash-style") {
-            match arg.as_str() {
+            match arg {
                 "sysv" => {
                     a.hash_style_sysv = true;
                     a.hash_style_gnu = false;
@@ -1400,7 +1400,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 _ => fatal!("invalid --hash-style argument: {arg}"),
             }
         } else if read_arg!("soname", true) || read_arg!("h", true) {
-            a.soname = raw_arg.clone();
+            a.soname = raw_arg.to_os_string();
         } else if read_arg!("audit", true) {
             if !a.audit.is_empty() {
                 a.audit.push(b':');
@@ -1462,14 +1462,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-use-android-relr-tags") {
             a.use_android_relr_tags = false;
         } else if read_arg!("package-metadata") {
-            a.package_metadata = parse_package_metadata(&arg);
+            a.package_metadata = parse_package_metadata(arg);
         } else if read_flag!("stats") {
             a.stats = true;
             Counter::enable();
         } else if read_arg!("C", true) || read_arg!("directory", true) {
-            a.directory = PathBuf::from(&raw_arg);
+            a.directory = PathBuf::from(raw_arg);
         } else if read_arg!("chroot", true) {
-            a.chroot = PathBuf::from(&raw_arg);
+            a.chroot = PathBuf::from(raw_arg);
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
             a.color_diagnostics = std::io::stderr().is_terminal();
             crate::error::set_color(a.color_diagnostics);
@@ -1498,7 +1498,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("zero-to-bss") {
             a.zero_to_bss = true;
         } else if read_arg!("compress-debug-sections") {
-            a.compress_debug_sections = match arg.as_str() {
+            a.compress_debug_sections = match arg {
                 "zlib" | "zlib-gabi" => DebugCompression::Zlib(1),
                 "zstd" => DebugCompression::Zstd(3),
                 "none" => DebugCompression::None,
@@ -1533,7 +1533,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             }
             a.oformat_binary = true;
         } else if read_arg!("retain-symbols-file", true) {
-            a.retain_symbols_file = Some(read_retain_symbols_file(&a.chroot, Path::new(&raw_arg)));
+            a.retain_symbols_file = Some(read_retain_symbols_file(&a.chroot, Path::new(raw_arg)));
         } else if read_arg!("section-align", true) {
             let arg = raw_arg.as_encoded_bytes();
             let Some((name, value)) = arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
@@ -1564,15 +1564,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.section_order = parse_section_order(raw_arg.as_encoded_bytes());
         } else if read_arg!("Tbss") {
             a.section_start
-                .insert(b".bss".to_vec(), parse_hex("Tbss", &arg));
+                .insert(b".bss".to_vec(), parse_hex("Tbss", arg));
         } else if read_arg!("Tdata") {
             a.section_start
-                .insert(b".data".to_vec(), parse_hex("Tdata", &arg));
+                .insert(b".data".to_vec(), parse_hex("Tdata", arg));
         } else if read_arg!("Ttext") {
             a.section_start
-                .insert(b".text".to_vec(), parse_hex("Ttext", &arg));
+                .insert(b".text".to_vec(), parse_hex("Ttext", arg));
         } else if read_arg!("Ttext-segment") {
-            a.ttext_segment = Some(parse_number("Ttext-segment", &arg) as u64);
+            a.ttext_segment = Some(parse_number("Ttext-segment", arg) as u64);
         } else if read_flag!("repro") {
             a.repro = true;
         } else if read_z_flag!("now") {
@@ -1590,7 +1590,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_z_flag!("execstack-if-needed") {
             a.z_execstack_if_needed = true;
         } else if read_z_arg!("max-page-size") {
-            a.page_size = parse_number("-z max-page-size", &arg) as u64;
+            a.page_size = parse_number("-z max-page-size", arg) as u64;
             if !a.page_size.is_power_of_two() {
                 fatal!("-z max-page-size {arg}: value must be a power of 2");
             }
@@ -1640,7 +1640,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_z_flag!("nodefaultlib") {
             a.z_nodefaultlib = true;
         } else if read_eq!("separate-debug-file", true) {
-            separate_debug_file = Some(PathBuf::from(&raw_arg));
+            separate_debug_file = Some(PathBuf::from(raw_arg));
         } else if read_flag!("separate-debug-file") {
             separate_debug_file = Some(PathBuf::new());
         } else if read_flag!("no-separate-debug-file") {
@@ -1652,7 +1652,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_z_flag!("noseparate-code") {
             z_separate_code = Some(SeparateCodeKind::NoSeparateCode);
         } else if read_z_arg!("stack-size") {
-            a.z_stack_size = parse_number("-z stack-size", &arg) as u64;
+            a.z_stack_size = parse_number("-z stack-size", arg) as u64;
         } else if read_z_flag!("dynamic-undefined-weak") {
             z_dynamic_undefined_weak = Some(true);
         } else if read_z_flag!("nodynamic-undefined-weak") {
@@ -1700,7 +1700,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("print-gc-sections") {
             a.print_gc_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-gc-sections", true) {
-            a.print_gc_sections = parse_report_output(&raw_arg);
+            a.print_gc_sections = parse_report_output(raw_arg);
         } else if read_flag!("no-print-gc-sections") {
             a.print_gc_sections = None;
         } else if read_arg!("discard-section", true) {
@@ -1709,7 +1709,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("no-discard-section", true) {
             a.discard_section.remove(raw_arg.as_encoded_bytes());
         } else if read_arg!("icf") {
-            match arg.as_str() {
+            match arg {
                 "all" => {
                     a.icf = true;
                     a.icf_all = true;
@@ -1723,13 +1723,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("ignore-data-address-equality") {
             a.ignore_data_address_equality = true;
         } else if read_arg!("image-base") {
-            a.image_base = parse_number("image-base", &arg) as u64;
+            a.image_base = parse_number("image-base", arg) as u64;
         } else if read_arg!("physical-image-base") {
-            a.physical_image_base = Some(parse_number("physical-image-base", &arg) as u64);
+            a.physical_image_base = Some(parse_number("physical-image-base", arg) as u64);
         } else if read_flag!("print-icf-sections") {
             a.print_icf_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-icf-sections", true) {
-            a.print_icf_sections = parse_report_output(&raw_arg);
+            a.print_icf_sections = parse_report_output(raw_arg);
         } else if read_flag!("no-print-icf-sections") {
             a.print_icf_sections = None;
         } else if read_flag!("quick-exit") {
@@ -1737,7 +1737,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-quick-exit") {
             a.quick_exit = false;
         } else if read_arg!("plugin", true) {
-            a.plugin = PathBuf::from(&raw_arg);
+            a.plugin = PathBuf::from(raw_arg);
         } else if read_arg!("plugin-opt", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_flag!("lto-cs-profile-generate") {
@@ -1822,13 +1822,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.plugin_opt
                 .push([b"jobs=", raw_arg.as_encoded_bytes()].concat());
         } else if read_arg!("thread-count") {
-            a.thread_count = Some(parse_number("thread-count", &arg).max(1) as usize);
+            a.thread_count = Some(parse_number("thread-count", arg).max(1) as usize);
         } else if read_flag!("threads") {
             a.thread_count = None;
         } else if read_flag!("no-threads") {
             a.thread_count = Some(1);
         } else if read_eq!("threads") {
-            a.thread_count = Some(parse_number("threads", &arg).max(1) as usize);
+            a.thread_count = Some(parse_number("threads", arg).max(1) as usize);
         } else if read_flag!("discard-all") || read_flag!("x") {
             a.discard_all = true;
         } else if read_flag!("discard-locals") || read_flag!("X") {
@@ -1845,12 +1845,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("error-unresolved-symbols") {
             error_unresolved_symbols = true;
         } else if read_arg!("rpath", true) {
-            add_rpath(&mut a, &mut rpaths, &raw_arg);
+            add_rpath(&mut a, &mut rpaths, raw_arg);
         } else if read_arg!("R", true) {
-            if crate::mapped_file::is_file(&raw_arg) {
-                fatal!("-R{}: -R as an alias for --just-symbols is not supported", raw_arg.to_string_lossy());
+            if crate::mapped_file::is_file(raw_arg) {
+                fatal!(
+                    "-R{}: -R as an alias for --just-symbols is not supported",
+                    raw_arg.to_string_lossy()
+                );
             }
-            add_rpath(&mut a, &mut rpaths, &raw_arg);
+            add_rpath(&mut a, &mut rpaths, raw_arg);
         } else if read_flag!("undefined-version") {
             a.undefined_version = true;
         } else if read_flag!("no-undefined-version") {
@@ -1858,7 +1861,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("build-id") {
             a.build_id = BuildId::Hash(20);
         } else if read_arg!("build-id") {
-            a.build_id = match arg.as_str() {
+            a.build_id = match arg {
                 "none" => BuildId::None,
                 "uuid" => BuildId::Uuid,
                 "md5" => BuildId::Hash(16),
@@ -1935,10 +1938,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         {
             // Ignored for compatibility.
         } else if read_arg!("version-script", true) {
-            a.version_scripts.push(PathBuf::from(&raw_arg));
+            a.version_scripts.push(PathBuf::from(raw_arg));
         } else if read_arg!("dynamic-list", true) {
             a.bsymbolic = BsymbolicKind::All;
-            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
+            a.dynamic_list
+                .push(DynamicListSource::File(PathBuf::from(raw_arg)));
         } else if read_arg!("dynamic-list-data") {
             a.dynamic_list_data = true;
         } else if read_arg!("export-dynamic-symbol", true) {
@@ -1946,7 +1950,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 raw_arg.as_encoded_bytes().to_vec(),
             ));
         } else if read_arg!("export-dynamic-symbol-list", true) {
-            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
+            a.dynamic_list
+                .push(DynamicListSource::File(PathBuf::from(raw_arg)));
         } else if read_flag!("as-needed") {
             rctx.as_needed = true;
         } else if read_flag!("no-as-needed") {
@@ -1956,10 +1961,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-whole-archive") {
             rctx.whole_archive = false;
         } else if read_arg!("l", true) || read_arg!("library", true) {
-            if visited_libs.insert(raw_arg.clone()) {
+            if visited_libs.insert(raw_arg) {
                 let mut job = ReaderJob {
                     rctx: rctx.clone(),
-                    name: PathBuf::from(&raw_arg),
+                    name: PathBuf::from(raw_arg),
                     is_lib: true,
                     ..Default::default()
                 };
@@ -1969,7 +1974,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("script", true) || read_arg!("T", true) {
             let mut job = ReaderJob {
                 rctx: rctx.clone(),
-                name: PathBuf::from(&raw_arg),
+                name: PathBuf::from(raw_arg),
                 ..Default::default()
             };
             job.rctx.pos = vec![jobs.len() as u32];
@@ -2204,8 +2209,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     }
 }
 
-fn add_rpath(a: &mut Args, seen: &mut HashSet<OsString>, path: &OsStr) {
-    if seen.insert(path.to_os_string()) {
+fn add_rpath<'a>(a: &mut Args, seen: &mut HashSet<&'a OsStr>, path: &'a OsStr) {
+    if seen.insert(path) {
         if !a.rpaths.is_empty() {
             a.rpaths.push(":");
         }
