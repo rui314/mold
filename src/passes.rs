@@ -1036,8 +1036,8 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
             let parts: Vec<_> = fragments
                 .into_iter()
                 .map(|fragments| {
-                    let (head, tail) = std::mem::take(&mut rest).split_at_mut(fragments.len());
-                    rest = tail;
+                    let head = rest.split_off_mut(..fragments.len()).unwrap();
+
                     let first = offset;
                     offset += fragments.len();
                     (first, head, fragments)
@@ -1391,9 +1391,8 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
             let mut rest = members.as_mut_slice();
             let mut slices = Vec::with_capacity(parts.len());
             for g in &parts {
-                let (head, tail) = rest.split_at_mut(g.members.len());
+                let head = rest.split_off_mut(..g.members.len()).unwrap();
                 slices.push(head);
-                rest = tail;
             }
             parts.par_iter().zip(slices).for_each(|(g, slice)| {
                 slice.copy_from_slice(&g.members);

@@ -57,9 +57,8 @@ pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
         let hdr = ctx.chunk_header(id);
         let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
         if count != 0 {
-            let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count);
+            let slots = rest.split_off_mut(..count).unwrap();
             chunks::write_dynrels(ctx, id, slots);
-            rest = tail;
         }
     }
     debug_assert!(rest.is_empty());
@@ -162,9 +161,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             let hdr = ctx.chunk_header(id);
             let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
             if count != 0 {
-                let (slots, tail) = std::mem::take(&mut rest).split_at_mut(count * size);
+                let slots = rest.split_off_mut(..count * size).unwrap();
                 chunks::write_dynrels(ctx, id, rels_from_bytes_mut::<E>(slots));
-                rest = tail;
             }
         }
         debug_assert!(rest.is_empty());

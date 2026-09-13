@@ -281,9 +281,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
         for (item, file) in items.iter_mut().zip(&ctx.objs) {
             if !file.fdes.is_empty() {
                 let len = file.fdes.len() * 8;
-                let (own, tail) = std::mem::take(&mut rest).split_at_mut(len);
+                let own = rest.split_off_mut(..len).unwrap();
                 item.hdr_entries = Some(own);
-                rest = tail;
             }
         }
         debug_assert!(rest.is_empty());

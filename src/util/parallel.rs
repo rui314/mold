@@ -27,10 +27,10 @@ pub(crate) fn stable_partition<T: Copy + Send + Sync>(
         .iter()
         .zip(matches.chunks(BLOCK))
         .map(|(&count, flags)| {
-            let (matched, tail) = std::mem::take(&mut yes).split_at_mut(count);
-            yes = tail;
-            let (unmatched, tail) = std::mem::take(&mut no).split_at_mut(flags.len() - count);
-            no = tail;
+            let matched = yes.split_off_mut(..count).unwrap();
+
+            let unmatched = no.split_off_mut(..flags.len() - count).unwrap();
+
             (matched, unmatched)
         })
         .collect();

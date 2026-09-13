@@ -66,9 +66,9 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             let start = chunk[0].offset as usize;
             let last = chunk.last().unwrap();
             let end = last.offset as usize + last.name.len() + 1;
-            let (_, tail) = std::mem::take(&mut rest).split_at_mut(start - pos);
-            let (out, tail) = tail.split_at_mut(end - start);
-            rest = tail;
+            rest.split_off_mut(..start - pos).unwrap();
+            let out = rest.split_off_mut(..end - start).unwrap();
+
             pos = end;
             (chunk, out)
         })

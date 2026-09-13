@@ -223,10 +223,8 @@ fn carve<'a>(rest: &mut &'a mut [u8], pos: &mut usize, start: usize, len: usize)
     if len == 0 {
         return &mut [];
     }
-    let buf = std::mem::take(rest);
-    let (_, buf) = buf.split_at_mut(start - *pos);
-    let (piece, tail) = buf.split_at_mut(len);
-    *rest = tail;
+    rest.split_off_mut(..start - *pos).unwrap();
+    let piece = rest.split_off_mut(..len).unwrap();
     *pos = start + len;
     piece
 }

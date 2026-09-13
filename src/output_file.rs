@@ -459,10 +459,10 @@ pub fn split_at_offsets<'a, T>(buf: &'a mut [T], offsets: &[u64]) -> Vec<&'a mut
         let start = start as usize;
         let end = offsets.get(i + 1).map_or(rest.len() + pos, |&e| e as usize);
         debug_assert!(pos <= start && start <= end);
-        let (_, tail) = std::mem::take(&mut rest).split_at_mut(start - pos);
-        let (slice, tail) = tail.split_at_mut(end - start);
+        rest.split_off_mut(..start - pos).unwrap();
+        let slice = rest.split_off_mut(..end - start).unwrap();
         slices.push(slice);
-        rest = tail;
+
         pos = end;
     }
     slices
@@ -479,10 +479,10 @@ pub fn split_ranges<'a>(buf: &'a mut [u8], ranges: &[Range<u64>]) -> Vec<&'a mut
     for i in order {
         let r = &ranges[i];
         assert!(r.start >= pos, "overlapping output ranges");
-        let (_, tail) = std::mem::take(&mut rest).split_at_mut((r.start - pos) as usize);
-        let (slice, tail) = tail.split_at_mut((r.end - r.start) as usize);
+        rest.split_off_mut(..(r.start - pos) as usize).unwrap();
+        let slice = rest.split_off_mut(..(r.end - r.start) as usize).unwrap();
         result[i] = Some(slice);
-        rest = tail;
+
         pos = r.end;
     }
     result.into_iter().map(|s| s.unwrap()).collect()
