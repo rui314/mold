@@ -195,16 +195,22 @@ fn write_code(buf: &mut [u8], words: &[u32]) {
     }
 }
 
-/// What a mapping symbol marks the following bytes as: the width of
-/// their instructions, or `None` for data.
-fn mapping_symbol_kind(name: &[u8]) -> Option<Option<usize>> {
+#[derive(Clone, Copy)]
+enum MappingKind {
+    Arm,
+    Thumb,
+    Data,
+}
+
+/// What a mapping symbol marks the following bytes as.
+fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
     let kind = |c: u8| name == [b'$', c] || (name.starts_with(&[b'$', c, b'.']));
     if kind(b'a') {
-        Some(Some(4))
+        Some(MappingKind::Arm)
     } else if kind(b't') {
-        Some(Some(2))
+        Some(MappingKind::Thumb)
     } else if kind(b'd') {
-        Some(None)
+        Some(MappingKind::Data)
     } else {
         None
     }
@@ -239,7 +245,7 @@ where
     let output = OutputBuffer::new(buf);
     ctx.objs.par_iter().for_each(|file| {
         // Collect mapping symbols
-        let mut marks: Vec<(InputSectionId, u64, Option<usize>)> = file
+        let mut marks: Vec<(InputSectionId, u64, MappingKind)> = file
             .base
             .local_symbols()
             .iter()
@@ -257,7 +263,11 @@ where
 
         // Swap bytes
         for (i, &(sec, start, kind)) in marks.iter().enumerate() {
-            let Some(width) = kind else { continue };
+            let width = match kind {
+                MappingKind::Arm => 4,
+                MappingKind::Thumb => 2,
+                MappingKind::Data => continue,
+            };
             let isec = ctx.input_section(sec);
             let end = match marks.get(i + 1) {
                 Some(&(next, offset, _)) if next == sec => offset,
