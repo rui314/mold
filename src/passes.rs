@@ -1448,14 +1448,14 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     obj.base.symbols.push(dummy);
     obj.base.first_global = 1;
 
-    let add = |ctx: &mut Context<E>, obj: &mut ObjectFile<E>, name: &[u8]| {
-        let id = ctx.get_symbol(name);
+    let add = |symbols: &mut crate::symbol::SymbolTable, obj: &mut ObjectFile<E>, name: &[u8]| {
+        let id = symbols.get_or_intern(name);
         obj.base.symbols.push(id);
         // An actual value will be set to a linker-synthesized symbol by
         // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
         // value. 0xdeadbeef is a unique dummy value to make debugging easier
         // if the field is accidentally used before it gets a valid one.
-        ctx.symbols[id].value = 0xdeadbeef;
+        symbols[id].value = 0xdeadbeef;
         let mut esym = ElfSym::<E>::default();
         esym.st_shndx_mut().set(SHN_ABS as u16);
         esym.set_type(STT_NOTYPE);
@@ -1465,13 +1465,13 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     };
 
     // Add --defsym'd symbols
-    for (name, _) in ctx.args.defsyms.clone() {
-        add(ctx, &mut obj, &name);
+    for (name, _) in &ctx.args.defsyms {
+        add(&mut ctx.symbols, &mut obj, name);
     }
     // Add --section-order symbols
-    for order in ctx.args.section_order.clone() {
+    for order in &ctx.args.section_order {
         if let SectionOrder::Symbol(name) = order {
-            add(ctx, &mut obj, &name);
+            add(&mut ctx.symbols, &mut obj, name);
         }
     }
 
@@ -1646,11 +1646,11 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // Handle --defsym symbols.
-    for (i, (name, value)) in ctx.args.defsyms.clone().iter().enumerate() {
-        let sym1 = ctx.get_symbol(name);
+    for (i, (name, value)) in ctx.args.defsyms.iter().enumerate() {
+        let sym1 = ctx.symbols.get_or_intern(name);
         match value {
             DefsymValue::Symbol(target) => {
-                let sym2 = ctx.get_symbol(target);
+                let sym2 = ctx.symbols.get_or_intern(target);
                 if ctx.symbols[sym2].file().is_none() {
                     error!("--defsym: undefined symbol: {}", ctx.symbols[sym2]);
                     continue;
@@ -3781,7 +3781,8 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
     let page_size = ctx.page_size;
     let mut i = 0;
 
-    for (j, ord) in ctx.args.section_order.clone().into_iter().enumerate() {
+    for j in 0..ctx.args.section_order.len() {
+        let ord = &ctx.args.section_order[j];
         match ord {
             SectionOrder::Section(_) | SectionOrder::Group(_) => {
                 while i < vec.len() && ctx.chunk_header(vec[i]).sect_order == j as i64 {
@@ -3813,17 +3814,17 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
                 }
             }
             SectionOrder::Addr { value, token } => {
-                if addr != ctx.args.image_base && value < addr {
+                if addr != ctx.args.image_base && *value < addr {
                     error!("--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
                         value,
                         token
                     );
                 }
-                addr = value;
+                addr = *value;
             }
-            SectionOrder::Align(value) => addr = align_to(addr, value),
+            SectionOrder::Align(value) => addr = align_to(addr, *value),
             SectionOrder::Symbol(name) => {
-                let id = ctx.get_symbol(&name);
+                let id = ctx.symbols.get_or_intern(name);
                 ctx.symbols[id].value = addr;
             }
         }
@@ -4257,16 +4258,16 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // --defsym=sym=value symbols
-    for (name, value) in ctx.args.defsyms.clone() {
-        let sym = ctx.get_symbol(&name);
+    for (name, value) in &ctx.args.defsyms {
+        let sym = ctx.symbols.get_or_intern(name);
         match value {
             DefsymValue::Addr(addr) => {
                 let s = &mut ctx.symbols[sym];
                 s.clear_origin();
-                s.value = addr;
+                s.value = *addr;
             }
             DefsymValue::Symbol(target) => {
-                let sym2 = ctx.get_symbol(&target);
+                let sym2 = ctx.symbols.get_or_intern(target);
                 let (value, origin, vis) = {
                     let s2 = &ctx.symbols[sym2];
                     (s2.value, s2.origin_state(), s2.visibility())
@@ -4280,9 +4281,10 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // --section-order symbols
-    for ord in ctx.args.section_order.clone() {
+    for i in 0..ctx.args.section_order.len() {
+        let ord = &ctx.args.section_order[i];
         if let SectionOrder::Symbol(name) = ord {
-            let sym = ctx.get_symbol(&name);
+            let sym = ctx.symbols.get_or_intern(name);
             if let Some(first) = first {
                 let _ = ctx.set_symbol_output_chunk(sym, first);
             }
