@@ -255,7 +255,7 @@ pub struct GdbIndexData {
     name_pool_size: u32,
     ht_size: u32,
     /// The hash table followed by the constant pool, once built.
-    tables: Vec<u32>,
+    tables: Box<[u32]>,
 }
 
 /// Views word-aligned table storage as its serialized bytes.
@@ -1096,7 +1096,7 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
         type_pool_size: pool_size.type_bytes,
         name_pool_size: pool_size.name_bytes,
         ht_size,
-        tables: Vec::new(),
+        tables: Box::default(),
     }
 }
 
@@ -1176,10 +1176,7 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
     let pool_size = (data.type_pool_size + data.name_pool_size) as usize;
     let table_size = symtab_size + pool_size;
     let table_words = table_size.div_ceil(4);
-    let mut tables = Vec::<std::mem::MaybeUninit<u32>>::with_capacity(table_words);
-    // SAFETY: MaybeUninit may be left uninitialized. Every serialized byte is
-    // written below before the storage is converted to u32 words.
-    unsafe { tables.set_len(table_words) };
+    let mut tables = Box::<[u32]>::new_uninit_slice(table_words);
     let table_addr = tables.as_mut_ptr() as usize;
 
     // `tables` contains the name hash table followed by the constant pool. The
@@ -1269,7 +1266,7 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
         },
     );
 
-    // Vec<u32> rounds the byte allocation up to a whole word; initialize only
+    // Box<[u32]> rounds the byte allocation up to a whole word; initialize only
     // those padding bytes, which are not part of the serialized tables.
     let padded_size = table_words * 4;
     for i in table_size..padded_size {
@@ -1277,16 +1274,9 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
         // remains active.
         unsafe { (table_addr as *mut u8).add(i).write(0) };
     }
-    let (table_ptr, table_len, table_capacity) = (
-        tables.as_mut_ptr().cast::<u32>(),
-        tables.len(),
-        tables.capacity(),
-    );
-    std::mem::forget(tables);
     // SAFETY: the hash table, every type vector, every name including its NUL,
-    // and the final allocation padding have all been initialized. u32 and
-    // MaybeUninit<u32> have identical allocation layouts.
-    let tables = unsafe { Vec::from_raw_parts(table_ptr, table_len, table_capacity) };
+    // and the final allocation padding have all been initialized.
+    let tables = unsafe { tables.assume_init() };
 
     // The serialized tables contain everything needed from names and the map.
     // Release their storage here so reclamation remains part of this background
