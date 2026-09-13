@@ -503,7 +503,7 @@ pub struct Args {
     pub spare_program_headers: i64,
     pub z_stack_size: u64,
     pub thread_count: Option<usize>,
-    pub retain_symbols_file: Option<Vec<Vec<u8>>>,
+    pub retain_symbols_file: Option<Vec<&'static [u8]>>,
     pub physical_image_base: Option<u64>,
     pub ttext_segment: Option<u64>,
     pub map: Option<ReportOutput>,
@@ -922,13 +922,12 @@ fn parse_package_metadata(arg: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn read_retain_symbols_file(chroot: &Path, path: &Path) -> Vec<Vec<u8>> {
+fn read_retain_symbols_file(chroot: &Path, path: &Path) -> Vec<&'static [u8]> {
     let mf = crate::mapped_file::must_open_file(chroot, path);
     mf.data()
         .split(|&b| b == b'\n')
         .map(|line| line.trim_with(|c| c == ' ' || c == '\t'))
         .filter(|line| !line.is_empty())
-        .map(<[u8]>::to_vec)
         .collect()
 }
 
