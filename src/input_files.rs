@@ -436,7 +436,7 @@ impl From<DsoId> for FileId {
 #[derive(Debug)]
 pub struct InputFile<E: Layout> {
     pub mf: Option<&'static MappedFile>,
-    pub filename: String,
+    pub filename: Cow<'static, str>,
 
     /// Position in the command line; lower is earlier. Symbol resolution
     /// breaks ties in favor of earlier files.
@@ -480,10 +480,10 @@ pub struct InputFile<E: Layout> {
 }
 
 impl<E: Layout> InputFile<E> {
-    fn empty(filename: &str) -> InputFile<E> {
+    fn empty(filename: Cow<'static, str>) -> InputFile<E> {
         InputFile {
             mf: None,
-            filename: filename.to_string(),
+            filename,
             priority: 0,
             file_index: u32::MAX,
             is_reachable: AtomicBool::new(false),
@@ -547,7 +547,7 @@ impl<E: Layout> InputFile<E> {
             is_little_endian: E::Endian::IS_LITTLE,
             e_flags: ehdr.e_flags.get(),
             shdrs,
-            ..InputFile::empty(&mf.name.to_string_lossy())
+            ..InputFile::empty(mf.name.to_string_lossy())
         };
 
         // e_shstrndx is a 16-bit field. If .shstrtab's section index is
@@ -1150,7 +1150,10 @@ impl<E: Arch> ObjectFile<E> {
     /// Creates the internal object file that holds linker-synthesized
     /// symbols.
     pub fn internal() -> ObjectFile<E> {
-        let mut file = ObjectFile::with_base(InputFile::<E>::empty("<internal>"), PathBuf::new());
+        let mut file = ObjectFile::with_base(
+            InputFile::<E>::empty(Cow::Borrowed("<internal>")),
+            PathBuf::new(),
+        );
         file.sections_parsed = true;
         file.base.set_reachable(true);
         file
@@ -1220,7 +1223,7 @@ impl<E: Arch> ObjectFile<E> {
         strtab: &'static [u8],
         comdat_keys: Vec<Option<&'static [u8]>>,
     ) -> ObjectFile<E> {
-        let mut base = InputFile::<E>::empty(&mf.name.to_string_lossy());
+        let mut base = InputFile::<E>::empty(mf.name.to_string_lossy());
         base.mf = Some(mf);
         base.elf_syms = Cow::Owned(elf_syms);
         base.symbol_strtab = strtab;

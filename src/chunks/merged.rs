@@ -152,7 +152,7 @@ impl<E: Arch> BackgroundMerge<E> {
                 }
                 let (filename, archive_name) = names.get_or_insert_with(|| {
                     (
-                        std::sync::Arc::<str>::from(file.base.filename.as_str()),
+                        std::sync::Arc::<str>::from(file.base.filename.as_ref()),
                         std::sync::Arc::<std::path::Path>::from(file.archive_name.as_path()),
                     )
                 });

@@ -921,7 +921,7 @@ fn merged_resolve_members<E: Arch>(
     let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
-        let filename = file.base.filename.as_str();
+        let filename = file.base.filename.as_ref();
         let archive_name = file.archive_name.as_path();
         let shstrtab = file.base.shstrtab;
         let num_elf_sections = file.num_elf_sections;
