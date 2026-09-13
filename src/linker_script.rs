@@ -87,7 +87,8 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
     let mut input = mf.data();
 
     while let Some(&c) = input.first() {
-        if c.is_ascii_whitespace() {
+        // C's isspace also accepts vertical tabs.
+        if c.is_ascii_whitespace() || c == b'\x0b' {
             input = &input[1..];
             continue;
         }
