@@ -60,9 +60,7 @@ fn sym_addr_if_defined<E: Arch>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
     }
 }
 
-fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
-    let mut vec: Vec<(u64, u64)> = Vec::new();
-    let mut define = |tag: u32, val: u64| vec.push((tag as u64, val));
+fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     let dynstr = &ctx.dynstr;
     let plt = &ctx.plt;
     let (rel, relsz, relent) = if E::IS_RELA {
@@ -284,14 +282,14 @@ fn create_contents<E: Arch>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     for _ in 0..ctx.args.spare_dynamic_tags.max(0) {
         define(DT_NULL, 0);
     }
-    vec
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     if ctx.args.is_static && !ctx.args.pie {
         return;
     }
-    let n = create_contents(ctx).len();
+    let mut n = 0;
+    for_each_entry(ctx, |_, _| n += 1);
     let size = (n * ElfDyn::<E>::size()) as u64;
     let dynamic = ctx.dynamic.as_mut().unwrap();
     dynamic.hdr.shdr.sh_size.set(size);
@@ -299,16 +297,17 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-    let entries: Vec<ElfDyn<E>> = create_contents(ctx)
-        .into_iter()
-        .map(|(d_tag, d_val)| ElfDyn {
-            d_tag: E::Word::new(d_tag),
-            d_val: E::Word::new(d_val),
-        })
-        .collect();
     debug_assert_eq!(
         ctx.dynamic.as_ref().unwrap().hdr.shdr.sh_size.get() as usize,
-        entries.len() * ElfDyn::<E>::size()
+        buf.len()
     );
-    ElfDyn::<E>::write_all(&entries, buf);
+    let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());
+    for_each_entry(ctx, |d_tag, d_val| {
+        let entry = ElfDyn::<E> {
+            d_tag: E::Word::new(d_tag as u64),
+            d_val: E::Word::new(d_val),
+        };
+        entry.write(slots.next().unwrap());
+    });
+    debug_assert!(slots.next().is_none());
 }
