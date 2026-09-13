@@ -8,7 +8,7 @@
 //! state and position for each file, files are read in any order, and
 //! the results are sorted back into command line order.
 
-use std::cell::UnsafeCell;
+use std::sync::Mutex;
 
 use rayon::prelude::*;
 
@@ -29,43 +29,10 @@ enum Loaded<E: Arch> {
     Dso(Vec<u32>, Box<SharedFile<E>>),
 }
 
-/// A concurrent vector implemented as one bin per Rayon worker. Writers on
-/// different workers never contend, and ordering is restored from ReaderJob
-/// positions after all input has been read.
-struct WorkerBins<T> {
-    bins: Vec<UnsafeCell<Vec<T>>>,
-}
-
-// SAFETY: a Rayon worker has a unique index and executes at most one closure
-// at a time. Callers do not invoke nested parallel work while pushing, and the
-// bins are consumed only after their scoped traversals have joined.
-unsafe impl<T: Send> Sync for WorkerBins<T> {}
-
-impl<T> WorkerBins<T> {
-    fn new() -> WorkerBins<T> {
-        WorkerBins {
-            bins: (0..=rayon::current_num_threads())
-                .map(|_| UnsafeCell::new(Vec::new()))
-                .collect(),
-        }
-    }
-
-    fn push(&self, value: T) {
-        let fallback = self.bins.len() - 1;
-        let i = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
-        // SAFETY: the Sync invariant above gives this worker exclusive access
-        // to its indexed vector for the duration of this non-nested closure.
-        unsafe { &mut *self.bins[i].get() }.push(value);
-    }
-
-    fn into_vec(self) -> Vec<T> {
-        self.bins
-            .into_iter()
-            .flat_map(UnsafeCell::into_inner)
-            .collect()
-    }
+/// Appends a result to the current worker's bin.
+fn push_to_worker<T>(bins: &[Mutex<Vec<T>>], value: T) {
+    let worker = rayon::current_thread_index().unwrap_or(bins.len() - 1);
+    bins[worker].lock().unwrap().push(value);
 }
 
 fn get_file_type<E: Arch>(ctx: &Context<E>, mf: &MappedFile) -> FileType {
@@ -373,8 +340,12 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     // function. If we add a directive that doesn't satisfy this, such
     // as SEARCH_DIR, which affects how -l arguments after it are
     // resolved, this scheme needs to be revisited.
-    let scripts = WorkerBins::new();
-    let loaded = WorkerBins::new();
+
+    // Keep one bin per worker, locking only to append a result after I/O and
+    // parsing. Command line positions restore the order after the jobs join.
+    let workers = rayon::current_num_threads();
+    let scripts: Vec<_> = (0..=workers).map(|_| Mutex::new(Vec::new())).collect();
+    let loaded: Vec<_> = (0..=workers).map(|_| Mutex::new(Vec::new())).collect();
 
     let ctx_ref: &Context<E> = ctx;
     rayon::scope(|scope| {
@@ -410,7 +381,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                             if let Some(file) =
                                 read_archive_member(ctx_ref, &child_rctx, child, &archive_name)
                             {
-                                loaded.push(file);
+                                push_to_worker(loaded, file);
                             }
                         });
                     }
@@ -433,7 +404,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                             if let Some(file) =
                                 read_archive_member(ctx_ref, &child_rctx, child, &archive_name)
                             {
-                                loaded.push(file);
+                                push_to_worker(loaded, file);
                             }
                         });
                     }
@@ -441,15 +412,15 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 FileType::Text => {
                     let mut job = job;
                     job.mf = Some(mf);
-                    scripts.push(job);
+                    push_to_worker(&scripts, job);
                 }
                 FileType::ElfObj => {
                     let file = new_object_file(ctx_ref, &rctx, mf, "");
-                    loaded.push(Loaded::Obj(rctx.pos, Box::new(file)));
+                    push_to_worker(&loaded, Loaded::Obj(rctx.pos, Box::new(file)));
                 }
                 FileType::ElfDso => {
                     let file = new_shared_file(ctx_ref, &rctx, mf);
-                    loaded.push(Loaded::Dso(rctx.pos, Box::new(file)));
+                    push_to_worker(&loaded, Loaded::Dso(rctx.pos, Box::new(file)));
                 }
                 FileType::GccLtoObj | FileType::LlvmBitcode => {
                     defer_lto_object(ctx_ref, &rctx, mf, "");
@@ -459,12 +430,15 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
         });
     });
 
-    for l in loaded.into_vec() {
+    for l in loaded.into_iter().flat_map(|bin| bin.into_inner().unwrap()) {
         push_loaded(ctx, l);
     }
 
     // Parse linker scripts and read the files they name.
-    let mut scripts = scripts.into_vec();
+    let mut scripts: Vec<_> = scripts
+        .into_iter()
+        .flat_map(|bin| bin.into_inner().unwrap())
+        .collect();
     scripts.sort_by(|a, b| a.rctx.pos.cmp(&b.rctx.pos));
     for job in scripts {
         let mut rctx = job.rctx.clone();
