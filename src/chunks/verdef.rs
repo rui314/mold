@@ -119,20 +119,23 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     };
 
     let soname = if ctx.args.soname.is_empty() {
-        ctx.args.output.file_name().unwrap_or_default().as_encoded_bytes().to_vec()
+        ctx.args
+            .output
+            .file_name()
+            .unwrap_or_default()
+            .as_encoded_bytes()
     } else {
-        ctx.args.soname.as_encoded_bytes().to_vec()
+        ctx.args.soname.as_encoded_bytes()
     };
     write(
         &mut contents,
         &mut ctx.dynstr,
-        &soname,
+        soname,
         1,
         VER_FLG_BASE as u16,
     );
 
-    let defs = ctx.args.version_definitions.clone();
-    for (i, verstr) in defs.iter().enumerate() {
+    for (i, verstr) in ctx.args.version_definitions.iter().enumerate() {
         write(
             &mut contents,
             &mut ctx.dynstr,

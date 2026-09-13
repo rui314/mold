@@ -383,8 +383,8 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
         passes::print_dependencies(&ctx);
     }
     // Handle --require-defined
-    for name in ctx.args.require_defined.clone() {
-        let id = ctx.get_symbol(&name);
+    for name in &ctx.args.require_defined {
+        let id = ctx.symbols.get_or_intern(name);
         if ctx.symbols[id].file().is_none() {
             error!("--require-defined: undefined symbol: {}", ctx.symbols[id]);
         }

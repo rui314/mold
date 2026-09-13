@@ -2402,13 +2402,8 @@ pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
-    let dso_ids: Vec<_> = ctx
-        .dsos
-        .iter()
-        .map(crate::input_files::SharedFile::id)
-        .collect();
-    for id in dso_ids {
-        let audit = ctx.dsos[id.index()].dt_audit();
+    for dso in &ctx.dsos {
+        let audit = dso.dt_audit();
         if !audit.is_empty() {
             if !ctx.args.depaudit.is_empty() {
                 ctx.args.depaudit.push(b':');
@@ -2416,20 +2411,21 @@ pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
             ctx.args.depaudit.extend_from_slice(audit);
         }
     }
-    let mut strings: Vec<Vec<u8>> = ctx
+    let strings = ctx
         .dsos
         .iter()
-        .map(|d| d.soname.clone())
-        .collect();
-    strings.extend(ctx.args.auxiliary.iter().cloned());
-    strings.extend(ctx.args.filter.iter().cloned());
-    strings.push(ctx.args.audit.clone());
-    strings.push(ctx.args.depaudit.clone());
-    strings.push(ctx.args.rpaths.as_encoded_bytes().to_vec());
-    strings.push(ctx.args.soname.as_encoded_bytes().to_vec());
+        .map(|dso| dso.soname.as_slice())
+        .chain(ctx.args.auxiliary.iter().map(Vec::as_slice))
+        .chain(ctx.args.filter.iter().map(Vec::as_slice))
+        .chain([
+            ctx.args.audit.as_slice(),
+            ctx.args.depaudit.as_slice(),
+            ctx.args.rpaths.as_encoded_bytes(),
+            ctx.args.soname.as_encoded_bytes(),
+        ]);
     for s in strings {
         if !s.is_empty() {
-            ctx.dynstr.add_string(&s);
+            ctx.dynstr.add_string(s);
         }
     }
 }
