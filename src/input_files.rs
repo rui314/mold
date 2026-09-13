@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
-use std::ptr::NonNull;
+use std::ops::{Index, IndexMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
+use rayon::iter::plumbing::{bridge, Consumer, Producer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
@@ -123,52 +123,20 @@ impl DsoId {
     }
 }
 
-/// Owns all files in stable storage and keeps the live files in a separate
-/// pointer vector. This is the Rust equivalent of C++ mold's `obj_pool` /
+/// Owns all files in stable storage and keeps the live files' pool indices
+/// separately. This is the Rust equivalent of C++ mold's `obj_pool` /
 /// `dso_pool` and `objs` / `dsos` vectors.
 pub struct FileList<T: FileInPool> {
     pool: Vec<Box<T>>,
-    live: Vec<FileRef<T>>,
-}
-
-/// A file in the live pointer vector. The pointee is owned by `FileList::pool`
-/// and therefore does not move until the entire list is dropped.
-pub struct FileRef<T>(NonNull<T>);
-
-// SAFETY: FileRefs in a FileList are unique pointers into separately allocated
-// boxes. Shared and mutable iteration follow the same rules as slice iteration.
-unsafe impl<T: Send> Send for FileRef<T> {}
-unsafe impl<T: Sync> Sync for FileRef<T> {}
-
-impl<T> Deref for FileRef<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        // SAFETY: the pointee is owned by the surrounding FileList and outlives
-        // this reference.
-        unsafe { self.0.as_ref() }
-    }
-}
-
-impl<T> DerefMut for FileRef<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        // SAFETY: each live pointer occurs once, and mutable iteration borrows
-        // the live vector mutably.
-        unsafe { self.0.as_mut() }
-    }
+    // Indices are unique and increasing: push appends, and retain preserves
+    // order. Mutable iterators can therefore split the pool into disjoint
+    // slices as they visit live files.
+    live: Vec<u32>,
 }
 
 /// Supplies the stable pool index stored in each input file.
 pub trait FileInPool {
     fn set_file_index(&mut self, index: u32);
-}
-
-fn file_ref<T>(file: &FileRef<T>) -> &T {
-    file
-}
-
-fn file_ref_mut<T>(file: &mut FileRef<T>) -> &mut T {
-    file
 }
 
 impl<T: FileInPool> Default for FileList<T> {
@@ -181,16 +149,15 @@ impl<T: FileInPool> Default for FileList<T> {
 }
 
 impl<T: FileInPool> FileList<T> {
-    /// Adds a file to the stable pool and the live pointer vector, returning its
+    /// Adds a file to the stable pool and the live index vector, returning its
     /// stable pool index.
     pub fn push(&mut self, mut file: Box<T>) -> u32 {
         let index = u32::try_from(self.pool.len()).expect("too many input files");
         // Packed input-section IDs reserve two of the file-index bits.
         assert!(index < 1 << 30, "too many input files");
         file.set_file_index(index);
-        let ptr = NonNull::from(file.as_mut());
         self.pool.push(file);
-        self.live.push(FileRef(ptr));
+        self.live.push(index);
         index
     }
 
@@ -219,15 +186,24 @@ impl<T: FileInPool> FileList<T> {
     }
 
     pub fn first(&self) -> Option<&T> {
-        self.live.first().map(file_ref)
+        self.live
+            .first()
+            .map(|&index| self.pool[index as usize].as_ref())
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator {
-        self.live.iter().map(file_ref)
+    pub fn iter(&self) -> FileIter<'_, T> {
+        FileIter {
+            pool: &self.pool,
+            live: self.live.iter(),
+        }
     }
 
-    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> + DoubleEndedIterator {
-        self.live.iter_mut().map(file_ref_mut)
+    pub fn iter_mut(&mut self) -> FileIterMut<'_, T> {
+        FileIterMut {
+            pool: &mut self.pool,
+            live: &self.live,
+            offset: 0,
+        }
     }
 
     /// Iterates over the pool, including files erased from the live vector.
@@ -239,20 +215,22 @@ impl<T: FileInPool> FileList<T> {
     where
         T: Sync,
     {
-        self.live.par_iter().map(|file| &**file)
+        self.live
+            .par_iter()
+            .map(|&index| self.pool[index as usize].as_ref())
     }
 
     pub fn par_iter_mut(&mut self) -> impl IndexedParallelIterator<Item = &mut T>
     where
         T: Send,
     {
-        self.live.par_iter_mut().map(|file| &mut **file)
+        FileParIterMut(self.iter_mut())
     }
 
-    /// Erases pointers from the live vector without destroying their
+    /// Erases indices from the live vector without destroying their
     /// pool-owned files.
     pub fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
-        self.live.retain(|file| keep(file));
+        self.live.retain(|&index| keep(&self.pool[index as usize]));
     }
 }
 
@@ -272,20 +250,19 @@ impl<T: FileInPool> IndexMut<usize> for FileList<T> {
 
 impl<'a, T: FileInPool> IntoIterator for &'a FileList<T> {
     type Item = &'a T;
-    type IntoIter = std::iter::Map<std::slice::Iter<'a, FileRef<T>>, fn(&FileRef<T>) -> &T>;
+    type IntoIter = FileIter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.live.iter().map(file_ref)
+        self.iter()
     }
 }
 
 impl<'a, T: FileInPool> IntoIterator for &'a mut FileList<T> {
     type Item = &'a mut T;
-    type IntoIter =
-        std::iter::Map<std::slice::IterMut<'a, FileRef<T>>, fn(&mut FileRef<T>) -> &mut T>;
+    type IntoIter = FileIterMut<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.live.iter_mut().map(file_ref_mut)
+        self.iter_mut()
     }
 }
 
@@ -296,6 +273,137 @@ impl<T: FileInPool> IntoIterator for FileList<T> {
     fn into_iter(self) -> Self::IntoIter {
         debug_assert_eq!(self.live.len(), self.pool.len());
         self.pool.into_iter()
+    }
+}
+
+/// Iterates over live files by their stable pool indices.
+pub struct FileIter<'a, T> {
+    pool: &'a [Box<T>],
+    live: std::slice::Iter<'a, u32>,
+}
+
+impl<'a, T> Iterator for FileIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<&'a T> {
+        self.live
+            .next()
+            .map(|&index| self.pool[index as usize].as_ref())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.live.size_hint()
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for FileIter<'a, T> {
+    fn next_back(&mut self) -> Option<&'a T> {
+        self.live
+            .next_back()
+            .map(|&index| self.pool[index as usize].as_ref())
+    }
+}
+
+impl<T> ExactSizeIterator for FileIter<'_, T> {}
+impl<T> std::iter::FusedIterator for FileIter<'_, T> {}
+
+/// Iterates mutably over live files, removing each visited slot from the
+/// remaining pool slice so that returned references cannot overlap.
+pub struct FileIterMut<'a, T> {
+    pool: &'a mut [Box<T>],
+    live: &'a [u32],
+    // The stable index corresponding to pool[0].
+    offset: usize,
+}
+
+impl<'a, T> Iterator for FileIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<&'a mut T> {
+        let (&index, live) = self.live.split_first()?;
+        self.live = live;
+        let (_, pool) = std::mem::take(&mut self.pool).split_at_mut(index as usize - self.offset);
+        let (file, pool) = pool.split_first_mut().unwrap();
+        self.pool = pool;
+        self.offset = index as usize + 1;
+        Some(file.as_mut())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.live.len(), Some(self.live.len()))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for FileIterMut<'a, T> {
+    fn next_back(&mut self) -> Option<&'a mut T> {
+        let (&index, live) = self.live.split_last()?;
+        self.live = live;
+        let (pool, tail) =
+            std::mem::take(&mut self.pool).split_at_mut(index as usize - self.offset);
+        self.pool = pool;
+        Some(tail[0].as_mut())
+    }
+}
+
+impl<T> ExactSizeIterator for FileIterMut<'_, T> {}
+impl<T> std::iter::FusedIterator for FileIterMut<'_, T> {}
+
+// Rayon's producer splits at a live-file boundary, giving each worker a
+// disjoint pool slice and its corresponding live indices.
+impl<'a, T: Send> Producer for FileIterMut<'a, T> {
+    type Item = &'a mut T;
+    type IntoIter = Self;
+
+    fn into_iter(self) -> Self {
+        self
+    }
+
+    fn split_at(self, index: usize) -> (Self, Self) {
+        let (left, right) = self.live.split_at(index);
+        let split = right
+            .first()
+            .map_or(self.pool.len(), |&i| i as usize - self.offset);
+        let (pool_left, pool_right) = self.pool.split_at_mut(split);
+        (
+            FileIterMut {
+                pool: pool_left,
+                live: left,
+                offset: self.offset,
+            },
+            FileIterMut {
+                pool: pool_right,
+                live: right,
+                offset: self.offset + split,
+            },
+        )
+    }
+}
+
+struct FileParIterMut<'a, T>(FileIterMut<'a, T>);
+
+impl<'a, T: Send> ParallelIterator for FileParIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn drive_unindexed<C: UnindexedConsumer<Self::Item>>(self, consumer: C) -> C::Result {
+        bridge(self, consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        Some(self.0.live.len())
+    }
+}
+
+impl<T: Send> IndexedParallelIterator for FileParIterMut<'_, T> {
+    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
+        bridge(self, consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.0.live.len()
+    }
+
+    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
+        callback.callback(self.0)
     }
 }
 
