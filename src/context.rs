@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -235,8 +234,6 @@ pub struct Context<E: Arch> {
 
     /// The size of the output file once the layout is fixed.
     pub filesize: u64,
-
-    _arch: PhantomData<E>,
 }
 
 impl<E: Arch> Context<E> {
@@ -335,7 +332,6 @@ impl<E: Arch> Context<E> {
             dtp_addr: 0,
             syms,
             filesize: 0,
-            _arch: PhantomData,
         }
     }
 
