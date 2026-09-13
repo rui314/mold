@@ -504,7 +504,7 @@ struct Literal {
 
 /// A set of glob patterns, each associated with a value. Looking up a
 /// string returns the largest value among the matching patterns, or -1.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Glob {
     // Patterns that need only a literal string comparison are kept out
     // of the automaton-based matchers below, which scan the entire input
@@ -534,14 +534,25 @@ fn is_literal(pat: &[u8]) -> bool {
     !pat.iter().any(|&c| matches!(c, b'*' | b'?' | b'[' | b'\\'))
 }
 
-impl Glob {
-    pub fn new() -> Self {
-        Glob {
+impl Default for Glob {
+    fn default() -> Self {
+        Self {
             match_all: -1,
             max_value: -1,
+            exacts: Vec::new(),
+            prefixes: Vec::new(),
+            suffixes: Vec::new(),
+            patterns: Vec::new(),
+            aho_corasick: AhoCorasick::default(),
+            compiled: OnceLock::new(),
             is_empty: true,
-            ..Default::default()
         }
+    }
+}
+
+impl Glob {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -712,6 +723,19 @@ mod tests {
             assert!(g.add(p.as_bytes(), i as i64));
         }
         g
+    }
+
+    #[test]
+    fn default_has_no_matches() {
+        let g = Glob::default();
+        assert!(g.is_empty());
+        assert_eq!(g.find(b"missing"), -1);
+
+        let mut g = Glob::default();
+        assert!(g.add(b"present", 7));
+        assert!(!g.is_empty());
+        assert_eq!(g.find(b"present"), 7);
+        assert_eq!(g.find(b"missing"), -1);
     }
 
     #[test]
