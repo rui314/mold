@@ -82,7 +82,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     }
     syms.sort_by_key(|&(dso, id)| {
         (
-            ctx.dsos[dso.index()].soname.clone(),
+            ctx.dsos[dso.index()].soname.as_slice(),
             ctx.symbols[id].ver_idx,
         )
     });
