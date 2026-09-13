@@ -282,7 +282,7 @@ impl<End: Endian> Arch for Arm32Target<End>
 where
     Self: Layout<Endian = End>,
 {
-    type InputSectionExtra = crate::input_sections::Arm32InputSectionExtra;
+    type InputSectionExtra = u32;
 
     const NAME: &'static str = if End::IS_LITTLE { "arm32" } else { "arm32be" };
     const FAMILY: Family = Family::Arm32;

@@ -148,6 +148,12 @@ const NO_FDE: u32 = u32::MAX;
 
 /// Target-specific state embedded in an input section.
 pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
+    /// Creates empty metadata before target-specific parsing.
+    #[inline]
+    fn empty() -> Self {
+        Self::default()
+    }
+
     #[inline]
     fn exidx(&self) -> Option<u32> {
         None
@@ -170,26 +176,25 @@ pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
 impl InputSectionExtra for () {}
 
 /// ARM32's link from a code section to its `.ARM.exidx` section.
-#[derive(Debug, Default)]
-pub struct Arm32InputSectionExtra {
-    // ELF section zero is reserved, so it is also our null value.
-    exidx: u32,
-}
+/// `u32::MAX` means that there is no associated section.
+impl InputSectionExtra for u32 {
+    #[inline]
+    fn empty() -> Self {
+        u32::MAX
+    }
 
-impl InputSectionExtra for Arm32InputSectionExtra {
     #[inline]
     fn exidx(&self) -> Option<u32> {
-        (self.exidx != 0).then_some(self.exidx)
+        (*self != u32::MAX).then_some(*self)
     }
 
     #[inline]
     fn set_exidx(&mut self, exidx: u32) {
         debug_assert_ne!(exidx, 0);
-        self.exidx = exidx;
+        debug_assert_ne!(exidx, u32::MAX);
+        *self = exidx;
     }
 }
-
-const _: () = assert!(std::mem::size_of::<Arm32InputSectionExtra>() == 4);
 
 /// Relaxation bookkeeping embedded only for RISC-V and LoongArch.
 impl InputSectionExtra for Box<[RelocDelta]> {
@@ -300,7 +305,7 @@ impl<E: Arch> InputSection<E> {
             relsec_idx: NO_RELSEC,
             fde_begin: NO_FDE,
             flags: AtomicU8::new(IS_ALIVE),
-            extra: E::InputSectionExtra::default(),
+            extra: E::InputSectionExtra::empty(),
         };
 
         // Sections may have been compressed. We usually uncompress them
