@@ -31,21 +31,17 @@ pub fn demangle_rust(name: &[u8]) -> Option<String> {
 /// The end of the legacy-mangled path `_ZN<len><ident>...E` at the start
 /// of `name`, if there is one.
 fn legacy_path_end(name: &str) -> Option<usize> {
-    let bytes = name.as_bytes();
-    let mut pos = name.strip_prefix("_ZN").map(|_| 3)?;
+    let mut rest = name.strip_prefix("_ZN")?;
     loop {
-        if bytes.get(pos) == Some(&b'E') {
-            return Some(pos + 1);
+        if rest.starts_with('E') {
+            return Some(name.len() - rest.len() + 1);
         }
-        let digits = bytes[pos..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit())
-            .count();
-        let len: usize = name[pos..pos + digits].parse().ok()?;
-        pos += digits + len;
-        if len == 0 || pos > bytes.len() {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        let len: usize = rest[..digits].parse().ok()?;
+        if len == 0 {
             return None;
         }
+        rest = rest.get(digits.checked_add(len)?..)?;
     }
 }
 
@@ -62,5 +58,14 @@ mod tests {
         assert_eq!(demangle_rust(b"_ZN3foo3barE").as_deref(), Some("foo::bar"));
         assert_eq!(demangle_rust(b"_ZN3foo").as_deref(), None);
         assert_eq!(demangle_rust(b"main"), None);
+    }
+
+    #[test]
+    fn rust_legacy_length_overflow() {
+        // Adding the digit count to this length wraps to zero, so an
+        // unchecked parser would keep visiting the same identifier.
+        let len = usize::MAX - usize::MAX.ilog10() as usize;
+        let name = format!("_ZN{len}E");
+        assert_eq!(demangle_rust(name.as_bytes()), None);
     }
 }
