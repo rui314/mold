@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 
 // Atomic accesses use relaxed ordering unless stronger synchronization is
 // required, matching C++ mold's default atomic wrapper.
@@ -260,8 +260,10 @@ pub struct Symbol {
     // equivalent to its address. Otherwise, it is relative to `origin`.
     pub value: u64,
 
-    // Index into the symbol table of the owner file.
-    pub sym_idx: u32,
+    // Index into the symbol table of the owner file. During COMDAT selection,
+    // this holds the winning file priority and is updated through shared
+    // Symbol references, so the storage itself must permit atomic writes.
+    sym_idx: AtomicU32,
     type_and_bind: u8,
 
     pub ver_idx: u16,
@@ -481,7 +483,7 @@ impl Symbol {
             file: SymbolFile::none(),
             origin: Origin::NONE,
             value: 0,
-            sym_idx: u32::MAX,
+            sym_idx: AtomicU32::new(u32::MAX),
             type_and_bind: 0,
             ver_idx: VER_NDX_UNSPECIFIED as u16,
             visibility: AtomicU8::new(STV_DEFAULT as u8),
@@ -505,6 +507,33 @@ impl Symbol {
     #[inline]
     pub fn file(&self) -> Option<FileId> {
         self.file.get()
+    }
+
+    #[inline]
+    pub fn sym_idx(&self) -> u32 {
+        self.sym_idx.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn set_sym_idx(&mut self, index: u32) {
+        *self.sym_idx.get_mut() = index;
+    }
+
+    /// Records the lowest file priority while symbol resolution is clear.
+    #[inline]
+    pub(crate) fn record_comdat_owner(&self, priority: u32) {
+        let mut old = self.sym_idx.load(Ordering::Relaxed);
+        while priority < old {
+            match self.sym_idx.compare_exchange_weak(
+                old,
+                priority,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => old = actual,
+            }
+        }
     }
 
     #[inline]
@@ -857,7 +886,7 @@ impl Symbol {
     #[inline]
     pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> ElfSym<E> {
         match self.file() {
-            Some(file) => ctx.file(file).elf_syms[self.sym_idx as usize],
+            Some(file) => ctx.file(file).elf_syms[self.sym_idx() as usize],
             None => ElfSym::<E>::default(),
         }
     }
@@ -1173,7 +1202,7 @@ impl Symbol {
     /// The symbol's index in the output symbol table.
     pub fn output_sym_idx<E: Arch>(&self, ctx: &Context<E>) -> u32 {
         let file = ctx.file(self.file().unwrap());
-        let i = file.output_sym_indices[self.sym_idx as usize];
+        let i = file.output_sym_indices[self.sym_idx() as usize];
         debug_assert!(i >= 0);
         if self.is_local(ctx) {
             file.local_symtab_idx + i as u32
@@ -1920,6 +1949,22 @@ pub fn is_c_identifier(s: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comdat_ownership_uses_lowest_priority() {
+        let mut symbol = Symbol::new(BStr::new(b"comdat"));
+        let shared = &symbol;
+        std::thread::scope(|scope| {
+            for priority in [9, 3, 7, 3, 5] {
+                scope.spawn(move || shared.record_comdat_owner(priority));
+            }
+        });
+        assert_eq!(symbol.sym_idx(), 3);
+
+        // Symbol resolution reuses the field for the input symbol's index.
+        symbol.set_sym_idx(17);
+        assert_eq!(symbol.sym_idx(), 17);
+    }
 
     #[test]
     fn auxiliary_records_follow_first_use_and_preserve_existing_data() {

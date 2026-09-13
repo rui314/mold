@@ -341,7 +341,10 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
         thunks.par_iter_mut().for_each(|thunk| {
             thunk.symbols.sort_by_key(|&id| {
                 let sym = &ctx.symbols[id];
-                (sym.file().map_or(0, |f| ctx.file(f).priority), sym.sym_idx)
+                (
+                    sym.file().map_or(0, |f| ctx.file(f).priority),
+                    sym.sym_idx(),
+                )
             });
         });
     }

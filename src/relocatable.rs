@@ -150,7 +150,7 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
         sym.set_file(FileId::Obj(obj_id));
         sym.clear_origin();
         sym.value = 0;
-        sym.sym_idx = i as u32;
+        sym.set_sym_idx(i as u32);
         sym.set_esym(esym);
     }
 }

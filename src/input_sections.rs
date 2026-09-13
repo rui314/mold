@@ -916,7 +916,7 @@ impl<E: Arch> InputSection<E> {
         let esym = &file.base.elf_syms[sym_idx];
         let st_bind = esym.st_bind();
         let is_undef =
-            esym.st_shndx().get() as u32 == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx != 0;
+            esym.st_shndx().get() as u32 == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx() != 0;
 
         if is_undef && sym.is_undef() {
             match ctx.args.unresolved_symbols {

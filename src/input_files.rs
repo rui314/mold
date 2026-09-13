@@ -102,7 +102,7 @@ impl FragmentSymbol {
         let mut sym = Symbol::new(BStr::new(b"<fragment>"));
         sym.set_file(FileId::Obj(file.id()));
         sym.set_fragment_dummy(true);
-        sym.sym_idx = self.sym_idx;
+        sym.set_sym_idx(self.sym_idx);
         sym.set_esym(&file.base.elf_syms[self.sym_idx as usize]);
         sym.set_visibility(STV_HIDDEN);
         sym.set_fragment(self.fragment);
@@ -2095,7 +2095,7 @@ impl<E: Arch> ObjectFile<E> {
 
         let mut first = Symbol::new(BStr::new(b""));
         first.set_file(file_id);
-        first.sym_idx = 0;
+        first.set_sym_idx(0);
         slots[0].write(first);
         self.base.symbols[0] = base_id;
 
@@ -2125,7 +2125,7 @@ impl<E: Arch> ObjectFile<E> {
             let mut sym = Symbol::new(BStr::new(name));
             sym.set_file(file_id);
             sym.value = esym.st_value().get();
-            sym.sym_idx = i as u32;
+            sym.set_sym_idx(i as u32);
             sym.set_esym(esym);
             sym.set_rust(self.is_rust_obj);
             if let Some(shndx) = shndx {
@@ -2722,7 +2722,7 @@ impl<E: Arch> ObjectFile<E> {
             let sym = &mut symbols[sym_id];
             sym.set_input_section(section);
             sym.value = 0;
-            sym.sym_idx = i as u32;
+            sym.set_sym_idx(i as u32);
             sym.ver_idx = default_version;
             sym.set_weak(false);
         }
@@ -3478,7 +3478,7 @@ impl<E: Arch> SharedFile<E> {
     // function, we conservatively infer it from a symbol address and a
     // section alignment requirement.
     pub fn alignment(&self, sym: &Symbol) -> u64 {
-        let shndx = self.base.elf_syms[sym.sym_idx as usize].st_shndx().get() as usize;
+        let shndx = self.base.elf_syms[sym.sym_idx() as usize].st_shndx().get() as usize;
         let shdr = &self.base.shdrs[shndx];
         let mut align = shdr.sh_addralign.get().max(1);
         if sym.value != 0 {
@@ -3491,7 +3491,7 @@ impl<E: Arch> SharedFile<E> {
     pub fn is_readonly(&self, sym: &Symbol) -> bool {
         let data = self.base.data();
         let ehdr = record_from_bytes::<ElfEhdr<E>>(data);
-        let val = self.base.elf_syms[sym.sym_idx as usize].st_value().get();
+        let val = self.base.elf_syms[sym.sym_idx() as usize].st_value().get();
         let phoff = ehdr.e_phoff.get() as usize;
         let size = std::mem::size_of::<ElfPhdr<E>>();
         let phnum = ehdr.e_phnum.get() as usize;
@@ -3747,7 +3747,7 @@ impl<E: Arch> ObjectFile<E> {
                     None => sym.clear_origin(),
                 }
                 sym.value = esym.st_value().get();
-                sym.sym_idx = i as u32;
+                sym.set_sym_idx(i as u32);
                 sym.set_esym(esym);
                 sym.ver_idx = resolver.default_version;
                 sym.set_weak(esym.is_weak());
@@ -3775,7 +3775,7 @@ impl<E: Arch> SharedFile<E> {
                     sym.set_file(FileId::Dso(id));
                     sym.clear_origin();
                     sym.value = esym.st_value().get();
-                    sym.sym_idx = i as u32;
+                    sym.set_sym_idx(i as u32);
                     sym.set_esym(esym);
                     sym.ver_idx = self.versyms[i];
                     sym.set_weak(true);
@@ -3793,7 +3793,7 @@ impl<E: Arch> SharedFile<E> {
                     if rank < resolver.current_rank(sym) {
                         sym.set_file(FileId::Dso(id));
                         sym.set_symbol_origin(sym_id);
-                        sym.sym_idx = i as u32;
+                        sym.set_sym_idx(i as u32);
                         sym.set_esym(esym);
                         sym.set_rust(false);
                         sym.set_versioned_default(true);

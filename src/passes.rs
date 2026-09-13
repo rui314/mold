@@ -5,7 +5,7 @@ use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
 
 use bstr::BStr;
@@ -389,7 +389,7 @@ fn clear_symbol<E: Arch>(sym: &mut Symbol) {
     sym.clear_file();
     sym.clear_origin();
     sym.value = 0;
-    sym.sym_idx = u32::MAX;
+    sym.set_sym_idx(u32::MAX);
     sym.set_esym(&ElfSym::<E>::default());
     sym.ver_idx = VER_NDX_UNSPECIFIED as u16;
     sym.set_weak(false);
@@ -581,20 +581,6 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
 
     // Symbol resolution is clear while COMDAT groups are selected, so sym_idx
     // can temporarily hold the winning file priority.
-    let record_owner = |sym: &Symbol, priority: u32| {
-        // SAFETY: sym_idx is aligned for u32. During this parallel phase it is
-        // accessed only through this atomic reference, and the phase is joined
-        // before ordinary accesses resume.
-        let owner = unsafe { AtomicU32::from_ptr(std::ptr::addr_of!(sym.sym_idx).cast_mut()) };
-        let mut old = owner.load(Ordering::Relaxed);
-        while priority < old {
-            match owner.compare_exchange_weak(old, priority, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
-        }
-    };
-
     // Read COMDAT metadata and choose an owner among reachable regular objects.
     // Ordinary global signatures already refer to the files' symbols; record
     // the other signatures for interning while each file's metadata is hot.
@@ -617,7 +603,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                             // LTO-generated file may own it. LLVM keeps claimed groups in its output;
                             // GCC emits their contents without a group, so no file owns them.
                             if !sym.comdat_claimed_by_ir() || is_lto_output {
-                                record_owner(sym, priority);
+                                sym.record_comdat_owner(priority);
                             }
                         }
                     }
@@ -660,7 +646,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             let group = unsafe { &*pending.group.as_ptr() };
             let sym = &symbols[group.signature()];
             if !sym.comdat_claimed_by_ir() || pending.is_lto_output {
-                record_owner(sym, pending.priority);
+                sym.record_comdat_owner(pending.priority);
             }
         });
         objs.par_iter_mut()
@@ -697,7 +683,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
         if file.base.is_reachable() {
             let priority = file.base.priority;
             for group in &mut file.comdat_groups {
-                group.set_owner(symbols[group.signature()].sym_idx == priority);
+                group.set_owner(symbols[group.signature()].sym_idx() == priority);
             }
         }
     });
@@ -723,18 +709,18 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                 discarded.push(false);
                 continue;
             };
-            if ctx.symbols[sig].sym_idx == u32::MAX {
-                ctx.symbols[sig].sym_idx = priority;
+            if ctx.symbols[sig].sym_idx() == u32::MAX {
+                ctx.symbols[sig].set_sym_idx(priority);
                 ctx.symbols[sig].set_comdat_claimed_by_ir(true);
             }
-            discarded.push(ctx.symbols[sig].sym_idx != priority);
+            discarded.push(ctx.symbols[sig].sym_idx() != priority);
         }
         ctx.objs[fi].lto_comdat_discarded = discarded;
     }
 
     // Restore sym_idx before the final symbol-resolution pass.
     ctx.symbols
-        .par_for_each_global_mut(|sym| sym.sym_idx = u32::MAX);
+        .par_for_each_global_mut(|sym| sym.set_sym_idx(u32::MAX));
 
     drop(t);
 
@@ -1592,7 +1578,7 @@ fn resolve_internal_symbols<E: Arch>(ctx: &mut Context<E>) {
             sym.set_file(FileId::Obj(id));
             sym.clear_origin();
             sym.value = esym.st_value().get();
-            sym.sym_idx = i as u32;
+            sym.set_sym_idx(i as u32);
             sym.set_esym(esym);
             sym.ver_idx = ctx.default_version;
             sym.set_weak(esym.is_weak());
@@ -2009,7 +1995,7 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
                     error!(
                         "duplicate symbol: {file}: {}: {}",
                         ctx.file_display(sym2.file().unwrap()),
-                        crate::util::display(file.base.symbol_name_in(sym.sym_idx as usize))
+                        crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
                     );
                 }
             }
@@ -2645,7 +2631,7 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
             sym.set_file(file_id);
             sym.clear_origin();
             sym.value = 0;
-            sym.sym_idx = i as u32;
+            sym.set_sym_idx(i as u32);
             sym.set_esym(&esym);
             sym.set_rust(is_rust);
             sym.set_weak(false);
@@ -3231,7 +3217,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             let sym_name = ctx.symbols[id].name();
             if let Some(id2) = ctx.symbols.lookup(sym_name) {
                 if id2 != id && ctx.symbols[id2].file() == Some(file_id) {
-                    let sym2_idx = ctx.symbols[id2].sym_idx as usize;
+                    let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
                     let file = &ctx.objs[obj_id.index()];
                     if !file.has_symver[sym2_idx - file.base.first_global] {
                         let v2 = ctx.symbols[id2].ver_idx as u32;
