@@ -545,21 +545,24 @@ fn add_comment_strings<E: Layout>(
     gc_sections: bool,
     cmdline_args: &[std::ffi::OsString],
 ) {
-    let add = |s: String| {
-        let mut bytes = s.into_bytes();
+    let add = |mut bytes: Vec<u8>| {
         bytes.push(0);
         let data = crate::util::leak_bytes(bytes);
         msec.insert(data, xxhash_rust::xxh3::xxh3_64(data), 0, gc_sections);
     };
     // Add an identification string to .comment.
-    add(crate::cmdline::VERSION.to_string());
+    add(crate::cmdline::VERSION.as_bytes().to_vec());
 
     // Embed command line arguments for debugging.
     if std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty()) {
-        add(format!(
-            "mold command line: {}",
-            cmdline_args[1..].iter().map(|s| s.to_string_lossy()).collect::<Vec<_>>().join(" ")
-        ));
+        let mut bytes = b"mold command line: ".to_vec();
+        for (i, arg) in cmdline_args[1..].iter().enumerate() {
+            if i != 0 {
+                bytes.push(b' ');
+            }
+            bytes.extend_from_slice(arg.as_encoded_bytes());
+        }
+        add(bytes);
     }
 }
 
