@@ -906,8 +906,8 @@ fn parse_package_metadata(arg: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn read_retain_symbols_file(path: &Path) -> Vec<Vec<u8>> {
-    let mf = MappedFile::must_open(path);
+fn read_retain_symbols_file(chroot: &Path, path: &Path) -> Vec<Vec<u8>> {
+    let mf = crate::mapped_file::must_open_file(chroot, path);
     mf.data()
         .split(|&b| b == b'\n')
         .map(|line| line.trim_with(|c| c == ' ' || c == '\t'))
@@ -1519,7 +1519,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             }
             a.oformat_binary = true;
         } else if read_arg!("retain-symbols-file", true) {
-            a.retain_symbols_file = Some(read_retain_symbols_file(Path::new(&raw_arg)));
+            a.retain_symbols_file = Some(read_retain_symbols_file(&a.chroot, Path::new(&raw_arg)));
         } else if read_arg!("section-align", true) {
             let arg = raw_arg.as_encoded_bytes();
             let Some((name, value)) = arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
