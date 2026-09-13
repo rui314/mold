@@ -4,6 +4,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
+use std::ops::Range;
 #[cfg(not(windows))]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 #[cfg(not(windows))]
@@ -434,29 +435,22 @@ pub fn split_at_offsets<'a, T>(buf: &'a mut [T], offsets: &[u64]) -> Vec<&'a mut
     slices
 }
 
-/// A byte range of the output file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Range {
-    pub offset: u64,
-    pub size: u64,
-}
-
 /// Borrows several disjoint ranges of a buffer mutably at once.
-pub fn split_ranges<'a>(buf: &'a mut [u8], ranges: &[Range]) -> Vec<&'a mut [u8]> {
+pub fn split_ranges<'a>(buf: &'a mut [u8], ranges: &[Range<u64>]) -> Vec<&'a mut [u8]> {
     let mut order: Vec<usize> = (0..ranges.len()).collect();
-    order.sort_by_key(|&i| ranges[i].offset);
+    order.sort_by_key(|&i| ranges[i].start);
 
     let mut result: Vec<Option<&'a mut [u8]>> = (0..ranges.len()).map(|_| None).collect();
     let mut rest = buf;
     let mut pos = 0u64;
     for i in order {
-        let r = ranges[i];
-        assert!(r.offset >= pos, "overlapping output ranges");
-        let (_, tail) = std::mem::take(&mut rest).split_at_mut((r.offset - pos) as usize);
-        let (slice, tail) = tail.split_at_mut(r.size as usize);
+        let r = &ranges[i];
+        assert!(r.start >= pos, "overlapping output ranges");
+        let (_, tail) = std::mem::take(&mut rest).split_at_mut((r.start - pos) as usize);
+        let (slice, tail) = tail.split_at_mut((r.end - r.start) as usize);
         result[i] = Some(slice);
         rest = tail;
-        pos = r.offset + r.size;
+        pos = r.end;
     }
     result.into_iter().map(|s| s.unwrap()).collect()
 }

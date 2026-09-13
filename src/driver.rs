@@ -1,6 +1,7 @@
 //! The linker driver: runs the passes in order.
 
 use std::fmt;
+use std::ops::Range;
 use std::sync::mpsc;
 
 use rayon::prelude::*;
@@ -11,7 +12,7 @@ use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
-use crate::output_file::{split_ranges, OutputFile, Range};
+use crate::output_file::{split_ranges, OutputFile};
 use crate::{error, fatal, passes};
 
 /// Runs the linker with the given command line. Returns the exit status.
@@ -677,17 +678,15 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     Ok(0)
 }
 
-fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range {
+fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
     let hdr = ctx.chunk_header(id);
     let size = if hdr.shdr.sh_type.get() == SHT_NOBITS {
         0
     } else {
         hdr.shdr.sh_size.get()
     };
-    Range {
-        offset: hdr.shdr.sh_offset.get(),
-        size,
-    }
+    let offset = hdr.shdr.sh_offset.get();
+    offset..offset + size
 }
 
 /// A chunk together with the other chunks whose bytes it writes.
@@ -778,20 +777,20 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     passes::report_undef_errors(ctx);
 
     // Zero-clear paddings between chunks
-    let mut ranges: Vec<Range> = ctx
+    let mut ranges: Vec<Range<u64>> = ctx
         .chunks
         .iter()
         .map(|&id| file_range(ctx, id))
-        .filter(|r| r.size != 0)
+        .filter(|r| !r.is_empty())
         .collect();
-    ranges.sort_by_key(|r| r.offset);
+    ranges.sort_by_key(|r| r.start);
     let mut pos = 0usize;
     for r in ranges {
-        let start = r.offset as usize;
+        let start = r.start as usize;
         if start > pos {
             buf[pos..start].fill(0);
         }
-        pos = pos.max(start + r.size as usize);
+        pos = pos.max(r.end as usize);
     }
     buf[pos..].fill(0);
 }
@@ -802,7 +801,7 @@ fn run_tasks<E: Arch>(
     tasks: &[Task],
     timer: &crate::util::perf::Timer,
 ) {
-    let mut ranges: Vec<Range> = Vec::new();
+    let mut ranges: Vec<Range<u64>> = Vec::new();
     let mut task_ranges: Vec<Vec<usize>> = Vec::new();
     for task in tasks {
         let mut idx = Vec::new();
@@ -846,10 +845,7 @@ fn run_tasks<E: Arch>(
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
-        chunks::eh_frame_hdr::write_header(
-            ctx,
-            &mut buf[r.offset as usize..(r.offset + r.size) as usize],
-        );
+        chunks::eh_frame_hdr::write_header(ctx, &mut buf[r.start as usize..r.end as usize]);
     }
 }
 
