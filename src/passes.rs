@@ -1431,11 +1431,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     // output deterministic.
     chunks.sort_by_cached_key(|&id| {
         let hdr = ctx.chunk_header(id);
-        (
-            hdr.name.to_vec(),
-            hdr.shdr.sh_type.get(),
-            hdr.shdr.sh_flags.get(),
-        )
+        (hdr.name, hdr.shdr.sh_type.get(), hdr.shdr.sh_flags.get())
     });
     ctx.chunks.extend(chunks);
 }
@@ -3547,13 +3543,7 @@ fn sort_output_sections_regular<E: Arch>(ctx: &mut Context<E>) {
         }
     };
     let mut chunks = std::mem::take(&mut ctx.chunks);
-    chunks.sort_by_cached_key(|&id| {
-        (
-            rank1(ctx, id),
-            rank2(ctx, id),
-            ctx.chunk_header(id).name.to_vec(),
-        )
-    });
+    chunks.sort_by_cached_key(|&id| (rank1(ctx, id), rank2(ctx, id), ctx.chunk_header(id).name));
     ctx.chunks = chunks;
 }
 
