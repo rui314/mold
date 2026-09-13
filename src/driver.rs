@@ -581,7 +581,6 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
     let t = ctx.timer("update_reldyn");
     chunks::reldyn::update_shdr(&mut ctx);
     drop(t);
-    ctx.filesize = filesize;
     t_before_copy.stop();
 
     // Create an output file

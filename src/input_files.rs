@@ -848,7 +848,6 @@ pub struct ObjectFile<E: Arch> {
     pub has_ctors: bool,
 
     // Output .eh_frame layout
-    pub fde_idx: u64,
     pub fde_offset: u64,
     pub fde_size: u64,
 
@@ -1186,7 +1185,6 @@ impl<E: Arch> ObjectFile<E> {
             is_dwarf32: false,
             has_init_array: false,
             has_ctors: false,
-            fde_idx: 0,
             fde_offset: 0,
             fde_size: 0,
             llvm_addrsig: None,

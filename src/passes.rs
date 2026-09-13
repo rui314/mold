@@ -4038,7 +4038,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
 }
 
 fn num_irelative_relocs<E: Arch>(ctx: &Context<E>) -> u64 {
-    let mut n = ctx.num_ifunc_dynrels.load(Ordering::Relaxed) as u64;
+    let mut n = 0u64;
     n += ctx
         .got
         .got_syms

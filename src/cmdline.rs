@@ -473,7 +473,6 @@ pub struct Args {
     pub undefined_version: bool,
     pub use_android_relr_tags: bool,
     pub warn_common: bool,
-    pub warn_once: bool,
     pub warn_textrel: bool,
     pub z_copyreloc: bool,
     pub z_delete: bool,
@@ -616,7 +615,6 @@ impl Default for Args {
             undefined_version: false,
             use_android_relr_tags: false,
             warn_common: false,
-            warn_once: false,
             warn_textrel: false,
             z_copyreloc: true,
             z_delete: true,
@@ -1035,9 +1033,6 @@ fn returns_etxtbsy() -> bool {
 pub struct ParsedArgs {
     pub args: Args,
     pub jobs: Vec<ReaderJob>,
-    /// The reader state at the end of the command line; `-static` there
-    /// means a static link.
-    pub final_rctx: ReaderContext,
 }
 
 /// Parses all options. `cmdline` includes the program name.
@@ -1485,7 +1480,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-warn-common") {
             a.warn_common = false;
         } else if read_flag!("warn-once") {
-            a.warn_once = true;
+            // Ignored for GNU ld compatibility, as in C++ mold.
         } else if read_flag!("warn-shared-textrel") {
             warn_shared_textrel = true;
         } else if read_flag!("warn-textrel") {
@@ -2203,11 +2198,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         a.dynamic_linker.clear();
     }
 
-    ParsedArgs {
-        args: a,
-        jobs,
-        final_rctx: rctx,
-    }
+    ParsedArgs { args: a, jobs }
 }
 
 fn add_rpath<'a>(a: &mut Args, seen: &mut HashSet<&'a OsStr>, path: &'a OsStr) {

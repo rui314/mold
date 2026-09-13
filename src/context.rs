@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
@@ -216,7 +216,6 @@ pub struct Context<E: Arch> {
 
     pub needs_tlsld: AtomicBool,
     pub has_textrel: AtomicBool,
-    pub num_ifunc_dynrels: AtomicU32,
 
     pub undef_errors: Mutex<HashMap<SymbolId, Vec<String>>>,
 
@@ -231,9 +230,6 @@ pub struct Context<E: Arch> {
     pub dtp_addr: u64,
 
     pub syms: SyntheticSymbols,
-
-    /// The size of the output file once the layout is fixed.
-    pub filesize: u64,
 }
 
 impl<E: Arch> Context<E> {
@@ -320,7 +316,6 @@ impl<E: Arch> Context<E> {
             comment: None,
             needs_tlsld: AtomicBool::new(false),
             has_textrel: AtomicBool::new(false),
-            num_ifunc_dynrels: AtomicU32::new(0),
             undef_errors: Mutex::new(HashMap::new()),
             version_patterns: Vec::new(),
             dynamic_list_patterns: Vec::new(),
@@ -330,7 +325,6 @@ impl<E: Arch> Context<E> {
             tp_addr: 0,
             dtp_addr: 0,
             syms,
-            filesize: 0,
         }
     }
 

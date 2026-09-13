@@ -178,10 +178,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // Assign FDE offsets to files.
-    let mut idx = 0u64;
     for file in &mut ctx.objs {
-        file.fde_idx = idx;
-        idx += file.fdes.len() as u64;
         file.fde_offset = offset;
         offset += file.fde_size;
     }
