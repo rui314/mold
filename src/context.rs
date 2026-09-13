@@ -49,7 +49,7 @@ use crate::chunks::{
     ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
 };
 use crate::cmdline::{Args, ReaderContext};
-use crate::elf::{ElfSym, ElfWord};
+use crate::elf::ElfWord;
 use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
@@ -150,7 +150,6 @@ pub struct Context<E: Arch> {
     pub lto_file_priority: u32,
 
     pub internal_obj: Option<ObjId>,
-    pub internal_esyms: Vec<ElfSym<E>>,
 
     pub output_sections: Vec<OutputSection<E>>,
     pub merged_sections: Vec<MergedSection<E>>,
@@ -285,7 +284,6 @@ impl<E: Arch> Context<E> {
             dso_sonames: HashSet::new(),
             lto_file_priority: 100,
             internal_obj: None,
-            internal_esyms: Vec::new(),
             output_sections: Vec::new(),
             merged_sections: Vec::new(),
             reloc_sections: Vec::new(),

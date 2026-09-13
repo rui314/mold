@@ -1443,7 +1443,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     obj.base.priority = 0;
 
     // Create linker-synthesized symbols.
-    ctx.internal_esyms = vec![ElfSym::<E>::default()];
+    obj.base.elf_syms = Cow::Owned(vec![ElfSym::<E>::default()]);
     let dummy = ctx.symbols.add(Symbol::new(BStr::new(b"")));
     obj.base.symbols.push(dummy);
     obj.base.first_global = 1;
@@ -1461,7 +1461,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         esym.set_type(STT_NOTYPE);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_DEFAULT);
-        ctx.internal_esyms.push(esym);
+        obj.base.elf_syms.to_mut().push(esym);
     };
 
     // Add --defsym'd symbols
@@ -1475,7 +1475,6 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    obj.base.elf_syms = Cow::Owned(ctx.internal_esyms.clone());
     let id = ObjId(ctx.objs.push(Box::new(obj)));
     ctx.internal_obj = Some(id);
     if ctx.file_by_priority.is_empty() {
@@ -1535,11 +1534,11 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         esym.set_type(ty);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_HIDDEN);
-        ctx.internal_esyms.push(esym);
         let id = ctx.get_symbol(name);
         ctx.symbols[id].value = 0xdeadbeef; // unique dummy value
         let obj = ctx.internal_obj.unwrap();
         ctx.objs[obj.index()].base.symbols.push(id);
+        ctx.objs[obj.index()].base.elf_syms.to_mut().push(esym);
         id
     }
 
@@ -1635,7 +1634,6 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    ctx.objs[obj_id.index()].base.elf_syms = Cow::Owned(ctx.internal_esyms.clone());
     resolve_internal_symbols(ctx);
 
     // Make all synthetic symbols relative ones by associating them to
@@ -1664,7 +1662,6 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
                 if E::FAMILY == Family::Ppc64V2 {
                     esym.set_ppc64_local_entry(sym2_esym.ppc64_local_entry());
                 }
-                ctx.internal_esyms[i + 1] = *esym;
                 if ctx.symbols[sym1].file() == Some(FileId::Obj(obj_id)) {
                     ctx.symbols[sym1].set_esym(esym);
                 }
