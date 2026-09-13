@@ -383,6 +383,11 @@ impl<T> FrozenMap<T> {
         Some(unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) })
     }
 
+    /// Returns a published entry identified by an ID obtained from this map.
+    /// Linker callers only retain IDs returned by insertion or traversal of
+    /// the owning map; they never probe a missing key or pass another map's
+    /// ID here. That invariant makes the unchecked, initialized-value lookup
+    /// below valid without a second occupancy check on this hot path.
     pub fn get(&self, id: EntryId) -> &T {
         self.0.value_at(id.0 as usize)
     }
