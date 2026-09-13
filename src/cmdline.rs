@@ -295,22 +295,14 @@ pub enum ShuffleSectionsKind {
     Reverse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SectionOrderKind {
-    Section,
-    Group,
-    Addr,
-    Align,
-    Symbol,
-}
-
 #[derive(Clone, Debug)]
-pub struct SectionOrder {
-    pub kind: SectionOrderKind,
-    pub name: String,
-    pub value: u64,
-    // for error reporting
-    pub token: String,
+pub enum SectionOrder {
+    Section(String),
+    Group(String),
+    // Keep the original token for error reporting.
+    Addr { value: u64, token: String },
+    Align(u64),
+    Symbol(String),
 }
 
 /// The right-hand side of `--defsym=SYMBOL=VALUE`.
@@ -924,43 +916,34 @@ fn parse_section_order(arg: &str) -> Vec<SectionOrder> {
 
     let mut orders = Vec::new();
     for tok in arg.split([' ', '\t']).filter(|t| !t.is_empty()) {
-        let mut order = SectionOrder {
-            kind: SectionOrderKind::Section,
-            name: String::new(),
-            value: 0,
-            token: tok.to_string(),
-        };
-
-        if matches!(
+        let order = if matches!(
             tok.to_ascii_uppercase().as_str(),
             "TEXT" | "DATA" | "RODATA" | "BSS"
         ) {
-            order.kind = SectionOrderKind::Group;
-            order.name = tok.to_string();
-        } else if let Some(v) = tok.strip_prefix('=').and_then(parse_value) {
-            order.kind = SectionOrderKind::Addr;
-            order.value = v;
+            SectionOrder::Group(tok.to_string())
+        } else if let Some(value) = tok.strip_prefix('=').and_then(parse_value) {
+            SectionOrder::Addr {
+                value,
+                token: tok.to_string(),
+            }
         } else if let Some(v) = tok.strip_prefix('%').and_then(parse_value) {
-            order.kind = SectionOrderKind::Align;
-            order.value = v;
+            SectionOrder::Align(v)
         } else if let Some(name) = tok.strip_prefix('!').filter(|n| !n.is_empty()) {
-            order.kind = SectionOrderKind::Symbol;
-            order.name = name.to_string();
+            SectionOrder::Symbol(name.to_string())
         } else if is_section_name(tok) || tok == "EHDR" || tok == "PHDR" {
-            order.kind = SectionOrderKind::Section;
-            order.name = tok.to_string();
+            SectionOrder::Section(tok.to_string())
         } else {
             fatal!("--section-order: parse error: {arg}");
-        }
+        };
         orders.push(order);
     }
 
     let mut is_first = true;
     for order in &orders {
-        if order.kind == SectionOrderKind::Section {
+        if let SectionOrder::Section(name) = order {
             if is_first {
                 is_first = false;
-            } else if order.name == "EHDR" {
+            } else if name == "EHDR" {
                 fatal!("--section-order: EHDR must be the first section specifier: {arg}");
             }
         }

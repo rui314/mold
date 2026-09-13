@@ -32,7 +32,7 @@ use crate::chunks::{
     OutputPhdr, OutputSectionId, OutputShdr,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildId, CetReportKind, DefsymValue, SectionOrderKind, SeparateCodeKind,
+    BsymbolicKind, BuildId, CetReportKind, DefsymValue, SectionOrder, SeparateCodeKind,
     ShuffleSectionsKind, UnresolvedKind,
 };
 use crate::context::Context;
@@ -80,7 +80,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
             ctx.args
                 .section_order
                 .iter()
-                .any(|o| o.kind == SectionOrderKind::Section && o.name == name)
+                .any(|o| matches!(o, SectionOrder::Section(n) if n == name))
         };
         let ehdr_flags = if ctx.args.section_order.is_empty() || find("EHDR") {
             SHF_ALLOC as u64
@@ -1468,8 +1468,8 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     }
     // Add --section-order symbols
     for order in ctx.args.section_order.clone() {
-        if order.kind == SectionOrderKind::Symbol {
-            add(ctx, &mut obj, order.name.as_bytes());
+        if let SectionOrder::Symbol(name) = order {
+            add(ctx, &mut obj, name.as_bytes());
         }
     }
 
@@ -3605,14 +3605,14 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
         let order = &ctx.args.section_order;
         if let Some(i) = order
             .iter()
-            .position(|o| o.kind == SectionOrderKind::Section && o.name.as_bytes() == name)
+            .position(|o| matches!(o, SectionOrder::Section(n) if n.as_bytes() == name))
         {
             return i as i64;
         }
         let group = section_order_group(ctx, id);
         if let Some(i) = order
             .iter()
-            .position(|o| o.kind == SectionOrderKind::Group && o.name.eq_ignore_ascii_case(group))
+            .position(|o| matches!(o, SectionOrder::Group(n) if n.eq_ignore_ascii_case(group)))
         {
             return i as i64;
         }
@@ -3813,9 +3813,9 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
     let page_size = ctx.page_size;
     let mut i = 0;
 
-    for (j, ord) in ctx.args.section_order.clone().iter().enumerate() {
-        match ord.kind {
-            SectionOrderKind::Section | SectionOrderKind::Group => {
+    for (j, ord) in ctx.args.section_order.clone().into_iter().enumerate() {
+        match ord {
+            SectionOrder::Section(_) | SectionOrder::Group(_) => {
                 while i < vec.len() && ctx.chunk_header(vec[i]).sect_order == j as i64 {
                     // Memory protection works on page size granularity. We need to
                     // put sections with different memory attributes into different
@@ -3844,18 +3844,18 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
                     i += 1;
                 }
             }
-            SectionOrderKind::Addr => {
-                if addr != ctx.args.image_base && ord.value < addr {
+            SectionOrder::Addr { value, token } => {
+                if addr != ctx.args.image_base && value < addr {
                     error!("--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
-                        ord.value,
-                        ord.token
+                        value,
+                        token
                     );
                 }
-                addr = ord.value;
+                addr = value;
             }
-            SectionOrderKind::Align => addr = align_to(addr, ord.value),
-            SectionOrderKind::Symbol => {
-                let id = ctx.get_symbol(ord.name.as_bytes());
+            SectionOrder::Align(value) => addr = align_to(addr, value),
+            SectionOrder::Symbol(name) => {
+                let id = ctx.get_symbol(name.as_bytes());
                 ctx.symbols[id].value = addr;
             }
         }
@@ -4313,8 +4313,8 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // --section-order symbols
     for ord in ctx.args.section_order.clone() {
-        if ord.kind == SectionOrderKind::Symbol {
-            let sym = ctx.get_symbol(ord.name.as_bytes());
+        if let SectionOrder::Symbol(name) = ord {
+            let sym = ctx.get_symbol(name.as_bytes());
             if let Some(first) = first {
                 let _ = ctx.set_symbol_output_chunk(sym, first);
             }
