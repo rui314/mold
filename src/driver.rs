@@ -801,25 +801,22 @@ fn run_tasks<E: Arch>(
     tasks: &[Task],
     timer: &crate::util::perf::Timer,
 ) {
-    let mut ranges: Vec<Range<u64>> = Vec::new();
-    let mut task_ranges: Vec<Vec<usize>> = Vec::new();
-    for task in tasks {
-        let mut idx = Vec::new();
-        for id in std::iter::once(task.chunk).chain(task.extra.iter().copied()) {
-            let r = file_range(ctx, id);
-            idx.push(ranges.len());
-            ranges.push(r);
-        }
-        task_ranges.push(idx);
-    }
-
-    let mut slices: Vec<Option<&mut [u8]>> =
-        split_ranges(buf, &ranges).into_iter().map(Some).collect();
-    let mut work: Vec<(&Task, Vec<&mut [u8]>)> = Vec::new();
-    for (task, idx) in tasks.iter().zip(task_ranges) {
-        let bufs = idx.into_iter().map(|i| slices[i].take().unwrap()).collect();
-        work.push((task, bufs));
-    }
+    let ranges: Vec<_> = tasks
+        .iter()
+        .flat_map(|task| {
+            std::iter::once(task.chunk)
+                .chain(task.extra.iter().copied())
+                .map(|id| file_range(ctx, id))
+        })
+        .collect();
+    let mut slices = split_ranges(buf, &ranges).into_iter();
+    let work: Vec<(&Task, Vec<&mut [u8]>)> = tasks
+        .iter()
+        .map(|task| {
+            let bufs = slices.by_ref().take(1 + task.extra.len()).collect();
+            (task, bufs)
+        })
+        .collect();
 
     work.into_par_iter().for_each(|(task, mut bufs)| {
         let name = ctx.chunk_header(task.chunk).name;
