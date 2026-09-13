@@ -2,7 +2,7 @@
 
 use std::fmt;
 use std::ops::Range;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
 use rayon::prelude::*;
 
@@ -277,7 +277,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str
     let merge_input = chunks::merged::BackgroundMerge::prepare(&ctx);
     let merge_timers = ctx.timers.clone();
     let merge_comment = ctx.comment;
-    let merge_cmdline = ctx.cmdline_args.clone();
+    let merge_cmdline = Arc::clone(&ctx.cmdline_args);
     let (merge_sender, merge_receiver) = mpsc::sync_channel(1);
     rayon::spawn(move || {
         let result = merge_input.run(chunks::merged::ResolveOptions {

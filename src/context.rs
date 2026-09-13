@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::arch::Arch;
 use crate::chunks::build_id::BuildIdSection;
@@ -105,7 +105,7 @@ pub struct Context<E: Arch> {
     pub args: Args,
 
     // Fully-expanded command line args
-    pub cmdline_args: Vec<std::ffi::OsString>,
+    pub cmdline_args: Arc<[std::ffi::OsString]>,
     pub timers: Timers,
 
     // Symbol table. Object file parsing records each global symbol with add(),
@@ -272,7 +272,7 @@ impl<E: Arch> Context<E> {
             verneed: VerneedSection::new(),
             note_package: NotePackageSection::new(),
             args,
-            cmdline_args,
+            cmdline_args: cmdline_args.into(),
             timers,
             symbols,
             symbol_chunks: Vec::new(),

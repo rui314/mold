@@ -937,7 +937,7 @@ pub fn read_lto_object<E: Arch>(
 ///
 /// This is an ugly hack and should be removed once GCC adopts the v3 API.
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
-    let mut args = ctx.cmdline_args.clone();
+    let mut args = ctx.cmdline_args.to_vec();
     for file in &ctx.objs {
         if file.is_lto_input() && !file.base.is_reachable() {
             let mut arg = std::ffi::OsString::from("--:ignore-ir-file=");
