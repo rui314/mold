@@ -71,7 +71,7 @@ if [ "$GITHUB_REPOSITORY" = '' ]; then
   image_build="podman build --arch $arch -t $image -"
 else
   # If this script is running on GitHub Actions, we want to cache
-  # the created container image in GitHub's container repostiory.
+  # the created container image in GitHub's container repository.
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
   image_build="podman build --arch $arch -t $image --output=type=registry --layers --cache-to $image --cache-from $image -"
 fi
@@ -173,7 +173,7 @@ EOF
 aarch64 | arm | ppc64le | s390x)
   # Debian 11 (Bullseye) released in August 2021
   #
-  # We don't want to build Clang for these targets on QEMU becuase it
+  # We don't want to build Clang for these targets on QEMU because it
   # would take an extremely long time. Also, I believe old Linux boxes
   # are typically x86-64.
   cat <<EOF | $image_build

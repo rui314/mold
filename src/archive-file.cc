@@ -10,7 +10,7 @@
 //
 // If an archive file is given to the linker, the linker pulls out
 // object files that are needed to resolve undefined symbols. So,
-// bunding object files as an archive and giving that archive to the
+// bundling object files as an archive and giving that archive to the
 // linker has a different meaning than directly giving the same set of
 // object files to the linker. The former links only needed object
 // files, while the latter links all the given object files.

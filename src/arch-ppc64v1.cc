@@ -3,7 +3,7 @@
 // the processor in the little-endian mode use the ELFv2 ABI instead. For
 // ELFv2, see arch-ppc64v2.cc.
 //
-// Even though they are similiar, ELFv1 isn't only different from ELFv2 in
+// Even though they are similar, ELFv1 isn't only different from ELFv2 in
 // endianness. The most notable difference is, in ELFv1, a function
 // pointer doesn't directly refer to the entry point of a function but
 // instead refers to a data structure so-called "function descriptor".
@@ -12,7 +12,7 @@
 // address and a value that should be set to %r2 before calling that
 // function. There is also a third member for "the environment pointer for
 // languages such as Pascal and PL/1" according to the psABI, but it looks
-// like no one acutally uses it. In total, the function descriptor is 24
+// like no one actually uses it. In total, the function descriptor is 24
 // bytes long. Here is why we need it.
 //
 // PPC generally lacks PC-relative data access instructions. Position-

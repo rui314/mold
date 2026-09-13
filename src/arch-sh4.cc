@@ -12,7 +12,7 @@
 // instruction set as shown below:
 //
 //  - SH-4 has 16 general-purpose registers (GPRs) instead of the most
-//    commmon 32 GPR configuration to save one bit to specify a register.
+//    common 32 GPR configuration to save one bit to specify a register.
 //
 //  - Binary instructions such as ADD normally take three register in
 //    RISC ISAs (e.g. x ← y ⊕ z where x, y and z are registers), but

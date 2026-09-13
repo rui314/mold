@@ -56,7 +56,7 @@ requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
       return true;
 
     // If the target section is in the same output section but
-    // hasn't got any address yet, that's unreacahble.
+    // hasn't got any address yet, that's unreachable.
     if (isec2->offset == -1)
       return true;
 
@@ -149,7 +149,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   i64 t = 0;
 
   while (b < m.size()) {
-    // Move D foward as far as we can jump from B to a thunk at D.
+    // Move D forward as far as we can jump from B to a thunk at D.
     auto d_thunk_end = [&] {
       u64 d_end = align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size;
       return align_to(d_end, thunk_align) + max_thunk_size;
@@ -212,7 +212,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     assert(thunk.size() < max_thunk_size);
     offset += thunk.size();
 
-    // Move B forward to point to the begining of the next batch.
+    // Move B forward to point to the beginning of the next batch.
     b = c;
   }
 

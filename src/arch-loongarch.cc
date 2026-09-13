@@ -1004,7 +1004,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       }
       break;
     case R_LARCH_CALL36:
-      // A CALL36 relocation referes to the following instruction pair
+      // A CALL36 relocation refers to the following instruction pair
       // to jump to PC ± 128 GiB.
       //
       //   pcaddu18i $t0,       0         # R_LARCH_CALL36

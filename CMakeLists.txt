@@ -329,7 +329,7 @@ add_custom_target(git_hash
 add_dependencies(mold git_hash)
 
 # Almost all functions are template in mold which take a target type
-# (e.g. X86_64) as its type parameter. Since we suport more than 10
+# (e.g. X86_64) as its type parameter. Since we support more than 10
 # targets, compiling a single source file for all the targets is very
 # slow.
 #

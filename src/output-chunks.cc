@@ -3053,7 +3053,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
   // We need to create dynamic symbols not only for this particular symbol
   // but also for its aliases (i.e. other symbols at the same address)
-  // becasue otherwise the aliases are broken apart at runtime.
+  // because otherwise the aliases are broken apart at runtime.
   // For example, `environ`, `_environ` and `__environ` in libc.so are
   // aliases. If one of the symbols is copied by a copy relocation, other
   // symbols have to refer to the copied place as well.

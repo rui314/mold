@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# ARM assembler has a differnet grammar than the others.
+# ARM assembler has a different grammar than the others.
 # Concretely speaking, ARM as uses "@" as a start of a comment.
 [[ $MACHINE = arm* ]] && skip
 
