@@ -681,15 +681,14 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResul
     if jobs.is_empty() {
         return Vec::new();
     }
-    let jobs = Arc::new(jobs);
-    let next = Arc::new(AtomicUsize::new(0));
+    let next = AtomicUsize::new(0);
     let (sender, receiver) = mpsc::channel();
     let workers = options.jobs.min(jobs.len());
 
     thread::scope(|scope| {
         for _ in 0..workers {
-            let jobs = Arc::clone(&jobs);
-            let next = Arc::clone(&next);
+            let jobs = &jobs;
+            let next = &next;
             let sender = sender.clone();
             scope.spawn(move || loop {
                 let index = next.fetch_add(1, Ordering::Relaxed);
