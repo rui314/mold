@@ -6,7 +6,6 @@
 //! follows the table: shard by shard, in the deterministic bucket order
 //! of [`FrozenMap::sorted_entries`].
 
-use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::RwLock;
 
@@ -18,6 +17,7 @@ use crate::chunks::ChunkHeader;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
+use crate::input_files::display_file;
 use crate::input_sections::{MergeInfo, SectionFragment, SectionRef};
 use crate::out;
 use crate::output_file::split_at_offsets;
@@ -207,26 +207,6 @@ impl<E: Arch> BackgroundMerge<E> {
                     .unwrap();
                 *info = member.info;
             }
-        }
-    }
-}
-
-struct FileName<'a> {
-    filename: &'a str,
-    archive_name: &'a str,
-}
-
-impl fmt::Display for FileName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.archive_name.is_empty() {
-            write!(f, "{}", crate::util::path_clean(self.filename))
-        } else {
-            write!(
-                f,
-                "{}({})",
-                crate::util::path_clean(self.archive_name),
-                self.filename
-            )
         }
     }
 }
@@ -493,10 +473,7 @@ pub fn resolve_sections<E: Arch>(
                     .par_iter_mut()
                     .fold(HyperLogLog::default, |mut sketch, member| {
                         member.merge_info.split_contents::<E>(
-                            &FileName {
-                                filename: member.filename,
-                                archive_name: member.archive_name,
-                            },
+                            &display_file(member.filename, member.archive_name),
                             member.data,
                             member.name,
                             section,

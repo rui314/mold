@@ -928,16 +928,14 @@ impl<E: Arch> ObjectFile<E> {
 
 /// Formats a file the way it appears in diagnostics before the file
 /// object exists.
-struct FileName<'a>(&'a str, &'a str);
-
-impl fmt::Display for FileName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.1.is_empty() {
-            write!(f, "{}", path_clean(self.0))
+pub(crate) fn display_file<'a>(filename: &'a str, archive_name: &'a str) -> impl fmt::Display + 'a {
+    fmt::from_fn(move |f| {
+        if archive_name.is_empty() {
+            write!(f, "{}", path_clean(filename))
         } else {
-            write!(f, "{}({})", path_clean(self.1), self.0)
+            write!(f, "{}({})", path_clean(archive_name), filename)
         }
-    }
+    })
 }
 
 fn is_debug_section<E: Layout>(shdr: &ElfShdr<E>, name: &[u8]) -> bool {
@@ -1201,8 +1199,8 @@ impl<E: Arch> ObjectFile<E> {
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
     pub fn new(mf: &'static MappedFile, archive_name: String) -> ObjectFile<E> {
-        let display = FileName(&mf.name.to_string_lossy(), &archive_name);
-        let base = InputFile::<E>::parse(mf, &display);
+        let base =
+            InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), &archive_name));
         let mut file = ObjectFile::with_base(base, archive_name);
         file.parse_symbols();
         file
@@ -3156,7 +3154,7 @@ impl<E: Arch> SharedFile<E> {
     }
 
     pub(crate) fn new(mf: &'static MappedFile, bins: &mut Bins<SymbolSlot>) -> SharedFile<E> {
-        let base = InputFile::<E>::parse(mf, &FileName(&mf.name.to_string_lossy(), ""));
+        let base = InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), ""));
         let mut file = SharedFile {
             base,
             soname: Vec::new(),

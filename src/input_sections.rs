@@ -623,13 +623,7 @@ impl<E: Arch> InputSection<E> {
 
     /// Formats the section as `file:(name)` for diagnostics.
     pub fn display<'a>(&'a self, file: &'a ObjectFile<E>) -> impl fmt::Display + 'a {
-        struct Display<'a, E: Arch>(&'a InputSection<E>, &'a ObjectFile<E>);
-        impl<E: Arch> fmt::Display for Display<'_, E> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}:({})", self.1, self.0.name(self.1))
-            }
-        }
-        Display(self, file)
+        fmt::from_fn(move |f| write!(f, "{}:({})", file, self.name(file)))
     }
 
     /// Get the name of a function containin a given offset.
