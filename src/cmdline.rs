@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
-use bstr::ByteSlice;
+use bstr::{ByteSlice, ByteVec};
 
 use crate::arch;
 use crate::elf::*;
@@ -728,7 +728,7 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
     let mf = MappedFile::must_open(path);
     mf.set_dependency(false);
     let data = mf.data();
-    let mut tokens = Vec::new();
+    let mut expanded = Vec::new();
     let mut i = 0;
 
     while i < data.len() {
@@ -772,15 +772,17 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
         if quote.is_some() {
             fatal!("{}: premature end of input", path.display());
         }
-        tokens.push(util::os_str(&tok).to_os_string());
-    }
-
-    let mut expanded = Vec::new();
-    for tok in tokens {
-        if let Some(nested) = tok.as_encoded_bytes().strip_prefix(b"@") {
-            expanded.extend(read_response_file(Path::new(util::os_str(nested)), depth + 1));
+        if let Some(nested) = tok.strip_prefix(b"@") {
+            expanded.extend(read_response_file(
+                Path::new(util::os_str(nested)),
+                depth + 1,
+            ));
         } else {
-            expanded.push(tok);
+            expanded.push(
+                tok.into_os_string().unwrap_or_else(|e| {
+                    fatal!("invalid OS string: {}", util::display(e.as_bytes()))
+                }),
+            );
         }
     }
     expanded
