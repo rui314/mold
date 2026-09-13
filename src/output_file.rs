@@ -11,7 +11,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 #[cfg(not(windows))]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+#[cfg(windows)]
 use std::sync::Mutex;
 
 use memmap2::MmapMut;
@@ -21,7 +22,28 @@ use memmap2::MmapOptions;
 use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.
+#[cfg(windows)]
 static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+#[cfg(not(windows))]
+static TMPFILE: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
+
+fn set_tmpfile(path: Option<&Path>) {
+    #[cfg(not(windows))]
+    {
+        // Published paths live until process exit: a signal on another thread
+        // may still be using the old pointer when this registration changes.
+        let ptr = path.map_or(std::ptr::null_mut(), |path| {
+            std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+                .expect("temporary path contains NUL")
+                .into_raw()
+        });
+        TMPFILE.store(ptr, Ordering::Release);
+    }
+    #[cfg(windows)]
+    {
+        *TMPFILE.lock().unwrap() = path.map(Path::to_path_buf);
+    }
+}
 
 #[cfg(not(windows))]
 static OUTPUT_BUFFER_START: AtomicUsize = AtomicUsize::new(0);
@@ -70,6 +92,17 @@ fn set_permissions(file: &File, perm: u32) -> io::Result<()> {
 
 /// Removes a partially written output file.
 pub fn cleanup() {
+    #[cfg(not(windows))]
+    {
+        let path = TMPFILE.swap(std::ptr::null_mut(), Ordering::AcqRel);
+        if !path.is_null() {
+            // SAFETY: path is a published, NUL-terminated string that is never
+            // freed. This path is also called from a signal handler, so it must
+            // not lock, allocate or drop owned storage. unlink is signal-safe.
+            unsafe { libc::unlink(path) };
+        }
+    }
+    #[cfg(windows)]
     if let Ok(mut guard) = TMPFILE.lock() {
         if let Some(path) = guard.take() {
             let _ = std::fs::remove_file(path);
@@ -228,7 +261,7 @@ impl OutputFile {
                 .open(&tmp)
                 .unwrap_or_else(|e| fatal!("cannot open {}: {e}", tmp.display()))
         });
-        *TMPFILE.lock().unwrap() = Some(tmp.clone());
+        set_tmpfile(Some(&tmp));
 
         set_permissions(&file, perm)
             .unwrap_or_else(|e| fatal!("{}: fchmod failed: {e}", tmp.display()));
@@ -399,7 +432,7 @@ impl OutputFile {
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
                 fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path.display())
             });
-            *TMPFILE.lock().unwrap() = None;
+            set_tmpfile(None);
         }
     }
 }
