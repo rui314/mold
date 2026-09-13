@@ -141,10 +141,9 @@ struct GotEntry {
 // Thread-local variables (TLVs) also use GOT entries. We need them because
 // TLVs are accessed in a different way than the ordinary global variables.
 // Their addresses are not unique; each thread has its own copy of TLVs.
-fn got_entries<E: Arch>(ctx: &Context<E>) -> Vec<GotEntry> {
-    let mut entries = Vec::new();
+fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
     let mut add = |idx: u32, val: u64, r_type: u32, sym: Option<SymbolId>| {
-        entries.push(GotEntry {
+        emit(GotEntry {
             idx,
             val,
             r_type,
@@ -282,14 +281,13 @@ fn got_entries<E: Arch>(ctx: &Context<E>) -> Vec<GotEntry> {
             add(idx, 1, R_NONE, None); // 1 means the main executable
         }
     }
-    entries
 }
 
-// Count the dynamic relocations that get_got_entries will emit, without
+// Count the dynamic relocations that for_each_entry will emit, without
 // materializing the entries; computing each entry's value involves a
 // symbol address lookup, which is too expensive for a function that runs
 // on every layout iteration. The cases below must mirror the r_type
-// choices in get_got_entries.
+// choices in for_each_entry.
 pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
     let got = &ctx.got;
     let mut n = 0;
@@ -343,9 +341,9 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
 
 pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
     let mut i = 0;
-    for ent in got_entries(ctx) {
+    for_each_entry(ctx, |ent| {
         if ent.r_type == R_NONE {
-            continue;
+            return;
         }
         let rel = ElfRel::<E>::new(
             ctx.got.hdr.shdr.sh_addr.get() + ent.idx as u64 * word::<E>(),
@@ -360,7 +358,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
             out[i] = rel;
             i += 1;
         }
-    }
+    });
     debug_assert_eq!(i, out.len());
 }
 
@@ -391,11 +389,11 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         }
     }
 
-    for ent in got_entries(ctx) {
+    for_each_entry(ctx, |ent| {
         let is_relr = ent.r_type == E::R_RELATIVE && ctx.args.pack_dyn_relocs_relr;
         if is_relr || ent.r_type == R_NONE {
             write(buf, ent.idx as usize, ent.val);
-            continue;
+            return;
         }
         if ctx.args.apply_dynamic_relocs {
             // A single TLSDESC relocation fixes two consecutive GOT slots
@@ -413,7 +411,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             }
             write(buf, i, ent.val);
         }
-    }
+    });
 }
 
 pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
