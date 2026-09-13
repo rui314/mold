@@ -153,7 +153,7 @@ impl Pattern {
                         next = Some((x + 1, y));
                         y += 1;
                         if let Some(Token::Str(literal)) = self.tokens.get(y) {
-                            let Some(pos) = find(&s[x..], literal) else {
+                            let Some(pos) = memchr::memmem::find(&s[x..], literal) else {
                                 return false;
                             };
                             let pos = x + pos;
@@ -199,23 +199,6 @@ fn push_char(tokens: &mut Vec<Token>, c: u8) {
     } else {
         tokens.push(Token::Str(vec![c]));
     }
-}
-
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-
-    let end = haystack.len().checked_sub(needle.len())? + 1;
-    let mut pos = 0;
-    while pos < end {
-        pos += memchr::memchr(needle[0], &haystack[pos..end])?;
-        if haystack[pos..].starts_with(needle) {
-            return Some(pos);
-        }
-        pos += 1;
-    }
-    None
 }
 
 // Nfa matches many glob patterns in parallel by representing each state
