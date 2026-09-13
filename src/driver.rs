@@ -552,7 +552,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
 
     // If --compress-debug-sections is given, compress .debug_* sections
     // using zlib or zstd.
-    if ctx.args.compress_debug_sections != ELFCOMPRESS_NONE {
+    if ctx.args.compress_debug_sections != crate::cmdline::DebugCompression::None {
         passes::compress_debug_sections(&mut ctx);
         filesize = passes::set_osec_offsets(&mut ctx);
     }

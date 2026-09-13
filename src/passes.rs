@@ -4516,7 +4516,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     sort_debug_info_sections(ctx);
 
     // Handle --compress-debug-info
-    if ctx.args.compress_debug_sections != ELFCOMPRESS_NONE {
+    if ctx.args.compress_debug_sections != crate::cmdline::DebugCompression::None {
         compress_debug_sections(ctx);
     }
 

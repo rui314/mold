@@ -2,6 +2,7 @@
 
 use crate::arch::Arch;
 use crate::chunks::{self, ChunkHeader, ChunkId};
+use crate::cmdline::DebugCompression;
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::compress::Compressor;
@@ -36,16 +37,15 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
     // Write uncompressed contents and then compress them
     chunks::write_to(ctx, original, &mut buf);
 
-    let level = ctx.args.compress_debug_sections_level;
-    let compressor = if ctx.args.compress_debug_sections == ELFCOMPRESS_ZLIB {
-        Compressor::zlib(&buf, level as u32)
-    } else {
-        Compressor::zstd(&buf, level as i32)
+    let (kind, compressor) = match ctx.args.compress_debug_sections {
+        DebugCompression::Zlib(level) => (ELFCOMPRESS_ZLIB, Compressor::zlib(&buf, level)),
+        DebugCompression::Zstd(level) => (ELFCOMPRESS_ZSTD, Compressor::zstd(&buf, level)),
+        DebugCompression::None => unreachable!("debug compression is disabled"),
     };
 
     // Compute header field values
     let mut chdr = ElfChdr::<E>::default();
-    chdr.ch_type_mut().set(ctx.args.compress_debug_sections);
+    chdr.ch_type_mut().set(kind);
     chdr.ch_size_mut().set(hdr.shdr.sh_size.get());
     chdr.ch_addralign_mut().set(hdr.shdr.sh_addralign.get());
     let flags = hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64;

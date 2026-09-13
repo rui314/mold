@@ -295,6 +295,14 @@ pub enum ShuffleSections {
     Reverse,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DebugCompression {
+    #[default]
+    None,
+    Zlib(u32),
+    Zstd(i32),
+}
+
 #[derive(Clone, Debug)]
 pub enum SectionOrder {
     Section(Vec<u8>),
@@ -460,8 +468,7 @@ pub struct Args {
     pub z_start_stop_visibility_protected: bool,
     pub z_text: bool,
     pub zero_to_bss: bool,
-    pub compress_debug_sections: u32,
-    pub compress_debug_sections_level: i64,
+    pub compress_debug_sections: DebugCompression,
     pub filler: Option<u8>,
     pub spare_dynamic_tags: i64,
     pub spare_program_headers: i64,
@@ -605,8 +612,7 @@ impl Default for Args {
             z_start_stop_visibility_protected: false,
             z_text: false,
             zero_to_bss: false,
-            compress_debug_sections: ELFCOMPRESS_NONE,
-            compress_debug_sections_level: 0,
+            compress_debug_sections: DebugCompression::None,
             filler: None,
             spare_dynamic_tags: 5,
             spare_program_headers: 0,
@@ -1451,36 +1457,28 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("zero-to-bss") {
             a.zero_to_bss = true;
         } else if read_arg!("compress-debug-sections") {
-            match arg.as_str() {
-                "zlib" | "zlib-gabi" => {
-                    a.compress_debug_sections = ELFCOMPRESS_ZLIB;
-                    a.compress_debug_sections_level = 1;
-                }
-                "zstd" => {
-                    a.compress_debug_sections = ELFCOMPRESS_ZSTD;
-                    a.compress_debug_sections_level = 3;
-                }
-                "none" => a.compress_debug_sections = ELFCOMPRESS_NONE,
+            a.compress_debug_sections = match arg.as_str() {
+                "zlib" | "zlib-gabi" => DebugCompression::Zlib(1),
+                "zstd" => DebugCompression::Zstd(3),
+                "none" => DebugCompression::None,
                 s if s.starts_with("zlib:") => {
-                    a.compress_debug_sections = ELFCOMPRESS_ZLIB;
                     let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(0..=9).contains(&level) {
                         fatal!("invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
                         );
                     }
-                    a.compress_debug_sections_level = level;
+                    DebugCompression::Zlib(level as u32)
                 }
                 s if s.starts_with("zstd:") => {
-                    a.compress_debug_sections = ELFCOMPRESS_ZSTD;
                     let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(1..=22).contains(&level) {
                         fatal!("invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
                         );
                     }
-                    a.compress_debug_sections_level = level;
+                    DebugCompression::Zstd(level as i32)
                 }
                 _ => fatal!("invalid --compress-debug-sections argument: {arg}"),
-            }
+            };
         } else if read_arg!("wrap", true) {
             a.wrap.insert(raw_arg.as_encoded_bytes().to_vec());
         } else if read_flag!("omagic") || read_flag!("N") {
