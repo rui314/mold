@@ -32,7 +32,7 @@ use crate::chunks::{
     OutputPhdr, OutputSectionId, OutputShdr,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildIdKind, CetReportKind, DefsymValue, SectionOrderKind, SeparateCodeKind,
+    BsymbolicKind, BuildId, CetReportKind, DefsymValue, SectionOrderKind, SeparateCodeKind,
     ShuffleSectionsKind, UnresolvedKind,
 };
 use crate::context::Context;
@@ -131,7 +131,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         ctx.interp = Some(InterpSection::new());
         chunks.push(ChunkId::Interp);
     }
-    if ctx.args.build_id.kind != BuildIdKind::None {
+    if !matches!(ctx.args.build_id, BuildId::None) {
         ctx.buildid = Some(BuildIdSection::new());
         chunks.push(ChunkId::BuildId);
     }
@@ -4354,9 +4354,9 @@ pub fn compress_debug_sections<E: Arch>(ctx: &mut Context<E>) {
 // We use it instead of SHA256 because it's faster.
 pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped: bool) {
     let _t = ctx.timer("write_build_id");
-    let contents: Vec<u8> = match ctx.args.build_id.kind {
-        BuildIdKind::Hex => ctx.args.build_id.value.clone(),
-        BuildIdKind::Hash => {
+    let contents: Vec<u8> = match &ctx.args.build_id {
+        BuildId::Hex(value) => value.clone(),
+        BuildId::Hash(size) => {
             const SHARD: usize = 4 * 1024 * 1024; // 4 MiB
             let hashes: Vec<[u8; 32]> = buf
                 .par_chunks_mut(SHARD)
@@ -4382,9 +4382,9 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
                 })
                 .collect();
             let digest = *blake3::hash(hashes.as_flattened()).as_bytes();
-            digest[..ctx.args.build_id.size()].to_vec()
+            digest[..*size].to_vec()
         }
-        BuildIdKind::Uuid => {
+        BuildId::Uuid => {
             let mut bytes = [0u8; 16];
             crate::util::random_bytes(&mut bytes);
             // Indicate that this is UUIDv4 as defined by RFC4122
@@ -4392,7 +4392,7 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
             bytes[8] = (bytes[8] & 0x3f) | 0x80;
             bytes.to_vec()
         }
-        BuildIdKind::None => unreachable!(),
+        BuildId::None => unreachable!(),
     };
     ctx.buildid.as_mut().unwrap().contents = contents;
     let hdr = ctx.buildid.as_ref().unwrap().hdr.shdr;

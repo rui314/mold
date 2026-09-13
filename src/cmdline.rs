@@ -233,29 +233,22 @@ mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64elf aar
 
 pub const VERSION: &str = env!("MOLD_VERSION");
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum BuildIdKind {
+#[derive(Clone, Debug, Default)]
+pub enum BuildId {
     #[default]
     None,
-    Hex,
-    Hash,
+    Hex(Vec<u8>),
+    Hash(usize),
     Uuid,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct BuildId {
-    pub kind: BuildIdKind,
-    pub value: Vec<u8>,
-    pub hash_size: usize,
 }
 
 impl BuildId {
     pub fn size(&self) -> usize {
-        match self.kind {
-            BuildIdKind::None => 0,
-            BuildIdKind::Hex => self.value.len(),
-            BuildIdKind::Hash => self.hash_size,
-            BuildIdKind::Uuid => 16,
+        match self {
+            BuildId::None => 0,
+            BuildId::Hex(value) => value.len(),
+            BuildId::Hash(size) => *size,
+            BuildId::Uuid => 16,
         }
     }
 }
@@ -1804,32 +1797,21 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("no-undefined-version") {
             a.undefined_version = false;
         } else if read_flag!("build-id") {
-            a.build_id.kind = BuildIdKind::Hash;
-            a.build_id.hash_size = 20;
+            a.build_id = BuildId::Hash(20);
         } else if read_arg!("build-id") {
-            match arg.as_str() {
-                "none" => a.build_id.kind = BuildIdKind::None,
-                "uuid" => a.build_id.kind = BuildIdKind::Uuid,
-                "md5" => {
-                    a.build_id.kind = BuildIdKind::Hash;
-                    a.build_id.hash_size = 16;
-                }
-                "sha1" => {
-                    a.build_id.kind = BuildIdKind::Hash;
-                    a.build_id.hash_size = 20;
-                }
-                "sha256" | "fast" => {
-                    a.build_id.kind = BuildIdKind::Hash;
-                    a.build_id.hash_size = 32;
-                }
+            a.build_id = match arg.as_str() {
+                "none" => BuildId::None,
+                "uuid" => BuildId::Uuid,
+                "md5" => BuildId::Hash(16),
+                "sha1" => BuildId::Hash(20),
+                "sha256" | "fast" => BuildId::Hash(32),
                 s if s.starts_with("0x") || s.starts_with("0X") => {
-                    a.build_id.kind = BuildIdKind::Hex;
-                    a.build_id.value = parse_hex_build_id(s);
+                    BuildId::Hex(parse_hex_build_id(s))
                 }
                 _ => fatal!("invalid --build-id argument: {arg}"),
-            }
+            };
         } else if read_flag!("no-build-id") {
-            a.build_id.kind = BuildIdKind::None;
+            a.build_id = BuildId::None;
         } else if read_flag!("be8") {
             a.be8 = true;
         } else if read_flag!("be32") {
