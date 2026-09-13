@@ -33,7 +33,7 @@ use crate::chunks::{
 };
 use crate::cmdline::{
     BsymbolicKind, BuildId, CetReportKind, DefsymValue, SectionOrder, SeparateCodeKind,
-    ShuffleSectionsKind, UnresolvedKind,
+    ShuffleSections, UnresolvedKind,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -2148,7 +2148,7 @@ pub fn sort_init_fini<E: Arch>(ctx: &mut Context<E>) {
             continue;
         }
         let mut members = std::mem::take(&mut ctx.output_sections[i].members);
-        if ctx.args.shuffle_sections == ShuffleSectionsKind::Reverse {
+        if ctx.args.shuffle_sections == ShuffleSections::Reverse {
             members.reverse();
         }
         let mut entries: Vec<(InputSectionId, i64)> = members
@@ -2177,7 +2177,7 @@ pub fn sort_ctor_dtor<E: Arch>(ctx: &mut Context<E>) {
             continue;
         }
         let mut members = std::mem::take(&mut ctx.output_sections[i].members);
-        if ctx.args.shuffle_sections != ShuffleSectionsKind::Reverse {
+        if ctx.args.shuffle_sections != ShuffleSections::Reverse {
             members.reverse();
         }
         let mut entries: Vec<(InputSectionId, i64)> = members
@@ -2383,18 +2383,17 @@ pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
             && name != b".preinit_array"
             && name != b".fini_array"
     };
-    let kind = ctx.args.shuffle_sections;
-    let seed = ctx.args.shuffle_sections_seed;
+    let mode = ctx.args.shuffle_sections;
     ctx.output_sections
         .par_iter_mut()
         .filter(|o| is_eligible(o))
-        .for_each(|osec| match kind {
-            ShuffleSectionsKind::Shuffle => {
+        .for_each(|osec| match mode {
+            ShuffleSections::Shuffle(seed) => {
                 let s = seed.wrapping_add(xxhash_rust::xxh3::xxh3_64(osec.hdr.name));
                 shuffle(&mut osec.members, s);
             }
-            ShuffleSectionsKind::Reverse => osec.members.reverse(),
-            ShuffleSectionsKind::None => {}
+            ShuffleSections::Reverse => osec.members.reverse(),
+            ShuffleSections::None => {}
         });
 }
 

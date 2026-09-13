@@ -288,10 +288,10 @@ pub enum CetReportKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ShuffleSectionsKind {
+pub enum ShuffleSections {
     #[default]
     None,
-    Shuffle,
+    Shuffle(u64),
     Reverse,
 }
 
@@ -388,7 +388,7 @@ pub struct Args {
     pub undefined_glob: Glob,
     pub unique: Glob,
     pub z_separate_code: SeparateCodeKind,
-    pub shuffle_sections: ShuffleSectionsKind,
+    pub shuffle_sections: ShuffleSections,
     pub entry: String,
     pub fini: String,
     pub init: String,
@@ -518,7 +518,6 @@ pub struct Args {
     pub trace_symbol: Vec<String>,
     pub z_x86_64_isa_level: u32,
     pub image_base: u64,
-    pub shuffle_sections_seed: u64,
     pub page_size: u64,
 
     /// Whether an existing output file may be overwritten in place.
@@ -534,7 +533,7 @@ impl Default for Args {
             undefined_glob: Glob::new(),
             unique: Glob::new(),
             z_separate_code: SeparateCodeKind::NoSeparateCode,
-            shuffle_sections: ShuffleSectionsKind::None,
+            shuffle_sections: ShuffleSections::None,
             entry: "_start".to_string(),
             fini: "_fini".to_string(),
             init: "_init".to_string(),
@@ -664,7 +663,6 @@ impl Default for Args {
             trace_symbol: Vec::new(),
             z_x86_64_isa_level: 0,
             image_base: 0x200000,
-            shuffle_sections_seed: 0,
             page_size: 0,
             overwrite_output_file: false,
         }
@@ -1036,6 +1034,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
+    // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
     let mut rpaths: HashSet<OsString> = HashSet::new();
 
@@ -1289,12 +1288,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.noinhibit_exec = true;
             crate::error::set_noinhibit_exec(true);
         } else if read_flag!("shuffle-sections") {
-            a.shuffle_sections = ShuffleSectionsKind::Shuffle;
+            // Resolve the seed after parsing all options.
+            a.shuffle_sections = ShuffleSections::Shuffle(0);
         } else if read_eq!("shuffle-sections") {
-            a.shuffle_sections = ShuffleSectionsKind::Shuffle;
-            shuffle_sections_seed = Some(parse_number("shuffle-sections", &arg) as u64);
+            let seed = parse_number("shuffle-sections", &arg) as u64;
+            a.shuffle_sections = ShuffleSections::Shuffle(seed);
+            shuffle_sections_seed = Some(seed);
         } else if read_flag!("reverse-sections") {
-            a.shuffle_sections = ShuffleSectionsKind::Reverse;
+            a.shuffle_sections = ShuffleSections::Reverse;
         } else if read_flag!("rosegment") {
             a.rosegment = true;
         } else if read_flag!("no-rosegment") {
@@ -1989,8 +1990,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         a.discard_all = false;
     }
 
-    if a.shuffle_sections == ShuffleSectionsKind::Shuffle {
-        a.shuffle_sections_seed = shuffle_sections_seed.unwrap_or_else(|| {
+    if let ShuffleSections::Shuffle(seed) = &mut a.shuffle_sections {
+        *seed = shuffle_sections_seed.unwrap_or_else(|| {
             let mut buf = [0u8; 8];
             util::random_bytes(&mut buf);
             u64::from_ne_bytes(buf)

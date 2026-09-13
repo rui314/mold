@@ -403,7 +403,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
     passes::fixup_ctors_in_init_array(&mut ctx);
 
     // Handle --shuffle-sections
-    if ctx.args.shuffle_sections != cmdline::ShuffleSectionsKind::None {
+    if ctx.args.shuffle_sections != cmdline::ShuffleSections::None {
         passes::shuffle_sections(&mut ctx);
     }
     // Copy string referred by .dynamic to .dynstr.

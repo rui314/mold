@@ -28,3 +28,8 @@ $QEMU $t/exe4 | grep 'Hello world'
 not diff $t/exe1 $t/exe2 >& /dev/null
 diff $t/exe2 $t/exe3
 not diff $t/exe3 $t/exe4 >& /dev/null
+
+# A bare shuffle option reuses the last explicit seed, even after reverse.
+$CC -B. -o $t/exe5 $t/a.o $t/b.o \
+  -Wl,--shuffle-sections=42,--reverse-sections,--shuffle-sections
+diff $t/exe2 $t/exe5
