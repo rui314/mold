@@ -115,13 +115,13 @@ fn main() {
         return;
     }
 
-    // Cargo uses different build directory layouts with and without
-    // -Zbuild-std, so find the profile directory by name.
-    let profile = std::env::var("PROFILE").unwrap();
+    // The build directory is inside the actual profile directory. PROFILE
+    // only describes inheritance and need not be that directory's name.
     let profile_dir = out_dir
         .ancestors()
-        .find(|path| path.file_name().and_then(|name| name.to_str()) == Some(profile.as_str()))
-        .unwrap();
+        .find(|path| path.file_name().is_some_and(|name| name == "build"))
+        .and_then(Path::parent)
+        .expect("OUT_DIR must be inside Cargo's build directory");
     let wrapper = profile_dir.join("mold-wrapper.so");
     let mut command = Command::new(&cc);
     command.args(["-shared", "-fPIC", "-O2", "-o"]);
