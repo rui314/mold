@@ -538,7 +538,7 @@ pub unsafe trait RelRecord:
     }
 
     /// Formats the relocation type name for the given target.
-    fn type_name<E: Arch>(&self) -> String {
+    fn type_name<E: Arch>(&self) -> std::borrow::Cow<'static, str> {
         E::rel_to_string(self.r_type())
     }
 }

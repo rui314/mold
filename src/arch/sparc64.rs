@@ -133,7 +133,7 @@ impl Arch for Sparc64 {
     const R_DTPMOD: u32 = R_SPARC_TLS_DTPMOD64;
     const R_FUNCALL: &'static [u32] = &[R_SPARC_WPLT30, R_SPARC_WDISP30];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         sparc64_rel_to_string(r_type & 0xff)
     }
 

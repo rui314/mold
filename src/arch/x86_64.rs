@@ -73,7 +73,7 @@ impl Arch for X86_64 {
     const R_SFRAME: Option<u32> = Some(R_X86_64_PC64);
     const R_FUNCALL: &'static [u32] = &[R_X86_64_PLT32, R_X86_64_PLTOFF64];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         x86_64_rel_to_string(r_type)
     }
 

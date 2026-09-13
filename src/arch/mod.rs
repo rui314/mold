@@ -146,7 +146,7 @@ pub trait Arch: Layout {
     }
 
     /// Returns the name of a relocation type, for diagnostics.
-    fn rel_to_string(r_type: u32) -> String;
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str>;
 
     /// Rewrites input sections the compiler left half-baked, before
     /// garbage collection. PPC64 ELFv1 dissolves the input `.opd`

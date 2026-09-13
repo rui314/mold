@@ -310,7 +310,7 @@ impl Arch for Ppc64V1 {
     const R_DTPMOD: u32 = R_PPC64_DTPMOD64;
     const R_FUNCALL: &'static [u32] = &[R_PPC64_REL24, R_PPC64_REL24_NOTOC];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         ppc64_rel_to_string(r_type)
     }
 

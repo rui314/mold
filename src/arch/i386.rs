@@ -81,7 +81,7 @@ impl Arch for I386 {
     const R_TLSDESC: Option<u32> = Some(R_386_TLS_DESC);
     const R_FUNCALL: &'static [u32] = &[R_386_PLT32];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         i386_rel_to_string(r_type)
     }
 

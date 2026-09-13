@@ -59,7 +59,7 @@ impl Arch for M68k {
     const R_DTPMOD: u32 = R_68K_TLS_DTPMOD32;
     const R_FUNCALL: &'static [u32] = &[R_68K_PLT32];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         m68k_rel_to_string(r_type)
     }
 

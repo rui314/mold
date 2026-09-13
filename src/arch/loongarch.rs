@@ -336,7 +336,7 @@ where
     });
     const R_FUNCALL: &'static [u32] = &[R_LARCH_B26, R_LARCH_CALL36];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         loongarch_rel_to_string(r_type)
     }
 

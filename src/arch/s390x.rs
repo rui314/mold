@@ -117,7 +117,7 @@ impl Arch for S390x {
     const R_SFRAME: Option<u32> = Some(R_390_PC64);
     const R_FUNCALL: &'static [u32] = &[R_390_PLT32DBL];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         s390x_rel_to_string(r_type)
     }
 

@@ -204,7 +204,7 @@ where
     const R_SFRAME: Option<u32> = Some(R_AARCH64_PREL64);
     const R_FUNCALL: &'static [u32] = &[R_AARCH64_JUMP26, R_AARCH64_CALL26];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         arm64_rel_to_string(r_type)
     }
 

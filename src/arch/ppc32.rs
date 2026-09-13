@@ -144,7 +144,7 @@ impl Arch for Ppc32 {
     const R_DTPMOD: u32 = R_PPC_DTPMOD32;
     const R_FUNCALL: &'static [u32] = &[R_PPC_REL24, R_PPC_PLTREL24, R_PPC_LOCAL24PC];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         ppc32_rel_to_string(r_type)
     }
 

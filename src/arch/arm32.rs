@@ -325,7 +325,7 @@ where
         R_ARM_PLT32,
     ];
 
-    fn rel_to_string(r_type: u32) -> String {
+    fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         arm32_rel_to_string(r_type)
     }
 

@@ -72,7 +72,7 @@ pub const STT_GNU_IFUNC: u32 = 10;
 pub const STT_SPARC_REGISTER: u32 = 13;
 
 /// Returns a symbol type's name for diagnostics.
-pub fn stt_to_string(st_type: u32) -> String {
+pub fn stt_to_string(st_type: u32) -> std::borrow::Cow<'static, str> {
     match st_type {
         STT_NOTYPE => "STT_NOTYPE".into(),
         STT_OBJECT => "STT_OBJECT".into(),
@@ -83,7 +83,7 @@ pub fn stt_to_string(st_type: u32) -> String {
         STT_TLS => "STT_TLS".into(),
         STT_GNU_IFUNC => "STT_GNU_IFUNC".into(),
         STT_SPARC_REGISTER => "STT_SPARC_REGISTER".into(),
-        _ => format!("unknown st_type ({st_type})"),
+        _ => format!("unknown st_type ({st_type})").into(),
     }
 }
 
@@ -407,10 +407,10 @@ macro_rules! define_relocations {
     ) => {
         $(pub const $name: u32 = $value;)*
 
-        pub fn $to_string(r_type: u32) -> String {
+        pub fn $to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
             match r_type {
-                $($name => String::from(stringify!($name)),)*
-                _ => format!("unknown (0x{r_type:x})"),
+                $($name => std::borrow::Cow::Borrowed(stringify!($name)),)*
+                _ => format!("unknown (0x{r_type:x})").into(),
             }
         }
     };
