@@ -3296,9 +3296,8 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
     // exported so that they are interposable. In other words, symbols
     // that did not match will be bound locally within the output file,
     // effectively turning them into protected symbols.
-    let handle_match = |ctx: &mut Context<E>, id: SymbolId| {
-        let shared = ctx.args.shared;
-        let sym = &mut ctx.symbols[id];
+    let shared = ctx.args.shared;
+    let handle_match = |sym: &mut Symbol| {
         if shared {
             if sym.is_exported() {
                 sym.set_imported(true);
@@ -3310,7 +3309,7 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
 
     let mut matcher = Glob::new();
     let mut cpp_matcher = Glob::new();
-    for p in ctx.dynamic_list_patterns.clone() {
+    for p in &ctx.dynamic_list_patterns {
         if p.is_cpp {
             if !cpp_matcher.add(p.pattern, 1) {
                 fatal!(
@@ -3331,37 +3330,25 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
             }
             continue;
         }
-        let id = ctx.get_symbol(p.pattern);
-        handle_match(ctx, id);
+        let id = ctx.symbols.get_or_intern(p.pattern);
+        handle_match(&mut ctx.symbols[id]);
     }
 
     if !matcher.is_empty() || !cpp_matcher.is_empty() {
-        let shared = ctx.args.shared;
-        let symbols = &ctx.symbols;
-        let matched: Vec<SymbolId> = symbols
-            .global_ids()
-            .collect::<Vec<_>>()
-            .par_iter()
-            .copied()
-            .filter(|&id| {
-                let sym = &symbols[id];
-                if !matches!(sym.file(), Some(FileId::Obj(_))) || (shared && !sym.is_exported()) {
-                    return false;
-                }
-                if matcher.find(sym.name()) != -1 {
-                    return true;
-                }
-                if !cpp_matcher.is_empty() {
+        ctx.symbols.par_for_each_global_mut(|sym| {
+            if !matches!(sym.file(), Some(FileId::Obj(_))) || (shared && !sym.is_exported()) {
+                return;
+            }
+            let matched = matcher.find(sym.name()) != -1
+                || (!cpp_matcher.is_empty() && {
                     let demangled = crate::util::demangle::demangle_cpp(sym.name());
                     let name: &[u8] = demangled.as_deref().map_or(sym.name(), str::as_bytes);
-                    return cpp_matcher.find(name) != -1;
-                }
-                false
-            })
-            .collect();
-        for id in matched {
-            handle_match(ctx, id);
-        }
+                    cpp_matcher.find(name) != -1
+                });
+            if matched {
+                handle_match(sym);
+            }
+        });
     }
 }
 
