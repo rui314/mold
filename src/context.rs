@@ -240,9 +240,9 @@ impl<E: Arch> Context<E> {
     pub fn new(args: Args, cmdline_args: Vec<std::ffi::OsString>) -> Context<E> {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
-            entry: symbols.intern(crate::util::leak_bytes(args.entry.clone().into_bytes())),
-            init: symbols.intern(crate::util::leak_bytes(args.init.clone().into_bytes())),
-            fini: symbols.intern(crate::util::leak_bytes(args.fini.clone().into_bytes())),
+            entry: symbols.intern(crate::util::leak_bytes(args.entry.clone())),
+            init: symbols.intern(crate::util::leak_bytes(args.init.clone())),
+            fini: symbols.intern(crate::util::leak_bytes(args.fini.clone())),
             ..SyntheticSymbols::default()
         };
         let page_size = args.page_size;

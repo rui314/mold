@@ -1536,12 +1536,11 @@ impl<E: Arch> ObjectFile<E> {
 
             // Handle --wrap option
             if esym.is_undef() && !args.wrap.is_empty() {
-                let as_str = |s: &[u8]| String::from_utf8_lossy(s).into_owned();
                 if let Some(real) = name.strip_prefix(b"__real_") {
-                    if args.wrap.contains(&as_str(real)) {
+                    if args.wrap.contains(real) {
                         key = &key[7..];
                     }
-                } else if args.wrap.contains(&as_str(key)) {
+                } else if args.wrap.contains(key) {
                     key = leak_bytes([b"__wrap_", key].concat());
                 }
             }
@@ -1835,11 +1834,7 @@ impl<E: Arch> ObjectFile<E> {
                     }
 
                     // Ignore section is specified by --discard-section.
-                    if !args.discard_section.is_empty()
-                        && args
-                            .discard_section
-                            .contains(&*String::from_utf8_lossy(name))
-                    {
+                    if !args.discard_section.is_empty() && args.discard_section.contains(name) {
                         continue;
                     }
 

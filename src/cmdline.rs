@@ -297,12 +297,12 @@ pub enum ShuffleSections {
 
 #[derive(Clone, Debug)]
 pub enum SectionOrder {
-    Section(String),
+    Section(Vec<u8>),
     Group(String),
     // Keep the original token for error reporting.
     Addr { value: u64, token: String },
     Align(u64),
-    Symbol(String),
+    Symbol(Vec<u8>),
 }
 
 /// The right-hand side of `--defsym=SYMBOL=VALUE`.
@@ -316,7 +316,7 @@ pub enum DefsymValue {
 #[derive(Clone, Debug)]
 pub enum DynamicListSource {
     File(PathBuf),
-    Pattern(String),
+    Pattern(Vec<u8>),
 }
 
 // The position of the file currently being read in the command
@@ -378,9 +378,9 @@ pub struct Args {
     pub unique: Glob,
     pub z_separate_code: SeparateCodeKind,
     pub shuffle_sections: ShuffleSections,
-    pub entry: String,
-    pub fini: String,
-    pub init: String,
+    pub entry: Vec<u8>,
+    pub fini: Vec<u8>,
+    pub init: Vec<u8>,
     pub unresolved_symbols: UnresolvedKind,
     pub allow_multiple_definition: bool,
     pub allow_shlib_undefined: bool,
@@ -487,12 +487,12 @@ pub struct Args {
     pub soname: OsString,
     pub sysroot: PathBuf,
     pub emulation: String,
-    pub section_align: HashMap<String, u64>,
-    pub section_start: HashMap<String, u64>,
-    pub discard_section: HashSet<String>,
+    pub section_align: HashMap<Vec<u8>, u64>,
+    pub section_start: HashMap<Vec<u8>, u64>,
+    pub discard_section: HashSet<Vec<u8>>,
     pub exclude_libs: HashSet<String>,
     pub ignore_ir_file: HashSet<OsString>,
-    pub wrap: HashSet<String>,
+    pub wrap: HashSet<Vec<u8>>,
     pub section_order: Vec<SectionOrder>,
     pub require_defined: Vec<Vec<u8>>,
     pub undefined: Vec<Vec<u8>>,
@@ -504,7 +504,7 @@ pub struct Args {
     pub dynamic_list: Vec<DynamicListSource>,
     pub auxiliary: Vec<String>,
     pub filter: Vec<String>,
-    pub trace_symbol: Vec<String>,
+    pub trace_symbol: Vec<Vec<u8>>,
     pub z_x86_64_isa_level: u32,
     pub image_base: u64,
     pub page_size: u64,
@@ -523,9 +523,9 @@ impl Default for Args {
             unique: Glob::new(),
             z_separate_code: SeparateCodeKind::NoSeparateCode,
             shuffle_sections: ShuffleSections::None,
-            entry: "_start".to_string(),
-            fini: "_fini".to_string(),
-            init: "_init".to_string(),
+            entry: b"_start".to_vec(),
+            fini: b"_fini".to_vec(),
+            init: b"_init".to_vec(),
             unresolved_symbols: UnresolvedKind::Ignore,
             allow_multiple_definition: false,
             allow_shlib_undefined: true,
@@ -886,41 +886,45 @@ fn read_retain_symbols_file(path: &Path) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn parse_section_order(arg: &str) -> Vec<SectionOrder> {
-    let parse_value = |s: &str| -> Option<u64> {
+fn parse_section_order(arg: &[u8]) -> Vec<SectionOrder> {
+    let parse_value = |s: &[u8]| -> Option<u64> {
+        let s = std::str::from_utf8(s).ok()?;
         if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
             u64::from_str_radix(hex, 16).ok()
         } else {
             s.parse().ok()
         }
     };
-    let is_section_name = |s: &str| {
-        s.bytes()
-            .next()
+    let is_section_name = |s: &[u8]| {
+        s.first()
+            .copied()
             .is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'.')
-            && !s.bytes().any(|c| c.is_ascii_whitespace())
+            && !s.iter().any(|c| c.is_ascii_whitespace())
     };
 
     let mut orders = Vec::new();
-    for tok in arg.split([' ', '\t']).filter(|t| !t.is_empty()) {
+    for tok in arg
+        .split(|&c| c == b' ' || c == b'\t')
+        .filter(|t| !t.is_empty())
+    {
         let order = if matches!(
-            tok.to_ascii_uppercase().as_str(),
-            "TEXT" | "DATA" | "RODATA" | "BSS"
+            tok.to_ascii_uppercase().as_slice(),
+            b"TEXT" | b"DATA" | b"RODATA" | b"BSS"
         ) {
-            SectionOrder::Group(tok.to_string())
-        } else if let Some(value) = tok.strip_prefix('=').and_then(parse_value) {
+            SectionOrder::Group(std::str::from_utf8(tok).unwrap().to_string())
+        } else if let Some(value) = tok.strip_prefix(b"=").and_then(parse_value) {
             SectionOrder::Addr {
                 value,
-                token: tok.to_string(),
+                token: std::str::from_utf8(tok).unwrap().to_string(),
             }
-        } else if let Some(v) = tok.strip_prefix('%').and_then(parse_value) {
+        } else if let Some(v) = tok.strip_prefix(b"%").and_then(parse_value) {
             SectionOrder::Align(v)
-        } else if let Some(name) = tok.strip_prefix('!').filter(|n| !n.is_empty()) {
-            SectionOrder::Symbol(name.to_string())
-        } else if is_section_name(tok) || tok == "EHDR" || tok == "PHDR" {
-            SectionOrder::Section(tok.to_string())
+        } else if let Some(name) = tok.strip_prefix(b"!").filter(|n| !n.is_empty()) {
+            SectionOrder::Symbol(name.to_vec())
+        } else if is_section_name(tok) || tok == b"EHDR" || tok == b"PHDR" {
+            SectionOrder::Section(tok.to_vec())
         } else {
-            fatal!("--section-order: parse error: {arg}");
+            fatal!("--section-order: parse error: {}", arg.as_bstr());
         };
         orders.push(order);
     }
@@ -930,8 +934,11 @@ fn parse_section_order(arg: &str) -> Vec<SectionOrder> {
         if let SectionOrder::Section(name) = order {
             if is_first {
                 is_first = false;
-            } else if name == "EHDR" {
-                fatal!("--section-order: EHDR must be the first section specifier: {arg}");
+            } else if name == b"EHDR" {
+                fatal!(
+                    "--section-order: EHDR must be the first section specifier: {}",
+                    arg.as_bstr()
+                );
             }
         }
     }
@@ -1223,8 +1230,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_flag!("q") || read_flag!("emit-relocs") {
             a.emit_relocs = true;
             a.discard_locals = false;
-        } else if read_arg!("e") || read_arg!("entry") {
-            a.entry = arg.clone();
+        } else if read_arg!("e", true) || read_arg!("entry", true) {
+            a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("Map", true) {
             a.map = PathBuf::from(&raw_arg);
             a.print_map = true;
@@ -1289,17 +1296,20 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.rosegment = true;
         } else if read_flag!("no-rosegment") {
             a.rosegment = false;
-        } else if read_arg!("y") || read_arg!("trace-symbol") {
-            a.trace_symbol.push(arg.clone());
+        } else if read_arg!("y", true) || read_arg!("trace-symbol", true) {
+            a.trace_symbol.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("filler") {
             a.filler = Some(parse_hex("filler", &arg) as u8);
         } else if read_arg!("L", true) || read_arg!("library-path", true) {
             a.library_paths.push(PathBuf::from(&raw_arg));
         } else if read_arg!("sysroot", true) {
             a.sysroot = PathBuf::from(&raw_arg);
-        } else if read_arg!("unique") {
-            if !a.unique.add(arg.as_bytes(), 1) {
-                fatal!("-unique: invalid glob pattern: {arg}");
+        } else if read_arg!("unique", true) {
+            if !a.unique.add(raw_arg.as_encoded_bytes(), 1) {
+                fatal!(
+                    "-unique: invalid glob pattern: {}",
+                    raw_arg.to_string_lossy()
+                );
             }
         } else if read_arg!("unresolved-symbols") {
             match arg.as_str() {
@@ -1309,16 +1319,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             }
         } else if read_arg!("undefined", true) || read_arg!("u", true) {
             a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_arg!("undefined-glob") {
-            if !a.undefined_glob.add(arg.as_bytes(), 0) {
-                fatal!("--undefined-glob: invalid pattern: {arg}");
+        } else if read_arg!("undefined-glob", true) {
+            if !a.undefined_glob.add(raw_arg.as_encoded_bytes(), 0) {
+                fatal!(
+                    "--undefined-glob: invalid pattern: {}",
+                    raw_arg.to_string_lossy()
+                );
             }
         } else if read_arg!("require-defined", true) {
             a.require_defined.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_arg!("init") {
-            a.init = arg.clone();
-        } else if read_arg!("fini") {
-            a.fini = arg.clone();
+        } else if read_arg!("init", true) {
+            a.init = raw_arg.as_encoded_bytes().to_vec();
+        } else if read_arg!("fini", true) {
+            a.fini = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("hash-style") {
             match arg.as_str() {
                 "sysv" => {
@@ -1468,8 +1481,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                 }
                 _ => fatal!("invalid --compress-debug-sections argument: {arg}"),
             }
-        } else if read_arg!("wrap") {
-            a.wrap.insert(arg.clone());
+        } else if read_arg!("wrap", true) {
+            a.wrap.insert(raw_arg.as_encoded_bytes().to_vec());
         } else if read_flag!("omagic") || read_flag!("N") {
             a.omagic = true;
             rctx.is_static = true;
@@ -1482,32 +1495,43 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.oformat_binary = true;
         } else if read_arg!("retain-symbols-file", true) {
             a.retain_symbols_file = Some(read_retain_symbols_file(Path::new(&raw_arg)));
-        } else if read_arg!("section-align") {
-            let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!("--section-align: syntax error: {arg}");
+        } else if read_arg!("section-align", true) {
+            let arg = raw_arg.as_encoded_bytes();
+            let Some((name, value)) = arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
+            else {
+                fatal!("--section-align: syntax error: {}", arg.as_bstr());
             };
+            let value = std::str::from_utf8(value)
+                .unwrap_or_else(|_| fatal!("--section-align: invalid number: {}", value.as_bstr()));
             let value = parse_number("section-align", value);
             if value <= 0 || !(value as u64).is_power_of_two() {
-                fatal!("--section-align={arg}: value must be a power of 2");
+                fatal!(
+                    "--section-align={}: value must be a power of 2",
+                    arg.as_bstr()
+                );
             }
-            a.section_align.insert(name.to_string(), value as u64);
-        } else if read_arg!("section-start") {
-            let Some((name, value)) = arg.split_once('=').filter(|(_, v)| !v.is_empty()) else {
-                fatal!("--section-start: syntax error: {arg}");
+            a.section_align.insert(name.to_vec(), value as u64);
+        } else if read_arg!("section-start", true) {
+            let arg = raw_arg.as_encoded_bytes();
+            let Some((name, value)) = arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
+            else {
+                fatal!("--section-start: syntax error: {}", arg.as_bstr());
             };
+            let value = std::str::from_utf8(value)
+                .unwrap_or_else(|_| fatal!("--section-start: invalid number: {}", value.as_bstr()));
             a.section_start
-                .insert(name.to_string(), parse_hex("section-start", value));
-        } else if read_arg!("section-order") {
-            a.section_order = parse_section_order(&arg);
+                .insert(name.to_vec(), parse_hex("section-start", value));
+        } else if read_arg!("section-order", true) {
+            a.section_order = parse_section_order(raw_arg.as_encoded_bytes());
         } else if read_arg!("Tbss") {
             a.section_start
-                .insert(".bss".to_string(), parse_hex("Tbss", &arg));
+                .insert(b".bss".to_vec(), parse_hex("Tbss", &arg));
         } else if read_arg!("Tdata") {
             a.section_start
-                .insert(".data".to_string(), parse_hex("Tdata", &arg));
+                .insert(b".data".to_vec(), parse_hex("Tdata", &arg));
         } else if read_arg!("Ttext") {
             a.section_start
-                .insert(".text".to_string(), parse_hex("Ttext", &arg));
+                .insert(b".text".to_vec(), parse_hex("Ttext", &arg));
         } else if read_arg!("Ttext-segment") {
             a.ttext_segment = Some(parse_number("Ttext-segment", &arg) as u64);
         } else if read_flag!("repro") {
@@ -1640,10 +1664,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.print_gc_sections = PathBuf::from(&raw_arg);
         } else if read_flag!("no-print-gc-sections") {
             a.print_gc_sections.clear();
-        } else if read_arg!("discard-section") {
-            a.discard_section.insert(arg.clone());
-        } else if read_arg!("no-discard-section") {
-            a.discard_section.remove(&arg);
+        } else if read_arg!("discard-section", true) {
+            a.discard_section
+                .insert(raw_arg.as_encoded_bytes().to_vec());
+        } else if read_arg!("no-discard-section", true) {
+            a.discard_section.remove(raw_arg.as_encoded_bytes());
         } else if read_arg!("icf") {
             match arg.as_str() {
                 "all" => {
@@ -1855,8 +1880,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
             a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
         } else if read_arg!("dynamic-list-data") {
             a.dynamic_list_data = true;
-        } else if read_arg!("export-dynamic-symbol") {
-            a.dynamic_list.push(DynamicListSource::Pattern(arg.clone()));
+        } else if read_arg!("export-dynamic-symbol", true) {
+            a.dynamic_list.push(DynamicListSource::Pattern(
+                raw_arg.as_encoded_bytes().to_vec(),
+            ));
         } else if read_arg!("export-dynamic-symbol-list", true) {
             a.dynamic_list.push(DynamicListSource::File(PathBuf::from(&raw_arg)));
         } else if read_flag!("as-needed") {
@@ -2068,7 +2095,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     }
 
     // Mark GC root symbols
-    a.undefined.push(a.entry.as_bytes().to_vec());
+    a.undefined.push(a.entry.clone());
     for (_, value) in &a.defsyms {
         if let DefsymValue::Symbol(sym) = value {
             a.undefined.push(sym.clone());

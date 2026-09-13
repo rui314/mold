@@ -87,8 +87,8 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
         }
         // --section-start can override a chunk's alignment. Conservatively use
         // .rel[a].dyn if the explicitly assigned address is not word-aligned.
-        let name = String::from_utf8_lossy(hdr.name).into_owned();
-        let addr = ctx.args.section_start.get(&name);
+        let name = hdr.name;
+        let addr = ctx.args.section_start.get(name);
         if addr.is_some_and(|&addr| addr % word != 0) {
             continue;
         }

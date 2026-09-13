@@ -123,7 +123,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
 
     // Handle --wrap options if any.
     for name in ctx.args.wrap.clone() {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(&name);
         ctx.symbols[id].set_wrapped(true);
     }
     // Handle --retain-symbols-file options if any.
@@ -134,7 +134,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
         }
     }
     for name in ctx.args.trace_symbol.clone() {
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(&name);
         ctx.symbols[id].set_traced(true);
     }
 
@@ -162,7 +162,7 @@ pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, String> {
             cmdline::DynamicListSource::Pattern(pattern) => {
                 ctx.dynamic_list_patterns
                     .push(crate::linker_script::DynamicPattern {
-                        pattern: crate::util::leak_bytes(pattern.into_bytes()),
+                        pattern: crate::util::leak_bytes(pattern),
                         source: "<command line>".to_string(),
                         is_cpp: false,
                     });

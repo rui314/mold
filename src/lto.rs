@@ -1026,7 +1026,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
     // regular object files.
     let mut names: Vec<Vec<u8>> = Vec::new();
     for name in &ctx.args.wrap {
-        let name = name.as_bytes();
+        let name = name.as_slice();
         names.extend([
             name.to_vec(),
             [b"__wrap_", name].concat(),
