@@ -3182,21 +3182,24 @@ impl<E: Arch> SharedFile<E> {
 
     /// The strings of the dynamic entries with the given tag, such as the
     /// DT_NEEDED libraries.
-    fn dynamic_strings(&self, tag: u64) -> Vec<&'static [u8]> {
-        let Some(idx) = self.base.find_section(SHT_DYNAMIC) else {
-            return Vec::new();
-        };
-        let shdr = &self.base.shdrs[idx];
-        let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
-        ElfDyn::<E>::parse_all(self.base.section_contents(idx))
+    fn dynamic_strings(&self, tag: u64) -> impl Iterator<Item = &'static [u8]> + '_ {
+        self.base
+            .find_section(SHT_DYNAMIC)
             .into_iter()
-            .filter(|entry| entry.d_tag.get() == tag)
-            .map(|entry| cstr_at(strtab, entry.d_val.get() as usize))
-            .collect()
+            .flat_map(move |idx| {
+                let shdr = &self.base.shdrs[idx];
+                let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
+                self.base
+                    .section_contents(idx)
+                    .chunks_exact(ElfDyn::<E>::size())
+                    .map(ElfDyn::<E>::parse)
+                    .filter(move |entry| entry.d_tag.get() == tag)
+                    .map(move |entry| cstr_at(strtab, entry.d_val.get() as usize))
+            })
     }
 
     fn get_soname(&self) -> Vec<u8> {
-        if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).first() {
+        if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).next() {
             return soname.to_vec();
         }
         if let Some(mf) = self.base.mf {
@@ -3357,15 +3360,12 @@ impl<E: Arch> SharedFile<E> {
         COUNTER.add(self.base.elf_syms.len() as i64);
     }
 
-    pub fn dt_needed(&self) -> Vec<&'static [u8]> {
+    pub fn dt_needed(&self) -> impl Iterator<Item = &'static [u8]> + '_ {
         self.dynamic_strings(DT_NEEDED as u64)
     }
 
     pub fn dt_audit(&self) -> &'static [u8] {
-        self.dynamic_strings(DT_AUDIT as u64)
-            .first()
-            .copied()
-            .unwrap_or(b"")
+        self.dynamic_strings(DT_AUDIT as u64).next().unwrap_or(b"")
     }
 
     // Symbol versioning is a GNU extension to the ELF file format. I don't

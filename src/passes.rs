@@ -2003,8 +2003,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     // symbol might be defined by that library.
     let complete = ctx.dsos.iter().all(|dso| {
         dso.dt_needed()
-            .iter()
-            .all(|needed| ctx.dso_sonames.contains(*needed))
+            .all(|needed| ctx.dso_sonames.contains(needed))
     });
 
     if complete {
