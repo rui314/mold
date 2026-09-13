@@ -1544,20 +1544,19 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     ctx.file_by_priority[0] = Some(FileId::Obj(id));
 }
 
-fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<String> {
+fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Vec<u8>> {
     let hdr = ctx.chunk_header(id);
     if !hdr.is_alloc() || hdr.name.is_empty() {
         return None;
     }
     if is_c_identifier(hdr.name) {
-        return Some(String::from_utf8_lossy(hdr.name).into_owned());
+        return Some(hdr.name.to_vec());
     }
     if ctx.args.start_stop {
-        let s = String::from_utf8_lossy(hdr.name).into_owned();
-        let s = s.strip_prefix('.').unwrap_or(&s);
+        let name = hdr.name.strip_prefix(b".").unwrap_or(hdr.name);
         return Some(
-            s.chars()
-                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            name.iter()
+                .map(|&b| if b.is_ascii_alphanumeric() { b } else { b'_' })
                 .collect(),
         );
     }
@@ -1590,21 +1589,21 @@ fn resolve_internal_symbols<E: Arch>(ctx: &mut Context<E>) {
 pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     let obj_id = ctx.internal_obj.unwrap();
 
-    fn add<E: Arch>(ctx: &mut Context<E>, name: &str, ty: u32) -> SymbolId {
+    fn add<E: Arch>(ctx: &mut Context<E>, name: &[u8], ty: u32) -> SymbolId {
         let mut esym = ElfSym::<E>::default();
         esym.st_shndx_mut().set(SHN_ABS as u16);
         esym.set_type(ty);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_HIDDEN);
         ctx.internal_esyms.push(esym);
-        let id = ctx.get_symbol(name.as_bytes());
+        let id = ctx.get_symbol(name);
         ctx.symbols[id].value = 0xdeadbeef; // unique dummy value
         let obj = ctx.internal_obj.unwrap();
         ctx.objs[obj.index()].base.symbols.push(id);
         id
     }
 
-    let s = |ctx: &mut Context<E>, name: &str| add(ctx, name, STT_NOTYPE);
+    let s = |ctx: &mut Context<E>, name: &str| add(ctx, name.as_bytes(), STT_NOTYPE);
 
     ctx.syms.ehdr_start = Some(s(ctx, "__ehdr_start"));
     ctx.syms.init_array_start = Some(s(ctx, "__init_array_start"));
@@ -1647,7 +1646,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if E::SUPPORTS_TLSDESC {
-        ctx.syms.tls_module_base = Some(add(ctx, "_TLS_MODULE_BASE_", STT_TLS));
+        ctx.syms.tls_module_base = Some(add(ctx, b"_TLS_MODULE_BASE_", STT_TLS));
     }
     if E::IS_RISCV {
         let id = s(ctx, "__global_pointer$");
@@ -1678,19 +1677,20 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         ctx.syms.tls_get_addr = Some(ctx.get_symbol(b"__tls_get_addr"));
     }
 
-    let add_start_stop = |ctx: &mut Context<E>, name: String| {
-        let id = s(ctx, &name);
+    let add_start_stop = |ctx: &mut Context<E>, name: Vec<u8>| {
+        let id = add(ctx, &name, STT_NOTYPE);
         if ctx.args.z_start_stop_visibility_protected {
             ctx.symbols[id].set_exported(true);
         }
     };
     for id in ctx.chunks.clone() {
         if let Some(name) = start_stop_name(ctx, id) {
-            add_start_stop(ctx, format!("__start_{name}"));
-            add_start_stop(ctx, format!("__stop_{name}"));
+            let name = name.as_slice();
+            add_start_stop(ctx, [b"__start_", name].concat());
+            add_start_stop(ctx, [b"__stop_", name].concat());
             if ctx.args.physical_image_base.is_some() {
-                add_start_stop(ctx, format!("__phys_start_{name}"));
-                add_start_stop(ctx, format!("__phys_stop_{name}"));
+                add_start_stop(ctx, [b"__phys_start_", name].concat());
+                add_start_stop(ctx, [b"__phys_stop_", name].concat());
             }
         }
     }
@@ -4331,17 +4331,18 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // __start_ and __stop_ symbols
     for &chunk in &sections {
         if let Some(name) = start_stop_name(ctx, chunk) {
-            let s = ctx.get_symbol(format!("__start_{name}").as_bytes());
+            let name = name.as_slice();
+            let s = ctx.get_symbol(&[b"__start_", name].concat());
             start(ctx, Some(s), Some(chunk), 0);
-            let e = ctx.get_symbol(format!("__stop_{name}").as_bytes());
+            let e = ctx.get_symbol(&[b"__stop_", name].concat());
             stop(ctx, Some(e), Some(chunk), 0);
 
             if ctx.args.physical_image_base.is_some() {
                 let shdr = ctx.chunk_header(chunk).shdr;
                 let paddr = to_paddr(ctx, shdr.sh_addr.get());
-                let x = ctx.get_symbol(format!("__phys_start_{name}").as_bytes());
+                let x = ctx.get_symbol(&[b"__phys_start_", name].concat());
                 ctx.set_symbol_output_chunk(x, chunk).value = paddr;
-                let y = ctx.get_symbol(format!("__phys_stop_{name}").as_bytes());
+                let y = ctx.get_symbol(&[b"__phys_stop_", name].concat());
                 ctx.set_symbol_output_chunk(y, chunk).value = paddr + shdr.sh_size.get();
             }
         }
