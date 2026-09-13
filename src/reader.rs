@@ -8,7 +8,7 @@
 //! state and position for each file, files are read in any order, and
 //! the results are sorted back into command line order.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 
 use rayon::prelude::*;
@@ -56,7 +56,7 @@ fn new_object_file<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-    archive_name: &Path,
+    archive_name: &'static Path,
 ) -> ObjectFile<E> {
     static COUNT: Counter = Counter::new("parsed_objs");
     COUNT.increment();
@@ -73,7 +73,7 @@ fn new_object_file<E: Arch>(
         }
         _ => {}
     }
-    let mut file = ObjectFile::<E>::new(mf, archive_name.to_path_buf());
+    let mut file = ObjectFile::<E>::new(mf, archive_name);
     file.base.as_needed =
         rctx.in_lib || (!archive_name.as_os_str().is_empty() && !rctx.whole_archive);
     file.base.set_reachable(!file.base.as_needed);
@@ -115,12 +115,12 @@ fn defer_lto_object<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-    archive_name: &Path,
+    archive_name: &'static Path,
 ) {
     ctx.lto_jobs
         .lock()
         .unwrap()
-        .push((rctx.clone(), mf, archive_name.to_path_buf()));
+        .push((rctx.clone(), mf, archive_name));
 }
 
 /// Reads an IR object through the LTO plugin. An object listed by
@@ -130,7 +130,7 @@ fn new_lto_object<E: Arch>(
     ctx: &mut Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-    archive_name: PathBuf,
+    archive_name: &'static Path,
 ) -> Option<ObjectFile<E>> {
     static COUNT: Counter = Counter::new("parsed_lto_objs");
     COUNT.increment();
@@ -151,7 +151,7 @@ fn read_archive_member<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
-    archive_name: &Path,
+    archive_name: &'static Path,
 ) -> Option<Loaded<E>> {
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {

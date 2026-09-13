@@ -10,7 +10,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
@@ -810,7 +810,7 @@ pub enum ObjectOrigin {
 #[derive(Debug)]
 pub struct ObjectFile<E: Arch> {
     pub base: InputFile<E>,
-    pub archive_name: PathBuf,
+    pub archive_name: &'static Path,
 
     /// The sections by section header index, plus sections synthesized
     /// for common symbols.
@@ -886,7 +886,7 @@ impl<E: Arch> fmt::Display for ObjectFile<E> {
             write!(
                 f,
                 "{}({})",
-                crate::util::clean_path(&self.archive_name).display(),
+                crate::util::clean_path(self.archive_name).display(),
                 self.base.filename
             )
         }
@@ -1152,14 +1152,14 @@ impl<E: Arch> ObjectFile<E> {
     pub fn internal() -> ObjectFile<E> {
         let mut file = ObjectFile::with_base(
             InputFile::<E>::empty(Cow::Borrowed("<internal>")),
-            PathBuf::new(),
+            Path::new(""),
         );
         file.sections_parsed = true;
         file.base.set_reachable(true);
         file
     }
 
-    fn with_base(base: InputFile<E>, archive_name: PathBuf) -> ObjectFile<E> {
+    fn with_base(base: InputFile<E>, archive_name: &'static Path) -> ObjectFile<E> {
         ObjectFile {
             num_elf_sections: base.shdrs.len(),
             base,
@@ -1205,9 +1205,9 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
-    pub fn new(mf: &'static MappedFile, archive_name: PathBuf) -> ObjectFile<E> {
+    pub fn new(mf: &'static MappedFile, archive_name: &'static Path) -> ObjectFile<E> {
         let base =
-            InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), &archive_name));
+            InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), archive_name));
         let mut file = ObjectFile::with_base(base, archive_name);
         file.parse_symbols();
         file
@@ -1218,7 +1218,7 @@ impl<E: Arch> ObjectFile<E> {
     /// and it has no sections.
     pub fn lto_input(
         mf: &'static MappedFile,
-        archive_name: PathBuf,
+        archive_name: &'static Path,
         elf_syms: Vec<ElfSym<E>>,
         strtab: &'static [u8],
         comdat_keys: Vec<Option<&'static [u8]>>,
@@ -2791,7 +2791,7 @@ impl<E: Arch> ObjectFile<E> {
     // Returns true if a given section contains a DWARF32 debug record.
     // `isec` must be a .debug_info section.
     pub fn is_dwarf32(&mut self) -> bool {
-        let name = display_file(&self.base.filename, &self.archive_name);
+        let name = display_file(&self.base.filename, self.archive_name);
         for i in 0..self.debug_info_sections.len() {
             let shndx = self.debug_info_sections[i];
             let isec = self.section_at(shndx);

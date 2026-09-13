@@ -922,7 +922,7 @@ fn merged_resolve_members<E: Arch>(
         (0..count).map(|_| Vec::new()).collect();
     for file in objs {
         let filename = file.base.filename.as_ref();
-        let archive_name = file.archive_name.as_path();
+        let archive_name = file.archive_name;
         let shstrtab = file.base.shstrtab;
         let num_elf_sections = file.num_elf_sections;
         for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {

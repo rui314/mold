@@ -110,7 +110,7 @@ struct BackgroundMember {
     info: MergeInfo,
     data: &'static [u8],
     filename: std::sync::Arc<str>,
-    archive_name: std::sync::Arc<std::path::Path>,
+    archive_name: &'static std::path::Path,
     name: &'static BStr,
 }
 
@@ -145,16 +145,13 @@ impl<E: Arch> BackgroundMerge<E> {
         let mut members: Vec<Vec<BackgroundMember>> =
             (0..sections.len()).map(|_| Vec::new()).collect();
         for file in &ctx.objs {
-            let mut names = None;
+            let mut filename = None;
             for info in file.merge_infos() {
                 if sections[info.parent.index()].resolved {
                     continue;
                 }
-                let (filename, archive_name) = names.get_or_insert_with(|| {
-                    (
-                        std::sync::Arc::<str>::from(file.base.filename.as_ref()),
-                        std::sync::Arc::<std::path::Path>::from(file.archive_name.as_path()),
-                    )
+                let filename = filename.get_or_insert_with(|| {
+                    std::sync::Arc::<str>::from(file.base.filename.as_ref())
                 });
                 let input = file.section_at(info.shndx);
                 members[info.parent.index()].push(BackgroundMember {
@@ -165,7 +162,7 @@ impl<E: Arch> BackgroundMerge<E> {
                     info: info.clone(),
                     data: input.contents(),
                     filename: filename.clone(),
-                    archive_name: archive_name.clone(),
+                    archive_name: file.archive_name,
                     name: input.name(file),
                 });
             }
@@ -184,7 +181,7 @@ impl<E: Arch> BackgroundMerge<E> {
                         merge_info: &mut member.info,
                         data: member.data,
                         filename: &member.filename,
-                        archive_name: &member.archive_name,
+                        archive_name: member.archive_name,
                         name: member.name,
                     })
                     .collect()
