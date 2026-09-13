@@ -2119,7 +2119,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         fatal!("--be32 is not supported");
     }
 
-    if std::env::var("MOLD_REPRO").is_ok_and(|v| !v.is_empty()) {
+    if std::env::var_os("MOLD_REPRO").is_some_and(|v| !v.is_empty()) {
         a.repro = true;
     }
 

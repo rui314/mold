@@ -554,7 +554,7 @@ fn add_comment_strings<E: Layout>(
     add(crate::cmdline::VERSION.as_bytes().to_vec());
 
     // Embed command line arguments for debugging.
-    if std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty()) {
+    if std::env::var_os("MOLD_DEBUG").is_some_and(|v| !v.is_empty()) {
         let mut bytes = b"mold command line: ".to_vec();
         for (i, arg) in cmdline_args[1..].iter().enumerate() {
             if i != 0 {

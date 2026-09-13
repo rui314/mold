@@ -2221,7 +2221,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("sort_debug_info_sections");
 
     // True if mold is running under ctest
-    let is_in_test = std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty());
+    let is_in_test = std::env::var_os("MOLD_DEBUG").is_some_and(|v| !v.is_empty());
 
     // Get lists of output debug sections that need sorting
     let vec1: Vec<OutputSectionId> = (0..ctx.output_sections.len())
