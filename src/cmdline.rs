@@ -986,7 +986,11 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
         return DefsymValue::Addr(v);
     }
     if !s.is_empty() && s.iter().all(u8::is_ascii_digit) {
-        return DefsymValue::Addr(std::str::from_utf8(s).unwrap().parse().unwrap_or(0));
+        let s = std::str::from_utf8(s).unwrap();
+        let value = s
+            .parse()
+            .unwrap_or_else(|_| fatal!("-defsym: not a number: {s}"));
+        return DefsymValue::Addr(value);
     }
     DefsymValue::Symbol(s.to_vec())
 }
