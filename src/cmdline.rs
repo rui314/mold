@@ -697,11 +697,7 @@ impl Default for Args {
 pub struct TargetTraits {
     pub name: &'static str,
     pub is_rela: bool,
-    pub is_sparc: bool,
-    pub is_riscv: bool,
-    pub is_sh4: bool,
-    pub is_x86_64: bool,
-    pub is_arm64: bool,
+    pub family: arch::Family,
     pub page_size: u64,
 }
 
@@ -1081,7 +1077,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     //
     // - Static PIE binaries crash on startup in some RISC-V environment if
     // we write addends to relocated places.
-    a.apply_dynamic_relocs = !target.is_sparc && !target.is_riscv;
+    a.apply_dynamic_relocs = !matches!(target.family, arch::Family::Sparc64 | arch::Family::RiscV);
 
     let mut i = 1;
     let mut arg = String::new();
@@ -1660,7 +1656,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_z_flag!("x86-64-v4") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
         } else if read_z_flag!("rewrite-endbr") {
-            if !target.is_x86_64 && !target.is_arm64 {
+            if !matches!(target.family, arch::Family::X86_64 | arch::Family::Arm64) {
                 fatal!("-z rewrite-endbr is supported only on x86-64 and arm64");
             }
             a.z_rewrite_endbr = true;
@@ -2099,13 +2095,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     // Even though SH4 is RELA, addends in its relocation records are always
     // zero, and actual addends are written to relocated places. So we need
     // to handle it as an exception.
-    if (!target.is_rela || target.is_sh4) && !a.apply_dynamic_relocs {
+    if (!target.is_rela || target.family == arch::Family::Sh4) && !a.apply_dynamic_relocs {
         fatal!(
             "--no-apply-dynamic-relocs may not be used on {}",
             target.name
         );
     }
-    if target.is_sparc && a.apply_dynamic_relocs {
+    if target.family == arch::Family::Sparc64 && a.apply_dynamic_relocs {
         fatal!("--apply-dynamic-relocs may not be used on SPARC64");
     }
 

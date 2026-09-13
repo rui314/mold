@@ -65,11 +65,7 @@ fn target_traits<E: Arch>() -> TargetTraits {
     TargetTraits {
         name: E::NAME,
         is_rela: E::IS_RELA,
-        is_sparc: E::IS_SPARC,
-        is_riscv: E::IS_RISCV,
-        is_sh4: E::FAMILY == arch::Family::Sh4,
-        is_x86_64: E::FAMILY == arch::Family::X86_64,
-        is_arm64: E::FAMILY == arch::Family::Arm64,
+        family: E::FAMILY,
         page_size: E::PAGE_SIZE,
     }
 }
