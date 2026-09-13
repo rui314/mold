@@ -264,18 +264,21 @@ fn mark<'a, E: Arch>(
 // Remove unreachable sections
 fn sweep<E: Arch>(ctx: &Context<E>) {
     let _t = ctx.timer("sweep");
-    let removed: Vec<Vec<SectionRef>> = ctx
+    let report = ctx.args.print_gc_sections.is_some();
+    let removed: Vec<SectionRef> = ctx
         .objs
         .par_iter()
-        .map(|file| {
+        .flat_map_iter(|file| {
             let mut removed = Vec::new();
             for isec in file.input_sections() {
                 if isec.is_alive() && !isec.is_visited() {
                     file.kill_section(isec.shndx as usize);
-                    removed.push(SectionRef {
-                        file: isec.file,
-                        shndx: isec.shndx,
-                    });
+                    if report {
+                        removed.push(SectionRef {
+                            file: isec.file,
+                            shndx: isec.shndx,
+                        });
+                    }
                 }
             }
             removed
@@ -286,7 +289,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
         return;
     };
     let mut out = String::new();
-    for r in removed.iter().flatten() {
+    for r in &removed {
         writeln!(out, "removing unused section {}", ctx.section_display(*r)).unwrap();
     }
     out.push_str("GC saved 0 bytes\n");
