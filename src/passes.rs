@@ -49,7 +49,7 @@ use crate::symbol::{
     is_c_identifier, Bins, Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT,
     NEEDS_PPC_OPD, NEEDS_TLSDESC, NEEDS_TLSGD,
 };
-use crate::util::glob::Glob;
+use crate::util::glob::GlobBuilder;
 use crate::util::perf::Counter;
 use crate::util::{align_to, leak_bytes};
 use crate::{error, fatal, out, warn};
@@ -2998,8 +2998,8 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
 
     // Assign versions to symbols specified with `extern "C++"` or
     // wildcard patterns first.
-    let mut matcher = Glob::new();
-    let mut cpp_matcher = Glob::new();
+    let mut matcher = GlobBuilder::default();
+    let mut cpp_matcher = GlobBuilder::default();
 
     // The "local:" label has a special meaning in the version script.
     // It can appear in any VERSION clause, and it hides matched symbols
@@ -3032,6 +3032,8 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
+    let matcher = matcher.build();
+    let cpp_matcher = cpp_matcher.build();
     if !matcher.is_empty() || !cpp_matcher.is_empty() {
         ctx.symbols.par_for_each_global_mut(|sym| {
             if !matches!(sym.file(), Some(FileId::Obj(_))) {
@@ -3302,8 +3304,8 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
         }
     };
 
-    let mut matcher = Glob::new();
-    let mut cpp_matcher = Glob::new();
+    let mut matcher = GlobBuilder::default();
+    let mut cpp_matcher = GlobBuilder::default();
     for p in &ctx.dynamic_list_patterns {
         if p.is_cpp {
             if !cpp_matcher.add(p.pattern, 1) {
@@ -3329,6 +3331,8 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
         handle_match(&mut ctx.symbols[id]);
     }
 
+    let matcher = matcher.build();
+    let cpp_matcher = cpp_matcher.build();
     if !matcher.is_empty() || !cpp_matcher.is_empty() {
         ctx.symbols.par_for_each_global_mut(|sym| {
             if !matches!(sym.file(), Some(FileId::Obj(_))) || (shared && !sym.is_exported()) {

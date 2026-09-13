@@ -10,7 +10,7 @@ use bstr::{ByteSlice, ByteVec};
 use crate::arch;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
-use crate::util::glob::Glob;
+use crate::util::glob::{Glob, GlobBuilder};
 use crate::util::perf::Counter;
 use crate::util::{self, align_down};
 use crate::{fatal, out, warn};
@@ -1048,6 +1048,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
     // --as-needed, that apply to the files after them; each job gets a
     // snapshot of the state at its position.
     let mut a = Args::default();
+    let mut undefined_glob = GlobBuilder::default();
+    let mut unique = GlobBuilder::default();
     let mut jobs: Vec<ReaderJob> = Vec::new();
     let mut rctx = ReaderContext::default();
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
@@ -1348,7 +1350,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("sysroot", true) {
             a.sysroot = PathBuf::from(raw_arg);
         } else if read_arg!("unique", true) {
-            if !a.unique.add(raw_arg.as_encoded_bytes(), 1) {
+            if !unique.add(raw_arg.as_encoded_bytes(), 1) {
                 fatal!(
                     "-unique: invalid glob pattern: {}",
                     raw_arg.to_string_lossy()
@@ -1363,7 +1365,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         } else if read_arg!("undefined", true) || read_arg!("u", true) {
             a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("undefined-glob", true) {
-            if !a.undefined_glob.add(raw_arg.as_encoded_bytes(), 0) {
+            if !undefined_glob.add(raw_arg.as_encoded_bytes(), 0) {
                 fatal!(
                     "--undefined-glob: invalid pattern: {}",
                     raw_arg.to_string_lossy()
@@ -2198,6 +2200,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
         a.dynamic_linker.clear();
     }
 
+    a.undefined_glob = undefined_glob.build();
+    a.unique = unique.build();
     ParsedArgs { args: a, jobs }
 }
 

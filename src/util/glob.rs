@@ -23,7 +23,6 @@
 //! with the [`Glob`] type.
 
 use std::collections::VecDeque;
-use std::sync::OnceLock;
 
 #[derive(Clone, Debug)]
 enum Token {
@@ -501,16 +500,14 @@ pub struct Glob {
     suffixes: Vec<Literal>,
     patterns: Vec<Pattern>, // "foo*bar"
     aho_corasick: AhoCorasick,
-    compiled: OnceLock<Compiled>,
+    nfa: Nfa,
     is_empty: bool,
 }
 
-#[derive(Debug)]
-struct Compiled {
-    exacts: Vec<Literal>,
-    nfa: Nfa,
-    patterns: Vec<Pattern>,
-    aho_corasick: AhoCorasick,
+/// Collects patterns before compiling an immutable matcher.
+#[derive(Debug, Default)]
+pub struct GlobBuilder {
+    glob: Glob,
 }
 
 fn is_literal(pat: &[u8]) -> bool {
@@ -527,9 +524,79 @@ impl Default for Glob {
             suffixes: Vec::new(),
             patterns: Vec::new(),
             aho_corasick: AhoCorasick::default(),
-            compiled: OnceLock::new(),
+            nfa: Nfa::default(),
             is_empty: true,
         }
+    }
+}
+
+impl GlobBuilder {
+    /// Adds a pattern. Returns false if the pattern is malformed.
+    pub fn add(&mut self, pat: &[u8], value: i64) -> bool {
+        debug_assert!(value >= 0);
+        self.glob.is_empty = false;
+        self.glob.max_value = self.glob.max_value.max(value);
+
+        // Match-all, exact, prefix and suffix patterns are handled with
+        // plain string comparisons instead of the matchers below, which
+        // have to scan the entire input string on every query.
+        if pat == b"*" {
+            self.glob.match_all = self.glob.match_all.max(value);
+            return true;
+        }
+        if is_literal(pat) {
+            self.glob.exacts.push(Literal {
+                pat: pat.to_vec(),
+                value,
+            });
+            return true;
+        }
+        if let Some(prefix) = pat.strip_suffix(b"*").filter(|p| is_literal(p)) {
+            self.glob.prefixes.push(Literal {
+                pat: prefix.to_vec(),
+                value,
+            });
+            return true;
+        }
+        if let Some(suffix) = pat.strip_prefix(b"*").filter(|p| is_literal(p)) {
+            self.glob.suffixes.push(Literal {
+                pat: suffix.to_vec(),
+                value,
+            });
+            return true;
+        }
+        // If the pattern requires only a single substring search, the
+        // Aho-Corasick algorithm is even faster than our glob matcher.
+        if AhoCorasick::can_handle(pat) {
+            self.glob.aho_corasick.add(pat, value);
+            return true;
+        }
+        match Pattern::compile(pat, value) {
+            Some(pattern) => {
+                self.glob.patterns.push(pattern);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Consumes the construction state. The result supports parallel queries.
+    pub fn build(self) -> Glob {
+        let mut glob = self.glob;
+        if glob.match_all == glob.max_value {
+            return glob;
+        }
+
+        // For duplicate names, retain the largest value.
+        glob.exacts
+            .sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
+        glob.exacts.dedup_by(|a, b| a.pat == b.pat);
+        if glob.patterns.len() >= 64 {
+            glob.nfa = Nfa::compile(&glob.patterns);
+            glob.patterns = Vec::new();
+        }
+        glob.aho_corasick.compile();
+        glob
     }
 }
 
@@ -542,100 +609,15 @@ impl Glob {
         self.is_empty
     }
 
-    /// Adds a pattern. Returns false if the pattern is malformed.
-    pub fn add(&mut self, pat: &[u8], value: i64) -> bool {
-        debug_assert!(value >= 0);
-        debug_assert!(self.compiled.get().is_none());
-        self.is_empty = false;
-        self.max_value = self.max_value.max(value);
-
-        // Match-all, exact, prefix and suffix patterns are handled with
-        // plain string comparisons instead of the matchers below, which
-        // have to scan the entire input string on every query.
-        if pat == b"*" {
-            self.match_all = self.match_all.max(value);
-            return true;
-        }
-        if is_literal(pat) {
-            self.exacts.push(Literal {
-                pat: pat.to_vec(),
-                value,
-            });
-            return true;
-        }
-        if let Some(prefix) = pat.strip_suffix(b"*").filter(|p| is_literal(p)) {
-            self.prefixes.push(Literal {
-                pat: prefix.to_vec(),
-                value,
-            });
-            return true;
-        }
-        if let Some(suffix) = pat.strip_prefix(b"*").filter(|p| is_literal(p)) {
-            self.suffixes.push(Literal {
-                pat: suffix.to_vec(),
-                value,
-            });
-            return true;
-        }
-        // If the pattern requires only a single substring search, the
-        // Aho-Corasick algorithm is even faster than our glob matcher.
-        if AhoCorasick::can_handle(pat) {
-            self.aho_corasick.add(pat, value);
-            return true;
-        }
-        match Pattern::compile(pat, value) {
-            Some(pattern) => {
-                self.patterns.push(pattern);
-                true
-            }
-            None => false,
-        }
-    }
-
-    fn compiled(&self) -> &Compiled {
-        self.compiled.get_or_init(|| {
-            // If the same name was added more than once, keep only the entry
-            // with the largest value, as find() returns the largest match.
-            // Sorting by (name, negated value) places that entry first in
-            // each run of duplicates, which is the one unique() keeps.
-            let mut exacts = self.exacts.clone();
-            exacts.sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
-            exacts.dedup_by(|a, b| a.pat == b.pat);
-
-            let mut patterns = self.patterns.clone();
-            let nfa = if patterns.len() >= 64 {
-                let nfa = Nfa::compile(&patterns);
-                patterns.clear();
-                nfa
-            } else {
-                Nfa::default()
-            };
-
-            let mut aho_corasick = self.aho_corasick.clone();
-            aho_corasick.compile();
-
-            Compiled {
-                exacts,
-                nfa,
-                patterns,
-                aho_corasick,
-            }
-        })
-    }
-
     /// Returns the largest value of a matching pattern, or -1 if none match.
     pub fn find(&self, s: &[u8]) -> i64 {
-        let compiled = self.compiled();
         let mut value = self.match_all;
         if value == self.max_value {
             return value;
         }
 
-        if let Ok(i) = compiled
-            .exacts
-            .binary_search_by(|l| l.pat.as_slice().cmp(s))
-        {
-            value = value.max(compiled.exacts[i].value);
+        if let Ok(i) = self.exacts.binary_search_by(|l| l.pat.as_slice().cmp(s)) {
+            value = value.max(self.exacts[i].value);
         }
         for p in &self.prefixes {
             if value < p.value && s.starts_with(&p.pat) {
@@ -650,14 +632,14 @@ impl Glob {
         if value == self.max_value {
             return value;
         }
-        value = value.max(compiled.aho_corasick.find(s));
+        value = value.max(self.aho_corasick.find(s));
         if value == self.max_value {
             return value;
         }
-        if !compiled.nfa.is_empty() {
-            value = value.max(compiled.nfa.matches(s));
+        if !self.nfa.is_empty() {
+            value = value.max(self.nfa.matches(s));
         }
-        for p in &compiled.patterns {
+        for p in &self.patterns {
             if value < p.value && p.matches(s) {
                 value = p.value;
             }
@@ -671,11 +653,11 @@ mod tests {
     use super::*;
 
     fn glob(pats: &[&str]) -> Glob {
-        let mut g = Glob::new();
+        let mut g = GlobBuilder::default();
         for (i, p) in pats.iter().enumerate() {
             assert!(g.add(p.as_bytes(), i as i64));
         }
-        g
+        g.build()
     }
 
     #[test]
@@ -684,8 +666,9 @@ mod tests {
         assert!(g.is_empty());
         assert_eq!(g.find(b"missing"), -1);
 
-        let mut g = Glob::default();
+        let mut g = GlobBuilder::default();
         assert!(g.add(b"present", 7));
+        let g = g.build();
         assert!(!g.is_empty());
         assert_eq!(g.find(b"present"), 7);
         assert_eq!(g.find(b"missing"), -1);
@@ -693,7 +676,7 @@ mod tests {
 
     #[test]
     fn shared_priorities_preserve_highest_match() {
-        let mut g = Glob::new();
+        let mut g = GlobBuilder::default();
         for (pattern, priority) in [
             ("*", 0),
             ("*inner*", 2),
@@ -704,6 +687,7 @@ mod tests {
         ] {
             assert!(g.add(pattern.as_bytes(), priority));
         }
+        let g = g.build();
         for (name, expected) in [
             ("none", 0),
             ("hasinnersuffix", 2),
@@ -713,9 +697,10 @@ mod tests {
         ] {
             assert_eq!(g.find(name.as_bytes()), expected);
         }
-        let mut g = Glob::new();
+        let mut g = GlobBuilder::default();
         assert!(g.add(b"*inner*", 0));
         assert!(g.add(b"*suffix", 0));
+        let g = g.build();
         assert_eq!(g.find(b"innersuffix"), 0);
         assert_eq!(g.find(b"none"), -1);
     }
