@@ -1483,21 +1483,21 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     ctx.file_by_priority[0] = Some(FileId::Obj(id));
 }
 
-fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Vec<u8>> {
+fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Cow<'static, [u8]>> {
     let hdr = ctx.chunk_header(id);
     if !hdr.is_alloc() || hdr.name.is_empty() {
         return None;
     }
     if is_c_identifier(hdr.name) {
-        return Some(hdr.name.to_vec());
+        return Some(Cow::Borrowed(hdr.name));
     }
     if ctx.args.start_stop {
         let name = hdr.name.strip_prefix(b".").unwrap_or(hdr.name);
-        return Some(
+        return Some(Cow::Owned(
             name.iter()
                 .map(|&b| if b.is_ascii_alphanumeric() { b } else { b'_' })
                 .collect(),
-        );
+        ));
     }
     None
 }
@@ -1625,7 +1625,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
         if let Some(name) = start_stop_name(ctx, id) {
-            let name = name.as_slice();
+            let name = name.as_ref();
             add_start_stop(ctx, [b"__start_", name].concat());
             add_start_stop(ctx, [b"__stop_", name].concat());
             if ctx.args.physical_image_base.is_some() {
@@ -4256,7 +4256,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // __start_ and __stop_ symbols
     for &chunk in &sections {
         if let Some(name) = start_stop_name(ctx, chunk) {
-            let name = name.as_slice();
+            let name = name.as_ref();
             let s = ctx.get_symbol(&[b"__start_", name].concat());
             start(ctx, Some(s), Some(chunk), 0);
             let e = ctx.get_symbol(&[b"__stop_", name].concat());
