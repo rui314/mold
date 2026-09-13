@@ -17,9 +17,13 @@ use std::process::Command;
 // no .git, and the hash is simply omitted.
 fn git_hash(source_dir: &Path) -> Option<String> {
     let dot_git = source_dir.join(".git");
-    println!("cargo:rerun-if-changed={}", dot_git.display());
     if !dot_git.exists() {
+        // Source archives use the package version. If Git metadata is added
+        // later, a clean rebuild is needed to embed the new commit hash.
         return None;
+    }
+    if dot_git.is_file() {
+        println!("cargo:rerun-if-changed={}", dot_git.display());
     }
 
     let git_path = |name: &str| -> Option<PathBuf> {
@@ -40,17 +44,30 @@ fn git_hash(source_dir: &Path) -> Option<String> {
         })
     };
 
-    if let Some(head) = git_path("HEAD") {
+    let reftable = git_path("reftable/tables.list").filter(|p| p.exists());
+    if let Some(head) = git_path("HEAD").filter(|p| p.exists()) {
         println!("cargo:rerun-if-changed={}", head.display());
         if let Ok(contents) = std::fs::read_to_string(&head) {
-            if let Some(reference) = contents.strip_prefix("ref: ").map(str::trim) {
+            if let Some(reference) = contents
+                .strip_prefix("ref: ")
+                .map(str::trim)
+                .filter(|_| reftable.is_none())
+            {
                 if let Some(path) = git_path(reference) {
-                    println!("cargo:rerun-if-changed={}", path.display());
+                    // A packed reference may acquire a loose file later.
+                    // Watch its nearest existing directory until that happens.
+                    if let Some(path) = path.ancestors().find(|p| p.exists()) {
+                        println!("cargo:rerun-if-changed={}", path.display());
+                    }
                 }
             }
         }
     }
-    if let Some(path) = git_path("packed-refs") {
+    for path in git_path("packed-refs")
+        .into_iter()
+        .chain(reftable)
+        .filter(|p| p.exists())
+    {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
