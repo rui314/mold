@@ -2,12 +2,14 @@
 //! handling for disk-full errors, and the `-run` subcommand.
 
 #[cfg(not(windows))]
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+#[cfg(not(windows))]
+use std::sync::Mutex;
 
 use crate::fatal;
 
 #[cfg(not(windows))]
-static PIPE_WRITE_FD: AtomicI32 = AtomicI32::new(-1);
+static PIPE_WRITER: Mutex<Option<OwnedFd>> = Mutex::new(None);
 
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
@@ -15,12 +17,22 @@ static PIPE_WRITE_FD: AtomicI32 = AtomicI32::new(-1);
 #[cfg(not(windows))]
 pub fn fork_child() {
     let mut pipefd = [0i32; 2];
-    // SAFETY: plain libc calls with valid arguments.
-    unsafe {
+    // Preserve pipe's descriptor inheritance across the LTO restart.
+    // SAFETY: pipe initializes both descriptors on success; each then has
+    // exactly one owner in this process.
+    let (reader, writer) = unsafe {
         if libc::pipe(pipefd.as_mut_ptr()) == -1 {
             eprintln!("mold: pipe failed");
             std::process::exit(1);
         }
+        (
+            OwnedFd::from_raw_fd(pipefd[0]),
+            OwnedFd::from_raw_fd(pipefd[1]),
+        )
+    };
+    // SAFETY: this runs before the linker starts its worker threads. The
+    // parent only waits for completion and exits; the child continues linking.
+    unsafe {
         let pid = libc::fork();
         if pid == -1 {
             eprintln!("mold: fork failed");
@@ -28,9 +40,9 @@ pub fn fork_child() {
         }
         if pid > 0 {
             // Parent
-            libc::close(pipefd[1]);
+            drop(writer);
             let mut buf = [0u8; 1];
-            if libc::read(pipefd[0], buf.as_mut_ptr() as *mut libc::c_void, 1) == 1 {
+            if libc::read(reader.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, 1) == 1 {
                 libc::_exit(0);
             }
             let mut status = 0;
@@ -43,10 +55,10 @@ pub fn fork_child() {
             }
             libc::_exit(1);
         }
-        // Child
-        libc::close(pipefd[0]);
     }
-    PIPE_WRITE_FD.store(pipefd[1], Ordering::Relaxed);
+    // Child
+    drop(reader);
+    *PIPE_WRITER.lock().unwrap() = Some(writer);
 }
 
 #[cfg(windows)]
@@ -55,14 +67,13 @@ pub fn fork_child() {}
 /// Tells the parent that the output is complete.
 #[cfg(not(windows))]
 pub fn notify_parent() {
-    let fd = PIPE_WRITE_FD.swap(-1, Ordering::Relaxed);
-    if fd == -1 {
+    let Some(writer) = PIPE_WRITER.lock().unwrap().take() else {
         return;
-    }
+    };
     let buf = [1u8];
-    // SAFETY: fd is a valid pipe write end.
+    // SAFETY: writer owns a valid pipe write end.
     unsafe {
-        libc::write(fd, buf.as_ptr() as *const libc::c_void, 1);
+        libc::write(writer.as_raw_fd(), buf.as_ptr() as *const libc::c_void, 1);
     }
 }
 

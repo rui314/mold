@@ -14,10 +14,14 @@
 #[cfg(not(windows))]
 use std::ffi::CStr;
 #[cfg(not(windows))]
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::fs::{File, OpenOptions};
+#[cfg(not(windows))]
+use std::os::unix::{fs::OpenOptionsExt, io::AsRawFd};
+#[cfg(not(windows))]
+use std::sync::Mutex;
 
 #[cfg(not(windows))]
-static LOCK_FD: AtomicI32 = AtomicI32::new(-1);
+static LOCK_FILE: Mutex<Option<File>> = Mutex::new(None);
 
 #[cfg(not(windows))]
 pub fn acquire_global_lock() {
@@ -40,27 +44,20 @@ pub fn acquire_global_lock() {
         let name = String::from_utf8_lossy(&name);
         std::path::PathBuf::from(format!("/tmp/mold-lock-{name}"))
     };
-    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
+    let Ok(file) = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .open(path)
+    else {
         return;
     };
-
-    // SAFETY: path is a valid C string and the remaining arguments have the
-    // types required by open and lockf.
-    unsafe {
-        let fd = libc::open(
-            path.as_ptr(),
-            libc::O_WRONLY | libc::O_CREAT | libc::O_CLOEXEC,
-            0o600,
-        );
-        if fd == -1 {
-            return;
-        }
-        if libc::lockf(fd, libc::F_LOCK, 0) == -1 {
-            libc::close(fd);
-            return;
-        }
-        LOCK_FD.store(fd, Ordering::Relaxed);
+    // SAFETY: file owns a valid descriptor. Keep lockf for compatibility with
+    // other mold processes; flock uses a different locking protocol.
+    if unsafe { libc::lockf(file.as_raw_fd(), libc::F_LOCK, 0) } == -1 {
+        return;
     }
+    *LOCK_FILE.lock().unwrap() = Some(file);
 }
 
 #[cfg(windows)]
@@ -68,11 +65,7 @@ pub fn acquire_global_lock() {}
 
 #[cfg(not(windows))]
 pub fn release_global_lock() {
-    let fd = LOCK_FD.swap(-1, Ordering::Relaxed);
-    if fd != -1 {
-        // SAFETY: fd is the lock file opened by acquire_global_lock.
-        unsafe { libc::close(fd) };
-    }
+    drop(LOCK_FILE.lock().unwrap().take());
 }
 
 #[cfg(windows)]
