@@ -1180,9 +1180,9 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
 //
 // The following functions takes care of ISA strings.
 
-#[derive(Clone, Debug)]
-struct Extension {
-    name: String,
+#[derive(Clone, Copy, Debug)]
+struct Extension<'a> {
+    name: &'a str,
     major: u64,
     minor: u64,
 }
@@ -1217,7 +1217,7 @@ fn extension_precedes(x: &str, y: &str) -> bool {
 /// Parses an ISA string into its extensions. Each element is a name
 /// (letters and digits, starting and ending with a letter) followed by
 /// `<major>p<minor>`; elements are separated by underscores.
-fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension>> {
+fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension<'_>>> {
     let mut result = Vec::new();
     for element in s.split(|&b| b == b'_') {
         let element = std::str::from_utf8(element).ok()?;
@@ -1241,7 +1241,7 @@ fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension>> {
             return None;
         }
         result.push(Extension {
-            name: name.to_string(),
+            name,
             major: element[major_start..major_end].parse().ok()?,
             minor: element[minor_start..].parse().ok()?,
         });
@@ -1249,7 +1249,7 @@ fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension>> {
     (!result.is_empty()).then_some(result)
 }
 
-fn merge_extensions(x: &[Extension], y: &[Extension]) -> Option<Vec<Extension>> {
+fn merge_extensions<'a>(x: &[Extension<'a>], y: &[Extension<'a>]) -> Option<Vec<Extension<'a>>> {
     // The base part (i.e. "rv64i" or "rv32i") must match.
     if x[0].name != y[0].name {
         return None;
@@ -1260,37 +1260,42 @@ fn merge_extensions(x: &[Extension], y: &[Extension]) -> Option<Vec<Extension>> 
     while let (Some(a), Some(b)) = (x.first(), y.first()) {
         if a.name == b.name {
             result.push(if (a.major, a.minor) < (b.major, b.minor) {
-                b.clone()
+                *b
             } else {
-                a.clone()
+                *a
             });
             x = &x[1..];
             y = &y[1..];
-        } else if extension_precedes(&a.name, &b.name) {
-            result.push(a.clone());
+        } else if extension_precedes(a.name, b.name) {
+            result.push(*a);
             x = &x[1..];
         } else {
-            result.push(b.clone());
+            result.push(*b);
             y = &y[1..];
         }
     }
-    result.extend(x.iter().cloned());
-    result.extend(y.iter().cloned());
+    result.extend_from_slice(x);
+    result.extend_from_slice(y);
     Some(result)
 }
 
-fn arch_string(extensions: &[Extension]) -> String {
-    extensions
-        .iter()
-        .map(|e| format!("{}{}p{}", e.name, e.major, e.minor))
-        .collect::<Vec<_>>()
-        .join("_")
+fn arch_string(extensions: &[Extension<'_>]) -> String {
+    use std::fmt::Write;
+
+    let mut result = String::new();
+    for (i, e) in extensions.iter().enumerate() {
+        if i != 0 {
+            result.push('_');
+        }
+        write!(result, "{}{}p{}", e.name, e.major, e.minor).unwrap();
+    }
+    result
 }
 
 // Build the output .riscv.attributes contents.
 pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let mut stack: Option<u64> = None;
-    let mut arch: Vec<Extension> = Vec::new();
+    let mut arch: Vec<Extension<'_>> = Vec::new();
     let mut unaligned = false;
 
     for file in &ctx.objs {
