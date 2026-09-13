@@ -376,11 +376,11 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
     // most of an output's dynamic relocations, so we process its
     // absolute relocations in parallel shards.
     let nshards = osec.dynrel_offsets.len().saturating_sub(1);
-    let mut offsets = osec.dynrel_offsets.clone();
+    let mut offsets = std::borrow::Cow::Borrowed(osec.dynrel_offsets.as_slice());
 
     if ctx.args.pack_dyn_relocs_relr && osec.hdr.num_relrs != 0 {
         debug_assert_eq!(osec.relr_offsets.len(), offsets.len());
-        for (offset, &relr_offset) in offsets.iter_mut().zip(&osec.relr_offsets) {
+        for (offset, &relr_offset) in offsets.to_mut().iter_mut().zip(&osec.relr_offsets) {
             *offset -= relr_offset;
         }
     }
