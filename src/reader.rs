@@ -115,13 +115,10 @@ fn defer_lto_object<E: Arch>(
     mf: &'static MappedFile,
     archive_name: &str,
 ) {
-    let job = ReaderJob {
-        rctx: rctx.clone(),
-        mf: Some(mf),
-        archive_name: archive_name.to_string(),
-        ..ReaderJob::default()
-    };
-    ctx.lto_jobs.lock().unwrap().push(job);
+    ctx.lto_jobs
+        .lock()
+        .unwrap()
+        .push((rctx.clone(), mf, archive_name.to_string()));
 }
 
 /// Reads an IR object through the LTO plugin. An object listed by
@@ -350,9 +347,9 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     let ctx_ref: &Context<E> = ctx;
     rayon::scope(|scope| {
         jobs.into_par_iter().for_each(|job| {
-            let mut rctx = job.rctx.clone();
+            let mut rctx = job.rctx;
 
-            // Everything else is a command line argument that we need to open.
+            // Open the input named by this command line argument.
             let mf = if job.is_lib {
                 let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
                 crate::util::leak(MappedFile {
@@ -367,10 +364,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 must_open_file(&ctx_ref.args.chroot, &job.name)
             };
 
-            // An archive member is enqueued by the job that read its archive
-            // file. A thin archive's members are opened here rather than by
-            // that job, so that the files of a large archive are opened in
-            // parallel.
+            // Read each archive member in its own task, including opening
+            // thin archive members, so that file I/O runs in parallel too.
             match get_file_type(ctx_ref, mf) {
                 FileType::Ar => {
                     for child in archive_file::read_fat_archive_members(mf) {
@@ -409,11 +404,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                         });
                     }
                 }
-                FileType::Text => {
-                    let mut job = job;
-                    job.mf = Some(mf);
-                    push_to_worker(&scripts, job);
-                }
+                FileType::Text => push_to_worker(&scripts, (rctx, mf)),
                 FileType::ElfObj => {
                     let file = new_object_file(ctx_ref, &rctx, mf, "");
                     push_to_worker(&loaded, Loaded::Obj(rctx.pos, Box::new(file)));
@@ -439,10 +430,9 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
         .into_iter()
         .flat_map(|bin| bin.into_inner().unwrap())
         .collect();
-    scripts.sort_by(|a, b| a.rctx.pos.cmp(&b.rctx.pos));
-    for job in scripts {
-        let mut rctx = job.rctx.clone();
-        Script::new(ctx, &mut rctx, job.mf.unwrap()).parse_linker_script();
+    scripts.sort_by(|(a, _), (b, _)| a.pos.cmp(&b.pos));
+    for (mut rctx, mf) in scripts {
+        Script::new(ctx, &mut rctx, mf).parse_linker_script();
     }
 
     // Hand IR files to the LTO plugin, in the command line order. The
@@ -453,10 +443,10 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     // copies' internal symbols become undefined references in the LTO
     // result.
     let mut lto_jobs = std::mem::take(ctx.lto_jobs.get_mut().unwrap());
-    lto_jobs.sort_by(|a, b| a.rctx.pos.cmp(&b.rctx.pos));
-    for job in lto_jobs {
-        if let Some(file) = new_lto_object(ctx, &job.rctx, job.mf.unwrap(), job.archive_name) {
-            push_loaded(ctx, Loaded::Obj(job.rctx.pos, Box::new(file)));
+    lto_jobs.sort_by(|(a, ..), (b, ..)| a.pos.cmp(&b.pos));
+    for (rctx, mf, archive_name) in lto_jobs {
+        if let Some(file) = new_lto_object(ctx, &rctx, mf, archive_name) {
+            push_loaded(ctx, Loaded::Obj(rctx.pos, Box::new(file)));
         }
     }
 

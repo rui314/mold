@@ -48,13 +48,14 @@ use crate::chunks::versym::VersymSection;
 use crate::chunks::{
     ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
 };
-use crate::cmdline::{Args, ReaderJob};
+use crate::cmdline::{Args, ReaderContext};
 use crate::elf::{ElfSym, ElfWord};
 use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
 use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
+use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
 use crate::util::perf::Timers;
 
@@ -136,10 +137,10 @@ pub struct Context<E: Arch> {
     // `objs` and `dsos`.
     pub pending_files: Vec<(Vec<u32>, FileId)>,
 
-    // IR files for LTO found by the file reader. read_input_files()
-    // hands them to the LTO plugin in the command line order once all
-    // input files have been found.
-    pub lto_jobs: Mutex<Vec<ReaderJob>>,
+    // Deferred IR files with their reader contexts and archive names.
+    // read_input_files() hands them to the LTO plugin in command line
+    // order once all input files have been found.
+    pub lto_jobs: Mutex<Vec<(ReaderContext, &'static MappedFile, String)>>,
 
     /// Sonames of all shared libraries given to the linker, including
     /// ones later dropped as unneeded; --no-allow-shlib-undefined can

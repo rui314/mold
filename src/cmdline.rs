@@ -358,25 +358,14 @@ impl ReaderContext {
 }
 
 // A file to read along with the reader state at its command line
-// position. parse_nonpositional_args() creates one ReaderJob per
+// position. parse_args() creates one ReaderJob per
 // input file argument; `name` is a path or, if `is_lib` is set, a
 // library name to search for.
-//
-// read_input_files() also records linker scripts and deferred IR files
-// with `mf` set. Deferred IR archive members also have `archive_name`
-// set, so the LTO plugin can claim them later.
 #[derive(Clone, Debug, Default)]
 pub struct ReaderJob {
     pub rctx: ReaderContext,
     pub name: PathBuf,
     pub is_lib: bool,
-    pub mf: Option<&'static MappedFile>,
-
-    // For an archive member. A member of a regular archive is a slice of
-    // the archive's mapping and comes already opened as `mf`; a member of
-    // a thin archive is a separate file that the job opens by `name`.
-    pub archive_name: String,
-    pub thin_parent: Option<&'static MappedFile>,
 }
 
 /// All command line options.
