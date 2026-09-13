@@ -144,11 +144,7 @@ pub fn get_file_type(plugin: &std::path::Path, mf: &MappedFile) -> FileType {
     // plugin is LLVM's, treat them as regular objects so that we can fall back
     // to native code instead of routing them through GCC LTO handling.
     let has_gcc_plugin = !plugin.as_os_str().is_empty()
-        && !plugin
-            .as_os_str()
-            .as_encoded_bytes()
-            .windows(9)
-            .any(|s| s == b"LLVMgold.");
+        && memchr::memmem::find(plugin.as_os_str().as_encoded_bytes(), b"LLVMgold.").is_none();
 
     if data.starts_with(b"\x7fELF") && data.len() >= 20 {
         let is_le = data[EI_DATA as usize] == ELFDATA2LSB as u8;

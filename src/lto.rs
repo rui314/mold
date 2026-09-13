@@ -823,12 +823,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
 /// Returns true if a given linker plugin looks like LLVM's one.
 /// Returns false if it's GCC.
 fn is_llvm<E: Arch>(ctx: &Context<E>) -> bool {
-    ctx.args
-        .plugin
-        .as_os_str()
-        .as_encoded_bytes()
-        .windows(9)
-        .any(|s| s == b"LLVMgold.")
+    memchr::memmem::find(ctx.args.plugin.as_os_str().as_encoded_bytes(), b"LLVMgold.").is_some()
 }
 
 /// Returns true if a given linker plugin supports the get_symbols_v3 API.

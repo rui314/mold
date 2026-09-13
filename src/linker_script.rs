@@ -93,7 +93,7 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
         }
 
         if input.starts_with(b"/*") {
-            let Some(pos) = input[2..].windows(2).position(|w| w == b"*/") else {
+            let Some(pos) = memchr::memmem::find(&input[2..], b"*/") else {
                 syntax_error(mf, input, "unclosed comment");
             };
             input = &input[pos + 4..];

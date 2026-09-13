@@ -71,10 +71,7 @@ impl<'a> ArHeader<'a> {
         if let Some(rest) = self.name.strip_prefix(b"/") {
             let offset = parse_decimal(rest);
             let start = strtab.get(offset..).unwrap_or(&[]);
-            let end = start
-                .windows(2)
-                .position(|w| w == b"/\n")
-                .unwrap_or(start.len());
+            let end = memchr::memmem::find(start, b"/\n").unwrap_or(start.len());
             return PathBuf::from(util::os_str(&start[..end]));
         }
 
