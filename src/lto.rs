@@ -895,7 +895,7 @@ pub fn read_lto_object<E: Arch>(
     // Initialize esyms
     let mut elf_syms = vec![ElfSym::<E>::default()];
     let mut comdat_keys = vec![None];
-    for sym in &symbols {
+    for sym in symbols {
         let mut esym = sym.to_elf_sym::<E>();
         esym.st_name_mut().set(strtab.len() as u32);
         strtab.extend_from_slice(&sym.name);
@@ -905,7 +905,7 @@ pub fn read_lto_object<E: Arch>(
         // section. We handle such symbols differently than comdat symbols in
         // a regular file because, unlike regular object files, IR files don't
         // have input sections.
-        comdat_keys.push(sym.comdat_key.as_ref().map(|key| leak_bytes(key.clone())));
+        comdat_keys.push(sym.comdat_key.map(leak_bytes));
     }
     // Create mold's object instance
     Some(ObjectFile::<E>::lto_input(
