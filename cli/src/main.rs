@@ -9,11 +9,6 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-// C++ mold also suppresses ignorable mimalloc warnings and re-enables
-// transparent huge pages when a parent disabled them. The setting is inherited,
-// and huge pages improve large links. The Rust entry point currently does
-// neither.
-
 type LinkFn = fn(&[std::ffi::OsString]) -> Result<i32, String>;
 
 // Each target has its own monomorphized link function. Start with the first

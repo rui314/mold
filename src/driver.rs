@@ -26,6 +26,14 @@ pub fn main(
     initial_target: &str,
     link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, String>,
 ) -> i32 {
+    // A parent's transparent huge page disable flag is inherited. Restore
+    // the system's default policy so large links can use huge pages.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    unsafe {
+        // SAFETY: this changes only the current process's THP setting.
+        libc::prctl(libc::PR_SET_THP_DISABLE, 0, 0, 0, 0);
+    }
+
     // Process -run option first. process_run_subcommand() does not return.
     if argv.get(1).is_some_and(|a| a == "-run" || a == "--run") {
         crate::subprocess::process_run_subcommand(&argv);
