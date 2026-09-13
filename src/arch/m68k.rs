@@ -38,7 +38,7 @@ impl Layout for M68k {
 }
 
 impl Arch for M68k {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "m68k";
     const FAMILY: Family = Family::M68k;

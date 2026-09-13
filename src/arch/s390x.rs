@@ -93,7 +93,7 @@ fn relaxes_gotent(
 }
 
 impl Arch for S390x {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "s390x";
     const FAMILY: Family = Family::S390x;

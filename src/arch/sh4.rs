@@ -132,7 +132,7 @@ impl<End: Endian> Arch for Sh4Target<End>
 where
     Self: Layout<Endian = End>,
 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = if End::IS_LITTLE { "sh4" } else { "sh4be" };
     const FAMILY: Family = Family::Sh4;

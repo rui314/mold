@@ -171,7 +171,7 @@ impl<End: Endian> Arch for Arm64Target<End>
 where
     Self: Layout<Endian = End>,
 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = if End::IS_LITTLE { "arm64" } else { "arm64be" };
     const FAMILY: Family = Family::Arm64;

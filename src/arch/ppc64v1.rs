@@ -284,7 +284,7 @@ pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
 }
 
 impl Arch for Ppc64V1 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc64v1";
     const FAMILY: Family = Family::Ppc64V1;

@@ -58,7 +58,7 @@ impl Layout for I386 {
 }
 
 impl Arch for I386 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "i386";
     const FAMILY: Family = Family::I386;

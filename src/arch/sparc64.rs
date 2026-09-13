@@ -111,7 +111,7 @@ pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
 }
 
 impl Arch for Sparc64 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "sparc64";
     const FAMILY: Family = Family::Sparc64;

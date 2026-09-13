@@ -118,7 +118,7 @@ fn write_plt_like(buf: &mut [u8], got: u64, entry_addr: u64) {
 }
 
 impl Arch for Ppc32 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc32";
     const FAMILY: Family = Family::Ppc32;

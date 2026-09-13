@@ -167,13 +167,7 @@ pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
     }
 }
 
-/// Input-section state for targets without extra members.
-#[derive(Debug, Default)]
-pub struct NoInputSectionExtra;
-
-impl InputSectionExtra for NoInputSectionExtra {}
-
-const _: () = assert!(std::mem::size_of::<NoInputSectionExtra>() == 0);
+impl InputSectionExtra for () {}
 
 /// ARM32's link from a code section to its `.ARM.exidx` section.
 #[derive(Debug, Default)]

@@ -364,7 +364,7 @@ pub fn save_restore_contents() -> Vec<u8> {
 }
 
 impl Arch for Ppc64V2 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc64v2";
     const FAMILY: Family = Family::Ppc64V2;

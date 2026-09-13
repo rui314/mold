@@ -48,7 +48,7 @@ impl Layout for X86_64 {
 }
 
 impl Arch for X86_64 {
-    type InputSectionExtra = crate::input_sections::NoInputSectionExtra;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = "x86_64";
     const FAMILY: Family = Family::X86_64;
