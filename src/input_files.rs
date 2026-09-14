@@ -192,6 +192,11 @@ impl<T: FileInPool> FileList<T> {
             .map(|&index| self.pool[index as usize].as_ref())
     }
 
+    /// Returns the nth live file; stable pool indices may contain holes.
+    pub(crate) fn live_file(&self, index: usize) -> &T {
+        &self.pool[self.live[index] as usize]
+    }
+
     pub fn iter(&self) -> FileIter<'_, T> {
         FileIter {
             pool: &self.pool,

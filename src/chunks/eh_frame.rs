@@ -5,8 +5,6 @@
 //! emitted as `.eh_frame_hdr` so that the unwinder can find the FDE for a
 //! PC by binary search.
 
-use std::ptr::NonNull;
-
 use rayon::prelude::*;
 
 use crate::arch::Arch;
@@ -22,74 +20,29 @@ use crate::util::endian::Endian;
 use crate::util::is_int;
 use crate::{error, fatal};
 
-/// A stable handle used while deduplicating CIEs. C++ mold keeps direct
-/// `CieRecord *` leaders; the owner pointer is needed here because Rust keeps
-/// the file-dependent relocation and symbol tables outside the record.
-#[derive(Clone, Copy)]
-pub(crate) struct CieHandle<E: Arch> {
-    file: NonNull<ObjectFile<E>>,
-    cie: NonNull<CieRecord>,
-}
-
-impl<E: Arch> CieHandle<E> {
-    /// Creates a handle while object files and their CIE vectors are stable.
-    ///
-    /// # Safety
-    ///
-    /// Both pointers must remain valid until the handle is discarded, and the
-    /// CIE vector must not be reallocated. Mutations through a handle must not
-    /// overlap a call to [`Self::equals`] involving that handle.
-    #[inline]
-    pub(crate) unsafe fn new(file: *mut ObjectFile<E>, cie: *mut CieRecord) -> CieHandle<E> {
-        CieHandle {
-            file: unsafe { NonNull::new_unchecked(file) },
-            cie: unsafe { NonNull::new_unchecked(cie) },
+/// Visits CIEs in input order, reusing the value assigned to an equivalent
+/// leader. The visitor only updates layout/ICF metadata, not CIE contents.
+pub(crate) fn deduplicate_cies<E: Arch>(
+    ctx: &mut Context<E>,
+    mut assign: impl FnMut(&mut CieRecord, Option<u32>) -> u32,
+) {
+    let mut leaders: Vec<(crate::input_files::ObjId, usize, u32)> = Vec::new();
+    for i in 0..ctx.objs.len() {
+        let id = ctx.objs.live_file(i).id();
+        for ci in 0..ctx.objs[id.index()].cies.len() {
+            let file = &ctx.objs[id.index()];
+            let leader = leaders
+                .iter()
+                .find(|&&(owner, index, _)| {
+                    let other = &ctx.objs[owner.index()];
+                    cie_equals::<E>(other, &other.cies[index], file, &file.cies[ci])
+                })
+                .map(|&(_, _, value)| value);
+            let value = assign(&mut ctx.objs[id.index()].cies[ci], leader);
+            if leader.is_none() {
+                leaders.push((id, ci, value));
+            }
         }
-    }
-
-    #[inline]
-    pub(crate) fn equals(self, other: CieHandle<E>) -> bool {
-        // SAFETY: construction guarantees that both records and owners remain
-        // live, and callers compare records only while they are not mutating.
-        unsafe {
-            cie_equals::<E>(
-                self.file.as_ref(),
-                self.cie.as_ref(),
-                other.file.as_ref(),
-                other.cie.as_ref(),
-            )
-        }
-    }
-
-    #[inline]
-    pub(crate) fn size(self) -> usize {
-        // SAFETY: the handle's owner and record remain live.
-        unsafe { self.cie.as_ref().size::<E>() }
-    }
-
-    #[inline]
-    pub(crate) fn icf_idx(self, value: u32) {
-        // SAFETY: callers mutate only the current record, which is not yet in
-        // the leader list and is not being compared concurrently.
-        unsafe { (*self.cie.as_ptr()).icf_idx = value };
-    }
-
-    #[inline]
-    fn output_offset(self) -> u32 {
-        // SAFETY: the handle's record remains live.
-        unsafe { self.cie.as_ref().output_offset }
-    }
-
-    #[inline]
-    fn set_output_offset(self, value: u32) {
-        // SAFETY: layout construction is serial and owns every CIE record.
-        unsafe { (*self.cie.as_ptr()).output_offset = value };
-    }
-
-    #[inline]
-    fn set_leader(self) {
-        // SAFETY: layout construction is serial and owns every CIE record.
-        unsafe { (*self.cie.as_ptr()).is_leader = true };
     }
 }
 
@@ -142,27 +95,16 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     });
 
     // Uniquify CIEs and assign offsets to them.
-    let mut leaders: Vec<CieHandle<E>> = Vec::new();
     let mut offset = 0u64;
-    for file in &mut ctx.objs {
-        let file_ptr = file as *mut ObjectFile<E>;
-        let cies = file.cies.as_mut_ptr();
-        for ci in 0..file.cies.len() {
-            // SAFETY: files are boxed and no CIE vector is resized during
-            // layout construction, so both addresses remain stable.
-            let cie = unsafe { CieHandle::new(file_ptr, cies.add(ci)) };
-            let leader = leaders.iter().copied().find(|&leader| leader.equals(cie));
-            match leader {
-                Some(leader) => cie.set_output_offset(leader.output_offset()),
-                None => {
-                    cie.set_output_offset(offset as u32);
-                    cie.set_leader();
-                    offset += cie.size() as u64;
-                    leaders.push(cie);
-                }
-            }
-        }
-    }
+    deduplicate_cies(ctx, |cie, leader| {
+        cie.output_offset = leader.unwrap_or_else(|| {
+            let start = offset as u32;
+            cie.is_leader = true;
+            offset += cie.size::<E>() as u64;
+            start
+        });
+        cie.output_offset
+    });
 
     // Assign FDE offsets to files.
     for file in &mut ctx.objs {

@@ -284,24 +284,15 @@ impl DigestMap {
 
 fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
-    let mut leaders: Vec<crate::chunks::eh_frame::CieHandle<E>> = Vec::new();
-    for file in &mut ctx.objs {
-        let file_ptr = file as *mut ObjectFile<E>;
-        let cies = file.cies.as_mut_ptr();
-        for ci in 0..file.cies.len() {
-            // SAFETY: object files are boxed and ICF does not resize their CIE
-            // vectors, so leaders remain stable through this serial pass.
-            let cie = unsafe { crate::chunks::eh_frame::CieHandle::new(file_ptr, cies.add(ci)) };
-            let found = leaders.iter().position(|&leader| leader.equals(cie));
-            match found {
-                Some(idx) => cie.icf_idx(idx as u32),
-                None => {
-                    cie.icf_idx(leaders.len() as u32);
-                    leaders.push(cie);
-                }
-            }
-        }
-    }
+    let mut next = 0;
+    crate::chunks::eh_frame::deduplicate_cies(ctx, |cie, leader| {
+        cie.icf_idx = leader.unwrap_or_else(|| {
+            let index = next;
+            next += 1;
+            index
+        });
+        cie.icf_idx
+    });
 }
 
 fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
