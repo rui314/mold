@@ -694,7 +694,7 @@ fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
 /// A chunk together with the other chunks whose bytes it writes.
 struct Task {
     chunk: ChunkId,
-    extra: Vec<ChunkId>,
+    extra: [Option<ChunkId>; 2],
 }
 
 // Copy chunks to an output file
@@ -722,39 +722,34 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         match id {
             ChunkId::EhFrameHdr | ChunkId::Strtab | ChunkId::SymtabShndx => {}
             ChunkId::EhFrame => {
-                let extra = ctx
-                    .eh_frame_hdr
-                    .as_ref()
-                    .map(|_| ChunkId::EhFrameHdr)
-                    .into_iter()
-                    .collect();
+                let extra = [ctx.eh_frame_hdr.as_ref().map(|_| ChunkId::EhFrameHdr), None];
                 first.push(Task { chunk: id, extra });
             }
             ChunkId::Symtab => {
-                let mut extra = vec![ChunkId::Strtab];
-                if ctx.symtab_shndx.is_some() {
-                    extra.push(ChunkId::SymtabShndx);
-                }
+                let extra = [
+                    Some(ChunkId::Strtab),
+                    ctx.symtab_shndx.as_ref().map(|_| ChunkId::SymtabShndx),
+                ];
                 first.push(Task { chunk: id, extra });
             }
             ChunkId::Reloc(i) => {
                 let osec = ctx.reloc_sections[i as usize].output_section;
                 last.push(Task {
                     chunk: id,
-                    extra: vec![ChunkId::Output(osec)],
+                    extra: [Some(ChunkId::Output(osec)), None],
                 });
             }
             ChunkId::EhFrameReloc => last.push(Task {
                 chunk: id,
-                extra: vec![ChunkId::EhFrame],
+                extra: [Some(ChunkId::EhFrame), None],
             }),
             _ if is_reloc_sec(id) => last.push(Task {
                 chunk: id,
-                extra: Vec::new(),
+                extra: [None; 2],
             }),
             _ => first.push(Task {
                 chunk: id,
-                extra: Vec::new(),
+                extra: [None; 2],
             }),
         }
     }
@@ -807,40 +802,40 @@ fn run_tasks<E: Arch>(
         .iter()
         .flat_map(|task| {
             std::iter::once(task.chunk)
-                .chain(task.extra.iter().copied())
+                .chain(task.extra.iter().flatten().copied())
                 .map(|id| file_range(ctx, id))
         })
         .collect();
     let mut slices = split_ranges(buf, &ranges).into_iter();
-    let work: Vec<(&Task, Vec<&mut [u8]>)> = tasks
+    let work: Vec<_> = tasks
         .iter()
         .map(|task| {
-            let bufs = slices.by_ref().take(1 + task.extra.len()).collect();
-            (task, bufs)
+            let own = slices.next().unwrap();
+            let extra = task.extra.map(|id| id.map(|_| slices.next().unwrap()));
+            (task, own, extra)
         })
         .collect();
 
-    work.into_par_iter().for_each(|(task, mut bufs)| {
-        let name = ctx.chunk_header(task.chunk).name;
-        let name = if name.is_empty() {
-            bstr::BStr::new("(header)")
-        } else {
-            name
-        };
-        let _t = timer.child(name);
-        let mut bufs = bufs.drain(..);
-        let own = bufs.next().unwrap();
-        match task.chunk {
-            ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, bufs.next()),
-            ChunkId::Symtab => {
-                let strtab = bufs.next().unwrap();
-                chunks::symtab::copy_buf(ctx, own, strtab, bufs.next());
+    work.into_par_iter()
+        .for_each(|(task, own, [extra1, extra2])| {
+            let name = ctx.chunk_header(task.chunk).name;
+            let name = if name.is_empty() {
+                bstr::BStr::new("(header)")
+            } else {
+                name
+            };
+            let _t = timer.child(name);
+            match task.chunk {
+                ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, extra1),
+                ChunkId::Symtab => {
+                    let strtab = extra1.unwrap();
+                    chunks::symtab::copy_buf(ctx, own, strtab, extra2);
+                }
+                ChunkId::Reloc(i) => chunks::reloc::copy_buf(ctx, i, own, extra1),
+                ChunkId::EhFrameReloc => chunks::eh_frame_reloc::copy_buf(ctx, own, extra1),
+                id => chunks::copy_buf(ctx, id, own),
             }
-            ChunkId::Reloc(i) => chunks::reloc::copy_buf(ctx, i, own, bufs.next()),
-            ChunkId::EhFrameReloc => chunks::eh_frame_reloc::copy_buf(ctx, own, bufs.next()),
-            id => chunks::copy_buf(ctx, id, own),
-        }
-    });
+        });
 
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
