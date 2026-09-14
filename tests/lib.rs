@@ -574,9 +574,8 @@ fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
                     };
                 }
             };
-            let mut command = Command::new("bash");
+            let mut command = Command::new(&job.script);
             command
-                .arg(&job.script)
                 .current_dir(root)
                 .env("MACHINE", &job.target.machine)
                 .stdout(Stdio::from(log))

@@ -833,7 +833,6 @@ impl Symbol {
     }
 
     /// Resolves the output chunk through its owning context.
-    #[doc = include_str!("../test/symbol-output-chunk.md")]
     pub fn output_chunk<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a ChunkHeader<E>> {
         match self.origin.get() {
             OriginValue::OutputChunk(chunk) => Some(ctx.symbol_chunk_header(chunk)),

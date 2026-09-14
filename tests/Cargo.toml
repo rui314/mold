@@ -6,5 +6,8 @@ description = "Test support for mold's shell test suite"
 license = "MIT"
 publish = false
 
+[lib]
+path = "lib.rs"
+
 [dependencies]
 libc = "0.2"

@@ -4,10 +4,8 @@ version = "2.42.1"
 edition = "2021"
 description = "A high-performance ELF linker, rewritten in Rust"
 license = "MIT"
-
-[[test]]
-name = "symbol_output_chunk"
-path = "test/symbol-output-chunk.rs"
+# tests/lib.rs belongs to the mold-tests workspace crate.
+autotests = false
 
 # The linker is generic over the target. Instantiating it for all twenty
 # targets in one crate keeps the compiler on a single core for minutes, so
