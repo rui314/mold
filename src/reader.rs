@@ -52,15 +52,7 @@ pub fn get_machine_type<E: Arch>(
     }
 }
 
-fn new_object_file<E: Arch>(
-    ctx: &Context<E>,
-    rctx: &ReaderContext,
-    mf: &'static MappedFile,
-    archive_name: &'static Path,
-) -> ObjectFile<E> {
-    static COUNT: Counter = Counter::new("parsed_objs");
-    COUNT.increment();
-
+fn check_machine_type<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) {
     let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None);
     match target {
         None => fatal!("{}: unknown machine type", mf.name.display()),
@@ -73,6 +65,18 @@ fn new_object_file<E: Arch>(
         }
         _ => {}
     }
+}
+
+fn new_object_file<E: Arch>(
+    ctx: &Context<E>,
+    rctx: &ReaderContext,
+    mf: &'static MappedFile,
+    archive_name: &'static Path,
+) -> ObjectFile<E> {
+    static COUNT: Counter = Counter::new("parsed_objs");
+    COUNT.increment();
+
+    check_machine_type(ctx, mf);
     let mut file = ObjectFile::<E>::new(mf, archive_name);
     file.base.as_needed =
         rctx.in_lib || (!archive_name.as_os_str().is_empty() && !rctx.whole_archive);
@@ -89,18 +93,7 @@ fn new_shared_file<E: Arch>(
     if rctx.is_static {
         fatal!("{}: attempted static link of a dynamic object", mf.name.display());
     }
-    let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None);
-    match target {
-        None => fatal!("{}: unknown machine type", mf.name.display()),
-        Some(t) if t != ctx.args.emulation => {
-            fatal!(
-                "{}: incompatible file type: {} is expected but got {t}",
-                mf.name.display(),
-                ctx.args.emulation
-            )
-        }
-        _ => {}
-    }
+    check_machine_type(ctx, mf);
     let mut file = SharedFile::<E>::new(mf, &mut ctx.symbol_bin());
     file.base.as_needed = rctx.as_needed;
     file.base.set_reachable(!file.base.as_needed);
