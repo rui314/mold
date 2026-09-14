@@ -2898,7 +2898,6 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
     }
 
     let offset = ctx.dynstr.hdr.shdr.sh_size.get();
-    ctx.dynsym.dynstr_offset = offset;
     // SAFETY: .dynsym contains each symbol once and every symbol has aux.
     unsafe {
         ctx.symbols.par_for_each_aux_mut(&syms, |i, _, aux| {

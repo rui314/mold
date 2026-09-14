@@ -19,7 +19,6 @@ pub struct DynsymSection<E: Layout> {
     pub hdr: ChunkHeader<E>,
     /// Index 0 is the null symbol.
     pub symbols: Vec<Option<SymbolId>>,
-    pub dynstr_offset: u64,
     pub dynstr_entries: Vec<DynstrEntry>,
 }
 
@@ -38,7 +37,6 @@ impl<E: Arch> DynsymSection<E> {
         DynsymSection {
             hdr,
             symbols: Vec::new(),
-            dynstr_offset: 0,
             dynstr_entries: Vec::new(),
         }
     }

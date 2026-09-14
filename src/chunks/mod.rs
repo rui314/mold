@@ -159,7 +159,6 @@ pub struct ChunkHeader<E: Layout> {
     pub is_relro: bool,
 
     /// For --gdb-index
-    pub is_compressed: bool,
 
     // Some synethetic sections add local symbols to the output.
     // For example, range extension thunks adds function_name@thunk
@@ -190,7 +189,6 @@ impl<E: Layout> ChunkHeader<E> {
             num_relrs: 0,
             relr: Vec::new(),
             is_relro: false,
-            is_compressed: false,
             local_symtab_idx: 0,
             num_local_symtab: 0,
             strtab_size: 0,

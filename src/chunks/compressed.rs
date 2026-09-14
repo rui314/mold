@@ -17,7 +17,6 @@ pub struct CompressedSection<E: Layout> {
     pub compressor: Compressor,
     /// Retained only for sections whose contents --gdb-index reads.
     pub uncompressed_data: Option<Vec<u8>>,
-    pub original: ChunkId,
 }
 
 impl std::fmt::Debug for Compressor {
@@ -52,7 +51,6 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
     let size = (std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64;
     let mut new_hdr = ChunkHeader::<E>::with_name(hdr.name, hdr.shdr.sh_type.get(), flags);
     new_hdr.shndx = hdr.shndx;
-    new_hdr.is_compressed = true;
     new_hdr.shdr = hdr.shdr;
     new_hdr.shdr.sh_flags.set(flags);
     new_hdr.shdr.sh_addralign.set(1);
@@ -64,7 +62,6 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
         chdr,
         compressor,
         uncompressed_data: keep_contents.then_some(buf),
-        original,
     }
 }
 
