@@ -1,5 +1,6 @@
 //! The passes of a link, in roughly the order the driver runs them.
 
+use crate::util::worker_local::WorkerLocal;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
@@ -548,13 +549,9 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     let (bins, pending): (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) = {
         let Context { objs, symbols, .. } = ctx;
         // Reuse each worker's buffers across jobs, locking once per file.
-        let workers = rayon::current_num_threads();
-        let work: Vec<_> = (0..=workers)
-            .map(|_| Mutex::new((Bins::new(), Vec::new())))
-            .collect();
+        let work = WorkerLocal::new(|| (Bins::new(), Vec::new()));
         objs.par_iter_mut().for_each(|file| {
-            let worker = rayon::current_thread_index().unwrap_or(workers);
-            let mut local = work[worker].lock().unwrap();
+            let mut local = work.get();
             let (bins, pending) = &mut *local;
             if file.base.is_reachable() {
                 if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
@@ -590,9 +587,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                 }
             }
         });
-        work.into_iter()
-            .map(|bin| bin.into_inner().unwrap())
-            .unzip()
+        work.into_values().unzip()
     };
 
     drop(t);
@@ -951,14 +946,9 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         } = ctx;
         let merged = RwLock::new(std::mem::take(merged_sections));
         // Keep a cache for each actual worker, including across Rayon jobs.
-        // Padding keeps independent workers' mutexes off the same cache line.
-        #[repr(align(128))]
-        struct Cache(Mutex<crate::chunks::merged::MergedSectionCache>);
-        let workers = rayon::current_num_threads();
-        let caches: Vec<_> = (0..=workers).map(|_| Cache(Mutex::default())).collect();
+        let caches = WorkerLocal::new(crate::chunks::merged::MergedSectionCache::default);
         objs.par_iter_mut().for_each(|file| {
-            let worker = rayon::current_thread_index().unwrap_or(workers);
-            let mut cache = caches[worker].0.lock().unwrap();
+            let mut cache = caches.get();
             file.convert_mergeable_sections(args, &merged, &mut cache);
         });
         *merged_sections = merged.into_inner().unwrap();
@@ -1280,15 +1270,13 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     let num_files = ctx.objs.len();
     let shared: Mutex<OutputSectionShared<E>> =
         Mutex::new((HashMap::new(), std::mem::take(&mut ctx.output_sections)));
-    let workers = rayon::current_num_threads();
-    let caches: Vec<_> = (0..=workers).map(|_| Mutex::new(HashMap::new())).collect();
+    let caches = WorkerLocal::new(HashMap::new);
 
     // Instantiate output sections and assign input sections to them
     {
         let Context { objs, args, .. } = ctx;
         objs.par_iter_mut().enumerate().for_each(|(fi, file)| {
-            let worker = rayon::current_thread_index().unwrap_or(workers);
-            let mut cache = caches[worker].lock().unwrap();
+            let mut cache = caches.get();
             let file_id = file.id();
             let shstrtab = file.base.shstrtab;
             let num_elf_sections = file.num_elf_sections;

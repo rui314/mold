@@ -9,7 +9,6 @@
 //! the results are sorted back into command line order.
 
 use std::path::Path;
-use std::sync::Mutex;
 
 use rayon::prelude::*;
 
@@ -22,18 +21,13 @@ use crate::input_files::{DsoId, FileId, ObjId, ObjectFile, SharedFile};
 use crate::linker_script::Script;
 use crate::mapped_file::{must_open_file, open_file, MappedFile};
 use crate::util::perf::Counter;
+use crate::util::worker_local::WorkerLocal;
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
 enum Loaded<E: Arch> {
     Obj(Vec<u32>, Box<ObjectFile<E>>),
     Dso(Vec<u32>, Box<SharedFile<E>>),
-}
-
-/// Appends a result to the current worker's bin.
-fn push_to_worker<T>(bins: &[Mutex<Vec<T>>], value: T) {
-    let worker = rayon::current_thread_index().unwrap_or(bins.len() - 1);
-    bins[worker].lock().unwrap().push(value);
 }
 
 fn get_file_type<E: Arch>(ctx: &Context<E>, mf: &MappedFile) -> FileType {
@@ -91,7 +85,10 @@ fn new_shared_file<E: Arch>(
     mf: &'static MappedFile,
 ) -> SharedFile<E> {
     if rctx.is_static {
-        fatal!("{}: attempted static link of a dynamic object", mf.name.display());
+        fatal!(
+            "{}: attempted static link of a dynamic object",
+            mf.name.display()
+        );
     }
     check_machine_type(ctx, mf);
     let mut file = SharedFile::<E>::new(mf, &mut ctx.symbol_bin());
@@ -251,7 +248,8 @@ fn open_library<E: Arch>(
         if target != E::NAME {
             warn!(
                 "{}: skipping incompatible file: {target} (e_machine {})",
-                path.display(), E::E_MACHINE
+                path.display(),
+                E::E_MACHINE
             );
             return None;
         }
@@ -337,9 +335,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
     // Keep one bin per worker, locking only to append a result after I/O and
     // parsing. Command line positions restore the order after the jobs join.
-    let workers = rayon::current_num_threads();
-    let scripts: Vec<_> = (0..=workers).map(|_| Mutex::new(Vec::new())).collect();
-    let loaded: Vec<_> = (0..=workers).map(|_| Mutex::new(Vec::new())).collect();
+    let scripts = WorkerLocal::new(Vec::new);
+    let loaded = WorkerLocal::new(Vec::new);
 
     let ctx_ref: &Context<E> = ctx;
     rayon::scope(|scope| {
@@ -373,7 +370,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                             if let Some(file) =
                                 read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {
-                                push_to_worker(loaded, file);
+                                loaded.get().push(file);
                             }
                         });
                     }
@@ -388,19 +385,19 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                             if let Some(file) =
                                 read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {
-                                push_to_worker(loaded, file);
+                                loaded.get().push(file);
                             }
                         });
                     }
                 }
-                FileType::Text => push_to_worker(&scripts, (rctx, mf)),
+                FileType::Text => scripts.get().push((rctx, mf)),
                 FileType::ElfObj => {
                     let file = new_object_file(ctx_ref, &rctx, mf, Path::new(""));
-                    push_to_worker(&loaded, Loaded::Obj(rctx.pos, Box::new(file)));
+                    loaded.get().push(Loaded::Obj(rctx.pos, Box::new(file)));
                 }
                 FileType::ElfDso => {
                     let file = new_shared_file(ctx_ref, &rctx, mf);
-                    push_to_worker(&loaded, Loaded::Dso(rctx.pos, Box::new(file)));
+                    loaded.get().push(Loaded::Dso(rctx.pos, Box::new(file)));
                 }
                 FileType::GccLtoObj | FileType::LlvmBitcode => {
                     defer_lto_object(ctx_ref, rctx, mf, Path::new(""));
@@ -410,15 +407,12 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
         });
     });
 
-    for l in loaded.into_iter().flat_map(|bin| bin.into_inner().unwrap()) {
+    for l in loaded.into_values().flatten() {
         push_loaded(ctx, l);
     }
 
     // Parse linker scripts and read the files they name.
-    let mut scripts: Vec<_> = scripts
-        .into_iter()
-        .flat_map(|bin| bin.into_inner().unwrap())
-        .collect();
+    let mut scripts: Vec<_> = scripts.into_values().flatten().collect();
     scripts.sort_by(|(a, _), (b, _)| a.pos.cmp(&b.pos));
     for (mut rctx, mf) in scripts {
         Script::new(ctx, &mut rctx, mf).parse_linker_script();

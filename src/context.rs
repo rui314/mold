@@ -43,6 +43,7 @@ use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
 use crate::util::perf::Timers;
+use crate::util::worker_local::WorkerLocal;
 
 // Keep immutable and mutable chunk lookup in the same static match.
 macro_rules! chunk_header {
@@ -160,7 +161,7 @@ pub struct Context<E: Arch> {
 
     /// Global symbol keys recorded while input files are parsed, one bin per
     /// Rayon worker plus one for callers outside the pool.
-    symbol_bins: OnceLock<Vec<Mutex<Bins<SymbolSlot>>>>,
+    symbol_bins: OnceLock<WorkerLocal<Bins<SymbolSlot>>>,
 
     pub objs: FileList<ObjectFile<E>>,
     pub dsos: FileList<SharedFile<E>>,
@@ -363,15 +364,9 @@ impl<E: Arch> Context<E> {
     /// Returns this worker's symbol bin. Looking it up once per file keeps the
     /// synchronization cost outside the per-symbol loop.
     pub(crate) fn symbol_bin(&self) -> MutexGuard<'_, Bins<SymbolSlot>> {
-        let bins = self.symbol_bins.get_or_init(|| {
-            let workers = rayon::current_num_threads();
-            (0..=workers).map(|_| Mutex::new(Bins::new())).collect()
-        });
-        let fallback = bins.len() - 1;
-        let index = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
-        bins[index].lock().unwrap()
+        self.symbol_bins
+            .get_or_init(|| WorkerLocal::new(Bins::new))
+            .get()
     }
 
     /// Takes all keys recorded since the previous gather, leaving empty bins
@@ -379,11 +374,7 @@ impl<E: Arch> Context<E> {
     pub(crate) fn take_symbol_bins(&mut self) -> Vec<Bins<SymbolSlot>> {
         self.symbol_bins
             .get_mut()
-            .map(|bins| {
-                bins.iter_mut()
-                    .map(|bin| std::mem::take(bin.get_mut().unwrap()))
-                    .collect()
-            })
+            .map(|bins| bins.take().collect())
             .unwrap_or_default()
     }
 

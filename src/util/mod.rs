@@ -13,6 +13,7 @@ pub mod perf;
 mod prefetch;
 pub(crate) mod siphash;
 pub mod tar;
+pub(crate) mod worker_local;
 
 pub(crate) use prefetch::prefetch;
 
