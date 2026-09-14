@@ -33,8 +33,8 @@ use crate::chunks::{
     OutputPhdr, OutputSectionId, OutputShdr,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildId, CetReportKind, DefsymValue, SectionOrder, SeparateCodeKind,
-    ShuffleSections, UnresolvedKind,
+    BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
+    SeparateCodeKind, ShuffleSections, UnresolvedKind,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -1644,7 +1644,8 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
         let id = ctx.objs[obj_id.index()].base.symbols[i];
         if ctx.symbols[id].file() == Some(FileId::Obj(obj_id)) {
-            ctx.set_symbol_output_chunk(id, ChunkId::Symtab).set_imported(false);
+            ctx.set_symbol_output_chunk(id, ChunkId::Symtab)
+                .set_imported(false);
         }
     }
 
@@ -1715,8 +1716,10 @@ pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
 }
 
 pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
-    out!(
-        "# This is an output of the mold linker's --print-dependencies option.\n\
+    ReportOutput::Stdout.with_writer("--print-dependencies", |out| {
+        writeln!(
+            out,
+            "# This is an output of the mold linker's --print-dependencies option.\n\
          #\n\
          # Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and\n\
          # <symbol>, separated by tab characters. It indicates that <section1> depends\n\
@@ -1725,49 +1728,59 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
          #\n\
          # If you want to obtain dependency information per function granularity,\n\
          # compile source files with the -ffunction-sections compiler flag."
-    );
+        )?;
 
-    let println = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
-        let kind = if is_weak { 'w' } else { 'u' };
-        match sym.input_section() {
-            Some(sec) => out!("{src}\t{}\t{kind}\t{sym}", ctx.input_section_display(sec)),
-            None => out!(
-                "{src}\t{}\t{kind}\t{sym}",
-                ctx.file_display(sym.file().unwrap())
-            ),
-        }
-    };
+        let mut print = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
+            let kind = if is_weak { 'w' } else { 'u' };
+            match sym.input_section() {
+                Some(sec) => writeln!(
+                    out,
+                    "{src}\t{}\t{kind}\t{sym}",
+                    ctx.input_section_display(sec)
+                ),
+                None => writeln!(
+                    out,
+                    "{src}\t{}\t{kind}\t{sym}",
+                    ctx.file_display(sym.file().unwrap())
+                ),
+            }
+        };
 
-    for file in &ctx.objs {
-        for isec in file.input_sections() {
-            let mut visited: HashSet<SymbolId> = HashSet::new();
-            for r in isec.rels(file) {
-                if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
-                    continue;
+        let mut visited: HashSet<SymbolId> = HashSet::new();
+        for file in &ctx.objs {
+            for isec in file.input_sections() {
+                visited.clear();
+                for r in isec.rels(file) {
+                    if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
+                        continue;
+                    }
+                    let esym = &file.base.elf_syms[r.r_sym() as usize];
+                    let id = file.base.symbols[r.r_sym() as usize];
+                    let sym = &ctx.symbols[id];
+                    if esym.is_undef()
+                        && sym.file().is_some()
+                        && sym.file() != Some(FileId::Obj(file.id()))
+                        && visited.insert(id)
+                    {
+                        print(&isec.display(file), sym, esym.is_weak())?;
+                    }
                 }
-                let esym = &file.base.elf_syms[r.r_sym() as usize];
-                let id = file.base.symbols[r.r_sym() as usize];
-                let sym = &ctx.symbols[id];
+            }
+        }
+        for file in &ctx.dsos {
+            for i in 0..file.base.elf_syms.len() {
+                let esym = &file.base.elf_syms[i];
+                let sym = &ctx.symbols[file.base.symbols[i]];
                 if esym.is_undef()
                     && sym.file().is_some()
-                    && sym.file() != Some(FileId::Obj(file.id()))
-                    && visited.insert(id)
+                    && sym.file() != Some(FileId::Dso(file.id()))
                 {
-                    println(&isec.display(file), sym, esym.is_weak());
+                    print(file, sym, esym.is_weak())?;
                 }
             }
         }
-    }
-    for file in &ctx.dsos {
-        for i in 0..file.base.elf_syms.len() {
-            let esym = &file.base.elf_syms[i];
-            let sym = &ctx.symbols[file.base.symbols[i]];
-            if esym.is_undef() && sym.file().is_some() && sym.file() != Some(FileId::Dso(file.id()))
-            {
-                println(file, sym, esym.is_weak());
-            }
-        }
-    }
+        Ok(())
+    });
 }
 
 fn create_response_file<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
