@@ -2152,21 +2152,16 @@ pub fn sort_init_fini<E: Arch>(ctx: &mut Context<E>) {
         if ctx.args.shuffle_sections == ShuffleSections::Reverse {
             members.reverse();
         }
-        let mut entries: Vec<(InputSectionId, i64)> = members
-            .iter()
-            .map(|&id| {
-                let isec = ctx.input_section(id);
-                let name = isec.name(&ctx.objs[isec.file.index()]);
-                let prio = if name.starts_with(b".ctors") || name.starts_with(b".dtors") {
-                    65535 - ctor_dtor_priority(ctx, id)
-                } else {
-                    init_fini_priority(name)
-                };
-                (id, prio)
-            })
-            .collect();
-        entries.sort_by_key(|e| e.1);
-        ctx.output_sections[i].members = entries.into_iter().map(|e| e.0).collect();
+        members.sort_by_cached_key(|&id| {
+            let isec = ctx.input_section(id);
+            let name = isec.name(&ctx.objs[isec.file.index()]);
+            if name.starts_with(b".ctors") || name.starts_with(b".dtors") {
+                65535 - ctor_dtor_priority(ctx, id)
+            } else {
+                init_fini_priority(name)
+            }
+        });
+        ctx.output_sections[i].members = members;
     }
 }
 
@@ -2181,12 +2176,8 @@ pub fn sort_ctor_dtor<E: Arch>(ctx: &mut Context<E>) {
         if ctx.args.shuffle_sections != ShuffleSections::Reverse {
             members.reverse();
         }
-        let mut entries: Vec<(InputSectionId, i64)> = members
-            .iter()
-            .map(|&id| (id, ctor_dtor_priority(ctx, id)))
-            .collect();
-        entries.sort_by_key(|e| e.1);
-        ctx.output_sections[i].members = entries.into_iter().map(|e| e.0).collect();
+        members.sort_by_cached_key(|&id| ctor_dtor_priority(ctx, id));
+        ctx.output_sections[i].members = members;
     }
 }
 
