@@ -55,10 +55,14 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     // FRE subsection. FREs carry no relocations, so their contents are
     // position-independent and are simply concatenated by copy_buf.
     let mut fdes = Vec::new();
+    let mut fre_len = 0u32;
+    let mut num_fres = 0u32;
     for file in &ctx.objs {
         for (i, fde) in file.sframe_fdes.iter().enumerate() {
             if file.section_at(fde.section).is_alive() {
                 fdes.push((file.id(), i as u32));
+                fre_len += fde.fre.len() as u32;
+                num_fres += fde.num_fres;
             }
         }
     }
@@ -71,7 +75,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     // We always emit PC-relative function pointers; we can additionally
     // mark the index as sorted unless this is a relocatable output,
     // where the final addresses (and hence the order) aren't known.
-    let mut hdr = SFrameHeader::<E> {
+    let hdr = SFrameHeader::<E> {
         magic: U16::new(SFRAME_MAGIC),
         version: 3,
         flags: SFRAME_F_FDE_FUNC_START_PCREL
@@ -84,13 +88,10 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         cfa_fixed_ra_offset: if E::FAMILY == Family::X86_64 { -8 } else { 0 },
         num_fdes: U32::new(fdes.len() as u32),
         freoff: U32::new((fdes.len() * SFrameFdeIdx::<E>::size()) as u32),
+        fre_len: U32::new(fre_len),
+        num_fres: U32::new(num_fres),
         ..SFrameHeader::<E>::default()
     };
-    for &(fi, i) in &fdes {
-        let fde = &ctx.objs[fi.index()].sframe_fdes[i as usize];
-        hdr.fre_len.set(hdr.fre_len.get() + fde.fre.len() as u32);
-        hdr.num_fres.set(hdr.num_fres.get() + fde.num_fres);
-    }
 
     let sframe = &mut ctx.sframe;
     sframe.hdr.shdr.sh_size.set(
