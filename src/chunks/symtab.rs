@@ -184,37 +184,33 @@ pub fn copy_buf<E: Arch>(
         (syms, xindex)
     };
     let locals: Vec<_> = parts.iter().map(|p| entries(p.locals)).collect();
-    let globals: Vec<_> = parts.iter().map(|p| entries(p.globals)).collect();
     let (mut srest, mut spos) = (strtab, 0);
-    let strtabs: Vec<_> = parts
-        .iter()
-        .map(|p| {
-            carve(
+    let work: Vec<_> = parts
+        .into_iter()
+        .zip(locals)
+        .map(|(part, (lsyms, lx))| {
+            let (gsyms, gx) = entries(part.globals);
+            let strtab = carve(
                 &mut srest,
                 &mut spos,
-                p.strtab.0 as usize,
-                p.strtab.1 as usize,
-            )
-        })
-        .collect();
-
-    parts
-        .par_iter()
-        .zip(locals)
-        .zip(globals)
-        .zip(strtabs)
-        .for_each(|(((part, (lsyms, lx)), (gsyms, gx)), strtab)| {
-            let mut block = SymtabBlock::new(
+                part.strtab.0 as usize,
+                part.strtab.1 as usize,
+            );
+            let block = SymtabBlock::new(
                 SymtabEntries::new(lsyms, lx),
                 SymtabEntries::new(gsyms, gx),
                 strtab,
                 part.strtab.0,
             );
-            match part.writer {
-                Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
-                Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
-                Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
-            }
+            (part.writer, block)
+        })
+        .collect();
+
+    work.into_par_iter()
+        .for_each(|(writer, mut block)| match writer {
+            Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
+            Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
+            Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
         });
 }
 
