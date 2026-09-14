@@ -22,12 +22,13 @@ pub struct RelocSection<E: Layout> {
 pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
     let osec = &ctx.output_sections[osec_id.index()];
     let (prefix, ty) = if E::IS_RELA {
-        (".rela", SHT_RELA)
+        (b".rela".as_slice(), SHT_RELA)
     } else {
-        (".rel", SHT_REL)
+        (b".rel".as_slice(), SHT_REL)
     };
-    let name = format!("{prefix}{}", osec.hdr.name);
-    let name = BStr::new(crate::util::leak_bytes(name.into_bytes()));
+    let name = BStr::new(crate::util::leak_bytes(
+        [prefix, osec.hdr.name.as_ref()].concat(),
+    ));
     let mut hdr = ChunkHeader::<E>::with_name(name, ty, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
