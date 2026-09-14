@@ -1,4 +1,4 @@
-//! Relocation tables for relocatable outputs.
+//! Relocation tables retained by `-r` and `--emit-relocs`.
 
 use bstr::BStr;
 
@@ -10,7 +10,7 @@ use crate::input_sections::{r_delta, FragmentLookup, InputSection};
 use crate::symbol::OriginValue;
 
 // RelocSection represents a relocation table for an output file.
-// This is used only for the relocatable output (i.e. the `-r` output).
+// These tables are emitted for `-r` and for final links with `--emit-relocs`.
 #[derive(Debug)]
 pub struct RelocSection<E: Layout> {
     pub hdr: ChunkHeader<E>,

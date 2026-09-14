@@ -54,26 +54,7 @@
 //! as the compiler always emits the longest instruction sequence. This
 //! makes the linker implementation a bit simpler because we don't need to
 //! worry about oscillation.
-//!
-//! Linker relaxation that shrinks sections, for RISC-V and LoongArch.
-//!
-//! RISC instructions have room for only small immediates, so a branch
-//! that may need to reach far is emitted as an instruction pair: RISC-V's
-//! AUIPC+JALR reaches ±2 GiB where JAL alone reaches ±1 MiB. Most targets
-//! have the compiler emit the short form and let the linker redirect
-//! out-of-range branches through thunks. RISC-V and LoongArch do the
-//! opposite: the compiler emits the long form, and the linker replaces it
-//! with a shorter one when the target turns out to be close enough.
-//!
-//! Deleting an instruction from the middle of a section shifts everything
-//! after it, so sections are no longer copied as a unit: `r_deltas`
-//! records how far the bytes at each point moved, relocation offsets are
-//! adjusted through it, and symbol values are adjusted in place. Sections
-//! only ever shrink, so there is no oscillation to worry about.
-//!
-//! Since even in-section branches may cross deleted bytes, all branches
-//! of these targets are expressed with relocations, which is why their
-//! object files have so many.
+
 
 use rayon::prelude::*;
 

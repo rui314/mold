@@ -5,7 +5,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
-// .strtab is referenced by .strtab and contains symbol names. Note that
+// .strtab is referenced by .symtab and contains symbol names. Note that
 // .strtab is not needed at runtime; one can remove the section from an
 // ELF file without breaking it. Strings that runtime accesses are stored
 // in .dynstr.
@@ -36,7 +36,7 @@ pub const DATA: u32 = 7;
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let mut offset = 1u64;
 
-    // ARM32 uses $a, $t and $t mapping symbols to mark the beginning of
+    // ARM32 uses $a, $t and $d mapping symbols to mark the beginning of
     // ARM, Thumb and data in text, respectively. These symbols don't
     // affect correctness of the program but helps disassembler to
     // disassemble machine code appropriately.

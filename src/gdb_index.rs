@@ -17,12 +17,13 @@
 //! executable without .gdb_index and later add it using the
 //! `gdb-add-index` post-processing tool that comes with gdb.
 //!
-//! Post-relocated debug section contents are needed to create a
-//! .gdb_index. Therefore, we create it after relocating all the other
-//! sections. The size of the section is also hard to estimate before
-//! applying relocations to debug info sections, so a .gdb_index is
-//! placed at the very end of the output file, even after the section
-//! header.
+//! The index is assembled in three stages. Units and names are read
+//! from immutable input snapshots in a background task. The name table
+//! is built once the order of units in the output is fixed. Address
+//! ranges require relocated debug section contents, so the address
+//! table is written after the other sections have been relocated.
+//! The final size depends on those ranges, so .gdb_index is placed
+//! at the very end of the output file, even after the section header.
 //!
 //! The mapping from names to compunits is 1:n while the mapping from
 //! address ranges to compunits is 1:1. That is, two object files may
@@ -35,6 +36,7 @@
 //!
 //! Names are in .debug_gnu_pubnames and .debug_gnu_pubtypes input
 //! sections. These sections are created if `-ggnu-pubnames` is given.
+//! These input sections are consumed instead of copied to the output.
 //! Besides names, these sections contain attributes for each name so
 //! that gdb can distinguish type names from function names, for example.
 //!
@@ -57,25 +59,6 @@
 //!
 //! This page explains the format of .gdb_index:
 //! https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
-//!
-//! `.gdb_index` generation for `--gdb-index`.
-//!
-//! `.gdb_index` speeds up gdb start-up. It maps the names of functions,
-//! variables and types to the units defining them, and address ranges to
-//! compilation units, so that gdb can find the unit for a name or a PC
-//! without reading all of the debug info first. The format is described
-//! at https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html.
-//!
-//! Names come from `.debug_gnu_pubnames` and `.debug_gnu_pubtypes`, which
-//! compilers emit under `-ggnu-pubnames`; those sections are consumed
-//! rather than copied to the output. Address ranges come from the
-//! compilation units in `.debug_info`, possibly through `.debug_ranges`,
-//! `.debug_rnglists` and `.debug_addr`, and are only known once
-//! relocations have been applied. The index is therefore assembled in
-//! three stages: units and names are read from the inputs, the name
-//! table is built once the order of units in the output is fixed, and
-//! the address table is written after everything else, at the very end
-//! of the file.
 
 // DWARF constants keep the spelling of the specification.
 #![allow(non_upper_case_globals)]

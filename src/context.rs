@@ -110,11 +110,9 @@ pub struct Context<E: Arch> {
     pub cmdline_args: Arc<[Cow<'static, OsStr>]>,
     pub timers: Timers,
 
-    // Symbol table. Object file parsing records each global symbol with add(),
-    // together with the file's slot for the resulting Symbol pointer.
-    // gather_symbols() gathers them. Other symbols, such as linker-synthesized
-    // ones and shared library symbols, are interned directly through insert() in
-    // get_symbol().
+    // Symbol table. Input file parsing records global symbols and their
+    // SymbolId slots in worker bins; gather_symbols() interns those names
+    // and fills the slots. Linker-synthesized symbols are interned directly.
     pub symbols: SymbolTable,
 
     // Append-only registry for synthetic symbol origins. The output chunk
@@ -429,7 +427,6 @@ impl<E: Arch> Context<E> {
         self.internal_obj == Some(id)
     }
 
-    /// The header of any chunk. Panics if the chunk does not exist.
     /// Associates a synthetic symbol with an output chunk of this context.
     pub fn set_symbol_output_chunk(&mut self, sym: SymbolId, chunk: ChunkId) -> &mut Symbol {
         let id = SymbolChunkId(
@@ -445,6 +442,7 @@ impl<E: Arch> Context<E> {
         self.chunk_header(self.symbol_chunks[id.0 as usize])
     }
 
+    /// The header of any chunk. Panics if the chunk does not exist.
     pub fn chunk_header(&self, id: ChunkId) -> &ChunkHeader<E> {
         macro_rules! opt {
             ($e:expr) => {
