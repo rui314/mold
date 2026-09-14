@@ -5,7 +5,6 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::io::Write;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
@@ -4536,26 +4535,26 @@ pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
         }
     }
 
-    let mut out = ctx.args.output.as_os_str().as_encoded_bytes().to_vec();
-    out.push(b':');
-    for d in &deps {
-        out.push(b' ');
-        out.extend_from_slice(d.as_os_str().as_encoded_bytes());
-    }
-    out.push(b'\n');
-    for d in &deps {
-        out.push(b'\n');
-        out.extend_from_slice(d.as_os_str().as_encoded_bytes());
-        out.extend_from_slice(b":\n");
-    }
-
-    let path = &ctx.args.dependency_file;
-    if path == std::path::Path::new("-") {
-        let _ = std::io::stdout().write_all(&out);
+    let destination = if ctx.args.dependency_file == std::path::Path::new("-") {
+        ReportOutput::Stdout
     } else {
-        std::fs::write(path, out)
-            .unwrap_or_else(|e| fatal!("--dependency-file: cannot open {}: {e}", path.display()));
-    }
+        ReportOutput::File(ctx.args.dependency_file.clone())
+    };
+    destination.with_writer("--dependency-file", |out| {
+        out.write_all(ctx.args.output.as_os_str().as_encoded_bytes())?;
+        out.write_all(b":")?;
+        for path in &deps {
+            out.write_all(b" ")?;
+            out.write_all(path.as_os_str().as_encoded_bytes())?;
+        }
+        out.write_all(b"\n")?;
+        for path in &deps {
+            out.write_all(b"\n")?;
+            out.write_all(path.as_os_str().as_encoded_bytes())?;
+            out.write_all(b":\n")?;
+        }
+        Ok(())
+    });
 }
 
 pub fn show_stats<E: Arch>(ctx: &Context<E>) {
