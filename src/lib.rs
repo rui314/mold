@@ -7,6 +7,7 @@ pub mod cmdline;
 pub mod context;
 pub mod driver;
 pub mod elf;
+mod elf_consts;
 pub mod error;
 pub mod filetype;
 pub mod gc_sections;

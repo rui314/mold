@@ -16,11 +16,9 @@
 //! than being copied. [`Arch`](crate::arch::Arch) selects the layout at
 //! compile time.
 
-mod consts;
-
 use std::fmt;
 
-pub use consts::*;
+pub use crate::elf_consts::*;
 
 use crate::arch::{Arch, I386, X86_64};
 use crate::util::endian::*;
