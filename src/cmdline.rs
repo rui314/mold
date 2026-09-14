@@ -1051,6 +1051,155 @@ fn returns_etxtbsy() -> bool {
     false
 }
 
+/// The GNU option grammar, with values borrowed from the original OS strings.
+struct ArgCursor<'a> {
+    args: &'a [Cow<'a, OsStr>],
+    index: usize,
+}
+
+impl<'a> ArgCursor<'a> {
+    fn current(&self) -> &'a OsStr {
+        &self.args[self.index]
+    }
+
+    fn text(&self) -> &'a str {
+        self.current().to_str().unwrap_or("")
+    }
+
+    fn read_arg(&mut self, name: &str) -> Option<&'a OsStr> {
+        let rest = match_option(self.current(), name)?;
+        let (value, count) = if rest.is_empty() {
+            let value = self
+                .args
+                .get(self.index + 1)
+                .unwrap_or_else(|| fatal!("option -{name}: argument missing"));
+            (value.as_ref(), 2)
+        } else if name.len() == 1 {
+            (rest, 1)
+        } else {
+            (util::os_str(rest.as_encoded_bytes().strip_prefix(b"=")?), 1)
+        };
+        self.index += count;
+        Some(value)
+    }
+
+    fn read_eq(&mut self, name: &str) -> Option<&'a OsStr> {
+        let rest = match_option(self.current(), name)?;
+        let value = util::os_str(rest.as_encoded_bytes().strip_prefix(b"=")?);
+        self.index += 1;
+        Some(value)
+    }
+
+    fn read_flag(&mut self, name: &str) -> bool {
+        if match_option(self.current(), name) != Some(OsStr::new("")) {
+            return false;
+        }
+        self.index += 1;
+        true
+    }
+
+    fn read_lto_option(&mut self) -> Option<Vec<u8>> {
+        // Argument forms precede flags, as in the main option grammar.
+        for (name, prefix) in [
+            ("lto-cs-profile-file", "cs-profile-path="),
+            ("lto-partitions", "lto-partitions="),
+            ("lto-obj-path", "obj-path="),
+            ("opt-remarks-filename", "opt-remarks-filename="),
+            ("opt-remarks-format", "opt-remarks-format="),
+            (
+                "opt-remarks-hotness-threshold",
+                "opt-remarks-hotness-threshold=",
+            ),
+            ("opt-remarks-passes", "opt-remarks-passes="),
+            (
+                "lto-pseudo-probe-for-profiling",
+                "pseudo-probe-for-profiling=",
+            ),
+            ("lto-sample-profile", "sample-profile="),
+            ("thinlto-index-only", "thinlto-index-only="),
+            (
+                "thinlto-object-suffix-replace",
+                "thinlto-object-suffix-replace=",
+            ),
+            ("thinlto-prefix-replace", "thinlto-prefix-replace="),
+            ("thinlto-cache-dir", "cache-dir="),
+            ("thinlto-cache-policy", "cache-policy="),
+            ("thinlto-jobs", "jobs="),
+        ] {
+            if let Some(value) = self.read_arg(name) {
+                return Some([prefix.as_bytes(), value.as_encoded_bytes()].concat());
+            }
+        }
+        for (name, value) in [
+            ("lto-cs-profile-generate", "cs-profile-generate"),
+            ("lto-debug-pass-manager", "debug-pass-manager"),
+            ("disable-verify", "disable-verify"),
+            ("lto-emit-asm", "emit-asm"),
+            ("no-legacy-pass-manager", "legacy-pass-manager"),
+            ("no-lto-legacy-pass-manager", "new-pass-manager"),
+            ("opt-remarks-with-hotness", "opt-remarks-with-hotness"),
+            ("save-temps", "save-temps"),
+            ("thinlto-emit-imports-files", "thinlto-emit-imports-files"),
+            ("thinlto-index-only", "thinlto-index-only"),
+        ] {
+            if self.read_flag(name) {
+                return Some(value.as_bytes().to_vec());
+            }
+        }
+        let level = self
+            .current()
+            .as_encoded_bytes()
+            .strip_prefix(b"-lto-O")
+            .or_else(|| self.current().as_encoded_bytes().strip_prefix(b"--lto-O"))?;
+        self.index += 1;
+        Some([b"O", level].concat())
+    }
+
+    fn read_switch(&mut self, positive: &str, negative: &str) -> Option<bool> {
+        if self.read_flag(positive) {
+            Some(true)
+        } else if self.read_flag(negative) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn read_z_switch(&mut self, positive: &str, negative: &str) -> Option<bool> {
+        if self.read_z_flag(positive) {
+            Some(true)
+        } else if self.read_z_flag(negative) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn z_value(&self) -> (Option<&'a str>, usize) {
+        if self.text() == "-z" {
+            (self.args.get(self.index + 1).and_then(|s| s.to_str()), 2)
+        } else {
+            (self.text().strip_prefix("-z"), 1)
+        }
+    }
+
+    fn read_z_flag(&mut self, name: &str) -> bool {
+        let (value, count) = self.z_value();
+        if value != Some(name) {
+            return false;
+        }
+        self.index += count;
+        true
+    }
+
+    fn read_z_arg(&mut self, name: &str) -> Option<&'a str> {
+        let (value, count) = self.z_value();
+        let value = value?.strip_prefix(name)?.strip_prefix('=')?;
+        self.index += count;
+        Some(value)
+    }
+}
+
 /// The result of parsing the command line.
 pub struct ParsedArgs {
     pub args: Args,
@@ -1059,12 +1208,6 @@ pub struct ParsedArgs {
 
 /// Parses all options. `cmdline` includes the program name.
 pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> ParsedArgs {
-    // Option names and numeric arguments are text; file arguments retain
-    // their OS representation through the raw argument readers below.
-    let cmdline: Vec<&str> = raw_cmdline
-        .iter()
-        .map(|s| s.to_str().unwrap_or(""))
-        .collect();
     // Input file arguments are turned into ReaderJobs for
     // read_input_files(). rctx tracks the reader state options, such as
     // --as-needed, that apply to the files after them; each job gets a
@@ -1114,43 +1257,24 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // we write addends to relocated places.
     a.apply_dynamic_relocs = !matches!(target.family, arch::Family::Sparc64 | arch::Family::RiscV);
 
-    let mut i = 1;
+    let mut cursor = ArgCursor {
+        args: raw_cmdline,
+        index: 1,
+    };
     let mut arg = "";
     let mut raw_arg = OsStr::new("");
 
-    // An option and its argument are either separate command line
-    // arguments or a single one, as in "-o foo" vs. "-ofoo" or
-    // "--output foo" vs. "--output=foo".
-    macro_rules! read_arg {
-        ($name:expr) => {
-            read_arg!($name, false)
+    macro_rules! read_value {
+        ($method:ident, $name:expr) => {
+            read_value!($method, $name, false)
         };
-        ($name:expr, $raw:expr) => {{
-            let name: &str = $name;
-            let value = match match_option(&raw_cmdline[i], name) {
-                None => None,
-                Some(rest) if rest.is_empty() => {
-                    if i + 1 == cmdline.len() {
-                        fatal!("option -{name}: argument missing");
-                    }
-                    i += 2;
-                    Some(raw_cmdline[i - 1].as_ref())
-                }
-                Some(rest) if name.len() == 1 => {
-                    i += 1;
-                    Some(rest)
-                }
-                Some(rest) => rest.as_encoded_bytes().strip_prefix(b"=").map(|value| {
-                    i += 1;
-                    util::os_str(value)
-                }),
-            };
-            if let Some(value) = value {
+        ($method:ident, $name:expr, $raw:expr) => {{
+            if let Some(value) = cursor.$method($name) {
                 raw_arg = value;
                 if !$raw {
                     arg = value
                         .to_str()
-                        .unwrap_or_else(|| fatal!("option -{name}: expected a UTF-8 argument"));
+                        .unwrap_or_else(|| fatal!("option -{}: expected a UTF-8 argument", $name));
                 }
                 true
             } else {
@@ -1158,70 +1282,16 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             }
         }};
     }
-
+    macro_rules! read_arg {
+        ($($args:tt)*) => { read_value!(read_arg, $($args)*) };
+    }
     macro_rules! read_eq {
-        ($name:expr) => {
-            read_eq!($name, false)
-        };
-        ($name:expr, $raw:expr) => {{
-            match match_option(&raw_cmdline[i], $name)
-                .and_then(|rest| rest.as_encoded_bytes().strip_prefix(b"="))
-            {
-                Some(value) => {
-                    raw_arg = util::os_str(value);
-                    if !$raw {
-                        arg = raw_arg.to_str().unwrap_or_else(|| {
-                            fatal!("option -{}: expected a UTF-8 argument", $name)
-                        });
-                    }
-                    i += 1;
-                    true
-                }
-                None => false,
-            }
-        }};
+        ($($args:tt)*) => { read_value!(read_eq, $($args)*) };
     }
-
-    macro_rules! read_flag {
-        ($name:expr) => {{
-            if match_option(&raw_cmdline[i], $name) == Some(OsStr::new("")) {
-                i += 1;
-                true
-            } else {
-                false
-            }
-        }};
-    }
-
-    macro_rules! read_z_flag {
-        ($name:expr) => {{
-            let name: &str = $name;
-            if i + 1 < cmdline.len() && cmdline[i] == "-z" && cmdline[i + 1] == name {
-                i += 2;
-                true
-            } else if cmdline[i].strip_prefix("-z") == Some(name) {
-                i += 1;
-                true
-            } else {
-                false
-            }
-        }};
-    }
-
     macro_rules! read_z_arg {
         ($name:expr) => {{
-            let name: &str = $name;
-            let (candidate, count) = if cmdline[i] == "-z" {
-                (cmdline.get(i + 1).map(|s| s.as_ref()), 2)
-            } else {
-                (cmdline[i].strip_prefix("-z"), 1)
-            };
-            if let Some(value) = candidate
-                .and_then(|s| s.strip_prefix(name))
-                .and_then(|s| s.strip_prefix('='))
-            {
+            if let Some(value) = cursor.read_z_arg($name) {
                 arg = value;
-                i += count;
                 true
             } else {
                 false
@@ -1229,20 +1299,20 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         }};
     }
 
-    while i < cmdline.len() {
-        if !raw_cmdline[i].as_encoded_bytes().starts_with(b"-") {
+    while cursor.index < raw_cmdline.len() {
+        if !cursor.current().as_encoded_bytes().starts_with(b"-") {
             let mut job = ReaderJob {
                 rctx: rctx.clone(),
-                name: PathBuf::from(&raw_cmdline[i]),
+                name: PathBuf::from(&cursor.current()),
                 ..Default::default()
             };
             job.rctx.pos = vec![jobs.len() as u32];
             jobs.push(job);
-            i += 1;
+            cursor.index += 1;
             continue;
         }
 
-        if read_flag!("help") {
+        if cursor.read_flag("help") {
             out!(
                 "Usage: {} [options] file...\n{}",
                 raw_cmdline[0].to_string_lossy(),
@@ -1255,15 +1325,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.output = PathBuf::from(raw_arg);
         } else if read_arg!("dynamic-linker", true) || read_arg!("I", true) {
             a.dynamic_linker = PathBuf::from(raw_arg);
-        } else if read_flag!("no-dynamic-linker") {
+        } else if cursor.read_flag("no-dynamic-linker") {
             a.dynamic_linker.clear();
-        } else if read_flag!("v") {
+        } else if cursor.read_flag("v") {
             out!("{VERSION}");
             version_shown = true;
-        } else if read_flag!("version") {
+        } else if cursor.read_flag("version") {
             out!("{VERSION}");
             std::process::exit(0);
-        } else if read_flag!("V") {
+        } else if cursor.read_flag("V") {
             out!("{VERSION}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
                  aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
                  elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
@@ -1278,21 +1348,21 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Some(name) => a.emulation = name,
                 None => fatal!("unknown -m argument: {arg}"),
             }
-        } else if read_flag!("end-lib") {
+        } else if cursor.read_flag("end-lib") {
             rctx.in_lib = false;
-        } else if read_flag!("export-dynamic") || read_flag!("E") {
+        } else if cursor.read_flag("export-dynamic") || cursor.read_flag("E") {
             a.export_dynamic = true;
-        } else if read_flag!("no-export-dynamic") {
+        } else if cursor.read_flag("no-export-dynamic") {
             a.export_dynamic = false;
-        } else if read_flag!("Bsymbolic") {
+        } else if cursor.read_flag("Bsymbolic") {
             a.bsymbolic = BsymbolicKind::All;
-        } else if read_flag!("Bsymbolic-functions") {
+        } else if cursor.read_flag("Bsymbolic-functions") {
             a.bsymbolic = BsymbolicKind::Functions;
-        } else if read_flag!("Bsymbolic-non-weak") {
+        } else if cursor.read_flag("Bsymbolic-non-weak") {
             a.bsymbolic = BsymbolicKind::NonWeak;
-        } else if read_flag!("Bsymbolic-non-weak-functions") {
+        } else if cursor.read_flag("Bsymbolic-non-weak-functions") {
             a.bsymbolic = BsymbolicKind::NonWeakFunctions;
-        } else if read_flag!("Bno-symbolic") {
+        } else if cursor.read_flag("Bno-symbolic") {
             a.bsymbolic = BsymbolicKind::None;
         } else if read_arg!("exclude-libs", true) {
             for lib in raw_arg
@@ -1301,30 +1371,33 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             {
                 a.exclude_libs.insert(lib.to_vec());
             }
-        } else if read_flag!("q") || read_flag!("emit-relocs") {
+        } else if cursor.read_flag("q") || cursor.read_flag("emit-relocs") {
             a.emit_relocs = true;
             a.discard_locals = false;
         } else if read_arg!("e", true) || read_arg!("entry", true) {
             a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("Map", true) {
             map_path = Some(PathBuf::from(raw_arg));
-        } else if read_flag!("print-dependencies") {
+        } else if cursor.read_flag("print-dependencies") {
             a.print_dependencies = true;
-        } else if read_flag!("print-map") || read_flag!("M") {
+        } else if cursor.read_flag("print-map") || cursor.read_flag("M") {
             map_path.get_or_insert_with(PathBuf::new);
-        } else if read_flag!("Bstatic") || read_flag!("dn") || read_flag!("static") {
+        } else if cursor.read_flag("Bstatic")
+            || cursor.read_flag("dn")
+            || cursor.read_flag("static")
+        {
             rctx.is_static = true;
-        } else if read_flag!("Bdynamic") || read_flag!("dy") {
+        } else if cursor.read_flag("Bdynamic") || cursor.read_flag("dy") {
             rctx.is_static = false;
-        } else if read_flag!("shared") || read_flag!("Bshareable") {
+        } else if cursor.read_flag("shared") || cursor.read_flag("Bshareable") {
             a.shared = true;
         } else if read_arg!("spare-dynamic-tags") {
             a.spare_dynamic_tags = parse_number("spare-dynamic-tags", arg);
         } else if read_arg!("spare-program-headers") {
             a.spare_program_headers = parse_number("spare-program-headers", arg);
-        } else if read_flag!("start-lib") {
+        } else if cursor.read_flag("start-lib") {
             rctx.in_lib = true;
-        } else if read_flag!("start-stop") {
+        } else if cursor.read_flag("start-stop") {
             a.start_stop = true;
         } else if read_arg!("dependency-file", true) {
             a.dependency_file = PathBuf::from(raw_arg);
@@ -1337,35 +1410,31 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 fatal!("-defsym: syntax error: {}", raw_arg.to_string_lossy());
             };
             a.defsyms.push((name.to_vec(), parse_defsym_value(value)));
-        } else if read_flag!(":lto-pass2") {
+        } else if cursor.read_flag(":lto-pass2") {
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file", true) {
             a.ignore_ir_file.insert(raw_arg.to_os_string());
-        } else if read_flag!("demangle") {
+        } else if cursor.read_flag("demangle") {
             crate::error::set_demangle(true);
-        } else if read_flag!("no-demangle") {
+        } else if cursor.read_flag("no-demangle") {
             crate::error::set_demangle(false);
-        } else if read_flag!("detach") {
-            a.detach = true;
-        } else if read_flag!("no-detach") {
-            a.detach = false;
-        } else if read_flag!("default-symver") {
+        } else if let Some(value) = cursor.read_switch("detach", "no-detach") {
+            a.detach = value;
+        } else if cursor.read_flag("default-symver") {
             a.default_symver = true;
-        } else if read_flag!("noinhibit-exec") {
+        } else if cursor.read_flag("noinhibit-exec") {
             crate::error::set_noinhibit_exec(true);
-        } else if read_flag!("shuffle-sections") {
+        } else if cursor.read_flag("shuffle-sections") {
             // Resolve the seed after parsing all options.
             a.shuffle_sections = ShuffleSections::Shuffle(0);
         } else if read_eq!("shuffle-sections") {
             let seed = parse_number("shuffle-sections", arg) as u64;
             a.shuffle_sections = ShuffleSections::Shuffle(seed);
             shuffle_sections_seed = Some(seed);
-        } else if read_flag!("reverse-sections") {
+        } else if cursor.read_flag("reverse-sections") {
             a.shuffle_sections = ShuffleSections::Reverse;
-        } else if read_flag!("rosegment") {
-            a.rosegment = true;
-        } else if read_flag!("no-rosegment") {
-            a.rosegment = false;
+        } else if let Some(value) = cursor.read_switch("rosegment", "no-rosegment") {
+            a.rosegment = value;
         } else if read_arg!("y", true) || read_arg!("trace-symbol", true) {
             a.trace_symbol.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("filler") {
@@ -1434,88 +1503,87 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 a.depaudit.push(b':');
             }
             a.depaudit.extend_from_slice(raw_arg.as_encoded_bytes());
-        } else if read_flag!("allow-multiple-definition") {
+        } else if cursor.read_flag("allow-multiple-definition") {
             a.allow_multiple_definition = true;
-        } else if read_flag!("apply-dynamic-relocs") {
-            a.apply_dynamic_relocs = true;
-        } else if read_flag!("no-apply-dynamic-relocs") {
-            a.apply_dynamic_relocs = false;
-        } else if read_flag!("trace") {
+        } else if let Some(value) =
+            cursor.read_switch("apply-dynamic-relocs", "no-apply-dynamic-relocs")
+        {
+            a.apply_dynamic_relocs = value;
+        } else if cursor.read_flag("trace") {
             a.trace = true;
-        } else if read_flag!("eh-frame-hdr") {
-            a.eh_frame_hdr = true;
-        } else if read_flag!("no-eh-frame-hdr") {
-            a.eh_frame_hdr = false;
-        } else if read_flag!("pie") || read_flag!("pic-executable") {
+        } else if let Some(value) = cursor.read_switch("eh-frame-hdr", "no-eh-frame-hdr") {
+            a.eh_frame_hdr = value;
+        } else if cursor.read_flag("pie") || cursor.read_flag("pic-executable") {
             a.pic = true;
             a.pie = true;
-        } else if read_flag!("no-pie") || read_flag!("no-pic-executable") || read_flag!("nopie") {
+        } else if cursor.read_flag("no-pie")
+            || cursor.read_flag("no-pic-executable")
+            || cursor.read_flag("nopie")
+        {
             a.pic = false;
             a.pie = false;
-        } else if read_flag!("relax") {
-            a.relax = true;
-        } else if read_flag!("no-relax") {
-            a.relax = false;
-        } else if read_flag!("gdb-index") {
-            a.gdb_index = true;
-        } else if read_flag!("no-gdb-index") {
-            a.gdb_index = false;
-        } else if read_flag!("r") || read_flag!("relocatable") {
+        } else if let Some(value) = cursor.read_switch("relax", "no-relax") {
+            a.relax = value;
+        } else if let Some(value) = cursor.read_switch("gdb-index", "no-gdb-index") {
+            a.gdb_index = value;
+        } else if cursor.read_flag("r") || cursor.read_flag("relocatable") {
             a.relocatable = true;
             a.emit_relocs = true;
             a.discard_locals = false;
-        } else if read_flag!("relocatable-merge-sections") {
+        } else if cursor.read_flag("relocatable-merge-sections") {
             a.relocatable_merge_sections = true;
-        } else if read_flag!("perf") {
+        } else if cursor.read_flag("perf") {
             a.perf = true;
-        } else if read_flag!("pack-dyn-relocs=relr") || read_z_flag!("pack-relative-relocs") {
+        } else if cursor.read_flag("pack-dyn-relocs=relr")
+            || cursor.read_z_flag("pack-relative-relocs")
+        {
             a.pack_dyn_relocs_relr = true;
             a.pack_dyn_relocs_android = false;
-        } else if read_flag!("pack-dyn-relocs=android") {
+        } else if cursor.read_flag("pack-dyn-relocs=android") {
             a.pack_dyn_relocs_android = true;
             a.pack_dyn_relocs_relr = false;
-        } else if read_flag!("pack-dyn-relocs=android+relr") {
+        } else if cursor.read_flag("pack-dyn-relocs=android+relr") {
             a.pack_dyn_relocs_android = true;
             a.pack_dyn_relocs_relr = true;
-        } else if read_flag!("pack-dyn-relocs=none") || read_z_flag!("nopack-relative-relocs") {
+        } else if cursor.read_flag("pack-dyn-relocs=none")
+            || cursor.read_z_flag("nopack-relative-relocs")
+        {
             a.pack_dyn_relocs_relr = false;
             a.pack_dyn_relocs_android = false;
-        } else if read_flag!("use-android-relr-tags") {
-            a.use_android_relr_tags = true;
-        } else if read_flag!("no-use-android-relr-tags") {
-            a.use_android_relr_tags = false;
+        } else if let Some(value) =
+            cursor.read_switch("use-android-relr-tags", "no-use-android-relr-tags")
+        {
+            a.use_android_relr_tags = value;
         } else if read_arg!("package-metadata") {
             a.package_metadata = parse_package_metadata(arg);
-        } else if read_flag!("stats") {
+        } else if cursor.read_flag("stats") {
             a.stats = true;
             Counter::enable();
         } else if read_arg!("C", true) || read_arg!("directory", true) {
             directory = PathBuf::from(raw_arg);
         } else if read_arg!("chroot", true) {
             a.chroot = PathBuf::from(raw_arg);
-        } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
+        } else if cursor.read_flag("color-diagnostics")
+            || cursor.read_flag("color-diagnostics=auto")
+        {
             crate::error::set_color(std::io::stderr().is_terminal());
-        } else if read_flag!("color-diagnostics=always") {
+        } else if cursor.read_flag("color-diagnostics=always") {
             crate::error::set_color(true);
-        } else if read_flag!("color-diagnostics=never") {
+        } else if cursor.read_flag("color-diagnostics=never") {
             crate::error::set_color(false);
-        } else if read_flag!("warn-common") {
-            a.warn_common = true;
-        } else if read_flag!("no-warn-common") {
-            a.warn_common = false;
-        } else if read_flag!("warn-once") {
+        } else if let Some(value) = cursor.read_switch("warn-common", "no-warn-common") {
+            a.warn_common = value;
+        } else if cursor.read_flag("warn-once") {
             // Ignored for GNU ld compatibility, as in C++ mold.
-        } else if read_flag!("warn-shared-textrel") {
+        } else if cursor.read_flag("warn-shared-textrel") {
             warn_shared_textrel = true;
-        } else if read_flag!("warn-textrel") {
+        } else if cursor.read_flag("warn-textrel") {
             a.warn_textrel = true;
-        } else if read_flag!("enable-new-dtags") {
-            a.enable_new_dtags = true;
-        } else if read_flag!("disable-new-dtags") {
-            a.enable_new_dtags = false;
-        } else if read_flag!("execute-only") {
+        } else if let Some(value) = cursor.read_switch("enable-new-dtags", "disable-new-dtags") {
+            a.enable_new_dtags = value;
+        } else if cursor.read_flag("execute-only") {
             a.execute_only = true;
-        } else if read_flag!("zero-to-bss") {
+        } else if cursor.read_flag("zero-to-bss") {
             a.zero_to_bss = true;
         } else if read_arg!("compress-debug-sections") {
             a.compress_debug_sections = match arg {
@@ -1542,10 +1610,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             };
         } else if read_arg!("wrap", true) {
             a.wrap.insert(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_flag!("omagic") || read_flag!("N") {
+        } else if cursor.read_flag("omagic") || cursor.read_flag("N") {
             a.omagic = true;
             rctx.is_static = true;
-        } else if read_flag!("no-omagic") {
+        } else if cursor.read_flag("no-omagic") {
             a.omagic = false;
         } else if read_arg!("oformat") {
             if arg != "binary" {
@@ -1593,132 +1661,123 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 .insert(b".text".to_vec(), parse_hex("Ttext", arg));
         } else if read_arg!("Ttext-segment") {
             a.ttext_segment = Some(parse_number("Ttext-segment", arg) as u64);
-        } else if read_flag!("repro") {
+        } else if cursor.read_flag("repro") {
             a.repro = true;
-        } else if read_z_flag!("now") {
-            a.z_now = true;
-        } else if read_z_flag!("lazy") {
-            a.z_now = false;
-        } else if read_z_flag!("cet-report=none") {
+        } else if let Some(value) = cursor.read_z_switch("now", "lazy") {
+            a.z_now = value;
+        } else if cursor.read_z_flag("cet-report=none") {
             a.z_cet_report = CetReportKind::None;
-        } else if read_z_flag!("cet-report=warning") {
+        } else if cursor.read_z_flag("cet-report=warning") {
             a.z_cet_report = CetReportKind::Warning;
-        } else if read_z_flag!("cet-report=error") {
+        } else if cursor.read_z_flag("cet-report=error") {
             a.z_cet_report = CetReportKind::Error;
-        } else if read_z_flag!("execstack") {
+        } else if cursor.read_z_flag("execstack") {
             a.z_execstack = true;
-        } else if read_z_flag!("execstack-if-needed") {
+        } else if cursor.read_z_flag("execstack-if-needed") {
             a.z_execstack_if_needed = true;
         } else if read_z_arg!("max-page-size") {
             a.page_size = parse_number("-z max-page-size", arg) as u64;
             if !a.page_size.is_power_of_two() {
                 fatal!("-z max-page-size {arg}: value must be a power of 2");
             }
-        } else if read_z_flag!("start-stop-visibility=protected") {
-            a.z_start_stop_visibility_protected = true;
-        } else if read_z_flag!("start-stop-visibility=hidden") {
-            a.z_start_stop_visibility_protected = false;
-        } else if read_z_flag!("noexecstack") {
+        } else if let Some(value) = cursor.read_z_switch(
+            "start-stop-visibility=protected",
+            "start-stop-visibility=hidden",
+        ) {
+            a.z_start_stop_visibility_protected = value;
+        } else if cursor.read_z_flag("noexecstack") {
             a.z_execstack = false;
-        } else if read_z_flag!("relro") {
+        } else if cursor.read_z_flag("relro") {
             z_relro = Some(true);
-        } else if read_z_flag!("norelro") {
+        } else if cursor.read_z_flag("norelro") {
             z_relro = Some(false);
-        } else if read_z_flag!("defs") || read_flag!("no-undefined") {
+        } else if cursor.read_z_flag("defs") || cursor.read_flag("no-undefined") {
             report_undefined = Some(true);
-        } else if read_z_flag!("undefs") {
+        } else if cursor.read_z_flag("undefs") {
             report_undefined = Some(false);
-        } else if read_z_flag!("nodlopen") {
+        } else if cursor.read_z_flag("nodlopen") {
             a.z_dlopen = false;
-        } else if read_z_flag!("nodelete") {
+        } else if cursor.read_z_flag("nodelete") {
             a.z_delete = false;
-        } else if read_z_flag!("nocopyreloc") {
+        } else if cursor.read_z_flag("nocopyreloc") {
             a.z_copyreloc = false;
-        } else if read_z_flag!("nodump") {
+        } else if cursor.read_z_flag("nodump") {
             a.z_dump = false;
-        } else if read_z_flag!("initfirst") {
+        } else if cursor.read_z_flag("initfirst") {
             a.z_initfirst = true;
-        } else if read_z_flag!("interpose") {
+        } else if cursor.read_z_flag("interpose") {
             a.z_interpose = true;
-        } else if read_z_flag!("ibt") {
+        } else if cursor.read_z_flag("ibt") {
             a.z_ibt = true;
-        } else if read_z_flag!("ibtplt") {
-        } else if read_z_flag!("muldefs") {
+        } else if cursor.read_z_flag("ibtplt") {
+        } else if cursor.read_z_flag("muldefs") {
             a.allow_multiple_definition = true;
-        } else if read_z_flag!("keep-text-section-prefix") {
-            a.z_keep_text_section_prefix = true;
-        } else if read_z_flag!("nokeep-text-section-prefix") {
-            a.z_keep_text_section_prefix = false;
-        } else if read_z_flag!("shstk") {
+        } else if let Some(value) =
+            cursor.read_z_switch("keep-text-section-prefix", "nokeep-text-section-prefix")
+        {
+            a.z_keep_text_section_prefix = value;
+        } else if cursor.read_z_flag("shstk") {
             a.z_shstk = true;
-        } else if read_z_flag!("text") {
+        } else if cursor.read_z_flag("text") {
             a.z_text = true;
-        } else if read_z_flag!("notext") || read_z_flag!("textoff") {
+        } else if cursor.read_z_flag("notext") || cursor.read_z_flag("textoff") {
             a.z_text = false;
-        } else if read_z_flag!("origin") {
+        } else if cursor.read_z_flag("origin") {
             a.z_origin = true;
-        } else if read_z_flag!("nodefaultlib") {
+        } else if cursor.read_z_flag("nodefaultlib") {
             a.z_nodefaultlib = true;
         } else if read_eq!("separate-debug-file", true) {
             separate_debug_file = Some(PathBuf::from(raw_arg));
-        } else if read_flag!("separate-debug-file") {
+        } else if cursor.read_flag("separate-debug-file") {
             separate_debug_file = Some(PathBuf::new());
-        } else if read_flag!("no-separate-debug-file") {
+        } else if cursor.read_flag("no-separate-debug-file") {
             separate_debug_file = None;
-        } else if read_z_flag!("separate-loadable-segments") {
+        } else if cursor.read_z_flag("separate-loadable-segments") {
             z_separate_code = Some(SeparateCodeKind::SeparateLoadableSegments);
-        } else if read_z_flag!("separate-code") {
+        } else if cursor.read_z_flag("separate-code") {
             z_separate_code = Some(SeparateCodeKind::SeparateCode);
-        } else if read_z_flag!("noseparate-code") {
+        } else if cursor.read_z_flag("noseparate-code") {
             z_separate_code = Some(SeparateCodeKind::NoSeparateCode);
         } else if read_z_arg!("stack-size") {
             a.z_stack_size = parse_number("-z stack-size", arg) as u64;
-        } else if read_z_flag!("dynamic-undefined-weak") {
+        } else if cursor.read_z_flag("dynamic-undefined-weak") {
             z_dynamic_undefined_weak = Some(true);
-        } else if read_z_flag!("nodynamic-undefined-weak") {
+        } else if cursor.read_z_flag("nodynamic-undefined-weak") {
             z_dynamic_undefined_weak = Some(false);
-        } else if read_z_flag!("sectionheader") {
-            a.z_sectionheader = true;
-        } else if read_z_flag!("nosectionheader") {
-            a.z_sectionheader = false;
-        } else if read_z_flag!("rodynamic") {
+        } else if let Some(value) = cursor.read_z_switch("sectionheader", "nosectionheader") {
+            a.z_sectionheader = value;
+        } else if cursor.read_z_flag("rodynamic") {
             a.z_rodynamic = true;
-        } else if read_z_flag!("x86-64-v2") {
+        } else if cursor.read_z_flag("x86-64-v2") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V2;
-        } else if read_z_flag!("x86-64-v3") {
+        } else if cursor.read_z_flag("x86-64-v3") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V3;
-        } else if read_z_flag!("x86-64-v4") {
+        } else if cursor.read_z_flag("x86-64-v4") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
-        } else if read_z_flag!("rewrite-endbr") {
+        } else if cursor.read_z_flag("rewrite-endbr") {
             if !matches!(target.family, arch::Family::X86_64 | arch::Family::Arm64) {
                 fatal!("-z rewrite-endbr is supported only on x86-64 and arm64");
             }
             a.z_rewrite_endbr = true;
-        } else if read_z_flag!("norewrite-endbr") {
+        } else if cursor.read_z_flag("norewrite-endbr") {
             a.z_rewrite_endbr = false;
-        } else if read_flag!("nmagic") {
-            a.nmagic = true;
-        } else if read_flag!("no-nmagic") {
-            a.nmagic = false;
-        } else if read_flag!("fatal-warnings") {
+        } else if let Some(value) = cursor.read_switch("nmagic", "no-nmagic") {
+            a.nmagic = value;
+        } else if cursor.read_flag("fatal-warnings") {
             crate::error::set_fatal_warnings(true);
-        } else if read_flag!("no-fatal-warnings") {
+        } else if cursor.read_flag("no-fatal-warnings") {
             crate::error::set_fatal_warnings(false);
-        } else if read_flag!("w") || read_flag!("no-warnings") {
+        } else if cursor.read_flag("w") || cursor.read_flag("no-warnings") {
             crate::error::set_suppress_warnings(true);
-        } else if read_flag!("fork") {
-            a.fork = true;
-        } else if read_flag!("no-fork") {
-            a.fork = false;
-        } else if read_flag!("gc-sections") {
-            a.gc_sections = true;
-        } else if read_flag!("no-gc-sections") {
-            a.gc_sections = false;
-        } else if read_flag!("print-gc-sections") {
+        } else if let Some(value) = cursor.read_switch("fork", "no-fork") {
+            a.fork = value;
+        } else if let Some(value) = cursor.read_switch("gc-sections", "no-gc-sections") {
+            a.gc_sections = value;
+        } else if cursor.read_flag("print-gc-sections") {
             a.print_gc_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-gc-sections", true) {
             a.print_gc_sections = parse_report_output(raw_arg);
-        } else if read_flag!("no-print-gc-sections") {
+        } else if cursor.read_flag("no-print-gc-sections") {
             a.print_gc_sections = None;
         } else if read_arg!("discard-section", true) {
             a.discard_section
@@ -1735,131 +1794,50 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 "none" => a.icf = false,
                 _ => fatal!("unknown --icf argument: {arg}"),
             }
-        } else if read_flag!("no-icf") {
+        } else if cursor.read_flag("no-icf") {
             a.icf = false;
-        } else if read_flag!("ignore-data-address-equality") {
+        } else if cursor.read_flag("ignore-data-address-equality") {
             a.ignore_data_address_equality = true;
         } else if read_arg!("image-base") {
             a.image_base = parse_number("image-base", arg) as u64;
         } else if read_arg!("physical-image-base") {
             a.physical_image_base = Some(parse_number("physical-image-base", arg) as u64);
-        } else if read_flag!("print-icf-sections") {
+        } else if cursor.read_flag("print-icf-sections") {
             a.print_icf_sections = Some(ReportOutput::Stdout);
         } else if read_eq!("print-icf-sections", true) {
             a.print_icf_sections = parse_report_output(raw_arg);
-        } else if read_flag!("no-print-icf-sections") {
+        } else if cursor.read_flag("no-print-icf-sections") {
             a.print_icf_sections = None;
-        } else if read_flag!("quick-exit") {
-            a.quick_exit = true;
-        } else if read_flag!("no-quick-exit") {
-            a.quick_exit = false;
+        } else if let Some(value) = cursor.read_switch("quick-exit", "no-quick-exit") {
+            a.quick_exit = value;
         } else if read_arg!("plugin", true) {
             a.plugin = PathBuf::from(raw_arg);
         } else if read_arg!("plugin-opt", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_flag!("lto-cs-profile-generate") {
-            a.plugin_opt.push(b"cs-profile-generate".to_vec());
-        } else if read_arg!("lto-cs-profile-file", true) {
-            a.plugin_opt
-                .push([b"cs-profile-path=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_flag!("lto-debug-pass-manager") {
-            a.plugin_opt.push(b"debug-pass-manager".to_vec());
-        } else if read_flag!("disable-verify") {
-            a.plugin_opt.push(b"disable-verify".to_vec());
-        } else if read_flag!("lto-emit-asm") {
-            a.plugin_opt.push(b"emit-asm".to_vec());
-        } else if read_flag!("no-legacy-pass-manager") {
-            a.plugin_opt.push(b"legacy-pass-manager".to_vec());
-        } else if read_arg!("lto-partitions", true) {
-            a.plugin_opt
-                .push([b"lto-partitions=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_flag!("no-lto-legacy-pass-manager") {
-            a.plugin_opt.push(b"new-pass-manager".to_vec());
-        } else if read_arg!("lto-obj-path", true) {
-            a.plugin_opt
-                .push([b"obj-path=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("opt-remarks-filename", true) {
-            a.plugin_opt
-                .push([b"opt-remarks-filename=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("opt-remarks-format", true) {
-            a.plugin_opt
-                .push([b"opt-remarks-format=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("opt-remarks-hotness-threshold", true) {
-            a.plugin_opt.push(
-                [
-                    b"opt-remarks-hotness-threshold=",
-                    raw_arg.as_encoded_bytes(),
-                ]
-                .concat(),
-            );
-        } else if read_arg!("opt-remarks-passes", true) {
-            a.plugin_opt
-                .push([b"opt-remarks-passes=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_flag!("opt-remarks-with-hotness") {
-            a.plugin_opt.push(b"opt-remarks-with-hotness".to_vec());
-        } else if let Some(level) = raw_cmdline[i].as_encoded_bytes().strip_prefix(b"-lto-O") {
-            a.plugin_opt.push([b"O", level].concat());
-            i += 1;
-        } else if let Some(level) = raw_cmdline[i].as_encoded_bytes().strip_prefix(b"--lto-O") {
-            a.plugin_opt.push([b"O", level].concat());
-            i += 1;
-        } else if read_arg!("lto-pseudo-probe-for-profiling", true) {
-            a.plugin_opt
-                .push([b"pseudo-probe-for-profiling=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("lto-sample-profile", true) {
-            a.plugin_opt
-                .push([b"sample-profile=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_flag!("save-temps") {
-            a.plugin_opt.push(b"save-temps".to_vec());
-        } else if read_flag!("thinlto-emit-imports-files") {
-            a.plugin_opt.push(b"thinlto-emit-imports-files".to_vec());
-        } else if read_arg!("thinlto-index-only", true) {
-            a.plugin_opt
-                .push([b"thinlto-index-only=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_flag!("thinlto-index-only") {
-            a.plugin_opt.push(b"thinlto-index-only".to_vec());
-        } else if read_arg!("thinlto-object-suffix-replace", true) {
-            a.plugin_opt.push(
-                [
-                    b"thinlto-object-suffix-replace=",
-                    raw_arg.as_encoded_bytes(),
-                ]
-                .concat(),
-            );
-        } else if read_arg!("thinlto-prefix-replace", true) {
-            a.plugin_opt
-                .push([b"thinlto-prefix-replace=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("thinlto-cache-dir", true) {
-            a.plugin_opt
-                .push([b"cache-dir=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("thinlto-cache-policy", true) {
-            a.plugin_opt
-                .push([b"cache-policy=", raw_arg.as_encoded_bytes()].concat());
-        } else if read_arg!("thinlto-jobs", true) {
-            a.plugin_opt
-                .push([b"jobs=", raw_arg.as_encoded_bytes()].concat());
+        } else if let Some(option) = cursor.read_lto_option() {
+            a.plugin_opt.push(option);
         } else if read_arg!("thread-count") {
             a.thread_count = Some(parse_number("thread-count", arg).max(1) as usize);
-        } else if read_flag!("threads") {
+        } else if cursor.read_flag("threads") {
             a.thread_count = None;
-        } else if read_flag!("no-threads") {
+        } else if cursor.read_flag("no-threads") {
             a.thread_count = Some(1);
         } else if read_eq!("threads") {
             a.thread_count = Some(parse_number("threads", arg).max(1) as usize);
-        } else if read_flag!("discard-all") || read_flag!("x") {
+        } else if cursor.read_flag("discard-all") || cursor.read_flag("x") {
             a.discard_all = true;
-        } else if read_flag!("discard-locals") || read_flag!("X") {
+        } else if cursor.read_flag("discard-locals") || cursor.read_flag("X") {
             a.discard_locals = true;
-        } else if read_flag!("discard-none") {
+        } else if cursor.read_flag("discard-none") {
             a.discard_all = false;
             a.discard_locals = false;
-        } else if read_flag!("strip-all") || read_flag!("s") {
+        } else if cursor.read_flag("strip-all") || cursor.read_flag("s") {
             a.strip_all = true;
-        } else if read_flag!("strip-debug") || read_flag!("S") {
+        } else if cursor.read_flag("strip-debug") || cursor.read_flag("S") {
             a.strip_debug = true;
-        } else if read_flag!("warn-unresolved-symbols") {
+        } else if cursor.read_flag("warn-unresolved-symbols") {
             error_unresolved_symbols = false;
-        } else if read_flag!("error-unresolved-symbols") {
+        } else if cursor.read_flag("error-unresolved-symbols") {
             error_unresolved_symbols = true;
         } else if read_arg!("rpath", true) {
             add_rpath(&mut a, &mut rpaths, raw_arg);
@@ -1871,11 +1849,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 );
             }
             add_rpath(&mut a, &mut rpaths, raw_arg);
-        } else if read_flag!("undefined-version") {
-            a.undefined_version = true;
-        } else if read_flag!("no-undefined-version") {
-            a.undefined_version = false;
-        } else if read_flag!("build-id") {
+        } else if let Some(value) = cursor.read_switch("undefined-version", "no-undefined-version")
+        {
+            a.undefined_version = value;
+        } else if cursor.read_flag("build-id") {
             a.build_id = BuildId::Hash(20);
         } else if read_arg!("build-id") {
             a.build_id = match arg {
@@ -1889,12 +1866,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 }
                 _ => fatal!("invalid --build-id argument: {arg}"),
             };
-        } else if read_flag!("no-build-id") {
+        } else if cursor.read_flag("no-build-id") {
             a.build_id = BuildId::None;
-        } else if read_flag!("be8") {
-            be8 = true;
-        } else if read_flag!("be32") {
-            be8 = false;
+        } else if let Some(value) = cursor.read_switch("be8", "be32") {
+            be8 = value;
         } else if read_arg!("format") || read_arg!("b") {
             if arg == "binary" {
                 fatal!("mold does not support `-b binary`. If you want to convert a binary file into an \
@@ -1907,51 +1882,51 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.auxiliary.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("filter", true) || read_arg!("F", true) {
             a.filter.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_flag!("allow-shlib-undefined") {
+        } else if cursor.read_flag("allow-shlib-undefined") {
             allow_shlib_undefined = Some(true);
-        } else if read_flag!("no-allow-shlib-undefined") {
+        } else if cursor.read_flag("no-allow-shlib-undefined") {
             allow_shlib_undefined = Some(false);
         } else if read_arg!("O")
-            || read_flag!("EB")
-            || read_flag!("EL")
-            || read_flag!("O0")
-            || read_flag!("O1")
-            || read_flag!("O2")
-            || read_flag!("verbose")
-            || read_flag!("color-diagnostics")
-            || read_flag!("eh-frame-hdr")
-            || read_flag!("start-group")
-            || read_flag!("end-group")
-            || read_flag!("(")
-            || read_flag!(")")
-            || read_flag!("fatal-warnings")
-            || read_flag!("enable-new-dtags")
-            || read_flag!("disable-new-dtags")
-            || read_flag!("nostdlib")
-            || read_flag!("no-add-needed")
-            || read_flag!("no-call-graph-profile-sort")
-            || read_flag!("no-copy-dt-needed-entries")
+            || cursor.read_flag("EB")
+            || cursor.read_flag("EL")
+            || cursor.read_flag("O0")
+            || cursor.read_flag("O1")
+            || cursor.read_flag("O2")
+            || cursor.read_flag("verbose")
+            || cursor.read_flag("color-diagnostics")
+            || cursor.read_flag("eh-frame-hdr")
+            || cursor.read_flag("start-group")
+            || cursor.read_flag("end-group")
+            || cursor.read_flag("(")
+            || cursor.read_flag(")")
+            || cursor.read_flag("fatal-warnings")
+            || cursor.read_flag("enable-new-dtags")
+            || cursor.read_flag("disable-new-dtags")
+            || cursor.read_flag("nostdlib")
+            || cursor.read_flag("no-add-needed")
+            || cursor.read_flag("no-call-graph-profile-sort")
+            || cursor.read_flag("no-copy-dt-needed-entries")
             || read_arg!("sort-section")
-            || read_flag!("sort-common")
-            || read_flag!("dc")
-            || read_flag!("dp")
-            || read_flag!("fix-cortex-a53-835769")
-            || read_flag!("fix-cortex-a53-843419")
-            || read_flag!("warn-once")
-            || read_flag!("nodefaultlibs")
-            || read_flag!("warn-constructors")
-            || read_flag!("warn-execstack")
-            || read_flag!("no-warn-execstack")
-            || read_flag!("long-plt")
-            || read_flag!("secure-plt")
+            || cursor.read_flag("sort-common")
+            || cursor.read_flag("dc")
+            || cursor.read_flag("dp")
+            || cursor.read_flag("fix-cortex-a53-835769")
+            || cursor.read_flag("fix-cortex-a53-843419")
+            || cursor.read_flag("warn-once")
+            || cursor.read_flag("nodefaultlibs")
+            || cursor.read_flag("warn-constructors")
+            || cursor.read_flag("warn-execstack")
+            || cursor.read_flag("no-warn-execstack")
+            || cursor.read_flag("long-plt")
+            || cursor.read_flag("secure-plt")
             || read_arg!("rpath-link")
-            || read_z_flag!("combreloc")
-            || read_z_flag!("nocombreloc")
+            || cursor.read_z_flag("combreloc")
+            || cursor.read_z_flag("nocombreloc")
             || read_z_arg!("common-page-size")
-            || read_flag!("no-keep-memory")
+            || cursor.read_flag("no-keep-memory")
             || read_arg!("max-cache-size")
-            || read_flag!("mmap-output-file")
-            || read_flag!("no-mmap-output-file")
+            || cursor.read_flag("mmap-output-file")
+            || cursor.read_flag("no-mmap-output-file")
         {
             // Ignored for compatibility.
         } else if read_arg!("version-script", true) {
@@ -1969,14 +1944,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_arg!("export-dynamic-symbol-list", true) {
             a.dynamic_list
                 .push(DynamicListSource::File(PathBuf::from(raw_arg)));
-        } else if read_flag!("as-needed") {
-            rctx.as_needed = true;
-        } else if read_flag!("no-as-needed") {
-            rctx.as_needed = false;
-        } else if read_flag!("whole-archive") {
-            rctx.whole_archive = true;
-        } else if read_flag!("no-whole-archive") {
-            rctx.whole_archive = false;
+        } else if let Some(value) = cursor.read_switch("as-needed", "no-as-needed") {
+            rctx.as_needed = value;
+        } else if let Some(value) = cursor.read_switch("whole-archive", "no-whole-archive") {
+            rctx.whole_archive = value;
         } else if read_arg!("l", true) || read_arg!("library", true) {
             if visited_libs.insert(raw_arg) {
                 let mut job = ReaderJob {
@@ -1995,25 +1966,28 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             };
             job.rctx.pos = vec![jobs.len() as u32];
             jobs.push(job);
-        } else if read_flag!("push-state") {
+        } else if cursor.read_flag("push-state") {
             rctx_stack.push(rctx.clone());
-        } else if read_flag!("pop-state") {
+        } else if cursor.read_flag("pop-state") {
             rctx = rctx_stack
                 .pop()
                 .unwrap_or_else(|| fatal!("no state pushed before popping"));
-        } else if cmdline[i].starts_with("-z") && cmdline[i].len() > 2 {
-            warn!("unknown command line option: {}", cmdline[i]);
-            i += 1;
-        } else if cmdline[i] == "-z" && i + 1 < cmdline.len() {
-            warn!("unknown command line option: -z {}", cmdline[i + 1]);
-            i += 2;
-        } else if cmdline[i] == "-dynamic" {
+        } else if cursor.text().starts_with("-z") && cursor.text().len() > 2 {
+            warn!("unknown command line option: {}", cursor.text());
+            cursor.index += 1;
+        } else if cursor.text() == "-z" && cursor.index + 1 < raw_cmdline.len() {
+            warn!(
+                "unknown command line option: -z {}",
+                raw_cmdline[cursor.index + 1].to_str().unwrap_or("")
+            );
+            cursor.index += 2;
+        } else if cursor.text() == "-dynamic" {
             fatal!("unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
         } else {
             fatal!(
                 "unknown command line option: {}",
-                raw_cmdline[i].to_string_lossy()
+                cursor.current().to_string_lossy()
             );
         }
     }
@@ -2242,7 +2216,80 @@ fn add_rpath<'a>(a: &mut Args, seen: &mut HashSet<&'a OsStr>, path: &'a OsStr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_c_number, parse_number};
+    use super::*;
+
+    #[test]
+    fn cursor_preserves_gnu_option_boundaries_and_values() {
+        let args: Vec<_> = [
+            "mold",
+            "-output",
+            "--output=next",
+            "-z",
+            "now",
+            "-zmax-page-size=4096",
+            "--gc-sections",
+            "--no-gc-sections",
+            "--lto-cs-profile-file=data",
+            "--save-temps",
+            "--lto-O2",
+        ]
+        .into_iter()
+        .map(|s| Cow::Borrowed(OsStr::new(s)))
+        .collect();
+        let mut cursor = ArgCursor {
+            args: &args,
+            index: 1,
+        };
+        assert_eq!(cursor.read_arg("output"), None);
+        assert_eq!(cursor.index, 1);
+        assert_eq!(cursor.read_arg("o"), Some(OsStr::new("utput")));
+        assert_eq!(cursor.read_eq("output"), Some(OsStr::new("next")));
+        assert!(!cursor.read_z_flag("lazy"));
+        assert!(cursor.read_z_flag("now"));
+        assert_eq!(cursor.read_z_arg("max-page-size"), Some("4096"));
+        assert_eq!(
+            cursor.read_switch("gc-sections", "no-gc-sections"),
+            Some(true)
+        );
+        assert_eq!(
+            cursor.read_switch("gc-sections", "no-gc-sections"),
+            Some(false)
+        );
+        assert_eq!(
+            cursor.read_lto_option(),
+            Some(b"cs-profile-path=data".to_vec())
+        );
+        assert_eq!(cursor.read_lto_option(), Some(b"save-temps".to_vec()));
+        assert_eq!(cursor.read_lto_option(), Some(b"O2".to_vec()));
+        assert_eq!(cursor.index, args.len());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cursor_borrows_non_utf8_separate_and_attached_values() {
+        let args: Vec<_> = [
+            b"mold".as_slice(),
+            b"-o",
+            b"out-\xff",
+            b"--plugin-opt=arg-\xfe",
+        ]
+        .into_iter()
+        .map(|s| Cow::Borrowed(util::os_str(s)))
+        .collect();
+        let mut cursor = ArgCursor {
+            args: &args,
+            index: 1,
+        };
+        assert_eq!(
+            cursor.read_arg("o").unwrap().as_encoded_bytes(),
+            b"out-\xff"
+        );
+        assert_eq!(
+            cursor.read_arg("plugin-opt").unwrap().as_encoded_bytes(),
+            b"arg-\xfe"
+        );
+        assert_eq!(cursor.index, args.len());
+    }
 
     #[test]
     fn numeric_options_use_c_integer_syntax() {
