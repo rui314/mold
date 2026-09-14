@@ -433,7 +433,7 @@ impl<'a, E: Arch> Script<'a, E> {
             } else {
                 let idx = next_ver;
                 next_ver += 1;
-                self.ctx.args.version_definitions.push(t.to_vec());
+                self.ctx.args.version_definitions.push(t.into());
                 tok = &tok[1..];
                 (t, idx)
             };

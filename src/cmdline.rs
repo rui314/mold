@@ -535,7 +535,7 @@ pub struct Args {
     pub defsyms: Vec<(Vec<u8>, DefsymValue)>,
     pub library_paths: Vec<PathBuf>,
     pub plugin_opt: Vec<Vec<u8>>,
-    pub version_definitions: Vec<Vec<u8>>,
+    pub version_definitions: Vec<Cow<'static, [u8]>>,
     pub version_scripts: Vec<PathBuf>,
     pub dynamic_list: Vec<DynamicListSource>,
     pub auxiliary: Vec<Vec<u8>>,
@@ -2169,7 +2169,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else {
             a.soname.as_encoded_bytes().to_vec()
         };
-        a.version_definitions.push(ver);
+        a.version_definitions.push(ver.into());
     }
 
     if let Some(file) = separate_debug_file {

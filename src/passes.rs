@@ -3089,7 +3089,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
         .version_definitions
         .iter()
         .enumerate()
-        .map(|(i, v)| (v.as_slice(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
+        .map(|(i, v)| (v.as_ref(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
         .collect();
 
     let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
