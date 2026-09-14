@@ -12,7 +12,7 @@ use crate::arch::Arch;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
-use crate::mapped_file::{must_open_file, open_file, MappedFile};
+use crate::mapped_file::{apply_chroot, must_open_file, open_file, MappedFile};
 use crate::reader;
 use crate::util;
 use crate::{fatal, warn};
@@ -130,13 +130,7 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
 }
 
 fn is_in_sysroot<E: Arch>(ctx: &Context<E>, path: &Path) -> bool {
-    let mut sysroot = ctx.args.sysroot.clone();
-    if sysroot.is_absolute() && !ctx.args.chroot.as_os_str().is_empty() {
-        sysroot = ctx
-            .args
-            .chroot
-            .join(util::clean_path(&sysroot).strip_prefix("/").unwrap());
-    }
+    let sysroot = apply_chroot(&ctx.args.chroot, &ctx.args.sysroot);
     let (Ok(path), Ok(sysroot)) = (path.canonicalize(), sysroot.canonicalize()) else {
         return false;
     };
