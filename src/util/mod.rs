@@ -292,14 +292,6 @@ pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
-/// Returns the directory part of a path, as `dirname(1)` would.
-pub fn path_dirname(path: &str) -> String {
-    match std::path::Path::new(path).parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent.to_string_lossy().into_owned(),
-        _ => ".".to_string(),
-    }
-}
-
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.
 pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
