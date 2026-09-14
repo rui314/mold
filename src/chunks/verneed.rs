@@ -105,7 +105,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         let start_group = i == 0 || syms[i - 1].0 != dso;
         if start_group {
             let soname = ctx.dsos[dso.index()].soname;
-            let vn_file = ctx.dynstr.find_string(&soname) as u32;
+            let vn_file = ctx.dynstr.find_string(soname) as u32;
             builder.start_group(vn_file);
             if ctx.args.pack_dyn_relocs_relr && is_glibc2(&ctx.dsos[dso.index()]) {
                 builder.add_entry(&mut ctx.dynstr, b"GLIBC_ABI_DT_RELR");

@@ -2004,7 +2004,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     rctx: rctx.clone(),
                     name: PathBuf::from(raw_arg),
                     is_lib: true,
-                    ..Default::default()
                 };
                 job.rctx.pos = vec![jobs.len() as u32];
                 jobs.push(job);
@@ -2037,14 +2036,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         }
     }
 
-    if !a.chroot.as_os_str().is_empty() {
-        if !a.dependency_file.as_os_str().is_empty() {
-            a.dependency_file = a.chroot.join(
-                a.dependency_file
-                    .strip_prefix("/")
-                    .unwrap_or(&a.dependency_file),
-            );
-        }
+    if !a.chroot.as_os_str().is_empty() && !a.dependency_file.as_os_str().is_empty() {
+        a.dependency_file = a.chroot.join(
+            a.dependency_file
+                .strip_prefix("/")
+                .unwrap_or(&a.dependency_file),
+        );
     }
 
     a.map = map_path.map(|mut path| {

@@ -70,7 +70,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     };
 
     for dso in &ctx.dsos {
-        define(DT_NEEDED, dynstr.find_string(&dso.soname));
+        define(DT_NEEDED, dynstr.find_string(dso.soname));
     }
     if !ctx.args.rpaths.is_empty() {
         let tag = if ctx.args.enable_new_dtags {

@@ -47,6 +47,7 @@ pub fn acquire_global_lock() {
     let Ok(file) = OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(false)
         .mode(0o600)
         .open(path)
     else {
