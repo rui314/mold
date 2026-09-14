@@ -787,13 +787,13 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
 }
 
 // Replace "@path/to/some/text/file" with its file contents.
-pub fn expand_response_files(argv: &[OsString]) -> Vec<OsString> {
+pub fn expand_response_files(argv: Vec<OsString>) -> Vec<OsString> {
     let mut args = Vec::new();
     for arg in argv {
         if let Some(path) = arg.as_encoded_bytes().strip_prefix(b"@") {
             args.extend(read_response_file(Path::new(util::os_str(path)), 1));
         } else {
-            args.push(arg.clone());
+            args.push(arg);
         }
     }
     args

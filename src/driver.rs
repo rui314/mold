@@ -1,5 +1,6 @@
 //! The linker driver: runs the passes in order.
 
+use std::ffi::OsString;
 use std::fmt;
 use std::ops::Range;
 use std::sync::{mpsc, Arc};
@@ -22,9 +23,9 @@ use crate::{error, fatal, passes};
 /// target the inputs are actually for; the executable provides both, as
 /// the targets are instantiated in crates of their own.
 pub fn main(
-    argv: Vec<std::ffi::OsString>,
+    argv: Vec<OsString>,
     initial_target: &str,
-    link_for_target: impl Fn(&str, &[std::ffi::OsString]) -> Result<i32, &'static str>,
+    link_for_target: impl Fn(&str, Arc<[OsString]>) -> Result<i32, &'static str>,
 ) -> i32 {
     // A parent's transparent huge page disable flag is inherited. Restore
     // the system's default policy so large links can use huge pages.
@@ -45,7 +46,7 @@ pub fn main(
     let orig_cwd = std::env::current_dir().ok();
 
     // Parse non-positional command line options
-    let cmdline = cmdline::expand_response_files(&argv);
+    let cmdline: Arc<[_]> = cmdline::expand_response_files(argv).into();
 
     // Parse with an enabled target's defaults; if the target turns out to
     // be different, start over with the right one.
@@ -54,7 +55,7 @@ pub fn main(
         if let Some(cwd) = &orig_cwd {
             let _ = std::env::set_current_dir(cwd);
         }
-        match link_for_target(target, &cmdline) {
+        match link_for_target(target, Arc::clone(&cmdline)) {
             Ok(status) => return status,
             Err(actual) => target = actual,
         }
@@ -95,10 +96,10 @@ fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
 
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
-pub fn link<E: Arch>(cmdline: &[std::ffi::OsString]) -> Result<i32, &'static str> {
-    let parsed = cmdline::parse_args(&target_traits::<E>(), cmdline);
+pub fn link<E: Arch>(cmdline: Arc<[OsString]>) -> Result<i32, &'static str> {
+    let parsed = cmdline::parse_args(&target_traits::<E>(), &cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
-    let mut ctx = Context::<E>::new(args, cmdline.to_vec());
+    let mut ctx = Context::<E>::new(args, cmdline);
 
     // If no -m option is given, deduce it from input files.
     if ctx.args.emulation.is_empty() {
