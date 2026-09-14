@@ -172,7 +172,7 @@ pub struct Context<E: Arch> {
     // nondeterministic order in which the parallel file reader found
     // them. read_input_files() sorts them by position to construct
     // `objs` and `dsos`.
-    pub pending_files: Vec<(Vec<u32>, FileId)>,
+    pub(crate) pending_files: Vec<crate::reader::Loaded<E>>,
 
     // Deferred IR files with their reader contexts and archive names.
     // read_input_files() hands them to the LTO plugin in command line

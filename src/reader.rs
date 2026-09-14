@@ -17,7 +17,7 @@ use crate::archive_file;
 use crate::cmdline::{ReaderContext, ReaderJob};
 use crate::context::Context;
 use crate::filetype::{self, FileType};
-use crate::input_files::{DsoId, FileId, ObjId, ObjectFile, SharedFile};
+use crate::input_files::{ObjectFile, SharedFile};
 use crate::linker_script::Script;
 use crate::mapped_file::{must_open_file, open_file, MappedFile};
 use crate::util::perf::Counter;
@@ -25,9 +25,17 @@ use crate::util::worker_local::WorkerLocal;
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
-enum Loaded<E: Arch> {
+pub(crate) enum Loaded<E: Arch> {
     Obj(Vec<u32>, Box<ObjectFile<E>>),
     Dso(Vec<u32>, Box<SharedFile<E>>),
+}
+
+impl<E: Arch> Loaded<E> {
+    fn position(&self) -> &[u32] {
+        match self {
+            Self::Obj(pos, _) | Self::Dso(pos, _) => pos,
+        }
+    }
 }
 
 fn get_file_type<E: Arch>(ctx: &Context<E>, mf: &MappedFile) -> FileType {
@@ -172,17 +180,19 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
             let file = new_object_file(ctx, rctx, mf, Path::new(""));
-            push_loaded(ctx, Loaded::Obj(rctx.pos.clone(), Box::new(file)));
+            ctx.pending_files
+                .push(Loaded::Obj(rctx.pos.clone(), Box::new(file)));
         }
         FileType::ElfDso => {
             let file = new_shared_file(ctx, rctx, mf);
-            push_loaded(ctx, Loaded::Dso(rctx.pos.clone(), Box::new(file)));
+            ctx.pending_files
+                .push(Loaded::Dso(rctx.pos.clone(), Box::new(file)));
         }
         FileType::Ar | FileType::ThinAr => {
             for child in archive_file::read_archive_members(&ctx.args.chroot, mf) {
                 let child_rctx = rctx.next_child();
                 if let Some(loaded) = read_archive_member(ctx, child_rctx, child, &mf.name) {
-                    push_loaded(ctx, loaded);
+                    ctx.pending_files.push(loaded);
                 }
             }
         }
@@ -191,19 +201,6 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
             defer_lto_object(ctx, rctx.clone(), mf, Path::new(""));
         }
         _ => fatal!("{}: unknown file type", mf.name.display()),
-    }
-}
-
-fn push_loaded<E: Arch>(ctx: &mut Context<E>, loaded: Loaded<E>) {
-    match loaded {
-        Loaded::Obj(pos, file) => {
-            let id = ObjId(ctx.objs.push(file));
-            ctx.pending_files.push((pos, FileId::Obj(id)));
-        }
-        Loaded::Dso(pos, file) => {
-            let id = DsoId(ctx.dsos.push(file));
-            ctx.pending_files.push((pos, FileId::Dso(id)));
-        }
     }
 }
 
@@ -407,9 +404,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
         });
     });
 
-    for l in loaded.into_values().flatten() {
-        push_loaded(ctx, l);
-    }
+    ctx.pending_files.extend(loaded.into_values().flatten());
 
     // Parse linker scripts and read the files they name.
     let mut scripts: Vec<_> = scripts.into_values().flatten().collect();
@@ -429,34 +424,28 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     lto_jobs.sort_by(|(a, ..), (b, ..)| a.pos.cmp(&b.pos));
     for (rctx, mf, archive_name) in lto_jobs {
         if let Some(file) = new_lto_object(ctx, &rctx, mf, archive_name) {
-            push_loaded(ctx, Loaded::Obj(rctx.pos, Box::new(file)));
+            ctx.pending_files
+                .push(Loaded::Obj(rctx.pos, Box::new(file)));
         }
     }
 
     // Sort the files into the command line order and assign priorities.
     let mut pending = std::mem::take(&mut ctx.pending_files);
-    pending.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let objs = std::mem::take(&mut ctx.objs);
-    let dsos = std::mem::take(&mut ctx.dsos);
-    let mut objs: Vec<Option<Box<ObjectFile<E>>>> = objs.into_iter().map(Some).collect();
-    let mut dsos: Vec<Option<Box<SharedFile<E>>>> = dsos.into_iter().map(Some).collect();
+    pending.sort_by(|a, b| a.position().cmp(b.position()));
 
     // Priority 0 is reserved for the internal object file. LTO-generated
     // files use priorities beginning at 100, so regular files begin at 10000.
-    for (i, (_, id)) in pending.into_iter().enumerate() {
+    for (i, loaded) in pending.into_iter().enumerate() {
         let priority = 10000 + i as u32;
-        match id {
-            FileId::Obj(idx) => {
-                let mut file = objs[idx.index()].take().unwrap();
+        match loaded {
+            Loaded::Obj(_, mut file) => {
                 file.base.priority = priority;
                 if ctx.args.trace {
                     out!("trace: {file}");
                 }
                 ctx.objs.push(file);
             }
-            FileId::Dso(idx) => {
-                let mut file = dsos[idx.index()].take().unwrap();
+            Loaded::Dso(_, mut file) => {
                 file.base.priority = priority;
                 if ctx.args.trace {
                     out!("trace: {file}");
