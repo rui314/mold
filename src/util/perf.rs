@@ -46,15 +46,17 @@ impl Counter {
         self.value.fetch_add(delta, Ordering::Relaxed);
     }
 
-    pub fn print() {
-        let mut counters = COUNTERS.lock().unwrap().clone();
-        counters.sort_by_key(|counter| counter.value.load(Ordering::Relaxed));
-        for counter in counters {
-            out!(
-                "{:>20}={}",
-                counter.name,
-                counter.value.load(Ordering::Relaxed)
-            );
+    pub fn print(stats: impl IntoIterator<Item = (&'static str, i64)>) {
+        let mut counters: Vec<_> = COUNTERS
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|counter| (counter.name, counter.value.load(Ordering::Relaxed)))
+            .collect();
+        counters.extend(stats);
+        counters.sort_by_key(|&(_, value)| value);
+        for (name, value) in counters {
+            out!("{:>20}={}", name, value);
         }
     }
 }
