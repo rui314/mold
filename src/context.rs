@@ -44,6 +44,63 @@ use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
 use crate::util::perf::Timers;
 
+// Keep immutable and mutable chunk lookup in the same static match.
+macro_rules! chunk_header {
+    ($ctx:ident, $id:ident, $borrow:ident $(, $mutable:tt)?) => {
+        match $id {
+            ChunkId::Ehdr => $ctx.ehdr.$borrow().expect("chunk does not exist"),
+            ChunkId::Phdr => &$($mutable)? $ctx.phdr.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::Shdr => $ctx.shdr.$borrow().expect("chunk does not exist"),
+            ChunkId::Interp => $ctx.interp.$borrow().expect("chunk does not exist"),
+            ChunkId::Got => &$($mutable)? $ctx.got.hdr,
+            ChunkId::GotPlt => &$($mutable)? $ctx.gotplt,
+            ChunkId::RelPlt => &$($mutable)? $ctx.relplt,
+            ChunkId::RelDyn => &$($mutable)? $ctx.reldyn.hdr,
+            ChunkId::RelrDyn => $ctx.relrdyn.$borrow().expect("chunk does not exist"),
+            ChunkId::Dynamic => $ctx.dynamic.$borrow().expect("chunk does not exist"),
+            ChunkId::Strtab => &$($mutable)? $ctx.strtab,
+            ChunkId::Dynstr => &$($mutable)? $ctx.dynstr.hdr,
+            ChunkId::Hash => $ctx.hash.$borrow().expect("chunk does not exist"),
+            ChunkId::GnuHash => &$($mutable)? $ctx.gnu_hash.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::GnuDebuglink => &$($mutable)? $ctx.gnu_debuglink.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::Shstrtab => $ctx.shstrtab.$borrow().expect("chunk does not exist"),
+            ChunkId::Plt => &$($mutable)? $ctx.plt.hdr,
+            ChunkId::PltGot => &$($mutable)? $ctx.pltgot.hdr,
+            ChunkId::Symtab => &$($mutable)? $ctx.symtab,
+            ChunkId::SymtabShndx => $ctx.symtab_shndx.$borrow().expect("chunk does not exist"),
+            ChunkId::Dynsym => &$($mutable)? $ctx.dynsym.hdr,
+            ChunkId::EhFrame => &$($mutable)? $ctx.eh_frame,
+            ChunkId::EhFrameHdr => &$($mutable)? $ctx.eh_frame_hdr.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::EhFrameReloc => $ctx.eh_frame_reloc.$borrow().expect("chunk does not exist"),
+            ChunkId::SFrame => &$($mutable)? $ctx.sframe.hdr,
+            ChunkId::SFrameReloc => $ctx.sframe_reloc.$borrow().expect("chunk does not exist"),
+            ChunkId::Copyrel => &$($mutable)? $ctx.copyrel.hdr,
+            ChunkId::CopyrelRelro => &$($mutable)? $ctx.copyrel_relro.hdr,
+            ChunkId::Versym => &$($mutable)? $ctx.versym.hdr,
+            ChunkId::Verneed => &$($mutable)? $ctx.verneed.hdr,
+            ChunkId::Verdef => &$($mutable)? $ctx.verdef.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::BuildId => &$($mutable)? $ctx.buildid.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::NotePackage => &$($mutable)? $ctx.note_package,
+            ChunkId::NoteProperty => &$($mutable)? $ctx.note_property.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::RiscvAttributes => &$($mutable)? $ctx.riscv_attributes.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::ArmExidx => &$($mutable)? $ctx.arm_exidx.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::Ppc64SaveRestore => $ctx
+                .ppc64_save_restore
+                .$borrow()
+                .expect("chunk does not exist"),
+            ChunkId::Ppc64Opd => &$($mutable)? $ctx.ppc64_opd.$borrow().expect("chunk does not exist").hdr,
+            ChunkId::GdbIndex => $ctx.gdb_index.$borrow().expect("chunk does not exist"),
+            ChunkId::RelroPadding => $ctx.relro_padding.$borrow().expect("chunk does not exist"),
+            ChunkId::Output(id) => &$($mutable)? $ctx.output_sections[id.index()].hdr,
+            ChunkId::Merged(id) => &$($mutable)? $ctx.merged_sections[id.index()].hdr,
+            ChunkId::Reloc(i) => &$($mutable)? $ctx.reloc_sections[i as usize].hdr,
+            ChunkId::ComdatGroup(i) => &$($mutable)? $ctx.comdat_group_sections[i as usize].hdr,
+            ChunkId::Compressed(i) => &$($mutable)? $ctx.compressed_sections[i as usize].hdr,
+            ChunkId::Placeholder(i) => &$($mutable)? $ctx.placeholders[i as usize],
+        }
+    };
+}
+
 /// Linker-synthesized symbols with well-known names.
 #[derive(Debug, Default)]
 pub struct SyntheticSymbols {
@@ -419,121 +476,11 @@ impl<E: Arch> Context<E> {
 
     /// The header of any chunk. Panics if the chunk does not exist.
     pub fn chunk_header(&self, id: ChunkId) -> &ChunkHeader<E> {
-        macro_rules! opt {
-            ($e:expr) => {
-                &$e.as_ref().expect("chunk does not exist").hdr
-            };
-        }
-        match id {
-            ChunkId::Ehdr => self.ehdr.as_ref().expect("chunk does not exist"),
-            ChunkId::Phdr => opt!(self.phdr),
-            ChunkId::Shdr => self.shdr.as_ref().expect("chunk does not exist"),
-            ChunkId::Interp => self.interp.as_ref().expect("chunk does not exist"),
-            ChunkId::Got => &self.got.hdr,
-            ChunkId::GotPlt => &self.gotplt,
-            ChunkId::RelPlt => &self.relplt,
-            ChunkId::RelDyn => &self.reldyn.hdr,
-            ChunkId::RelrDyn => self.relrdyn.as_ref().expect("chunk does not exist"),
-            ChunkId::Dynamic => self.dynamic.as_ref().expect("chunk does not exist"),
-            ChunkId::Strtab => &self.strtab,
-            ChunkId::Dynstr => &self.dynstr.hdr,
-            ChunkId::Hash => self.hash.as_ref().expect("chunk does not exist"),
-            ChunkId::GnuHash => opt!(self.gnu_hash),
-            ChunkId::GnuDebuglink => opt!(self.gnu_debuglink),
-            ChunkId::Shstrtab => self.shstrtab.as_ref().expect("chunk does not exist"),
-            ChunkId::Plt => &self.plt.hdr,
-            ChunkId::PltGot => &self.pltgot.hdr,
-            ChunkId::Symtab => &self.symtab,
-            ChunkId::SymtabShndx => self.symtab_shndx.as_ref().expect("chunk does not exist"),
-            ChunkId::Dynsym => &self.dynsym.hdr,
-            ChunkId::EhFrame => &self.eh_frame,
-            ChunkId::EhFrameHdr => opt!(self.eh_frame_hdr),
-            ChunkId::EhFrameReloc => self.eh_frame_reloc.as_ref().expect("chunk does not exist"),
-            ChunkId::SFrame => &self.sframe.hdr,
-            ChunkId::SFrameReloc => self.sframe_reloc.as_ref().expect("chunk does not exist"),
-            ChunkId::Copyrel => &self.copyrel.hdr,
-            ChunkId::CopyrelRelro => &self.copyrel_relro.hdr,
-            ChunkId::Versym => &self.versym.hdr,
-            ChunkId::Verneed => &self.verneed.hdr,
-            ChunkId::Verdef => opt!(self.verdef),
-            ChunkId::BuildId => opt!(self.buildid),
-            ChunkId::NotePackage => &self.note_package,
-            ChunkId::NoteProperty => opt!(self.note_property),
-            ChunkId::RiscvAttributes => opt!(self.riscv_attributes),
-            ChunkId::ArmExidx => opt!(self.arm_exidx),
-            ChunkId::Ppc64SaveRestore => self
-                .ppc64_save_restore
-                .as_ref()
-                .expect("chunk does not exist"),
-            ChunkId::Ppc64Opd => opt!(self.ppc64_opd),
-            ChunkId::GdbIndex => self.gdb_index.as_ref().expect("chunk does not exist"),
-            ChunkId::RelroPadding => self.relro_padding.as_ref().expect("chunk does not exist"),
-            ChunkId::Output(id) => &self.output_sections[id.index()].hdr,
-            ChunkId::Merged(id) => &self.merged_sections[id.index()].hdr,
-            ChunkId::Reloc(i) => &self.reloc_sections[i as usize].hdr,
-            ChunkId::ComdatGroup(i) => &self.comdat_group_sections[i as usize].hdr,
-            ChunkId::Compressed(i) => &self.compressed_sections[i as usize].hdr,
-            ChunkId::Placeholder(i) => &self.placeholders[i as usize],
-        }
+        chunk_header!(self, id, as_ref)
     }
 
     pub fn chunk_header_mut(&mut self, id: ChunkId) -> &mut ChunkHeader<E> {
-        macro_rules! opt {
-            ($e:expr) => {
-                &mut $e.as_mut().expect("chunk does not exist").hdr
-            };
-        }
-        match id {
-            ChunkId::Ehdr => self.ehdr.as_mut().expect("chunk does not exist"),
-            ChunkId::Phdr => opt!(self.phdr),
-            ChunkId::Shdr => self.shdr.as_mut().expect("chunk does not exist"),
-            ChunkId::Interp => self.interp.as_mut().expect("chunk does not exist"),
-            ChunkId::Got => &mut self.got.hdr,
-            ChunkId::GotPlt => &mut self.gotplt,
-            ChunkId::RelPlt => &mut self.relplt,
-            ChunkId::RelDyn => &mut self.reldyn.hdr,
-            ChunkId::RelrDyn => self.relrdyn.as_mut().expect("chunk does not exist"),
-            ChunkId::Dynamic => self.dynamic.as_mut().expect("chunk does not exist"),
-            ChunkId::Strtab => &mut self.strtab,
-            ChunkId::Dynstr => &mut self.dynstr.hdr,
-            ChunkId::Hash => self.hash.as_mut().expect("chunk does not exist"),
-            ChunkId::GnuHash => opt!(self.gnu_hash),
-            ChunkId::GnuDebuglink => opt!(self.gnu_debuglink),
-            ChunkId::Shstrtab => self.shstrtab.as_mut().expect("chunk does not exist"),
-            ChunkId::Plt => &mut self.plt.hdr,
-            ChunkId::PltGot => &mut self.pltgot.hdr,
-            ChunkId::Symtab => &mut self.symtab,
-            ChunkId::SymtabShndx => self.symtab_shndx.as_mut().expect("chunk does not exist"),
-            ChunkId::Dynsym => &mut self.dynsym.hdr,
-            ChunkId::EhFrame => &mut self.eh_frame,
-            ChunkId::EhFrameHdr => opt!(self.eh_frame_hdr),
-            ChunkId::EhFrameReloc => self.eh_frame_reloc.as_mut().expect("chunk does not exist"),
-            ChunkId::SFrame => &mut self.sframe.hdr,
-            ChunkId::SFrameReloc => self.sframe_reloc.as_mut().expect("chunk does not exist"),
-            ChunkId::Copyrel => &mut self.copyrel.hdr,
-            ChunkId::CopyrelRelro => &mut self.copyrel_relro.hdr,
-            ChunkId::Versym => &mut self.versym.hdr,
-            ChunkId::Verneed => &mut self.verneed.hdr,
-            ChunkId::Verdef => opt!(self.verdef),
-            ChunkId::BuildId => opt!(self.buildid),
-            ChunkId::NotePackage => &mut self.note_package,
-            ChunkId::NoteProperty => opt!(self.note_property),
-            ChunkId::RiscvAttributes => opt!(self.riscv_attributes),
-            ChunkId::ArmExidx => opt!(self.arm_exidx),
-            ChunkId::Ppc64SaveRestore => self
-                .ppc64_save_restore
-                .as_mut()
-                .expect("chunk does not exist"),
-            ChunkId::Ppc64Opd => opt!(self.ppc64_opd),
-            ChunkId::GdbIndex => self.gdb_index.as_mut().expect("chunk does not exist"),
-            ChunkId::RelroPadding => self.relro_padding.as_mut().expect("chunk does not exist"),
-            ChunkId::Output(id) => &mut self.output_sections[id.index()].hdr,
-            ChunkId::Merged(id) => &mut self.merged_sections[id.index()].hdr,
-            ChunkId::Reloc(i) => &mut self.reloc_sections[i as usize].hdr,
-            ChunkId::ComdatGroup(i) => &mut self.comdat_group_sections[i as usize].hdr,
-            ChunkId::Compressed(i) => &mut self.compressed_sections[i as usize].hdr,
-            ChunkId::Placeholder(i) => &mut self.placeholders[i as usize],
-        }
+        chunk_header!(self, id, as_mut, mut)
     }
 
     /// Finds the first chunk of a section type.
