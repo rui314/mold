@@ -598,10 +598,10 @@ pub fn populate_symtab<E: Arch>(
     };
 
     for thunk in &osec.thunks {
+        let suffix = format!("${}", thunk.name);
         for (i, &sym) in thunk.symbols.iter().enumerate() {
             let addr = osec.hdr.shdr.sh_addr.get() + thunk.offset + thunk.offsets[i];
             let name = ctx.symbols[sym].name();
-            let suffix = format!("${}", thunk.name);
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));
             if E::FAMILY == Family::Arm32 {
                 // Emit "$t", "$a" and "$d" if ARM32.
