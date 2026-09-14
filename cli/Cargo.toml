@@ -7,11 +7,11 @@ license = "MIT"
 
 [[bin]]
 name = "mold"
-path = "src/main.rs"
+path = "main.rs"
 
 [[test]]
 name = "integration"
-path = "tests/integration.rs"
+path = "integration.rs"
 harness = false
 
 [dependencies]
