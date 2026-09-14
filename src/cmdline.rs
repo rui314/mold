@@ -433,10 +433,7 @@ pub struct Args {
     pub allow_multiple_definition: bool,
     pub allow_shlib_undefined: bool,
     pub apply_dynamic_relocs: bool,
-    pub be8: bool,
-    pub color_diagnostics: bool,
     pub default_symver: bool,
-    pub demangle: bool,
     pub detach: bool,
     pub discard_all: bool,
     pub discard_locals: bool,
@@ -446,7 +443,6 @@ pub struct Args {
     pub enable_new_dtags: bool,
     pub execute_only: bool,
     pub export_dynamic: bool,
-    pub fatal_warnings: bool,
     pub fork: bool,
     pub gc_sections: bool,
     pub gdb_index: bool,
@@ -457,7 +453,6 @@ pub struct Args {
     pub ignore_data_address_equality: bool,
     pub lto_pass2: bool,
     pub nmagic: bool,
-    pub noinhibit_exec: bool,
     pub oformat_binary: bool,
     pub omagic: bool,
     pub pack_dyn_relocs_android: bool,
@@ -478,7 +473,6 @@ pub struct Args {
     pub stats: bool,
     pub strip_all: bool,
     pub strip_debug: bool,
-    pub suppress_warnings: bool,
     pub trace: bool,
     pub undefined_version: bool,
     pub use_android_relr_tags: bool,
@@ -520,7 +514,6 @@ pub struct Args {
     pub chroot: PathBuf,
     pub depaudit: Vec<u8>,
     pub dependency_file: PathBuf,
-    pub directory: PathBuf,
     pub dynamic_linker: PathBuf,
     pub output: PathBuf,
     pub package_metadata: String,
@@ -575,10 +568,7 @@ impl Default for Args {
             allow_multiple_definition: false,
             allow_shlib_undefined: true,
             apply_dynamic_relocs: true,
-            be8: false,
-            color_diagnostics: false,
             default_symver: false,
-            demangle: true,
             detach: true,
             discard_all: false,
             discard_locals: true,
@@ -588,7 +578,6 @@ impl Default for Args {
             enable_new_dtags: true,
             execute_only: false,
             export_dynamic: false,
-            fatal_warnings: false,
             fork: true,
             gc_sections: false,
             gdb_index: false,
@@ -599,7 +588,6 @@ impl Default for Args {
             ignore_data_address_equality: false,
             lto_pass2: false,
             nmagic: false,
-            noinhibit_exec: false,
             oformat_binary: false,
             omagic: false,
             pack_dyn_relocs_android: false,
@@ -620,7 +608,6 @@ impl Default for Args {
             stats: false,
             strip_all: false,
             strip_debug: false,
-            suppress_warnings: false,
             trace: false,
             undefined_version: false,
             use_android_relr_tags: false,
@@ -662,7 +649,6 @@ impl Default for Args {
             chroot: PathBuf::new(),
             depaudit: Vec::new(),
             dependency_file: PathBuf::new(),
-            directory: PathBuf::new(),
             dynamic_linker: PathBuf::new(),
             output: PathBuf::from("a.out"),
             package_metadata: String::new(),
@@ -1084,6 +1070,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // --as-needed, that apply to the files after them; each job gets a
     // snapshot of the state at its position.
     let mut a = Args::default();
+    let mut be8 = false;
+    let mut directory = PathBuf::new();
     let mut undefined_glob = GlobBuilder::default();
     let mut unique = GlobBuilder::default();
     let mut jobs: Vec<ReaderJob> = Vec::new();
@@ -1091,12 +1079,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
     let mut visited_libs: HashSet<&OsStr> = HashSet::new();
 
-    a.color_diagnostics = std::io::stderr().is_terminal();
-    crate::error::set_color(a.color_diagnostics);
-    crate::error::set_fatal_warnings(a.fatal_warnings);
-    crate::error::set_suppress_warnings(a.suppress_warnings);
-    crate::error::set_noinhibit_exec(a.noinhibit_exec);
-    crate::error::set_demangle(a.demangle);
+    crate::error::set_color(std::io::stderr().is_terminal());
+    crate::error::set_fatal_warnings(false);
+    crate::error::set_suppress_warnings(false);
+    crate::error::set_noinhibit_exec(false);
+    crate::error::set_demangle(true);
     a.page_size = target.page_size;
 
     let mut version_shown = false;
@@ -1178,7 +1165,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         };
         ($name:expr, $raw:expr) => {{
             match match_option(&raw_cmdline[i], $name)
-                .and_then(|rest| rest.as_encoded_bytes().strip_prefix(b"=")) {
+                .and_then(|rest| rest.as_encoded_bytes().strip_prefix(b"="))
+            {
                 Some(value) => {
                     raw_arg = util::os_str(value);
                     if !$raw {
@@ -1255,7 +1243,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         }
 
         if read_flag!("help") {
-            out!("Usage: {} [options] file...\n{}", raw_cmdline[0].to_string_lossy(), HELP);
+            out!(
+                "Usage: {} [options] file...\n{}",
+                raw_cmdline[0].to_string_lossy(),
+                HELP
+            );
             std::process::exit(0);
         }
 
@@ -1350,10 +1342,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_arg!(":ignore-ir-file", true) {
             a.ignore_ir_file.insert(raw_arg.to_os_string());
         } else if read_flag!("demangle") {
-            a.demangle = true;
             crate::error::set_demangle(true);
         } else if read_flag!("no-demangle") {
-            a.demangle = false;
             crate::error::set_demangle(false);
         } else if read_flag!("detach") {
             a.detach = true;
@@ -1362,7 +1352,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_flag!("default-symver") {
             a.default_symver = true;
         } else if read_flag!("noinhibit-exec") {
-            a.noinhibit_exec = true;
             crate::error::set_noinhibit_exec(true);
         } else if read_flag!("shuffle-sections") {
             // Resolve the seed after parsing all options.
@@ -1501,17 +1490,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.stats = true;
             Counter::enable();
         } else if read_arg!("C", true) || read_arg!("directory", true) {
-            a.directory = PathBuf::from(raw_arg);
+            directory = PathBuf::from(raw_arg);
         } else if read_arg!("chroot", true) {
             a.chroot = PathBuf::from(raw_arg);
         } else if read_flag!("color-diagnostics") || read_flag!("color-diagnostics=auto") {
-            a.color_diagnostics = std::io::stderr().is_terminal();
-            crate::error::set_color(a.color_diagnostics);
+            crate::error::set_color(std::io::stderr().is_terminal());
         } else if read_flag!("color-diagnostics=always") {
-            a.color_diagnostics = true;
             crate::error::set_color(true);
         } else if read_flag!("color-diagnostics=never") {
-            a.color_diagnostics = false;
             crate::error::set_color(false);
         } else if read_flag!("warn-common") {
             a.warn_common = true;
@@ -1715,13 +1701,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_flag!("no-nmagic") {
             a.nmagic = false;
         } else if read_flag!("fatal-warnings") {
-            a.fatal_warnings = true;
             crate::error::set_fatal_warnings(true);
         } else if read_flag!("no-fatal-warnings") {
-            a.fatal_warnings = false;
             crate::error::set_fatal_warnings(false);
         } else if read_flag!("w") || read_flag!("no-warnings") {
-            a.suppress_warnings = true;
             crate::error::set_suppress_warnings(true);
         } else if read_flag!("fork") {
             a.fork = true;
@@ -1909,9 +1892,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_flag!("no-build-id") {
             a.build_id = BuildId::None;
         } else if read_flag!("be8") {
-            a.be8 = true;
+            be8 = true;
         } else if read_flag!("be32") {
-            a.be8 = false;
+            be8 = false;
         } else if read_arg!("format") || read_arg!("b") {
             if arg == "binary" {
                 fatal!("mold does not support `-b binary`. If you want to convert a binary file into an \
@@ -2028,7 +2011,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             fatal!("unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
         } else {
-            fatal!("unknown command line option: {}", raw_cmdline[i].to_string_lossy());
+            fatal!(
+                "unknown command line option: {}",
+                raw_cmdline[i].to_string_lossy()
+            );
         }
     }
 
@@ -2049,16 +2035,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         parse_report_output(path.as_os_str()).unwrap_or(ReportOutput::Stdout)
     });
 
-    if !a.directory.as_os_str().is_empty() {
-        if let Err(e) = std::env::set_current_dir(&a.directory) {
-            fatal!("chdir failed: {}: {e}", a.directory.display());
+    if !directory.as_os_str().is_empty() {
+        if let Err(e) = std::env::set_current_dir(&directory) {
+            fatal!("chdir failed: {}: {e}", directory.display());
         }
     }
 
     if !a.sysroot.as_os_str().is_empty() {
         for path in &mut a.library_paths {
             let bytes = path.as_os_str().as_encoded_bytes();
-            if let Some(rest) = bytes.strip_prefix(b"=").or_else(|| bytes.strip_prefix(b"$SYSROOT")) {
+            if let Some(rest) = bytes
+                .strip_prefix(b"=")
+                .or_else(|| bytes.strip_prefix(b"$SYSROOT"))
+            {
                 let mut full = a.sysroot.as_os_str().to_os_string();
                 full.push(util::os_str(rest));
                 *path = PathBuf::from(full);
@@ -2161,7 +2150,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     if a.image_base % a.page_size != 0 {
         fatal!("-image-base must be a multiple of -max-page-size");
     }
-    if a.emulation == "arm32be" && !a.be8 {
+    if a.emulation == "arm32be" && !be8 {
         fatal!("--be32 is not supported");
     }
 
@@ -2171,7 +2160,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
 
     if a.default_symver {
         let ver = if a.soname.is_empty() {
-            a.output.file_name().unwrap_or_default().as_encoded_bytes().to_vec()
+            a.output
+                .file_name()
+                .unwrap_or_default()
+                .as_encoded_bytes()
+                .to_vec()
         } else {
             a.soname.as_encoded_bytes().to_vec()
         };
