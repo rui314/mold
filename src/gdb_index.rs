@@ -681,7 +681,7 @@ pub struct GdbInputFile {
 pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
     ctx.objs
         .par_iter_mut()
-        .map(|file| {
+        .filter_map(|file| {
             let file_id = file.id().0;
             let name = file.to_string();
             let mut debug_info = Vec::new();
@@ -743,12 +743,16 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 });
             }
 
-            GdbInputFile {
+            if debug_info.is_empty() && pubnames.is_empty() {
+                return None;
+            }
+
+            Some(GdbInputFile {
                 file: file_id,
                 name,
                 debug_info,
                 pubnames,
-            }
+            })
         })
         .collect()
 }
