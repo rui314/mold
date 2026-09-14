@@ -75,11 +75,10 @@ use crate::output_file::{split_at_offsets, OutputFile};
 use crate::util::endian::Endian;
 use std::borrow::Cow;
 use std::path::Path;
-use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use crate::util::concurrent_map::{ConcurrentMap, FrozenMap, MapEntryRef};
+use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, MapEntryRef};
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Timer;
 use crate::util::read_uleb;
@@ -127,7 +126,7 @@ impl NameType {
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct IndexedName {
-    entry: NameEntryRef,
+    entry: EntryId,
     type_vector_idx: u32,
     kind: u8,
 }
@@ -201,28 +200,6 @@ struct NameEntry {
     type_vector_offset: u32,
     name_offset: u32,
 }
-
-/// A stable pointer to a value in the GDB name map.
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-struct NameEntryRef(NonNull<NameEntry>);
-
-impl NameEntryRef {
-    fn new(entry: &NameEntry) -> NameEntryRef {
-        NameEntryRef(NonNull::from(entry))
-    }
-
-    fn get(self, _owner: &FrozenMap<NameEntry>) -> &NameEntry {
-        // SAFETY: values live at stable addresses in the map's mmap allocation.
-        // The owner keeps that allocation live for the returned reference.
-        unsafe { self.0.as_ref() }
-    }
-}
-
-// SAFETY: NameEntryRef is only dereferenced while the owning map is live, and
-// NameEntry is shared between threads through its atomic fields.
-unsafe impl Send for NameEntryRef {}
-unsafe impl Sync for NameEntryRef {}
 
 #[derive(Clone, Copy, Default)]
 /// Byte counts accumulated by the parallel constant-pool layout scan.
@@ -1027,7 +1004,7 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
             let nametype = record.nametype();
             // SAFETY: NameType stores a NUL-terminated string that remains
             // live for the complete link.
-            let (_, value, _) = unsafe {
+            let (entry, value, _) = unsafe {
                 map.insert_cstr_with(
                     nametype.name as *const u8,
                     nametype.hash(),
@@ -1035,7 +1012,7 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
                 )
             };
             record.set_indexed(IndexedName {
-                entry: NameEntryRef::new(value),
+                entry,
                 type_vector_idx: value.count.fetch_add(1, Ordering::Relaxed) + 1,
                 kind: nametype.kind(),
             });
@@ -1210,7 +1187,7 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
     let write_names = |records: &[NameRecord], unit: usize| {
         for record in records {
             let name = record.indexed();
-            let entry = name.entry.get(names);
+            let entry = names.get(name.entry);
             let offset = entry.type_vector_offset as usize + name.type_vector_idx as usize * 4;
             debug_assert!(offset + 4 <= data.type_pool_size as usize);
             let value = (name.kind as u32) << 24 | unit as u32;
