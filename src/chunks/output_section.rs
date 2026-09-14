@@ -1,5 +1,6 @@
 //! Output sections built from input sections, such as `.text` and `.data`.
 
+use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
 use bstr::BStr;
@@ -59,21 +60,23 @@ pub struct OutputSection<E: Layout> {
 }
 
 /// A pointer to an output buffer whose disjoint ranges are written in parallel.
-pub(crate) struct OutputBuffer {
+pub(crate) struct OutputBuffer<'a> {
     ptr: *mut u8,
     len: usize,
+    marker: PhantomData<&'a mut [u8]>,
 }
 
 // SAFETY: Parallel loops use the pointer only for ranges that the ELF layout
 // proves disjoint, just as their C++ counterparts do.
-unsafe impl Sync for OutputBuffer {}
+unsafe impl Sync for OutputBuffer<'_> {}
 
-impl OutputBuffer {
+impl<'a> OutputBuffer<'a> {
     #[inline]
-    pub(crate) fn new(buf: &mut [u8]) -> OutputBuffer {
+    pub(crate) fn new(buf: &'a mut [u8]) -> OutputBuffer<'a> {
         OutputBuffer {
             ptr: buf.as_mut_ptr(),
             len: buf.len(),
+            marker: PhantomData,
         }
     }
 
