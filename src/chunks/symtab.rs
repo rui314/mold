@@ -46,7 +46,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         .count() as u32;
 
     // Linker-synthesized symbols
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let hdr = ctx.chunk_header_mut(id);
         hdr.local_symtab_idx = nsyms;
         nsyms += hdr.num_local_symtab;

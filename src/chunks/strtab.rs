@@ -44,7 +44,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         offset += b"$a\0$t\0$d\0".len() as u64;
     }
 
-    for id in ctx.chunks.clone() {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         let hdr = ctx.chunk_header_mut(id);
         hdr.strtab_offset = offset;
         offset += hdr.strtab_size;

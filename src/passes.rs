@@ -1639,10 +1639,10 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     // Make all synthetic symbols relative ones by associating them to
     // a dummy output section.
-    let syms = ctx.objs[obj_id.index()].base.symbols.clone();
-    for id in &syms {
-        if ctx.symbols[*id].file() == Some(FileId::Obj(obj_id)) {
-            ctx.set_symbol_output_chunk(*id, ChunkId::Symtab).set_imported(false);
+    for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
+        let id = ctx.objs[obj_id.index()].base.symbols[i];
+        if ctx.symbols[id].file() == Some(FileId::Obj(obj_id)) {
+            ctx.set_symbol_output_chunk(id, ChunkId::Symtab).set_imported(false);
         }
     }
 
@@ -1832,7 +1832,7 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
 
     let mut seen = HashSet::new();
     for mf in crate::mapped_file::file_pool() {
-        if mf.parent.is_none() && seen.insert(mf.name.clone()) {
+        if mf.parent.is_none() && seen.insert(mf.name.as_path()) {
             // Reopen the original contents because private mappings may have
             // been modified. Preserve the symlink name used in response.txt.
             let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
