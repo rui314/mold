@@ -65,14 +65,6 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
         }
     }
 
-    fn read_i16(bytes: &[u8]) -> i16 {
-        if Self::IS_LITTLE {
-            read_il16(bytes)
-        } else {
-            read_ib16(bytes)
-        }
-    }
-
     fn read_i32(bytes: &[u8]) -> i32 {
         if Self::IS_LITTLE {
             read_il32(bytes)
@@ -110,14 +102,6 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
             write_ul64(bytes, value);
         } else {
             write_ub64(bytes, value);
-        }
-    }
-
-    fn write_i16(bytes: &mut [u8], value: i16) {
-        if Self::IS_LITTLE {
-            write_il16(bytes, value);
-        } else {
-            write_ib16(bytes, value);
         }
     }
 

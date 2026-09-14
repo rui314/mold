@@ -20,7 +20,6 @@ use hashbrown::{Equivalent, HashMap};
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
@@ -828,14 +827,6 @@ impl Symbol {
     pub fn fragment(&self) -> Option<FragmentRef> {
         match self.origin.get() {
             OriginValue::Fragment(fragment) => Some(fragment),
-            _ => None,
-        }
-    }
-
-    /// Resolves the output chunk through its owning context.
-    pub fn output_chunk<'a, E: Arch>(&self, ctx: &'a Context<E>) -> Option<&'a ChunkHeader<E>> {
-        match self.origin.get() {
-            OriginValue::OutputChunk(chunk) => Some(ctx.symbol_chunk_header(chunk)),
             _ => None,
         }
     }
