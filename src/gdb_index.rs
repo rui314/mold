@@ -1079,16 +1079,11 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
                 // parallel chunks update disjoint values.
                 let entry = unsafe { &mut *entry_ref.value_mut_ptr(&names) };
                 entry.type_vector_offset = size.type_bytes;
-                entry.name_offset = size.name_bytes;
+                entry.name_offset = pool_size.type_bytes + size.name_bytes;
                 size.type_bytes += entry.count.load(Ordering::Relaxed) * 4 + 4;
                 size.name_bytes += entry_ref.key_len(&names) as u32 + 1;
             }
         });
-    entries.par_iter().for_each(|&entry_ref| {
-        // SAFETY: as above, each entry appears once.
-        unsafe { &mut *entry_ref.value_mut_ptr(&names) }.name_offset += pool_size.type_bytes;
-    });
-
     let ht_size = (entries.len() as u32 * 5 / 4 + 1).next_power_of_two();
     GdbIndexData {
         cus,
