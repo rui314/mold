@@ -2,12 +2,11 @@
 
 use crate::util::worker_local::WorkerLocal;
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Mutex, RwLock};
 
 use bstr::BStr;
 use rayon::prelude::*;
@@ -1173,60 +1172,23 @@ fn output_section_key<E: Arch>(
 type OutputSectionKey = (&'static BStr, u32);
 
 /// One file's contribution to an output section while members are gathered.
+#[derive(Default)]
 struct OutputSectionFileMembers {
     members: Vec<InputSectionId>,
     sh_flags: u64,
     p2align: u8,
 }
 
-// Scratch buffer used by create_output_sections() to build `members`.
-// Grouping input sections by file allows appending them in parallel
-// without synchronization while keeping their order deterministic.
-struct OutputSectionBuilder {
+struct CachedOutputSection {
     section: OutputSectionId,
-    files: Box<[UnsafeCell<OutputSectionFileMembers>]>,
+    file: Option<ObjId>,
+    group: usize,
 }
 
 type OutputSectionShared<E> = (
-    HashMap<OutputSectionKey, Arc<OutputSectionBuilder>>,
+    HashMap<OutputSectionKey, OutputSectionId>,
     Vec<OutputSection<E>>,
 );
-
-// SAFETY: the file-parallel traversal gives each task a distinct slot. The
-// slots are read only after that traversal joins.
-unsafe impl Sync for OutputSectionBuilder {}
-
-impl OutputSectionBuilder {
-    fn new(section: OutputSectionId, num_files: usize) -> OutputSectionBuilder {
-        OutputSectionBuilder {
-            section,
-            files: (0..num_files)
-                .map(|_| {
-                    UnsafeCell::new(OutputSectionFileMembers {
-                        members: Vec::new(),
-                        sh_flags: 0,
-                        p2align: 0,
-                    })
-                })
-                .collect(),
-        }
-    }
-
-    /// Returns the slot owned by the task processing `file`.
-    ///
-    /// # Safety
-    ///
-    /// Only one task may call this for a given file index, and all calls must
-    /// finish before the slots are read.
-    #[inline]
-    unsafe fn with_file_mut<R>(
-        &self,
-        file: usize,
-        f: impl FnOnce(&mut OutputSectionFileMembers) -> R,
-    ) -> R {
-        unsafe { f(&mut *self.files[file].get()) }
-    }
-}
 
 // PT_GNU_RELRO segment is a security mechanism to make more pages
 // read-only than we could have done without it.
@@ -1266,104 +1228,103 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     // Keep a cache per worker so it is reused across Rayon jobs. Each mutex
     // is locked once per file, without contention between workers.
     // It makes a noticeable difference if we have millions of input sections.
-    let num_files = ctx.objs.len();
     let shared: Mutex<OutputSectionShared<E>> =
         Mutex::new((HashMap::new(), std::mem::take(&mut ctx.output_sections)));
     let caches = WorkerLocal::new(HashMap::new);
 
     // Instantiate output sections and assign input sections to them
-    {
+    let file_groups = {
         let Context { objs, args, .. } = ctx;
-        objs.par_iter_mut().enumerate().for_each(|(fi, file)| {
-            let mut cache = caches.get();
-            let file_id = file.id();
-            let shstrtab = file.base.shstrtab;
-            let num_elf_sections = file.num_elf_sections;
-            let shdrs = &file.base.shdrs;
-            let extra_shdrs = &file.elf_sections2;
-            for (member, isec) in file
-                .sections
-                .regular_ids_mut(file_id)
-                .filter(|(_, isec)| isec.is_alive())
-            {
-                let name = isec.name_in(shstrtab, num_elf_sections);
-                let sh_type = if isec.is_nobits() {
-                    SHT_NOBITS
-                } else if isec.shndx as usize >= num_elf_sections {
-                    let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
-                    shdr.sh_type.get()
-                } else {
-                    shdrs[isec.shndx as usize].sh_type.get()
-                };
-                let sh_flags = isec.sh_flags
-                    & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
+        objs.par_iter_mut()
+            .map(|file| {
+                let mut groups: Vec<(OutputSectionId, OutputSectionFileMembers)> = Vec::new();
+                let mut cache = caches.get();
+                let file_id = file.id();
+                let shstrtab = file.base.shstrtab;
+                let num_elf_sections = file.num_elf_sections;
+                let shdrs = &file.base.shdrs;
+                let extra_shdrs = &file.elf_sections2;
+                for (member, isec) in file
+                    .sections
+                    .regular_ids_mut(file_id)
+                    .filter(|(_, isec)| isec.is_alive())
+                {
+                    let name = isec.name_in(shstrtab, num_elf_sections);
+                    let sh_type = if isec.is_nobits() {
+                        SHT_NOBITS
+                    } else if isec.shndx as usize >= num_elf_sections {
+                        let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
+                        shdr.sh_type.get()
+                    } else {
+                        shdrs[isec.shndx as usize].sh_type.get()
+                    };
+                    let sh_flags = isec.sh_flags
+                        & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
 
-                if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
-                    // COMDAT group members keep their own output sections
-                    // in a relocatable output.
-                    let mut osec = OutputSection::<E>::new(name, sh_type);
-                    osec.hdr.shdr.sh_flags.set(sh_flags);
-                    osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
-                    osec.hdr.is_relro = is_relro(&osec);
-                    osec.members.push(member);
-                    let mut shared = shared.lock().unwrap();
-                    shared.1.push(osec);
-                    isec.output_section = Some(OutputSectionId::new(shared.1.len() as u32 - 1));
-                    continue;
-                }
+                    if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
+                        // COMDAT group members keep their own output sections
+                        // in a relocatable output.
+                        let mut osec = OutputSection::<E>::new(name, sh_type);
+                        osec.hdr.shdr.sh_flags.set(sh_flags);
+                        osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
+                        osec.hdr.is_relro = is_relro(&osec);
+                        osec.members.push(member);
+                        let mut shared = shared.lock().unwrap();
+                        shared.1.push(osec);
+                        isec.output_section = Some(OutputSectionId::new(shared.1.len() as u32 - 1));
+                        continue;
+                    }
 
-                let key = output_section_key::<E>(args, isec, name, sh_type, ctors_in_init_array);
-                let builder = match cache.entry(key) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
+                    let key =
+                        output_section_key::<E>(args, isec, name, sh_type, ctors_in_init_array);
+                    let cached = cache.entry(key).or_insert_with(|| {
                         let mut shared = shared.lock().unwrap();
                         let (map, sections) = &mut *shared;
-                        let builder = map
-                            .entry(key)
-                            .or_insert_with(|| {
-                                sections.push(OutputSection::<E>::new(key.0, key.1));
-                                let id = OutputSectionId::new(sections.len() as u32 - 1);
-                                Arc::new(OutputSectionBuilder::new(id, num_files))
-                            })
-                            .clone();
-                        entry.insert(builder)
-                    }
-                };
-                isec.output_section = Some(builder.section);
-
-                // SAFETY: this closure is the only task for file fi;
-                // flattening starts after the parallel traversal joins.
-                unsafe {
-                    builder.with_file_mut(fi, |file| {
-                        file.members.push(member);
-                        file.sh_flags |= sh_flags & !(SHF_GROUP as u64);
-                        file.p2align = file.p2align.max(isec.p2align());
+                        let section = *map.entry(key).or_insert_with(|| {
+                            sections.push(OutputSection::<E>::new(key.0, key.1));
+                            OutputSectionId::new(sections.len() as u32 - 1)
+                        });
+                        CachedOutputSection {
+                            section,
+                            file: None,
+                            group: 0,
+                        }
                     });
+                    if cached.file != Some(file_id) {
+                        cached.file = Some(file_id);
+                        cached.group = groups.len();
+                        groups.push((cached.section, OutputSectionFileMembers::default()));
+                    }
+                    isec.output_section = Some(cached.section);
+                    let group = &mut groups[cached.group].1;
+                    group.members.push(member);
+                    group.sh_flags |= sh_flags & !(SHF_GROUP as u64);
+                    group.p2align = group.p2align.max(isec.p2align());
                 }
-            }
-        });
-    }
-    let (map, sections) = shared.into_inner().unwrap();
+                groups
+            })
+            .collect::<Vec<_>>()
+    };
+    drop(caches);
+    let (_, sections) = shared.into_inner().unwrap();
     ctx.output_sections = sections;
 
-    // Flatten the per-file members into contiguous vectors and compute the
-    // section alignment. Both are done in parallel over the files; an output
-    // section such as .text has a million members.
-    let builders: Vec<Arc<OutputSectionBuilder>> = map.into_values().collect();
-    drop(caches);
-    let flattened: Vec<(OutputSectionId, Vec<InputSectionId>, u64, u8)> = builders
-        .into_par_iter()
-        .map(|builder| {
-            // The worker caches held the other references. Once they are
-            // dropped, each task owns its builder and can unwrap its cells.
-            let builder = Arc::into_inner(builder).expect("shared output section builder");
-            let parts: Vec<OutputSectionFileMembers> = builder
-                .files
-                .into_vec()
-                .into_iter()
-                .map(UnsafeCell::into_inner)
-                .collect();
+    // Transpose only the groups that exist, retaining input-file order.
+    let mut grouped: Vec<Vec<OutputSectionFileMembers>> =
+        (0..ctx.output_sections.len()).map(|_| Vec::new()).collect();
+    for groups in file_groups {
+        for (section, members) in groups {
+            grouped[section.index()].push(members);
+        }
+    }
 
+    // Copy large member vectors in parallel, as well as flattening different
+    // output sections in parallel. No task mutates another file's groups.
+    let flattened: Vec<_> = grouped
+        .into_par_iter()
+        .enumerate()
+        .filter(|(_, parts)| !parts.is_empty())
+        .map(|(index, parts)| {
             let n = parts.iter().map(|g| g.members.len()).sum();
             let mut members = vec![InputSectionId::NONE; n];
             let mut rest = members.as_mut_slice();
@@ -1378,7 +1339,12 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
 
             let sh_flags = parts.iter().fold(0, |flags, g| flags | g.sh_flags);
             let p2align = parts.iter().map(|g| g.p2align).max().unwrap_or(0);
-            (builder.section, members, sh_flags, p2align)
+            (
+                OutputSectionId::new(index as u32),
+                members,
+                sh_flags,
+                p2align,
+            )
         })
         .collect();
     for (id, members, sh_flags, p2align) in flattened {
