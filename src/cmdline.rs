@@ -1012,21 +1012,45 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
 // open(2) on an executable file that is currently running. This function
 // returns true if we are running on a Linux kernel older than 6.11 or newer
 // than 6.12.
+#[cfg(unix)]
 fn returns_etxtbsy() -> bool {
-    let Ok(release) = std::fs::read_to_string("/proc/sys/kernel/osrelease") else {
+    // uname may leave the tail of each string buffer untouched.
+    let mut buf = std::mem::MaybeUninit::<libc::utsname>::zeroed();
+    // SAFETY: buf points to writable storage for a complete utsname.
+    if unsafe { libc::uname(buf.as_mut_ptr()) } != 0 {
         return false;
-    };
-    // Parses a kernel version string, e.g. "6.8.0-47-generic".
-    let mut parts = release
-        .trim()
-        .split(['.', '-'])
-        .map(|p| p.parse::<u32>().unwrap_or(0));
-    let ver = (
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-    );
+    }
+    // SAFETY: uname succeeded and initialized the structure, including
+    // NUL-terminated sysname and release strings.
+    let buf = unsafe { buf.assume_init() };
+    let sysname = unsafe { std::ffi::CStr::from_ptr(buf.sysname.as_ptr()) };
+    if sysname.to_bytes() != b"Linux" {
+        return false;
+    }
+    let release = unsafe { std::ffi::CStr::from_ptr(buf.release.as_ptr()) }.to_bytes();
+
+    // Match the C++ parser's leading major.minor.patch, ignoring any suffix.
+    // An unrecognized version is treated as 0.0.0.
+    let ver = (|| {
+        let mut parts = release.splitn(3, |&c| c == b'.');
+        let mut ver = [0u32; 3];
+        for (i, num) in ver.iter_mut().enumerate() {
+            let part = parts.next()?;
+            let len = part.iter().take_while(|c| c.is_ascii_digit()).count();
+            if len == 0 || (i < 2 && len != part.len()) {
+                return None;
+            }
+            *num = std::str::from_utf8(&part[..len]).ok()?.parse().ok()?;
+        }
+        Some((ver[0], ver[1], ver[2]))
+    })()
+    .unwrap_or((0, 0, 0));
     !((6, 11, 0)..(6, 13, 0)).contains(&ver)
+}
+
+#[cfg(not(unix))]
+fn returns_etxtbsy() -> bool {
+    false
 }
 
 /// The result of parsing the command line.
