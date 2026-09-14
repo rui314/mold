@@ -1,7 +1,7 @@
 //! `.copyrel` and `.copyrel.rel.ro`, storage for copy relocations.
 
 use crate::arch::Arch;
-use crate::chunks::{self, ChunkHeader};
+use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
@@ -65,7 +65,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     // For example, `environ`, `_environ` and `__environ` in libc.so are
     // aliases. If one of the symbols is copied by a copy relocation, other
     // symbols have to refer to the copied place as well.
-    let aliases: Vec<SymbolId> = dso.symbols_at(ctx, sym, dso_id).to_vec();
+    let aliases = dso.symbols_at(ctx, sym, dso_id);
 
     let sec = if relro {
         &mut ctx.copyrel_relro
@@ -78,7 +78,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     let align = sec.hdr.shdr.sh_addralign.get().max(alignment);
     sec.hdr.shdr.sh_addralign.set(align);
 
-    for alias in aliases {
+    for &alias in aliases {
         ctx.symbols.aux_mut(alias);
         let s = &mut ctx.symbols[alias];
         s.set_imported(true);
@@ -86,7 +86,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
         s.set_copyrel(true);
         s.set_copyrel_readonly(relro);
         s.value = offset;
-        chunks::dynsym::add_symbol(ctx, alias);
+        ctx.dynsym.add_symbol(&mut ctx.symbols, alias);
     }
 }
 

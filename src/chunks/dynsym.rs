@@ -10,7 +10,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
-use crate::symbol::SymbolId;
+use crate::symbol::{SymbolId, SymbolTable};
 
 // .dynsym contains symbols for dynamic linking. This is similar to
 // .symtab, but .dynsym contains data that the runtime uses.
@@ -42,23 +42,23 @@ impl<E: Arch> DynsymSection<E> {
             dynstr_entries: Vec::new(),
         }
     }
+
+    #[inline]
+    pub fn add_symbol(&mut self, symbols: &mut SymbolTable, sym: SymbolId) {
+        if self.symbols.is_empty() {
+            self.symbols.push(None);
+        }
+        if symbols[sym].dynsym_idx(symbols).is_none() {
+            // Mark the symbol as queued before sort_dynsyms assigns its real index.
+            symbols.aux_mut(sym).dynsym_idx = u32::MAX - 1;
+            self.symbols.push(Some(sym));
+        }
+    }
 }
 
 impl<E: Arch> Default for DynsymSection<E> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[inline]
-pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-    if ctx.dynsym.symbols.is_empty() {
-        ctx.dynsym.symbols.push(None);
-    }
-    if ctx.symbols[sym].dynsym_idx(&ctx.symbols).is_none() {
-        // Mark the symbol as queued before sort_dynsyms assigns its real index.
-        ctx.symbols.aux_mut(sym).dynsym_idx = u32::MAX - 1;
-        ctx.dynsym.symbols.push(Some(sym));
     }
 }
 

@@ -85,7 +85,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     assert_ne!(idx, u32::MAX);
     ctx.symbols.aux_mut(sym).plt_idx = idx;
     ctx.plt.symbols.push(sym);
-    crate::chunks::dynsym::add_symbol(ctx, sym);
+    ctx.dynsym.add_symbol(&mut ctx.symbols, sym);
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {

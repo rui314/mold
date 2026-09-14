@@ -2727,7 +2727,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         };
 
         if is_imported || is_exported {
-            dynsym::add_symbol(ctx, id);
+            ctx.dynsym.add_symbol(&mut ctx.symbols, id);
         }
         if flags & NEEDS_GOT != 0 {
             crate::chunks::got::add_got_symbol(ctx, id);
