@@ -1065,7 +1065,7 @@ impl<E: Layout> Iterator for CrelReader<'_, E> {
             self.r_type += util::read_sleb(&mut self.data);
         }
         if self.is_rela && flags & 4 != 0 {
-            self.addend += util::read_sleb(&mut self.data);
+            self.addend = self.addend.wrapping_add(util::read_sleb(&mut self.data));
         }
 
         Some(ElfRel::<E>::new(
@@ -3819,5 +3819,33 @@ pub fn print_trace_symbol<R: SymbolRecord>(file: &dyn fmt::Display, esym: &R, sy
         out!("trace-symbol: {file}: weak reference to {sym}");
     } else {
         out!("trace-symbol: {file}: reference to {sym}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::X86_64;
+
+    #[test]
+    fn crel_addend_wraps() {
+        let data = [
+            0x1f, // Three relocations with addends, offset scale 3.
+            0x07, 0x01, 0x01, // Offset 0, symbol 1, R_X86_64_64.
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, // i64::MAX
+            0x0c, 0x01, // Offset delta 8, addend delta +1.
+            0x0c, 0x7f, // Offset delta 8, addend delta -1.
+        ];
+        let rels: Vec<_> = CrelReader::<X86_64>::new(&"test", &data)
+            .map(|rel| (rel.r_offset(), rel.r_sym(), rel.r_type(), rel.r_addend()))
+            .collect();
+        assert_eq!(
+            rels,
+            [
+                (0, 1, R_X86_64_64, i64::MAX),
+                (8, 1, R_X86_64_64, i64::MIN),
+                (16, 1, R_X86_64_64, i64::MAX),
+            ]
+        );
     }
 }
