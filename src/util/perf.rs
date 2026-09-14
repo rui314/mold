@@ -72,6 +72,25 @@ struct Record {
     children: Vec<usize>,
 }
 
+// Infer implicit parents from complete intervals, as C++ mold does. Overlapping
+// timers need not be nested, and explicitly named parents take precedence.
+fn nest_records(records: &mut [Record]) {
+    for record in records.iter_mut() {
+        record.children.clear();
+    }
+    for i in 0..records.len() {
+        if records[i].parent.is_none() {
+            let inner = &records[i];
+            records[i].parent = records[..i].iter().rposition(|outer| {
+                outer.start <= inner.start && inner.end.unwrap() <= outer.end.unwrap()
+            });
+        }
+        if let Some(parent) = records[i].parent {
+            records[parent].children.push(i);
+        }
+    }
+}
+
 /// Collects wall-clock and CPU timing records for the passes of a link.
 /// Cloning shares the underlying records.
 #[derive(Clone, Debug)]
@@ -172,15 +191,9 @@ impl Timers {
         }
     }
 
-    /// Starts a timer, nested in the timer still running that started last.
+    /// Starts a timer whose nesting is inferred from completed time intervals.
     pub fn start(&self, name: &str) -> Timer {
-        let Some(records) = &self.records else {
-            return self.inactive();
-        };
-        let records = records.lock().unwrap();
-        let parent = records.iter().rposition(|r| r.end.is_none());
-        drop(records);
-        self.start_child(name, parent)
+        self.start_child(name, None)
     }
 
     fn start_child(&self, name: impl std::fmt::Display, parent: Option<usize>) -> Timer {
@@ -201,9 +214,6 @@ impl Timers {
             parent,
             children: Vec::new(),
         });
-        if let Some(parent) = parent {
-            records[parent].children.push(index);
-        }
         Timer {
             timers: self.clone(),
             index,
@@ -233,6 +243,7 @@ impl Timers {
                 r.end = Some(now);
             }
         }
+        nest_records(&mut records);
 
         fn print_rec(records: &[Record], i: usize, indent: usize) {
             let r = &records[i];
@@ -245,7 +256,7 @@ impl Timers {
                 " ".repeat(indent * 2),
                 r.name
             );
-            // Children are appended in start order under the records lock.
+            // nest_records adds children in their recorded start order.
             for &child in &r.children {
                 print_rec(records, child, indent + 1);
             }
@@ -300,6 +311,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn implicit_timer_parents_follow_completed_intervals() {
+        let timers = Timers::new();
+        let root = timers.start("root");
+        let _running = [
+            timers.start("foreground"),
+            timers.start("nested"),
+            timers.start("background"),
+            timers.start("next foreground"),
+            root.child("explicit child"),
+        ];
+        let mut records = timers.records.as_ref().unwrap().lock().unwrap();
+        let start = records[0].start;
+        for (record, (begin, end)) in
+            records
+                .iter_mut()
+                .zip([(0, 100), (10, 40), (15, 25), (20, 70), (50, 80), (60, 65)])
+        {
+            record.start = start + std::time::Duration::from_millis(begin);
+            record.end = Some(start + std::time::Duration::from_millis(end));
+        }
+        nest_records(&mut records);
+        let children: Vec<_> = records.iter().map(|r| r.children.clone()).collect();
+        drop(records);
+        assert_eq!(
+            children,
+            [vec![1, 3, 4, 5], vec![2], vec![], vec![], vec![], vec![]]
+        );
+    }
+
+    #[test]
     fn optional_recording_includes_nested_and_background_timers() {
         for timers in [Timers::new(), Timers::disabled()] {
             let mut root = timers.start("root");
@@ -312,7 +353,8 @@ mod tests {
             root.stop();
             root.stop();
             if let Some(records) = &timers.records {
-                let records = records.lock().unwrap();
+                let mut records = records.lock().unwrap();
+                nest_records(&mut records);
                 assert_eq!(records.len(), 3);
                 assert!(records.iter().all(|record| record.end.is_some()));
                 assert_eq!(records[0].children, [1, 2]);
