@@ -1,9 +1,9 @@
 [package]
 name = "mold-cli"
-version = "2.42.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "The mold executable"
-license = "MIT"
+license.workspace = true
 
 [[bin]]
 name = "mold"
@@ -16,7 +16,7 @@ harness = false
 
 [dependencies]
 mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "cc58b72775b8b5bc89ee37752af61fcb4f7c2909" }
-mold = { path = ".." }
+mold.workspace = true
 mold-target-x86_64 = { path = "../arch/x86_64", optional = true }
 mold-target-i386 = { path = "../arch/i386", optional = true }
 mold-target-arm32 = { path = "../arch/arm32", optional = true }

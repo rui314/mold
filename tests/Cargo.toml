@@ -1,13 +1,13 @@
 [package]
 name = "mold-tests"
-version = "2.42.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Test support for mold's shell test suite"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [lib]
 path = "lib.rs"
 
 [dependencies]
-libc = "0.2"
+libc.workspace = true

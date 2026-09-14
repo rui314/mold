@@ -1,12 +1,12 @@
 [package]
 name = "mold-target-loongarch32"
-version = "2.42.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "The mold linker instantiated for loongarch32"
-license = "MIT"
+license.workspace = true
 
 [lib]
 path = "lib.rs"
 
 [dependencies]
-mold = { path = "../.." }
+mold.workspace = true
