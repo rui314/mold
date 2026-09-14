@@ -312,13 +312,26 @@ pub enum ReportOutput {
 
 impl ReportOutput {
     pub fn write(&self, option: &str, contents: &[u8]) {
+        self.with_writer(option, |out| out.write_all(contents));
+    }
+
+    pub fn with_writer(
+        &self,
+        option: &str,
+        write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+    ) {
         match self {
             Self::Stdout => {
-                let _ = std::io::stdout().write_all(contents);
+                let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+                let _ = write(&mut out).and_then(|()| out.flush());
             }
             Self::File(path) => {
-                std::fs::write(path, contents)
+                let file = std::fs::File::create(path)
                     .unwrap_or_else(|e| fatal!("{option}: cannot open {}: {e}", path.display()));
+                let mut out = std::io::BufWriter::new(file);
+                write(&mut out)
+                    .and_then(|()| out.flush())
+                    .unwrap_or_else(|e| fatal!("{option}: writing {} failed: {e}", path.display()));
             }
         }
     }

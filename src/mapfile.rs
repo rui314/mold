@@ -40,57 +40,57 @@ pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
     let _t = ctx.timer("print_map");
     let map = section_symbols(ctx);
 
-    let mut out = String::from("               VMA       Size Align Out     In      Symbol\n");
-    for &id in &ctx.chunks {
-        let hdr = ctx.chunk_header(id);
-        writeln!(
-            out,
-            "{:#18x}{:>11}{:>6} {}",
-            hdr.shdr.sh_addr.get(),
-            hdr.shdr.sh_size.get(),
-            hdr.shdr.sh_addralign.get(),
-            hdr.name
-        )
-        .unwrap();
+    output.with_writer("--print-map", |out| {
+        out.write_all(b"               VMA       Size Align Out     In      Symbol\n")?;
+        for &id in &ctx.chunks {
+            let hdr = ctx.chunk_header(id);
+            writeln!(
+                out,
+                "{:#18x}{:>11}{:>6} {}",
+                hdr.shdr.sh_addr.get(),
+                hdr.shdr.sh_size.get(),
+                hdr.shdr.sh_addralign.get(),
+                hdr.name
+            )?;
 
-        let ChunkId::Output(osec_id) = id else {
-            continue;
-        };
-        let osec = &ctx.output_sections[osec_id.index()];
-        let lines: Vec<String> = osec
-            .members
-            .par_iter()
-            .map(|&member| {
-                let isec = ctx.input_section(member);
-                let addr = if osec.hdr.is_alloc() {
-                    osec.hdr.shdr.sh_addr.get() + isec.offset()
-                } else {
-                    0
-                };
-                let mut s = format!(
-                    "{addr:#18x}{:>11}{:>6}         {}\n",
-                    isec.sh_size,
-                    1u64 << isec.p2align(),
-                    isec.display(&ctx.objs[isec.file.index()])
-                );
-                if let Some(syms) = map.get(&member) {
-                    for &id in syms {
-                        let sym = &ctx.symbols[id];
-                        writeln!(
-                            s,
-                            "{:#18x}          0     0                 {sym}",
-                            sym.addr(ctx)
-                        )
-                        .unwrap();
+            let ChunkId::Output(osec_id) = id else {
+                continue;
+            };
+            let osec = &ctx.output_sections[osec_id.index()];
+            let lines: Vec<String> = osec
+                .members
+                .par_iter()
+                .map(|&member| {
+                    let isec = ctx.input_section(member);
+                    let addr = if osec.hdr.is_alloc() {
+                        osec.hdr.shdr.sh_addr.get() + isec.offset()
+                    } else {
+                        0
+                    };
+                    let mut s = format!(
+                        "{addr:#18x}{:>11}{:>6}         {}\n",
+                        isec.sh_size,
+                        1u64 << isec.p2align(),
+                        isec.display(&ctx.objs[isec.file.index()])
+                    );
+                    if let Some(syms) = map.get(&member) {
+                        for &id in syms {
+                            let sym = &ctx.symbols[id];
+                            writeln!(
+                                s,
+                                "{:#18x}          0     0                 {sym}",
+                                sym.addr(ctx)
+                            )
+                            .unwrap();
+                        }
                     }
-                }
-                s
-            })
-            .collect();
-        for line in lines {
-            out.push_str(&line);
+                    s
+                })
+                .collect();
+            for line in lines {
+                out.write_all(line.as_bytes())?;
+            }
         }
-    }
-
-    output.write("--print-map", out.as_bytes());
+        Ok(())
+    });
 }
