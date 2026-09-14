@@ -4447,10 +4447,8 @@ fn crc32_solve(current: u32, desired: u32) -> [u8; 4] {
 pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("write_separate_debug_file");
 
-    let path = ctx.args.separate_debug_file.clone();
-
     // Open an output file early
-    let mut output = OutputFile::open_locked(&path, 0o666);
+    let mut output = OutputFile::open_locked(&ctx.args.separate_debug_file, 0o666);
 
     // We want to write to the debug info file in background so that the
     // user doesn't have to wait for it to complete.
