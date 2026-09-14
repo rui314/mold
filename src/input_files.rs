@@ -2245,9 +2245,8 @@ impl<E: Arch> ObjectFile<E> {
                 let off = fde.input_offset as usize + 4;
                 let cie_offset = E::Endian::read_i32(&contents[off..]) as i64;
                 let target = off as i64 - cie_offset;
-                let Some(ci) = new_cies
-                    .iter()
-                    .position(|c| c.input_offset as i64 == target)
+                // CIEs were appended in input-offset order.
+                let Ok(ci) = new_cies.binary_search_by_key(&target, |c| i64::from(c.input_offset))
                 else {
                     fatal!("{}: bad FDE pointer", isec.display(self));
                 };
@@ -3294,9 +3293,8 @@ impl<E: Arch> SharedFile<E> {
                 && (ver as usize) < self.version_strings.len()
                 && !self.version_strings[ver as usize].is_empty();
 
-            let versioned_key = || {
-                leak_bytes([name, b"@", self.version_strings[ver as usize]].concat())
-            };
+            let versioned_key =
+                || leak_bytes([name, b"@", self.version_strings[ver as usize]].concat());
 
             // Symbol resolution involving symbol versioning is tricky because one
             // symbol can be resolved with two different identifiers. Among
