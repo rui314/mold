@@ -222,47 +222,33 @@ pub trait PhdrRecord: FileRecord + fmt::Debug {
     fn p_align_mut(&mut self) -> &mut Self::Word;
 }
 
+macro_rules! impl_phdr_record {
+    ($record:ident, $word:ident) => {
 #[rustfmt::skip]
-impl<E: Endian> PhdrRecord for Elf64Phdr<E> {
-    type Endian = E;
-    type Word = U64<E>;
+        impl<E: Endian> PhdrRecord for $record<E> {
+            type Endian = E;
+            type Word = $word<E>;
 
-    fn p_type(&self) -> &U32<E> { &self.p_type }
-    fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
-    fn p_flags(&self) -> &U32<E> { &self.p_flags }
-    fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
-    fn p_offset_mut(&mut self) -> &mut U64<E> { &mut self.p_offset }
-    fn p_vaddr(&self) -> &U64<E> { &self.p_vaddr }
-    fn p_vaddr_mut(&mut self) -> &mut U64<E> { &mut self.p_vaddr }
-    fn p_paddr(&self) -> &U64<E> { &self.p_paddr }
-    fn p_paddr_mut(&mut self) -> &mut U64<E> { &mut self.p_paddr }
-    fn p_filesz_mut(&mut self) -> &mut U64<E> { &mut self.p_filesz }
-    fn p_memsz(&self) -> &U64<E> { &self.p_memsz }
-    fn p_memsz_mut(&mut self) -> &mut U64<E> { &mut self.p_memsz }
-    fn p_align(&self) -> &U64<E> { &self.p_align }
-    fn p_align_mut(&mut self) -> &mut U64<E> { &mut self.p_align }
+            fn p_type(&self) -> &U32<E> { &self.p_type }
+            fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
+            fn p_flags(&self) -> &U32<E> { &self.p_flags }
+            fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
+            fn p_offset_mut(&mut self) -> &mut $word<E> { &mut self.p_offset }
+            fn p_vaddr(&self) -> &$word<E> { &self.p_vaddr }
+            fn p_vaddr_mut(&mut self) -> &mut $word<E> { &mut self.p_vaddr }
+            fn p_paddr(&self) -> &$word<E> { &self.p_paddr }
+            fn p_paddr_mut(&mut self) -> &mut $word<E> { &mut self.p_paddr }
+            fn p_filesz_mut(&mut self) -> &mut $word<E> { &mut self.p_filesz }
+            fn p_memsz(&self) -> &$word<E> { &self.p_memsz }
+            fn p_memsz_mut(&mut self) -> &mut $word<E> { &mut self.p_memsz }
+            fn p_align(&self) -> &$word<E> { &self.p_align }
+            fn p_align_mut(&mut self) -> &mut $word<E> { &mut self.p_align }
+        }
+    };
 }
 
-#[rustfmt::skip]
-impl<E: Endian> PhdrRecord for Elf32Phdr<E> {
-    type Endian = E;
-    type Word = U32<E>;
-
-    fn p_type(&self) -> &U32<E> { &self.p_type }
-    fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
-    fn p_flags(&self) -> &U32<E> { &self.p_flags }
-    fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
-    fn p_offset_mut(&mut self) -> &mut U32<E> { &mut self.p_offset }
-    fn p_vaddr(&self) -> &U32<E> { &self.p_vaddr }
-    fn p_vaddr_mut(&mut self) -> &mut U32<E> { &mut self.p_vaddr }
-    fn p_paddr(&self) -> &U32<E> { &self.p_paddr }
-    fn p_paddr_mut(&mut self) -> &mut U32<E> { &mut self.p_paddr }
-    fn p_filesz_mut(&mut self) -> &mut U32<E> { &mut self.p_filesz }
-    fn p_memsz(&self) -> &U32<E> { &self.p_memsz }
-    fn p_memsz_mut(&mut self) -> &mut U32<E> { &mut self.p_memsz }
-    fn p_align(&self) -> &U32<E> { &self.p_align }
-    fn p_align_mut(&mut self) -> &mut U32<E> { &mut self.p_align }
-}
+impl_phdr_record!(Elf64Phdr, U64);
+impl_phdr_record!(Elf32Phdr, U32);
 
 pub type ElfPhdr<E> = <E as Layout>::Phdr;
 
@@ -414,43 +400,31 @@ pub trait SymbolRecord: FileRecord + fmt::Debug {
     }
 }
 
+macro_rules! impl_symbol_record {
+    ($record:ident, $word:ident) => {
 #[rustfmt::skip]
-impl<E: Endian> SymbolRecord for Elf64Sym<E> {
-    type Endian = E;
-    type Word = U64<E>;
+        impl<E: Endian> SymbolRecord for $record<E> {
+            type Endian = E;
+            type Word = $word<E>;
 
-    fn st_name(&self) -> &U32<E> { &self.st_name }
-    fn st_name_mut(&mut self) -> &mut U32<E> { &mut self.st_name }
-    fn st_value(&self) -> &U64<E> { &self.st_value }
-    fn st_value_mut(&mut self) -> &mut U64<E> { &mut self.st_value }
-    fn st_size(&self) -> &U64<E> { &self.st_size }
-    fn st_size_mut(&mut self) -> &mut U64<E> { &mut self.st_size }
-    fn st_shndx(&self) -> &U16<E> { &self.st_shndx }
-    fn st_shndx_mut(&mut self) -> &mut U16<E> { &mut self.st_shndx }
-    fn type_and_bind(&self) -> u8 { self.type_and_bind }
-    fn type_and_bind_mut(&mut self) -> &mut u8 { &mut self.type_and_bind }
-    fn other(&self) -> u8 { self.other }
-    fn other_mut(&mut self) -> &mut u8 { &mut self.other }
+            fn st_name(&self) -> &U32<E> { &self.st_name }
+            fn st_name_mut(&mut self) -> &mut U32<E> { &mut self.st_name }
+            fn st_value(&self) -> &$word<E> { &self.st_value }
+            fn st_value_mut(&mut self) -> &mut $word<E> { &mut self.st_value }
+            fn st_size(&self) -> &$word<E> { &self.st_size }
+            fn st_size_mut(&mut self) -> &mut $word<E> { &mut self.st_size }
+            fn st_shndx(&self) -> &U16<E> { &self.st_shndx }
+            fn st_shndx_mut(&mut self) -> &mut U16<E> { &mut self.st_shndx }
+            fn type_and_bind(&self) -> u8 { self.type_and_bind }
+            fn type_and_bind_mut(&mut self) -> &mut u8 { &mut self.type_and_bind }
+            fn other(&self) -> u8 { self.other }
+            fn other_mut(&mut self) -> &mut u8 { &mut self.other }
+        }
+    };
 }
 
-#[rustfmt::skip]
-impl<E: Endian> SymbolRecord for Elf32Sym<E> {
-    type Endian = E;
-    type Word = U32<E>;
-
-    fn st_name(&self) -> &U32<E> { &self.st_name }
-    fn st_name_mut(&mut self) -> &mut U32<E> { &mut self.st_name }
-    fn st_value(&self) -> &U32<E> { &self.st_value }
-    fn st_value_mut(&mut self) -> &mut U32<E> { &mut self.st_value }
-    fn st_size(&self) -> &U32<E> { &self.st_size }
-    fn st_size_mut(&mut self) -> &mut U32<E> { &mut self.st_size }
-    fn st_shndx(&self) -> &U16<E> { &self.st_shndx }
-    fn st_shndx_mut(&mut self) -> &mut U16<E> { &mut self.st_shndx }
-    fn type_and_bind(&self) -> u8 { self.type_and_bind }
-    fn type_and_bind_mut(&mut self) -> &mut u8 { &mut self.type_and_bind }
-    fn other(&self) -> u8 { self.other }
-    fn other_mut(&mut self) -> &mut u8 { &mut self.other }
-}
+impl_symbol_record!(Elf64Sym, U64);
+impl_symbol_record!(Elf32Sym, U32);
 
 pub type ElfSym<E> = <E as Layout>::Sym;
 
@@ -919,31 +893,25 @@ pub trait ChdrRecord: FileRecord + fmt::Debug {
     fn ch_addralign_mut(&mut self) -> &mut Self::Word;
 }
 
+macro_rules! impl_chdr_record {
+    ($record:ident, $word:ident) => {
 #[rustfmt::skip]
-impl<E: Endian> ChdrRecord for Elf64Chdr<E> {
-    type Endian = E;
-    type Word = U64<E>;
+        impl<E: Endian> ChdrRecord for $record<E> {
+            type Endian = E;
+            type Word = $word<E>;
 
-    fn ch_type(&self) -> &U32<E> { &self.ch_type }
-    fn ch_type_mut(&mut self) -> &mut U32<E> { &mut self.ch_type }
-    fn ch_size(&self) -> &U64<E> { &self.ch_size }
-    fn ch_size_mut(&mut self) -> &mut U64<E> { &mut self.ch_size }
-    fn ch_addralign(&self) -> &U64<E> { &self.ch_addralign }
-    fn ch_addralign_mut(&mut self) -> &mut U64<E> { &mut self.ch_addralign }
+            fn ch_type(&self) -> &U32<E> { &self.ch_type }
+            fn ch_type_mut(&mut self) -> &mut U32<E> { &mut self.ch_type }
+            fn ch_size(&self) -> &$word<E> { &self.ch_size }
+            fn ch_size_mut(&mut self) -> &mut $word<E> { &mut self.ch_size }
+            fn ch_addralign(&self) -> &$word<E> { &self.ch_addralign }
+            fn ch_addralign_mut(&mut self) -> &mut $word<E> { &mut self.ch_addralign }
+        }
+    };
 }
 
-#[rustfmt::skip]
-impl<E: Endian> ChdrRecord for Elf32Chdr<E> {
-    type Endian = E;
-    type Word = U32<E>;
-
-    fn ch_type(&self) -> &U32<E> { &self.ch_type }
-    fn ch_type_mut(&mut self) -> &mut U32<E> { &mut self.ch_type }
-    fn ch_size(&self) -> &U32<E> { &self.ch_size }
-    fn ch_size_mut(&mut self) -> &mut U32<E> { &mut self.ch_size }
-    fn ch_addralign(&self) -> &U32<E> { &self.ch_addralign }
-    fn ch_addralign_mut(&mut self) -> &mut U32<E> { &mut self.ch_addralign }
-}
+impl_chdr_record!(Elf64Chdr, U64);
+impl_chdr_record!(Elf32Chdr, U32);
 
 pub type ElfChdr<E> = <E as Layout>::Chdr;
 
