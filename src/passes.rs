@@ -630,18 +630,12 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             .for_each(|file| file.pending_comdat_signatures = Vec::new());
     }
 
-    let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
-
     // IR objects name their COMDAT groups per symbol.
-    for obj_id in obj_ids.iter().copied() {
-        let fi = obj_id.index();
-        for i in 0..ctx.objs[fi].lto_comdat_keys.len() {
-            if let (Some(key), None) = (
-                ctx.objs[fi].lto_comdat_keys[i],
-                ctx.objs[fi].lto_comdat_signatures[i],
-            ) {
+    for file in &mut ctx.objs {
+        for i in 0..file.lto_comdat_keys.len() {
+            if let (Some(key), None) = (file.lto_comdat_keys[i], file.lto_comdat_signatures[i]) {
                 let sig = ctx.symbols.intern(key);
-                ctx.objs[fi].lto_comdat_signatures[i] = Some(sig);
+                file.lto_comdat_signatures[i] = Some(sig);
             }
         }
     }
@@ -673,9 +667,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     // definitions, so a regular object extracted after LTO must not win the
     // group and resurrect a copy of them
     // (https://github.com/rui314/mold/issues/1637).
-    for obj_id in obj_ids {
-        let fi = obj_id.index();
-        let file = &ctx.objs[fi];
+    for file in &mut ctx.objs {
         if !file.base.is_reachable() || file.lto_comdat_signatures.is_empty() {
             continue;
         }
@@ -692,7 +684,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
             }
             discarded.push(ctx.symbols[sig].sym_idx() != priority);
         }
-        ctx.objs[fi].lto_comdat_discarded = discarded;
+        file.lto_comdat_discarded = discarded;
     }
 
     // Restore sym_idx before the final symbol-resolution pass.
@@ -3095,17 +3087,12 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
         .map(|(i, v)| (v.as_ref(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
         .collect();
 
-    let obj_ids: Vec<ObjId> = ctx.objs.iter().map(ObjectFile::id).collect();
-    for obj_id in obj_ids {
-        if ctx.is_internal(obj_id) {
+    for file in &ctx.objs {
+        if ctx.is_internal(file.id()) {
             continue;
         }
-        let file_id = FileId::Obj(obj_id);
-        for i in
-            ctx.objs[obj_id.index()].base.first_global..ctx.objs[obj_id.index()].base.elf_syms.len()
-        {
-            let file = &ctx.objs[obj_id.index()];
-
+        let file_id = FileId::Obj(file.id());
+        for i in file.base.first_global..file.base.elf_syms.len() {
             // Match VERSION part of symbol foo@VERSION with version definitions.
             if !file.has_symver[i - file.base.first_global] {
                 continue;
@@ -3132,7 +3119,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             let Some(&ver_idx) = verdefs.get(ver) else {
                 error!(
                     "{}: symbol {} has undefined version {}",
-                    ctx.objs[obj_id.index()],
+                    file,
                     ctx.symbols[id],
                     crate::util::display(ver)
                 );
@@ -3153,7 +3140,6 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             if let Some(id2) = ctx.symbols.lookup(sym_name) {
                 if id2 != id && ctx.symbols[id2].file() == Some(file_id) {
                     let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
-                    let file = &ctx.objs[obj_id.index()];
                     if !file.has_symver[sym2_idx - file.base.first_global] {
                         let v2 = ctx.symbols[id2].ver_idx as u32;
                         if v2 == ctx.default_version as u32
