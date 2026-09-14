@@ -7,7 +7,7 @@ use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{r_delta, FragmentLookup, InputSection};
-use crate::symbol::OriginValue;
+use crate::symbol::{OriginValue, Symbol};
 
 // RelocSection represents a relocation table for an output file.
 // These tables are emitted for `-r` and for final links with `--emit-relocs`.
@@ -60,6 +60,26 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
     sec.hdr.shdr.sh_info.set(osec_shndx);
 }
 
+/// Maps a symbol and addend to the output symbol table. Input section symbols
+/// are replaced by output section symbols, with their offsets in the addend.
+/// A section without an output section has no surviving symbol reference.
+#[inline]
+pub(crate) fn output_symidx_addend<E: Arch>(
+    ctx: &Context<E>,
+    sym: &Symbol,
+    addend: i64,
+) -> Option<(u32, i64)> {
+    if sym.st_type() == STT_SECTION {
+        let target = sym.input_section_ref(ctx)?;
+        Some((
+            ctx.output_section(target.output_section?).hdr.shndx,
+            addend + target.offset() as i64,
+        ))
+    } else {
+        Some((sym.output_sym_idx(ctx), addend))
+    }
+}
+
 // Translates an input relocation's symbol reference into the {r_sym, addend}
 // pair that is valid in the output file. The returned r_sym is either an output
 // section index (for section-relative relocs) or an output symbol table index.
@@ -83,36 +103,20 @@ fn symidx_addend<'a, E: Arch>(
     }
 
     if sym.st_type() == STT_SECTION {
-        match sym.origin() {
-            OriginValue::Fragment(frag) => {
-                let msec = &ctx.merged_sections[frag.section.index()];
-                return (
-                    msec.hdr.shndx,
-                    msec.fragments.get(frag.entry).offset() as i64
-                        + sym.value as i64
-                        + isec.rel_addend(rel),
-                );
-            }
-            OriginValue::InputSection(section) => {
-                let target = ctx.input_section(section);
-                if let Some(osec) = target.output_section {
-                    return (
-                        ctx.output_section(osec).hdr.shndx,
-                        isec.rel_addend(rel) + target.offset() as i64,
-                    );
-                }
-            }
-            _ => {}
+        if let OriginValue::Fragment(frag) = sym.origin() {
+            let msec = &ctx.merged_sections[frag.section.index()];
+            return (
+                msec.hdr.shndx,
+                msec.fragments.get(frag.entry).offset() as i64
+                    + sym.value as i64
+                    + isec.rel_addend(rel),
+            );
         }
-        // This is usually a dead debug section referring to a
-        // COMDAT-eliminated section.
+    } else if !sym.write_to_symtab() {
         return (0, 0);
     }
-
-    if sym.write_to_symtab() {
-        return (sym.output_sym_idx(ctx), isec.rel_addend(rel));
-    }
-    (0, 0)
+    // A dead debug section can refer to a COMDAT-eliminated section.
+    output_symidx_addend(ctx, sym, isec.rel_addend(rel)).unwrap_or((0, 0))
 }
 
 /// Writes the relocations. With `-r` on a REL target, the addends are

@@ -61,24 +61,15 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
         let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
         let mut rel = ElfRel::<E>::new(ctx.eh_frame.shdr.sh_addr.get() + offset, r.r_type(), 0, 0);
 
-        if sym.st_type() == STT_SECTION {
-            // We discard section symbols in input files and re-create new
-            // ones for each output section. So we need to adjust relocations'
-            // addends if they refer a section symbol.
-            let target = sym.input_section_ref(ctx).unwrap();
-            rel.set_r_sym(ctx.output_section(target.output_section.unwrap()).hdr.shndx);
-            let addend = isec.rel_addend(r) + target.offset() as i64;
-            if E::IS_RELA {
-                rel.set_r_addend(addend);
-            } else if ctx.args.relocatable {
-                if let Some(eh) = eh_frame_buf {
-                    E::write_addend(&mut eh[offset as usize..], addend, r);
-                }
-            }
-        } else {
-            rel.set_r_sym(sym.output_sym_idx(ctx));
-            if E::IS_RELA {
-                rel.set_r_addend(isec.rel_addend(r));
+        let (r_sym, addend) =
+            crate::chunks::reloc::output_symidx_addend(ctx, sym, isec.rel_addend(r))
+                .expect("relocation refers to a section without output");
+        rel.set_r_sym(r_sym);
+        if E::IS_RELA {
+            rel.set_r_addend(addend);
+        } else if ctx.args.relocatable && sym.st_type() == STT_SECTION {
+            if let Some(eh) = eh_frame_buf {
+                E::write_addend(&mut eh[offset as usize..], addend, r);
             }
         }
         out[n] = rel;

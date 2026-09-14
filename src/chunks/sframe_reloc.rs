@@ -41,18 +41,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             + SFrameHeader::<E>::size() as u64
             + (i * SFrameFdeIdx::<E>::size()) as u64;
 
-        let (r_sym, r_addend) = if sym.st_type() == STT_SECTION {
-            // We discard input section symbols and create a fresh one per output
-            // section, so a reference to a section symbol needs its addend
-            // adjusted by the input section's offset in its output section.
-            let target = sym.input_section_ref(ctx).unwrap();
-            (
-                ctx.output_section(target.output_section.unwrap()).hdr.shndx,
-                fde.addend + target.offset() as i64,
-            )
-        } else {
-            (sym.output_sym_idx(ctx), fde.addend)
-        };
+        let (r_sym, r_addend) = crate::chunks::reloc::output_symidx_addend(ctx, sym, fde.addend)
+            .expect("relocation refers to a section without output");
         out[i] = ElfRel::<E>::new(r_offset, r_type, r_sym, r_addend);
     }
 }
