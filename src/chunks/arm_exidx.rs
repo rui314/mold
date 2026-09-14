@@ -182,10 +182,10 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
             }
         });
 
-    let mut out = vec![0u8; entries.len() * ENTRY_SIZE];
+    buf.truncate(entries.len() * ENTRY_SIZE);
     for (i, (addr, val)) in entries.iter().enumerate() {
-        E::Endian::write_u32(&mut out[i * ENTRY_SIZE..], *addr);
-        E::Endian::write_u32(&mut out[i * ENTRY_SIZE + 4..], *val);
+        E::Endian::write_u32(&mut buf[i * ENTRY_SIZE..], *addr);
+        E::Endian::write_u32(&mut buf[i * ENTRY_SIZE + 4..], *val);
     }
-    out
+    buf
 }
