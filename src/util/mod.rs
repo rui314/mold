@@ -139,19 +139,7 @@ pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
 #[inline]
 pub fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
     let rest = table.get(offset..).unwrap_or(&[]);
-    if rest.is_empty() {
-        return rest;
-    }
-
-    // ELF string tables normally end in NUL, so strlen cannot read past the
-    // table. Keep the bounded path for malformed tables without a terminator.
-    let end = unsafe {
-        if table.last() == Some(&0) {
-            libc::strlen(rest.as_ptr().cast())
-        } else {
-            libc::strnlen(rest.as_ptr().cast(), rest.len())
-        }
-    };
+    let end = memchr::memchr(0, rest).unwrap_or(rest.len());
     &rest[..end]
 }
 

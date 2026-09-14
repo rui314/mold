@@ -315,11 +315,8 @@ impl<'a, E: Arch> Reader<'a, E> {
 
     fn cstr(&mut self) -> &'a [u8] {
         let rest = &self.data[self.pos..];
-        // SAFETY: strnlen reads at most rest.len() bytes from the slice.
-        let len = unsafe { libc::strnlen(rest.as_ptr().cast(), rest.len()) };
-        if len == rest.len() {
-            fatal!("--gdb-index: unterminated string in debug info");
-        }
+        let len = memchr::memchr(0, rest)
+            .unwrap_or_else(|| fatal!("--gdb-index: unterminated string in debug info"));
         self.pos += len + 1;
         &rest[..len]
     }
