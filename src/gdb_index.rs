@@ -87,8 +87,11 @@ use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
+use crate::input_files::display_file;
 use crate::output_file::{split_at_offsets, OutputFile};
 use crate::util::endian::Endian;
+use std::borrow::Cow;
+use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -670,7 +673,8 @@ struct PubnamesInput {
 /// foreground passes may continue mutating their ObjectFiles independently.
 pub struct GdbInputFile {
     file: u32,
-    name: String,
+    filename: Cow<'static, str>,
+    archive_name: &'static Path,
     debug_info: Vec<DebugInfoInput>,
     pubnames: Vec<PubnamesInput>,
 }
@@ -683,7 +687,8 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
         .par_iter_mut()
         .filter_map(|file| {
             let file_id = file.id().0;
-            let name = file.to_string();
+            let filename = file.base.filename.clone();
+            let archive_name = file.archive_name;
             let mut debug_info = Vec::new();
             for i in 0..file.debug_info_sections.len() {
                 let shndx = file.debug_info_sections[i];
@@ -700,7 +705,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress(&name, section_name, input_size);
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
                 debug_info.push(DebugInfoInput {
                     shndx,
                     contents: isec.contents(),
@@ -720,7 +725,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress(&name, section_name, input_size);
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
@@ -749,7 +754,8 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 
             Some(GdbInputFile {
                 file: file_id,
-                name,
+                filename,
+                archive_name,
                 debug_info,
                 pubnames,
             })
@@ -850,7 +856,10 @@ fn read_pubnames<E: Arch>(file: &GdbInputFile, units: &mut FileUnits) {
             r.offset(offset_size); // debug_info_size
 
             let Some(names) = pubnames_unit(input, field_offset, units) else {
-                fatal!("{}: corrupted debug_info_offset", file.name);
+                fatal!(
+                    "{}: corrupted debug_info_offset",
+                    display_file(&file.filename, file.archive_name)
+                );
             };
             let end = pos + set_size as usize;
             while r.pos < end {
