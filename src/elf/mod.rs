@@ -100,6 +100,17 @@ pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
     unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
 }
 
+/// Mutably views records directly in their file representation.
+pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
+    let size = R::size();
+    assert_ne!(size, 0);
+    assert!(data.len().is_multiple_of(size));
+    debug_assert_eq!(std::mem::align_of::<R>(), 1);
+    // SAFETY: FileRecord requires alignment one and every bit pattern to be
+    // valid. `data` is exclusively borrowed for the returned slice.
+    unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
+}
+
 /// The ELF file header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -446,14 +457,7 @@ impl<E: Endian> SymbolRecord for Elf32Sym<E> {
 pub type ElfSym<E> = <E as Layout>::Sym;
 
 /// A word-sized unsigned integer in an ELF file.
-///
-/// # Safety
-///
-/// Implementations must have alignment one, contain no padding, and accept
-/// every bit pattern.
-pub unsafe trait ElfWord:
-    Clone + Copy + fmt::Debug + Default + Send + Sync + 'static
-{
+pub trait ElfWord: FileRecord + fmt::Debug {
     type Endian: Endian;
 
     fn new(value: u64) -> Self;
@@ -462,7 +466,9 @@ pub unsafe trait ElfWord:
 }
 
 // SAFETY: U32 is a transparent wrapper around a byte array.
-unsafe impl<E: Endian> ElfWord for U32<E> {
+unsafe impl<E: Endian> FileRecord for U32<E> {}
+
+impl<E: Endian> ElfWord for U32<E> {
     type Endian = E;
 
     #[inline(always)]
@@ -482,7 +488,9 @@ unsafe impl<E: Endian> ElfWord for U32<E> {
 }
 
 // SAFETY: U64 is a transparent wrapper around a byte array.
-unsafe impl<E: Endian> ElfWord for U64<E> {
+unsafe impl<E: Endian> FileRecord for U64<E> {}
+
+impl<E: Endian> ElfWord for U64<E> {
     type Endian = E;
 
     #[inline(always)]
@@ -502,15 +510,7 @@ unsafe impl<E: Endian> ElfWord for U64<E> {
 }
 
 /// An ELF relocation record in its target-dependent file representation.
-///
-/// # Safety
-///
-/// Implementations must have alignment one, contain no padding or references,
-/// and accept every bit pattern. These requirements let relocation sections in
-/// possibly unaligned archive members be viewed as slices of records.
-pub unsafe trait RelRecord:
-    Clone + Copy + fmt::Debug + Default + Eq + Send + Sync + 'static
-{
+pub trait RelRecord: FileRecord + fmt::Debug + Eq {
     type Endian: Endian;
     const IS_RELA: bool;
 
@@ -698,7 +698,11 @@ impl_signed_field!(I64);
 
 macro_rules! impl_rela_record {
     ($name:ty, $endian:ty) => {
-        unsafe impl RelRecord for $name {
+        // SAFETY: these repr(C) records contain only alignment-one integer
+        // fields, with no padding and no invalid bit patterns.
+        unsafe impl FileRecord for $name {}
+
+        impl RelRecord for $name {
             type Endian = $endian;
             const IS_RELA: bool = true;
 
@@ -757,7 +761,11 @@ macro_rules! impl_rela_record {
 
 macro_rules! impl_rel_record {
     ($name:ty, $endian:ty) => {
-        unsafe impl RelRecord for $name {
+        // SAFETY: these repr(C) records contain only alignment-one integer
+        // fields, with no padding and no invalid bit patterns.
+        unsafe impl FileRecord for $name {}
+
+        impl RelRecord for $name {
             type Endian = $endian;
             const IS_RELA: bool = false;
 
@@ -846,22 +854,12 @@ const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
 /// used rather than copied out. Input files hold tens of millions of
 /// relocations, which most passes go through once.
 pub(crate) fn rels_from_bytes<E: Layout>(data: &[u8]) -> &[E::Rel] {
-    let size = std::mem::size_of::<E::Rel>();
-    assert_eq!(std::mem::align_of::<E::Rel>(), 1);
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: RelRecord requires alignment one and every bit pattern to be
-    // valid. The resulting slice covers exactly `data`.
-    unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
+    records_from_bytes(data)
 }
 
 /// Mutably views relocation records in their target-dependent file representation.
 pub(crate) fn rels_from_bytes_mut<E: Layout>(data: &mut [u8]) -> &mut [E::Rel] {
-    let size = std::mem::size_of::<E::Rel>();
-    assert_eq!(std::mem::align_of::<E::Rel>(), 1);
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: RelRecord requires alignment one and every bit pattern to be
-    // valid. `data` is exclusively borrowed for the returned slice.
-    unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
+    records_from_bytes_mut(data)
 }
 
 /// An entry of the `.dynamic` section.
