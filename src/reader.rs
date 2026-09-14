@@ -113,14 +113,11 @@ fn new_shared_file<E: Arch>(
 // is order-dependent.
 fn defer_lto_object<E: Arch>(
     ctx: &Context<E>,
-    rctx: &ReaderContext,
+    rctx: ReaderContext,
     mf: &'static MappedFile,
     archive_name: &'static Path,
 ) {
-    ctx.lto_jobs
-        .lock()
-        .unwrap()
-        .push((rctx.clone(), mf, archive_name));
+    ctx.lto_jobs.lock().unwrap().push((rctx, mf, archive_name));
 }
 
 /// Reads an IR object through the LTO plugin. An object listed by
@@ -149,14 +146,14 @@ fn new_lto_object<E: Arch>(
 // Reads a file inside an archive.
 fn read_archive_member<E: Arch>(
     ctx: &Context<E>,
-    rctx: &ReaderContext,
+    rctx: ReaderContext,
     mf: &'static MappedFile,
     archive_name: &'static Path,
 ) -> Option<Loaded<E>> {
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
-            let file = new_object_file(ctx, rctx, mf, archive_name);
-            Some(Loaded::Obj(rctx.pos.clone(), Box::new(file)))
+            let file = new_object_file(ctx, &rctx, mf, archive_name);
+            Some(Loaded::Obj(rctx.pos, Box::new(file)))
         }
         FileType::GccLtoObj | FileType::LlvmBitcode => {
             defer_lto_object(ctx, rctx, mf, archive_name);
@@ -194,14 +191,14 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
         FileType::Ar | FileType::ThinAr => {
             for child in archive_file::read_archive_members(&ctx.args.chroot, mf) {
                 let child_rctx = rctx.next_child();
-                if let Some(loaded) = read_archive_member(ctx, &child_rctx, child, &mf.name) {
+                if let Some(loaded) = read_archive_member(ctx, child_rctx, child, &mf.name) {
                     push_loaded(ctx, loaded);
                 }
             }
         }
         FileType::Text => Script::new(ctx, rctx, mf).parse_linker_script(),
         FileType::GccLtoObj | FileType::LlvmBitcode => {
-            defer_lto_object(ctx, rctx, mf, Path::new(""));
+            defer_lto_object(ctx, rctx.clone(), mf, Path::new(""));
         }
         _ => fatal!("{}: unknown file type", mf.name.display()),
     }
@@ -380,7 +377,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                         let loaded = &loaded;
                         scope.spawn(move |_| {
                             if let Some(file) =
-                                read_archive_member(ctx_ref, &child_rctx, child, archive_name)
+                                read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {
                                 push_to_worker(loaded, file);
                             }
@@ -403,7 +400,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                                 is_dependency: std::sync::atomic::AtomicBool::new(true),
                             });
                             if let Some(file) =
-                                read_archive_member(ctx_ref, &child_rctx, child, archive_name)
+                                read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {
                                 push_to_worker(loaded, file);
                             }
@@ -420,7 +417,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                     push_to_worker(&loaded, Loaded::Dso(rctx.pos, Box::new(file)));
                 }
                 FileType::GccLtoObj | FileType::LlvmBitcode => {
-                    defer_lto_object(ctx_ref, &rctx, mf, Path::new(""));
+                    defer_lto_object(ctx_ref, rctx, mf, Path::new(""));
                 }
                 _ => fatal!("{}: unknown file type", mf.name.display()),
             }
