@@ -245,9 +245,8 @@ impl Timers {
                 " ".repeat(indent * 2),
                 r.name
             );
-            let mut children = r.children.clone();
-            children.sort_by_key(|&c| records[c].start);
-            for child in children {
+            // Children are appended in start order under the records lock.
+            for &child in &r.children {
                 print_rec(records, child, indent + 1);
             }
         }
