@@ -2001,16 +2001,17 @@ impl<E: Arch> ObjectFile<E> {
     // We expect them to be sorted, so sort them if necessary.
     fn sort_relocations(&mut self) {
         if E::IS_RISCV || E::IS_LOONGARCH {
-            let sections: Vec<u32> = self.input_sections().map(|isec| isec.shndx).collect();
+            let sections: Vec<u32> = self
+                .input_sections()
+                .filter(|isec| {
+                    isec.is_alive()
+                        && isec.is_alloc()
+                        && !isec.rels(self).iter().map(|r| r.r_offset()).is_sorted()
+                })
+                .map(|isec| isec.shndx)
+                .collect();
             for shndx in sections {
-                let isec = self.section_at(shndx);
-                if !isec.is_alive() || !isec.is_alloc() {
-                    continue;
-                }
-                let rels = isec.rels(self);
-                if !rels.iter().map(|r| r.r_offset()).is_sorted() {
-                    self.rels_mut(shndx).sort_by_key(|r| r.r_offset());
-                }
+                self.rels_mut(shndx).sort_by_key(|r| r.r_offset());
             }
         }
     }
