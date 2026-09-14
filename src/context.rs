@@ -1,8 +1,9 @@
 //! The linker context: everything about one link, from parsed arguments
 //! to output chunks.
 
-use std::ffi::OsString;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -106,7 +107,7 @@ pub struct Context<E: Arch> {
     pub args: Args,
 
     // Fully-expanded command line args
-    pub cmdline_args: Arc<[OsString]>,
+    pub cmdline_args: Arc<[Cow<'static, OsStr>]>,
     pub timers: Timers,
 
     // Symbol table. Object file parsing records each global symbol with add(),
@@ -234,7 +235,7 @@ pub struct Context<E: Arch> {
 }
 
 impl<E: Arch> Context<E> {
-    pub fn new(args: Args, cmdline_args: impl Into<Arc<[OsString]>>) -> Context<E> {
+    pub fn new(args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Context<E> {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
             entry: symbols.intern(crate::util::leak_bytes(args.entry.clone())),

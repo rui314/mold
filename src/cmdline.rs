@@ -1,5 +1,6 @@
 //! Command-line argument parsing.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::io::{IsTerminal, Write};
@@ -718,7 +719,7 @@ fn is_space(c: u8) -> bool {
 //
 // This function opens a given file, tokenizes its contents, and returns a
 // list of tokens.
-fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
+fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
     if depth > 10 {
         fatal!("{}: response file nesting too deep", path.display());
     }
@@ -735,12 +736,13 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
             continue;
         }
 
-        // Copy the token while removing quotes and backslashes. Tokens with
-        // neither are by far the common case and could otherwise be borrowed
-        // from the file, but command-line strings are owned. A backslash
-        // escapes the next character, and a quoted part may be followed by
-        // more characters of the same token.
-        let mut tok = Vec::new();
+        // Plain tokens can borrow the mapping, which lives for the complete
+        // link. Copy only when removing quotes or backslashes.
+        let start = i;
+        while i < data.len() && !is_space(data[i]) && !matches!(data[i], b'\\' | b'\'' | b'"') {
+            i += 1;
+        }
+        let mut tok = Cow::Borrowed(&data[start..i]);
         let mut quote = None;
         while i < data.len() {
             let c = data[i];
@@ -748,13 +750,13 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
                 if i + 1 == data.len() {
                     fatal!("{}: premature end of input", path.display());
                 }
-                tok.push(data[i + 1]);
+                tok.to_mut().push(data[i + 1]);
                 i += 2;
             } else if let Some(q) = quote {
                 if c == q {
                     quote = None;
                 } else {
-                    tok.push(c);
+                    tok.to_mut().push(c);
                 }
                 i += 1;
             } else if c == b'\'' || c == b'"' {
@@ -763,7 +765,7 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
             } else if is_space(c) {
                 break;
             } else {
-                tok.push(c);
+                tok.to_mut().push(c);
                 i += 1;
             }
         }
@@ -776,24 +778,25 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<OsString> {
                 depth + 1,
             ));
         } else {
-            expanded.push(
-                tok.into_os_string().unwrap_or_else(|e| {
+            expanded.push(match tok {
+                Cow::Borrowed(bytes) => Cow::Borrowed(util::os_str(bytes)),
+                Cow::Owned(bytes) => Cow::Owned(bytes.into_os_string().unwrap_or_else(|e| {
                     fatal!("invalid OS string: {}", util::display(e.as_bytes()))
-                }),
-            );
+                })),
+            });
         }
     }
     expanded
 }
 
 // Replace "@path/to/some/text/file" with its file contents.
-pub fn expand_response_files(argv: Vec<OsString>) -> Vec<OsString> {
+pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
     let mut args = Vec::new();
     for arg in argv {
         if let Some(path) = arg.as_encoded_bytes().strip_prefix(b"@") {
             args.extend(read_response_file(Path::new(util::os_str(path)), 1));
         } else {
-            args.push(arg);
+            args.push(Cow::Owned(arg));
         }
     }
     args
@@ -1060,7 +1063,7 @@ pub struct ParsedArgs {
 }
 
 /// Parses all options. `cmdline` includes the program name.
-pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs {
+pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> ParsedArgs {
     // Option names and numeric arguments are text; file arguments retain
     // their OS representation through the raw argument readers below.
     let cmdline: Vec<&str> = raw_cmdline
@@ -1135,7 +1138,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[OsString]) -> ParsedArgs
                         fatal!("option -{name}: argument missing");
                     }
                     i += 2;
-                    Some(raw_cmdline[i - 1].as_os_str())
+                    Some(raw_cmdline[i - 1].as_ref())
                 }
                 Some(rest) if name.len() == 1 => {
                     i += 1;

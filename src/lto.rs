@@ -937,10 +937,10 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
         if file.is_lto_input() && !file.base.is_reachable() {
             let mut arg = std::ffi::OsString::from("--:ignore-ir-file=");
             arg.push(file.base.mf.unwrap().identifier());
-            args.push(arg);
+            args.push(arg.into());
         }
     }
-    args.push("--:lto-pass2".into());
+    args.push(std::ffi::OsStr::new("--:lto-pass2").into());
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());

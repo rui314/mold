@@ -6,6 +6,8 @@
 //! follows the table: shard by shard, in the deterministic bucket order
 //! of [`FrozenMap::sorted_entries`].
 
+use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::sync::atomic::Ordering;
 use std::sync::RwLock;
 
@@ -101,7 +103,7 @@ pub struct ResolveOptions<'a> {
     pub allocated_only: bool,
     pub gc_sections: bool,
     pub comment: Option<MergedSectionId>,
-    pub cmdline_args: &'a [std::ffi::OsString],
+    pub cmdline_args: &'a [Cow<'static, OsStr>],
     pub timers: &'a Timers,
 }
 
@@ -547,7 +549,7 @@ pub fn resolve_sections<E: Arch>(
 fn add_comment_strings<E: Layout>(
     msec: &MergedSection<E>,
     gc_sections: bool,
-    cmdline_args: &[std::ffi::OsString],
+    cmdline_args: &[Cow<'static, OsStr>],
 ) {
     let add = |mut bytes: Vec<u8>| {
         bytes.push(0);

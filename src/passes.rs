@@ -1792,8 +1792,9 @@ fn create_response_file<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         out.push(b'\n');
     }
     for arg in &ctx.cmdline_args[1..] {
-        if arg != "-repro" && arg != "--repro" {
-            argument(&mut out, arg.as_encoded_bytes());
+        let arg = arg.as_encoded_bytes();
+        if arg != b"-repro" && arg != b"--repro" {
+            argument(&mut out, arg);
         }
     }
     out
