@@ -1383,14 +1383,16 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
     let builders: Vec<Arc<OutputSectionBuilder>> = map.into_values().collect();
     drop(caches);
     let flattened: Vec<(OutputSectionId, Vec<InputSectionId>, u64, u8)> = builders
-        .par_iter()
+        .into_par_iter()
         .map(|builder| {
-            let parts: Vec<&OutputSectionFileMembers> = builder
+            // The worker caches held the other references. Once they are
+            // dropped, each task owns its builder and can unwrap its cells.
+            let builder = Arc::into_inner(builder).expect("shared output section builder");
+            let parts: Vec<OutputSectionFileMembers> = builder
                 .files
-                .iter()
-                // SAFETY: the file traversal has joined, so the slots are no
-                // longer being mutated.
-                .map(|file| unsafe { &*file.get() })
+                .into_vec()
+                .into_iter()
+                .map(UnsafeCell::into_inner)
                 .collect();
 
             let n = parts.iter().map(|g| g.members.len()).sum();
