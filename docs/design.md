@@ -168,7 +168,7 @@ tool.
   (i.e. `_start`) or a few other root sections. In mold, we are using
   multiple threads to mark sections concurrently.
 
-- Similarly, BFD, gold an lld support Identical Comdat Folding (ICF)
+- Similarly, BFD, gold and lld support Identical Comdat Folding (ICF)
   as yet another size optimization. ICF merges two or more read-only
   sections that happen to have the same contents and relocations.
   To do that, we have to find isomorphic subgraphs from larger graphs.
@@ -386,7 +386,7 @@ not plan to implement and why I turned them down.
   fixing the final file layout.
 
   The other reason to reject this idea is because there's good a
-  chance for this idea to have a negative impact on linker's overall
+  chance for this idea to have a negative impact on the linker's overall
   performance. If we copy file contents before fixing the layout, we
   can't apply relocations to them while copying because symbol
   addresses are not available yet. If we fix the file layout first, we
