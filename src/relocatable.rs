@@ -30,8 +30,6 @@
 //!
 //!  - Relocations are copied, but we need to fix symbol indices.
 
-use rayon::prelude::*;
-
 use crate::arch::Arch;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
@@ -125,33 +123,27 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
 /// unresolved undefined symbols belongs to some input file.
 fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("r_claim_unresolved_symbols");
-    let candidates: Vec<(crate::input_files::ObjId, usize)> = ctx
-        .objs
-        .par_iter()
-        .flat_map_iter(|file| {
-            let file_id = file.id();
-            (file.base.first_global..file.base.elf_syms.len())
-                .filter(move |&i| file.base.elf_syms[i].is_undef())
-                .map(move |i| (file_id, i))
-        })
-        .collect();
-    for (obj_id, i) in candidates {
-        let file = &ctx.objs[obj_id.index()];
-        let id = file.base.symbols[i];
-        let esym = &file.base.elf_syms[i];
+    for file in &ctx.objs {
         let priority = file.base.priority;
-        let sym = &ctx.symbols[id];
-        if let Some(owner) = sym.file() {
-            if !sym.is_undef() || ctx.file(owner).priority <= priority {
+        for i in file.base.first_global..file.base.elf_syms.len() {
+            let esym = &file.base.elf_syms[i];
+            if !esym.is_undef() {
                 continue;
             }
+            let id = file.base.symbols[i];
+            let sym = &ctx.symbols[id];
+            if let Some(owner) = sym.file() {
+                if !sym.is_undef() || ctx.file(owner).priority <= priority {
+                    continue;
+                }
+            }
+            let sym = &mut ctx.symbols[id];
+            sym.set_file(FileId::Obj(file.id()));
+            sym.clear_origin();
+            sym.value = 0;
+            sym.set_sym_idx(i as u32);
+            sym.set_esym(esym);
         }
-        let sym = &mut ctx.symbols[id];
-        sym.set_file(FileId::Obj(obj_id));
-        sym.clear_origin();
-        sym.value = 0;
-        sym.set_sym_idx(i as u32);
-        sym.set_esym(esym);
     }
 }
 
