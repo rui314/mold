@@ -5,5 +5,8 @@ edition = "2021"
 description = "The mold linker instantiated for arm64be"
 license = "MIT"
 
+[lib]
+path = "lib.rs"
+
 [dependencies]
 mold = { path = "../.." }
