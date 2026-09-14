@@ -604,15 +604,6 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
     let mut map: std::collections::HashMap<SectionRef, usize> = std::collections::HashMap::new();
     for &r in sections {
         let leader = ctx.section(r).icf_leader_in_round();
-        if leader == r {
-            map.entry(leader).or_insert_with(|| {
-                leaders.push((leader, Vec::new()));
-                leaders.len() - 1
-            });
-        }
-    }
-    for &r in sections {
-        let leader = ctx.section(r).icf_leader_in_round();
         if leader != r {
             let idx = *map.entry(leader).or_insert_with(|| {
                 leaders.push((leader, Vec::new()));
@@ -626,9 +617,6 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
     let mut out = String::new();
     let mut saved = 0usize;
     for (leader, members) in &leaders {
-        if members.is_empty() {
-            continue;
-        }
         writeln!(out, "selected section {}", ctx.section_display(*leader)).unwrap();
         for m in members {
             writeln!(
