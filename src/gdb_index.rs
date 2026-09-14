@@ -991,10 +991,10 @@ fn estimate_names<T: Sync>(units: &[T], names: impl Fn(&T) -> &[NameRecord] + Sy
 pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexData {
     let _timer = timer;
     let per_file: Vec<FileUnits> = files
-        .par_iter()
+        .into_par_iter()
         .map(|file| {
-            let mut units = read_debug_units::<E>(file, file.file);
-            read_pubnames::<E>(file, &mut units);
+            let mut units = read_debug_units::<E>(&file, file.file);
+            read_pubnames::<E>(&file, &mut units);
             for cu in &mut units.cus {
                 dedup_names(&mut cu.names);
             }
