@@ -1603,7 +1603,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     if E::FAMILY == Family::Ppc32 {
-        ctx.syms.sda_base = Some(s(ctx, "_SDA_BASE_"));
+        s(ctx, "_SDA_BASE_");
     }
     if E::IS_SPARC {
         // TLS_GD_CALL and TLS_LDM_CALL relocations call it implicitly.

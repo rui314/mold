@@ -91,7 +91,6 @@ pub struct SyntheticSymbols {
     pub end: Option<SymbolId>,
     pub etext: Option<SymbolId>,
     pub toc: Option<SymbolId>,
-    pub sda_base: Option<SymbolId>,
     pub tls_get_addr: Option<SymbolId>,
 
     /// The entry point, `-init` and `-fini` symbols.
