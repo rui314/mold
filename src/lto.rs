@@ -100,7 +100,8 @@
 //! back into the linker. The plugin isn't thread-safe and keeps global
 //! state, so this module does too.
 
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
+use std::borrow::Cow;
+use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString, OsStr, OsString};
 use std::fs::File;
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
@@ -932,15 +933,19 @@ pub fn read_lto_object<E: Arch>(
 ///
 /// This is an ugly hack and should be removed once GCC adopts the v3 API.
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
-    let mut args = ctx.cmdline_args.to_vec();
+    let mut args: Vec<Cow<'_, OsStr>> = ctx
+        .cmdline_args
+        .iter()
+        .map(|arg| Cow::Borrowed(arg.as_ref()))
+        .collect();
     for file in &ctx.objs {
         if file.is_lto_input() && !file.base.is_reachable() {
-            let mut arg = std::ffi::OsString::from("--:ignore-ir-file=");
+            let mut arg = OsString::from("--:ignore-ir-file=");
             arg.push(file.base.mf.unwrap().identifier());
             args.push(arg.into());
         }
     }
-    args.push(std::ffi::OsStr::new("--:lto-pass2").into());
+    args.push(OsStr::new("--:lto-pass2").into());
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
