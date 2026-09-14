@@ -14,7 +14,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
-use rayon::iter::plumbing::{bridge, Consumer, Producer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
@@ -230,7 +229,8 @@ impl<T: FileInPool> FileList<T> {
     where
         T: Send,
     {
-        FileParIterMut(self.iter_mut())
+        // Preserve indexed live-file order using Rayon's standard producer.
+        self.iter_mut().collect::<Vec<_>>().into_par_iter()
     }
 
     /// Erases indices from the live vector without destroying their
@@ -353,65 +353,6 @@ impl<'a, T> DoubleEndedIterator for FileIterMut<'a, T> {
 
 impl<T> ExactSizeIterator for FileIterMut<'_, T> {}
 impl<T> std::iter::FusedIterator for FileIterMut<'_, T> {}
-
-// Rayon's producer splits at a live-file boundary, giving each worker a
-// disjoint pool slice and its corresponding live indices.
-impl<'a, T: Send> Producer for FileIterMut<'a, T> {
-    type Item = &'a mut T;
-    type IntoIter = Self;
-
-    fn into_iter(self) -> Self {
-        self
-    }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        let (left, right) = self.live.split_at(index);
-        let split = right
-            .first()
-            .map_or(self.pool.len(), |&i| i as usize - self.offset);
-        let (pool_left, pool_right) = self.pool.split_at_mut(split);
-        (
-            FileIterMut {
-                pool: pool_left,
-                live: left,
-                offset: self.offset,
-            },
-            FileIterMut {
-                pool: pool_right,
-                live: right,
-                offset: self.offset + split,
-            },
-        )
-    }
-}
-
-struct FileParIterMut<'a, T>(FileIterMut<'a, T>);
-
-impl<'a, T: Send> ParallelIterator for FileParIterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn drive_unindexed<C: UnindexedConsumer<Self::Item>>(self, consumer: C) -> C::Result {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.0.live.len())
-    }
-}
-
-impl<T: Send> IndexedParallelIterator for FileParIterMut<'_, T> {
-    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
-        bridge(self, consumer)
-    }
-
-    fn len(&self) -> usize {
-        self.0.live.len()
-    }
-
-    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
-        callback.callback(self.0)
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FileId {
@@ -3819,6 +3760,34 @@ pub fn print_trace_symbol<R: SymbolRecord>(file: &dyn fmt::Display, esym: &R, sy
 mod tests {
     use super::*;
     use crate::arch::X86_64;
+
+    #[test]
+    fn parallel_file_iteration_preserves_live_order_and_stable_storage() {
+        struct File {
+            index: u32,
+            value: u32,
+        }
+        impl FileInPool for File {
+            fn set_file_index(&mut self, index: u32) {
+                self.index = index;
+            }
+        }
+        let mut files = FileList::default();
+        for _ in 0..17 {
+            files.push(Box::new(File { index: 0, value: 0 }));
+        }
+        let first = &files[0] as *const File;
+        files.retain(|file| file.index % 2 == 0);
+        files.par_iter_mut().enumerate().for_each(|(i, file)| {
+            assert_eq!(file.index, i as u32 * 2);
+            file.value = i as u32 + 1;
+        });
+        assert_eq!(files.pool_len(), 17);
+        assert_eq!(&files[0] as *const File, first);
+        for (i, file) in files.pool_iter().enumerate() {
+            assert_eq!(file.value, if i % 2 == 0 { i as u32 / 2 + 1 } else { 0 });
+        }
+    }
 
     #[test]
     fn crel_addend_wraps() {
