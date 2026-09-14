@@ -67,16 +67,16 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
 pub(crate) fn output_symidx_addend<E: Arch>(
     ctx: &Context<E>,
     sym: &Symbol,
-    addend: i64,
+    addend: impl FnOnce() -> i64,
 ) -> Option<(u32, i64)> {
     if sym.st_type() == STT_SECTION {
         let target = sym.input_section_ref(ctx)?;
         Some((
             ctx.output_section(target.output_section?).hdr.shndx,
-            addend + target.offset() as i64,
+            addend() + target.offset() as i64,
         ))
     } else {
-        Some((sym.output_sym_idx(ctx), addend))
+        Some((sym.output_sym_idx(ctx), addend()))
     }
 }
 
@@ -116,7 +116,28 @@ fn symidx_addend<'a, E: Arch>(
         return (0, 0);
     }
     // A dead debug section can refer to a COMDAT-eliminated section.
-    output_symidx_addend(ctx, sym, isec.rel_addend(rel)).unwrap_or((0, 0))
+    output_symidx_addend(ctx, sym, || isec.rel_addend(rel)).unwrap_or((0, 0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::I386;
+    use crate::cmdline::Args;
+
+    #[test]
+    fn discarded_section_does_not_read_implicit_addend() {
+        let ctx = Context::<I386>::new(Args::default(), Vec::new());
+        let mut sym = Symbol::new(BStr::new(b".text"));
+        let mut esym = ElfSym::<I386>::default();
+        esym.set_type(STT_SECTION);
+        sym.set_esym(&esym);
+
+        assert_eq!(
+            output_symidx_addend(&ctx, &sym, || panic!("read discarded relocation")),
+            None
+        );
+    }
 }
 
 /// Writes the relocations. With `-r` on a REL target, the addends are

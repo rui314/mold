@@ -61,13 +61,20 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
         let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
         let mut rel = ElfRel::<E>::new(ctx.eh_frame.shdr.sh_addr.get() + offset, r.r_type(), 0, 0);
 
-        let (r_sym, addend) =
-            crate::chunks::reloc::output_symidx_addend(ctx, sym, isec.rel_addend(r))
-                .expect("relocation refers to a section without output");
+        let is_section = sym.st_type() == STT_SECTION;
+        let (r_sym, addend) = crate::chunks::reloc::output_symidx_addend(ctx, sym, || {
+            if E::IS_RELA || is_section {
+                isec.rel_addend(r)
+            } else {
+                // Ordinary REL symbols keep the addend already in .eh_frame.
+                0
+            }
+        })
+        .expect("relocation refers to a section without output");
         rel.set_r_sym(r_sym);
         if E::IS_RELA {
             rel.set_r_addend(addend);
-        } else if ctx.args.relocatable && sym.st_type() == STT_SECTION {
+        } else if ctx.args.relocatable && is_section {
             if let Some(eh) = eh_frame_buf {
                 E::write_addend(&mut eh[offset as usize..], addend, r);
             }

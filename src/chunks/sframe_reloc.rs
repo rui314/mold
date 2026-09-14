@@ -41,7 +41,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             + SFrameHeader::<E>::size() as u64
             + (i * SFrameFdeIdx::<E>::size()) as u64;
 
-        let (r_sym, r_addend) = crate::chunks::reloc::output_symidx_addend(ctx, sym, fde.addend)
+        let (r_sym, r_addend) = crate::chunks::reloc::output_symidx_addend(ctx, sym, || fde.addend)
             .expect("relocation refers to a section without output");
         out[i] = ElfRel::<E>::new(r_offset, r_type, r_sym, r_addend);
     }
