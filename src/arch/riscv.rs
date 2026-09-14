@@ -27,6 +27,7 @@ use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{
     check_tlsle, r_delta, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, RelocDelta,
 };
@@ -899,31 +900,26 @@ where
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for rel in isec.rels(file) {
-            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, rel) {
+            let Some(NonAllocReloc { sym, s, a, frag }) =
+                isec.resolve_nonalloc(ctx, file, rel, &mut fragment_cache)
+            else {
                 continue;
-            }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let off = rel.r_offset() as usize;
-            let frag = isec.fragment(ctx, rel, &mut fragment_cache);
-            let (s, a) = match frag {
-                Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
-            let frag_ref = frag.map(|(f, _)| f);
+            let off = rel.r_offset() as usize;
             let sa = s.wrapping_add(a);
             let loc = &mut buf[off..];
 
             match rel.r_type() {
                 R_RISCV_32 => End::write_u32(loc, sa as u32),
-                R_RISCV_64 => match isec.tombstone(ctx, sym, frag_ref) {
+                R_RISCV_64 => match isec.tombstone(ctx, sym, frag) {
                     Some(v) => End::write_u64(loc, v),
                     None => End::write_u64(loc, sa),
                 },
-                R_RISCV_TLS_DTPREL32 => match isec.tombstone(ctx, sym, frag_ref) {
+                R_RISCV_TLS_DTPREL32 => match isec.tombstone(ctx, sym, frag) {
                     Some(v) => End::write_u32(loc, v as u32),
                     None => End::write_u32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
                 },
-                R_RISCV_TLS_DTPREL64 => match isec.tombstone(ctx, sym, frag_ref) {
+                R_RISCV_TLS_DTPREL64 => match isec.tombstone(ctx, sym, frag) {
                     Some(v) => End::write_u64(loc, v),
                     None => End::write_u64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 },

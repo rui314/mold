@@ -39,6 +39,7 @@ use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
+use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::endian::{
@@ -472,17 +473,12 @@ impl Arch for S390x {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {
-            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
+            let Some(NonAllocReloc { sym, s, a, frag }) =
+                isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
+            else {
                 continue;
-            }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let off = rel.r_offset() as usize;
-            let frag = isec.fragment(ctx, &rel, &mut fragment_cache);
-            let (s, a) = match frag {
-                Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
-            let frag_ref = frag.map(|(f, _)| f);
+            let off = rel.r_offset() as usize;
             let sa = s.wrapping_add(a);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
 
@@ -491,11 +487,11 @@ impl Arch for S390x {
                     check(sa as i64, 0, 1 << 32);
                     write_ub32(&mut buf[off..], sa as u32);
                 }
-                R_390_64 => match isec.tombstone(ctx, sym, frag_ref) {
+                R_390_64 => match isec.tombstone(ctx, sym, frag) {
                     Some(v) => write_ub64(&mut buf[off..], v),
                     None => write_ub64(&mut buf[off..], sa),
                 },
-                R_390_TLS_LDO64 => match isec.tombstone(ctx, sym, frag_ref) {
+                R_390_TLS_LDO64 => match isec.tombstone(ctx, sym, frag) {
                     Some(v) => write_ub64(&mut buf[off..], v),
                     None => write_ub64(&mut buf[off..], sa.wrapping_sub(ctx.dtp_addr)),
                 },

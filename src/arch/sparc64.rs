@@ -63,6 +63,7 @@ use crate::chunks::eh_frame;
 use crate::chunks::plt::SPARC_NUM_SMALL_PLT;
 use crate::context::Context;
 use crate::elf::*;
+use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
 use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
 use crate::util::endian::{
@@ -689,23 +690,18 @@ impl Arch for Sparc64 {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {
-            if rel.r_type() == R_NONE || isec.record_undef_error(ctx, &rel) {
+            let Some(NonAllocReloc { sym, s, a, frag }) =
+                isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
+            else {
                 continue;
-            }
-            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            let frag = isec.fragment(ctx, &rel, &mut fragment_cache);
-            let (s, a) = match frag {
-                Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
-                None => (sym.addr(ctx), rel.r_addend() as u64),
             };
             let sa = s.wrapping_add(a);
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_SPARC_64 | R_SPARC_UA64 => write_ub64(
-                    loc,
-                    isec.tombstone(ctx, sym, frag.map(|(f, _)| f)).unwrap_or(sa),
-                ),
+                R_SPARC_64 | R_SPARC_UA64 => {
+                    write_ub64(loc, isec.tombstone(ctx, sym, frag).unwrap_or(sa))
+                }
                 R_SPARC_32 | R_SPARC_UA32 => {
                     isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
                     write_ub32(loc, sa as u32);

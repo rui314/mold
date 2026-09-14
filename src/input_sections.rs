@@ -265,6 +265,15 @@ fn to_p2align(alignment: u64) -> u8 {
     }
 }
 
+/// Resolved S and A for a nonallocated relocation. Keep its fragment so the
+/// target can apply tombstones only to relocation kinds that support them.
+pub(crate) struct NonAllocReloc<'a> {
+    pub sym: &'a Symbol,
+    pub s: u64,
+    pub a: u64,
+    pub frag: Option<FragmentRef>,
+}
+
 impl<E: Arch> InputSection<E> {
     pub fn new(
         file: &ObjectFile<E>,
@@ -603,6 +612,33 @@ impl<E: Arch> InputSection<E> {
                 .expect("unterminated FDE run")
             + 1;
         &file.fdes[begin..end]
+    }
+
+    /// Shares the nonallocated relocation prelude, retaining the caller's
+    /// cached owner and fragment lookup across relocations.
+    #[inline(always)]
+    pub(crate) fn resolve_nonalloc<'a>(
+        &self,
+        ctx: &'a Context<E>,
+        file: &'a ObjectFile<E>,
+        rel: &ElfRel<E>,
+        cache: &mut FragmentLookup<'a>,
+    ) -> Option<NonAllocReloc<'a>> {
+        if rel.r_type() == R_NONE || self.record_undef_error_with_file(ctx, file, rel) {
+            return None;
+        }
+        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+        let frag = self.fragment_with_file(ctx, file, rel, cache);
+        let (s, a) = match frag {
+            Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
+            None => (sym.addr(ctx), self.rel_addend(rel) as u64),
+        };
+        Some(NonAllocReloc {
+            sym,
+            s,
+            a,
+            frag: frag.map(|(f, _)| f),
+        })
     }
 
     /// The addend of a relocation against this section.
