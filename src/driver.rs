@@ -2,7 +2,6 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
-use std::fmt;
 use std::ops::Range;
 use std::sync::{mpsc, Arc};
 
@@ -841,11 +840,5 @@ fn run_tasks<E: Arch>(
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
         chunks::eh_frame_hdr::write_header(ctx, &mut buf[r.start as usize..r.end as usize]);
-    }
-}
-
-impl<E: Arch> fmt::Debug for Context<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Context<{}>", E::NAME)
     }
 }

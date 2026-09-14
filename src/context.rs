@@ -575,3 +575,9 @@ impl<E: Arch> Context<E> {
         self.timers.start(name)
     }
 }
+
+impl<E: Arch> fmt::Debug for Context<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Context<{}>", E::NAME)
+    }
+}
