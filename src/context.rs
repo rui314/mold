@@ -218,7 +218,6 @@ pub struct Context<E: Arch> {
     pub version_patterns: Vec<VersionPattern>,
     pub dynamic_list_patterns: Vec<DynamicPattern>,
     pub default_version: u16,
-    pub page_size: u64,
 
     // For thread-local variables
     pub tls_begin: u64,
@@ -237,7 +236,6 @@ impl<E: Arch> Context<E> {
             fini: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.fini))),
             ..SyntheticSymbols::default()
         };
-        let page_size = args.page_size;
         let timers = if args.perf {
             Timers::new()
         } else {
@@ -315,7 +313,6 @@ impl<E: Arch> Context<E> {
             version_patterns: Vec::new(),
             dynamic_list_patterns: Vec::new(),
             default_version: crate::elf::VER_NDX_UNSPECIFIED as u16,
-            page_size,
             tls_begin: 0,
             tp_addr: 0,
             dtp_addr: 0,

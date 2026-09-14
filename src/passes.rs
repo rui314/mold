@@ -3663,7 +3663,7 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
 
     // Assign virtual addresses
     let mut addr = ctx.args.image_base;
-    let page_size = ctx.page_size;
+    let page_size = ctx.args.page_size;
     let mut i = 0;
     while i < ctx.chunks.len() {
         let id = ctx.chunks[i];
@@ -3770,7 +3770,7 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
         .filter(|&c| ctx.chunk_header(c).is_alloc())
         .collect();
     let mut addr = ctx.args.image_base;
-    let page_size = ctx.page_size;
+    let page_size = ctx.args.page_size;
     let mut i = 0;
 
     for j in 0..ctx.args.section_order.len() {
@@ -3834,7 +3834,7 @@ fn align_with_skew(val: u64, align: u64, skew: u64) -> u64 {
 
 // Assign file offsets to output sections.
 fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
-    let page_size = ctx.page_size;
+    let page_size = ctx.args.page_size;
     let mut fileoff = 0u64;
     let mut i = 0;
 
@@ -4494,7 +4494,7 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     compute_section_headers(ctx);
 
     // Assign file offsets to sections
-    let page_size = ctx.page_size;
+    let page_size = ctx.args.page_size;
     let mut fileoff = 0;
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];

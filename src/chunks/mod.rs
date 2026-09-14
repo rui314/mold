@@ -432,7 +432,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
             // significant for segments with zero on-file size. We still want to
             // keep it congruent with the virtual address modulo page size
             // because some loaders (at least FreeBSD's) are picky about it.
-            phdr.p_offset_mut().set(shdr.sh_addr.get() % ctx.page_size);
+            phdr.p_offset_mut().set(shdr.sh_addr.get() % ctx.args.page_size);
         } else {
             phdr.p_offset_mut().set(shdr.sh_offset.get());
             phdr.p_filesz_mut().set(shdr.sh_size.get());
@@ -514,7 +514,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         define(&mut vec, PT_LOAD, flags, first_shdr);
         if !ctx.args.nmagic && !ctx.args.omagic {
             let last = vec.last_mut().unwrap();
-            let align = last.p_align().get().max(ctx.page_size);
+            let align = last.p_align().get().max(ctx.args.page_size);
             last.p_align_mut().set(align);
         }
 
@@ -664,7 +664,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
             {
                 if in_sync
                     && addr <= p.p_vaddr().get()
-                    && p.p_vaddr().get() < addr + ctx.page_size * 2
+                    && p.p_vaddr().get() < addr + ctx.args.page_size * 2
                 {
                     let vaddr = p.p_vaddr().get();
                     p.p_paddr_mut().set(vaddr);

@@ -501,7 +501,6 @@ pub struct Glob {
     patterns: Vec<Pattern>, // "foo*bar"
     aho_corasick: AhoCorasick,
     nfa: Nfa,
-    is_empty: bool,
 }
 
 /// Collects patterns before compiling an immutable matcher.
@@ -525,7 +524,6 @@ impl Default for Glob {
             patterns: Vec::new(),
             aho_corasick: AhoCorasick::default(),
             nfa: Nfa::default(),
-            is_empty: true,
         }
     }
 }
@@ -534,7 +532,6 @@ impl GlobBuilder {
     /// Adds a pattern. Returns false if the pattern is malformed.
     pub fn add(&mut self, pat: &[u8], value: i64) -> bool {
         debug_assert!(value >= 0);
-        self.glob.is_empty = false;
         self.glob.max_value = self.glob.max_value.max(value);
 
         // Match-all, exact, prefix and suffix patterns are handled with
@@ -606,7 +603,7 @@ impl Glob {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.is_empty
+        self.max_value < 0
     }
 
     /// Returns the largest value of a matching pattern, or -1 if none match.
