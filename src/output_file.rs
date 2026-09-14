@@ -111,11 +111,11 @@ pub fn cleanup() {
 }
 
 enum Storage {
-    /// A mapping of the file, possibly larger than the file itself; `len`
-    /// is the file's size.
-    Mmap {
-        // The mapping may extend past `len` so the file can grow in place.
-        map: MmapMut,
+    File {
+        file: File,
+        // Empty files and a locked file awaiting resize have no mapping.
+        // A mapping may reserve more address space than the file's `len`.
+        map: Option<MmapMut>,
         len: usize,
     },
     Memory(Vec<u8>),
@@ -125,8 +125,6 @@ enum Storage {
 pub struct OutputFile {
     path: PathBuf,
     tmp_path: Option<PathBuf>,
-    /// The file being written, if it is a real file.
-    file: Option<File>,
     storage: Storage,
     perm: u32,
 }
@@ -143,7 +141,12 @@ fn preallocate(file: &File, offset: u64, size: u64) {
     unsafe {
         let mut fs: libc::statfs = std::mem::zeroed();
         if libc::fstatfs(file.as_raw_fd(), &mut fs) != 0 || fs.f_type != libc::TMPFS_MAGIC as _ {
-            libc::fallocate(file.as_raw_fd(), 0, offset as libc::off_t, size as libc::off_t);
+            libc::fallocate(
+                file.as_raw_fd(),
+                0,
+                offset as libc::off_t,
+                size as libc::off_t,
+            );
         }
     }
 }
@@ -151,9 +154,9 @@ fn preallocate(file: &File, offset: u64, size: u64) {
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn preallocate(_file: &File, _offset: u64, _size: u64) {}
 
-fn map_file(file: &File, size: u64) -> io::Result<Storage> {
+fn map_file(file: &File, size: u64) -> io::Result<Option<MmapMut>> {
     if size == 0 {
-        return Ok(Storage::Memory(Vec::new()));
+        return Ok(None);
     }
     // We map the file with twice as much address space as its size, so
     // that extend() can grow the file into the mapping in place. Touching
@@ -180,20 +183,21 @@ fn map_file(file: &File, size: u64) -> io::Result<Storage> {
     // number of faults drops by an order of magnitude.
     // SAFETY: the range is the mapping; the advice is only a hint.
     unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
-    Ok(Storage::Mmap {
-        map,
-        len: size as usize,
-    })
+    Ok(Some(map))
 }
 
 impl OutputFile {
     #[cfg(not(windows))]
     fn publish_output_buffer(&self) {
         match &self.storage {
-            Storage::Mmap { map, len } => {
+            Storage::File {
+                map: Some(map),
+                len,
+                ..
+            } => {
                 set_output_buffer_range(map.as_ptr() as usize, *len);
             }
-            Storage::Memory(_) => set_output_buffer_range(0, 0),
+            _ => set_output_buffer_range(0, 0),
         }
     }
 
@@ -226,7 +230,6 @@ impl OutputFile {
             return OutputFile {
                 path: path.to_path_buf(),
                 tmp_path: None,
-                file: None,
                 storage: Storage::Memory(vec![0; size as usize]),
                 perm,
             };
@@ -278,13 +281,16 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
         preallocate(&file, 0, size);
 
-        let storage = map_file(&file, size)
+        let map = map_file(&file, size)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", path.display()));
         let output = OutputFile {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
-            file: Some(file),
-            storage,
+            storage: Storage::File {
+                file,
+                map,
+                len: size as usize,
+            },
             perm,
         };
         #[cfg(not(windows))]
@@ -317,8 +323,11 @@ impl OutputFile {
         OutputFile {
             path: path.to_path_buf(),
             tmp_path: None,
-            file: Some(file),
-            storage: Storage::Memory(Vec::new()),
+            storage: Storage::File {
+                file,
+                map: None,
+                len: 0,
+            },
             perm,
         }
     }
@@ -330,35 +339,38 @@ impl OutputFile {
 
     /// Sets the size of a file opened with [`Self::open_locked`].
     pub fn resize(&mut self, size: u64) {
-        let file = self
-            .file
-            .as_ref()
-            .expect("resizing an output file that isn't a file");
+        let Storage::File { file, map, len } = &mut self.storage else {
+            panic!("resizing an output file that isn't a file");
+        };
         file.set_len(size)
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
-        // Reserve twice as much address space as the file needs so that
-        // extend() can grow it into the mapping in place.
-        self.storage = map_file(file, size)
+        *map = map_file(file, size)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
+        *len = size as usize;
         #[cfg(not(windows))]
         self.publish_output_buffer();
     }
 
     /// Whether the buffer is a mapping of the file rather than memory.
     pub fn is_mmapped(&self) -> bool {
-        matches!(self.storage, Storage::Mmap { .. })
+        matches!(self.storage, Storage::File { map: Some(_), .. })
     }
 
     pub fn buf(&mut self) -> &mut [u8] {
         match &mut self.storage {
-            Storage::Mmap { map, len } => &mut map[..*len],
+            Storage::File {
+                map: Some(map),
+                len,
+                ..
+            } => &mut map[..*len],
+            Storage::File { map: None, .. } => &mut [],
             Storage::Memory(vec) => &mut vec[..],
         }
     }
 
     pub(crate) fn len(&self) -> usize {
         match &self.storage {
-            Storage::Mmap { len, .. } => *len,
+            Storage::File { len, .. } => *len,
             Storage::Memory(vec) => vec.len(),
         }
     }
@@ -370,25 +382,23 @@ impl OutputFile {
     // move.
     pub fn extend(&mut self, size: usize) {
         let new_len = self.len() + size;
-        match (&mut self.storage, &self.file) {
-            (Storage::Memory(vec), _) => vec.resize(new_len, 0),
-            (Storage::Mmap { map, len }, Some(file)) => {
+        match &mut self.storage {
+            Storage::Memory(vec) => vec.resize(new_len, 0),
+            Storage::File { file, map, len } => {
                 file.set_len(new_len as u64)
                     .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
                 // Allocate only the appended range. Reallocating the already
                 // written prefix can flush dirty extents on filesystems such
                 // as btrfs and serialize a large part of .gdb_index output.
                 preallocate(file, *len as u64, size as u64);
-                if new_len <= map.len() {
-                    *len = new_len;
-                } else {
+                if map.as_ref().is_none_or(|map| new_len > map.len()) {
                     // The appended data does not fit in the existing mapping, so map
                     // the grown file again.
-                    self.storage = map_file(file, new_len as u64)
+                    *map = map_file(file, new_len as u64)
                         .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
                 }
+                *len = new_len;
             }
-            (Storage::Mmap { .. }, None) => unreachable!("a mapping always has a file"),
         }
         #[cfg(not(windows))]
         self.publish_output_buffer();
@@ -399,8 +409,12 @@ impl OutputFile {
     pub fn close(self) {
         #[cfg(not(windows))]
         set_output_buffer_range(0, 0);
-        match self.storage {
-            Storage::Mmap { map, .. } => drop(map),
+        // Hold the file (and any lock) through publication of the output.
+        let _file = match self.storage {
+            Storage::File { file, map, .. } => {
+                drop(map);
+                Some(file)
+            }
             Storage::Memory(vec) => {
                 if self.path == Path::new("-") {
                     let mut stdout = std::io::stdout().lock();
@@ -419,19 +433,17 @@ impl OutputFile {
                     }
                     return;
                 }
-                let mut file = match self.file {
-                    Some(file) => file,
-                    None => open_options(self.perm)
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(&self.path)
-                        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path.display())),
-                };
+                let mut file = open_options(self.perm)
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(&self.path)
+                    .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path.display()));
                 file.write_all(&vec)
                     .unwrap_or_else(|e| fatal!("{}: write failed: {e}", self.path.display()));
+                None
             }
-        }
+        };
         if let Some(tmp) = self.tmp_path {
             // If an output file already exists, open a file and then remove it.
             // This is the fastest way to unlink a file, as it does not make the
@@ -442,7 +454,11 @@ impl OutputFile {
                 std::mem::forget(old);
             }
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path.display())
+                fatal!(
+                    "cannot rename {} to {}: {e}",
+                    tmp.display(),
+                    self.path.display()
+                )
             });
             set_tmpfile(None);
         }
@@ -535,6 +551,26 @@ mod tests {
                 }
             }
         }
+        // Cover empty regular files, remapping on growth, and the locked
+        // staging state used by separate debug output. Keep this in the same
+        // test because output publication uses process-global state.
+        for initial in [0, 8] {
+            let mut file = OutputFile::open_impl(&path, initial, 0o600, true);
+            file.buf().fill(7);
+            file.extend(65536);
+            assert!(file.buf()[..initial as usize].iter().all(|&b| b == 7));
+            assert!(file.buf()[initial as usize..].iter().all(|&b| b == 0));
+            file.close();
+            assert_eq!(std::fs::metadata(&path).unwrap().len(), initial + 65536);
+        }
+        let mut file = OutputFile::open_locked(&path, 0o600);
+        assert!(file.buf().is_empty());
+        file.resize(0);
+        assert!(!file.is_mmapped());
+        file.resize(4);
+        file.buf().copy_from_slice(b"test");
+        file.close();
+        assert_eq!(std::fs::read(&path).unwrap(), b"test");
         std::fs::remove_file(path).unwrap();
     }
 }
