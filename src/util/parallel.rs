@@ -1,5 +1,37 @@
 use rayon::prelude::*;
 
+/// An owned Rayon job whose result is needed by a later linker pass.
+pub(crate) struct Background<T> {
+    receiver: std::sync::mpsc::Receiver<T>,
+    name: &'static str,
+}
+
+impl<T: Send + 'static> Background<T> {
+    pub fn spawn(name: &'static str, run: impl FnOnce() -> T + Send + 'static) -> Self {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        rayon::spawn(move || {
+            let _ = sender.send(run());
+        });
+        Self { receiver, name }
+    }
+
+    pub fn join(self) -> T {
+        use std::sync::mpsc::TryRecvError;
+        loop {
+            match self.receiver.try_recv() {
+                Ok(value) => return value,
+                Err(TryRecvError::Disconnected) => panic!("{} task failed", self.name),
+                Err(TryRecvError::Empty) => {
+                    // A blocking receive would deadlock a one-worker pool.
+                    if !matches!(rayon::yield_now(), Some(rayon::Yield::Executed)) {
+                        std::thread::yield_now();
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Stably partitions a slice, returning the number of matching elements.
 /// Each block scatters into disjoint ranges computed from its match count.
 pub(crate) fn stable_partition<T: Copy + Send + Sync>(
@@ -60,6 +92,19 @@ pub(crate) fn stable_partition<T: Copy + Send + Sync>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_job_joins_on_one_worker() {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| {
+                let job =
+                    Background::spawn("test", || (0..100usize).into_par_iter().sum::<usize>());
+                assert_eq!(job.join(), 4950);
+            });
+    }
 
     #[test]
     fn preserves_both_groups_across_blocks() {

@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::ops::Range;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -13,6 +13,7 @@ use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
 use crate::output_file::{split_ranges, OutputFile};
+use crate::util::parallel::Background;
 use crate::{error, fatal, passes};
 
 /// Runs the linker with the given command line. Returns the exit status.
@@ -77,20 +78,6 @@ fn thread_count(args: &Args) -> usize {
             .map_or(1, |n| n.get())
             .min(32)
     })
-}
-
-fn wait_for_background<T>(receiver: mpsc::Receiver<T>, name: &str) -> T {
-    loop {
-        match receiver.try_recv() {
-            Ok(value) => return value,
-            Err(mpsc::TryRecvError::Disconnected) => panic!("{name} task failed"),
-            Err(mpsc::TryRecvError::Empty) => {
-                if !matches!(rayon::yield_now(), Some(rayon::Yield::Executed)) {
-                    std::thread::yield_now();
-                }
-            }
-        }
-    }
 }
 
 /// Links for the target `E`, or reports the target the inputs are actually
@@ -224,16 +211,10 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     let gdb_input_job = if ctx.args.gdb_index && !ctx.args.relocatable {
         let timer = t_before_copy.handle();
         let inputs = crate::gdb_index::prepare_inputs(&mut ctx);
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        let job = move || {
+        Some(Background::spawn(".gdb_index input", move || {
             let timer = timer.child("read_gdb_index_inputs");
-            let data = crate::gdb_index::read_inputs::<E>(timer, inputs);
-            let _ = sender.send(data);
-        };
-        // Rayon has no task priorities, so queue this as an ordinary
-        // background task.
-        rayon::spawn(job);
-        Some(receiver)
+            crate::gdb_index::read_inputs::<E>(timer, inputs)
+        }))
     } else {
         None
     };
@@ -261,16 +242,14 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     let merge_timers = ctx.timers.clone();
     let merge_comment = ctx.comment;
     let merge_cmdline = Arc::clone(&ctx.cmdline_args);
-    let (merge_sender, merge_receiver) = mpsc::sync_channel(1);
-    rayon::spawn(move || {
-        let result = merge_input.run(chunks::merged::ResolveOptions {
+    let merge_job = Background::spawn("non-allocated string merging", move || {
+        merge_input.run(chunks::merged::ResolveOptions {
             allocated_only: false,
             gc_sections: false,
             comment: merge_comment,
             cmdline_args: &merge_cmdline,
             timers: &merge_timers,
-        });
-        let _ = merge_sender.send(result);
+        })
     });
 
     // Create .bss sections for common symbols.
@@ -409,7 +388,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     // name is defined twice.
     passes::check_symbol_version_conflicts(&ctx);
 
-    wait_for_background(merge_receiver, "non-allocated string merging").finish(&mut ctx);
+    merge_job.join().finish(&mut ctx);
 
     // Sort sections by section attributes so that we'll have to
     // create as few segments as possible.
@@ -436,7 +415,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     passes::sort_dynsyms(&mut ctx);
     // sort_debug_info_sections may uncompress the same .debug_info sections.
     if let Some(job) = gdb_input_job {
-        ctx.gdb_index_data = Some(wait_for_background(job, ".gdb_index input"));
+        ctx.gdb_index_data = Some(job.join());
     }
     // Sort .debug_info contents so that DWARF32 debug info precedes that of
     // DWARF64. This is to mitigate the possibility of a relocation overflow.
@@ -454,16 +433,10 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
             .take()
             .expect("missing .gdb_index input data");
         crate::gdb_index::prepare_tables(&ctx, &mut data);
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        let job = move || {
+        Some(Background::spawn(".gdb_index table", move || {
             let timer = timer.child("build_gdb_index_tables");
-            let data = crate::gdb_index::build_tables(timer, data, gdb_table_workers);
-            let _ = sender.send(data);
-        };
-        // Rayon has no task priorities, so queue this as an ordinary
-        // background task.
-        rayon::spawn(job);
-        Some(receiver)
+            crate::gdb_index::build_tables(timer, data, gdb_table_workers)
+        }))
     } else {
         None
     };
@@ -597,7 +570,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
         // sections. We have applied the relocations now, so finish the index.
         if ctx.gdb_index.is_some() && ctx.gnu_debuglink.is_none() {
             if let Some(job) = gdb_table_job.take() {
-                ctx.gdb_index_data = Some(wait_for_background(job, ".gdb_index table"));
+                ctx.gdb_index_data = Some(job.join());
             }
             crate::gdb_index::write(&mut ctx, &mut output);
         }
