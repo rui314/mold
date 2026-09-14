@@ -289,7 +289,6 @@ pub fn get_machine_type(
     match get_file_type(plugin, mf) {
         FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
         FileType::Ar => archive_file::read_fat_archive_members(mf)
-            .into_iter()
             .find(|child| {
                 matches!(
                     get_file_type(plugin, child),
@@ -298,7 +297,6 @@ pub fn get_machine_type(
             })
             .and_then(|child| get_elf_target(child.data())),
         FileType::ThinAr => archive_file::read_thin_archive_members(chroot, mf)
-            .into_iter()
             .find(|child| {
                 matches!(
                     get_file_type(plugin, child),

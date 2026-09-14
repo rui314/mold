@@ -135,7 +135,10 @@ fn archive_members(
             }
 
             if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-                fatal!("{}: filename is not stored as a long filename", mf.name.display());
+                fatal!(
+                    "{}: filename is not stored as a long filename",
+                    mf.name.display()
+                );
             }
 
             // Read the name field
@@ -162,53 +165,48 @@ fn archive_members(
 
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
-pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> Vec<PathBuf> {
-    archive_members(mf, true)
-        .map(|(name, _)| {
-            if name.is_absolute() {
-                name
-            } else {
-                mf.name.parent().unwrap_or(Path::new(".")).join(name)
-            }
-        })
-        .collect()
+pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> impl Iterator<Item = PathBuf> {
+    archive_members(mf, true).map(move |(name, _)| {
+        if name.is_absolute() {
+            name
+        } else {
+            mf.name.parent().unwrap_or(Path::new(".")).join(name)
+        }
+    })
 }
 
-pub fn read_thin_archive_members(
-    chroot: &Path,
+pub fn read_thin_archive_members<'a>(
+    chroot: &'a Path,
     mf: &'static MappedFile,
-) -> Vec<&'static MappedFile> {
-    get_thin_archive_member_paths(mf)
-        .into_iter()
-        .map(|path| {
-            let member = crate::mapped_file::must_open_file(chroot, &path);
-            util::leak(MappedFile {
-                name: member.name.clone(),
-                data: member.data,
-                given_fullpath: true,
-                parent: None,
-                thin_parent: Some(mf),
-                is_dependency: std::sync::atomic::AtomicBool::new(true),
-            })
+) -> impl Iterator<Item = &'static MappedFile> + 'a {
+    get_thin_archive_member_paths(mf).map(move |path| {
+        let member = crate::mapped_file::must_open_file(chroot, &path);
+        util::leak(MappedFile {
+            name: member.name.clone(),
+            data: member.data,
+            given_fullpath: true,
+            parent: None,
+            thin_parent: Some(mf),
+            is_dependency: std::sync::atomic::AtomicBool::new(true),
         })
-        .collect::<Vec<_>>()
+    })
 }
 
-pub fn read_fat_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
+pub fn read_fat_archive_members(
+    mf: &'static MappedFile,
+) -> impl Iterator<Item = &'static MappedFile> {
     let base = mf.data().as_ptr() as usize;
-    archive_members(mf, false)
-        .map(|(name, body)| {
-            let start = body.as_ptr() as usize - base;
-            mf.slice(name, start, body.len())
-        })
-        .collect()
+    archive_members(mf, false).map(move |(name, body)| {
+        let start = body.as_ptr() as usize - base;
+        mf.slice(name, start, body.len())
+    })
 }
 
 pub fn read_archive_members(chroot: &Path, mf: &'static MappedFile) -> Vec<&'static MappedFile> {
     if mf.data().starts_with(b"!<arch>\n") {
-        read_fat_archive_members(mf)
+        read_fat_archive_members(mf).collect()
     } else {
         debug_assert!(mf.data().starts_with(b"!<thin>\n"));
-        read_thin_archive_members(chroot, mf)
+        read_thin_archive_members(chroot, mf).collect()
     }
 }
