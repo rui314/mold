@@ -79,7 +79,6 @@
 //! can only grow, so once two rounds produce the same count the partition
 //! into equivalence classes has converged.
 
-use std::fmt::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
@@ -614,23 +613,21 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
     }
     leaders.sort_by_key(|(l, _)| ctx.section(*l).priority(&ctx.objs[l.file.index()]));
 
-    let mut out = String::new();
-    let mut saved = 0usize;
-    for (leader, members) in &leaders {
-        writeln!(out, "selected section {}", ctx.section_display(*leader)).unwrap();
-        for m in members {
-            writeln!(
-                out,
-                "  removing identical section {}",
-                ctx.section_display(*m)
-            )
-            .unwrap();
-            saved += ctx.section(*leader).contents().len();
+    output.with_writer("--print-icf-sections", |out| {
+        let mut saved = 0usize;
+        for (leader, members) in &leaders {
+            writeln!(out, "selected section {}", ctx.section_display(*leader))?;
+            for m in members {
+                writeln!(
+                    out,
+                    "  removing identical section {}",
+                    ctx.section_display(*m)
+                )?;
+                saved += ctx.section(*leader).contents().len();
+            }
         }
-    }
-    writeln!(out, "ICF saved {saved} bytes").unwrap();
-
-    output.write("--print-icf-sections", out.as_bytes());
+        writeln!(out, "ICF saved {saved} bytes")
+    });
 }
 
 pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {

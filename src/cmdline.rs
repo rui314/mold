@@ -311,10 +311,6 @@ pub enum ReportOutput {
 }
 
 impl ReportOutput {
-    pub fn write(&self, option: &str, contents: &[u8]) {
-        self.with_writer(option, |out| out.write_all(contents));
-    }
-
     pub fn with_writer(
         &self,
         option: &str,
