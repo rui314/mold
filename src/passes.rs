@@ -2259,11 +2259,9 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
         let objs = &ctx.objs;
         let osec = &mut ctx.output_sections[id.index()];
         // Preserve the relative order within the two DWARF classes.
-        let (a, b): (Vec<InputSectionId>, Vec<InputSectionId>) = osec
-            .members
-            .iter()
-            .partition(|&&m| objs[m.file().index()].is_dwarf32);
-        osec.members = a.into_iter().chain(b).collect();
+        crate::util::parallel::stable_partition(&mut osec.members, |&m| {
+            objs[m.file().index()].is_dwarf32
+        });
         chunks::compute_section_size(ctx, ChunkId::Output(id));
     }
 
