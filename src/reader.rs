@@ -359,7 +359,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
             // thin archive members, so that file I/O runs in parallel too.
             match get_file_type(ctx_ref, mf) {
                 FileType::Ar => {
-                    for child in archive_file::read_fat_archive_members(mf) {
+                    for child in archive_file::read_archive_members(&ctx_ref.args.chroot, mf) {
                         let child_rctx = rctx.next_child();
                         let archive_name = mf.name.as_path();
                         let loaded = &loaded;

@@ -287,15 +287,7 @@ pub fn get_machine_type(
 ) -> Option<&'static str> {
     match get_file_type(plugin, mf) {
         FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
-        FileType::Ar => archive_file::read_fat_archive_members(mf)
-            .find(|child| {
-                matches!(
-                    get_file_type(plugin, child),
-                    FileType::ElfObj | FileType::GccLtoObj
-                )
-            })
-            .and_then(|child| get_elf_target(child.data())),
-        FileType::ThinAr => archive_file::read_thin_archive_members(chroot, mf)
+        FileType::Ar | FileType::ThinAr => archive_file::read_archive_members(chroot, mf)
             .find(|child| {
                 matches!(
                     get_file_type(plugin, child),

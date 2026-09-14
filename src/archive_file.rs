@@ -166,37 +166,31 @@ fn archive_members(
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
 pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> impl Iterator<Item = PathBuf> {
-    archive_members(mf, true).map(move |(name, _)| {
-        if name.is_absolute() {
-            name
-        } else {
-            mf.name.parent().unwrap_or(Path::new(".")).join(name)
-        }
-    })
+    archive_members(mf, true).map(move |(name, _)| member_path(mf, name))
 }
 
-pub fn read_thin_archive_members<'a>(
+fn member_path(mf: &MappedFile, name: PathBuf) -> PathBuf {
+    if name.is_absolute() {
+        name
+    } else {
+        mf.name.parent().unwrap_or(Path::new(".")).join(name)
+    }
+}
+
+/// Opens members as they are consumed. Parallel readers can instead schedule
+/// thin-member paths on workers using get_thin_archive_member_paths().
+pub fn read_archive_members<'a>(
     chroot: &'a Path,
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = &'static MappedFile> + 'a {
-    get_thin_archive_member_paths(mf).map(move |path| mf.open_thin_member(chroot, &path))
-}
-
-pub fn read_fat_archive_members(
-    mf: &'static MappedFile,
-) -> impl Iterator<Item = &'static MappedFile> {
+    let thin = mf.data().starts_with(b"!<thin>\n");
+    debug_assert!(thin || mf.data().starts_with(b"!<arch>\n"));
     let base = mf.data().as_ptr() as usize;
-    archive_members(mf, false).map(move |(name, body)| {
-        let start = body.as_ptr() as usize - base;
-        mf.slice(name, start, body.len())
+    archive_members(mf, thin).map(move |(name, body)| {
+        if thin {
+            mf.open_thin_member(chroot, &member_path(mf, name))
+        } else {
+            mf.slice(name, body.as_ptr() as usize - base, body.len())
+        }
     })
-}
-
-pub fn read_archive_members(chroot: &Path, mf: &'static MappedFile) -> Vec<&'static MappedFile> {
-    if mf.data().starts_with(b"!<arch>\n") {
-        read_fat_archive_members(mf).collect()
-    } else {
-        debug_assert!(mf.data().starts_with(b"!<thin>\n"));
-        read_thin_archive_members(chroot, mf).collect()
-    }
 }
