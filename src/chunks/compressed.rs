@@ -15,7 +15,7 @@ pub struct CompressedSection<E: Layout> {
     pub hdr: ChunkHeader<E>,
     pub chdr: ElfChdr<E>,
     pub compressor: Compressor,
-    /// Kept for --gdb-index, which reads the uncompressed contents.
+    /// Retained only for sections whose contents --gdb-index reads.
     pub uncompressed_data: Option<Vec<u8>>,
     pub original: ChunkId,
 }
@@ -58,12 +58,12 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
     new_hdr.shdr.sh_addralign.set(1);
     new_hdr.shdr.sh_size.set(size);
 
-    // We can discard the uncompressed contents unless --gdb-index is given
+    let keep_contents = ctx.args.gdb_index && crate::gdb_index::needs_section_contents(hdr.name);
     CompressedSection {
         hdr: new_hdr,
         chdr,
         compressor,
-        uncompressed_data: ctx.args.gdb_index.then_some(buf),
+        uncompressed_data: keep_contents.then_some(buf),
         original,
     }
 }

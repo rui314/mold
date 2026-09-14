@@ -1298,9 +1298,22 @@ pub fn build_tables_now<E: Arch>(ctx: &mut Context<E>) {
     ctx.gdb_index_data = Some(build_tables(timer, data, rayon::current_num_threads()));
 }
 
+const RANGE_SECTION_NAMES: [&[u8]; 5] = [
+    b".debug_info",
+    b".debug_abbrev",
+    b".debug_ranges",
+    b".debug_addr",
+    b".debug_rnglists",
+];
+
+/// Whether GDB index construction needs a section's relocated contents.
+pub(crate) fn needs_section_contents(name: &[u8]) -> bool {
+    RANGE_SECTION_NAMES.contains(&name)
+}
+
 /// The contents of a debug section in the output, or its uncompressed
 /// contents if it was compressed.
-fn section_contents<'a, E: Arch>(ctx: &'a Context<E>, buf: &'a [u8], name: &str) -> &'a [u8] {
+fn section_contents<'a, E: Arch>(ctx: &'a Context<E>, buf: &'a [u8], name: &[u8]) -> &'a [u8] {
     for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
         if hdr.name != name {
@@ -1340,12 +1353,14 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     // Find debug info sections
     {
         let buf = output.buf();
+        let [info, abbrev, ranges, addr, rnglists] =
+            RANGE_SECTION_NAMES.map(|name| section_contents(ctx, buf, name));
         let secs = RangeSections {
-            info: section_contents(ctx, buf, ".debug_info"),
-            abbrev: section_contents(ctx, buf, ".debug_abbrev"),
-            ranges: section_contents(ctx, buf, ".debug_ranges"),
-            addr: section_contents(ctx, buf, ".debug_addr"),
-            rnglists: section_contents(ctx, buf, ".debug_rnglists"),
+            info,
+            abbrev,
+            ranges,
+            addr,
+            rnglists,
         };
         data.cus.par_iter_mut().for_each(|cu| {
             cu.ranges = read_address_ranges::<E>(&secs, cu);
