@@ -216,7 +216,7 @@ pub fn new_ehdr<E: Arch>(sh_flags: u64) -> ChunkHeader<E> {
     hdr
 }
 
-// OutputShdr represents the section header. The section header is usually
+// The section header table is usually
 // located at the end of an ELF file and is optional for executables.
 // Executables work without it because the runtime only reads the program
 // header. Section header is significant only in object files and not

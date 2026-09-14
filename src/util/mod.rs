@@ -2,17 +2,17 @@
 
 // Utility functions
 
-pub mod compress;
-pub mod concurrent_map;
-pub mod demangle;
+pub(crate) mod compress;
+pub(crate) mod concurrent_map;
+pub(crate) mod demangle;
 pub mod endian;
-pub mod glob;
-pub mod hyperloglog;
+pub(crate) mod glob;
+pub(crate) mod hyperloglog;
 pub(crate) mod parallel;
-pub mod perf;
+pub(crate) mod perf;
 mod prefetch;
 pub(crate) mod siphash;
-pub mod tar;
+pub(crate) mod tar;
 pub(crate) mod worker_local;
 
 pub(crate) use prefetch::prefetch;
@@ -90,7 +90,7 @@ pub(crate) unsafe fn madvise_hugepage_interior(_data: *const u8, _size: usize) {
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".
 #[inline]
-pub fn align_to(value: u64, align: u64) -> u64 {
+pub(crate) fn align_to(value: u64, align: u64) -> u64 {
     if align == 0 {
         return value;
     }
@@ -99,35 +99,35 @@ pub fn align_to(value: u64, align: u64) -> u64 {
 }
 
 /// Rounds `value` down to a multiple of `align`, which must be a power of two.
-pub fn align_down(value: u64, align: u64) -> u64 {
+pub(crate) fn align_down(value: u64, align: u64) -> u64 {
     debug_assert!(align.is_power_of_two());
     value & !(align - 1)
 }
 
 /// Returns bit `pos` of `value`.
-pub fn bit(value: u64, pos: u32) -> u64 {
+pub(crate) fn bit(value: u64, pos: u32) -> u64 {
     (value >> pos) & 1
 }
 
 // Returns [hi:lo] bits of val.
 #[inline]
-pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
+pub(crate) fn bits(value: u64, hi: u32, lo: u32) -> u64 {
     (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
 }
 
 // Cast val to a signed N bit integer.
 // For example, sign_extend(x, 32) == (i32)x for any integer x.
-pub fn sign_extend(value: u64, n: u32) -> i64 {
+pub(crate) fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }
 
 /// Whether `value` is representable as a signed `n`-bit integer.
-pub fn is_int(value: i64, n: u32) -> bool {
+pub(crate) fn is_int(value: i64, n: u32) -> bool {
     sign_extend(value as u64, n) == value
 }
 
 /// Writes a NUL-terminated string and returns the number of bytes written.
-pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
+pub(crate) fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
     buf[..s.len()].copy_from_slice(s);
     buf[s.len()] = 0;
     s.len() + 1
@@ -137,14 +137,14 @@ pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
 /// The result excludes the terminator. A missing terminator yields the rest
 /// of the table.
 #[inline]
-pub fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
+pub(crate) fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
     let rest = table.get(offset..).unwrap_or(&[]);
     let end = memchr::memchr(0, rest).unwrap_or(rest.len());
     &rest[..end]
 }
 
 /// Appends `value` in unsigned LEB128 encoding.
-pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
+pub(crate) fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
     loop {
         let byte = (value & 0x7f) as u8;
         value >>= 7;
@@ -157,7 +157,7 @@ pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
 }
 
 /// Appends `value` in signed LEB128 encoding.
-pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
+pub(crate) fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
     loop {
         let byte = (value & 0x7f) as u8;
         value >>= 7;
@@ -171,7 +171,7 @@ pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
 }
 
 /// Overwrites an existing unsigned LEB128 value in place, keeping its length.
-pub fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
+pub(crate) fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
     let mut i = 0;
     while buf[i] & 0x80 != 0 {
         buf[i] = 0x80 | (value & 0x7f) as u8;
@@ -183,7 +183,7 @@ pub fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
 
 /// Reads an unsigned LEB128 value, advancing `bytes` past it.
 #[inline]
-pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
+pub(crate) fn read_uleb(bytes: &mut &[u8]) -> u64 {
     let mut value = 0;
     let mut shift = 0;
     loop {
@@ -201,7 +201,7 @@ pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
 
 /// Reads a signed LEB128 value, advancing `bytes` past it.
 #[inline]
-pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
+pub(crate) fn read_sleb(bytes: &mut &[u8]) -> i64 {
     let mut value = 0u64;
     let mut shift = 0;
     loop {
@@ -222,7 +222,7 @@ pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
 }
 
 /// Fills `buf` with random bytes from the operating system.
-pub fn random_bytes(buf: &mut [u8]) {
+pub(crate) fn random_bytes(buf: &mut [u8]) {
     getrandom::fill(buf).unwrap_or_else(|err| crate::fatal!("cannot get random bytes: {err}"));
 }
 
@@ -231,18 +231,18 @@ pub fn random_bytes(buf: &mut [u8]) {
 /// Input files, symbol names and a few other objects must outlive every
 /// data structure of a link, and the process exits as soon as the link is
 /// done, so never freeing them is both simplest and cheapest.
-pub fn leak<T>(value: T) -> &'static T {
+pub(crate) fn leak<T>(value: T) -> &'static T {
     Box::leak(Box::new(value))
 }
 
 /// Leaks a byte string for the rest of the process's lifetime.
-pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
+pub(crate) fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
 }
 
 /// Normalizes a path lexically, resolving `.` and `..` components without
 /// consulting the file system.
-pub fn path_clean(path: &str) -> String {
+pub(crate) fn path_clean(path: &str) -> String {
     clean_path(std::path::Path::new(path))
         .to_string_lossy()
         .into_owned()
@@ -250,7 +250,7 @@ pub fn path_clean(path: &str) -> String {
 
 /// Converts bytes from a response file or linker script to an OS string.
 /// Unix paths can contain arbitrary non-NUL bytes.
-pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
+pub(crate) fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
     use bstr::ByteSlice;
     bytes
         .to_os_str()
@@ -258,7 +258,7 @@ pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
 }
 
 /// Normalizes an OS path without resolving symlinks.
-pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
+pub(crate) fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
     use std::path::{Component, PathBuf};
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -282,7 +282,7 @@ pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.
-pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+pub(crate) fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
 }
 

@@ -815,13 +815,13 @@ pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
     resolve_symbols_pass(ctx, &files, true);
 }
 
-/// Drops files that didn't make it into the link and renumbers the rest.
+/// Removes unreachable files from the live file lists.
 pub fn remove_unreachable_files<E: Arch>(ctx: &mut Context<E>) {
     remove_objects(ctx, |file| !file.base.is_reachable());
     remove_unreachable_dsos(ctx);
 }
 
-/// Drops the object files `remove` selects and renumbers the rest.
+/// Removes selected objects from the live list, retaining their backing storage.
 fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile<E>) -> bool) {
     ctx.objs.retain(|file| !remove(file));
 }

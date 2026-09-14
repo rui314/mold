@@ -218,9 +218,8 @@ pub trait Arch: Layout {
         Vec::new()
     }
 
-    /// Rewrites the output image once every section is copied: big-endian
-    /// ARM32 converts code to BE8 form here, and x86-64 removes unneeded
-    /// ENDBR instructions.
+    /// Rewrites the output image once every section is copied. Big-endian
+    /// ARM32 converts code to BE8 form here.
     fn finish_output(_ctx: &Context<Self>, _buf: &mut [u8]) {}
 
     /// Writes an addend into a relocated location, for REL-type targets

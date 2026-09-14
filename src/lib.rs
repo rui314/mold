@@ -1,36 +1,36 @@
 //! A high-performance ELF linker.
 
 pub mod arch;
-pub mod archive_file;
-pub mod chunks;
-pub mod cmdline;
-pub mod context;
+pub(crate) mod archive_file;
+pub(crate) mod chunks;
+pub(crate) mod cmdline;
+pub(crate) mod context;
 pub mod driver;
 pub mod elf;
 mod elf_consts;
-pub mod error;
-pub mod filetype;
-pub mod gc_sections;
-pub mod gdb_index;
-pub mod icf;
-pub mod input_files;
-pub mod input_sections;
-pub mod jobs;
-pub mod linker_script;
+pub(crate) mod error;
+pub(crate) mod filetype;
+pub(crate) mod gc_sections;
+pub(crate) mod gdb_index;
+pub(crate) mod icf;
+pub(crate) mod input_files;
+pub(crate) mod input_sections;
+pub(crate) mod jobs;
+pub(crate) mod linker_script;
 #[cfg(not(all(target_os = "windows", target_env = "msvc")))]
-pub mod lto;
+pub(crate) mod lto;
 #[cfg(all(target_os = "windows", target_env = "msvc"))]
 #[path = "lto_win32.rs"]
-pub mod lto;
-pub mod mapfile;
-pub mod mapped_file;
-pub mod output_file;
-pub mod passes;
-pub mod reader;
-pub mod relocatable;
-pub mod shrink_sections;
-pub mod subprocess;
-pub mod symbol;
-pub mod thunks;
-pub mod tls;
+pub(crate) mod lto;
+pub(crate) mod mapfile;
+pub(crate) mod mapped_file;
+pub(crate) mod output_file;
+pub(crate) mod passes;
+pub(crate) mod reader;
+pub(crate) mod relocatable;
+pub(crate) mod shrink_sections;
+pub(crate) mod subprocess;
+pub(crate) mod symbol;
+pub(crate) mod thunks;
+pub(crate) mod tls;
 pub mod util;

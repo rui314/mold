@@ -1,83 +1,3 @@
-//! This file handles the linker plugin to support LTO (Link-Time
-//! Optimization).
-//!
-//! LTO is a technique to do whole-program optimization to a program. Since
-//! a linker sees the whole program as opposed to a single compilation
-//! unit, it in theory can do some optimizations that cannot be done in the
-//! usual separate compilation model. For example, LTO should be able to
-//! inline functions that are defined in other compilation unit.
-//!
-//! In GCC and Clang, all you have to do to enable LTO is adding the
-//! `-flto` flag to the compiler and the linker command lines. If `-flto`
-//! is given, the compiler generates a file that contains not machine code
-//! but the compiler's IR (intermediate representation). In GCC, the output
-//! is an ELF file which wraps GCC's IR. In LLVM, it's not even an ELF file
-//! but just a raw LLVM IR file.
-//!
-//! Here is what we have to do if at least one input file is not a usual
-//! ELF file but an IR object file:
-//!
-//!  1. Read symbols both from usual ELF files and from IR object files and
-//!     resolve symbols as usual.
-//!
-//!  2. Pass all IR objects to the compiler backend. The compiler backend
-//!     compiles the IRs and returns a few big ELF object files as a
-//!     result.
-//!
-//!  3. Parse the returned ELF files and overwrite IR object symbols with
-//!     the returned ones, discarding IR object files.
-//!
-//!  4. Continue the rest of the linking process as usual.
-//!
-//! When gcc or clang inovkes ld, they pass `-plugin /path/to/linker-plugin.so`
-//! to the linker. The given .so file provides a way to call the compiler
-//! backend.
-//!
-//! The linker plugin API is documented at
-//! https://gcc.gnu.org/wiki/whopr/driver, though the document is a bit
-//! outdated.
-//!
-//! Frankly, the linker plugin API is peculiar and is not very easy to use.
-//! For some reason, the API functions don't return the result of a
-//! function call as a return value but instead calls other function with
-//! the result as its argument to "return" the result.
-//!
-//! For example, the first thing you need to do after dlopen()'ing a linker
-//! plugin .so is to call `onload` function with a list of callback
-//! functions. `onload` calls callbacks to notify about the pointers to
-//! other functions the linker plugin provides. I don't know why `onload`
-//! can't just return a list of functions or why the linker plugin can't
-//! define not only `onload` but other functions, but that's what it is.
-//!
-//! Here is the steps to use the linker plugin:
-//!
-//!  1. dlopen() the linker plugin .so and call `onload` to obtain pointers
-//!     to other functions provided by the plugin.
-//!
-//!  2. Call `claim_file_hook` with an IR object file to read its symbol
-//!     table. `claim_file_hook` calls the `add_symbols` callback to
-//!     "return" a list of symbols.
-//!
-//!  3. `claim_file_hook` returns LDPT_OK only when the plugin wants to
-//!     handle a given file. Since we pass only IR object files to the
-//!     plugin in mold, it always returns LDPT_OK in our case.
-//!
-//!  4. Once we made a decision as to which object file to include into the
-//!     output file, we call `all_symbols_read_hook` to compile IR objects
-//!     into a few big ELF files. That function calls the `get_symbols`
-//!     callback to ask us about the symbol resolution results. (The
-//!     compiler backend needs to know whether an undefined symbol in an IR
-//!     object was resolved to a regular object file or a shared object to
-//!     do whole program optimization, for example.)
-//!
-//!  5. `all_symbols_read_hook` "returns" the result by calling the
-//!     `add_input_file` callback. The callback is called with a path to an
-//!     LTO'ed ELF file. We parse that ELF file and override symbols
-//!     defined by IR objects with the ELF file's ones.
-//!
-//!  6. Lastly, we call `cleanup_hook` to remove temporary files created by
-//!     the compiler backend.
-//!
 //! Link-time optimization through the linker plugin interface.
 //!
 //! With `-flto`, compilers emit files holding their intermediate
@@ -840,7 +760,9 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
     let file = File::open(&container.name)
         .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name.display()));
     let input = PluginInputFile {
-        name: CString::new(container.name.as_os_str().as_encoded_bytes()).unwrap().into_raw(),
+        name: CString::new(container.name.as_os_str().as_encoded_bytes())
+            .unwrap()
+            .into_raw(),
         #[cfg(not(windows))]
         fd: file.as_raw_fd(),
         #[cfg(windows)]
