@@ -2266,41 +2266,31 @@ impl<E: Arch> ObjectFile<E> {
             let rel = fde.rels(file)[0];
             file.shndx_at_in(rel.r_sym() as usize)
         };
-        let mut order: Vec<(u64, usize, usize)> = self
-            .fdes
-            .iter()
-            .enumerate()
-            .map(|(i, fde)| {
-                let shndx = section_of(self, fde);
-                (self.section_at(shndx as u32).priority(self), i, shndx)
-            })
-            .collect();
-        order.sort();
-        let fdes = std::mem::take(&mut self.fdes);
-        let mut sorted: Vec<Option<FdeRecord>> = fdes.into_iter().map(Some).collect();
-        self.fdes = order
-            .iter()
-            .map(|&(_, i, _)| sorted[i].take().unwrap())
-            .collect();
-        let shndxs: Vec<usize> = order.iter().map(|&(_, _, s)| s).collect();
+        let mut fdes = std::mem::take(&mut self.fdes);
+        fdes.sort_by_cached_key(|fde| {
+            let shndx = section_of(self, fde);
+            self.section_at(shndx as u32).priority(self)
+        });
 
         // Associate FDEs to input sections.
         let mut i = 0;
-        while i < shndxs.len() {
+        while i < fdes.len() {
             let begin = i;
-            let shndx = shndxs[i];
-            while i < shndxs.len() && shndxs[i] == shndx {
+            let shndx = section_of(self, &fdes[i]);
+            i += 1;
+            while i < fdes.len() && section_of(self, &fdes[i]) == shndx {
                 i += 1;
             }
-            self.fdes[i - 1].is_last = true;
+            fdes[i - 1].is_last = true;
             if self.section_at(shndx as u32).is_alive() {
                 self.section_mut(shndx).unwrap().fde_begin = begin as u32;
             } else {
-                for fde in &self.fdes[begin..i] {
+                for fde in &fdes[begin..i] {
                     fde.kill();
                 }
             }
         }
+        self.fdes = fdes;
     }
 
     // .sframe is a compact stack-unwinding format. Just like .eh_frame, the
