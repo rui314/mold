@@ -14,25 +14,12 @@ use crate::util::endian::Endian;
 // .symtab contains non-dynamic symbols. The section is not needed at
 // runtime and can be stripped from an ELF file without affecting the
 // behavior of the program. Symbols in .symtab are mainly for debugging.
-#[derive(Debug)]
-pub struct SymtabSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> SymtabSection<E> {
-    pub fn new() -> SymtabSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
-        let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
-        hdr.shdr.sh_entsize.set(entsize);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        SymtabSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for SymtabSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
+    let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
+    hdr.shdr.sh_entsize.set(entsize);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
@@ -75,9 +62,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     } else {
         nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64
     };
-    ctx.symtab.hdr.shdr.sh_info.set(first_global);
-    ctx.symtab.hdr.shdr.sh_link.set(ctx.strtab.hdr.shndx);
-    ctx.symtab.hdr.shdr.sh_size.set(size);
+    ctx.symtab.shdr.sh_info.set(first_global);
+    ctx.symtab.shdr.sh_link.set(ctx.strtab.shndx);
+    ctx.symtab.shdr.sh_size.set(size);
 }
 
 /// Writes `.symtab`, `.strtab` and `.symtab_shndx`.

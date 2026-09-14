@@ -9,23 +9,8 @@ use crate::elf::*;
 // .strtab is not needed at runtime; one can remove the section from an
 // ELF file without breaking it. Strings that runtime accesses are stored
 // in .dynstr.
-#[derive(Debug)]
-pub struct StrtabSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Layout> StrtabSection<E> {
-    pub fn new() -> StrtabSection<E> {
-        StrtabSection {
-            hdr: ChunkHeader::<E>::new(".strtab", SHT_STRTAB, 0),
-        }
-    }
-}
-
-impl<E: Layout> Default for StrtabSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+    ChunkHeader::<E>::new(".strtab", SHT_STRTAB, 0)
 }
 
 // Offsets in .strtab for ARM32 mapping symbols
@@ -59,7 +44,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         offset += file.base.strtab_size;
     }
     let size = if offset == 1 { 0 } else { offset };
-    ctx.strtab.hdr.shdr.sh_size.set(size);
+    ctx.strtab.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

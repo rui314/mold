@@ -86,7 +86,7 @@ impl Arch for I386 {
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
-        let gotplt = u64::from(ctx.gotplt.hdr.shdr.sh_addr.get());
+        let gotplt = u64::from(ctx.gotplt.shdr.sh_addr.get());
         if ctx.args.pic {
             const INSN: [u8; 16] = [
                 0x51, // push %ecx

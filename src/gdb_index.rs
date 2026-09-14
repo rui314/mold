@@ -688,7 +688,11 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
+                isec.uncompress(
+                    &display_file(&filename, archive_name),
+                    section_name,
+                    input_size,
+                );
                 debug_info.push(DebugInfoInput {
                     shndx,
                     contents: isec.contents(),
@@ -708,7 +712,11 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
+                isec.uncompress(
+                    &display_file(&filename, archive_name),
+                    section_name,
+                    input_size,
+                );
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
@@ -1456,10 +1464,10 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
 
     // Update the section size and rewrite the section header
     if let Some(gdb_index) = &mut ctx.gdb_index {
-        gdb_index.hdr.shdr.sh_size.set(size as u64);
+        gdb_index.shdr.sh_size.set(size as u64);
     }
     if let Some(section_headers) = &ctx.shdr {
-        let shdr = section_headers.hdr.shdr;
+        let shdr = section_headers.shdr;
         let buf = output.buf();
         let start = shdr.sh_offset.get() as usize;
         let end = (shdr.sh_offset.get() + shdr.sh_size.get()) as usize;

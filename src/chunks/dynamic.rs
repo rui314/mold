@@ -10,25 +10,18 @@ use crate::symbol::SymbolId;
 // .dynamic contains various information for dynamically-linked ELF files.
 // At runtime, the dynamic linker reads the information to work
 // appropriately.
-#[derive(Debug)]
-pub struct DynamicSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> DynamicSection<E> {
-    pub fn new(args: &crate::cmdline::Args) -> DynamicSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        hdr.shdr.sh_entsize.set(ElfDyn::<E>::size() as u64);
-        if args.z_rodynamic {
-            hdr.shdr.sh_flags.set(SHF_ALLOC as u64);
-            hdr.is_relro = false;
-        } else {
-            hdr.shdr.sh_flags.set((SHF_ALLOC | SHF_WRITE) as u64);
-            hdr.is_relro = true;
-        }
-        DynamicSection { hdr }
+pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr.shdr.sh_entsize.set(ElfDyn::<E>::size() as u64);
+    if args.z_rodynamic {
+        hdr.shdr.sh_flags.set(SHF_ALLOC as u64);
+        hdr.is_relro = false;
+    } else {
+        hdr.shdr.sh_flags.set((SHF_ALLOC | SHF_WRITE) as u64);
+        hdr.is_relro = true;
     }
+    hdr
 }
 
 // An ARM64 function with a non-standard calling convention is marked with
@@ -81,7 +74,10 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
         define(tag, dynstr.find_string(ctx.args.rpaths.as_encoded_bytes()));
     }
     if !ctx.args.soname.is_empty() {
-        define(DT_SONAME, dynstr.find_string(ctx.args.soname.as_encoded_bytes()));
+        define(
+            DT_SONAME,
+            dynstr.find_string(ctx.args.soname.as_encoded_bytes()),
+        );
     }
     for s in &ctx.args.auxiliary {
         define(DT_AUXILIARY, dynstr.find_string(s));
@@ -118,14 +114,14 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
         } else {
             (DT_RELR, DT_RELRSZ, DT_RELRENT)
         };
-        define(relr, relrdyn.hdr.shdr.sh_addr.get());
-        define(relrsz, relrdyn.hdr.shdr.sh_size.get());
-        define(relrent, relrdyn.hdr.shdr.sh_entsize.get());
+        define(relr, relrdyn.shdr.sh_addr.get());
+        define(relrsz, relrdyn.shdr.sh_size.get());
+        define(relrent, relrdyn.shdr.sh_entsize.get());
     }
 
-    if ctx.relplt.hdr.shdr.sh_size.get() != 0 {
-        define(DT_JMPREL, ctx.relplt.hdr.shdr.sh_addr.get());
-        define(DT_PLTRELSZ, ctx.relplt.hdr.shdr.sh_size.get());
+    if ctx.relplt.shdr.sh_size.get() != 0 {
+        define(DT_JMPREL, ctx.relplt.shdr.sh_addr.get());
+        define(DT_PLTRELSZ, ctx.relplt.shdr.sh_size.get());
         define(DT_PLTREL, rel as u64);
     }
 
@@ -134,14 +130,14 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
             define(DT_PLTGOT, plt.hdr.shdr.sh_addr.get());
         }
     } else if E::FAMILY == Family::Ppc32 {
-        if ctx.gotplt.hdr.shdr.sh_size.get() != 0 {
+        if ctx.gotplt.shdr.sh_size.get() != 0 {
             define(
                 DT_PLTGOT,
-                ctx.gotplt.hdr.shdr.sh_addr.get() + crate::chunks::gotplt::header_size::<E>(),
+                ctx.gotplt.shdr.sh_addr.get() + crate::chunks::gotplt::header_size::<E>(),
             );
         }
-    } else if ctx.gotplt.hdr.shdr.sh_size.get() != 0 {
-        define(DT_PLTGOT, ctx.gotplt.hdr.shdr.sh_addr.get());
+    } else if ctx.gotplt.shdr.sh_size.get() != 0 {
+        define(DT_PLTGOT, ctx.gotplt.shdr.sh_addr.get());
     }
 
     if ctx.dynsym.hdr.shdr.sh_size.get() != 0 {
@@ -193,7 +189,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     }
 
     if let Some(hash) = &ctx.hash {
-        define(DT_HASH, hash.hdr.shdr.sh_addr.get());
+        define(DT_HASH, hash.shdr.sh_addr.get());
     }
     if let Some(gnu_hash) = &ctx.gnu_hash {
         define(DT_GNU_HASH, gnu_hash.hdr.shdr.sh_addr.get());
@@ -260,7 +256,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
         define(DT_RISCV_VARIANT_CC, 0);
     }
     if E::FAMILY == Family::Ppc32 {
-        define(DT_PPC_GOT, ctx.gotplt.hdr.shdr.sh_addr.get());
+        define(DT_PPC_GOT, ctx.gotplt.shdr.sh_addr.get());
     }
     if E::IS_PPC64 {
         // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
@@ -292,13 +288,13 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     for_each_entry(ctx, |_, _| n += 1);
     let size = (n * ElfDyn::<E>::size()) as u64;
     let dynamic = ctx.dynamic.as_mut().unwrap();
-    dynamic.hdr.shdr.sh_size.set(size);
-    dynamic.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
+    dynamic.shdr.sh_size.set(size);
+    dynamic.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     debug_assert_eq!(
-        ctx.dynamic.as_ref().unwrap().hdr.shdr.sh_size.get() as usize,
+        ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize,
         buf.len()
     );
     let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());

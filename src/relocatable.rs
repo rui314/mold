@@ -32,12 +32,9 @@
 
 use crate::arch::Arch;
 use crate::chunks::comdat_group::ComdatGroupSection;
-use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::riscv_attributes::RiscvAttributesSection;
-use crate::chunks::sframe_reloc::SFrameRelocSection;
-use crate::chunks::shstrtab::ShstrtabSection;
-use crate::chunks::{self, ChunkId, OutputEhdr, OutputShdr};
+use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
@@ -47,11 +44,11 @@ use crate::util::align_to;
 
 // Create linker-synthesized sections
 fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
-    ctx.ehdr = Some(OutputEhdr::<E>::new(0));
-    ctx.shdr = Some(OutputShdr::<E>::new());
-    ctx.eh_frame_reloc = Some(EhFrameRelocSection::<E>::new());
-    ctx.sframe_reloc = Some(SFrameRelocSection::<E>::new());
-    ctx.shstrtab = Some(ShstrtabSection::new());
+    ctx.ehdr = Some(chunks::new_ehdr::<E>(0));
+    ctx.shdr = Some(chunks::new_shdr::<E>());
+    ctx.eh_frame_reloc = Some(chunks::eh_frame_reloc::new_header::<E>());
+    ctx.sframe_reloc = Some(chunks::sframe_reloc::new_header::<E>());
+    ctx.shstrtab = Some(chunks::shstrtab::new_header());
     ctx.chunks.extend([
         ChunkId::Ehdr,
         ChunkId::Shdr,

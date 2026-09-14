@@ -176,7 +176,7 @@ where
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         if ctx.args.pic {
             const INSN: [u16; 6] = [
                 0xd202, //    mov.l   1f, r2

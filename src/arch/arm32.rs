@@ -349,7 +349,7 @@ where
             0x0000_0000, //    (padding)
         ];
         write_code(buf, &INSN);
-        let gotplt_addr = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt_addr = ctx.gotplt.shdr.sh_addr.get();
         let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
         let gotplt = gotplt_addr.wrapping_sub(plt_addr).wrapping_sub(16);
         End::write_u32(&mut buf[16..], gotplt as u32);

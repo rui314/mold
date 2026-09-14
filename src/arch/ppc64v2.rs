@@ -428,7 +428,7 @@ impl Arch for Ppc64V2 {
         for (i, &insn) in INSN.iter().enumerate() {
             write_ul32(&mut buf[i * 4..], insn);
         }
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let val = gotplt.wrapping_sub(plt).wrapping_sub(8);
         or32(&mut buf[28..], higha(val) as u32);

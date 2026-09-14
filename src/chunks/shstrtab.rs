@@ -13,23 +13,8 @@ use crate::util::write_cstr;
 // .shstrtab contains section names, such as ".text" or ".data". Just like
 // .strtab, .shstrtab is not needed at runtime. One can remove .shstrtab
 // and section table from an executable without breaking it.
-#[derive(Debug)]
-pub struct ShstrtabSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Layout> ShstrtabSection<E> {
-    pub fn new() -> ShstrtabSection<E> {
-        ShstrtabSection {
-            hdr: ChunkHeader::<E>::new(".shstrtab", SHT_STRTAB, 0),
-        }
-    }
-}
-
-impl<E: Layout> Default for ShstrtabSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+    ChunkHeader::<E>::new(".shstrtab", SHT_STRTAB, 0)
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
@@ -51,7 +36,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         });
         ctx.chunk_header_mut(id).shdr.sh_name.set(off as u32);
     }
-    ctx.shstrtab.as_mut().unwrap().hdr.shdr.sh_size.set(offset);
+    ctx.shstrtab.as_mut().unwrap().shdr.sh_size.set(offset);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

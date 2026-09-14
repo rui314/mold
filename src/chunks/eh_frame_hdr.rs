@@ -50,7 +50,7 @@ pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[1] = (DW_EH_PE_pcrel | DW_EH_PE_sdata4) as u8;
     buf[2] = DW_EH_PE_udata4 as u8;
     buf[3] = (DW_EH_PE_datarel | DW_EH_PE_sdata4) as u8;
-    let eh_frame = ctx.eh_frame.hdr.shdr.sh_addr.get();
+    let eh_frame = ctx.eh_frame.shdr.sh_addr.get();
     let hdr = sec.hdr.shdr.sh_addr.get();
     let offset = eh_frame.wrapping_sub(hdr).wrapping_sub(4);
     E::Endian::write_u32(&mut buf[4..], offset as u32);

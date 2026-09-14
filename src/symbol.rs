@@ -1084,7 +1084,7 @@ impl Symbol {
             // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
             // suffix. That's why we use starts_with() instead of `==` here.
             let name = self.name();
-            let eh_frame = &ctx.eh_frame.hdr.shdr;
+            let eh_frame = &ctx.eh_frame.shdr;
             if name.starts_with(b"__EH_FRAME_BEGIN__")
                 || name.starts_with(b"__EH_FRAME_LIST__")
                 || name.starts_with(b".eh_frame_seg")
@@ -1123,7 +1123,7 @@ impl Symbol {
     }
 
     pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
-        ctx.gotplt.hdr.shdr.sh_addr.get()
+        ctx.gotplt.shdr.sh_addr.get()
             + crate::chunks::gotplt::header_size::<E>()
             + self.plt_idx(&ctx.symbols).unwrap() as u64 * crate::chunks::gotplt::entry_size::<E>()
     }

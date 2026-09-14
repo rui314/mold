@@ -36,7 +36,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
     } else {
         sym.output_sym_idx(ctx)
     };
-    let symtab_shndx = ctx.symtab.hdr.shndx;
+    let symtab_shndx = ctx.symtab.shndx;
     let sec = &mut ctx.comdat_group_sections[i as usize];
     sec.hdr.shdr.sh_link.set(symtab_shndx);
     sec.hdr.shdr.sh_info.set(sh_info);

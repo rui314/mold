@@ -6,38 +6,25 @@ use crate::context::Context;
 use crate::elf::*;
 
 // .rel.plt contains relocation information for .plt.
-#[derive(Debug)]
-pub struct RelPltSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> RelPltSection<E> {
-    pub fn new() -> RelPltSection<E> {
-        let (name, ty) = if E::IS_RELA {
-            (".rela.plt", SHT_RELA)
-        } else {
-            (".rel.plt", SHT_REL)
-        };
-        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
-        let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
-        hdr.shdr.sh_entsize.set(entsize);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        RelPltSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for RelPltSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+    let (name, ty) = if E::IS_RELA {
+        (".rela.plt", SHT_RELA)
+    } else {
+        (".rel.plt", SHT_REL)
+    };
+    let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
+    let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+    hdr.shdr.sh_entsize.set(entsize);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let size = ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64;
-    ctx.relplt.hdr.shdr.sh_size.set(size);
-    ctx.relplt.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
+    ctx.relplt.shdr.sh_size.set(size);
+    ctx.relplt.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     if !E::IS_SPARC {
-        ctx.relplt.hdr.shdr.sh_info.set(ctx.gotplt.hdr.shndx);
+        ctx.relplt.shdr.sh_info.set(ctx.gotplt.shndx);
     }
 }
 

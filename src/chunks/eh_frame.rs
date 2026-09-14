@@ -97,23 +97,10 @@ impl<E: Arch> CieHandle<E> {
 // for each function. Each input object file contains one .eh_frame section.
 // We parse input .eh_frame sections, merge their contents and emit the
 // merged information to .eh_frame.
-#[derive(Debug)]
-pub struct EhFrameSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> EhFrameSection<E> {
-    pub fn new() -> EhFrameSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".eh_frame", SHT_PROGBITS, SHF_ALLOC as u64);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        EhFrameSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for EhFrameSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".eh_frame", SHT_PROGBITS, SHF_ALLOC as u64);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 /// Whether two CIEs are identical, including their relocations.
@@ -184,13 +171,13 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // .eh_frame must end with a null word.
-    ctx.eh_frame.hdr.shdr.sh_size.set(offset + 4);
+    ctx.eh_frame.shdr.sh_size.set(offset + 4);
 }
 
 // Write to .eh_frame and .eh_frame_hdr.
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut [u8]>) {
-    let sh_addr = ctx.eh_frame.hdr.shdr.sh_addr.get();
-    let sh_size = ctx.eh_frame.hdr.shdr.sh_size.get();
+    let sh_addr = ctx.eh_frame.shdr.sh_addr.get();
+    let sh_size = ctx.eh_frame.shdr.sh_size.get();
 
     // Each file owns the range of its FDEs; leader CIEs are written by
     // their files too. Since CIE ranges precede all FDE ranges, both are

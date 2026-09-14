@@ -14,23 +14,14 @@ use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
 use crate::chunks::build_id::{self, BuildIdSection};
-use crate::chunks::dynamic::DynamicSection;
 use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
-use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
 use crate::chunks::gnu_debuglink::{self, GnuDebuglinkSection};
 use crate::chunks::gnu_hash::{self, GnuHashSection};
-use crate::chunks::hash::HashSection;
-use crate::chunks::interp::InterpSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::output_section::OutputSection;
-use crate::chunks::relrdyn::RelrDynSection;
-use crate::chunks::relro_padding::RelroPaddingSection;
-use crate::chunks::shstrtab::ShstrtabSection;
-use crate::chunks::symtab_shndx::SymtabShndxSection;
 use crate::chunks::verdef::VerdefSection;
 use crate::chunks::{
-    self, compressed, copyrel, dynsym, reloc, ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr,
-    OutputPhdr, OutputSectionId, OutputShdr,
+    self, compressed, copyrel, dynsym, reloc, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId,
 };
 use crate::cmdline::{
     BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
@@ -98,12 +89,12 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         } else {
             0
         };
-        ctx.ehdr = Some(OutputEhdr::<E>::new(ehdr_flags));
+        ctx.ehdr = Some(chunks::new_ehdr::<E>(ehdr_flags));
         chunks.push(ChunkId::Ehdr);
         ctx.phdr = Some(OutputPhdr::<E>::new(phdr_flags));
         chunks.push(ChunkId::Phdr);
         if ctx.args.z_sectionheader {
-            ctx.shdr = Some(OutputShdr::<E>::new());
+            ctx.shdr = Some(chunks::new_shdr::<E>());
             chunks.push(ChunkId::Shdr);
         }
     }
@@ -115,7 +106,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::RelDyn);
     chunks.push(ChunkId::RelPlt);
     if ctx.args.pack_dyn_relocs_relr {
-        ctx.relrdyn = Some(RelrDynSection::<E>::new(&ctx.args));
+        ctx.relrdyn = Some(chunks::relrdyn::new_header::<E>(&ctx.args));
         chunks.push(ChunkId::RelrDyn);
     }
     chunks.push(ChunkId::Strtab);
@@ -130,11 +121,11 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::CopyrelRelro);
 
     if ctx.shdr.is_some() {
-        ctx.shstrtab = Some(ShstrtabSection::new());
+        ctx.shstrtab = Some(chunks::shstrtab::new_header());
         chunks.push(ChunkId::Shstrtab);
     }
     if !ctx.args.dynamic_linker.as_os_str().is_empty() {
-        ctx.interp = Some(InterpSection::new());
+        ctx.interp = Some(chunks::interp::new_header());
         chunks.push(ChunkId::Interp);
     }
     if !matches!(ctx.args.build_id, BuildId::None) {
@@ -146,15 +137,15 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::EhFrameHdr);
     }
     if ctx.args.gdb_index && has_debug_info_section(ctx) {
-        ctx.gdb_index = Some(GdbIndexSection::new());
+        ctx.gdb_index = Some(chunks::new_gdb_index());
         chunks.push(ChunkId::GdbIndex);
     }
     if ctx.args.z_relro && ctx.args.section_order.is_empty() {
-        ctx.relro_padding = Some(RelroPaddingSection::new());
+        ctx.relro_padding = Some(chunks::relro_padding::new_header());
         chunks.push(ChunkId::RelroPadding);
     }
     if ctx.args.hash_style_sysv {
-        ctx.hash = Some(HashSection::<E>::new());
+        ctx.hash = Some(chunks::hash::new_header::<E>());
         chunks.push(ChunkId::Hash);
     }
     if ctx.args.hash_style_gnu {
@@ -166,7 +157,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::Verdef);
     }
     if ctx.args.emit_relocs {
-        ctx.eh_frame_reloc = Some(EhFrameRelocSection::<E>::new());
+        ctx.eh_frame_reloc = Some(chunks::eh_frame_reloc::new_header::<E>());
         chunks.push(ChunkId::EhFrameReloc);
     }
     if !ctx.args.separate_debug_file.as_os_str().is_empty() {
@@ -175,7 +166,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if ctx.args.shared || !ctx.dsos.is_empty() || ctx.args.pie {
-        ctx.dynamic = Some(DynamicSection::<E>::new(&ctx.args));
+        ctx.dynamic = Some(chunks::dynamic::new_header::<E>(&ctx.args));
         chunks.push(ChunkId::Dynamic);
         // If .dynamic exists, .dynsym and .dynstr must exist as well
         // since .dynamic refers to them.
@@ -198,8 +189,7 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::RiscvAttributes);
     }
     if E::FAMILY == Family::Ppc64V2 {
-        ctx.ppc64_save_restore =
-            Some(crate::chunks::ppc64_save_restore::Ppc64SaveRestoreSection::new());
+        ctx.ppc64_save_restore = Some(chunks::ppc64_save_restore::new_header());
         chunks.push(ChunkId::Ppc64SaveRestore);
     }
     if E::FAMILY == Family::Ppc64V1 {
@@ -3968,17 +3958,17 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
 
     if shndx >= SHN_LORESERVE && ctx.chunks.contains(&ChunkId::Symtab) && ctx.symtab_shndx.is_none()
     {
-        let mut sec = SymtabShndxSection::new();
-        sec.hdr.shndx = shndx;
+        let mut sec = chunks::symtab_shndx::new_header();
+        sec.shndx = shndx;
         shndx += 1;
-        sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
+        sec.shdr.sh_link.set(ctx.symtab.shndx);
         ctx.symtab_shndx = Some(sec);
         ctx.chunks.push(ChunkId::SymtabShndx);
     }
 
     if let Some(shdr) = &mut ctx.shdr {
         let size = shndx as u64 * ElfShdr::<E>::size() as u64;
-        shdr.hdr.shdr.sh_size.set(size);
+        shdr.shdr.sh_size.set(size);
     }
 
     // Some types of section header refer to other section by index.
@@ -3989,8 +3979,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
-        let n = ctx.symtab.hdr.shdr.sh_size.get() / std::mem::size_of::<ElfSym<E>>() as u64;
-        symtab_shndx.hdr.shdr.sh_size.set(n * 4);
+        let n = ctx.symtab.shdr.sh_size.get() / std::mem::size_of::<ElfSym<E>>() as u64;
+        symtab_shndx.shdr.sh_size.set(n * 4);
     }
 }
 
@@ -4098,8 +4088,8 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 
     if let Some(ehdr) = &ctx.ehdr {
-        if ehdr.hdr.is_alloc() {
-            let addr = ehdr.hdr.shdr.sh_addr.get();
+        if ehdr.is_alloc() {
+            let addr = ehdr.shdr.sh_addr.get();
             for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
                 if let (Some(sym), Some(first)) = (sym, first) {
                     let s = ctx.set_symbol_output_chunk(sym, first);

@@ -159,7 +159,6 @@ pub struct ChunkHeader<E: Layout> {
     pub is_relro: bool,
 
     /// For --gdb-index
-
     // Some synethetic sections add local symbols to the output.
     // For example, range extension thunks adds function_name@thunk
     // symbol for each thunk entry. The following members are used
@@ -210,18 +209,11 @@ impl<E: Layout> ChunkHeader<E> {
 }
 
 // ELF header which is at the beginning of each ELF file.
-#[derive(Debug)]
-pub struct OutputEhdr<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> OutputEhdr<E> {
-    pub fn new(sh_flags: u64) -> OutputEhdr<E> {
-        let mut hdr = ChunkHeader::<E>::new("EHDR", 0, sh_flags);
-        hdr.shdr.sh_size.set(ElfEhdr::<E>::size() as u64);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        OutputEhdr { hdr }
-    }
+pub fn new_ehdr<E: Arch>(sh_flags: u64) -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new("EHDR", 0, sh_flags);
+    hdr.shdr.sh_size.set(ElfEhdr::<E>::size() as u64);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 // OutputShdr represents the section header. The section header is usually
@@ -229,24 +221,11 @@ impl<E: Arch> OutputEhdr<E> {
 // Executables work without it because the runtime only reads the program
 // header. Section header is significant only in object files and not
 // needed at runtime
-#[derive(Debug)]
-pub struct OutputShdr<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> OutputShdr<E> {
-    pub fn new() -> OutputShdr<E> {
-        let mut hdr = ChunkHeader::<E>::new("SHDR", 0, 0);
-        hdr.shdr.sh_size.set(1);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        OutputShdr { hdr }
-    }
-}
-
-impl<E: Arch> Default for OutputShdr<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_shdr<E: Arch>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new("SHDR", 0, 0);
+    hdr.shdr.sh_size.set(1);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 // Program header, a.k.a. segment header. Each entry in the program header
@@ -271,23 +250,10 @@ impl<E: Arch> OutputPhdr<E> {
 }
 
 // .gdb_index contains several tables to speed up gdb start-up.
-#[derive(Debug)]
-pub struct GdbIndexSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Layout> GdbIndexSection<E> {
-    pub fn new() -> GdbIndexSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".gdb_index", SHT_PROGBITS, 0);
-        hdr.shdr.sh_addralign.set(4);
-        GdbIndexSection { hdr }
-    }
-}
-
-impl<E: Layout> Default for GdbIndexSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_gdb_index<E: Layout>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".gdb_index", SHT_PROGBITS, 0);
+    hdr.shdr.sh_addralign.set(4);
+    hdr
 }
 
 fn entry_addr<E: Arch>(ctx: &Context<E>) -> u64 {
@@ -323,8 +289,8 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
     // The real value is stored to the zero'th section's sh_link field.
     if let Some(shstrtab) = &ctx.shstrtab {
-        ehdr.e_shstrndx.set(if shstrtab.hdr.shndx < SHN_LORESERVE {
-            shstrtab.hdr.shndx as u16
+        ehdr.e_shstrndx.set(if shstrtab.shndx < SHN_LORESERVE {
+            shstrtab.shndx as u16
         } else {
             SHN_XINDEX as u16
         });
@@ -349,12 +315,12 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 
     if let Some(shdr) = &ctx.shdr {
-        ehdr.e_shoff.set(shdr.hdr.shdr.sh_offset.get());
+        ehdr.e_shoff.set(shdr.shdr.sh_offset.get());
         ehdr.e_shentsize.set(ElfShdr::<E>::size() as u16);
         // Since e_shnum is a 16-bit integer field, we can't store a very
         // large value there. If it is >65535, the real value is stored to
         // the zero'th section's sh_size field.
-        let shnum = shdr.hdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64;
+        let shnum = shdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64;
         ehdr.e_shnum.set(if shnum <= u16::MAX as u64 {
             shnum as u16
         } else {
@@ -371,8 +337,8 @@ fn write_shdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 
     let mut first = ElfShdr::<E>::default();
     if let Some(shstrtab) = &ctx.shstrtab {
-        if shstrtab.hdr.shndx >= SHN_LORESERVE {
-            first.sh_link.set(shstrtab.hdr.shndx);
+        if shstrtab.shndx >= SHN_LORESERVE {
+            first.sh_link.set(shstrtab.shndx);
         }
     }
     let shnum = buf.len() / size;
@@ -432,7 +398,8 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
             // significant for segments with zero on-file size. We still want to
             // keep it congruent with the virtual address modulo page size
             // because some loaders (at least FreeBSD's) are picky about it.
-            phdr.p_offset_mut().set(shdr.sh_addr.get() % ctx.args.page_size);
+            phdr.p_offset_mut()
+                .set(shdr.sh_addr.get() % ctx.args.page_size);
         } else {
             phdr.p_offset_mut().set(shdr.sh_offset.get());
             phdr.p_filesz_mut().set(shdr.sh_size.get());
@@ -486,7 +453,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
 
     // Create a PT_INTERP.
     if let Some(osec) = &ctx.interp {
-        define(&mut vec, PT_INTERP, PF_R, &osec.hdr.shdr);
+        define(&mut vec, PT_INTERP, PF_R, &osec.shdr);
     }
 
     // Create a PT_NOTE for SHF_NOTE sections.
@@ -559,9 +526,9 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
 
     // Add PT_DYNAMIC
     if let Some(osec) = &ctx.dynamic {
-        if osec.hdr.shdr.sh_size.get() != 0 {
+        if osec.shdr.sh_size.get() != 0 {
             let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
-            define(&mut vec, PT_DYNAMIC, flags, &osec.hdr.shdr);
+            define(&mut vec, PT_DYNAMIC, flags, &osec.shdr);
         }
     }
 

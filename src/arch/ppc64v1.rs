@@ -343,7 +343,7 @@ impl Arch for Ppc64V1 {
             0x4e80_0420, // bctr
         ];
         write_insns(buf, &INSN);
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let val = gotplt.wrapping_sub(plt).wrapping_sub(8);
         or32(&mut buf[16..], higha(val));

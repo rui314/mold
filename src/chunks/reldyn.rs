@@ -106,7 +106,7 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
         .map(|&id| ctx.chunk_header(id).relr.len() as u64 * word)
         .sum();
     if let Some(relrdyn) = &mut ctx.relrdyn {
-        relrdyn.hdr.shdr.sh_size.set(size);
+        relrdyn.shdr.sh_size.set(size);
     }
 }
 

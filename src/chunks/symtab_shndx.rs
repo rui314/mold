@@ -12,22 +12,9 @@ use crate::elf::*;
 // of sections.
 //
 // Use of this section is exceptional. Most ELF files don't contain one.
-#[derive(Debug)]
-pub struct SymtabShndxSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Layout> SymtabShndxSection<E> {
-    pub fn new() -> SymtabShndxSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".symtab_shndx", SHT_SYMTAB_SHNDX, 0);
-        hdr.shdr.sh_entsize.set(4);
-        hdr.shdr.sh_addralign.set(4);
-        SymtabShndxSection { hdr }
-    }
-}
-
-impl<E: Layout> Default for SymtabShndxSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".symtab_shndx", SHT_SYMTAB_SHNDX, 0);
+    hdr.shdr.sh_entsize.set(4);
+    hdr.shdr.sh_addralign.set(4);
+    hdr
 }

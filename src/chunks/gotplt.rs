@@ -8,24 +8,17 @@ use crate::util::endian::Endian;
 
 // .got.plt is similar to .got in the sense that it is a table containing
 // pointers. The contents in .got.plt are function pointers used by .plt.
-#[derive(Debug)]
-pub struct GotPltSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> GotPltSection<E> {
-    pub fn new(args: &crate::cmdline::Args) -> GotPltSection<E> {
-        let sh_type = if E::IS_PPC64 {
-            SHT_NOBITS
-        } else {
-            SHT_PROGBITS
-        };
-        let mut hdr = ChunkHeader::<E>::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
-        hdr.is_relro = args.z_now;
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        hdr.shdr.sh_size.set(header_size::<E>());
-        GotPltSection { hdr }
-    }
+pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+    let sh_type = if E::IS_PPC64 {
+        SHT_NOBITS
+    } else {
+        SHT_PROGBITS
+    };
+    let mut hdr = ChunkHeader::<E>::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
+    hdr.is_relro = args.z_now;
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr.shdr.sh_size.set(header_size::<E>());
+    hdr
 }
 
 pub fn header_size<E: Arch>() -> u64 {
@@ -40,7 +33,7 @@ pub fn entry_size<E: Arch>() -> u64 {
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let size = header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>();
-    ctx.gotplt.hdr.shdr.sh_size.set(size);
+    ctx.gotplt.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -63,7 +56,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     write(
         buf,
         0,
-        ctx.dynamic.as_ref().map_or(0, |d| d.hdr.shdr.sh_addr.get()),
+        ctx.dynamic.as_ref().map_or(0, |d| d.shdr.sh_addr.get()),
     );
     write(buf, 1, 0);
     write(buf, 2, 0);

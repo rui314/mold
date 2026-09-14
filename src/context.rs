@@ -14,42 +14,25 @@ use crate::chunks::build_id::BuildIdSection;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::compressed::CompressedSection;
 use crate::chunks::copyrel::CopyrelSection;
-use crate::chunks::dynamic::DynamicSection;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::dynsym::DynsymSection;
-use crate::chunks::eh_frame::EhFrameSection;
 use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
-use crate::chunks::eh_frame_reloc::EhFrameRelocSection;
 use crate::chunks::gnu_debuglink::GnuDebuglinkSection;
 use crate::chunks::gnu_hash::GnuHashSection;
 use crate::chunks::got::GotSection;
-use crate::chunks::gotplt::GotPltSection;
-use crate::chunks::hash::HashSection;
-use crate::chunks::interp::InterpSection;
 use crate::chunks::merged::{MergedSection, MergedSectionId};
-use crate::chunks::note_package::NotePackageSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::output_section::OutputSection;
 use crate::chunks::plt::PltSection;
 use crate::chunks::pltgot::PltGotSection;
 use crate::chunks::reldyn::RelDynSection;
 use crate::chunks::reloc::RelocSection;
-use crate::chunks::relplt::RelPltSection;
-use crate::chunks::relrdyn::RelrDynSection;
-use crate::chunks::relro_padding::RelroPaddingSection;
 use crate::chunks::riscv_attributes::RiscvAttributesSection;
 use crate::chunks::sframe::SFrameSection;
-use crate::chunks::sframe_reloc::SFrameRelocSection;
-use crate::chunks::shstrtab::ShstrtabSection;
-use crate::chunks::strtab::StrtabSection;
-use crate::chunks::symtab::SymtabSection;
-use crate::chunks::symtab_shndx::SymtabShndxSection;
 use crate::chunks::verdef::VerdefSection;
 use crate::chunks::verneed::VerneedSection;
 use crate::chunks::versym::VersymSection;
-use crate::chunks::{
-    ChunkHeader, ChunkId, GdbIndexSection, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
-};
+use crate::chunks::{self, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId};
 use crate::cmdline::{Args, ReaderContext};
 use crate::elf::ElfWord;
 use crate::input_files::{FileId, FileList, InputFile, ObjId, ObjectFile, SharedFile};
@@ -160,54 +143,54 @@ pub struct Context<E: Arch> {
     // For --separate-debug-file
     pub debug_chunks: Vec<ChunkId>,
 
-    pub ehdr: Option<OutputEhdr<E>>,
+    pub ehdr: Option<ChunkHeader<E>>,
     pub phdr: Option<OutputPhdr<E>>,
-    pub shdr: Option<OutputShdr<E>>,
-    pub interp: Option<InterpSection<E>>,
+    pub shdr: Option<ChunkHeader<E>>,
+    pub interp: Option<ChunkHeader<E>>,
     pub got: GotSection<E>,
-    pub gotplt: GotPltSection<E>,
-    pub relplt: RelPltSection<E>,
+    pub gotplt: ChunkHeader<E>,
+    pub relplt: ChunkHeader<E>,
     pub reldyn: RelDynSection<E>,
-    pub relrdyn: Option<RelrDynSection<E>>,
-    pub dynamic: Option<DynamicSection<E>>,
-    pub strtab: StrtabSection<E>,
+    pub relrdyn: Option<ChunkHeader<E>>,
+    pub dynamic: Option<ChunkHeader<E>>,
+    pub strtab: ChunkHeader<E>,
     pub dynstr: DynstrSection<E>,
-    pub hash: Option<HashSection<E>>,
+    pub hash: Option<ChunkHeader<E>>,
     pub gnu_hash: Option<GnuHashSection<E>>,
     pub gnu_debuglink: Option<GnuDebuglinkSection<E>>,
-    pub shstrtab: Option<ShstrtabSection<E>>,
+    pub shstrtab: Option<ChunkHeader<E>>,
     pub plt: PltSection<E>,
     pub pltgot: PltGotSection<E>,
-    pub symtab: SymtabSection<E>,
-    pub symtab_shndx: Option<SymtabShndxSection<E>>,
+    pub symtab: ChunkHeader<E>,
+    pub symtab_shndx: Option<ChunkHeader<E>>,
     pub dynsym: DynsymSection<E>,
-    pub eh_frame: EhFrameSection<E>,
+    pub eh_frame: ChunkHeader<E>,
     pub eh_frame_hdr: Option<EhFrameHdrSection<E>>,
-    pub eh_frame_reloc: Option<EhFrameRelocSection<E>>,
+    pub eh_frame_reloc: Option<ChunkHeader<E>>,
     pub sframe: SFrameSection<E>,
-    pub sframe_reloc: Option<SFrameRelocSection<E>>,
+    pub sframe_reloc: Option<ChunkHeader<E>>,
     pub copyrel: CopyrelSection<E>,
     pub copyrel_relro: CopyrelSection<E>,
     pub versym: VersymSection<E>,
     pub verneed: VerneedSection<E>,
     pub verdef: Option<VerdefSection<E>>,
     pub buildid: Option<BuildIdSection<E>>,
-    pub note_package: NotePackageSection<E>,
+    pub note_package: ChunkHeader<E>,
 
     // Target-specific context members
     pub note_property: Option<NotePropertySection<E>>,
     pub riscv_attributes: Option<RiscvAttributesSection<E>>,
     pub arm_exidx: Option<crate::chunks::arm_exidx::ArmExidxSection<E>>,
-    pub ppc64_save_restore: Option<crate::chunks::ppc64_save_restore::Ppc64SaveRestoreSection<E>>,
+    pub ppc64_save_restore: Option<ChunkHeader<E>>,
     pub ppc64_opd: Option<crate::chunks::opd::Ppc64OpdSection<E>>,
     /// Whether any input uses Power10 PC-relative calls, which decides
     /// how thunks address their targets.
     pub is_power10: AtomicBool,
-    pub gdb_index: Option<GdbIndexSection<E>>,
+    pub gdb_index: Option<ChunkHeader<E>>,
 
     // Partially built .gdb_index data passed between its background stages.
     pub gdb_index_data: Option<crate::gdb_index::GdbIndexData>,
-    pub relro_padding: Option<RelroPaddingSection<E>>,
+    pub relro_padding: Option<ChunkHeader<E>>,
     pub comment: Option<MergedSectionId>,
 
     pub needs_tlsld: AtomicBool,
@@ -245,21 +228,21 @@ impl<E: Arch> Context<E> {
         Context {
             reldyn: RelDynSection::<E>::new(&args),
             got: GotSection::<E>::new(),
-            gotplt: GotPltSection::<E>::new(&args),
-            relplt: RelPltSection::<E>::new(),
-            strtab: StrtabSection::new(),
+            gotplt: chunks::gotplt::new_header::<E>(&args),
+            relplt: chunks::relplt::new_header::<E>(),
+            strtab: chunks::strtab::new_header(),
             dynstr: DynstrSection::new(),
             plt: PltSection::<E>::new(),
             pltgot: PltGotSection::new(),
-            symtab: SymtabSection::<E>::new(),
+            symtab: chunks::symtab::new_header::<E>(),
             dynsym: DynsymSection::<E>::new(),
-            eh_frame: EhFrameSection::<E>::new(),
+            eh_frame: chunks::eh_frame::new_header::<E>(),
             sframe: SFrameSection::<E>::new(),
             copyrel: CopyrelSection::new(false),
             copyrel_relro: CopyrelSection::new(true),
             versym: VersymSection::new(),
             verneed: VerneedSection::new(),
-            note_package: NotePackageSection::new(),
+            note_package: chunks::note_package::new_header(),
             args,
             cmdline_args: cmdline_args.into(),
             timers,
@@ -442,46 +425,49 @@ impl<E: Arch> Context<E> {
             };
         }
         match id {
-            ChunkId::Ehdr => opt!(self.ehdr),
+            ChunkId::Ehdr => self.ehdr.as_ref().expect("chunk does not exist"),
             ChunkId::Phdr => opt!(self.phdr),
-            ChunkId::Shdr => opt!(self.shdr),
-            ChunkId::Interp => opt!(self.interp),
+            ChunkId::Shdr => self.shdr.as_ref().expect("chunk does not exist"),
+            ChunkId::Interp => self.interp.as_ref().expect("chunk does not exist"),
             ChunkId::Got => &self.got.hdr,
-            ChunkId::GotPlt => &self.gotplt.hdr,
-            ChunkId::RelPlt => &self.relplt.hdr,
+            ChunkId::GotPlt => &self.gotplt,
+            ChunkId::RelPlt => &self.relplt,
             ChunkId::RelDyn => &self.reldyn.hdr,
-            ChunkId::RelrDyn => opt!(self.relrdyn),
-            ChunkId::Dynamic => opt!(self.dynamic),
-            ChunkId::Strtab => &self.strtab.hdr,
+            ChunkId::RelrDyn => self.relrdyn.as_ref().expect("chunk does not exist"),
+            ChunkId::Dynamic => self.dynamic.as_ref().expect("chunk does not exist"),
+            ChunkId::Strtab => &self.strtab,
             ChunkId::Dynstr => &self.dynstr.hdr,
-            ChunkId::Hash => opt!(self.hash),
+            ChunkId::Hash => self.hash.as_ref().expect("chunk does not exist"),
             ChunkId::GnuHash => opt!(self.gnu_hash),
             ChunkId::GnuDebuglink => opt!(self.gnu_debuglink),
-            ChunkId::Shstrtab => opt!(self.shstrtab),
+            ChunkId::Shstrtab => self.shstrtab.as_ref().expect("chunk does not exist"),
             ChunkId::Plt => &self.plt.hdr,
             ChunkId::PltGot => &self.pltgot.hdr,
-            ChunkId::Symtab => &self.symtab.hdr,
-            ChunkId::SymtabShndx => opt!(self.symtab_shndx),
+            ChunkId::Symtab => &self.symtab,
+            ChunkId::SymtabShndx => self.symtab_shndx.as_ref().expect("chunk does not exist"),
             ChunkId::Dynsym => &self.dynsym.hdr,
-            ChunkId::EhFrame => &self.eh_frame.hdr,
+            ChunkId::EhFrame => &self.eh_frame,
             ChunkId::EhFrameHdr => opt!(self.eh_frame_hdr),
-            ChunkId::EhFrameReloc => opt!(self.eh_frame_reloc),
+            ChunkId::EhFrameReloc => self.eh_frame_reloc.as_ref().expect("chunk does not exist"),
             ChunkId::SFrame => &self.sframe.hdr,
-            ChunkId::SFrameReloc => opt!(self.sframe_reloc),
+            ChunkId::SFrameReloc => self.sframe_reloc.as_ref().expect("chunk does not exist"),
             ChunkId::Copyrel => &self.copyrel.hdr,
             ChunkId::CopyrelRelro => &self.copyrel_relro.hdr,
             ChunkId::Versym => &self.versym.hdr,
             ChunkId::Verneed => &self.verneed.hdr,
             ChunkId::Verdef => opt!(self.verdef),
             ChunkId::BuildId => opt!(self.buildid),
-            ChunkId::NotePackage => &self.note_package.hdr,
+            ChunkId::NotePackage => &self.note_package,
             ChunkId::NoteProperty => opt!(self.note_property),
             ChunkId::RiscvAttributes => opt!(self.riscv_attributes),
             ChunkId::ArmExidx => opt!(self.arm_exidx),
-            ChunkId::Ppc64SaveRestore => opt!(self.ppc64_save_restore),
+            ChunkId::Ppc64SaveRestore => self
+                .ppc64_save_restore
+                .as_ref()
+                .expect("chunk does not exist"),
             ChunkId::Ppc64Opd => opt!(self.ppc64_opd),
-            ChunkId::GdbIndex => opt!(self.gdb_index),
-            ChunkId::RelroPadding => opt!(self.relro_padding),
+            ChunkId::GdbIndex => self.gdb_index.as_ref().expect("chunk does not exist"),
+            ChunkId::RelroPadding => self.relro_padding.as_ref().expect("chunk does not exist"),
             ChunkId::Output(id) => &self.output_sections[id.index()].hdr,
             ChunkId::Merged(id) => &self.merged_sections[id.index()].hdr,
             ChunkId::Reloc(i) => &self.reloc_sections[i as usize].hdr,
@@ -498,46 +484,49 @@ impl<E: Arch> Context<E> {
             };
         }
         match id {
-            ChunkId::Ehdr => opt!(self.ehdr),
+            ChunkId::Ehdr => self.ehdr.as_mut().expect("chunk does not exist"),
             ChunkId::Phdr => opt!(self.phdr),
-            ChunkId::Shdr => opt!(self.shdr),
-            ChunkId::Interp => opt!(self.interp),
+            ChunkId::Shdr => self.shdr.as_mut().expect("chunk does not exist"),
+            ChunkId::Interp => self.interp.as_mut().expect("chunk does not exist"),
             ChunkId::Got => &mut self.got.hdr,
-            ChunkId::GotPlt => &mut self.gotplt.hdr,
-            ChunkId::RelPlt => &mut self.relplt.hdr,
+            ChunkId::GotPlt => &mut self.gotplt,
+            ChunkId::RelPlt => &mut self.relplt,
             ChunkId::RelDyn => &mut self.reldyn.hdr,
-            ChunkId::RelrDyn => opt!(self.relrdyn),
-            ChunkId::Dynamic => opt!(self.dynamic),
-            ChunkId::Strtab => &mut self.strtab.hdr,
+            ChunkId::RelrDyn => self.relrdyn.as_mut().expect("chunk does not exist"),
+            ChunkId::Dynamic => self.dynamic.as_mut().expect("chunk does not exist"),
+            ChunkId::Strtab => &mut self.strtab,
             ChunkId::Dynstr => &mut self.dynstr.hdr,
-            ChunkId::Hash => opt!(self.hash),
+            ChunkId::Hash => self.hash.as_mut().expect("chunk does not exist"),
             ChunkId::GnuHash => opt!(self.gnu_hash),
             ChunkId::GnuDebuglink => opt!(self.gnu_debuglink),
-            ChunkId::Shstrtab => opt!(self.shstrtab),
+            ChunkId::Shstrtab => self.shstrtab.as_mut().expect("chunk does not exist"),
             ChunkId::Plt => &mut self.plt.hdr,
             ChunkId::PltGot => &mut self.pltgot.hdr,
-            ChunkId::Symtab => &mut self.symtab.hdr,
-            ChunkId::SymtabShndx => opt!(self.symtab_shndx),
+            ChunkId::Symtab => &mut self.symtab,
+            ChunkId::SymtabShndx => self.symtab_shndx.as_mut().expect("chunk does not exist"),
             ChunkId::Dynsym => &mut self.dynsym.hdr,
-            ChunkId::EhFrame => &mut self.eh_frame.hdr,
+            ChunkId::EhFrame => &mut self.eh_frame,
             ChunkId::EhFrameHdr => opt!(self.eh_frame_hdr),
-            ChunkId::EhFrameReloc => opt!(self.eh_frame_reloc),
+            ChunkId::EhFrameReloc => self.eh_frame_reloc.as_mut().expect("chunk does not exist"),
             ChunkId::SFrame => &mut self.sframe.hdr,
-            ChunkId::SFrameReloc => opt!(self.sframe_reloc),
+            ChunkId::SFrameReloc => self.sframe_reloc.as_mut().expect("chunk does not exist"),
             ChunkId::Copyrel => &mut self.copyrel.hdr,
             ChunkId::CopyrelRelro => &mut self.copyrel_relro.hdr,
             ChunkId::Versym => &mut self.versym.hdr,
             ChunkId::Verneed => &mut self.verneed.hdr,
             ChunkId::Verdef => opt!(self.verdef),
             ChunkId::BuildId => opt!(self.buildid),
-            ChunkId::NotePackage => &mut self.note_package.hdr,
+            ChunkId::NotePackage => &mut self.note_package,
             ChunkId::NoteProperty => opt!(self.note_property),
             ChunkId::RiscvAttributes => opt!(self.riscv_attributes),
             ChunkId::ArmExidx => opt!(self.arm_exidx),
-            ChunkId::Ppc64SaveRestore => opt!(self.ppc64_save_restore),
+            ChunkId::Ppc64SaveRestore => self
+                .ppc64_save_restore
+                .as_mut()
+                .expect("chunk does not exist"),
             ChunkId::Ppc64Opd => opt!(self.ppc64_opd),
-            ChunkId::GdbIndex => opt!(self.gdb_index),
-            ChunkId::RelroPadding => opt!(self.relro_padding),
+            ChunkId::GdbIndex => self.gdb_index.as_mut().expect("chunk does not exist"),
+            ChunkId::RelroPadding => self.relro_padding.as_mut().expect("chunk does not exist"),
             ChunkId::Output(id) => &mut self.output_sections[id.index()].hdr,
             ChunkId::Merged(id) => &mut self.merged_sections[id.index()].hdr,
             ChunkId::Reloc(i) => &mut self.reloc_sections[i as usize].hdr,

@@ -10,30 +10,17 @@ use crate::input_files::ObjectFile;
 
 // EhFrameRelocSection contains relocation records for .eh_frame. It is used
 // only for relocatable outputs (an .o file rather than an executable or .so).
-#[derive(Debug)]
-pub struct EhFrameRelocSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> EhFrameRelocSection<E> {
-    pub fn new() -> EhFrameRelocSection<E> {
-        let (name, ty) = if E::IS_RELA {
-            (".rela.eh_frame", SHT_RELA)
-        } else {
-            (".rel.eh_frame", SHT_REL)
-        };
-        let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
-        hdr.shdr.sh_entsize.set(entsize);
-        EhFrameRelocSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for EhFrameRelocSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+    let (name, ty) = if E::IS_RELA {
+        (".rela.eh_frame", SHT_RELA)
+    } else {
+        (".rel.eh_frame", SHT_REL)
+    };
+    let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+    hdr.shdr.sh_entsize.set(entsize);
+    hdr
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
@@ -53,9 +40,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         .sum();
     let size = (count * std::mem::size_of::<ElfRel<E>>()) as u64;
     let sec = ctx.eh_frame_reloc.as_mut().unwrap();
-    sec.hdr.shdr.sh_size.set(size);
-    sec.hdr.shdr.sh_link.set(ctx.symtab.hdr.shndx);
-    sec.hdr.shdr.sh_info.set(ctx.eh_frame.hdr.shndx);
+    sec.shdr.sh_size.set(size);
+    sec.shdr.sh_link.set(ctx.symtab.shndx);
+    sec.shdr.sh_info.set(ctx.eh_frame.shndx);
 }
 
 /// Writes the relocations; with REL and `-r`, addends are written into
@@ -72,12 +59,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
                     eh_frame_buf: &mut Option<&mut [u8]>| {
         let isec = file.section_at(shndx);
         let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
-        let mut rel = ElfRel::<E>::new(
-            ctx.eh_frame.hdr.shdr.sh_addr.get() + offset,
-            r.r_type(),
-            0,
-            0,
-        );
+        let mut rel = ElfRel::<E>::new(ctx.eh_frame.shdr.sh_addr.get() + offset, r.r_type(), 0, 0);
 
         if sym.st_type() == STT_SECTION {
             // We discard section symbols in input files and re-create new

@@ -52,7 +52,7 @@ pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
-    let symtab_shndx = ctx.symtab.hdr.shndx;
+    let symtab_shndx = ctx.symtab.shndx;
     let osec = ctx.reloc_sections[i as usize].output_section;
     let osec_shndx = ctx.output_sections[osec.index()].hdr.shndx;
     let sec = &mut ctx.reloc_sections[i as usize];

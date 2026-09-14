@@ -39,23 +39,16 @@ use crate::util::endian::Endian;
 // relocation table is waste of space.
 //
 // .relr.dyn is designed to store base relocations in a space-efficient way.
-#[derive(Debug)]
-pub struct RelrDynSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> RelrDynSection<E> {
-    pub fn new(args: &crate::cmdline::Args) -> RelrDynSection<E> {
-        let ty = if args.use_android_relr_tags {
-            SHT_ANDROID_RELR
-        } else {
-            SHT_RELR
-        };
-        let mut hdr = ChunkHeader::<E>::new(".relr.dyn", ty, SHF_ALLOC as u64);
-        hdr.shdr.sh_entsize.set(E::WORD_SIZE as u64);
-        hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        RelrDynSection { hdr }
-    }
+pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+    let ty = if args.use_android_relr_tags {
+        SHT_ANDROID_RELR
+    } else {
+        SHT_RELR
+    };
+    let mut hdr = ChunkHeader::<E>::new(".relr.dyn", ty, SHF_ALLOC as u64);
+    hdr.shdr.sh_entsize.set(E::WORD_SIZE as u64);
+    hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
+    hdr
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

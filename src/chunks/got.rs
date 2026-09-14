@@ -377,7 +377,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
     if let Some(dynamic) = &ctx.dynamic {
         if E::FAMILY == Family::S390x {
-            write(buf, 0, dynamic.hdr.shdr.sh_addr.get());
+            write(buf, 0, dynamic.shdr.sh_addr.get());
         }
 
         // ARM64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
@@ -385,7 +385,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         //
         // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
         if E::FAMILY == Family::Arm64 && ctx.args.is_static && ctx.args.pie {
-            write(buf, 0, dynamic.hdr.shdr.sh_addr.get());
+            write(buf, 0, dynamic.shdr.sh_addr.get());
         }
     }
 

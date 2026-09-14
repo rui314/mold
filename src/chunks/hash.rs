@@ -29,28 +29,15 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 // for ELF. In ELF, each dynamic symbol is not searched from a specific
 // library but from all the ELF files loaded to memory. Therefore,
 // minimizing the cost of each dynamic symbol lookup is important.
-#[derive(Debug)]
-pub struct HashSection<E: Layout> {
-    pub hdr: ChunkHeader<E>,
-}
-
-impl<E: Arch> HashSection<E> {
-    pub fn new() -> HashSection<E> {
-        let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);
-        // Even though u32 should suffice as an etnry size for all targets,
-        // s390x uses u64. It looks like a spec bug, but we need to follow
-        // suit for the sake of binary compatibility.
-        let entry = entry_size::<E>() as u64;
-        hdr.shdr.sh_entsize.set(entry);
-        hdr.shdr.sh_addralign.set(entry);
-        HashSection { hdr }
-    }
-}
-
-impl<E: Arch> Default for HashSection<E> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+    let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);
+    // Even though u32 should suffice as an etnry size for all targets,
+    // s390x uses u64. It looks like a spec bug, but we need to follow
+    // suit for the sake of binary compatibility.
+    let entry = entry_size::<E>() as u64;
+    hdr.shdr.sh_entsize.set(entry);
+    hdr.shdr.sh_addralign.set(entry);
+    hdr
 }
 
 pub fn entry_size<E: Arch>() -> usize {
@@ -68,8 +55,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let entry = entry_size::<E>() as u64;
     let num_slots = ctx.dynsym.symbols.len() as u64;
     let hash = ctx.hash.as_mut().unwrap();
-    hash.hdr.shdr.sh_size.set(entry * 2 + num_slots * entry * 2);
-    hash.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
+    hash.shdr.sh_size.set(entry * 2 + num_slots * entry * 2);
+    hash.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {

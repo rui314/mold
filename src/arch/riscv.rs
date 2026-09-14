@@ -379,7 +379,7 @@ where
         for (i, &v) in insn.iter().enumerate() {
             write32(&mut buf[i * 4..], v);
         }
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let disp = gotplt.wrapping_sub(plt);
         write_utype(buf, disp);

@@ -222,7 +222,7 @@ where
         for (i, &v) in INSN.iter().enumerate() {
             write_insn(&mut buf[i * 4..], v);
         }
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get() + 16;
+        let gotplt = ctx.gotplt.shdr.sh_addr.get() + 16;
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         write_adrp(&mut buf[4..], page(gotplt).wrapping_sub(page(plt + 4)));
         or_insn(&mut buf[8..], (bits(gotplt, 11, 3) << 10) as u32);

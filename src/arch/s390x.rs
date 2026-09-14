@@ -144,7 +144,7 @@ impl Arch for S390x {
             0x00, 0x00, 0x00, 0x00, // (filler)
         ];
         buf[..48].copy_from_slice(&INSN);
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let offset = gotplt.wrapping_sub(plt).wrapping_sub(24);
         write_ub32(&mut buf[26..], (offset >> 1) as u32);

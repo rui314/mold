@@ -101,7 +101,7 @@ impl Arch for X86_64 {
             0xcc, 0xcc, // (padding)
         ];
         buf[..32].copy_from_slice(&INSN);
-        let gotplt = ctx.gotplt.hdr.shdr.sh_addr.get();
+        let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         write_u32(
             &mut buf[8..],
@@ -322,7 +322,7 @@ impl Arch for X86_64 {
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec.addr(ctx) + rel.r_offset();
-            let got_base = ctx.gotplt.hdr.shdr.sh_addr.get();
+            let got_base = ctx.gotplt.shdr.sh_addr.get();
             let g = if sym.has_got(&ctx.symbols) {
                 sym.got_addr(ctx).wrapping_sub(got_base)
             } else {
@@ -598,7 +598,7 @@ impl Arch for X86_64 {
                 R_X86_64_GOTOFF64 => write_u64(
                     &mut buf[off..],
                     s.wrapping_add(a)
-                        .wrapping_sub(ctx.gotplt.hdr.shdr.sh_addr.get()),
+                        .wrapping_sub(ctx.gotplt.shdr.sh_addr.get()),
                 ),
                 R_X86_64_GOTPC64 => {
                     // PC-relative relocation doesn't make sense for non-memory-allocated
@@ -606,7 +606,7 @@ impl Arch for X86_64 {
                     // _GLOBAL_OFFSET_TABLE_.
                     write_u64(
                         &mut buf[off..],
-                        ctx.gotplt.hdr.shdr.sh_addr.get().wrapping_add(a),
+                        ctx.gotplt.shdr.sh_addr.get().wrapping_add(a),
                     )
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().get().wrapping_add(a)),
