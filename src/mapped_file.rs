@@ -186,6 +186,19 @@ impl MappedFile {
         mf
     }
 
+    /// Opens a member whose bytes are stored outside this thin archive.
+    pub fn open_thin_member(&'static self, chroot: &Path, path: &Path) -> &'static MappedFile {
+        let member = must_open_file(chroot, path);
+        util::leak(MappedFile {
+            name: member.name.clone(),
+            data: member.data,
+            given_fullpath: true,
+            parent: None,
+            thin_parent: Some(self),
+            is_dependency: AtomicBool::new(true),
+        })
+    }
+
     pub fn size(&self) -> usize {
         self.data.len()
     }

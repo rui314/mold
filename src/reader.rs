@@ -384,15 +384,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                         let archive_name = mf.name.as_path();
                         let loaded = &loaded;
                         scope.spawn(move |_| {
-                            let child = must_open_file(&ctx_ref.args.chroot, &path);
-                            let child = crate::util::leak(MappedFile {
-                                name: child.name.clone(),
-                                data: child.data,
-                                given_fullpath: true,
-                                parent: None,
-                                thin_parent: Some(mf),
-                                is_dependency: std::sync::atomic::AtomicBool::new(true),
-                            });
+                            let child = mf.open_thin_member(&ctx_ref.args.chroot, &path);
                             if let Some(file) =
                                 read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {

@@ -179,17 +179,7 @@ pub fn read_thin_archive_members<'a>(
     chroot: &'a Path,
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = &'static MappedFile> + 'a {
-    get_thin_archive_member_paths(mf).map(move |path| {
-        let member = crate::mapped_file::must_open_file(chroot, &path);
-        util::leak(MappedFile {
-            name: member.name.clone(),
-            data: member.data,
-            given_fullpath: true,
-            parent: None,
-            thin_parent: Some(mf),
-            is_dependency: std::sync::atomic::AtomicBool::new(true),
-        })
-    })
+    get_thin_archive_member_paths(mf).map(move |path| mf.open_thin_member(chroot, &path))
 }
 
 pub fn read_fat_archive_members(
