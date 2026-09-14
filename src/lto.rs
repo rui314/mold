@@ -119,7 +119,7 @@ use crate::arch::Arch;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::{FileId, ObjId, ObjectFile, ObjectOrigin};
+use crate::input_files::{FileId, ObjectFile, ObjectOrigin};
 use crate::mapped_file::{must_open_file, MappedFile};
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
@@ -432,8 +432,7 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     // The Rust port gathers and resolves the registered symbols after the
     // plugin callback returns.
     file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
-    let id = ObjId(ctx.objs.push(Box::new(file)));
-    ctx.file_by_priority.push(Some(FileId::Obj(id)));
+    ctx.objs.push(Box::new(file));
     LDPS_OK
 }
 

@@ -450,9 +450,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
     // Priority 0 is reserved for the internal object file. LTO-generated
     // files use priorities beginning at 100, so regular files begin at 10000.
-    ctx.file_by_priority.push(None);
-    for (_, id) in pending {
-        let priority = 10000 + ctx.file_by_priority.len() as u32 - 1;
+    for (i, (_, id)) in pending.into_iter().enumerate() {
+        let priority = 10000 + i as u32;
         match id {
             FileId::Obj(idx) => {
                 let mut file = objs[idx.index()].take().unwrap();
@@ -460,8 +459,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 if ctx.args.trace {
                     out!("trace: {file}");
                 }
-                let id = ObjId(ctx.objs.push(file));
-                ctx.file_by_priority.push(Some(FileId::Obj(id)));
+                ctx.objs.push(file);
             }
             FileId::Dso(idx) => {
                 let mut file = dsos[idx.index()].take().unwrap();
@@ -469,8 +467,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 if ctx.args.trace {
                     out!("trace: {file}");
                 }
-                let id = DsoId(ctx.dsos.push(file));
-                ctx.file_by_priority.push(Some(FileId::Dso(id)));
+                ctx.dsos.push(file);
             }
         }
     }

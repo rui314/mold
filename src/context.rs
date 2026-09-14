@@ -125,9 +125,6 @@ pub struct Context<E: Arch> {
     pub objs: FileList<ObjectFile<E>>,
     pub dsos: FileList<SharedFile<E>>,
 
-    /// Files indexed by priority, for decoding symbol resolution results.
-    pub file_by_priority: Vec<Option<FileId>>,
-
     // Reader context
 
     // Input files with their command line positions, in the
@@ -273,7 +270,6 @@ impl<E: Arch> Context<E> {
             symbol_bins: OnceLock::new(),
             objs: FileList::default(),
             dsos: FileList::default(),
-            file_by_priority: Vec::new(),
             pending_files: Vec::new(),
             lto_jobs: Mutex::new(Vec::new()),
             dso_sonames: HashSet::new(),

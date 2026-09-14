@@ -1471,10 +1471,6 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
 
     let id = ObjId(ctx.objs.push(Box::new(obj)));
     ctx.internal_obj = Some(id);
-    if ctx.file_by_priority.is_empty() {
-        ctx.file_by_priority.push(None);
-    }
-    ctx.file_by_priority[0] = Some(FileId::Obj(id));
 }
 
 fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Cow<'static, [u8]>> {

@@ -12,7 +12,6 @@ use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::FileId;
 use crate::output_file::{split_ranges, OutputFile};
 use crate::{error, fatal, passes};
 
@@ -180,26 +179,9 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     // Parse input files
     crate::reader::read_input_files(&mut ctx, jobs);
 
-    // Uniquify shared object files by soname
-    {
-        let mut dsos = std::mem::take(&mut ctx.dsos);
-        let mut keep = vec![false; dsos.len()];
-        for file in &dsos {
-            keep[file.id().index()] = ctx.dso_sonames.insert(file.soname);
-        }
-        dsos.retain(|file| keep[file.id().index()]);
-        for slot in &mut ctx.file_by_priority {
-            if let Some(FileId::Dso(d)) = *slot {
-                if !keep[d.index()] {
-                    *slot = None;
-                }
-            }
-        }
-
-        // FileList keeps even discarded DSOs in its backing pool, so the
-        // symbol slots recorded during parsing remain valid until gather.
-        ctx.dsos = dsos;
-    }
+    // FileList retains discarded DSOs in its backing pool, keeping symbol
+    // slots recorded during parsing valid until gather.
+    ctx.dsos.retain(|file| ctx.dso_sonames.insert(file.soname));
 
     // Handle -repro
     if ctx.args.repro {
