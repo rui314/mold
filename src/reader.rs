@@ -48,12 +48,12 @@ pub fn get_machine_type<E: Arch>(
 ) -> Option<&'static str> {
     match get_file_type(ctx, mf) {
         FileType::Text => crate::linker_script::output_target(ctx, rctx, mf),
-        _ => filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None),
+        _ => filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf),
     }
 }
 
 fn check_machine_type<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) {
-    let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None);
+    let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf);
     match target {
         None => fatal!("{}: unknown machine type", mf.name.display()),
         Some(t) if t != ctx.args.emulation => {
@@ -219,7 +219,7 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
         if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
             if get_file_type(ctx, mf) != FileType::Text {
                 if let Some(target) =
-                    filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf, || None)
+                    filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf)
                 {
                     return target;
                 }

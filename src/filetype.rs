@@ -284,7 +284,6 @@ pub fn get_machine_type(
     plugin: &std::path::Path,
     chroot: &std::path::Path,
     mf: &'static MappedFile,
-    script_target: impl FnOnce() -> Option<&'static str>,
 ) -> Option<&'static str> {
     match get_file_type(plugin, mf) {
         FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
@@ -304,7 +303,6 @@ pub fn get_machine_type(
                 )
             })
             .and_then(|child| get_elf_target(child.data())),
-        FileType::Text => script_target(),
         _ => None,
     }
 }
