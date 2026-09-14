@@ -555,94 +555,67 @@ fn log_says_skipped(path: &Path) -> bool {
     })
 }
 
-fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
-    let mut outcome = match File::create(&job.log) {
-        Err(err) => {
-            eprintln!("{}: cannot create {}: {err}", job.name, job.log.display());
-            Outcome::Fail
+fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome, String> {
+    let log = File::create(&job.log)
+        .map_err(|err| format!("cannot create {}: {err}", job.log.display()))?;
+    let stderr = log
+        .try_clone()
+        .map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
+    let mut command = Command::new(&job.script);
+    command
+        .current_dir(root)
+        .env("MACHINE", &job.target.machine)
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(stderr));
+    for (name, value) in [("TRIPLE", &job.target.triple), ("CPU", &job.target.cpu)] {
+        if let Some(value) = value {
+            command.env(name, value);
+        } else {
+            command.env_remove(name);
         }
-        Ok(log) => {
-            let stderr = match log.try_clone() {
-                Ok(file) => file,
-                Err(err) => {
-                    eprintln!("{}: cannot clone {}: {err}", job.name, job.log.display());
-                    return TestResult {
-                        target: Arc::clone(&job.target),
-                        name: job.name.clone(),
-                        log: job.log.clone(),
-                        outcome: Outcome::Fail,
-                    };
-                }
-            };
-            let mut command = Command::new(&job.script);
-            command
-                .current_dir(root)
-                .env("MACHINE", &job.target.machine)
-                .stdout(Stdio::from(log))
-                .stderr(Stdio::from(stderr));
-            match &job.target.triple {
-                Some(triple) => {
-                    command.env("TRIPLE", triple);
-                }
-                None => {
-                    command.env_remove("TRIPLE");
-                }
-            }
-            match &job.target.cpu {
-                Some(cpu) => {
-                    command.env("CPU", cpu);
-                }
-                None => {
-                    command.env_remove("CPU");
-                }
-            }
+    }
 
-            // Give every test its own process group, so a timeout also kills
-            // compiler or QEMU children rather than leaving them behind.
-            #[cfg(unix)]
-            command.process_group(0);
-
-            match command.spawn() {
-                Err(err) => {
-                    eprintln!("{}: cannot run {}: {err}", job.name, job.script.display());
+    // A timeout must also kill compiler and QEMU children.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("cannot run {}: {err}", job.script.display()))?;
+    let start = Instant::now();
+    loop {
+        match child
+            .try_wait()
+            .map_err(|err| format!("cannot wait for test: {err}"))?
+        {
+            Some(status) => {
+                return Ok(if !status.success() {
                     Outcome::Fail
+                } else if log_says_skipped(&job.log) {
+                    Outcome::Skip
+                } else {
+                    Outcome::Pass
+                })
+            }
+            None if start.elapsed() < timeout => thread::sleep(Duration::from_millis(20)),
+            None => {
+                #[cfg(unix)]
+                unsafe {
+                    libc::kill(-(child.id() as i32), libc::SIGKILL);
                 }
-                Ok(mut child) => {
-                    let start = Instant::now();
-                    loop {
-                        match child.try_wait() {
-                            Ok(Some(status)) => {
-                                break if !status.success() {
-                                    Outcome::Fail
-                                } else if log_says_skipped(&job.log) {
-                                    Outcome::Skip
-                                } else {
-                                    Outcome::Pass
-                                };
-                            }
-                            Ok(None) if start.elapsed() < timeout => {
-                                thread::sleep(Duration::from_millis(20))
-                            }
-                            Ok(None) => {
-                                #[cfg(unix)]
-                                unsafe {
-                                    libc::kill(-(child.id() as i32), libc::SIGKILL);
-                                }
-                                #[cfg(not(unix))]
-                                let _ = child.kill();
-                                let _ = child.wait();
-                                break Outcome::Timeout;
-                            }
-                            Err(err) => {
-                                eprintln!("{}: cannot wait for test: {err}", job.name);
-                                break Outcome::Fail;
-                            }
-                        }
-                    }
-                }
+                #[cfg(not(unix))]
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(Outcome::Timeout);
             }
         }
-    };
+    }
+}
+
+fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
+    let mut outcome = run_process(root, job, timeout).unwrap_or_else(|err| {
+        eprintln!("{}: {err}", job.name);
+        Outcome::Fail
+    });
 
     // Keep failed test directories for diagnosis, but do not retain the
     // successful tests' potentially large temporary files.
