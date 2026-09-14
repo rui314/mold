@@ -42,12 +42,12 @@ impl MergedSectionId {
 /// section vector can move as other workers add sections; IDs remain stable.
 #[derive(Default)]
 pub struct MergedSectionCache {
-    entries: Vec<(MergedSectionKey, MergedSectionId)>,
+    entries: Vec<(MergedSectionKey<'static>, MergedSectionId)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct MergedSectionKey {
-    name: &'static BStr,
+struct MergedSectionKey<'a> {
+    name: &'a BStr,
     flags: u64,
     sh_type: u32,
     entsize: u64,
@@ -223,12 +223,12 @@ fn merged_output_name(
     flags: u64,
     entsize: u64,
     addralign: u64,
-) -> &'static BStr {
+) -> Cow<'static, [u8]> {
     if args.relocatable && !args.relocatable_merge_sections {
-        return name;
+        return Cow::Borrowed(name);
     }
     if !args.unique.is_empty() && args.unique.find(name) != -1 {
-        return name;
+        return Cow::Borrowed(name);
     }
 
     // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M"
@@ -241,11 +241,11 @@ fn merged_output_name(
             format!(".rodata.cst{entsize}")
         };
         if name == name2.as_bytes() {
-            return name;
+            return Cow::Borrowed(name);
         }
-        return BStr::new(crate::util::leak_bytes(name2.into_bytes()));
+        return Cow::Owned(name2.into_bytes());
     }
-    name
+    Cow::Borrowed(name)
 }
 
 impl<E: Layout> MergedSection<E> {
@@ -293,18 +293,25 @@ impl<E: Layout> MergedSection<E> {
         }
 
         let name = merged_output_name(args, name, flags, entsize, addralign);
+        let sh_type = shdr.sh_type.get();
         let key = MergedSectionKey {
-            name,
+            name: BStr::new(&name),
             flags,
-            sh_type: shdr.sh_type.get(),
+            sh_type,
             entsize,
         };
         if let Some((_, id)) = cache.entries.iter().find(|(k, _)| *k == key) {
             return Some(*id);
         }
-        let mut remember = |id| {
+        let mut remember = |id, name: &'static BStr| {
             // Bound lookup cost even when --unique creates many sections.
             if cache.entries.len() < 32 {
+                let key = MergedSectionKey {
+                    name,
+                    flags,
+                    sh_type,
+                    entsize,
+                };
                 cache.entries.push((key, id));
             }
             Some(id)
@@ -312,27 +319,33 @@ impl<E: Layout> MergedSection<E> {
         let find = |sections: &[MergedSection<E>]| {
             sections
                 .iter()
-                .position(|s| {
-                    s.hdr.name == name
+                .enumerate()
+                .find(|(_, s)| {
+                    s.hdr.name == name.as_ref()
                         && s.hdr.shdr.sh_flags.get() == flags
-                        && s.hdr.shdr.sh_type.get() == shdr.sh_type.get()
+                        && s.hdr.shdr.sh_type.get() == sh_type
                         && s.hdr.shdr.sh_entsize.get() == entsize
                 })
-                .map(|i| MergedSectionId(i as u32))
+                .map(|(i, s)| (MergedSectionId(i as u32), s.hdr.name))
         };
 
         // Search for an existing output section.
-        if let Some(id) = find(&sections.read().unwrap()) {
-            return remember(id);
+        if let Some((id, name)) = find(&sections.read().unwrap()) {
+            return remember(id, name);
         }
 
         // Create a new output section.
         let mut sections = sections.write().unwrap();
-        if let Some(id) = find(&sections) {
-            return remember(id);
+        if let Some((id, name)) = find(&sections) {
+            return remember(id, name);
         }
-        sections.push(MergedSection::new(name, flags, shdr.sh_type.get(), entsize));
-        remember(MergedSectionId(sections.len() as u32 - 1))
+        // Only a new section needs to retain its generated name permanently.
+        let name = BStr::new(match name {
+            Cow::Borrowed(name) => name,
+            Cow::Owned(name) => crate::util::leak_bytes(name),
+        });
+        sections.push(MergedSection::new(name, flags, sh_type, entsize));
+        remember(MergedSectionId(sections.len() as u32 - 1), name)
     }
 
     pub fn insert(
