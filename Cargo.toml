@@ -29,7 +29,7 @@ blake3 = "1.8.7"
 bstr = "1"
 cpp_demangle = "0.4"
 crc32fast = "1"
-flate2 = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib"] }
 getrandom = "0.4.3"
 hashbrown = "0.17.1"
 libc.workspace = true
