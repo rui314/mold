@@ -235,12 +235,12 @@ pub struct Context<E: Arch> {
 }
 
 impl<E: Arch> Context<E> {
-    pub fn new(args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Context<E> {
+    pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Context<E> {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
-            entry: symbols.intern(crate::util::leak_bytes(args.entry.clone())),
-            init: symbols.intern(crate::util::leak_bytes(args.init.clone())),
-            fini: symbols.intern(crate::util::leak_bytes(args.fini.clone())),
+            entry: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.entry))),
+            init: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.init))),
+            fini: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.fini))),
             ..SyntheticSymbols::default()
         };
         let page_size = args.page_size;
