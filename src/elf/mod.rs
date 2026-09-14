@@ -60,10 +60,6 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
         unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
     }
 
-    fn parse_all(bytes: &[u8]) -> Vec<Self> {
-        bytes.chunks_exact(Self::size()).map(Self::parse).collect()
-    }
-
     fn write(&self, buf: &mut [u8]) {
         assert!(buf.len() >= Self::size());
         // SAFETY: `buf` has room for the complete record, and copying bytes

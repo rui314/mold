@@ -1872,7 +1872,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_arg!("rpath", true) {
             add_rpath(&mut a, &mut rpaths, raw_arg);
         } else if read_arg!("R", true) {
-            if crate::mapped_file::is_file(raw_arg) {
+            if Path::new(raw_arg).metadata().is_ok_and(|m| !m.is_dir()) {
                 fatal!(
                     "-R{}: -R as an alias for --just-symbols is not supported",
                     raw_arg.to_string_lossy()

@@ -273,8 +273,3 @@ pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedF
     MappedFile::open_impl(&apply_chroot(chroot, path))
         .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
 }
-
-/// Whether a path refers to something that is not a directory.
-pub fn is_file(path: impl AsRef<Path>) -> bool {
-    path.as_ref().metadata().is_ok_and(|m| !m.is_dir())
-}
