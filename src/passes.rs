@@ -4307,24 +4307,17 @@ pub fn compress_debug_sections<E: Arch>(ctx: &mut Context<E>) {
 
     // Since this pass is embarassingly parallel, we want to use all
     // available cores by default.
-    let targets: Vec<(usize, ChunkId)> = ctx
+    let compressed: Vec<_> = ctx
         .chunks
-        .iter()
+        .par_iter()
         .enumerate()
         .filter(|&(_, &id)| {
             let hdr = ctx.chunk_header(id);
             !hdr.is_alloc() && hdr.shdr.sh_size.get() != 0 && hdr.name.starts_with(b".debug_")
         })
-        .map(|(i, &id)| (i, id))
+        .map(|(i, &id)| (i, compressed::new(ctx, id)))
         .collect();
-    let compressed: Vec<compressed::CompressedSection<E>> = {
-        let ctx_ref: &Context<E> = ctx;
-        targets
-            .par_iter()
-            .map(|&(_, id)| compressed::new(ctx_ref, id))
-            .collect()
-    };
-    for ((i, _), sec) in targets.into_iter().zip(compressed) {
+    for (i, sec) in compressed {
         ctx.compressed_sections.push(sec);
         ctx.chunks[i] = ChunkId::Compressed(ctx.compressed_sections.len() as u32 - 1);
     }
