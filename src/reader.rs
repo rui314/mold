@@ -283,14 +283,15 @@ pub fn find_library<E: Arch>(
     } else {
         let mut stem = std::ffi::OsString::from("lib");
         stem.push(name);
+        let shared = (!rctx.is_static).then(|| {
+            let mut filename = stem.clone();
+            filename.push(".so");
+            filename
+        });
+        let mut archive = stem;
+        archive.push(".a");
         for dir in &ctx.args.library_paths {
-            for suffix in if rctx.is_static {
-                &[".a"][..]
-            } else {
-                &[".so", ".a"][..]
-            } {
-                let mut filename = stem.clone();
-                filename.push(suffix);
+            for filename in shared.iter().chain(std::iter::once(&archive)) {
                 if let Some(mf) = open_library(ctx, rctx, &dir.join(filename)) {
                     return mf;
                 }
