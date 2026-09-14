@@ -38,6 +38,12 @@ pub enum Compressor {
     Zstd { shards: Vec<Vec<u8>> },
 }
 
+impl std::fmt::Debug for Compressor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Compressor({} bytes)", self.compressed_size())
+    }
+}
+
 fn adler32(data: &[u8]) -> u32 {
     let len = data.len().try_into().unwrap();
     // SAFETY: data is readable for len bytes. Each caller passes one shard,

@@ -19,12 +19,6 @@ pub struct CompressedSection<E: Layout> {
     pub uncompressed_data: Option<Vec<u8>>,
 }
 
-impl std::fmt::Debug for Compressor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Compressor({} bytes)", self.compressed_size())
-    }
-}
-
 pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
     let hdr = ctx.chunk_header(original);
 
