@@ -523,25 +523,16 @@ fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
     // counts into starting indices with a prefix sum. The extra entry at
     // the end makes edge_indices[i + 1] valid for every vertex, so that
     // vertex i's edges are edge_indices[i] to edge_indices[i + 1].
-    let counts: Vec<u32> = sections
-        .par_iter()
-        .map(|&r| {
-            let mut count = 0u32;
-            for_each_edge::<E>(ctx, r, |_| count += 1);
-            count
-        })
-        .collect();
-
-    let mut indices = Vec::with_capacity(sections.len() + 1);
-    indices.push(0u32);
-    for count in counts {
-        indices.push(
-            indices
-                .last()
-                .unwrap()
-                .checked_add(count)
-                .expect("too many ICF edges"),
-        );
+    let mut indices = vec![0u32; sections.len() + 1];
+    indices[..sections.len()]
+        .par_iter_mut()
+        .zip(sections)
+        .for_each(|(count, &r)| for_each_edge::<E>(ctx, r, |_| *count += 1));
+    let mut sum = 0u32;
+    for count in &mut indices {
+        let next = sum.checked_add(*count).expect("too many ICF edges");
+        *count = sum;
+        sum = next;
     }
 
     let mut values = vec![0; *indices.last().unwrap() as usize];
