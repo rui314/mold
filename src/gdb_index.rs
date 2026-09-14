@@ -76,7 +76,6 @@ use crate::util::endian::Endian;
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
 
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, MapEntryRef};
 use crate::util::hyperloglog::HyperLogLog;
@@ -1113,23 +1112,17 @@ fn limited_parallel_for_mut_init<T: Send, S: Send>(
         return;
     }
 
-    let len = values.len();
-    let workers = workers.max(1).min(len);
-    let chunk_size = len.div_ceil(workers.saturating_mul(2)).max(1);
-    let chunks = Mutex::new(values.chunks_mut(chunk_size).enumerate());
-    (0..workers).into_par_iter().for_each(|_| {
-        let mut state = init();
-        loop {
-            // Release the queue lock before processing the disjoint chunk.
-            let next = chunks.lock().unwrap().next();
-            let Some((chunk_idx, chunk)) = next else {
-                break;
-            };
+    let workers = workers.max(1).min(values.len());
+    let chunk_size = values.len().div_ceil(workers);
+    values
+        .par_chunks_mut(chunk_size)
+        .enumerate()
+        .for_each(|(chunk_idx, chunk)| {
+            let mut state = init();
             for (i, value) in chunk.iter_mut().enumerate() {
                 op(&mut state, chunk_idx * chunk_size + i, value);
             }
-        }
-    });
+        });
 }
 
 /// Build the name lookup table and the constant pool for .gdb_index. They
