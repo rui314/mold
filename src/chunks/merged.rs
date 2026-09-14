@@ -111,7 +111,7 @@ struct BackgroundMember {
     reference: SectionRef,
     info: MergeInfo,
     data: &'static [u8],
-    filename: std::sync::Arc<str>,
+    filename: Cow<'static, str>,
     archive_name: &'static std::path::Path,
     name: &'static BStr,
 }
@@ -147,14 +147,10 @@ impl<E: Arch> BackgroundMerge<E> {
         let mut members: Vec<Vec<BackgroundMember>> =
             (0..sections.len()).map(|_| Vec::new()).collect();
         for file in &ctx.objs {
-            let mut filename = None;
             for info in file.merge_infos() {
                 if sections[info.parent.index()].resolved {
                     continue;
                 }
-                let filename = filename.get_or_insert_with(|| {
-                    std::sync::Arc::<str>::from(file.base.filename.as_ref())
-                });
                 let input = file.section_at(info.shndx);
                 members[info.parent.index()].push(BackgroundMember {
                     reference: SectionRef {
@@ -163,7 +159,7 @@ impl<E: Arch> BackgroundMerge<E> {
                     },
                     info: info.clone(),
                     data: input.contents(),
-                    filename: filename.clone(),
+                    filename: file.base.filename.clone(),
                     archive_name: file.archive_name,
                     name: input.name(file),
                 });
