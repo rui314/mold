@@ -2999,13 +2999,22 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
     buf++;
   };
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  // Relocations must be sorted by offset because a consumer of this
+  // object (including mold itself) pairs each CIE and FDE with a
+  // contiguous run of relocations in a single scan over .eh_frame.
+  // The output places all leader CIEs before all FDEs, so emit the CIE
+  // relocations of every file first and only then the FDE relocations.
+  // Interleaving them per file would place a later file's CIE relocation
+  // (typically a personality routine pointer) after an earlier file's
+  // FDE relocations.
+  for (ObjectFile<E> *file : ctx.objs)
     for (CieRecord<E> &cie : file->cies)
       if (cie.is_leader)
         for (const ElfRel<E> &rel : cie.get_rels())
           copy(*file, cie.input_section, rel,
                cie.output_offset + rel.r_offset - cie.input_offset);
 
+  for (ObjectFile<E> *file : ctx.objs) {
     for (FdeRecord<E> &fde : file->fdes) {
       i64 offset = file->fde_offset + fde.output_offset;
       for (const ElfRel<E> &rel : fde.get_rels(*file))
