@@ -3678,15 +3678,32 @@ void write_separate_debug_file(Context<E> &ctx) {
   if (ctx.arg.detach)
     notify_parent<E>();
 
+  // .gnu_debuglink belongs only in the main file. A NOBITS placeholder
+  // in the debug file is treated as a corrupt debug link by ELF tools.
+  std::erase(ctx.chunks, ctx.gnu_debuglink);
+
+  // Renumber the original chunks as symbols still refer to them after
+  // we replace them with dummy sections below.
+  auto remap = [&](u32 idx) {
+    return idx > ctx.gnu_debuglink->shndx ? idx - 1 : idx;
+  };
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    chunk->shndx = remap(chunk->shndx);
+    ElfShdr<E> &shdr = chunk->shdr;
+    shdr.sh_link = remap(shdr.sh_link);
+    if ((shdr.sh_flags & SHF_INFO_LINK) ||
+        shdr.sh_type == SHT_REL || shdr.sh_type == SHT_RELA)
+      shdr.sh_info = remap(shdr.sh_info);
+  }
+
   // Restore debug info sections that had been set aside while we were
   // creating the main file.
   i64 num_chunks = ctx.chunks.size();
   append(ctx.chunks, ctx.debug_chunks);
 
-
-  // A debug info file contains all sections as the original file, though
-  // most of them can be empty as if they were bss sections. We convert
-  // real sections into dummy sections here.
+  // Preserve the remaining sections from the main file, though most can
+  // be empty as if they were bss sections. Convert them to dummy sections.
   for (i64 i = 0; i < num_chunks; i++) {
     Chunk<E> *chunk = ctx.chunks[i];
     if (!chunk->is_header() && chunk != ctx.shstrtab &&
