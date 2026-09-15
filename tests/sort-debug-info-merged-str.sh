@@ -21,5 +21,11 @@ echo 'int main() {}' | $CC -o $t/c.o -c -xc - -g
 MOLD_DEBUG=1 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -g
 readelf -p .debug_str $t/exe > $t/log
 
-for i in `seq 0 499`; do grep -q "dwarf64_fn_$i\$" $t/log; done
-for i in `seq 0 499`; do grep -q "dwarf32_fn_$i\$" $t/log; done
+awk '
+  { seen[$NF] = 1 }
+  END {
+    for (i = 0; i < 500; i++)
+      if (!seen["dwarf64_fn_" i] || !seen["dwarf32_fn_" i])
+        exit 1
+  }
+' $t/log
