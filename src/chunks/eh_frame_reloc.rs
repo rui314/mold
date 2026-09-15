@@ -83,6 +83,14 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
         n += 1;
     };
 
+    // Relocations must be sorted by offset, because a consumer of this
+    // object (including mold itself) pairs each CIE and FDE with a
+    // contiguous run of relocations while scanning .eh_frame once. The
+    // output places every leader CIE before all FDEs, so emit the CIE
+    // relocations of all files first and only then the FDE relocations.
+    // Interleaving them per file would place a later file's CIE
+    // relocation (typically a personality routine pointer) after an
+    // earlier file's FDE relocations.
     for file in &ctx.objs {
         for cie in &file.cies {
             if cie.is_leader {
@@ -93,6 +101,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
                 }
             }
         }
+    }
+    for file in &ctx.objs {
         for fde in &file.fdes {
             let cie = &file.cies[fde.cie_idx as usize];
             let base = file.fde_offset + fde.output_offset as u64;
