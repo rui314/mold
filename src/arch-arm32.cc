@@ -18,7 +18,7 @@
 // byte boundaries. So the least significant bit of a function address
 // is always 0.
 //
-// To distinguish Thumb functions from ARM fucntions, the LSB of a
+// To distinguish Thumb functions from ARM functions, the LSB of a
 // function address is repurposed as a boolean flag. If the LSB is 0,
 // the function referred to by the address is encoded in ARM;
 // otherwise, Thumb.
@@ -770,7 +770,7 @@ std::vector<u8> Arm32ExidxSection<E>::get_contents(Context<E> &ctx) {
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start
   // address of a function that the record covers. The value is one of
-  // the followings:
+  // the following:
   //
   // 1. CANTUNWIND indicating that there's no unwinding info for the function,
   // 2. a compact unwinding record encoded into a 32-bit value, or

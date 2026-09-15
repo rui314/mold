@@ -15,7 +15,7 @@
 // TLV needs a coordination between the compiler, the linker and the
 // runtime to work correctly.
 //
-// An ELF exectuable or a shared library using TLV contains a "TLS template
+// An ELF executable or a shared library using TLV contains a "TLS template
 // image" in the PT_TLS segment. For each newly created thread including the
 // initial one, the runtime allocates a contiguous memory for an executable
 // and its depending shared libraries and copies template images there. That
@@ -196,7 +196,7 @@ u64 get_dtp_addr(const ElfPhdr<E> &phdr) {
     // (32 KiB) past the start of the TLS block. The bias maximizes the
     // accessible range of load/store instructions with 16-bits signed
     // immediates. That is, if the offset were right at the beginning of the
-    // start of the TLS block, the half of addressible space (negative
+    // start of the TLS block, the half of addressable space (negative
     // immediates) would have been wasted.
     return phdr.p_vaddr + 0x8000;
   } else if constexpr (is_riscv<E>) {

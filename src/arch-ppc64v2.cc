@@ -60,9 +60,9 @@
 // Power10 added 8-bytes-long instructions to the ISA. Some of them are
 // PC-relative load/store instructions that take 34 bits offsets.
 // Functions compiled with `-mcpu=power10` use these instructions for PIC.
-// r2 does not have a special meaning in such fucntions.
+// r2 does not have a special meaning in such functions.
 //
-// When a fucntion compiled for Power10 calls a function that uses the TOC
+// When a function compiled for Power10 calls a function that uses the TOC
 // pointer, we need to compute a correct value for TOC and set it to r2
 // before transferring the control to the callee. Thunks are responsible
 // for doing it.

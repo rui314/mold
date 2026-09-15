@@ -7,7 +7,7 @@
 //    is running on. For example, users should be able to run mold on a
 //    little-endian x86 machine to create a big-endian s390x binary.
 //
-// 2. Even though data members in all ELF data strucutres are naturally
+// 2. Even though data members in all ELF data structures are naturally
 //    aligned, they are not guaranteed to be aligned on memory because of
 //    archive files. Archive files (.a files) align each file only to a
 //    2 byte boundary, so anything larger than 2 bytes may be misaligned

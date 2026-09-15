@@ -1203,7 +1203,7 @@ void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
     if (file->extra.stack_align) {
       i64 val = *file->extra.stack_align;
       if (stack != -1 && stack != val)
-        Error(ctx) << *file << ": stack alignment requirement mistmatch";
+        Error(ctx) << *file << ": stack alignment requirement mismatch";
       stack = val;
     }
 

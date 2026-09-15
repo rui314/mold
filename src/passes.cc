@@ -3334,7 +3334,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
          -get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>));
     stop(ctx.__rel_iplt_end, ctx.reldyn);
   } else {
-    // If the symbols are not ncessary, we turn them to absolute
+    // If the symbols are not necessary, we turn them to absolute
     // symbols at address 0.
     ctx.__rel_iplt_start->origin = nullptr;
     ctx.__rel_iplt_end->origin = nullptr;
@@ -3486,7 +3486,7 @@ template <typename E>
 void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
-  // Since this pass is embarassingly parallel, we want to use all
+  // Since this pass is embarrassingly parallel, we want to use all
   // available cores by default.
   i64 thread_count = 0;
   if (!ctx.arg.thread_count.has_value()) {

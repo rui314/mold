@@ -19,7 +19,7 @@
 // as the symbol table or the string table. That works, but that's not
 // compatible with GNU ld.
 //
-// To be compatible with GNU ld, we need to do the followings:
+// To be compatible with GNU ld, we need to do the following:
 //
 //  - Regular sections containing opaque data (e.g. ".text" or ".data")
 //    are just copied as-is. Two sections with the same name are merged.
