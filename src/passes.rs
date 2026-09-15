@@ -4395,15 +4395,36 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
         crate::subprocess::notify_parent();
     }
 
+    // .gnu_debuglink belongs only in the main file. A NOBITS placeholder
+    // in the debug file is treated as a corrupt debug link by ELF tools.
+    ctx.chunks.retain(|&id| id != ChunkId::GnuDebuglink);
+
+    // Renumber the original chunks as symbols still refer to them after
+    // we replace them with dummy sections below.
+    let debuglink_shndx = ctx.gnu_debuglink.as_ref().unwrap().hdr.shndx;
+    let remap = |idx: u32| if idx > debuglink_shndx { idx - 1 } else { idx };
+
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let hdr = ctx.chunk_header_mut(id);
+        hdr.shndx = remap(hdr.shndx);
+        let shdr = &mut hdr.shdr;
+        shdr.sh_link.set(remap(shdr.sh_link.get()));
+        if shdr.sh_flags.get() & SHF_INFO_LINK as u64 != 0
+            || matches!(shdr.sh_type.get(), SHT_REL | SHT_RELA)
+        {
+            shdr.sh_info.set(remap(shdr.sh_info.get()));
+        }
+    }
+
     // Restore debug info sections that had been set aside while we were
     // creating the main file.
     let num_chunks = ctx.chunks.len();
     let debug_chunks = std::mem::take(&mut ctx.debug_chunks);
     ctx.chunks.extend(debug_chunks);
 
-    // A debug info file contains all sections as the original file, though
-    // most of them can be empty as if they were bss sections. We convert
-    // real sections into dummy sections here.
+    // Preserve the remaining sections from the main file, though most can
+    // be empty as if they were bss sections. Convert them to dummy sections.
     for i in 0..num_chunks {
         let id = ctx.chunks[i];
         if id.is_header()
