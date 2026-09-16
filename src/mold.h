@@ -2160,6 +2160,10 @@ public:
 
   std::string soname;
   std::vector<std::string_view> version_strings;
+
+  // Explicitly versioned symbols for default-version definitions and
+  // undefined references. These are not redirected to the unversioned
+  // name by resolve_default_symver().
   std::vector<Symbol<E> *> symbols2;
   std::vector<ElfSym<E>> elf_syms2;
 

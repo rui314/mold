@@ -1451,9 +1451,10 @@ void check_symbol_types(Context<E> &ctx) {
           sym->file && sym->file != file)
         check(*file, *sym, sym->esym(), file->elf_syms[i]);
 
-      if (Symbol<E> *sym = file->symbols2[i])
-        if (sym->file && sym->file != file)
-          check(*file, *sym, sym->esym(), file->elf_syms[i]);
+      if (!file->elf_syms[i].is_undef())
+        if (Symbol<E> *sym = file->symbols2[i])
+          if (sym->file && sym->file != file)
+            check(*file, *sym, sym->esym(), file->elf_syms[i]);
     }
   });
 }

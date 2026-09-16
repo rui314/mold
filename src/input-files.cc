@@ -1627,9 +1627,13 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       // Unversioned symbol
       add_symbol(name);
       this->symbols2.push_back(nullptr);
-    } else if (esyms[i].is_undef() || (vers[i] & VERSYM_HIDDEN)) {
-      // Versioned non-default symbol, or undefined reference whose
-      // version comes from .gnu.version_r.
+    } else if (esyms[i].is_undef()) {
+      // Versioned undefined symbol
+      Symbol<E> *sym = get_versioned_sym();
+      this->symbols.emplace_back(sym);
+      this->symbols2.push_back(sym);
+    } else if (vers[i] & VERSYM_HIDDEN) {
+      // Versioned non-default symbol
       this->symbols.emplace_back(get_versioned_sym());
       this->symbols2.push_back(nullptr);
     } else {
@@ -1802,16 +1806,23 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
-    // We follow undefined symbols in a DSO only to handle
-    // --no-allow-shlib-undefined.
-    if (esym.is_undef() && !esym.is_weak() && sym.file &&
-        (!sym.file->is_dso || !ctx.arg.allow_shlib_undefined) &&
-        !sym.file->is_reachable.test_and_set()) {
-      feeder(sym.file);
+    if (!esym.is_undef() || esym.is_weak())
+      continue;
 
-      if (sym.is_traced)
-        Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                 << " for " << sym;
+    // Follow references to other DSOs only to check --no-allow-shlib-undefined.
+    //
+    // A versioned reference must not extract an unversioned definition
+    // from an archive. resolve_default_symver redirects symbols[] to the
+    // bare name, so follow the original versioned symbol in symbols2[].
+    if (InputFile<E> *file = symbols2[i] ? symbols2[i]->file : sym.file) {
+      if ((!file->is_dso || !ctx.arg.allow_shlib_undefined) &&
+          !file->is_reachable.test_and_set()) {
+        feeder(file);
+
+        if (sym.is_traced)
+          Out(ctx) << "trace-symbol: " << *this << " keeps " << *file
+                   << " for " << sym;
+      }
     }
   }
 }
