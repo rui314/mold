@@ -615,7 +615,7 @@ static void parse_fde_encoding(Context<E> &ctx, CieRecord<E> &cie) {
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
 // covers the current PC explains how to find a handler and how to
-// transfer the control ot it.
+// transfer the control to it.
 //
 // Unlike the most other sections, linker has to parse .eh_frame contents
 // because of the following reasons:
@@ -1314,7 +1314,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
 template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
-  // Scan relocations against seciton contents
+  // Scan relocations against section contents
   for (InputSection<E> *isec : sections)
     if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
@@ -1696,7 +1696,7 @@ std::string_view SharedFile<E>::get_dt_audit(Context<E> &ctx) {
 // parallel table.
 //
 // One version is considered the "default" version for each shared object.
-// If an undefiend symbol `foo` is resolved to a symbol defined by the
+// If an undefined symbol `foo` is resolved to a symbol defined by the
 // shared object, it's marked so that it'll be resolved to (`foo`, the
 // default version of the library) at load-time.
 //
@@ -1780,7 +1780,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
     // A symbol with the default version is a special case because, unlike
     // other symbols, the symbol can be referred by two names, `foo` and
-    // `foo@VERSION`. Here, we resolve `foo@VERSOIN` as a proxy of `foo`.
+    // `foo@VERSION`. Here, we resolve `foo@VERSION` as a proxy of `foo`.
     Symbol<E> *sym2 = this->symbols2[i];
     if (sym2 && sym2 != &sym) {
       std::scoped_lock lock2(sym2->mu);

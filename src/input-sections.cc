@@ -287,7 +287,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   }
 }
 
-// Get the name of a function containin a given offset.
+// Get the name of a function containing a given offset.
 template <typename E>
 std::string_view
 InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {

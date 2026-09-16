@@ -1719,7 +1719,7 @@ std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.oformat_binary)
     ctx.arg.strip_all = true;
 
-  // By default, mold tries to ovewrite to an output file if exists
+  // By default, mold tries to overwrite to an output file if exists
   // because at least on Linux, writing to an existing file is much
   // faster than creating a fresh file and writing to it.
   //

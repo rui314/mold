@@ -1022,7 +1022,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
-// .rel.dyn contains relocation infromation for other sections.
+// .rel.dyn contains relocation information for other sections.
 template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
@@ -1256,7 +1256,7 @@ public:
 };
 
 // .hash contains an on-disk hash table for .dynsym so that the runtime
-// can look up a symbol name quickly without scannin all entries in
+// can look up a symbol name quickly without scanning all entries in
 // .dynsym.
 //
 // Quickly identifying whether or not a .dynsym contains a given symbol is
@@ -1367,7 +1367,7 @@ public:
 };
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
-// are sorted by their dcorresponding function addresses, so tha the
+// are sorted by their corresponding function addresses, so that the
 // runtime can quickly find an exception-handling record for the current
 // function by binary search. Without .eh_frame_hdr, the runtime would
 // have had to do linear search in .eh_frame.
@@ -3207,7 +3207,7 @@ public:
   // In this case, we use the address of the `foo`'s PLT entry in the
   // main executable (whose address is fixed at link-time) as its
   // address. In order to guarantee pointer equality, we also need to
-  // fill foo's GOT entries in DSOs with the addres of the foo's PLT
+  // fill foo's GOT entries in DSOs with the address of the foo's PLT
   // entry instead of `foo`'s real address. We can do that by setting a
   // symbol value to `foo`'s dynamic symbol. If a symbol value is set,
   // the dynamic loader initialize `foo`'s GOT entries with that value
@@ -3243,7 +3243,7 @@ public:
   // A copy relocation instructs the loader to copy data from a DSO to a
   // specified location in the main executable. By using this feature,
   // we can copy `foo`'s data to a BSS region at runtime. With that,
-  // we can apply relocations agianst `foo` as if `foo` existed in the
+  // we can apply relocations against `foo` as if `foo` existed in the
   // main executable's BSS area, whose address is known at link-time.
   //
   // Copy relocations are used only by position-dependent executables.
@@ -3535,7 +3535,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 
 // Input object files may contain duplicate code for inline functions
 // and such. Linkers de-duplicate them at link-time. However, linkers
-// generaly don't remove debug info for de-duplicated functions because
+// generally don't remove debug info for de-duplicated functions because
 // doing that requires parsing the entire debug section.
 //
 // Instead, linkers write "tombstone" values to dead debug info records
@@ -4016,7 +4016,7 @@ inline bool Symbol<E>::is_local(Context<E> &ctx) const {
 
 template <typename E>
 inline bool Symbol<E>::is_pde_ifunc(Context<E> &ctx) const {
-  // Returns true if this is an ifunc tha uses two GOT slots
+  // Returns true if this is an ifunc that uses two GOT slots
   return is_ifunc() && !ctx.arg.pic && !is_ppc64<E>;
 }
 

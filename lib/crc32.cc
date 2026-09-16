@@ -8,7 +8,7 @@ namespace mold {
 // This function "forges" a CRC. That is, given the current and a desired
 // CRC32 value, crc32_solve() returns a binary blob to add to the end of
 // the original data to yield the desired CRC. Trailing garbage is ignored
-// by many bianry file formats, so you can create a file with a desired
+// by many binary file formats, so you can create a file with a desired
 // CRC using crc32_solve(). We need it for --separate-debug-file.
 std::vector<u8> crc32_solve(u32 current, u32 desired) {
   constexpr u32 poly = 0xedb88320;

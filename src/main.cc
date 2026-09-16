@@ -610,7 +610,7 @@ int mold_main(int argc, char **argv) {
   sort_init_fini(ctx);
 
   // Likewise, .ctors and .dtors have to be sorted. They are rare
-  // because they are superceded by .init_array/.fini_array, though.
+  // because they are superseded by .init_array/.fini_array, though.
   sort_ctor_dtor(ctx);
 
   // If .ctors/.dtors are to be placed to .init_array/.fini_array,

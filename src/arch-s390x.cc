@@ -4,7 +4,7 @@
 // z/Architecture is a 64-bit CISC ISA developed by IBM around 2000 for
 // IBM's "big iron" mainframe computers. The computers are direct
 // descendents of IBM System/360 all the way back in 1966. I've never
-// actually seen a mainframe, and you probaly haven't either, but it looks
+// actually seen a mainframe, and you probably haven't either, but it looks
 // like the mainframe market is still large enough to sustain its ecosystem.
 // Ubuntu for example provides the official support for s390x as of 2022.
 // Since they are being actively maintained, we need to support them.
@@ -26,7 +26,7 @@
 //   a2:    lower 32 bits of TP (thread pointer)
 //
 // Thread-local storage (TLS) is supported on s390x in the same way as it
-// is on other targets with one exeption. On other targets, __tls_get_addr
+// is on other targets with one exception. On other targets, __tls_get_addr
 // is used to get an address of a thread-local variable. On s390x,
 // __tls_get_offset is used instead. The difference is __tls_get_offset
 // returns an address of a thread-local variable as an offset from TP. So
