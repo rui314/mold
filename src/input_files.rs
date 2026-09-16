@@ -3074,8 +3074,9 @@ pub struct SharedFile<E: Layout> {
     pub soname: &'static [u8],
     pub version_strings: Vec<&'static [u8]>,
 
-    /// For each symbol, the `foo@VERSION` alias of a default-versioned
-    /// definition `foo@@VERSION`.
+    /// Explicitly versioned symbols for default-version definitions and
+    /// undefined references. These are not redirected to the unversioned
+    /// name by resolve_default_symver().
     pub symbols2: Vec<SymbolId>,
     pub versyms: Vec<u16>,
 
@@ -3260,9 +3261,12 @@ impl<E: Arch> SharedFile<E> {
             let (key, alias) = if !has_version {
                 // Unversioned symbol
                 (name, None)
-            } else if esym.is_undef() || E::Endian::read_u16(&vers[i]) & VERSYM_HIDDEN as u16 != 0 {
-                // Versioned non-default symbol, or undefined reference whose
-                // version comes from .gnu.version_r.
+            } else if esym.is_undef() {
+                // Versioned undefined symbol
+                let key = versioned_key();
+                (key, Some(key))
+            } else if E::Endian::read_u16(&vers[i]) & VERSYM_HIDDEN as u16 != 0 {
+                // Versioned non-default symbol
                 (versioned_key(), None)
             } else {
                 // Versioned default symbol

@@ -259,20 +259,31 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                 if sym.is_traced() {
                     crate::input_files::print_trace_symbol(file, esym, sym);
                 }
-                // We follow undefined symbols in a DSO only to handle
-                // --no-allow-shlib-undefined.
-                if esym.is_undef() && !esym.is_weak() {
-                    if let Some(target) = sym.file() {
-                        if (!target.is_dso() || !ctx.args.allow_shlib_undefined)
-                            && ctx.file(target).mark_reachable()
-                        {
-                            found.push(target);
-                            if sym.is_traced() {
-                                out!(
-                                    "trace-symbol: {file} keeps {} for {sym}",
-                                    ctx.file_display(target)
-                                );
-                            }
+                if !esym.is_undef() || esym.is_weak() {
+                    continue;
+                }
+
+                // Follow references to other DSOs only to check --no-allow-shlib-undefined.
+                //
+                // A versioned reference must not extract an unversioned definition
+                // from an archive. resolve_default_symver redirects symbols[] to the
+                // bare name, so follow the original versioned symbol in symbols2[].
+                let id2 = file.symbols2[i];
+                let target = if id2 != SymbolId::NONE {
+                    ctx.symbols[id2].file()
+                } else {
+                    sym.file()
+                };
+                if let Some(target) = target {
+                    if (!target.is_dso() || !ctx.args.allow_shlib_undefined)
+                        && ctx.file(target).mark_reachable()
+                    {
+                        found.push(target);
+                        if sym.is_traced() {
+                            out!(
+                                "trace-symbol: {file} keeps {} for {sym}",
+                                ctx.file_display(target)
+                            );
                         }
                     }
                 }
@@ -2045,7 +2056,7 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
                 check(file, id, sym, file.base.elf_syms[i].st_type());
             }
             let id2 = file.symbols2[i];
-            if id2 != SymbolId::NONE {
+            if !file.base.elf_syms[i].is_undef() && id2 != SymbolId::NONE {
                 let sym = &ctx.symbols[id2];
                 if sym.file().is_some() && sym.file() != Some(id) {
                     check(file, id, sym, file.base.elf_syms[i].st_type());
