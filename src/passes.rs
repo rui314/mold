@@ -811,7 +811,11 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
                     }
                     N_SECT => {
                         sym.set_file(FileId::Obj((obj_idx) as u32));
-                        match crate::input_files::find_subsec(isecs, &obj.subsecs, nlist.n_value) {
+                        match crate::input_files::find_subsec_or_end(
+                            isecs,
+                            &obj.subsecs,
+                            nlist.n_value,
+                        ) {
                             Some((isec, off)) => {
                                 sym.set_input_section(Some(isec as u32));
                                 sym.value = off;
@@ -1843,6 +1847,41 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
 }
 
 pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
+    use rayon::prelude::*;
+    // Undefined symbols a live relocation actually targets. A .globl with
+    // no definition (XNU's `SleepToken` under !WITH_CLASSIC_S2R, or
+    // `clean_mmu_dcache` declared beside `CleanPoC_Dcache`) emits an
+    // undefined extern nlist and no relocation at all; ld64 drops such a
+    // symbol silently, and so must this check, or linking the individual
+    // objects (no LTO to fold them away) fails on them.
+    let mut referenced: hashbrown::HashSet<crate::symbol::SymbolId> = {
+        let ctx_ref: &Context<E> = ctx;
+        let ids: Vec<crate::symbol::SymbolId> = ctx_ref
+            .isecs
+            .par_iter()
+            .filter(|isec| isec.is_alive())
+            .flat_map_iter(|isec| {
+                crate::input_files::isec_relocs_of(&ctx_ref.objs, isec)
+                    .iter()
+                    .filter_map(move |rel| ctx_ref.reloc_target_sym(isec.file as usize, rel))
+            })
+            .collect();
+        ids.into_iter().collect()
+    };
+    // Symbols the command line insists on even without a reference.
+    for name in &ctx.args.forced_undefined {
+        if let Some(id) = ctx.symbols.get(name) {
+            referenced.insert(id);
+        }
+    }
+    if let Some(id) = ctx.symbols.get(&ctx.args.entry) {
+        referenced.insert(id);
+    }
+    for (existing, _) in &ctx.args.aliases {
+        if let Some(id) = ctx.symbols.get(existing) {
+            referenced.insert(id);
+        }
+    }
     // Errors name a file that wants the symbol; the map from symbol to
     // referencing object is built only once an error is certain.
     let mut referencers: Option<std::collections::HashMap<crate::symbol::SymbolId, usize>> = None;
@@ -1871,6 +1910,9 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     for i in 0..ctx.symbols.syms.len() {
         let sym = &ctx.symbols[i];
         if sym.is_used() && !sym.is_defined() {
+            if !referenced.contains(&(i as crate::symbol::SymbolId)) {
+                continue;
+            }
             let allowed = ctx.args.undefined_dynamic_lookup
                 || ctx.args.allowed_undefined.iter().any(|n| n == sym.name());
             if allowed {
@@ -3520,7 +3562,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         let sym = &mut ctx.symbols[id];
         if !sym.is_defined() {
             sym.set_file(FileId::Obj(internal));
-            sym.value = ctx.args.pagezero_size;
+            sym.value = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
             sym.set_is_extern(true);
         }
     }
@@ -3532,7 +3574,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     let sym = &mut ctx.symbols[id];
     if !sym.is_defined() {
         sym.set_file(FileId::Obj(internal));
-        sym.value = ctx.args.pagezero_size;
+        sym.value = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
         sym.set_is_extern(false);
     }
 
@@ -3840,6 +3882,32 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     ty | attrs
 }
 
+/// Applies ld64's -rename_section and -rename_segment to an input
+/// section. An exact -rename_section match names the output section
+/// outright (it wins over the built-in mapping, as in ld64); otherwise
+/// the built-in mapping decides and -rename_segment then renames the
+/// resulting segment. Neither applies to a -r output.
+fn renamed_output_section(
+    args: &crate::cmdline::Args,
+    relocatable: bool,
+    segname: &str,
+    sectname: &str,
+    builtin: impl FnOnce() -> Option<(&'static str, &'static str)>,
+) -> Option<(&'static str, &'static str)> {
+    if !relocatable
+        && let Some((_, _, seg, sect)) =
+            args.rename_sections.iter().find(|(seg, sect, _, _)| seg == segname && sect == sectname)
+    {
+        return Some((String::leak(seg.clone()), String::leak(sect.clone())));
+    }
+    let (seg, sect) = builtin()?;
+    if !relocatable && let Some((_, new)) = args.rename_segments.iter().find(|(old, _)| old == seg)
+    {
+        return Some((String::leak(new.clone()), sect));
+    }
+    Some((seg, sect))
+}
+
 /// Creates output section chunks and appends each input section to its
 /// chunk, and groups chunks into segments.
 pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
@@ -3888,12 +3956,20 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             let id = match by_name.get(&key) {
                 Some(&id) => id,
                 None => {
-                    let id = output_section_for(
+                    let id = renamed_output_section(
+                        &ctx.args,
                         relocatable,
-                        ctx.args.data_const,
-                        objc_const_refs,
                         hdr.segname(),
                         hdr.sectname(),
+                        || {
+                            output_section_for(
+                                relocatable,
+                                ctx.args.data_const,
+                                objc_const_refs,
+                                hdr.segname(),
+                                hdr.sectname(),
+                            )
+                        },
                     )
                     .map(|out| match by_out.get(&out) {
                         Some(&id) => id,
@@ -4446,12 +4522,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // Sort the chunks into file order: the standard segment order, and
     // section ranks within a segment. Sections of one rank follow the
     // order their first input section was seen in - object, then
-    // section ordinal - as ld-prime lays them out (__cstring before
-    // __gcc_except_tab when the object has them that way); a merged
-    // literal section counts from its first input, not from the pass
-    // that merged it. Purely synthetic sections keep their creation
-    // order (the sort is stable).
-    let mut first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
+    // section ordinal - as ld-prime lays them out. Segment ranks honor
+    // -segment_order, then the standard order; segments stay together,
+    // and __LINKEDIT is always last.
+    let mut section_first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
     for (i, isec) in ctx.isecs.iter().enumerate() {
         if ctx.is_internal(isec.file as usize) {
             continue;
@@ -4460,26 +4534,39 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             continue;
         };
         let key = ((isec.file as u64) << 32) | isec.shndx as u64;
-        let slot = &mut first_seen[id.index()];
+        let slot = &mut section_first_seen[id.index()];
         *slot = (*slot).min(key);
     }
     if let Some(obj) = ctx.common_first_obj {
         for (i, osec) in ctx.output_sections.iter().enumerate() {
             if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
-                first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
+                section_first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
             }
         }
     }
     let mut order = ctx.chunks.clone();
+    let mut first_seen: hashbrown::HashMap<&'static str, usize> = hashbrown::HashMap::new();
+    for &id in &order {
+        let n = first_seen.len();
+        first_seen.entry(ctx.chunk_header(id).segname).or_insert(n);
+    }
+    let segment_order = &ctx.args.segment_order;
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
-        let seg_rank = match hdr.segname {
+        let standard = match hdr.segname {
             "__TEXT" => 0,
             "__DATA_CONST" => 1,
             "__DATA" => 2,
-            "__LINKEDIT" => 4,
             _ => 3,
         };
+        let seg_rank = if hdr.segname == "__LINKEDIT" {
+            usize::MAX
+        } else if let Some(i) = segment_order.iter().position(|s| s == hdr.segname) {
+            i
+        } else {
+            segment_order.len() + standard
+        };
+        let seg_rank = (seg_rank, first_seen[hdr.segname]);
         let sect_rank = match id {
             ChunkId::MachHeader => 0,
             ChunkId::UnwindInfo => 100,
@@ -4488,7 +4575,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             _ => 1 + output_section_rank(hdr.segname, &hdr.sectname),
         };
         let seen = match id {
-            ChunkId::Output(osec) => first_seen[osec.index()],
+            ChunkId::Output(osec) => section_first_seen[osec.index()],
             _ => u64::MAX,
         };
         // Zero-fill sections go last in their segment so that they don't
@@ -5298,7 +5385,7 @@ pub fn create_output_symtab<E: Target>(
 
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let page = E::PAGE_SIZE;
-    let mut addr = 0;
+    let mut addr = ctx.args.image_base.unwrap_or(0);
     let mut fileoff = 0;
 
     // Chunk sizes that are independent of the layout.
@@ -5446,7 +5533,17 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             continue;
         }
 
-        let seg_vmaddr = addr;
+        // -segaddr pins a segment's address; the running address
+        // resumes where it was, or past the pinned segment if that
+        // lies above it.
+        let pinned = ctx
+            .args
+            .segaddrs
+            .iter()
+            .find(|(name, _)| name == ctx.segments[seg_idx].name)
+            .map(|&(_, a)| a);
+        let resume = addr;
+        let seg_vmaddr = pinned.unwrap_or(addr);
         let seg_fileoff = fileoff;
         let mut cursor = fileoff;
 
@@ -5546,6 +5643,9 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         seg.cmd.vmsize = align_to(vm_end - seg_vmaddr, page).max(seg.cmd.filesize);
 
         addr = seg_vmaddr + seg.cmd.vmsize;
+        if pinned.is_some() {
+            addr = addr.max(resume);
+        }
         fileoff = seg_fileoff + seg.cmd.filesize;
     }
 

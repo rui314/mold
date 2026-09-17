@@ -258,6 +258,22 @@ pub struct Args {
     /// True when -pagezero_size was given explicitly (it is an error
     /// anywhere but a main executable).
     pub explicit_pagezero: bool,
+    /// -image_base: the VM address of the first segment.
+    pub image_base: Option<u64>,
+    /// -segaddr: (segment, address) overrides.
+    pub segaddrs: Vec<(String, u64)>,
+    /// -segprot: (segment, max, init) protections.
+    pub segprots: Vec<(String, u8, u8)>,
+    /// -segment_order: segment names in output order.
+    pub segment_order: Vec<String>,
+    /// -rename_section: (old_seg, old_sect, new_seg, new_sect).
+    pub rename_sections: Vec<(String, String, String, String)>,
+    /// -rename_segment: (old, new).
+    pub rename_segments: Vec<(String, String)>,
+    /// -static: no dyld rebase/bind or chained fixups (the XNU kernel).
+    pub static_link: bool,
+    /// -pie / -no_pie: emit a position-independent executable (MH_PIE).
+    pub pie: bool,
 }
 
 impl Default for Args {
@@ -351,6 +367,14 @@ impl Default for Args {
             local_keep_list: None,
             pagezero_size: 0x1_0000_0000,
             explicit_pagezero: false,
+            image_base: None,
+            segaddrs: Vec::new(),
+            segprots: Vec::new(),
+            segment_order: Vec::new(),
+            rename_sections: Vec::new(),
+            rename_segments: Vec::new(),
+            static_link: false,
+            pie: true,
         }
     }
 }
@@ -415,6 +439,21 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
         Ok(num) => num,
         Err(_) => fatal!("malformed {opt}: {val}"),
     }
+}
+
+/// Parses ld64's `-segprot` protection strings ("r", "w", "x").
+fn parse_prot(opt: &str, val: &str) -> u8 {
+    let mut prot = 0u8;
+    for c in val.chars() {
+        match c {
+            'r' => prot |= 1,
+            'w' => prot |= 2,
+            'x' => prot |= 4,
+            '-' => {}
+            _ => fatal!("{opt}: invalid protection: {val}"),
+        }
+    }
+    prot
 }
 
 fn is_space(c: u8) -> bool {
@@ -635,10 +674,46 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
+            b"-static" => args.static_link = true,
+            b"-version_load_command" => {}
+            b"-pie" => args.pie = true,
+            b"-no_pie" => args.pie = false,
+            b"-no_dead_strip_inits_and_terms" => {}
             b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i)));
                 args.explicit_pagezero = true;
+            }
+            b"-image_base" => args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i)))),
+            b"-segaddr" => {
+                let seg = text(name, next_arg(&mut i)).to_string();
+                let addr = parse_hex(name, text(name, next_arg(&mut i)));
+                args.segaddrs.push((seg, addr));
+            }
+            b"-segprot" => {
+                let seg = text(name, next_arg(&mut i)).to_string();
+                let max = parse_prot(name, text(name, next_arg(&mut i)));
+                let init = parse_prot(name, text(name, next_arg(&mut i)));
+                args.segprots.push((seg, max, init));
+            }
+            b"-segment_order" => {
+                args.segment_order = text(name, next_arg(&mut i))
+                    .split(':')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+            }
+            b"-rename_section" => {
+                let old_seg = text(name, next_arg(&mut i)).to_string();
+                let old_sect = text(name, next_arg(&mut i)).to_string();
+                let new_seg = text(name, next_arg(&mut i)).to_string();
+                let new_sect = text(name, next_arg(&mut i)).to_string();
+                args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
+            }
+            b"-rename_segment" => {
+                let old = text(name, next_arg(&mut i)).to_string();
+                let new = text(name, next_arg(&mut i)).to_string();
+                args.rename_segments.push((old, new));
             }
             b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i))),
             b"-sectcreate" => {

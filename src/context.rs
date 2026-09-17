@@ -349,6 +349,11 @@ impl<E: Target> Context<E> {
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {
+        // A static executable (the kernel) has no dyld, so it uses no
+        // chained fixups or dyld info at all.
+        if self.args.static_link {
+            return false;
+        }
         // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
         // from macOS 13 on x86_64 (below that, classic dyld info with
         // lazy binding), and never under -undefined dynamic_lookup or
@@ -596,6 +601,13 @@ impl<E: Target> Context<E> {
     /// binds both with library ordinal -3, never lazily, and lists
     /// them in the classic weak_bind stream.
     pub fn binds_weak_lookup(&self, id: SymbolId) -> bool {
+        // A static image has no dyld to perform runtime weak lookup, so a
+        // call to a weakly-defined symbol in the image binds directly.
+        // ld64 emits neither a stub nor a weak bind for it (the stock
+        // XNU kernel has no stubs and an empty weak bind table).
+        if self.args.static_link {
+            return false;
+        }
         if self.is_weak_coalesced(id) {
             return true;
         }

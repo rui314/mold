@@ -323,6 +323,13 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
     cmd.maxprot = segment_prot(seg.name);
     cmd.initprot = segment_prot(seg.name);
+    // -segprot overrides the defaults (the last one given wins).
+    if let Some(&(_, max, init)) =
+        ctx.args.segprots.iter().rev().find(|(name, _, _)| name == seg.name)
+    {
+        cmd.maxprot = u32::from(max);
+        cmd.initprot = u32::from(init);
+    }
     // dyld makes __DATA_CONST read-only once binds are applied.
     if seg.name == "__DATA_CONST" {
         cmd.flags = SG_READ_ONLY;
@@ -589,7 +596,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     }
     vec.push(create_symtab_cmd(ctx));
     vec.push(create_dysymtab_cmd(ctx));
-    if ctx.args.output_type == MH_EXECUTE {
+    if ctx.args.output_type == MH_EXECUTE && !ctx.args.static_link {
         vec.push(create_dylinker_cmd());
     }
     vec.push(create_uuid_cmd(ctx));
@@ -640,6 +647,7 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let cmds = create_load_commands(ctx);
 
+    let is_static_executable = ctx.args.output_type == MH_EXECUTE && ctx.args.static_link;
     let hdr = MachHeader {
         magic: MH_MAGIC_64,
         cputype: E::CPUTYPE,
@@ -649,7 +657,9 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         sizeofcmds: cmds.iter().map(Vec::len).sum::<usize>() as u32,
         // Under -flat_namespace every import is a flat lookup that
         // dyld resolves at load, so ld64 does not claim MH_NOUNDEFS.
-        flags: if ctx.args.flat_namespace {
+        flags: if is_static_executable {
+            MH_NOUNDEFS
+        } else if ctx.args.flat_namespace {
             MH_DYLDLINK
         } else {
             MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
@@ -659,7 +669,11 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     let mut hdr = hdr;
     match ctx.args.output_type {
-        MH_EXECUTE => hdr.flags |= MH_PIE,
+        MH_EXECUTE => {
+            if ctx.args.pie {
+                hdr.flags |= MH_PIE;
+            }
+        }
         MH_DYLIB => {
             if !ctx.dylibs.iter().any(|d| d.is_reexported) {
                 hdr.flags |= MH_NO_REEXPORTED_DYLIBS;

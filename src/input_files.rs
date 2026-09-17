@@ -180,6 +180,34 @@ pub fn find_subsec(
     }
 }
 
+/// Like `find_subsec`, but also accepts an address at the very end of
+/// the last subsection.  Assembler places a bound label (an array's
+/// `_end`, say) right after the data it bounds, and these objects are
+/// built without MH_SUBSECTIONS_VIA_SYMBOLS, so such a symbol has no
+/// zero-length subsection of its own.  Only external symbols use this:
+/// a local label at a section's end is an alias, not an atom of its own,
+/// and a relocatable link still drops it.
+pub fn find_subsec_or_end(
+    isecs: &[InputSection],
+    subsecs: &[crate::input_sections::InputSectionId],
+    addr: u64,
+) -> Option<(usize, u64)> {
+    if let Some(found) = find_subsec(isecs, subsecs, addr) {
+        return Some(found);
+    }
+    let i = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
+    if i == 0 {
+        return None;
+    }
+    let id = subsecs[i - 1] as usize;
+    let isec = &isecs[id];
+    if isec.input_addr as u64 + isec.size as u64 == addr {
+        Some((id, isec.size as u64))
+    } else {
+        None
+    }
+}
+
 /// A dynamic library, from a .tbd stub or a dylib binary.
 #[derive(Debug)]
 pub struct DylibFile {
@@ -1625,6 +1653,10 @@ fn parse_eh_frame<E: Target>(
                     pos += 5;
                 }
                 b'R' => pos += 1,
+                // 'S' marks a signal frame and 'B' is the GNU
+                // "frameless" augmentation; neither carries
+                // augmentation data.
+                b'S' | b'B' => {}
                 _ => fatal!("{file_name}: __eh_frame: unknown augmentation"),
             }
         }
