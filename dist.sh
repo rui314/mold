@@ -157,30 +157,32 @@ timestamp=$(git log -1 --format=%ct)
 setarch=
 [ "$arch" = arm ] && setarch='setarch linux32'
 
-mkdir -p dist "target/dist-cargo-$arch"
+mkdir -p dist "target/dist-vendor-$arch"
 
 # Cargo verifies registry packages against the checksums in Cargo.lock and
-# checks out Git dependencies at the commit recorded there. Fetch them in a
+# checks out Git dependencies at the commit recorded there. Vendor them in a
 # separate networked step so that the actual build can run without a network.
+# Cargo's own cache is a tmpfs because the libgit2 inside a 32-bit cargo can't
+# read a bind-mounted ext4 directory (readdir fails with EOVERFLOW under QEMU).
 podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 \
-  --pull=never --env CARGO_HOME=/cargo -v "$(pwd):/mold:ro" \
-  -v "$(pwd)/target/dist-cargo-$arch:/cargo" "$image" $setarch \
-  bash -c 'cd /mold && cargo fetch --locked'
+  --pull=never --env CARGO_HOME=/cargo --tmpfs /cargo -v "$(pwd):/mold:ro" \
+  -v "$(pwd)/target/dist-vendor-$arch:/vendor" "$image" $setarch \
+  bash -c 'cd /mold && cargo vendor --locked /vendor/sources > /vendor/config.toml'
 
 # Build mold in a container.
 #
 # SOURCE_DATE_EPOCH is a standardized environment variable that allows
 # build artifacts to appear as if they were built at a specific time.
-# Fixed source, target and Cargo paths keep embedded build paths stable.
+# Fixed source, vendor and target paths keep embedded build paths stable.
 podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 --network=none \
-  --pull=never --env CARGO_HOME=/cargo --env SOURCE_DATE_EPOCH="$timestamp" \
-  --env DEST="$dest" -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
-  -v "$(pwd)/target/dist-cargo-$arch:/cargo" "$image" \
+  --pull=never --env SOURCE_DATE_EPOCH="$timestamp" --env DEST="$dest" \
+  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
+  -v "$(pwd)/target/dist-vendor-$arch:/vendor:ro" "$image" \
   $setarch bash -c '
 set -e
 export CARGO_TARGET_DIR=/build/target
 cd /mold
-cargo build --release --frozen --package mold-cli
+cargo build --release --frozen --config /vendor/config.toml --package mold-cli
 stage=/build/$DEST
 DESTDIR=/build PREFIX=/$DEST ./install-mold.sh
 strip --strip-unneeded "$stage/bin/mold" "$stage/lib/mold/mold-wrapper.so"
