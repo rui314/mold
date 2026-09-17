@@ -20,6 +20,10 @@ jobs:
         sudo ./install-test-deps.sh
         sudo .github/workflows/install-extras.sh
     - run: cargo build --locked
+    - name: check the build for a 32-bit host
+      run: |
+        rustup target add armv7-unknown-linux-gnueabihf
+        cargo check --locked --workspace --all-targets --target armv7-unknown-linux-gnueabihf
     - name: verify all target toolchains are available
       run: |
         cargo test --locked -p mold-cli --test integration -- --list |

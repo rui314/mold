@@ -163,6 +163,7 @@ pub struct SymbolAux {
     pub thunk_addrs: Vec<u64>,
 }
 
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<SymbolAux>() == 64);
 
 impl Default for SymbolAux {

@@ -679,6 +679,7 @@ pub(crate) struct PendingComdatSignature {
     pub name_len: u32,
 }
 
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<PendingComdatSignature>() == 24);
 
 /// RISC-V attributes read from `.riscv.attributes`.
