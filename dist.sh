@@ -62,6 +62,10 @@ esac
 
 rust_version=1.97.1
 
+# Switch to the pinned snapshot.debian.org sources that the Debian images
+# ship commented out; the live mirrors no longer carry every architecture.
+apt_setup="sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list"
+
 case $arch in
 x86_64)
   # Debian 9 (Stretch) released in June 2017.
@@ -69,21 +73,18 @@ x86_64)
   # We use a Google-provided mirror (mirror.gcr.io) instead of the official
   # Docker Hub (docker.io) because docker.io has a strict rate limit policy.
   base_image=mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
-  apt_setup="sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list"
   rust_target=x86_64-unknown-linux-gnu
   rust_sha256=b4cdbc7cc6b0ee0a2666b1872769fdb2ad8393b28b63952f6493b4b400e4832b
   ;;
 aarch64)
   # Debian 11 (Bullseye) released in August 2021.
   base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
-  apt_setup=:
   rust_target=aarch64-unknown-linux-gnu
   rust_sha256=2f2496c70bd336a66a4c8baf2d303ba161f3552f192444c3639ba903c7c1e2c5
   ;;
 arm)
   # Debian 11 (Bullseye) released in August 2021.
   base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
-  apt_setup=:
   rust_target=armv7-unknown-linux-gnueabihf
   rust_sha256=e89c5e33aaddc6ef56857000c9117875c2997e9a1a500bd7b16277c9874b002f
   ;;
@@ -96,14 +97,12 @@ riscv64)
 ppc64le)
   # Debian 11 (Bullseye) released in August 2021.
   base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
-  apt_setup=:
   rust_target=powerpc64le-unknown-linux-gnu
   rust_sha256=ff524eef5a59d801df09ccad5cdaf9ea1f0a07d75cbed2a7e9f013a9eb76a3c1
   ;;
 s390x)
   # Debian 11 (Bullseye) released in August 2021.
   base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
-  apt_setup=:
   rust_target=s390x-unknown-linux-gnu
   rust_sha256=808268af9e880d41b8cb32b242e38c9bd3ea7aba6409b02fbffa0fbc5370c538
   ;;
