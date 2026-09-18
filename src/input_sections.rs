@@ -284,6 +284,9 @@ impl<E: Target> InputSection<E> {
         }
 
         let (sh_size, p2align) = if compressed {
+            if contents.len() < ElfChdr::<E>::size() {
+                fatal!("{file}:({name}): corrupted compressed section");
+            }
             let chdr = record_from_bytes::<ElfChdr<E>>(contents);
             (chdr.ch_size(), to_p2align(chdr.ch_addralign()))
         } else {
@@ -555,7 +558,11 @@ impl<E: Target> InputSection<E> {
         buf: &mut [u8],
     ) {
         if !self.is_compressed() {
-            buf.copy_from_slice(&self.contents()[..buf.len()]);
+            match self.contents() {
+                // A NOBITS section has no contents and reads as zeros.
+                [] => buf.fill(0),
+                contents => buf.copy_from_slice(&contents[..buf.len()]),
+            }
             return;
         }
 
