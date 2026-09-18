@@ -861,6 +861,7 @@ fn parse_number(opt: &str, value: &str) -> i64 {
 }
 
 fn from_hex(c: u8) -> u8 {
+    debug_assert!(c.is_ascii_hexdigit());
     match c {
         b'0'..=b'9' => c - b'0',
         b'a'..=b'f' => c - b'a' + 10,
