@@ -20,8 +20,8 @@ use crate::cmdline::Args;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{
-    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeInfo, RelocationSpan,
-    SFrameFde, SectionList,
+    CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeInfo, SFrameFde,
+    SectionList,
 };
 use crate::mapped_file::MappedFile;
 use crate::symbol::{
@@ -824,7 +824,7 @@ impl<E: Target> ObjectFile<E> {
     }
 
     #[inline(always)]
-    fn input_relocation_data(&self, relsec_idx: u32) -> &'static [u8] {
+    fn input_relocation_data(&self, relsec_idx: u32) -> &[u8] {
         self.base.section_contents_from_shdr(&self.base.shdrs[relsec_idx as usize])
     }
 }
@@ -1181,18 +1181,6 @@ impl<E: Target> ObjectFile<E> {
         }
 
         RelocationIter::Ordinary(self.relocations(Some(relsec_idx)).iter().copied())
-    }
-
-    fn relocation_span(&self, relsec_idx: Option<u32>) -> RelocationSpan {
-        let Some(relsec_idx) = relsec_idx else {
-            return RelocationSpan::Input(&[]);
-        };
-        let rels = self.decoded_crel.get(relsec_idx as usize);
-        if rels.is_some_and(Option::is_some) {
-            RelocationSpan::SideTable(relsec_idx)
-        } else {
-            RelocationSpan::Input(self.input_relocation_data(relsec_idx))
-        }
     }
 
     /// Returns relocations for rewriting. Ordinary records live in the
@@ -1992,7 +1980,7 @@ impl<E: Target> ObjectFile<E> {
         for &shndx in &eh_frame_sections {
             let isec = self.section_at(shndx);
             let contents = isec.contents();
-            let relocations = self.relocation_span(isec.relsec_idx());
+            let relsec_idx = isec.relsec_idx();
             let rels = isec.rels(self);
             let cies_begin = self.cies.len();
             let mut new_cies: Vec<CieRecord> = Vec::new();
@@ -2024,7 +2012,7 @@ impl<E: Target> ObjectFile<E> {
                         input_offset: begin_offset as u32,
                         output_offset: 0,
                         rel_idx: rel_begin as u32,
-                        relocations,
+                        relsec_idx,
                         icf_idx: 0,
                         fde_ptr_size: 0,
                         is_leader: false,
