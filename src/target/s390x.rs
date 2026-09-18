@@ -263,7 +263,7 @@ impl Target for S390x {
         let file = &ctx.objs[isec.file.index()];
         let isec_addr = isec.addr(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
-        for (i, rel_mut) in rels.iter_mut().enumerate() {
+        for rel_mut in rels.iter_mut() {
             let rel = *rel_mut;
             if rel.r_type() == R_NONE || Self::is_absrel(&rel) {
                 continue;
@@ -281,7 +281,7 @@ impl Target for S390x {
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             // R_390_*DBL relocs should never refer to a symbol at an odd address
             let check_dbl = |val: i64, lo: i64, hi: i64| {
                 check(val, lo, hi);
@@ -464,7 +464,7 @@ impl Target for S390x {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
@@ -472,7 +472,7 @@ impl Target for S390x {
             };
             let off = rel.r_offset() as usize;
             let sa = s.wrapping_add(a);
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
 
             match rel.r_type() {
                 R_390_32 => {

@@ -400,7 +400,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             let pcrel = sa.wrapping_sub(p);
             let tprel = sa.wrapping_sub(ctx.tp_addr);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i - 1, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let loc = &mut buf[off..];
 
             match rel.r_type() {
@@ -694,14 +694,14 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
                 continue;
             };
             let off = rel.r_offset() as usize;
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let loc = &mut buf[off..];
 
             match rel.r_type() {

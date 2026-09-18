@@ -427,7 +427,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let osec = &ctx.output_sections[isec.output_section.expect("output section").index()];
 
-        for (i, rel) in rels.iter().enumerate() {
+        for rel in rels {
             if rel.r_type() == R_NONE || rel.r_type() == R_ARM_V4BX || Self::is_absrel(rel) {
                 continue;
             }
@@ -445,7 +445,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel, val, lo, hi);
             // A thunk has two entry points: +0 for Thumb, +4 for ARM.
             let thumb_thunk = || sym.thunk_addr(ctx, p);
             let arm_thunk = || sym.thunk_addr(ctx, p) + 4;

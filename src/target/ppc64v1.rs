@@ -471,7 +471,7 @@ impl Target for Ppc64V1 {
         let toc = toc(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
 
-        for (i, rel) in rels.iter().enumerate() {
+        for rel in rels {
             if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
@@ -492,7 +492,7 @@ impl Target for Ppc64V1 {
                 R_PPC64_TOC16_HA => write_ub16(loc, ha(sa.wrapping_sub(toc)) as u16),
                 R_PPC64_TOC16_LO => write_ub16(loc, lo(sa.wrapping_sub(toc)) as u16),
                 R_PPC64_TOC16_DS => {
-                    isec.check_range(ctx, i, sa.wrapping_sub(toc) as i64, -(1 << 15), 1 << 15);
+                    isec.check_range(ctx, rel, sa.wrapping_sub(toc) as i64, -(1 << 15), 1 << 15);
                     or16(loc, sa.wrapping_sub(toc) & 0xfffc);
                 }
                 R_PPC64_TOC16_LO_DS => or16(loc, sa.wrapping_sub(toc) & 0xfffc),
@@ -502,7 +502,7 @@ impl Target for Ppc64V1 {
                     if sym.has_plt(&ctx.symbols) || !is_int(val, 26) {
                         val = sym.thunk_addr(ctx, p).wrapping_add(a).wrapping_sub(p) as i64;
                     }
-                    isec.check_range(ctx, i, val, -(1 << 25), 1 << 25);
+                    isec.check_range(ctx, rel, val, -(1 << 25), 1 << 25);
                     or32(loc, bits(val as u64, 25, 2) << 2);
 
                     // If a callee is an external function, PLT saves %r2 to the
@@ -559,7 +559,7 @@ impl Target for Ppc64V1 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
@@ -571,7 +571,7 @@ impl Target for Ppc64V1 {
             match rel.r_type() {
                 R_PPC64_ADDR64 => write_ub64(loc, isec.tombstone(ctx, sym, frag).unwrap_or(sa)),
                 R_PPC64_ADDR32 => {
-                    isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
+                    isec.check_range(ctx, &rel, sa as i64, 0, 1 << 32);
                     write_ub32(loc, sa as u32);
                 }
                 R_PPC64_DTPREL64 => write_ub64(loc, sa.wrapping_sub(ctx.dtp_addr)),
