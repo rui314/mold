@@ -519,7 +519,7 @@ impl Arch for I386 {
 
     fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
         match rel.r_type() {
-            R_386_NONE => {}
+            R_386_NONE | R_386_TLS_DESC_CALL => {}
             R_386_8 | R_386_PC8 => loc[0] = val as u8,
             R_386_16 | R_386_PC16 => write_u16(loc, val as u16),
             R_386_32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X | R_386_PLT32 | R_386_GOTOFF

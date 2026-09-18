@@ -771,7 +771,7 @@ where
     fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
         let v = val as u64;
         match rel.r_type() {
-            R_ARM_NONE => {}
+            R_ARM_NONE | R_ARM_V4BX => {}
             R_ARM_ABS32 | R_ARM_REL32 | R_ARM_BASE_PREL | R_ARM_GOTOFF32 | R_ARM_GOT_PREL
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1
@@ -782,10 +782,11 @@ where
             R_ARM_THM_JUMP11 => {
                 End::write_u16(loc, (End::read_u16(loc) & 0xf800) | b(v, 11, 1) as u16)
             }
+            R_ARM_THM_JUMP19 => write_thm_b21::<End>(loc, val as u32),
             R_ARM_THM_CALL | R_ARM_THM_JUMP24 | R_ARM_THM_TLS_CALL => {
                 write_thm_b25::<End>(loc, val as u32)
             }
-            R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 => {
+            R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 | R_ARM_TLS_CALL => {
                 End::write_u32(loc, (End::read_u32(loc) & 0xff00_0000) | b(v, 25, 2))
             }
             R_ARM_MOVW_PREL_NC | R_ARM_MOVW_ABS_NC | R_ARM_MOVT_PREL | R_ARM_MOVT_ABS => {
