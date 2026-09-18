@@ -33,5 +33,5 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     E::Endian::write_u32(&mut buf[4..], content_size);
     E::Endian::write_u32(&mut buf[8..], NT_FDO_PACKAGING_METADATA);
     buf[12..16].copy_from_slice(b"FDO\0");
-    write_cstr(&mut buf[16..], ctx.args.package_metadata.as_bytes()); // Content
+    write_cstr(&mut buf[16..], &ctx.args.package_metadata); // Content
 }

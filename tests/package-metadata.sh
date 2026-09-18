@@ -16,3 +16,7 @@ readelf -x .note.package $t/exe2 | grep -F '{"foo":"bar"}'
 
 not $CC -B. -o $t/exe3 $t/a.o -Wl,--package-metadata='foo%x' |&
   grep 'invalid string: foo%x'
+
+# The string is arbitrary bytes and need not be UTF-8.
+$CC -B. -o $t/exe4 $t/a.o -Wl,--package-metadata='%FF%41{}'
+readelf -x .note.package $t/exe4 | grep -q ff417b7d

@@ -516,7 +516,7 @@ pub struct Args {
     pub dependency_file: PathBuf,
     pub dynamic_linker: PathBuf,
     pub output: PathBuf,
-    pub package_metadata: String,
+    pub package_metadata: Vec<u8>,
     pub plugin: PathBuf,
     pub print_gc_sections: Option<ReportOutput>,
     pub print_icf_sections: Option<ReportOutput>,
@@ -651,7 +651,7 @@ impl Default for Args {
             dependency_file: PathBuf::new(),
             dynamic_linker: PathBuf::new(),
             output: PathBuf::from("a.out"),
-            package_metadata: String::new(),
+            package_metadata: Vec::new(),
             plugin: PathBuf::new(),
             print_gc_sections: None,
             print_icf_sections: None,
@@ -877,26 +877,26 @@ fn parse_hex_build_id(arg: &str) -> Vec<u8> {
     digits.as_bytes().chunks(2).map(|pair| (from_hex(pair[0]) << 4) | from_hex(pair[1])).collect()
 }
 
-fn parse_package_metadata(arg: &str) -> String {
-    let bytes = arg.as_bytes();
+// The argument is arbitrary bytes with `%XX` escapes.
+fn parse_package_metadata(arg: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if i + 2 >= bytes.len()
-                || !bytes[i + 1].is_ascii_hexdigit()
-                || !bytes[i + 2].is_ascii_hexdigit()
+    while i < arg.len() {
+        if arg[i] == b'%' {
+            if i + 2 >= arg.len()
+                || !arg[i + 1].is_ascii_hexdigit()
+                || !arg[i + 2].is_ascii_hexdigit()
             {
-                fatal!("--package-metadata: invalid string: {arg}");
+                fatal!("--package-metadata: invalid string: {}", util::display(arg));
             }
-            out.push((from_hex(bytes[i + 1]) << 4) | from_hex(bytes[i + 2]));
+            out.push((from_hex(arg[i + 1]) << 4) | from_hex(arg[i + 2]));
             i += 3;
         } else {
-            out.push(bytes[i]);
+            out.push(arg[i]);
             i += 1;
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
+    out
 }
 
 fn read_retain_symbols_file(chroot: &Path, path: &Path) -> Vec<&'static [u8]> {
@@ -1498,8 +1498,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             cursor.read_switch("use-android-relr-tags", "no-use-android-relr-tags")
         {
             a.use_android_relr_tags = value;
-        } else if read_arg!("package-metadata") {
-            a.package_metadata = parse_package_metadata(arg);
+        } else if read_arg!("package-metadata", true) {
+            a.package_metadata = parse_package_metadata(raw_arg.as_encoded_bytes());
         } else if cursor.read_flag("stats") {
             a.stats = true;
             Counter::enable();
