@@ -737,7 +737,7 @@ impl<E: Arch> InputSection<E> {
     #[cold]
     fn report_out_of_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
         let file = &ctx.objs[self.file.index()];
-        let rel = self.rels(file)[rel_idx];
+        let rel = self.relocations(ctx).nth(rel_idx).expect("relocation index");
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",
