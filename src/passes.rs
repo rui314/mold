@@ -2389,15 +2389,26 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 
     // Word-size absolute relocations (e.g. R_X86_64_64) are handled
     // separately because they can be promoted to dynamic relocations.
+    // Promoting a symbol changes how relocations against it in other
+    // sections are classified, so symbols are promoted for all sections
+    // before any section is scanned. Otherwise, the result would depend
+    // on which section happened to be scanned first.
     let results: Vec<(OutputSectionId, Vec<crate::chunks::output_section::AbsRel>, Vec<u64>)> = {
         let ctx_ref: &Context<E> = ctx;
-        (0..ctx_ref.output_sections.len())
+        let abs_rels: Vec<_> = (0..ctx_ref.output_sections.len())
             .into_par_iter()
             .map(|i| OutputSectionId::new(i as u32))
             .filter(|&id| ctx_ref.output_sections[id.index()].hdr.is_alloc())
-            .map(|id| {
-                let (abs_rels, offsets) =
-                    crate::chunks::output_section::scan_abs_relocations(ctx_ref, id);
+            .map(|id| (id, chunks::output_section::collect_abs_relocations(ctx_ref, id)))
+            .collect();
+        abs_rels.par_iter().for_each(|(id, abs_rels)| {
+            chunks::output_section::promote_abs_relocations(ctx_ref, *id, abs_rels);
+        });
+        abs_rels
+            .into_par_iter()
+            .map(|(id, mut abs_rels)| {
+                let offsets =
+                    chunks::output_section::scan_abs_relocations(ctx_ref, id, &mut abs_rels);
                 (id, abs_rels, offsets)
             })
             .collect()
