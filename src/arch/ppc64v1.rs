@@ -212,7 +212,11 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                 sym.value = rel.r_addend() as u64;
             });
         }
-        // Sort symbols so that get_opd_sym_at() can do binary search.
+        // Sort symbols by descriptor so that we can binary search them. Aliases
+        // share a descriptor, and the stable sort keeps them in symbol table
+        // order, so the lower bound is the first alias, which is the local
+        // symbol if there is one. Binding a section-relative reference to a
+        // global alias instead would make it preemptible.
         descriptors.sort_by_key(|&(offset, _)| offset);
 
         // Rewrite relocations so that they directly refer to .opd.
@@ -231,14 +235,14 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
                 if !refers_to_opd[rel.r_sym() as usize] {
                     continue;
                 }
-                match descriptors
-                    .binary_search_by_key(&(rel.r_addend() as u64), |&(offset, _)| offset)
-                {
-                    Ok(n) => {
-                        rel.set_r_sym(descriptors[n].1);
+                let offset = rel.r_addend() as u64;
+                let n = descriptors.partition_point(|&(o, _)| o < offset);
+                match descriptors.get(n) {
+                    Some(&(o, idx)) if o == offset => {
+                        rel.set_r_sym(idx);
                         rel.set_r_addend(0);
                     }
-                    Err(_) => unresolved = unresolved.or(Some(*rel)),
+                    _ => unresolved = unresolved.or(Some(*rel)),
                 }
             }
             if let Some(rel) = unresolved {
