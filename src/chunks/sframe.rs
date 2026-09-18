@@ -130,7 +130,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut fre_off = 0usize;
     for (i, &(fi, fi_idx)) in sframe.fdes.iter().enumerate() {
         let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
-        buf[fre_base + fre_off..fre_base + fre_off + fde.fre.len()].copy_from_slice(fde.fre);
+        buf[fre_base + fre_off..][..fde.fre.len()].copy_from_slice(fde.fre);
 
         let func_start_offset = if ctx.args.relocatable {
             0

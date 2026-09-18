@@ -67,8 +67,7 @@ pub struct OutputSectionId(NonZeroU32);
 impl OutputSectionId {
     #[inline]
     pub fn new(index: u32) -> Self {
-        let encoded = index.checked_add(1).expect("too many output sections");
-        Self(NonZeroU32::new(encoded).unwrap())
+        Self(index.checked_add(1).and_then(NonZeroU32::new).expect("too many output sections"))
     }
 
     #[inline]
@@ -158,11 +157,10 @@ pub struct ChunkHeader<E: Target> {
     pub relr: Vec<u64>,
     pub is_relro: bool,
 
-    /// For --gdb-index
-    // Some synethetic sections add local symbols to the output.
-    // For example, range extension thunks adds function_name@thunk
-    // symbol for each thunk entry. The following members are used
-    // for such synthesizing symbols.
+    /// Some synthetic sections add local symbols to the output. For
+    /// example, range extension thunks add a function_name@thunk symbol
+    /// for each thunk entry. The following members are used for such
+    /// synthesized symbols.
     pub local_symtab_idx: u32,
     pub num_local_symtab: u32,
     pub strtab_size: u64,

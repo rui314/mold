@@ -39,13 +39,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         return;
     }
     let w = E::WORD_SIZE;
-    let write = |buf: &mut [u8], idx: usize, val: u64| {
-        if E::IS_64 {
-            E::write_u64(&mut buf[idx * w..], val);
-        } else {
-            E::write_u32(&mut buf[idx * w..], val as u32);
-        }
-    };
+    let write =
+        |buf: &mut [u8], idx: usize, val: u64| Word::<E>::new(val).write(&mut buf[idx * w..]);
     // The first slot of .got.plt points to _DYNAMIC, as requested by
     // the psABI. The second and the third slots are reserved by the psABI.
     write(buf, 0, ctx.dynamic.as_ref().map_or(0, |d| d.shdr.sh_addr.get()));
