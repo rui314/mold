@@ -60,7 +60,17 @@ fn encode_path(basedir: &OsStr, path: &Path) -> Vec<u8> {
     let len = b" path=\n".len() + bytes.len();
     let total = len + len.to_string().len();
     let total = len + total.to_string().len();
-    let mut out = format!("{total} path=").into_bytes();
+
+    // PAX defines the `path` value as UTF-8. If a filename isn't valid
+    // UTF-8, we have to declare that we are storing raw bytes, or bsdtar
+    // (the tar of FreeBSD and macOS) fails to extract the archive. We
+    // don't declare it for every file because GNU tar doesn't know the
+    // keyword and prints a warning for each occurrence.
+    let mut out = Vec::new();
+    if path.to_str().is_none() {
+        out.extend_from_slice(b"21 hdrcharset=BINARY\n");
+    }
+    out.extend_from_slice(format!("{total} path=").as_bytes());
     out.extend_from_slice(bytes);
     out.push(b'\n');
     out

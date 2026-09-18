@@ -78,7 +78,7 @@ fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
     let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
         .expect("invalid concurrent-map layout");
     // SAFETY: the layout has nonzero size.
-    let entries = unsafe { alloc_zeroed(layout).cast() };
+    let entries = unsafe { alloc_zeroed(layout).cast::<Entry<T>>() };
     if entries.is_null() {
         panic!("cannot allocate {bufsize} bytes for concurrent map");
     }

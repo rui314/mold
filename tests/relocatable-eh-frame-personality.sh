@@ -30,7 +30,7 @@ EOF
 
 ./mold -r -o $t/c.o $t/a.o $t/b.o
 
-readelf -rW $t/c.o | sed -n '/\.rela\?\.eh_frame/,/^$/p' | grep '^0' |
+readelf -rW $t/c.o | sed -nE '/\.rela?\.eh_frame/,/^$/p' | grep '^0' |
   awk '{ print $1 }' > $t/log
 sort -c $t/log
 
