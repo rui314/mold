@@ -17,7 +17,7 @@ default-members = [".", "cli", "arch/*", "tests"]
 
 [workspace.package]
 version = "2.42.1"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]

@@ -161,19 +161,21 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
         fatal!("mold-wrapper.so is missing");
     };
 
-    // Set environment variables
-    std::env::set_var("LD_PRELOAD", &dso);
-    std::env::set_var("MOLD_PATH", &self_path);
-
-    use std::os::unix::process::CommandExt;
-    let cmd = std::path::Path::new(&argv[2]).file_name().unwrap_or_default();
     // If ld, ld.lld or ld.gold is specified, run mold instead
-    let err = if cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold" {
-        std::process::Command::new(&self_path).args(&argv[3..]).exec()
+    let cmd = std::path::Path::new(&argv[2]).file_name().unwrap_or_default();
+    let program = if cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold" {
+        self_path.as_os_str()
     } else {
-        std::process::Command::new(&argv[2]).args(&argv[3..]).exec()
+        &argv[2]
     };
-    // Execute a given command
+
+    // Execute a given command with the wrapper preloaded
+    use std::os::unix::process::CommandExt;
+    let err = std::process::Command::new(program)
+        .args(&argv[3..])
+        .env("LD_PRELOAD", &dso)
+        .env("MOLD_PATH", &self_path)
+        .exec();
     fatal!("mold -run failed: {}: {err}", argv[2].to_string_lossy());
 }
 

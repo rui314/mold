@@ -200,7 +200,7 @@ type ClaimFileHandler = unsafe extern "C" fn(*const PluginInputFile, *mut c_int)
 type Hook = unsafe extern "C" fn() -> c_int;
 type NewInputHandler = unsafe extern "C" fn(*const PluginInputFile) -> c_int;
 
-extern "C" {
+unsafe extern "C" {
     /// The printf-like diagnostics callback, defined in `c/lto-message.c`.
     fn mold_lto_message(level: c_int, fmt: *const c_char, ...) -> c_int;
 }
@@ -228,7 +228,7 @@ struct ClaimedSymbol {
 
 impl ClaimedSymbol {
     unsafe fn from_plugin(sym: &PluginSymbol) -> ClaimedSymbol {
-        let bytes = |p: *const c_char| CStr::from_ptr(p).to_bytes().to_vec();
+        let bytes = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_bytes().to_vec();
         ClaimedSymbol {
             name: bytes(sym.name),
             comdat_key: (!sym.comdat_key.is_null()).then(|| bytes(sym.comdat_key)),
@@ -292,7 +292,7 @@ static CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 /// # Safety
 ///
 /// `msg` must point to a NUL-terminated string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mold_lto_report(level: c_int, msg: *const c_char) {
     let msg = unsafe { CStr::from_ptr(msg) }.to_string_lossy();
     match level {
@@ -322,15 +322,16 @@ unsafe extern "C" fn add_symbols(
     nsyms: c_int,
     psyms: *const PluginSymbol,
 ) -> c_int {
-    let syms = std::slice::from_raw_parts(psyms, nsyms as usize);
-    *CLAIMED_SYMBOLS.lock().unwrap() = syms.iter().map(|s| ClaimedSymbol::from_plugin(s)).collect();
+    let syms = unsafe { std::slice::from_raw_parts(psyms, nsyms as usize) };
+    *CLAIMED_SYMBOLS.lock().unwrap() =
+        syms.iter().map(|s| unsafe { ClaimedSymbol::from_plugin(s) }).collect();
     LDPS_OK
 }
 
 /// Receives an object file the plugin compiled.
 unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
-    let ctx = &mut *(CONTEXT.load(Ordering::Acquire) as *mut Context<E>);
-    let path = crate::util::os_str(CStr::from_ptr(path).to_bytes());
+    let ctx = unsafe { &mut *(CONTEXT.load(Ordering::Acquire) as *mut Context<E>) };
+    let path = crate::util::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
     let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
 
@@ -367,8 +368,8 @@ unsafe extern "C" fn set_extra_library_path(_path: *const c_char) -> c_int {
 }
 
 unsafe extern "C" fn get_view(handle: *const c_void, view: *mut *const c_void) -> c_int {
-    let mf = &*(handle as *const MappedFile);
-    *view = mf.data().as_ptr() as *const c_void;
+    let mf = unsafe { &*(handle as *const MappedFile) };
+    unsafe { *view = mf.data().as_ptr() as *const c_void };
     LDPS_OK
 }
 
@@ -449,7 +450,7 @@ unsafe extern "C" fn get_symbols_v2<E: Arch>(
     nsyms: c_int,
     psyms: *mut PluginSymbol,
 ) -> c_int {
-    get_symbols::<E>(handle, nsyms, psyms, true)
+    unsafe { get_symbols::<E>(handle, nsyms, psyms, true) }
 }
 
 unsafe extern "C" fn get_symbols_v3<E: Arch>(
@@ -457,7 +458,7 @@ unsafe extern "C" fn get_symbols_v3<E: Arch>(
     nsyms: c_int,
     psyms: *mut PluginSymbol,
 ) -> c_int {
-    get_symbols::<E>(handle, nsyms, psyms, false)
+    unsafe { get_symbols::<E>(handle, nsyms, psyms, false) }
 }
 
 /// get_symbols teaches the LTO plugin as to how we have resolved symbols.
@@ -474,8 +475,8 @@ unsafe fn get_symbols<E: Arch>(
     psyms: *mut PluginSymbol,
     is_v2: bool,
 ) -> c_int {
-    let ctx = &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>);
-    let psyms = std::slice::from_raw_parts_mut(psyms, nsyms as usize);
+    let ctx = unsafe { &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>) };
+    let psyms = unsafe { std::slice::from_raw_parts_mut(psyms, nsyms as usize) };
     let handle = handle as *const MappedFile;
     let Some(file) = ctx.objs.iter().find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {
@@ -540,8 +541,10 @@ unsafe extern "C" fn get_api_version(
     }
     // The plugin reads the string after this function has returned
     static LINKER_VERSION: OnceLock<CString> = OnceLock::new();
-    *linker_identifier = c"mold".as_ptr();
-    *linker_version = LINKER_VERSION.get_or_init(|| CString::new(VERSION).unwrap()).as_ptr();
+    unsafe {
+        *linker_identifier = c"mold".as_ptr();
+        *linker_version = LINKER_VERSION.get_or_init(|| CString::new(VERSION).unwrap()).as_ptr();
+    }
     if LAPI_V1 <= maximal_api_supported {
         HOOKS.lock().unwrap().gcc_api_v1 = true;
         return LAPI_V1;
