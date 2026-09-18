@@ -42,7 +42,7 @@ pub fn new<E: Target>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<
     chdr.set_ch_size(hdr.shdr.sh_size.get());
     chdr.set_ch_addralign(hdr.shdr.sh_addralign.get());
     let flags = hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64;
-    let size = (std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64;
+    let size = (ElfChdr::<E>::size() + compressor.compressed_size()) as u64;
     let mut new_hdr = ChunkHeader::<E>::with_name(hdr.name, hdr.shdr.sh_type.get(), flags);
     new_hdr.shndx = hdr.shndx;
     new_hdr.shdr = hdr.shdr;
@@ -62,5 +62,5 @@ pub fn new<E: Target>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<
 pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.compressed_sections[i as usize];
     sec.chdr.write(buf);
-    sec.compressor.write_to(&mut buf[std::mem::size_of::<ElfChdr<E>>()..]);
+    sec.compressor.write_to(&mut buf[ElfChdr::<E>::size()..]);
 }

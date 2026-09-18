@@ -12,14 +12,14 @@ use crate::target::Target;
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".rela.sframe", SHT_RELA, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-    let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+    let entsize = ElfRel::<E>::size() as u64;
     hdr.shdr.sh_entsize.set(entsize);
     hdr
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let n = ctx.sframe.fdes.len();
-    let size = (n * std::mem::size_of::<ElfRel<E>>()) as u64;
+    let size = (n * ElfRel::<E>::size()) as u64;
     let sec = ctx.sframe_reloc.as_mut().unwrap();
     sec.shdr.sh_size.set(size);
     sec.shdr.sh_link.set(ctx.symtab.shndx);

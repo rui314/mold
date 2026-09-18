@@ -91,7 +91,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
         } else {
             define(rel, ctx.reldyn.hdr.shdr.sh_addr.get());
             define(relsz, ctx.reldyn.hdr.shdr.sh_size.get());
-            define(relent, std::mem::size_of::<ElfRel<E>>() as u64);
+            define(relent, ElfRel::<E>::size() as u64);
         }
     }
 
@@ -129,7 +129,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
 
     if ctx.dynsym.hdr.shdr.sh_size.get() != 0 {
         define(DT_SYMTAB, ctx.dynsym.hdr.shdr.sh_addr.get());
-        define(DT_SYMENT, std::mem::size_of::<ElfSym<E>>() as u64);
+        define(DT_SYMENT, ElfSym::<E>::size() as u64);
     }
     if ctx.dynstr.hdr.shdr.sh_size.get() != 0 {
         define(DT_STRTAB, ctx.dynstr.hdr.shdr.sh_addr.get());

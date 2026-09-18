@@ -9,14 +9,14 @@ use crate::target::Target;
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let (name, ty) = if E::IS_RELA { (".rela.plt", SHT_RELA) } else { (".rel.plt", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
-    let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
+    let entsize = ElfRel::<E>::size() as u64;
     hdr.shdr.sh_entsize.set(entsize);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    let size = ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64;
+    let size = ctx.plt.symbols.len() as u64 * ElfRel::<E>::size() as u64;
     ctx.relplt.shdr.sh_size.set(size);
     ctx.relplt.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     if !E::IS_SPARC {

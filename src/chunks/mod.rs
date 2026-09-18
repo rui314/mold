@@ -298,9 +298,8 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     if let Some(phdr) = &ctx.phdr {
         ehdr.e_phoff.set(phdr.hdr.shdr.sh_offset.get());
-        ehdr.e_phentsize.set(std::mem::size_of::<ElfPhdr<E>>() as u16);
-        ehdr.e_phnum
-            .set((phdr.hdr.shdr.sh_size.get() / std::mem::size_of::<ElfPhdr<E>>() as u64) as u16);
+        ehdr.e_phentsize.set(ElfPhdr::<E>::size() as u16);
+        ehdr.e_phnum.set((phdr.hdr.shdr.sh_size.get() / ElfPhdr::<E>::size() as u64) as u16);
     }
 
     if let Some(shdr) = &ctx.shdr {
@@ -631,7 +630,7 @@ pub fn update_phdr<E: Target>(ctx: &mut Context<E>) {
         ctx.tp_addr = tls::tp_addr::<E>(phdr);
         ctx.dtp_addr = tls::dtp_addr::<E>(phdr);
     }
-    let size = (phdrs.len() * std::mem::size_of::<ElfPhdr<E>>()) as u64;
+    let size = (phdrs.len() * ElfPhdr::<E>::size()) as u64;
     let phdr = ctx.phdr.as_mut().unwrap();
     phdr.hdr.shdr.sh_size.set(size);
     phdr.phdrs = phdrs;

@@ -15,7 +15,7 @@ use crate::target::{Family, Target};
 // behavior of the program. Symbols in .symtab are mainly for debugging.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
-    let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
+    let entsize = ElfSym::<E>::size() as u64;
     hdr.shdr.sh_entsize.set(entsize);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr
@@ -52,7 +52,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     }
 
     let first_global = ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx);
-    let size = if nsyms == 1 { 0 } else { nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64 };
+    let size = if nsyms == 1 { 0 } else { nsyms as u64 * ElfSym::<E>::size() as u64 };
     ctx.symtab.shdr.sh_info.set(first_global);
     ctx.symtab.shdr.sh_link.set(ctx.strtab.shndx);
     ctx.symtab.shdr.sh_size.set(size);
@@ -65,7 +65,7 @@ pub fn copy_buf<E: Target>(
     strtab: &mut [u8],
     mut xindex: Option<&mut [u8]>,
 ) {
-    let size = std::mem::size_of::<ElfSym<E>>();
+    let size = ElfSym::<E>::size();
     symtab[..size].fill(0);
     if let Some(xindex) = xindex.as_deref_mut() {
         xindex.fill(0);
