@@ -87,7 +87,6 @@ struct Options {
     list: bool,
 }
 
-#[derive(Clone)]
 struct TestJob {
     target: Arc<Target>,
     script: PathBuf,
@@ -267,9 +266,7 @@ fn command_exists(command: &str) -> bool {
         return path.is_file();
     }
     env::var_os("PATH")
-        .into_iter()
-        .flat_map(|paths| env::split_paths(&paths).collect::<Vec<_>>())
-        .any(|dir| dir.join(command).is_file())
+        .is_some_and(|paths| env::split_paths(&paths).any(|dir| dir.join(command).is_file()))
 }
 
 fn supports_power10() -> bool {
@@ -357,7 +354,6 @@ fn discover_scripts(test_dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         scripts.push((name, path));
     }
-    scripts.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(scripts)
 }
 
@@ -471,8 +467,11 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
     let stderr =
         log.try_clone().map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
     let mut command = Command::new(&job.script);
+    // A script that read the terminal would stop in its background process
+    // group until the timeout; give it end-of-file instead.
     command
         .current_dir(root)
+        .stdin(Stdio::null())
         .env("MACHINE", &job.target.machine)
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(stderr));
@@ -503,6 +502,8 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
             }
             None if start.elapsed() < timeout => thread::sleep(Duration::from_millis(20)),
             None => {
+                // SAFETY: kill has no memory-safety preconditions; the group
+                // id is the pid of the still-unreaped child.
                 #[cfg(unix)]
                 unsafe {
                     libc::kill(-(child.id() as i32), libc::SIGKILL);
@@ -631,16 +632,21 @@ fn print_summary(results: &[TestResult]) -> bool {
 
 pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     let options = parse_options();
-    let work_dir = prepare_work_dir(mold).unwrap_or_else(|err| {
-        eprintln!("mold-tests: {err}");
-        std::process::exit(1);
-    });
-    let (targets, unavailable) = selected_targets(&options);
-    let jobs = make_jobs(cases_dirs, &work_dir, targets, &options.patterns, !options.list)
-        .unwrap_or_else(|err| {
+    let work_dir = match prepare_work_dir(mold) {
+        Ok(dir) => dir,
+        Err(err) => {
             eprintln!("mold-tests: {err}");
-            std::process::exit(1);
-        });
+            return ExitCode::FAILURE;
+        }
+    };
+    let (targets, unavailable) = selected_targets(&options);
+    let jobs = match make_jobs(cases_dirs, &work_dir, targets, &options.patterns, !options.list) {
+        Ok(jobs) => jobs,
+        Err(err) => {
+            eprintln!("mold-tests: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     if options.list {
         print_inventory(&jobs, &unavailable);
