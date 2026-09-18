@@ -982,15 +982,15 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
 // than 6.12.
 #[cfg(unix)]
 fn returns_etxtbsy() -> bool {
+    // SAFETY: utsname consists of byte arrays, so all zeros is a valid value.
     // uname may leave the tail of each string buffer untouched.
-    let mut buf = std::mem::MaybeUninit::<libc::utsname>::zeroed();
-    // SAFETY: buf points to writable storage for a complete utsname.
-    if unsafe { libc::uname(buf.as_mut_ptr()) } != 0 {
+    let mut buf: libc::utsname = unsafe { std::mem::zeroed() };
+    // SAFETY: buf is writable storage for a complete utsname.
+    if unsafe { libc::uname(&mut buf) } != 0 {
         return false;
     }
-    // SAFETY: uname succeeded and initialized the structure, including
-    // NUL-terminated sysname and release strings.
-    let buf = unsafe { buf.assume_init() };
+    // SAFETY: uname succeeded and NUL-terminated the sysname and release
+    // strings.
     let sysname = unsafe { std::ffi::CStr::from_ptr(buf.sysname.as_ptr()) };
     if sysname.to_bytes() != b"Linux" {
         return false;
@@ -1831,15 +1831,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("O1")
             || cursor.read_flag("O2")
             || cursor.read_flag("verbose")
-            || cursor.read_flag("color-diagnostics")
-            || cursor.read_flag("eh-frame-hdr")
             || cursor.read_flag("start-group")
             || cursor.read_flag("end-group")
             || cursor.read_flag("(")
             || cursor.read_flag(")")
-            || cursor.read_flag("fatal-warnings")
-            || cursor.read_flag("enable-new-dtags")
-            || cursor.read_flag("disable-new-dtags")
             || cursor.read_flag("nostdlib")
             || cursor.read_flag("no-add-needed")
             || cursor.read_flag("no-call-graph-profile-sort")
@@ -1850,7 +1845,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("dp")
             || cursor.read_flag("fix-cortex-a53-835769")
             || cursor.read_flag("fix-cortex-a53-843419")
-            || cursor.read_flag("warn-once")
             || cursor.read_flag("nodefaultlibs")
             || cursor.read_flag("warn-constructors")
             || cursor.read_flag("warn-execstack")
