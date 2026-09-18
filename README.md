@@ -138,7 +138,7 @@ GCC or Clang, which you can install with your system's package manager.
 ### Compile mold
 
 ```shell
-git clone --branch stable https://github.com/rui314/mold.git
+git clone https://github.com/rui314/mold.git
 cd mold
 cargo build --release
 ```
