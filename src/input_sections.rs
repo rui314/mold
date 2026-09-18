@@ -1632,14 +1632,10 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
     if entsize == 1 {
         return memchr::memchr(0, &data[pos..]).map(|i| pos + i);
     }
-    let mut p = pos;
-    while p + entsize <= data.len() {
-        if data[p..p + entsize].iter().all(|&b| b == 0) {
-            return Some(p);
-        }
-        p += entsize;
-    }
-    None
+    data[pos..]
+        .chunks_exact(entsize)
+        .position(|entry| entry.iter().all(|&b| b == 0))
+        .map(|i| pos + i * entsize)
 }
 
 // ObjectFile needs a lookup table indexed by ELF section number. A regular
