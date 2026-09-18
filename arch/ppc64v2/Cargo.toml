@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-ppc64v2"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for ppc64v2"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

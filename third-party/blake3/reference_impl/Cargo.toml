@@ -1,8 +1,0 @@
-[package]
-name = "reference_impl"
-version = "0.0.0"
-edition = "2024"
-
-[lib]
-name = "reference_impl"
-path = "reference_impl.rs"

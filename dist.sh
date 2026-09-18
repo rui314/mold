@@ -2,39 +2,33 @@
 #
 # This script creates a mold binary distribution. The output is written to
 # the `dist` directory as `mold-$version-$arch-linux.tar.gz` (e.g.
-# `mold-2.40.0-x86_64-linux.tar.gz`).
+# `mold-2.42.0-x86_64-linux.tar.gz`).
 #
-# This script aims to produce reproducible outputs. That means each time
-# it's run on the same git commit, it generates a bit-for-bit identical
-# binary file regardless of when or where it's executed. This property
-# serves as a strong safeguard against supply chain attacks. With a
-# reproducible build, anyone can independently verify that the binary
-# files published on our GitHub release page were built from the git
-# commit tagged for release by rebuilding the binaries themselves.
+# This script aims to produce reproducible outputs. The container images,
+# Rust toolchain, Cargo dependencies and file timestamps are pinned so that
+# the same git commit can produce a bit-for-bit identical binary file. This
+# property serves as a strong safeguard against supply chain attacks. With
+# a reproducible build, anyone can independently verify that the binary
+# files published on our GitHub release page were built from the git commit
+# tagged for release by rebuilding the binaries themselves.
 #
 # Debian provides snapshot.debian.org to host all historical binary
-# packages. We use it to construct a container image pinned to a
-# particular timestamp. snapshot.debian.org is known to be very slow,
-# but that shouldn't be a big problem for us because we only need that
-# site the first time.
+# packages. Distro package repositories must be pinned as well as the base
+# image before a build is fully reproducible. The loongarch64 build still
+# uses the live Debian sid repository, so it does not yet have that property.
 #
-# The mold executable created by this script is statically linked to
-# libstdc++, but dynamically linked to glibc, libm and a few other
-# libraries, as these libraries are almost always available on any Linux
-# system. We can't statically link glibc because doing so would disable
-# dlopen(), which is required to load the LTO linker plugin.
+# The mold executable created by this script is dynamically linked to the
+# system C runtime and other standard system libraries. We can't statically
+# link glibc because doing so would disable dlopen(), which is required to
+# load the LTO linker plugin.
 #
 # We use a reasonably old Debian version for the build environment because
 # a binary dynamically linked against a newer version of glibc won't work
 # on a system with an older version of glibc.
 #
-# We prefer to build mold with Clang rather than GCC because mold's
-# Identical Code Folding works best with the LLVM address significance
-# table (.llvm_addrsig). Building a release binary with GCC produces a
-# slightly larger binary than with Clang.
-#
-# We need a recent version of Clang to build mold. If it's not available
-# via apt-get, we'll build it ourselves.
+# The Rust toolchain is downloaded from the official Rust distribution
+# site. Its version and SHA-256 hash are recorded below, so the toolchain
+# is another pinned build input.
 #
 # This script can be used to create non-native binaries (e.g., building
 # aarch64 binary on x86-64) because Podman automatically runs everything
@@ -42,7 +36,7 @@
 # non-native builds, you may need to install the qemu-user-static package.
 
 set -e -x
-cd "$(dirname $0)"
+cd "$(dirname "$0")"
 
 usage() {
   echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x | loongarch64 ]"
@@ -52,174 +46,101 @@ usage() {
 case $# in
 0)
   arch=$(uname -m)
-  if [ $arch = arm64 ]; then
+  if [ "$arch" = arm64 ]; then
     arch=aarch64
-  elif [[ $arch = arm* ]]; then
+  elif [[ "$arch" = arm* ]]; then
     arch=arm
   fi
   ;;
 1)
-  arch="$1"
+  arch=$1
   ;;
 *)
   usage
+  ;;
 esac
 
-# Create a Podman image.
-if [ "$GITHUB_REPOSITORY" = '' ]; then
-  image=mold-builder-$arch
-  image_build="podman build --arch $arch -t $image -"
-else
-  # If this script is running on GitHub Actions, we want to cache
-  # the created container image in GitHub's container repostiory.
-  image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  image_build="podman build --arch $arch -t $image --output=type=registry --layers --cache-to $image --cache-from $image -"
-fi
+rust_version=1.97.1
+
+# Switch to the pinned snapshot.debian.org sources that the Debian images
+# ship commented out; the live mirrors no longer carry every architecture.
+apt_setup="sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list"
 
 case $arch in
 x86_64)
   # Debian 9 (Stretch) released in June 2017.
   #
-  # We use a Google-provided mirror (gcr.io) instead of the official Docker
-  # Hub (docker.io) because docker.io has a strict rate limit policy.
-  #
-  # The toolchain in Debian 9 is too old to build mold, so we rebuild it
-  # from source. We download source archives from official sites and build
-  # them locally, rather than downloading pre-built binaries from somewhere
-  # else, to avoid relying on unverifiable third-party binary blobs. Each
-  # archive is checked against the SHA-256 hash recorded below before it is
-  # unpacked, so this git commit alone determines every input of the build.
-  # A compromised network or mirror can only make the build fail, never
-  # change its output. Podman caches the result of each RUN command, so
-  # rebuilding is done only once per host.
-  cat <<EOF | $image_build
-FROM mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
-ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
-  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends wget xz-utils file make gcc g++ git zlib1g-dev libssl-dev ca-certificates && \
-  rm -rf /var/lib/apt/lists
-
-# Build CMake 3.27
-RUN mkdir /build && \
-  cd /build && \
-  wget --progress=dot:mega https://cmake.org/files/v3.27/cmake-3.27.7.tar.gz && \
-  echo '08f71a106036bf051f692760ef9558c0577c42ac39e96ba097e7662bd4158d8e cmake-3.27.7.tar.gz' | sha256sum -c && \
-  tar xf cmake-3.27.7.tar.gz --strip-components=1 && \
-  ./bootstrap --parallel=\$(nproc) && \
-  make -j\$(nproc) && \
-  make install && \
-  rm -rf /build
-
-# Build GCC 14
-RUN mkdir /build && \
-  cd /build && \
-  wget --progress=dot:mega https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz && \
-  echo 'a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9 gcc-14.2.0.tar.xz' | sha256sum -c && \
-  tar xf gcc-14.2.0.tar.xz --strip-components=1 && \
-  mkdir gmp mpc mpfr && \
-  wget --progress=dot:mega https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz && \
-  echo 'a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898 gmp-6.3.0.tar.xz' | sha256sum -c && \
-  tar xf gmp-6.3.0.tar.xz --strip-components=1 -C gmp && \
-  wget --progress=dot:mega https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz && \
-  echo 'ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8 mpc-1.3.1.tar.gz' | sha256sum -c && \
-  tar xf mpc-1.3.1.tar.gz --strip-components=1 -C mpc && \
-  wget --progress=dot:mega https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.1.tar.xz && \
-  echo '277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2 mpfr-4.2.1.tar.xz' | sha256sum -c && \
-  tar xf mpfr-4.2.1.tar.xz --strip-components=1 -C mpfr && \
-  ./configure --prefix=/usr --enable-languages=c,c++ --disable-bootstrap --disable-multilib && \
-  make -j\$(nproc) && \
-  make install && \
-  ln -sf /usr/lib64/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6 && \
-  rm -rf /build
-
-# Build GNU binutils 2.43
-RUN mkdir /build && \
-  cd /build && \
-  wget --progress=dot:mega https://ftp.gnu.org/gnu/binutils/binutils-2.43.tar.xz && \
-  echo 'b53606f443ac8f01d1d5fc9c39497f2af322d99e14cea5c0b4b124d630379365 binutils-2.43.tar.xz' | sha256sum -c && \
-  tar xf binutils-2.43.tar.xz --strip-components=1 && \
-  ./configure --prefix=/usr && \
-  make -j\$(nproc) && \
-  make install && \
-  rm -fr /build
-
-# Build Python 3.12.7
-RUN mkdir /build && \
-  cd /build && \
-  wget --progress=dot:mega https://www.python.org/ftp/python/3.12.7/Python-3.12.7.tar.xz && \
-  echo '24887b92e2afd4a2ac602419ad4b596372f67ac9b077190f459aba390faf5550 Python-3.12.7.tar.xz' | sha256sum -c && \
-  tar xf Python-3.12.7.tar.xz --strip-components=1 && \
-  ./configure && \
-  make -j\$(nproc) && \
-  make install && \
-  rm -rf /build
-
-# Build LLVM 20
-RUN mkdir /build && \
-  cd /build && \
-  wget --progress=dot:mega https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.3/llvm-project-20.1.3.src.tar.xz && \
-  echo 'b6183c41281ee3f23da7fda790c6d4f5877aed103d1e759763b1008bdd0e2c50 llvm-project-20.1.3.src.tar.xz' | sha256sum -c && \
-  tar xf llvm-project-20.1.3.src.tar.xz --strip-components=1 && \
-  mkdir b && \
-  cd b && \
-  cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang ../llvm && \
-  cmake --build . -j\$(nproc) && \
-  cmake --install . --strip && \
-  rm -rf /build
-EOF
+  # We use a Google-provided mirror (mirror.gcr.io) instead of the official
+  # Docker Hub (docker.io) because docker.io has a strict rate limit policy.
+  base_image=mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
+  rust_target=x86_64-unknown-linux-gnu
+  rust_sha256=b4cdbc7cc6b0ee0a2666b1872769fdb2ad8393b28b63952f6493b4b400e4832b
   ;;
-aarch64 | arm | ppc64le | s390x)
-  # Debian 11 (Bullseye) released in August 2021
-  #
-  # We don't want to build Clang for these targets on QEMU becuase it
-  # would take an extremely long time. Also, I believe old Linux boxes
-  # are typically x86-64.
-  cat <<EOF | $image_build
-FROM mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
-ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
-  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-16 cmake git && \
-  ln -sf /usr/bin/clang-16 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-16 /usr/bin/clang++ && \
-  rm -rf /var/lib/apt/lists
-EOF
+aarch64)
+  # Debian 11 (Bullseye) released in August 2021.
+  base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
+  rust_target=aarch64-unknown-linux-gnu
+  rust_sha256=2f2496c70bd336a66a4c8baf2d303ba161f3552f192444c3639ba903c7c1e2c5
+  ;;
+arm)
+  # Debian 11 (Bullseye) released in August 2021.
+  base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
+  rust_target=armv7-unknown-linux-gnueabihf
+  rust_sha256=e89c5e33aaddc6ef56857000c9117875c2997e9a1a500bd7b16277c9874b002f
   ;;
 riscv64)
-  cat <<EOF | $image_build
-FROM mirror.gcr.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
-ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
-  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake git && \
-  ln -sf /usr/bin/clang-18 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
-  rm -rf /var/lib/apt/lists
-EOF
+  base_image=mirror.gcr.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
+  apt_setup="sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources"
+  rust_target=riscv64gc-unknown-linux-gnu
+  rust_sha256=59bec35d8febb2ab918fa41cffbaa5b07146a63bdc33f029ff756d70a3151ece
+  ;;
+ppc64le)
+  # Debian 11 (Bullseye) released in August 2021.
+  base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
+  rust_target=powerpc64le-unknown-linux-gnu
+  rust_sha256=ff524eef5a59d801df09ccad5cdaf9ea1f0a07d75cbed2a7e9f013a9eb76a3c1
+  ;;
+s390x)
+  # Debian 11 (Bullseye) released in August 2021.
+  base_image=mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
+  rust_target=s390x-unknown-linux-gnu
+  rust_sha256=808268af9e880d41b8cb32b242e38c9bd3ea7aba6409b02fbffa0fbc5370c538
   ;;
 loongarch64)
-  cat <<EOF | $image_build
-FROM mirror.gcr.io/loongarch64/debian:sid@sha256:0356df4e494bbb86bb469377a00789a5b42bbf67d5ff649a3f9721b745cbef77
-ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list && \
-  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake git && \
-  ln -sf /usr/bin/clang-19 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
-  rm -rf /var/lib/apt/lists
-EOF
+  base_image=mirror.gcr.io/loongarch64/debian:sid@sha256:0356df4e494bbb86bb469377a00789a5b42bbf67d5ff649a3f9721b745cbef77
+  apt_setup="echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list"
+  rust_target=loongarch64-unknown-linux-gnu
+  rust_sha256=d5a925962854730ae7641420d8337af93988ea4ff47b503a856ec53776c87841
   ;;
 *)
   usage
   ;;
 esac
 
-version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' CMakeLists.txt)
+# Create a Podman image containing the native C tools and a pinned Rust
+# toolchain. The downloaded archive is checked before it is unpacked.
+image=mold-rust-builder-$arch
+archive=rust-$rust_version-$rust_target.tar.gz
+
+podman build --arch "$arch" -t "$image" - <<EOF
+FROM $base_image
+ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
+RUN $apt_setup && \
+  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
+  rm -rf /var/lib/apt/lists
+RUN mkdir /tmp/rust && \
+  cd /tmp/rust && \
+  wget --progress=dot:mega https://static.rust-lang.org/dist/$archive && \
+  echo '$rust_sha256 $archive' | sha256sum -c && \
+  tar xf $archive && \
+  ./${archive%.tar.gz}/install.sh --prefix=/usr/local --disable-ldconfig && \
+  cd / && \
+  rm -rf /tmp/rust
+EOF
+
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 dest=mold-$version-$arch-linux
 
 # Source tarballs available on GitHub don't contain .git directory.
@@ -231,36 +152,42 @@ dest=mold-$version-$arch-linux
 timestamp=$(git log -1 --format=%ct)
 
 # `uname -m` in an ARM32 container running on an ARM64 host reports it
-# not as ARM32 but as ARM64. That confuses BLAKE3's cmake script and
-# erroneously enables NEON SIMD instructions. `setarch` can be used to
-# change the output of `uname -m`.
+# not as ARM32 but as ARM64. Keep the reported machine consistent with
+# the ARM32 userspace for any build tool that inspects it.
 setarch=
-[ $arch = arm ] && setarch='setarch linux32'
+[ "$arch" = arm ] && setarch='setarch linux32'
 
-mkdir -p dist
+mkdir -p dist "target/dist-vendor-$arch"
+
+# Cargo verifies registry packages against the checksums in Cargo.lock and
+# checks out Git dependencies at the commit recorded there. Vendor them in a
+# separate networked step so that the actual build can run without a network.
+# Cargo's own cache is a tmpfs because the libgit2 inside a 32-bit cargo can't
+# read a bind-mounted ext4 directory (readdir fails with EOVERFLOW under QEMU).
+podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 \
+  --pull=never --env CARGO_HOME=/cargo --tmpfs /cargo -v "$(pwd):/mold:ro" \
+  -v "$(pwd)/target/dist-vendor-$arch:/vendor" "$image" $setarch \
+  bash -c 'cd /mold && cargo vendor --locked /vendor/sources > /vendor/config.toml'
 
 # Build mold in a container.
 #
 # SOURCE_DATE_EPOCH is a standardized environment variable that allows
 # build artifacts to appear as if they were built at a specific time.
-# We use it to control how the compiler expands the C/C++ __DATE__ and
-# __TIME__ macros.
-podman run --arch $arch -it --rm --userns=host --pids-limit=-1 --network=none \
-  --pull=never -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image \
-   $setarch bash -c "
+# Fixed source, vendor and target paths keep embedded build paths stable.
+podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 --network=none \
+  --pull=never --env SOURCE_DATE_EPOCH="$timestamp" --env DEST="$dest" \
+  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
+  -v "$(pwd)/target/dist-vendor-$arch:/vendor:ro" "$image" \
+  $setarch bash -c '
 set -e
-export SOURCE_DATE_EPOCH=$timestamp
-mkdir /build
+export CARGO_TARGET_DIR=/build/target
+cd /mold
+cargo build --release --frozen --config /vendor/config.toml --package mold-cli
+stage=/build/$DEST
+DESTDIR=/build PREFIX=/$DEST ./install-mold.sh
+strip --strip-unneeded "$stage/bin/mold" "$stage/lib/mold/mold-wrapper.so"
+find "$stage" -print | xargs touch --no-dereference --date="@$SOURCE_DATE_EPOCH"
 cd /build
-cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=1 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ /mold
-cmake --build . -j\$(nproc)
-cmake --install .
-cmake -DMOLD_USE_MOLD=1 .
-cmake --build . -j\$(nproc)
-ctest --output-on-failure -j\$(nproc)
-cmake --install . --prefix $dest --strip
-find $dest -print | xargs touch --no-dereference --date=@$timestamp
-find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz
-cp mold /dist
-sha256sum /dist/$dest.tar.gz
-"
+find "$DEST" -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > "/dist/$DEST.tar.gz"
+sha256sum "/dist/$DEST.tar.gz"
+'

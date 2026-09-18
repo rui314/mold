@@ -131,42 +131,28 @@ and LoongArch are also attached to each
 
 ## How to Build
 
-mold is written in C++20, so if you build mold yourself, you will need a
-recent version of a C++ compiler and a C++ standard library. We recommend GCC
-10.2 or Clang 16.0.0 (or later) and libstdc++ 10 or libc++ 7 (or later).
-
-### Install Dependencies
-
-To install build dependencies, run `./install-build-deps.sh` in this
-directory. It will detect your Linux distribution and attempt to install the
-necessary packages.
+mold is written in Rust and built with Cargo. Install the stable Rust toolchain
+with [rustup](https://rustup.rs/). You also need Git and a C compiler such as
+GCC or Clang, which you can install with your system's package manager.
 
 ### Compile mold
 
 ```shell
 git clone --branch stable https://github.com/rui314/mold.git
 cd mold
-sudo ./install-build-deps.sh
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ -B build
-cmake --build build -j$(nproc)
-sudo cmake --build build --target install
+cargo build --release
 ```
 
-You might need to pass a C++20 compiler command name to `cmake`. In the
-example above, `c++` is passed. If that doesn't work for you, try a specific
-version of a compiler, such as `g++-10` or `clang++-12`.
+The executable and its companion preload library are
+`target/release/mold` and `target/release/mold-wrapper.so`.
 
-By default, `mold` is installed to `/usr/local/bin`. You can change the
-installation location by passing `-DCMAKE_INSTALL_PREFIX=<directory>`.
-For other cmake options, see the comments in `CMakeLists.txt`.
+### Install mold
 
-If you are not using a recent enough Linux distribution, or if `cmake` does
-not work for you for any reason, you can use Podman to build mold in a
-container. To do so, run `./dist.sh` in this directory instead of using
-`cmake`. The shell script will pull a container image, build mold and auxiliary
-files inside it, and package them into a single tar file named
-`dist/mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere
-and use the mold executable in it.
+Run `sudo ./install-mold.sh` to install mold under `/usr/local`. To install it
+under a different prefix, set `PREFIX`, as in
+`sudo PREFIX=/usr ./install-mold.sh`.
+
+You can also run `target/release/mold` directly without installing it.
 
 ## How to use
 
@@ -188,11 +174,10 @@ to use mold instead of `/usr/bin/ld`:
   valid argument, so you need to use the `-B` option instead. The `-B` option
   tells GCC where to look for external commands like `ld`.
 
-  If you have installed mold with `make install`, there should be a directory
-  named `/usr/libexec/mold` (or `/usr/local/libexec/mold`, depending on your
-  `$PREFIX`), and the `ld` command should be there. The `ld` is actually a
-  symlink to `mold`. So, all you need is to pass `-B/usr/libexec/mold` (or
-  `-B/usr/local/libexec/mold`) to GCC.
+  If you installed mold using the script above, there is a directory named
+  `/usr/local/libexec/mold`, and the `ld` command there is a symlink to mold.
+  Pass `-B/usr/local/libexec/mold` to GCC. If you installed under another
+  prefix, use that prefix instead.
 
 If you haven't installed `ld.mold` to any `$PATH`, you can still pass
 `-fuse-ld=/absolute/path/to/mold` to clang to use mold. However, GCC does not
@@ -266,7 +251,7 @@ mold -run make <make-options-if-any>
 Internally, mold invokes a given command with the `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object file
 intercepts all function calls to `exec(3)`-family functions to replace
-`argv[0]` with `mold` if it is `ld`, `ld.bf`, `ld.gold`, or `ld.lld`.
+`argv[0]` with `mold` if it is `ld`, `ld.bfd`, `ld.gold`, or `ld.lld`.
 
 </details>
 

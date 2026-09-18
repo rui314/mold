@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-arm32be"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for arm32be"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

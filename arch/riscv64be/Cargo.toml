@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-riscv64be"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for riscv64be"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

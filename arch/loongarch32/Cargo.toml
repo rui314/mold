@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-loongarch32"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for loongarch32"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

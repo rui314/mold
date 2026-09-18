@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-x86_64"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for x86_64"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

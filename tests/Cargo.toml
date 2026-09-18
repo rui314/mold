@@ -1,0 +1,13 @@
+[package]
+name = "mold-tests"
+version.workspace = true
+edition.workspace = true
+description = "Test support for mold's shell test suite"
+license.workspace = true
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+libc.workspace = true

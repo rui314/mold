@@ -1,79 +1,87 @@
 name: CI
+
 on:
   push:
   pull_request:
-env:
-  UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
 jobs:
-  build-asan-tsan:
+  test-all-targets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Incremental artifacts and mold's own debug info are unused in CI.
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - name: install test dependencies
+      run: |
+        sudo ./install-test-deps.sh
+        sudo .github/workflows/install-extras.sh
+    - run: cargo build --locked
+    - name: check the build for a 32-bit host
+      run: |
+        rustup target add armv7-unknown-linux-gnueabihf
+        cargo check --locked --workspace --all-targets --target armv7-unknown-linux-gnueabihf
+    - name: verify all target toolchains are available
+      run: |
+        cargo test --locked -p mold-cli --test integration -- --list |
+          tee "$RUNNER_TEMP/test-inventory.txt"
+        ! grep -q '^unavailable:' "$RUNNER_TEMP/test-inventory.txt"
+    # All workspace crates were built above. Avoid linking empty test binaries
+    # for the target crates and command.
+    - run: cargo test --locked -p mold -p mold-tests -p mold-cli --lib --test integration
+    - name: archive test results
+      uses: actions/upload-artifact@v7
+      if: failure()
+      with:
+        name: test-results-all-targets
+        path: target/debug/mold-test/out/test
+
+  test-sanitizers:
     strategy:
       matrix:
-        target:
-        - ''
-        - '-DMOLD_USE_ASAN=On'
-        - '-DMOLD_USE_TSAN=On'
+        include:
+        - sanitizer: address
+          # Input files intentionally remain allocated until process exit.
+          runtime-options: detect_leaks=0:halt_on_error=1
+          test-prefix: ''
+          test-timeout: 30
+        - sanitizer: thread
+          runtime-options: halt_on_error=1
+          # TSan cannot model the atomic-fence synchronization in Rayon's
+          # work-stealing queue. Two CPUs still exercise parallel linker code.
+          test-prefix: taskset -c 0,1
+          test-timeout: 60
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: target/${{ matrix.sanitizer }}
+      RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
+      RUSTDOCFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
     steps:
-    - uses: actions/checkout@v7
-    - uses: rui314/setup-mold@staging
-    - run: sudo ./install-build-deps.sh
-    - name: build
-      run: |
-        sudo apt-get install -y clang-18 clang gcc-multilib gdb dwarfdump zstd
-        mkdir build
-        cd build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 ${{ matrix.target }} ..
-        cmake --build . -j$(nproc)
-    - run: cd build; ctest --output-on-failure -j$(nproc)
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rust-src
+    - run: sudo ./install-test-deps.sh
+    - run: cargo +nightly build --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --no-default-features --features system-allocator,x86_64
+    - run: |
+        if [ '${{ matrix.sanitizer }}' = address ]; then
+          export ASAN_OPTIONS='${{ matrix.runtime-options }}'
+        else
+          export TSAN_OPTIONS='${{ matrix.runtime-options }}'
+        fi
+        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold-cli --no-default-features --features system-allocator,x86_64 --test integration -- --native --test-threads 1 --timeout ${{ matrix.test-timeout }}
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
       with:
-        name: test-results-clang
-        path: |
-          build
-          !build/CMakeFiles
+        name: test-results-${{ matrix.sanitizer }}
+        path: target/${{ matrix.sanitizer }}/x86_64-unknown-linux-gnu/debug/mold-test/out/test
 
-  build-msan:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v7
-    - uses: redhat-actions/podman-login@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    - run: .github/workflows/run-msan.sh
-
-  build-multi-archs:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v7
-    - name: install-build-deps
-      run: |
-        sudo ./install-build-deps.sh
-        sudo ./install-cross-tools.sh
-        sudo .github/workflows/install-extras.sh
-    - name: build
-      run: |
-        mkdir build
-        cd build
-        cmake ..
-        cmake --build . -j$(nproc)
-    - run: cd build; ctest --output-on-failure -j$(nproc)
-    - name: archive test results
-      uses: actions/upload-artifact@v7
-      if: failure()
-      with:
-        name: test-results-multi-archs
-        path: |
-          build
-          !build/CMakeFiles
-
-  build-distros:
+  test-distros:
     strategy:
       matrix:
         distro:
@@ -87,17 +95,17 @@ jobs:
         - ubuntu:25.04
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    container: ${{ matrix.distro }}
+    # Tumbleweed does not declare PATH in its container configuration.
+    container:
+      image: ${{ matrix.distro }}
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
-    - uses: actions/checkout@v7
-    - run: ./install-build-deps.sh
-    - name: build
-      run: |
-        mkdir build
-        cd build
-        cmake ..
-        cmake --build . -j$(nproc)
-    - run: cd build; ctest --output-on-failure -j$(nproc)
+    - uses: actions/checkout@v6
+    - run: ./install-test-deps.sh
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo build --locked -p mold-cli --no-default-features --features x86_64
+    - run: cargo test --locked -p mold-cli --no-default-features --features x86_64 --test integration -- --native
     - name: sanitize distro name
       if: failure()
       id: sanitize
@@ -107,66 +115,55 @@ jobs:
       if: failure()
       with:
         name: test-results-${{ steps.sanitize.outputs.name }}
-        path: |
-          build
-          !build/CMakeFiles
+        path: target/debug/mold-test/out/test
 
   build-macos:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v7
-    - name: build
-      run: |
-        mkdir build
-        cd build
-        cmake ..
-        cmake --build . -j$(sysctl -n hw.physicalcpu)
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo build --locked -p mold-cli --no-default-features --features x86_64
 
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v7
-    - name: build
-      run: |
-        mkdir build
-        cd build
-        cmake -T clangcl ..
-        cmake --build . -j $Env:NUMBER_OF_PROCESSORS
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo build --locked -p mold-cli --no-default-features --features x86_64
 
   build-msys:
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
-    - uses: actions/checkout@v7
-    - name: Setup MSYS2
-      uses: msys2/setup-msys2@v2
+    - uses: actions/checkout@v6
+    - uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
         update: true
-        pacboy: gcc-libs:p libwinpthread-git:p tbb:p zlib:p zstd:p dlfcn:p cc:p cmake:p ninja:p
-    - name: build
-      shell: msys2 {0}
-      run: |
-        mkdir build
-        cd build
-        cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON ..
-        cmake --build . -j $(nproc)
+        install: git
+        pacboy: rust:p cc:p dlfcn:p
+    - shell: msys2 {0}
+      run: cargo build --locked -p mold-cli --no-default-features --features x86_64
 
   build-freebsd:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # The VM has little disk space, so omit unused build artifacts.
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
-    - uses: actions/checkout@v7
-    - name: Build and test
-      uses: vmactions/freebsd-vm@v1
+    - uses: actions/checkout@v6
+    - uses: vmactions/freebsd-vm@v1
       with:
         usesh: true
         run: |
-          ./install-build-deps.sh
-          mkdir build
-          cd build
-          cmake ..
-          cmake --build . -j$(nproc)
-          ctest --output-on-failure -j$(nproc)
+          pkg install -y rust
+          ./install-test-deps.sh
+          cargo build --locked -p mold-cli --no-default-features --features x86_64
+          cargo test --locked -p mold-cli --no-default-features --features x86_64 --test integration -- --native

@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-s390x"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for s390x"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

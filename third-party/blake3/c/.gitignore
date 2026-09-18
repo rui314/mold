@@ -1,7 +1,0 @@
-blake3
-example
-example_tbb
-build/
-*.o
-
-CMakeUserPresets.json

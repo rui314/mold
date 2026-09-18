@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-arm64"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for arm64"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

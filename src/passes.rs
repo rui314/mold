@@ -1,0 +1,4805 @@
+//! The passes of a link, in roughly the order the driver runs them.
+
+use crate::util::worker_local::WorkerLocal;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
+use std::ptr::NonNull;
+use std::sync::atomic::Ordering;
+use std::sync::{Mutex, RwLock};
+
+use bstr::BStr;
+use rayon::prelude::*;
+
+use crate::arch::{Arch, Family};
+use crate::chunks::build_id::{self, BuildIdSection};
+use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
+use crate::chunks::gnu_debuglink::{self, GnuDebuglinkSection};
+use crate::chunks::gnu_hash::{self, GnuHashSection};
+use crate::chunks::note_property::NotePropertySection;
+use crate::chunks::output_section::OutputSection;
+use crate::chunks::verdef::VerdefSection;
+use crate::chunks::{
+    self, compressed, copyrel, dynsym, reloc, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId,
+};
+use crate::cmdline::{
+    BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
+    SeparateCodeKind, ShuffleSections, UnresolvedKind,
+};
+use crate::context::Context;
+use crate::elf::*;
+use crate::input_files::{
+    resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, FileList, ObjId,
+    ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
+};
+use crate::input_sections::{InputSection, InputSectionId, SectionRef};
+use crate::linker_script::VersionPattern;
+use crate::output_file::OutputFile;
+use crate::symbol::{
+    is_c_identifier, Bins, Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT,
+    NEEDS_PPC_OPD, NEEDS_TLSDESC, NEEDS_TLSGD,
+};
+use crate::util::glob::GlobBuilder;
+use crate::util::perf::Counter;
+use crate::util::{align_to, leak_bytes};
+use crate::{error, fatal, out, warn};
+
+pub fn apply_exclude_libs<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("apply_exclude_libs");
+    let set = &ctx.args.exclude_libs;
+    if set.is_empty() {
+        return;
+    }
+    for file in &mut ctx.objs {
+        if !file.archive_name.as_os_str().is_empty()
+            && (set.contains(
+                file.archive_name
+                    .file_name()
+                    .unwrap_or_default()
+                    .as_encoded_bytes(),
+            ) || set.contains(b"ALL".as_slice()))
+        {
+            file.exclude_libs = true;
+        }
+    }
+}
+
+fn has_debug_info_section<E: Arch>(ctx: &Context<E>) -> bool {
+    ctx.objs.iter().any(|f| !f.debug_info_sections.is_empty())
+}
+
+pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
+    let mut chunks = Vec::new();
+
+    if !ctx.args.oformat_binary {
+        let find = |name: &str| {
+            ctx.args
+                .section_order
+                .iter()
+                .any(|o| matches!(o, SectionOrder::Section(n) if n == name.as_bytes()))
+        };
+        let ehdr_flags = if ctx.args.section_order.is_empty() || find("EHDR") {
+            SHF_ALLOC as u64
+        } else {
+            0
+        };
+        let phdr_flags = if ctx.args.section_order.is_empty() || find("PHDR") {
+            SHF_ALLOC as u64
+        } else {
+            0
+        };
+        ctx.ehdr = Some(chunks::new_ehdr::<E>(ehdr_flags));
+        chunks.push(ChunkId::Ehdr);
+        ctx.phdr = Some(OutputPhdr::<E>::new(phdr_flags));
+        chunks.push(ChunkId::Phdr);
+        if ctx.args.z_sectionheader {
+            ctx.shdr = Some(chunks::new_shdr::<E>());
+            chunks.push(ChunkId::Shdr);
+        }
+    }
+
+    chunks.push(ChunkId::Got);
+    if !E::IS_SPARC {
+        chunks.push(ChunkId::GotPlt);
+    }
+    chunks.push(ChunkId::RelDyn);
+    chunks.push(ChunkId::RelPlt);
+    if ctx.args.pack_dyn_relocs_relr {
+        ctx.relrdyn = Some(chunks::relrdyn::new_header::<E>(&ctx.args));
+        chunks.push(ChunkId::RelrDyn);
+    }
+    chunks.push(ChunkId::Strtab);
+    chunks.push(ChunkId::Plt);
+    chunks.push(ChunkId::PltGot);
+    chunks.push(ChunkId::Symtab);
+    chunks.push(ChunkId::Dynsym);
+    chunks.push(ChunkId::Dynstr);
+    chunks.push(ChunkId::EhFrame);
+    chunks.push(ChunkId::SFrame);
+    chunks.push(ChunkId::Copyrel);
+    chunks.push(ChunkId::CopyrelRelro);
+
+    if ctx.shdr.is_some() {
+        ctx.shstrtab = Some(chunks::shstrtab::new_header());
+        chunks.push(ChunkId::Shstrtab);
+    }
+    if !ctx.args.dynamic_linker.as_os_str().is_empty() {
+        ctx.interp = Some(chunks::interp::new_header());
+        chunks.push(ChunkId::Interp);
+    }
+    if !matches!(ctx.args.build_id, BuildId::None) {
+        ctx.buildid = Some(BuildIdSection::new());
+        chunks.push(ChunkId::BuildId);
+    }
+    if ctx.args.eh_frame_hdr {
+        ctx.eh_frame_hdr = Some(EhFrameHdrSection::new());
+        chunks.push(ChunkId::EhFrameHdr);
+    }
+    if ctx.args.gdb_index && has_debug_info_section(ctx) {
+        ctx.gdb_index = Some(chunks::new_gdb_index());
+        chunks.push(ChunkId::GdbIndex);
+    }
+    if ctx.args.z_relro && ctx.args.section_order.is_empty() {
+        ctx.relro_padding = Some(chunks::relro_padding::new_header());
+        chunks.push(ChunkId::RelroPadding);
+    }
+    if ctx.args.hash_style_sysv {
+        ctx.hash = Some(chunks::hash::new_header::<E>());
+        chunks.push(ChunkId::Hash);
+    }
+    if ctx.args.hash_style_gnu {
+        ctx.gnu_hash = Some(GnuHashSection::<E>::new());
+        chunks.push(ChunkId::GnuHash);
+    }
+    if !ctx.args.version_definitions.is_empty() {
+        ctx.verdef = Some(VerdefSection::new());
+        chunks.push(ChunkId::Verdef);
+    }
+    if ctx.args.emit_relocs {
+        ctx.eh_frame_reloc = Some(chunks::eh_frame_reloc::new_header::<E>());
+        chunks.push(ChunkId::EhFrameReloc);
+    }
+    if !ctx.args.separate_debug_file.as_os_str().is_empty() {
+        ctx.gnu_debuglink = Some(GnuDebuglinkSection::new());
+        chunks.push(ChunkId::GnuDebuglink);
+    }
+
+    if ctx.args.shared || !ctx.dsos.is_empty() || ctx.args.pie {
+        ctx.dynamic = Some(chunks::dynamic::new_header::<E>(&ctx.args));
+        chunks.push(ChunkId::Dynamic);
+        // If .dynamic exists, .dynsym and .dynstr must exist as well
+        // since .dynamic refers to them.
+        ctx.dynstr.add_string(b"");
+        if ctx.dynsym.symbols.is_empty() {
+            ctx.dynsym.symbols.push(None);
+        }
+    }
+
+    chunks.push(ChunkId::Versym);
+    chunks.push(ChunkId::Verneed);
+    chunks.push(ChunkId::NotePackage);
+
+    if E::IS_X86 {
+        ctx.note_property = Some(NotePropertySection::<E>::new());
+        chunks.push(ChunkId::NoteProperty);
+    }
+    if E::IS_RISCV {
+        ctx.riscv_attributes = Some(crate::chunks::riscv_attributes::RiscvAttributesSection::new());
+        chunks.push(ChunkId::RiscvAttributes);
+    }
+    if E::FAMILY == Family::Ppc64V2 {
+        ctx.ppc64_save_restore = Some(chunks::ppc64_save_restore::new_header());
+        chunks.push(ChunkId::Ppc64SaveRestore);
+    }
+    if E::FAMILY == Family::Ppc64V1 {
+        ctx.ppc64_opd = Some(crate::chunks::opd::Ppc64OpdSection::new());
+        chunks.push(ChunkId::Ppc64Opd);
+    }
+
+    ctx.chunks.extend(chunks);
+}
+
+/// Marks the files that the given files depend on reachable, recursively.
+/// Marks the files reachable from `roots` live. A file found live is
+/// visited as a task of its own: there are at most thousands of files,
+/// so the tasks are cheap, and the pool stays busy rather than draining
+/// between rounds of a search whose frontier is often small.
+fn mark_live_files<E: Arch>(ctx: &Context<E>, roots: Vec<FileId>) {
+    fn visit<'s, E: Arch>(ctx: &'s Context<E>, id: FileId, scope: &rayon::Scope<'s>) {
+        for found in mark_live_file(ctx, id) {
+            scope.spawn(move |scope| visit(ctx, found, scope));
+        }
+    }
+    rayon::scope(|scope| {
+        for id in roots {
+            scope.spawn(move |scope| visit(ctx, id, scope));
+        }
+    });
+}
+
+fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
+    let mut found = Vec::new();
+    match id {
+        FileId::Obj(obj_id) => {
+            let file = &ctx.objs[obj_id.index()];
+            debug_assert!(file.base.is_reachable());
+            for i in file.base.first_global..file.base.elf_syms.len() {
+                let esym = &file.base.elf_syms[i];
+                let sym = &ctx.symbols[file.base.symbols[i]];
+
+                if !esym.is_undef() && file.exclude_libs {
+                    sym.merge_visibility(STV_HIDDEN);
+                } else {
+                    sym.merge_visibility(esym.st_visibility());
+                }
+                if sym.is_traced() {
+                    crate::input_files::print_trace_symbol(file, esym, sym);
+                }
+
+                if let Some(target) = sym.file() {
+                    let undef_ref = esym.is_undef() && (!esym.is_weak() || target.is_dso());
+                    let common_ref = esym.is_common() && !sym.is_common();
+                    if (undef_ref || common_ref) && ctx.file(target).mark_reachable() {
+                        found.push(target);
+                        if sym.is_traced() {
+                            out!(
+                                "trace-symbol: {file} keeps {} for {sym}",
+                                ctx.file_display(target)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        FileId::Dso(dso_id) => {
+            let file = &ctx.dsos[dso_id.index()];
+            for i in 0..file.base.elf_syms.len() {
+                let esym = &file.base.elf_syms[i];
+                let sym = &ctx.symbols[file.base.symbols[i]];
+                if sym.is_traced() {
+                    crate::input_files::print_trace_symbol(file, esym, sym);
+                }
+                if !esym.is_undef() || esym.is_weak() {
+                    continue;
+                }
+
+                // Follow references to other DSOs only to check --no-allow-shlib-undefined.
+                //
+                // A versioned reference must not extract an unversioned definition
+                // from an archive. resolve_default_symver redirects symbols[] to the
+                // bare name, so follow the original versioned symbol in symbols2[].
+                let id2 = file.symbols2[i];
+                let target = if id2 != SymbolId::NONE {
+                    ctx.symbols[id2].file()
+                } else {
+                    sym.file()
+                };
+                if let Some(target) = target {
+                    if (!target.is_dso() || !ctx.args.allow_shlib_undefined)
+                        && ctx.file(target).mark_reachable()
+                    {
+                        found.push(target);
+                        if sym.is_traced() {
+                            out!(
+                                "trace-symbol: {file} keeps {} for {sym}",
+                                ctx.file_display(target)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
+    // Symbols named on the command line pull in their files, and keep
+    // their sections under --gc-sections; so does the entry point.
+    let args = &ctx.args;
+    let names: Vec<Vec<u8>> = args
+        .undefined
+        .iter()
+        .chain(&args.require_defined)
+        .cloned()
+        .collect();
+    for name in names {
+        let id = ctx.get_symbol(&name);
+        ctx.symbols[id].set_gc_root(true);
+        if let Some(file) = ctx.symbols[id].file() {
+            ctx.file(file).set_reachable(true);
+        }
+    }
+    let entry = ctx.syms.entry;
+    ctx.symbols[entry].set_gc_root(true);
+
+    if !ctx.args.undefined_glob.is_empty() {
+        let roots: Vec<SymbolId> = {
+            let Context {
+                objs,
+                symbols,
+                args,
+                ..
+            } = &*ctx;
+            objs.par_iter()
+                .flat_map_iter(|file| {
+                    file.base.global_symbols().iter().copied().filter(|&id| {
+                        let sym = &symbols[id];
+                        sym.file() == Some(FileId::Obj(file.id()))
+                            && args.undefined_glob.find(sym.name()) != -1
+                    })
+                })
+                .collect()
+        };
+        for id in roots {
+            let file = ctx.symbols[id].file().unwrap();
+            ctx.file(file).set_reachable(true);
+            ctx.symbols[id].set_gc_root(true);
+        }
+    }
+
+    let mut roots: Vec<FileId> = Vec::new();
+    for file in &ctx.objs {
+        if file.base.is_reachable() {
+            roots.push(FileId::Obj(file.id()));
+        }
+    }
+    for file in &ctx.dsos {
+        if file.base.is_reachable() {
+            roots.push(FileId::Dso(file.id()));
+        }
+    }
+    mark_live_files(ctx, roots);
+}
+
+// Symbol resolution involving a default symbol version is tricky because
+// a symbol that provides the default version has two names by which it
+// can be referred. Specifically, a symbol `foo` with the default version
+// `VER1` can be referred to either as `foo` or `foo@VER1`. No other
+// symbols have two names like that.
+//
+// By default, we insert symbols with a default version without an at-sign
+// (i.e. `foo` instead of `foo@VER1`) into our internal symbol table.
+// Therefore, if the symbol is referenced with an at-sign (i.e.
+// `foo@VER1`), the reference fails to resolve. This function corrects
+// that error.
+//
+// In this function, we check all unresolved versioned symbols of the form
+// `foo@VER1` by removing the version part and see if `foo` has version
+// `VER1`. If it does, that's the symbol we are looking for.
+fn resolve_default_symver<E: Arch>(ctx: &mut Context<E>) {
+    let Context {
+        objs,
+        dsos,
+        symbols,
+        ..
+    } = ctx;
+    objs.par_iter_mut().for_each(|file| {
+        let start = file.base.first_global.min(file.base.symbols.len());
+        for id in &mut file.base.symbols[start..] {
+            if symbols[*id].is_versioned_default() {
+                *id = symbols[*id].symbol_origin().unwrap();
+            }
+        }
+    });
+    dsos.par_iter_mut().for_each(|file| {
+        for id in &mut file.base.symbols {
+            if symbols[*id].is_versioned_default() {
+                *id = symbols[*id].symbol_origin().unwrap();
+            }
+        }
+    });
+}
+
+fn clear_symbol<E: Arch>(sym: &mut Symbol) {
+    sym.clear_file();
+    sym.clear_origin();
+    sym.value = 0;
+    sym.set_sym_idx(u32::MAX);
+    sym.set_esym(&ElfSym::<E>::default());
+    sym.ver_idx = VER_NDX_UNSPECIFIED as u16;
+    sym.set_weak(false);
+    sym.set_imported(false);
+    sym.set_exported(false);
+    sym.set_versioned_default(false);
+}
+
+/// Resets the resolution of every global symbol. Local symbols belong to
+/// their files and aren't resolved, so they're left alone.
+fn clear_symbols<E: Arch>(ctx: &mut Context<E>) {
+    ctx.symbols.par_for_each_global_mut(|sym| {
+        if sym.file().is_some() {
+            clear_symbol::<E>(sym);
+        }
+    });
+}
+
+// Creates a Symbol for each global symbol name recorded during file
+// parsing and fills in the files' symbol pointers. Each hash shard of
+// the symbol table is populated by a single thread, so no
+// synchronization is needed, unlike interning symbols directly into a
+// concurrent hash table as files are parsed.
+pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("gather_symbols");
+    let bins = ctx.take_symbol_bins();
+    // Reserve local symbols and a cheap CREL-header bound before constructing
+    // globals. Unlike C++ arena storage, the central Rust vector would copy all
+    // existing symbols if fragment dummies forced it to grow later.
+    let additional_capacity = ctx
+        .objs
+        .par_iter()
+        .filter(|file| file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed)
+        .map(|file| {
+            let locals = if file.base.elf_syms.is_empty() {
+                0
+            } else {
+                file.base.first_global.max(1)
+            };
+            let fragments = if file.archive_name.as_os_str().is_empty() || file.base.is_reachable()
+            {
+                file.crel_fragment_dummy_upper_bound()
+            } else {
+                0
+            };
+            locals.saturating_add(fragments)
+        })
+        .reduce(|| 0, usize::saturating_add);
+    let Context { symbols, .. } = ctx;
+
+    // Each hash shard is populated by one thread and writes directly to the
+    // stable slots recorded while files were parsed, so no synchronization
+    // or final scatter pass is needed.
+    symbols.gather_symbol_slots(bins, additional_capacity);
+}
+
+fn current_rank<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
+    match sym.file() {
+        None => 7 << 32,
+        Some(file) => {
+            let base = ctx.file(file);
+            resolved_symbol_rank(sym, file.is_dso(), !base.is_reachable(), base.priority)
+        }
+    }
+}
+
+/// Resolves every global symbol in place. Files run in parallel, taking
+/// each symbol's lock before comparing and updating its definition.
+fn resolve_symbols_pass<E: Arch>(ctx: &mut Context<E>, files: &[FileId], only_reachable: bool) {
+    let _t = ctx.timer("resolve_symbols_pass");
+    let Context {
+        objs,
+        dsos,
+        symbols,
+        default_version,
+        ..
+    } = ctx;
+    let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
+    files.par_iter().for_each(|&id| match id {
+        FileId::Obj(id) => {
+            let file = &objs[id.index()];
+            if !only_reachable || file.base.is_reachable() {
+                file.resolve_symbols(&resolver, id);
+            }
+        }
+        FileId::Dso(id) => {
+            let file = &dsos[id.index()];
+            if !only_reachable || file.base.is_reachable() {
+                file.resolve_symbols(&resolver, id);
+            }
+        }
+    });
+}
+
+/// Resolves the rare hidden-symbol retry while ignoring DSO definitions.
+fn resolve_skip_dso_symbols_pass<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("resolve_symbols_pass");
+    let Context {
+        objs,
+        dsos,
+        symbols,
+        default_version,
+        ..
+    } = ctx;
+    let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
+    objs.par_iter().for_each(|file| {
+        file.resolve_skip_dso_symbols(&resolver, file.id());
+    });
+}
+
+/// An exceptional COMDAT signature whose Symbol slot is filled by gathering.
+/// The owning ObjectFile and its group vector stay in place through the
+/// gather, just as they do for the files' ordinary SymbolSlots.
+struct PendingComdatOwner {
+    group: NonNull<ComdatGroupRef>,
+    priority: u32,
+    is_lto_output: bool,
+}
+
+// SAFETY: every pending record names a distinct group, and it is consumed only
+// after gathering has stopped writing the group's signature slot.
+unsafe impl Send for PendingComdatOwner {}
+
+/// A packed COMDAT signature word that receives the interned SymbolId before
+/// ownership is selected.
+#[derive(Clone, Copy)]
+struct ComdatSymbolSlot(NonNull<u32>);
+
+// SAFETY: each exceptional COMDAT signature has one pending slot, and one
+// symbol-map shard writes it before the groups are examined again.
+unsafe impl Send for ComdatSymbolSlot {}
+unsafe impl Sync for ComdatSymbolSlot {}
+
+impl ComdatSymbolSlot {
+    fn new(group: &mut ComdatGroupRef) -> ComdatSymbolSlot {
+        ComdatSymbolSlot(NonNull::from(group.signature_word_mut()))
+    }
+
+    fn assign(self, id: SymbolId) {
+        assert!(id.0 < 1 << 31);
+        // SAFETY: guaranteed by the construction and synchronization rules
+        // documented on ComdatSymbolSlot.
+        unsafe { self.0.write(id.0) };
+    }
+}
+
+// Select COMDAT groups and construct input sections. If LTO will run,
+// the first invocation also constructs the losing copies of COMDAT
+// members because this function runs again after LTO and may then
+// select a different winner.
+fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("parse_input_sections");
+
+    // Symbol resolution is clear while COMDAT groups are selected, so sym_idx
+    // can temporarily hold the winning file priority.
+    // Read COMDAT metadata and choose an owner among reachable regular objects.
+    // Ordinary global signatures already refer to the files' symbols; record
+    // the other signatures for interning while each file's metadata is hot.
+    let t = ctx.timer("read_section_metadata");
+    let (bins, pending): (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) = {
+        let Context { objs, symbols, .. } = ctx;
+        // Reuse each worker's buffers across jobs, locking once per file.
+        let work = WorkerLocal::new(|| (Bins::new(), Vec::new()));
+        objs.par_iter_mut().for_each(|file| {
+            let mut local = work.get();
+            let (bins, pending) = &mut *local;
+            if file.base.is_reachable() {
+                if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
+                    file.read_section_metadata();
+                }
+                let priority = file.base.priority;
+                let is_lto_output = file.origin == ObjectOrigin::LtoOutput;
+                for group in &mut file.comdat_groups {
+                    if group.signature() != SymbolId::DISCARDED_COMDAT {
+                        let sym = &symbols[group.signature()];
+                        // A group claimed by an IR file belongs to the LTO result, so only an
+                        // LTO-generated file may own it. LLVM keeps claimed groups in its output;
+                        // GCC emits their contents without a group, so no file owns them.
+                        if !sym.comdat_claimed_by_ir() || is_lto_output {
+                            sym.record_comdat_owner(priority);
+                        }
+                    }
+                }
+                let signatures = &file.pending_comdat_signatures;
+                let groups = &mut file.comdat_groups;
+                for signature in signatures {
+                    let group = &mut groups[signature.group_idx as usize];
+                    bins.record(
+                        signature.key,
+                        signature.name_len as usize,
+                        ComdatSymbolSlot::new(group),
+                    );
+                    pending.push(PendingComdatOwner {
+                        group: NonNull::from(group),
+                        priority,
+                        is_lto_output,
+                    });
+                }
+            }
+        });
+        work.into_values().unzip()
+    };
+
+    drop(t);
+
+    // Intern the signature symbols all at once, as for the files' own symbols.
+    let t = ctx.timer("comdat_signatures");
+    {
+        let Context { objs, symbols, .. } = ctx;
+        symbols.gather(bins, 0, ComdatSymbolSlot::assign);
+
+        // Signatures just interned could not participate in the metadata
+        // traversal above. Record them now.
+        let symbols: &crate::symbol::SymbolTable = symbols;
+        pending.into_par_iter().flatten().for_each(|pending| {
+            // SAFETY: each pending pointer came from a distinct group that
+            // stays in place, and symbol gathering has joined before this
+            // parallel traversal begins.
+            let group = unsafe { &*pending.group.as_ptr() };
+            let sym = &symbols[group.signature()];
+            if !sym.comdat_claimed_by_ir() || pending.is_lto_output {
+                sym.record_comdat_owner(pending.priority);
+            }
+        });
+        objs.par_iter_mut()
+            .for_each(|file| file.pending_comdat_signatures = Vec::new());
+    }
+
+    // IR objects name their COMDAT groups per symbol.
+    for file in &mut ctx.objs {
+        for i in 0..file.lto_comdat_keys.len() {
+            if let (Some(key), None) = (file.lto_comdat_keys[i], file.lto_comdat_signatures[i]) {
+                let sig = ctx.symbols.intern(key);
+                file.lto_comdat_signatures[i] = Some(sig);
+            }
+        }
+    }
+
+    drop(t);
+
+    // Choose an owner for each group: the reachable object with the
+    // lowest priority. A group claimed by an IR file belongs to the LTO
+    // result, so only an LTO-generated object may own it.
+    let t = ctx.timer("comdat_owners");
+
+    // Set each group's result after all reachable files have recorded their
+    // claims.
+    let symbols = &ctx.symbols;
+    ctx.objs.par_iter_mut().for_each(|file| {
+        if file.base.is_reachable() {
+            let priority = file.base.priority;
+            for group in &mut file.comdat_groups {
+                group.set_owner(symbols[group.signature()].sym_idx() == priority);
+            }
+        }
+    });
+
+    // LTO plugin symbol tables may not enumerate all section-level helper
+    // symbols (e.g. some thunks). Therefore, an IR file may claim a signature
+    // only if no reachable regular object has already claimed it.
+    //
+    // An IR file's claim is permanent: the LTO result provides the claimed
+    // definitions, so a regular object extracted after LTO must not win the
+    // group and resurrect a copy of them
+    // (https://github.com/rui314/mold/issues/1637).
+    for file in &mut ctx.objs {
+        if !file.base.is_reachable() || file.lto_comdat_signatures.is_empty() {
+            continue;
+        }
+        let priority = file.base.priority;
+        let mut discarded = Vec::with_capacity(file.lto_comdat_signatures.len());
+        for &sig in &file.lto_comdat_signatures {
+            let Some(sig) = sig else {
+                discarded.push(false);
+                continue;
+            };
+            if ctx.symbols[sig].sym_idx() == u32::MAX {
+                ctx.symbols[sig].set_sym_idx(priority);
+                ctx.symbols[sig].set_comdat_claimed_by_ir(true);
+            }
+            discarded.push(ctx.symbols[sig].sym_idx() != priority);
+        }
+        file.lto_comdat_discarded = discarded;
+    }
+
+    // Restore sym_idx before the final symbol-resolution pass.
+    ctx.symbols
+        .par_for_each_global_mut(|sym| sym.set_sym_idx(u32::MAX));
+
+    drop(t);
+
+    // LTO can change archive extraction and therefore the winning COMDAT
+    // group. Construct the losing copies too so one can become the winner
+    // after LTO.
+    let keep_discarded_comdat = ctx
+        .objs
+        .iter()
+        .any(|f| f.base.is_reachable() && (f.is_lto_input() || f.is_gcc_offload_obj));
+
+    let t = ctx.timer("parse_sections");
+    let maximum: usize = ctx
+        .objs
+        .iter()
+        .filter(|file| {
+            file.base.is_reachable()
+                && file.base.mf.is_some()
+                && !file.is_lto_input()
+                && !file.sections_parsed
+        })
+        .map(|file| {
+            if file.base.elf_syms.is_empty() {
+                0
+            } else {
+                file.base.first_global.max(1)
+            }
+        })
+        .sum();
+    {
+        let Context {
+            objs,
+            symbols,
+            args,
+            ..
+        } = ctx;
+        symbols.with_parallel_appender(maximum, |allocator| {
+            objs.par_iter_mut().for_each(|file| {
+                if !file.base.is_reachable() {
+                    return;
+                }
+                if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
+                    file.parse_sections(args, file.id(), allocator, keep_discarded_comdat);
+                    // Parsing already omitted losing groups and constructed
+                    // the others alive. --gdb-index may kill group members.
+                    if !keep_discarded_comdat && !args.gdb_index {
+                        return;
+                    }
+                }
+                // Reapply ownership to groups parsed before LTO as well.
+                for group in &file.comdat_groups {
+                    for member in file.comdat_members(group) {
+                        if let Some(isec) = file.section(member as usize) {
+                            if group.is_owner() {
+                                isec.revive();
+                            } else {
+                                file.kill_section(member as usize);
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+    drop(t);
+}
+
+pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("resolve_symbols");
+    gather_symbols(ctx);
+
+    let files: Vec<FileId> = ctx
+        .objs
+        .iter()
+        .map(|file| FileId::Obj(file.id()))
+        .chain(ctx.dsos.iter().map(|file| FileId::Dso(file.id())))
+        .collect();
+
+    // Call resolve_symbols() to find the most appropriate file for each
+    // symbol. And then mark reachable objects to decide which files to
+    // include into an output.
+    resolve_symbols_pass(ctx, &files, false);
+    let t = ctx.timer("resolve_default_symver");
+    resolve_default_symver(ctx);
+    drop(t);
+    let t = ctx.timer("mark_live_objects");
+    mark_live_objects(ctx);
+    drop(t);
+
+    // Symbols with hidden visibility need to be resolved within the
+    // output file. If a hidden symbol was resolved to a DSO, we resolve
+    // that symbol again, skipping DSOs. Its new definition may be in an
+    // archive member that is not reachable yet; making it reachable can
+    // change other symbols' visibility, so we repeat until no hidden
+    // symbol resolves to a DSO. This should be rare.
+    loop {
+        let hidden = ctx.symbols.par_find_globals(|sym| {
+            matches!(sym.file(), Some(FileId::Dso(dso))
+                if ctx.dsos[dso.index()].base.is_reachable()
+                    && sym.visibility() == STV_HIDDEN)
+        });
+        if hidden.is_empty() {
+            break;
+        }
+        for &id in &hidden {
+            let sym = &mut ctx.symbols[id];
+            sym.set_skip_dso(true);
+            clear_symbol::<E>(sym);
+        }
+        resolve_skip_dso_symbols_pass(ctx);
+
+        let mut roots = Vec::new();
+        for &id in &hidden {
+            if let Some(file) = ctx.symbols[id].file() {
+                if !ctx.file(file).is_reachable() {
+                    ctx.file(file).set_reachable(true);
+                    roots.push(file);
+                }
+            }
+        }
+        mark_live_files(ctx, roots);
+    }
+
+    // Now that we know the exact set of input files that are to be
+    // included in the output file, we want to redo symbol resolution.
+    // This is because symbols defined by object files in archive files
+    // may have risen as a result of mark_live_objects().
+    //
+    // To redo symbol resolution, we want to clear the state first.
+    let t = ctx.timer("clear_symbols");
+    clear_symbols(ctx);
+    drop(t);
+
+    // Parse input sections after archive extraction, so COMDAT selection
+    // considers only reachable objects. This must happen before final symbol
+    // resolution; otherwise discarding a group could leave a dangling reference.
+    parse_input_sections(ctx);
+
+    // Redo symbol resolution
+    resolve_symbols_pass(ctx, &files, true);
+}
+
+/// Removes unreachable files from the live file lists.
+pub fn remove_unreachable_files<E: Arch>(ctx: &mut Context<E>) {
+    remove_objects(ctx, |file| !file.base.is_reachable());
+    remove_unreachable_dsos(ctx);
+}
+
+/// Removes selected objects from the live list, retaining their backing storage.
+fn remove_objects<E: Arch>(ctx: &mut Context<E>, remove: impl Fn(&ObjectFile<E>) -> bool) {
+    ctx.objs.retain(|file| !remove(file));
+}
+
+/// Whether the link involves the LTO plugin.
+pub fn has_lto_obj<E: Arch>(ctx: &Context<E>) -> bool {
+    ctx.objs
+        .iter()
+        .any(|file| file.base.is_reachable() && (file.is_lto_input() || file.is_gcc_offload_obj))
+}
+
+// Do link-time optimization. We pass all IR object files to the compiler
+// backend to compile them into a few ELF object files.
+pub fn do_lto<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("do_lto");
+
+    // The compiler backend needs to know how symbols are resolved, so
+    // compute symbol visibility, import/export bits, etc early.
+    apply_version_script(ctx);
+    parse_symbol_version(ctx);
+    compute_import_export(ctx);
+
+    // If multiple IR object files define the same symbol, the LTO backend
+    // would choose one of them randomly instead of reporting an error.
+    // So we need to check for symbol duplication error before doing an LTO.
+    if !ctx.args.allow_multiple_definition {
+        check_duplicate_symbols(ctx);
+    }
+
+    // Invoke the LTO plugin. This step compiles IR object files into a few
+    // big ELF files.
+    crate::lto::run_plugin(ctx);
+
+    // Redo name resolution.
+    clear_symbols(ctx);
+
+    // Remove IR object files and reset reachability for archive members.
+    // Archive members that were extracted pre-LTO to satisfy references from
+    // IR objects may no longer be needed now that LTO output provides those
+    // symbols. Reset their reachability so that resolve_symbols() below can
+    // re-derive which archive members are actually needed.
+    for file in &ctx.objs {
+        if file.is_lto_input() || file.base.as_needed {
+            file.base.set_reachable(false);
+        }
+    }
+    remove_objects(ctx, |file| file.is_lto_input());
+    resolve_symbols(ctx);
+}
+
+pub fn parse_eh_frame_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("parse_eh_frame_sections");
+    let Context { objs, .. } = ctx;
+    objs.par_iter_mut().for_each(|file| file.parse_ehframe());
+}
+
+pub fn parse_sframe_sections<E: Arch>(ctx: &mut Context<E>) {
+    if !E::SUPPORTS_SFRAME {
+        return;
+    }
+    let _t = ctx.timer("parse_sframe_sections");
+    let Context { objs, .. } = ctx;
+    objs.par_iter_mut().for_each(|file| file.parse_sframe());
+}
+
+/// Registers direct, stable member borrows with their merged sections for a
+/// parallel resolution phase.
+fn merged_resolve_members<E: Arch>(
+    objs: &mut FileList<ObjectFile<E>>,
+    count: usize,
+) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
+    let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
+        (0..count).map(|_| Vec::new()).collect();
+    for file in objs {
+        let filename = file.base.filename.as_ref();
+        let archive_name = file.archive_name;
+        let shstrtab = file.base.shstrtab;
+        let num_elf_sections = file.num_elf_sections;
+        for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {
+            let parent = merge_info.parent.index();
+            members[parent].push(crate::chunks::merged::ResolveMember {
+                merge_info,
+                data: input.contents(),
+                filename,
+                archive_name,
+                name: input.name_in(shstrtab, num_elf_sections),
+            });
+        }
+    }
+    members
+}
+
+pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("create_merged_sections");
+
+    if !ctx.args.oformat_binary && !ctx.args.relocatable {
+        let mut shdr = ElfShdr::<E>::default();
+        shdr.sh_type.set(SHT_PROGBITS);
+        shdr.sh_flags.set((SHF_MERGE | SHF_STRINGS) as u64);
+        let merged = RwLock::new(std::mem::take(&mut ctx.merged_sections));
+        ctx.comment = crate::chunks::merged::MergedSection::get_instance(
+            &ctx.args,
+            &merged,
+            BStr::new(b".comment"),
+            &shdr,
+            &mut crate::chunks::merged::MergedSectionCache::default(),
+        );
+        ctx.merged_sections = merged.into_inner().unwrap();
+    }
+
+    // Create fragment metadata for eligible SHF_MERGE input sections. The
+    // original InputSections remain stored but are marked dead.
+    let t = ctx.timer("convert_mergeable_sections");
+    {
+        let Context {
+            objs,
+            merged_sections,
+            args,
+            ..
+        } = ctx;
+        let merged = RwLock::new(std::mem::take(merged_sections));
+        // Keep a cache for each actual worker, including across Rayon jobs.
+        let caches = WorkerLocal::new(crate::chunks::merged::MergedSectionCache::default);
+        objs.par_iter_mut().for_each(|file| {
+            let mut cache = caches.get();
+            file.convert_mergeable_sections(args, &merged, &mut cache);
+        });
+        *merged_sections = merged.into_inner().unwrap();
+    }
+    drop(t);
+
+    // Register each mergeable section with its merged section. There are
+    // only a few merged sections, so doing this from the parallel loop
+    // above under a lock would serialize all threads on it.
+    let t = ctx.timer("register_members");
+    for file in &ctx.objs {
+        for m in file.merge_infos() {
+            ctx.merged_sections[m.parent.index()]
+                .members
+                .push(SectionRef {
+                    file: file.id(),
+                    shndx: m.shndx,
+                });
+        }
+    }
+    drop(t);
+
+    let t = ctx.timer("resolve");
+    let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
+    crate::chunks::merged::resolve_sections::<E>(
+        &mut ctx.merged_sections,
+        &mut members,
+        crate::chunks::merged::ResolveOptions {
+            allocated_only: true,
+            gc_sections: ctx.args.gc_sections,
+            comment: ctx.comment,
+            cmdline_args: &ctx.cmdline_args,
+            timers: &ctx.timers,
+        },
+    );
+    drop(t);
+
+    let _t = ctx.timer("reattach_section_pieces");
+    let Context {
+        objs,
+        symbols,
+        merged_sections,
+        ..
+    } = ctx;
+
+    let editor = SymbolEditor::new(symbols.as_mut_slice());
+    let fragments: Vec<_> = objs
+        .par_iter_mut()
+        .map(|file| {
+            let id = file.id();
+            file.reattach_section_symbols(id, &editor, merged_sections);
+            file.reattach_fragment_relocations(merged_sections)
+        })
+        .collect();
+
+    // Relocations already name the new file-local slots. Publish their global
+    // ids after reserving exactly the number of symbols that were needed.
+    let base = symbols.len();
+    // SAFETY: each task initializes all of its disjoint new slots.
+    unsafe {
+        symbols.add_many_with_existing(fragments.iter().map(Vec::len).sum(), |_, slots| {
+            let mut rest = slots;
+            let mut offset = base;
+            let parts: Vec<_> = fragments
+                .into_iter()
+                .map(|fragments| {
+                    let head = rest.split_off_mut(..fragments.len()).unwrap();
+
+                    let first = offset;
+                    offset += fragments.len();
+                    (first, head, fragments)
+                })
+                .collect();
+            objs.par_iter_mut()
+                .zip(parts)
+                .for_each(|(file, (first, slots, fragments))| {
+                    file.base.symbols.reserve(fragments.len());
+                    for (i, (slot, fragment)) in slots.iter_mut().zip(fragments).enumerate() {
+                        slot.write(fragment.into_symbol(file));
+                        file.base.symbols.push(SymbolId((first + i) as u32));
+                    }
+                });
+        });
+    }
+}
+
+pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("convert_common_symbols");
+    let default_version = ctx.default_version;
+    let Context {
+        objs,
+        symbols,
+        args,
+        ..
+    } = ctx;
+    for file in objs {
+        file.convert_common_symbols(args, file.id(), symbols, default_version);
+    }
+}
+
+fn has_ctors_and_init_array<E: Arch>(ctx: &Context<E>) -> bool {
+    ctx.objs.iter().any(|f| f.has_ctors) && ctx.objs.iter().any(|f| f.has_init_array)
+}
+
+fn canonicalize_type<E: Arch>(name: &[u8], ty: u32) -> u32 {
+    // Some old assemblers don't recognize these section names and create
+    // them as SHT_PROGBITS.
+    if ty == SHT_PROGBITS {
+        if name == b".init_array" || name.starts_with(b".init_array.") {
+            return SHT_INIT_ARRAY;
+        }
+        if name == b".fini_array" || name.starts_with(b".fini_array.") {
+            return SHT_FINI_ARRAY;
+        }
+    }
+    // The x86-64 psABI defines SHT_X86_64_UNWIND for .eh_frame, allowing
+    // the linker to recognize the section not by name but by section type.
+    // However, that spec change was generally considered a mistake; it has
+    // just complicated the situation. As a result, .eh_frame on x86-64 may
+    // be either SHT_PROGBITS or SHT_X86_64_UNWIND. We use SHT_PROGBITS
+    // consistently.
+    if E::FAMILY == Family::X86_64 && ty == SHT_X86_64_UNWIND {
+        return SHT_PROGBITS;
+    }
+    ty
+}
+
+fn output_name<E: Arch>(
+    args: &crate::cmdline::Args,
+    name: &'static BStr,
+    flags: u64,
+) -> &'static BStr {
+    if args.relocatable && !args.relocatable_merge_sections {
+        return name;
+    }
+    if !args.unique.is_empty() && args.unique.find(name) != -1 {
+        return name;
+    }
+    if flags & SHF_MERGE as u64 != 0 {
+        return name;
+    }
+    if E::FAMILY == Family::Arm32 {
+        if name.starts_with(b".ARM.exidx") {
+            return BStr::new(b".ARM.exidx");
+        }
+        if name.starts_with(b".ARM.extab") {
+            return BStr::new(b".ARM.extab");
+        }
+    }
+
+    if args.z_keep_text_section_prefix {
+        for prefix in [
+            ".text.hot.",
+            ".text.unknown.",
+            ".text.unlikely.",
+            ".text.startup.",
+            ".text.exit.",
+        ] {
+            let stem = &prefix[..prefix.len() - 1];
+            if name == stem.as_bytes() || name.starts_with(prefix.as_bytes()) {
+                return BStr::new(stem.as_bytes());
+            }
+        }
+    }
+
+    const PREFIXES: &[&str] = &[
+        ".text.",
+        ".data.rel.ro.",
+        ".data.",
+        ".rodata.",
+        ".bss.rel.ro.",
+        ".bss.",
+        ".init_array.",
+        ".fini_array.",
+        ".tbss.",
+        ".tdata.",
+        ".gcc_except_table.",
+        ".ctors.",
+        ".dtors.",
+        ".gnu.warning.",
+        ".openbsd.randomdata.",
+        ".sdata.",
+        ".sbss.",
+        ".srodata.",
+        ".gnu.build.attributes.",
+    ];
+    for prefix in PREFIXES {
+        let stem = &prefix[..prefix.len() - 1];
+        if name == stem.as_bytes() || name.starts_with(prefix.as_bytes()) {
+            return BStr::new(stem.as_bytes());
+        }
+    }
+    name
+}
+
+fn output_section_key<E: Arch>(
+    args: &crate::cmdline::Args,
+    isec: &crate::input_sections::InputSection<E>,
+    name: &'static BStr,
+    sh_type: u32,
+    ctors_in_init_array: bool,
+) -> (&'static BStr, u32) {
+    // If .init_array/.fini_array exist, .ctors/.dtors must be merged
+    // with them.
+    //
+    // CRT object files contain .ctors/.dtors sections without any
+    // relocations. They contain sentinel values, 0 and -1, to mark the
+    // beginning and the end of the initializer/finalizer pointer arrays.
+    // We do not place them into .init_array/.fini_array because such
+    // invalid pointer values would simply make the program to crash.
+    if ctors_in_init_array && isec.has_relocations() {
+        if name == b".ctors" || name.starts_with(b".ctors.") {
+            return (BStr::new(b".init_array"), SHT_INIT_ARRAY);
+        }
+        if name == b".dtors" || name.starts_with(b".dtors.") {
+            return (BStr::new(b".fini_array"), SHT_FINI_ARRAY);
+        }
+    }
+    let name = output_name::<E>(args, name, isec.sh_flags);
+    (name, canonicalize_type::<E>(name, sh_type))
+}
+
+type OutputSectionKey = (&'static BStr, u32);
+
+/// One file's contribution to an output section while members are gathered.
+#[derive(Default)]
+struct OutputSectionFileMembers {
+    members: Vec<InputSectionId>,
+    sh_flags: u64,
+    p2align: u8,
+}
+
+struct CachedOutputSection {
+    section: OutputSectionId,
+    file: Option<ObjId>,
+    group: usize,
+}
+
+type OutputSectionShared<E> = (
+    HashMap<OutputSectionKey, OutputSectionId>,
+    Vec<OutputSection<E>>,
+);
+
+// PT_GNU_RELRO segment is a security mechanism to make more pages
+// read-only than we could have done without it.
+//
+// Traditionally, sections are either read-only or read-write. If a
+// section contains dynamic relocations, it must have been put into a
+// read-write segment so that the program loader can mutate its
+// contents in memory, even if no one will write to it at runtime.
+//
+// RELRO segment allows us to make such pages writable only when a
+// program is being loaded. After that, the page becomes read-only.
+//
+// Some sections, such as .init, .fini, .got, .dynamic, contain
+// dynamic relocations but doesn't have to be writable at runtime,
+// so they are put into a RELRO segment.
+fn is_relro<E: Layout>(osec: &OutputSection<E>) -> bool {
+    let name = osec.hdr.name;
+    let ty = osec.hdr.shdr.sh_type.get();
+    let flags = osec.hdr.shdr.sh_flags.get();
+    name == b".toc"
+        || name.ends_with(b".rel.ro")
+        || name.ends_with(b".rel.ro.hot")
+        || name.ends_with(b".rel.ro.unlikely")
+        || matches!(ty, SHT_INIT_ARRAY | SHT_FINI_ARRAY | SHT_PREINIT_ARRAY)
+        || flags & SHF_TLS as u64 != 0
+}
+
+// Create output sections for input sections.
+//
+// Since one output section could contain millions of input sections,
+// we need to do it efficiently.
+pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("create_output_sections");
+    let ctors_in_init_array = has_ctors_and_init_array(ctx);
+    let first_new = ctx.output_sections.len();
+
+    // Keep a cache per worker so it is reused across Rayon jobs. Each mutex
+    // is locked once per file, without contention between workers.
+    // It makes a noticeable difference if we have millions of input sections.
+    let shared: Mutex<OutputSectionShared<E>> =
+        Mutex::new((HashMap::new(), std::mem::take(&mut ctx.output_sections)));
+    let caches = WorkerLocal::new(HashMap::new);
+
+    // Instantiate output sections and assign input sections to them
+    let file_groups = {
+        let Context { objs, args, .. } = ctx;
+        objs.par_iter_mut()
+            .map(|file| {
+                let mut groups: Vec<(OutputSectionId, OutputSectionFileMembers)> = Vec::new();
+                let mut cache = caches.get();
+                let file_id = file.id();
+                let shstrtab = file.base.shstrtab;
+                let num_elf_sections = file.num_elf_sections;
+                let shdrs = &file.base.shdrs;
+                let extra_shdrs = &file.elf_sections2;
+                for (member, isec) in file
+                    .sections
+                    .regular_ids_mut(file_id)
+                    .filter(|(_, isec)| isec.is_alive())
+                {
+                    let name = isec.name_in(shstrtab, num_elf_sections);
+                    let sh_type = if isec.is_nobits() {
+                        SHT_NOBITS
+                    } else if isec.shndx as usize >= num_elf_sections {
+                        let shdr = &extra_shdrs[isec.shndx as usize - num_elf_sections];
+                        shdr.sh_type.get()
+                    } else {
+                        shdrs[isec.shndx as usize].sh_type.get()
+                    };
+                    let sh_flags = isec.sh_flags
+                        & !(SHF_MERGE | SHF_STRINGS | SHF_COMPRESSED | SHF_GNU_RETAIN) as u64;
+
+                    if args.relocatable && sh_flags & SHF_GROUP as u64 != 0 {
+                        // COMDAT group members keep their own output sections
+                        // in a relocatable output.
+                        let mut osec = OutputSection::<E>::new(name, sh_type);
+                        osec.hdr.shdr.sh_flags.set(sh_flags);
+                        osec.hdr.shdr.sh_addralign.set(1 << isec.p2align());
+                        osec.hdr.is_relro = is_relro(&osec);
+                        osec.members.push(member);
+                        let mut shared = shared.lock().unwrap();
+                        shared.1.push(osec);
+                        isec.output_section = Some(OutputSectionId::new(shared.1.len() as u32 - 1));
+                        continue;
+                    }
+
+                    let key =
+                        output_section_key::<E>(args, isec, name, sh_type, ctors_in_init_array);
+                    let cached = cache.entry(key).or_insert_with(|| {
+                        let mut shared = shared.lock().unwrap();
+                        let (map, sections) = &mut *shared;
+                        let section = *map.entry(key).or_insert_with(|| {
+                            sections.push(OutputSection::<E>::new(key.0, key.1));
+                            OutputSectionId::new(sections.len() as u32 - 1)
+                        });
+                        CachedOutputSection {
+                            section,
+                            file: None,
+                            group: 0,
+                        }
+                    });
+                    if cached.file != Some(file_id) {
+                        cached.file = Some(file_id);
+                        cached.group = groups.len();
+                        groups.push((cached.section, OutputSectionFileMembers::default()));
+                    }
+                    isec.output_section = Some(cached.section);
+                    let group = &mut groups[cached.group].1;
+                    group.members.push(member);
+                    group.sh_flags |= sh_flags & !(SHF_GROUP as u64);
+                    group.p2align = group.p2align.max(isec.p2align());
+                }
+                groups
+            })
+            .collect::<Vec<_>>()
+    };
+    drop(caches);
+    let (_, sections) = shared.into_inner().unwrap();
+    ctx.output_sections = sections;
+
+    // Transpose only the groups that exist, retaining input-file order.
+    let mut grouped: Vec<Vec<OutputSectionFileMembers>> =
+        (0..ctx.output_sections.len()).map(|_| Vec::new()).collect();
+    for groups in file_groups {
+        for (section, members) in groups {
+            grouped[section.index()].push(members);
+        }
+    }
+
+    // Copy large member vectors in parallel, as well as flattening different
+    // output sections in parallel. No task mutates another file's groups.
+    let flattened: Vec<_> = grouped
+        .into_par_iter()
+        .enumerate()
+        .filter(|(_, parts)| !parts.is_empty())
+        .map(|(index, parts)| {
+            let n = parts.iter().map(|g| g.members.len()).sum();
+            let mut members = vec![InputSectionId::NONE; n];
+            let mut rest = members.as_mut_slice();
+            let mut slices = Vec::with_capacity(parts.len());
+            for g in &parts {
+                let head = rest.split_off_mut(..g.members.len()).unwrap();
+                slices.push(head);
+            }
+            parts.par_iter().zip(slices).for_each(|(g, slice)| {
+                slice.copy_from_slice(&g.members);
+            });
+
+            let sh_flags = parts.iter().fold(0, |flags, g| flags | g.sh_flags);
+            let p2align = parts.iter().map(|g| g.p2align).max().unwrap_or(0);
+            (
+                OutputSectionId::new(index as u32),
+                members,
+                sh_flags,
+                p2align,
+            )
+        })
+        .collect();
+    for (id, members, sh_flags, p2align) in flattened {
+        let osec = &mut ctx.output_sections[id.index()];
+        osec.members = members;
+        osec.hdr.shdr.sh_flags.set(sh_flags);
+        osec.hdr.shdr.sh_addralign.set(1 << p2align);
+        osec.hdr.is_relro = is_relro(osec);
+    }
+
+    // Add output sections and mergeable sections to ctx.chunks
+    let mut chunks: Vec<ChunkId> = (first_new..ctx.output_sections.len())
+        .map(|i| ChunkId::Output(OutputSectionId::new(i as u32)))
+        .chain(
+            (0..ctx.merged_sections.len())
+                .map(|i| ChunkId::Merged(crate::chunks::merged::MergedSectionId(i as u32))),
+        )
+        .collect();
+    // Sections are added to the section lists in an arbitrary order
+    // because they are created in parallel. Sort them to to make the
+    // output deterministic.
+    chunks.sort_by_cached_key(|&id| {
+        let hdr = ctx.chunk_header(id);
+        (hdr.name, hdr.shdr.sh_type.get(), hdr.shdr.sh_flags.get())
+    });
+    ctx.chunks.extend(chunks);
+}
+
+// Create a dummy object file containing linker-synthesized
+// symbols.
+pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
+    let mut obj = ObjectFile::internal();
+    obj.base.priority = 0;
+
+    // Create linker-synthesized symbols.
+    obj.base.elf_syms = Cow::Owned(vec![ElfSym::<E>::default()]);
+    let dummy = ctx.symbols.add(Symbol::new(BStr::new(b"")));
+    obj.base.symbols.push(dummy);
+    obj.base.first_global = 1;
+
+    let add = |symbols: &mut crate::symbol::SymbolTable, obj: &mut ObjectFile<E>, name: &[u8]| {
+        let id = symbols.get_or_intern(name);
+        obj.base.symbols.push(id);
+        // An actual value will be set to a linker-synthesized symbol by
+        // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
+        // value. 0xdeadbeef is a unique dummy value to make debugging easier
+        // if the field is accidentally used before it gets a valid one.
+        symbols[id].value = 0xdeadbeef;
+        let mut esym = ElfSym::<E>::default();
+        esym.st_shndx_mut().set(SHN_ABS as u16);
+        esym.set_type(STT_NOTYPE);
+        esym.set_bind(STB_GLOBAL);
+        esym.set_visibility(STV_DEFAULT);
+        obj.base.elf_syms.to_mut().push(esym);
+    };
+
+    // Add --defsym'd symbols
+    for (name, _) in &ctx.args.defsyms {
+        add(&mut ctx.symbols, &mut obj, name);
+    }
+    // Add --section-order symbols
+    for order in &ctx.args.section_order {
+        if let SectionOrder::Symbol(name) = order {
+            add(&mut ctx.symbols, &mut obj, name);
+        }
+    }
+
+    let id = ObjId(ctx.objs.push(Box::new(obj)));
+    ctx.internal_obj = Some(id);
+}
+
+fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Cow<'static, [u8]>> {
+    let hdr = ctx.chunk_header(id);
+    if !hdr.is_alloc() || hdr.name.is_empty() {
+        return None;
+    }
+    if is_c_identifier(hdr.name) {
+        return Some(Cow::Borrowed(hdr.name));
+    }
+    if ctx.args.start_stop {
+        let name = hdr.name.strip_prefix(b".").unwrap_or(hdr.name);
+        return Some(Cow::Owned(
+            name.iter()
+                .map(|&b| if b.is_ascii_alphanumeric() { b } else { b'_' })
+                .collect(),
+        ));
+    }
+    None
+}
+
+/// Resolves the internal object's symbols; its definitions win ties by
+/// virtue of its priority 0.
+fn resolve_internal_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let id = ctx.internal_obj.unwrap();
+    let obj = &ctx.objs[id.index()];
+    for i in obj.base.first_global..obj.base.elf_syms.len() {
+        let esym = &obj.base.elf_syms[i];
+        let sym_id = obj.base.symbols[i];
+        let rank = symbol_resolution_rank(esym, false, false, 0);
+        if rank < current_rank(ctx, &ctx.symbols[sym_id]) {
+            let sym = &mut ctx.symbols[sym_id];
+            sym.set_file(FileId::Obj(id));
+            sym.clear_origin();
+            sym.value = esym.st_value().get();
+            sym.set_sym_idx(i as u32);
+            sym.set_esym(esym);
+            sym.ver_idx = ctx.default_version;
+            sym.set_weak(esym.is_weak());
+            sym.set_versioned_default(false);
+        }
+    }
+}
+
+pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let obj_id = ctx.internal_obj.unwrap();
+
+    fn add<E: Arch>(ctx: &mut Context<E>, name: &[u8], ty: u32) -> SymbolId {
+        let mut esym = ElfSym::<E>::default();
+        esym.st_shndx_mut().set(SHN_ABS as u16);
+        esym.set_type(ty);
+        esym.set_bind(STB_GLOBAL);
+        esym.set_visibility(STV_HIDDEN);
+        let id = ctx.get_symbol(name);
+        ctx.symbols[id].value = 0xdeadbeef; // unique dummy value
+        let obj = ctx.internal_obj.unwrap();
+        ctx.objs[obj.index()].base.symbols.push(id);
+        ctx.objs[obj.index()].base.elf_syms.to_mut().push(esym);
+        id
+    }
+
+    let s = |ctx: &mut Context<E>, name: &str| add(ctx, name.as_bytes(), STT_NOTYPE);
+
+    ctx.syms.ehdr_start = Some(s(ctx, "__ehdr_start"));
+    ctx.syms.init_array_start = Some(s(ctx, "__init_array_start"));
+    ctx.syms.init_array_end = Some(s(ctx, "__init_array_end"));
+    ctx.syms.fini_array_start = Some(s(ctx, "__fini_array_start"));
+    ctx.syms.fini_array_end = Some(s(ctx, "__fini_array_end"));
+    ctx.syms.preinit_array_start = Some(s(ctx, "__preinit_array_start"));
+    ctx.syms.preinit_array_end = Some(s(ctx, "__preinit_array_end"));
+    ctx.syms.dynamic = Some(s(ctx, "_DYNAMIC"));
+    ctx.syms.global_offset_table = Some(s(ctx, "_GLOBAL_OFFSET_TABLE_"));
+    ctx.syms.procedure_linkage_table = Some(s(ctx, "_PROCEDURE_LINKAGE_TABLE_"));
+    ctx.syms.bss_start = Some(s(ctx, "__bss_start"));
+    ctx.syms.end_ = Some(s(ctx, "_end"));
+    ctx.syms.etext_ = Some(s(ctx, "_etext"));
+    ctx.syms.edata_ = Some(s(ctx, "_edata"));
+    ctx.syms.executable_start = Some(s(ctx, "__executable_start"));
+    let (start, end) = if E::IS_RELA {
+        ("__rela_iplt_start", "__rela_iplt_end")
+    } else {
+        ("__rel_iplt_start", "__rel_iplt_end")
+    };
+    ctx.syms.rel_iplt_start = Some(s(ctx, start));
+    ctx.syms.rel_iplt_end = Some(s(ctx, end));
+
+    if ctx.args.eh_frame_hdr {
+        ctx.syms.gnu_eh_frame_hdr = Some(s(ctx, "__GNU_EH_FRAME_HDR"));
+    }
+
+    for (name, slot) in [("end", 0), ("etext", 1), ("edata", 2), ("__dso_handle", 3)] {
+        let id = ctx.get_symbol(name.as_bytes());
+        if ctx.symbols[id].file().is_none() {
+            let id = s(ctx, name);
+            match slot {
+                0 => ctx.syms.end = Some(id),
+                1 => ctx.syms.etext = Some(id),
+                2 => ctx.syms.edata = Some(id),
+                _ => ctx.syms.dso_handle = Some(id),
+            }
+        }
+    }
+
+    if E::SUPPORTS_TLSDESC {
+        ctx.syms.tls_module_base = Some(add(ctx, b"_TLS_MODULE_BASE_", STT_TLS));
+    }
+    if E::IS_RISCV {
+        let id = s(ctx, "__global_pointer$");
+        ctx.syms.global_pointer = Some(id);
+        if ctx.dynamic.is_some() && !ctx.args.shared {
+            ctx.symbols[id].set_exported(true);
+        }
+    }
+    if E::FAMILY == Family::Arm32 {
+        ctx.syms.exidx_start = Some(s(ctx, "__exidx_start"));
+        ctx.syms.exidx_end = Some(s(ctx, "__exidx_end"));
+    }
+    if E::IS_PPC64 {
+        ctx.syms.toc = Some(s(ctx, ".TOC."));
+    }
+    if E::FAMILY == Family::Ppc64V2 {
+        for &(label, _) in crate::arch::ppc64v2::SAVE_RESTORE_INSNS {
+            if !label.is_empty() {
+                s(ctx, label);
+            }
+        }
+    }
+    if E::FAMILY == Family::Ppc32 {
+        s(ctx, "_SDA_BASE_");
+    }
+    if E::IS_SPARC {
+        // TLS_GD_CALL and TLS_LDM_CALL relocations call it implicitly.
+        ctx.syms.tls_get_addr = Some(ctx.get_symbol(b"__tls_get_addr"));
+    }
+
+    let add_start_stop = |ctx: &mut Context<E>, name: Vec<u8>| {
+        let id = add(ctx, &name, STT_NOTYPE);
+        if ctx.args.z_start_stop_visibility_protected {
+            ctx.symbols[id].set_exported(true);
+        }
+    };
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        if let Some(name) = start_stop_name(ctx, id) {
+            let name = name.as_ref();
+            add_start_stop(ctx, [b"__start_", name].concat());
+            add_start_stop(ctx, [b"__stop_", name].concat());
+            if ctx.args.physical_image_base.is_some() {
+                add_start_stop(ctx, [b"__phys_start_", name].concat());
+                add_start_stop(ctx, [b"__phys_stop_", name].concat());
+            }
+        }
+    }
+
+    resolve_internal_symbols(ctx);
+
+    // Make all synthetic symbols relative ones by associating them to
+    // a dummy output section.
+    for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
+        let id = ctx.objs[obj_id.index()].base.symbols[i];
+        if ctx.symbols[id].file() == Some(FileId::Obj(obj_id)) {
+            ctx.set_symbol_output_chunk(id, ChunkId::Symtab)
+                .set_imported(false);
+        }
+    }
+
+    // Handle --defsym symbols.
+    for (i, (name, value)) in ctx.args.defsyms.iter().enumerate() {
+        let sym1 = ctx.symbols.get_or_intern(name);
+        match value {
+            DefsymValue::Symbol(target) => {
+                let sym2 = ctx.symbols.get_or_intern(target);
+                if ctx.symbols[sym2].file().is_none() {
+                    error!("--defsym: undefined symbol: {}", ctx.symbols[sym2]);
+                    continue;
+                }
+                let sym2_esym = ctx.symbols[sym2].esym(ctx);
+                let obj = &mut ctx.objs[obj_id.index()];
+                let esym = &mut obj.base.elf_syms.to_mut()[i + 1];
+                esym.set_type(sym2_esym.st_type());
+                if E::FAMILY == Family::Ppc64V2 {
+                    esym.set_ppc64_local_entry(sym2_esym.ppc64_local_entry());
+                }
+                if ctx.symbols[sym1].file() == Some(FileId::Obj(obj_id)) {
+                    ctx.symbols[sym1].set_esym(esym);
+                }
+                if ctx.symbols[sym2].is_absolute() {
+                    ctx.symbols[sym1].clear_origin();
+                }
+            }
+            DefsymValue::Addr(_) => ctx.symbols[sym1].clear_origin(),
+        }
+    }
+}
+
+pub fn apply_section_align<E: Arch>(ctx: &mut Context<E>) {
+    if ctx.args.section_align.is_empty() {
+        return;
+    }
+    for osec in &mut ctx.output_sections {
+        if let Some(&align) = ctx.args.section_align.get(osec.hdr.name) {
+            osec.hdr.shdr.sh_addralign.set(align);
+        }
+    }
+}
+
+pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
+    let warning = ctx.args.z_cet_report == CetReportKind::Warning;
+    let has_feature = |file: &ObjectFile<E>, feature: u32| {
+        file.gnu_properties
+            .get(&GNU_PROPERTY_X86_FEATURE_1_AND)
+            .is_some_and(|v| v & feature != 0)
+    };
+    for file in &ctx.objs {
+        if ctx.is_internal(file.id()) {
+            continue;
+        }
+        for (feature, name) in [
+            (GNU_PROPERTY_X86_FEATURE_1_IBT, "IBT"),
+            (GNU_PROPERTY_X86_FEATURE_1_SHSTK, "SHSTK"),
+        ] {
+            if !has_feature(file, feature) {
+                if warning {
+                    warn!("{file}: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
+                } else {
+                    error!("{file}: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
+                }
+            }
+        }
+    }
+}
+
+pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
+    ReportOutput::Stdout.with_writer("--print-dependencies", |out| {
+        writeln!(
+            out,
+            "# This is an output of the mold linker's --print-dependencies option.\n\
+         #\n\
+         # Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and\n\
+         # <symbol>, separated by tab characters. It indicates that <section1> depends\n\
+         # on <section2> to use <symbol>. <symbol-type> is either \"u\" or \"w\" for\n\
+         # regular undefined or weak undefined, respectively.\n\
+         #\n\
+         # If you want to obtain dependency information per function granularity,\n\
+         # compile source files with the -ffunction-sections compiler flag."
+        )?;
+
+        let mut print = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
+            let kind = if is_weak { 'w' } else { 'u' };
+            match sym.input_section() {
+                Some(sec) => writeln!(
+                    out,
+                    "{src}\t{}\t{kind}\t{sym}",
+                    ctx.input_section_display(sec)
+                ),
+                None => writeln!(
+                    out,
+                    "{src}\t{}\t{kind}\t{sym}",
+                    ctx.file_display(sym.file().unwrap())
+                ),
+            }
+        };
+
+        let mut visited: HashSet<SymbolId> = HashSet::new();
+        for file in &ctx.objs {
+            for isec in file.input_sections() {
+                visited.clear();
+                for r in isec.rels(file) {
+                    if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
+                        continue;
+                    }
+                    let esym = &file.base.elf_syms[r.r_sym() as usize];
+                    let id = file.base.symbols[r.r_sym() as usize];
+                    let sym = &ctx.symbols[id];
+                    if esym.is_undef()
+                        && sym.file().is_some()
+                        && sym.file() != Some(FileId::Obj(file.id()))
+                        && visited.insert(id)
+                    {
+                        print(&isec.display(file), sym, esym.is_weak())?;
+                    }
+                }
+            }
+        }
+        for file in &ctx.dsos {
+            for i in 0..file.base.elf_syms.len() {
+                let esym = &file.base.elf_syms[i];
+                let sym = &ctx.symbols[file.base.symbols[i]];
+                if esym.is_undef()
+                    && sym.file().is_some()
+                    && sym.file() != Some(FileId::Dso(file.id()))
+                {
+                    print(file, sym, esym.is_weak())?;
+                }
+            }
+        }
+        Ok(())
+    });
+}
+
+fn create_response_file<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
+    fn argument(out: &mut Vec<u8>, bytes: &[u8]) {
+        out.push(b'"');
+        for &byte in bytes {
+            if byte == b'"' || byte == b'\\' {
+                out.push(b'\\');
+            }
+            out.push(byte);
+        }
+        out.extend_from_slice(b"\"\n");
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let bytes = cwd.as_os_str().as_encoded_bytes();
+    let mut out = b"-C\n".to_vec();
+    argument(&mut out, bytes.strip_prefix(b"/").unwrap_or(bytes));
+    if bytes != b"/" {
+        out.extend_from_slice(b"--chroot ..");
+        for _ in 1..bytes.iter().filter(|&&b| b == b'/').count() {
+            out.extend_from_slice(b"/..");
+        }
+        out.push(b'\n');
+    }
+    for arg in &ctx.cmdline_args[1..] {
+        let arg = arg.as_encoded_bytes();
+        if arg != b"-repro" && arg != b"--repro" {
+            argument(&mut out, arg);
+        }
+    }
+    out
+}
+
+pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
+    let _t = ctx.timer("write_repro_file");
+    let mut name = ctx.args.output.as_os_str().to_os_string();
+    name.push(".repro.tar");
+    let path = std::path::PathBuf::from(name);
+    let mut basedir = ctx
+        .args
+        .output
+        .file_name()
+        .unwrap_or_default()
+        .to_os_string();
+    basedir.push(".repro");
+    let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
+        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
+
+    let write = |tar: &mut crate::util::tar::TarWriter, name: &std::path::Path, data: &[u8]| {
+        tar.append(name, data)
+            .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
+    };
+    write(
+        &mut tar,
+        std::path::Path::new("response.txt"),
+        &create_response_file(ctx),
+    );
+    write(
+        &mut tar,
+        std::path::Path::new("version.txt"),
+        format!("{}\n", crate::cmdline::VERSION).as_bytes(),
+    );
+
+    let mut seen = HashSet::new();
+    for mf in crate::mapped_file::file_pool() {
+        if mf.parent.is_none() && seen.insert(mf.name.as_path()) {
+            // Reopen the original contents because private mappings may have
+            // been modified. Preserve the symlink name used in response.txt.
+            let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
+            let abs = std::path::absolute(&mf.name)
+                .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name.display()));
+            write(&mut tar, &abs, reopened.data());
+        }
+    }
+}
+
+pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
+    let _t = ctx.timer("check_duplicate_symbols");
+    ctx.objs.par_iter().for_each(|file| {
+        if !file.base.is_reachable() {
+            return;
+        }
+        let file_id = FileId::Obj(file.id());
+        for i in file.base.first_global..file.base.elf_syms.len() {
+            let esym = &file.base.elf_syms[i];
+            let sym = &ctx.symbols[file.base.symbols[i]];
+
+            // Skip if our symbol is undef or weak
+            let Some(owner) = sym.file() else { continue };
+            if owner == file_id
+                || ctx.internal_obj.map(FileId::Obj) == Some(owner)
+                || esym.is_undef()
+                || esym.is_common()
+                || esym.st_bind() == STB_WEAK
+            {
+                continue;
+            }
+            // Skip if our symbol is in a dead section. In most cases, the
+            // section has been eliminated due to comdat deduplication.
+            if !esym.is_abs() {
+                match file.symbol_section(i) {
+                    Some(isec) if isec.is_alive() => {}
+                    _ => continue,
+                }
+            }
+            // Skip if the symbol is a deduplicated comdat symbol that is in
+            // an IR file.
+            if file.is_lto_input() && file.lto_comdat_discarded[i] {
+                continue;
+            }
+            // Skip if one side is an LTO IR object and the other is not.
+            // The LTO backend resolves conflicts between IR and regular objects
+            // on its own; only IR-vs-IR duplicates need to be caught here.
+            if let FileId::Obj(o) = owner {
+                if ctx.objs[o.index()].is_lto_input() != file.is_lto_input() {
+                    continue;
+                }
+            }
+            error!(
+                "duplicate symbol: {file}: {}: {sym}",
+                ctx.file_display(owner)
+            );
+        }
+    });
+    crate::error::checkpoint();
+}
+
+// A default-versioned symbol `foo@@VER` can also be referred to as
+// `foo@VER`, so exporting both `foo@@VER` and `foo@VER` would produce a
+// dynamic symbol table with two definitions of the same versioned name,
+// and which one a versioned reference binds to would be up to the
+// dynamic loader. GNU ld and lld reject this; so do we.
+pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
+    if ctx.dynamic.is_none() || ctx.args.allow_multiple_definition {
+        return;
+    }
+    let _t = ctx.timer("check_symbol_version_conflicts");
+    ctx.dynsym
+        .symbols
+        .par_iter()
+        .skip(1)
+        .flatten()
+        .for_each(|&id| {
+            let sym = &ctx.symbols[id];
+            let Some(FileId::Obj(obj)) = sym.file() else {
+                return;
+            };
+            if sym.is_weak()
+                || sym.ver_idx as u32 == VER_NDX_UNSPECIFIED
+                || sym.ver_idx as u32 & VERSYM_HIDDEN == 0
+            {
+                return;
+            }
+            let Some(id2) = ctx.symbols.lookup(sym.name()) else {
+                return;
+            };
+            if id2 == id {
+                return;
+            }
+            let sym2 = &ctx.symbols[id2];
+            if let Some(FileId::Obj(_)) = sym2.file() {
+                if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
+                    let file = &ctx.objs[obj.index()];
+                    error!(
+                        "duplicate symbol: {file}: {}: {}",
+                        ctx.file_display(sym2.file().unwrap()),
+                        crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
+                    );
+                }
+            }
+        });
+    crate::error::checkpoint();
+}
+
+// GCC and Clang set the SHT_NOBITS flag for an output section only if the
+// section name is .bss or similar. Sections with nonstandard names, such
+// as those defined with __attribute__((section(".sectname"))), are always
+// emitted as non-BSS sections even if they contain only uninitialized
+// variables.
+//
+// This function finds such allocated but all-zero sections and converts
+// them into BSS, reducing the output file size.
+pub fn convert_zero_to_bss<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("convert_zero_to_bss");
+    ctx.objs.par_iter_mut().for_each(|file| {
+        if !file.base.is_reachable() {
+            return;
+        }
+        let sections: Vec<u32> = file
+            .input_sections()
+            .filter(|isec| {
+                let flags = isec.sh_flags as u32;
+                isec.is_alive()
+                    && isec.sh_type(file) == SHT_PROGBITS
+                    && flags & SHF_ALLOC != 0
+                    && flags & SHF_WRITE != 0
+                    && flags & SHF_EXECINSTR == 0
+                    && isec.rels(file).is_empty()
+                    && !isec.contents().is_empty()
+                    && isec.contents().iter().all(|&b| b == 0)
+            })
+            .map(|isec| isec.shndx)
+            .collect();
+        for shndx in sections {
+            let isec = file.section_mut(shndx as usize).unwrap();
+            isec.set_nobits();
+            isec.clear_contents();
+        }
+    });
+}
+
+fn has_dso_definition<E: Arch>(ctx: &Context<E>, id: SymbolId) -> bool {
+    ctx.dsos.pool_iter().any(|dso| {
+        dso.base
+            .symbols
+            .iter()
+            .zip(dso.base.elf_syms.iter())
+            .any(|(&s, esym)| s == id && !esym.is_undef())
+    })
+}
+
+// If --no-allow-shlib-undefined is specified, we report errors on
+// unresolved symbols in shared libraries. This is useful when you are
+// creating a final executable and want to make sure that all symbols
+// including ones in shared libraries have been resolved.
+//
+// If you do not pass --no-allow-shlib-undefined, undefined symbols in
+// shared libraries will be reported as run-time error by the dynamic
+// linker.
+pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("check_shlib_undefined");
+
+    // Skip test if we don't have a complete set of shared object files
+    // for the program, because if there's a missing .so, an undefined
+    // symbol might be defined by that library.
+    let complete = ctx.dsos.iter().all(|dso| {
+        dso.dt_needed()
+            .all(|needed| ctx.dso_sonames.contains(needed))
+    });
+
+    if complete {
+        ctx.dsos.par_iter().for_each(|file| {
+            // Check if all undefined symbols have been resolved.
+            for i in 0..file.base.elf_syms.len() {
+                let esym = &file.base.elf_syms[i];
+                let id = file.base.symbols[i];
+                let sym = &ctx.symbols[id];
+                // Dynamic symbol table for SPARC contains bogus entries which
+                // we need to ignore
+                let is_sparc_register = E::IS_SPARC && esym.st_type() == STT_SPARC_REGISTER;
+                let defined = sym.file().is_some() && sym.visibility() != STV_HIDDEN;
+                if esym.is_undef()
+                    && !esym.is_weak()
+                    && !is_sparc_register
+                    && !defined
+                    && !has_dso_definition(ctx, id)
+                {
+                    error!("{file}: --no-allow-shlib-undefined: undefined symbol: {sym}");
+                }
+            }
+        });
+    }
+
+    // Beyond this point, DSOs that are not referenced directly by any
+    // object file are not needed. They were kept by
+    // SharedFile<E>::mark_live_objects just for this pass. Therefore,
+    // remove unneeded DSOs from the list now.
+    for file in &ctx.dsos {
+        file.base.set_reachable(!file.base.as_needed);
+    }
+    let Context {
+        objs,
+        dsos,
+        symbols,
+        ..
+    } = ctx;
+    objs.par_iter().for_each(|file| {
+        for &id in file.base.global_symbols() {
+            if let Some(FileId::Dso(dso)) = symbols[id].file() {
+                dsos[dso.index()].base.set_reachable(true);
+            }
+        }
+    });
+    remove_unreachable_dsos(ctx);
+}
+
+/// Drops DSOs that are no longer needed, renumbering the rest.
+pub fn remove_unreachable_dsos<E: Arch>(ctx: &mut Context<E>) {
+    ctx.dsos.retain(|file| file.base.is_reachable());
+}
+
+pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
+    let _t = ctx.timer("check_symbol_types");
+    let canonicalize = |ty: u32| match ty {
+        STT_GNU_IFUNC => STT_FUNC,
+        STT_COMMON => STT_OBJECT,
+        ty => ty,
+    };
+    let check = |file: &dyn std::fmt::Display, file_id: FileId, sym: &Symbol, st_type2: u32| {
+        let esym1 = &sym.esym(ctx);
+        if let Some(owner) = sym.file() {
+            if owner != file_id
+                && esym1.st_type() != STT_NOTYPE
+                && st_type2 != STT_NOTYPE
+                && canonicalize(esym1.st_type()) != canonicalize(st_type2)
+            {
+                warn!("symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
+                    ctx.file_display(owner),
+                    stt_to_string(esym1.st_type()),
+                    stt_to_string(st_type2)
+                );
+            }
+        }
+    };
+
+    ctx.objs.par_iter().for_each(|file| {
+        let id = FileId::Obj(file.id());
+        for i in file.base.first_global..file.base.elf_syms.len() {
+            let sym = &ctx.symbols[file.base.symbols[i]];
+            if sym.file().is_some() && sym.file() != Some(id) {
+                check(file, id, sym, file.base.elf_syms[i].st_type());
+            }
+        }
+    });
+    ctx.dsos.par_iter().for_each(|file| {
+        let id = FileId::Dso(file.id());
+        for i in 0..file.base.elf_syms.len() {
+            let sym = &ctx.symbols[file.base.symbols[i]];
+            if sym.file().is_some() && sym.file() != Some(id) {
+                check(file, id, sym, file.base.elf_syms[i].st_type());
+            }
+            let id2 = file.symbols2[i];
+            if !file.base.elf_syms[i].is_undef() && id2 != SymbolId::NONE {
+                let sym = &ctx.symbols[id2];
+                if sym.file().is_some() && sym.file() != Some(id) {
+                    check(file, id, sym, file.base.elf_syms[i].st_type());
+                }
+            }
+        }
+    });
+}
+
+/// The `.N` suffix of an init/fini section name, or 65536.
+fn init_fini_priority(name: &[u8]) -> i64 {
+    numeric_suffix(name).unwrap_or(65536)
+}
+
+fn numeric_suffix(name: &[u8]) -> Option<i64> {
+    let pos = name.iter().rposition(|&b| b == b'.')?;
+    let digits = &name[pos + 1..];
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(digits).ok()?.parse().ok()
+}
+
+fn ctor_dtor_priority<E: Arch>(ctx: &Context<E>, id: InputSectionId) -> i64 {
+    // crtbegin.o and crtend.o contain marker symbols such as
+    // __CTOR_LIST__ or __DTOR_LIST__. So they have to be at the
+    // beginning or end of the section.
+    let isec = ctx.input_section(id);
+    let file = &ctx.objs[isec.file.index()];
+    let filename = &file.base.filename;
+    if filename.contains("crtbegin") {
+        return -2;
+    }
+    if filename.contains("crtend") {
+        return 65536;
+    }
+    numeric_suffix(isec.name(file)).unwrap_or(-1)
+}
+
+pub fn sort_init_fini<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("sort_init_fini");
+    for i in 0..ctx.output_sections.len() {
+        let name = ctx.output_sections[i].hdr.name;
+        if name != b".init_array" && name != b".preinit_array" && name != b".fini_array" {
+            continue;
+        }
+        let mut members = std::mem::take(&mut ctx.output_sections[i].members);
+        if ctx.args.shuffle_sections == ShuffleSections::Reverse {
+            members.reverse();
+        }
+        members.sort_by_cached_key(|&id| {
+            let isec = ctx.input_section(id);
+            let name = isec.name(&ctx.objs[isec.file.index()]);
+            if name.starts_with(b".ctors") || name.starts_with(b".dtors") {
+                65535 - ctor_dtor_priority(ctx, id)
+            } else {
+                init_fini_priority(name)
+            }
+        });
+        ctx.output_sections[i].members = members;
+    }
+}
+
+pub fn sort_ctor_dtor<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("sort_ctor_dtor");
+    for i in 0..ctx.output_sections.len() {
+        let name = ctx.output_sections[i].hdr.name;
+        if name != b".ctors" && name != b".dtors" {
+            continue;
+        }
+        let mut members = std::mem::take(&mut ctx.output_sections[i].members);
+        if ctx.args.shuffle_sections != ShuffleSections::Reverse {
+            members.reverse();
+        }
+        members.sort_by_cached_key(|&id| ctor_dtor_priority(ctx, id));
+        ctx.output_sections[i].members = members;
+    }
+}
+
+// Debug sections in an input object file refer to other debug sections in
+// the same file using section offsets. The offsets are 64 bits in DWARF64
+// and 32 bits in DWARF32.
+//
+// GCC and Clang emit DWARF32 debug info by default even for 64-bit code.
+// That is, 64-bit values are used for addresses, and 32-bit values for
+// references between debug sections. This makes sense for ordinary programs
+// because it reduces the size of the debug info sections.
+//
+// You can change the format to DWARF64 by passing `-gdwarf64`. Therefore,
+// the "right" approach to build an extremely large program in debug mode is
+// to recompile everything with `-gdwarf64`. However, that’s often not
+// feasiable for various reasons.
+//
+// If we don't do anything about it, a relocation overflow could occur if
+// any output debug section exceeds 4 GiB in size, making it almost
+// impossible for users to link an object file compiled without `-gdwarf64`
+// to an extremely large program.
+//
+// This function works around the issue by sorting output debug section
+// contents so that DWARF32 input sections are at the start of the output
+// section followed by DWARF64 input sections. By doing this, we can avoid
+// relocation overflow until the total size of DWARF32 input sections alone
+// exceeds 4 GiB.
+pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("sort_debug_info_sections");
+
+    // True if mold is running under ctest
+    let is_in_test = std::env::var_os("MOLD_DEBUG").is_some_and(|v| !v.is_empty());
+
+    // Get lists of output debug sections that need sorting
+    let vec1: Vec<OutputSectionId> = (0..ctx.output_sections.len())
+        .map(|i| OutputSectionId::new(i as u32))
+        .filter(|&id| {
+            let osec = &ctx.output_sections[id.index()];
+            !osec.hdr.is_alloc()
+                && osec.hdr.name.starts_with(b".debug_")
+                && (osec.hdr.shdr.sh_size.get() >= u32::MAX as u64 || is_in_test)
+        })
+        .collect();
+    let vec2: Vec<crate::chunks::merged::MergedSectionId> = (0..ctx.merged_sections.len())
+        .map(|i| crate::chunks::merged::MergedSectionId(i as u32))
+        .filter(|&id| {
+            let msec = &ctx.merged_sections[id.index()];
+            !msec.is_alloc()
+                && msec.hdr.name.starts_with(b".debug_")
+                && (msec.hdr.shdr.sh_size.get() >= u32::MAX as u64 || is_in_test)
+        })
+        .collect();
+    if vec1.is_empty() && vec2.is_empty() {
+        return;
+    }
+
+    // Record whether each input file contains DWARF32 debug info.
+    {
+        let Context { objs, .. } = ctx;
+        objs.par_iter_mut().for_each(|file| {
+            file.is_dwarf32 = !file.debug_info_sections.is_empty() && file.is_dwarf32();
+        });
+    }
+
+    // Unless DWARF32 and DWARF64 debug info come from different files, it
+    // doesn't make sense to sort sections.
+    let has_dwarf32 = ctx.objs.iter().any(|f| f.is_dwarf32);
+    let has_dwarf64 = ctx
+        .objs
+        .iter()
+        .any(|f| !f.is_dwarf32 && !f.debug_info_sections.is_empty());
+    if !has_dwarf32 || !has_dwarf64 {
+        return;
+    }
+
+    // Reorder input sections in the output section so that DWARF32
+    // precededs DWARF64.
+    for id in vec1 {
+        let objs = &ctx.objs;
+        let osec = &mut ctx.output_sections[id.index()];
+        // Preserve the relative order within the two DWARF classes.
+        crate::util::parallel::stable_partition(&mut osec.members, |&m| {
+            objs[m.file().index()].is_dwarf32
+        });
+        chunks::compute_section_size(ctx, ChunkId::Output(id));
+    }
+
+    // Reorder strings in .debug_str and the like
+    for id in &vec2 {
+        let msec = &ctx.merged_sections[id.index()];
+        for file in ctx.objs.iter().filter(|f| f.is_dwarf32) {
+            for m in file.merge_infos().filter(|m| m.parent == *id) {
+                for &frag in &m.fragments {
+                    msec.fragments.get(frag).set_32bit();
+                }
+            }
+        }
+    }
+    for id in vec2 {
+        crate::chunks::merged::layout(&mut ctx.merged_sections[id.index()]);
+    }
+}
+
+// .ctors/.dtors serves the same purpose as .init_array/.fini_array,
+// albeit with very subtly differences. Both contain pointers to
+// initializer/finalizer functions. The runtime executes them one by one
+// but in the exact opposite order to one another. Therefore, if we are to
+// place the contents of .ctors/.dtors into .init_array/.fini_array, we
+// need to reverse them.
+//
+// It's unfortunate that we have both .ctors/.dtors and
+// .init_array/.fini_array in ELF for historical reasons, but that's
+// the reality we need to deal with.
+pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("fixup_ctors_in_init_array");
+    let word = E::WORD_SIZE;
+
+    for (osec_name, prefix) in [
+        (&b".init_array"[..], &b".ctors"[..]),
+        (&b".fini_array"[..], &b".dtors"[..]),
+    ] {
+        let Some(ChunkId::Output(id)) = ctx.find_chunk_by_name(osec_name) else {
+            continue;
+        };
+        let members = &ctx.output_sections[id.index()].members;
+        for &m in members {
+            let section_ref = ctx.input_section(m).section_ref();
+            if !ctx
+                .input_section(m)
+                .name(&ctx.objs[section_ref.file.index()])
+                .starts_with(prefix)
+            {
+                continue;
+            }
+            let file = &ctx.objs[section_ref.file.index()];
+            let isec = ctx.input_section(m);
+            if !isec.sh_size.is_multiple_of(word as u64) {
+                fatal!("{}: section corrupted", isec.display(file));
+            }
+            let mut contents = isec.contents().to_vec();
+            let n = contents.len() / word;
+            for i in 0..n / 2 {
+                let (a, b) = (i * word, (n - 1 - i) * word);
+                for k in 0..word {
+                    contents.swap(a + k, b + k);
+                }
+            }
+            let size = isec.sh_size;
+            let file = &mut ctx.objs[section_ref.file.index()];
+            let rels = file.rels_mut(section_ref.shndx);
+            for r in rels.iter_mut() {
+                r.set_r_offset(size - r.r_offset() - word as u64);
+            }
+            rels.sort_by_key(|r| r.r_offset());
+            file.section_mut(section_ref.shndx as usize)
+                .unwrap()
+                .set_contents(leak_bytes(contents));
+        }
+    }
+}
+
+fn shuffle(vec: &mut [InputSectionId], mut seed: u64) {
+    if vec.is_empty() {
+        return;
+    }
+    // Xorshift random number generator. We use this RNG because it is
+    // measurably faster than MT19937.
+    let mut rand = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    };
+    // The Fisher-Yates shuffling algorithm. Use a fixed RNG and index mapping so
+    // the exact order is reproducible across platforms and library versions.
+    for i in 0..vec.len() - 1 {
+        let j = i + (rand() % (vec.len() - i) as u64) as usize;
+        vec.swap(i, j);
+    }
+}
+
+pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("shuffle_sections");
+    let is_eligible = |osec: &OutputSection<E>| {
+        let name = osec.hdr.name;
+        osec.hdr.is_alloc()
+            && name != b".init"
+            && name != b".fini"
+            && name != b".ctors"
+            && name != b".dtors"
+            && name != b".init_array"
+            && name != b".preinit_array"
+            && name != b".fini_array"
+    };
+    let mode = ctx.args.shuffle_sections;
+    ctx.output_sections
+        .par_iter_mut()
+        .filter(|o| is_eligible(o))
+        .for_each(|osec| match mode {
+            ShuffleSections::Shuffle(seed) => {
+                let s = seed.wrapping_add(xxhash_rust::xxh3::xxh3_64(osec.hdr.name));
+                shuffle(&mut osec.members, s);
+            }
+            ShuffleSections::Reverse => osec.members.reverse(),
+            ShuffleSections::None => {}
+        });
+}
+
+pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
+    for dso in &ctx.dsos {
+        let audit = dso.dt_audit();
+        if !audit.is_empty() {
+            if !ctx.args.depaudit.is_empty() {
+                ctx.args.depaudit.push(b':');
+            }
+            ctx.args.depaudit.extend_from_slice(audit);
+        }
+    }
+    let strings = ctx
+        .dsos
+        .iter()
+        .map(|dso| dso.soname)
+        .chain(ctx.args.auxiliary.iter().map(Vec::as_slice))
+        .chain(ctx.args.filter.iter().map(Vec::as_slice))
+        .chain([
+            ctx.args.audit.as_slice(),
+            ctx.args.depaudit.as_slice(),
+            ctx.args.rpaths.as_encoded_bytes(),
+            ctx.args.soname.as_encoded_bytes(),
+        ]);
+    for s in strings {
+        if !s.is_empty() {
+            ctx.dynstr.add_string(s);
+        }
+    }
+}
+
+pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("compute_section_sizes");
+
+    // On a target with range extension thunks, an executable section gets
+    // its thunks and its layout at the same time.
+    let needs_thunks = |ctx: &Context<E>, id: ChunkId| match id {
+        ChunkId::Output(osec) => {
+            E::NEEDS_THUNK
+                && !ctx.args.relocatable
+                && ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64
+                    != 0
+        }
+        _ => false,
+    };
+
+    // create_range_extension_thunks is not thread-safe
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        if let ChunkId::Output(osec) = id {
+            if needs_thunks(ctx, id) {
+                crate::thunks::create_range_extension_thunks(ctx, osec);
+            }
+        }
+    }
+
+    // Relocatable links resolve non-allocated sections here; ordinary links
+    // already completed that work in the background.
+    if ctx.merged_sections.iter().any(|section| !section.resolved) {
+        let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
+        crate::chunks::merged::resolve_sections::<E>(
+            &mut ctx.merged_sections,
+            &mut members,
+            crate::chunks::merged::ResolveOptions {
+                allocated_only: false,
+                gc_sections: ctx.args.gc_sections,
+                comment: ctx.comment,
+                cmdline_args: &ctx.cmdline_args,
+                timers: &ctx.timers,
+            },
+        );
+    }
+
+    // Output sections are laid out in parallel with each other, and each
+    // in parallel over its members; the synthesized chunks follow.
+    let sizes: Vec<(OutputSectionId, u64)> = {
+        let ctx: &Context<E> = ctx;
+        ctx.chunks
+            .par_iter()
+            .filter_map(|&id| match id {
+                ChunkId::Output(osec) if !needs_thunks(ctx, id) => {
+                    Some((osec, chunks::output_section::layout(ctx, osec)))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    for (osec, size) in sizes {
+        ctx.output_sections[osec.index()].hdr.shdr.sh_size.set(size);
+    }
+
+    // Every merged section now owns all the mutable state needed for its
+    // layout, just as each C++ Chunk does in the parallel chunk loop.
+    ctx.merged_sections
+        .par_iter_mut()
+        .filter(|section| section.is_alloc())
+        .for_each(crate::chunks::merged::layout);
+
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        match id {
+            ChunkId::Output(_) => {}
+            ChunkId::Merged(_) => {}
+            _ => chunks::compute_section_size(ctx, id),
+        }
+    }
+}
+
+// Find all unresolved symbols and attach them to the most appropriate files.
+//
+// Note that even a symbol that will be reported as an undefined symbol
+// will get an owner file in this function. Such symbol will be reported
+// by ObjectFile<E>::scan_relocations(). This is because we want to report
+// errors only on symbols that are actually referenced.
+pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("claim_unresolved_symbols");
+
+    // Find the references to symbols that no file defines. Nearly all
+    // references are to defined symbols, which this pass leaves alone, so
+    // they are filtered out without taking the symbols' locks, which
+    // would otherwise be contended for every popular symbol.
+    let candidates: Vec<(ObjId, usize)> = {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .objs
+            .par_iter()
+            .flat_map_iter(|file| {
+                let file_id = file.id();
+                let internal = ctx_ref.is_internal(file_id);
+                (file.base.first_global..file.base.elf_syms.len())
+                    .filter(move |&i| {
+                        !internal
+                            && file.base.elf_syms[i].is_undef()
+                            && ctx_ref.symbols[file.base.symbols[i]].file().is_none()
+                    })
+                    .map(move |i| (file_id, i))
+            })
+            .collect()
+    };
+
+    for (obj_id, i) in candidates {
+        let file = &ctx.objs[obj_id.index()];
+        let esym = file.base.elf_syms[i];
+        let id = file.base.symbols[i];
+        let priority = file.base.priority;
+        let file_id = FileId::Obj(obj_id);
+
+        {
+            let sym = &ctx.symbols[id];
+            if let Some(owner) = sym.file() {
+                if !sym.is_undef() || ctx.file(owner).priority <= priority {
+                    continue;
+                }
+            }
+        }
+
+        let claim = |ctx: &mut Context<E>, is_imported: bool| {
+            let sym = &ctx.symbols[id];
+            if sym.is_traced() {
+                out!(
+                    "trace-symbol: {}: unresolved{} symbol {sym}",
+                    ctx.objs[obj_id.index()],
+                    if esym.is_weak() { " weak" } else { "" }
+                );
+            }
+            let default_version = ctx.default_version;
+            let is_rust = ctx.objs[obj_id.index()].is_rust_obj;
+            let sym = &mut ctx.symbols[id];
+            sym.set_file(file_id);
+            sym.clear_origin();
+            sym.value = 0;
+            sym.set_sym_idx(i as u32);
+            sym.set_esym(&esym);
+            sym.set_rust(is_rust);
+            sym.set_weak(false);
+            sym.set_imported(is_imported);
+            sym.set_exported(false);
+            sym.ver_idx = if is_imported {
+                VER_NDX_UNSPECIFIED as u16
+            } else {
+                default_version
+            };
+        };
+
+        let visibility = ctx.symbols[id].visibility();
+        if esym.is_undef_weak() {
+            if ctx.args.z_dynamic_undefined_weak && visibility != STV_HIDDEN {
+                // Global weak undefined symbols are promoted to dynamic symbols
+                // by default only when linking a DSO. We generally cannot do that
+                // for executables because we may need to create a copy relocation
+                // for a data symbol, but the symbol size is not available for an
+                // unclaimed weak symbol.
+                //
+                // In contrast, GNU ld promotes weak symbols to dynamic ones even
+                // for an executable as long as they don't need copy relocations
+                // (i.e. they need only PLT entries.) That may result in an
+                // inconsistent behavior of a linked program depending on whether
+                // whether its object files were compiled with -fPIC or not. I think
+                // that's bad semantics, so we don't do that.
+                claim(ctx, true);
+            } else {
+                // Otherwise, weak undefs are converted to absolute symbols with value 0.
+                claim(ctx, false);
+            }
+            continue;
+        }
+
+        // Traditionally, remaining undefined symbols cause a link failure
+        // only when we are creating an executable. Undefined symbols in
+        // shared objects are promoted to dynamic symbols, so that they'll
+        // get another chance to be resolved at run-time. You can change the
+        // behavior by passing `-z defs` to the linker.
+        //
+        // Even if `-z defs` is given, weak undefined symbols are still
+        // promoted to dynamic symbols for compatibility with other linkers.
+        // Some major programs, notably Firefox, depend on the behavior
+        // (they use this loophole to export symbols from libxul.so).
+        if ctx.args.shared
+            && visibility != STV_HIDDEN
+            && ctx.args.unresolved_symbols != UnresolvedKind::Error
+        {
+            claim(ctx, true);
+            continue;
+        }
+
+        // Convert remaining undefined symbols to absolute symbols with value 0.
+        claim(ctx, false);
+    }
+}
+
+pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("scan_relocations");
+
+    // Scan relocations to find dynamic symbols.
+    {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .objs
+            .par_iter()
+            .for_each(|file| file.scan_relocations(ctx_ref));
+    }
+    // Exit if there was a relocation that refers an undefined symbol.
+    crate::error::checkpoint();
+
+    // Word-size absolute relocations (e.g. R_X86_64_64) are handled
+    // separately because they can be promoted to dynamic relocations.
+    let results: Vec<(
+        OutputSectionId,
+        Vec<crate::chunks::output_section::AbsRel>,
+        Vec<u64>,
+    )> = {
+        let ctx_ref: &Context<E> = ctx;
+        (0..ctx_ref.output_sections.len())
+            .into_par_iter()
+            .map(|i| OutputSectionId::new(i as u32))
+            .filter(|&id| ctx_ref.output_sections[id.index()].hdr.is_alloc())
+            .map(|id| {
+                let (abs_rels, offsets) =
+                    crate::chunks::output_section::scan_abs_relocations(ctx_ref, id);
+                (id, abs_rels, offsets)
+            })
+            .collect()
+    };
+    for (id, abs_rels, offsets) in results {
+        let osec = &mut ctx.output_sections[id.index()];
+        osec.abs_rels = abs_rels;
+        osec.dynrel_offsets = offsets;
+    }
+    // Exit if the absolute-relocation pass reported an error.
+    crate::error::checkpoint();
+
+    // Group dynamic symbols by their owning file.
+    let groups: Vec<Vec<SymbolId>> = {
+        let ctx_ref: &Context<E> = ctx;
+        let objs: Vec<Vec<SymbolId>> = ctx_ref
+            .objs
+            .par_iter()
+            .map(|file| {
+                let id = FileId::Obj(file.id());
+                file.base
+                    .symbols
+                    .iter()
+                    .copied()
+                    .filter(|&s| {
+                        let sym = &ctx_ref.symbols[s];
+                        sym.file() == Some(id)
+                            && (sym.flags() != 0 || sym.is_imported() || sym.is_exported())
+                    })
+                    .collect()
+            })
+            .collect();
+        let dsos: Vec<Vec<SymbolId>> = ctx_ref
+            .dsos
+            .par_iter()
+            .map(|file| {
+                let id = FileId::Dso(file.id());
+                file.base
+                    .symbols
+                    .iter()
+                    .copied()
+                    .filter(|&s| {
+                        let sym = &ctx_ref.symbols[s];
+                        sym.file() == Some(id)
+                            && (sym.flags() != 0 || sym.is_imported() || sym.is_exported())
+                    })
+                    .collect()
+            })
+            .collect();
+        objs.into_iter().chain(dsos).collect()
+    };
+
+    if ctx.needs_tlsld.load(Ordering::Relaxed) {
+        crate::chunks::got::add_tlsld(ctx);
+    }
+
+    // Every dynamic symbol gets its auxiliary record. The loop below
+    // assigns table entries in order and so runs on one thread; the
+    // records are allocated beforehand in the side vector.
+    // SAFETY: every group was filtered to symbols owned by its input file,
+    // and each input file has a unique id.
+    unsafe { ctx.symbols.allocate_aux(&groups) };
+    let mut syms = Vec::with_capacity(groups.iter().map(Vec::len).sum());
+    syms.extend(groups.into_iter().flatten());
+
+    // Fetch symbols before their auxiliary records to hide both loads.
+    // Assign table entries in command-line order.
+    for (i, &id) in syms.iter().enumerate() {
+        if let Some(&next) = syms.get(i + 64) {
+            crate::util::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
+        }
+        if let Some(aux) = syms
+            .get(i + 16)
+            .and_then(|&id| ctx.symbols[id].aux(&ctx.symbols))
+        {
+            crate::util::prefetch(std::ptr::from_ref(aux).cast());
+        }
+        let flags = ctx.symbols[id].flags();
+        let (is_imported, is_exported, ty) = {
+            let sym = &ctx.symbols[id];
+            (sym.is_imported(), sym.is_exported(), sym.ty())
+        };
+
+        if is_imported || is_exported {
+            ctx.dynsym.add_symbol(&mut ctx.symbols, id);
+        }
+        if flags & NEEDS_GOT != 0 {
+            crate::chunks::got::add_got_symbol(ctx, id);
+        }
+        if flags & NEEDS_CANONICAL != 0 && ty == STT_FUNC {
+            let sym = &mut ctx.symbols[id];
+            sym.set_canonical(true);
+
+            // A canonical PLT needs to be visible from DSOs.
+            sym.set_exported(true);
+
+            // We can't use .plt.got for a canonical PLT because otherwise
+            // .plt.got and .got would refer to each other, resulting in an
+            // infinite loop at runtime.
+            crate::chunks::plt::add_symbol(ctx, id);
+        } else if flags & NEEDS_PLT != 0 {
+            if flags & NEEDS_GOT != 0 {
+                crate::chunks::pltgot::add_symbol(ctx, id);
+            } else {
+                crate::chunks::plt::add_symbol(ctx, id);
+            }
+        }
+        if flags & NEEDS_GOTTP != 0 {
+            crate::chunks::got::add_gottp_symbol(ctx, id);
+        }
+        if flags & NEEDS_TLSGD != 0 {
+            crate::chunks::got::add_tlsgd_symbol(ctx, id);
+        }
+        if flags & NEEDS_TLSDESC != 0 {
+            crate::chunks::got::add_tlsdesc_symbol(ctx, id);
+        }
+        if flags & NEEDS_CANONICAL != 0 && ty != STT_FUNC {
+            let relro = ctx.args.z_relro
+                && match ctx.symbols[id].file() {
+                    Some(FileId::Dso(dso)) => ctx.dsos[dso.index()].is_readonly(&ctx.symbols[id]),
+                    _ => false,
+                };
+            copyrel::add_symbol(ctx, relro, id);
+        }
+        if E::FAMILY == Family::Ppc64V1 && flags & NEEDS_PPC_OPD != 0 {
+            crate::chunks::opd::add_symbol(ctx, id);
+        }
+        ctx.symbols[id].clear_flags();
+    }
+
+    if ctx.has_textrel.load(Ordering::Relaxed) && ctx.args.warn_textrel {
+        warn!("creating a DT_TEXTREL in an output file");
+    }
+}
+
+// Report all undefined symbols, grouped by symbol.
+pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
+    const MAX_ERRORS: usize = 3;
+    if ctx.args.unresolved_symbols == UnresolvedKind::Ignore {
+        return;
+    }
+    let mut errors: Vec<(SymbolId, Vec<String>)> =
+        std::mem::take(&mut *ctx.undef_errors.lock().unwrap())
+            .into_iter()
+            .collect();
+    errors.sort_by_key(|e| e.0);
+
+    for (id, messages) in errors {
+        let sym = &ctx.symbols[id];
+        let mut msg = format!("undefined symbol: {sym}\n");
+        for m in messages.iter().take(MAX_ERRORS) {
+            msg.push_str(m);
+        }
+        if messages.len() > MAX_ERRORS {
+            writeln!(
+                msg,
+                ">>> referenced {} more times",
+                messages.len() - MAX_ERRORS
+            )
+            .unwrap();
+        }
+        // Remove the trailing '\n' because Error/Warn adds it automatically
+        msg.pop();
+        if ctx.args.unresolved_symbols == UnresolvedKind::Error {
+            error!("{msg}");
+        } else {
+            warn!("{msg}");
+        }
+    }
+    crate::error::checkpoint();
+}
+
+pub fn create_reloc_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("create_reloc_sections");
+
+    // Create .rela.* sections
+    let ids: Vec<OutputSectionId> = ctx
+        .chunks
+        .iter()
+        .filter_map(|c| c.as_output_section())
+        .collect();
+    let secs: Vec<reloc::RelocSection<E>> = {
+        let ctx_ref: &Context<E> = ctx;
+        ids.par_iter().map(|&id| reloc::new(ctx_ref, id)).collect()
+    };
+    for (id, sec) in ids.into_iter().zip(secs) {
+        ctx.reloc_sections.push(sec);
+        let idx = ctx.reloc_sections.len() as u32 - 1;
+        ctx.output_sections[id.index()].reloc_sec = Some(idx);
+        ctx.chunks.push(ChunkId::Reloc(idx));
+    }
+}
+
+pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("sort_dynsyms");
+    if ctx.dynsym.symbols.is_empty() {
+        return;
+    }
+    let mut syms: Vec<SymbolId> = ctx.dynsym.symbols[1..].iter().flatten().copied().collect();
+
+    // In any symtab, local symbols must precede global symbols.
+    let num_locals =
+        crate::util::parallel::stable_partition(&mut syms, |&id| ctx.symbols[id].is_local(ctx));
+    let mut first_exported = syms.len();
+    let mut dynstr_entries = vec![dynsym::DynstrEntry::default(); syms.len() + 1];
+
+    // Cache contiguous sort keys instead of chasing symbol pointers in each
+    // comparison. The names are reused by both dynamic-table output passes.
+    if let Some(gnu_hash) = &mut ctx.gnu_hash {
+        first_exported = num_locals
+            + crate::util::parallel::stable_partition(&mut syms[num_locals..], |&id| {
+                !ctx.symbols[id].is_exported()
+            });
+        let exported = &mut syms[first_exported..];
+        let num_exported = exported.len() as u32;
+        let num_buckets = num_exported / GnuHashSection::<E>::LOAD_FACTOR + 1;
+        struct Entry {
+            bucket: u32,
+            name: &'static [u8],
+            id: SymbolId,
+            hash: u32,
+        }
+        let mut entries: Vec<_> = exported
+            .par_iter()
+            .map(|&id| {
+                let name: &'static [u8] = ctx.symbols[id].name();
+                let hash = gnu_hash::djb_hash(name);
+                Entry {
+                    bucket: hash % num_buckets,
+                    name,
+                    id,
+                    hash,
+                }
+            })
+            .collect();
+        // SAFETY: .dynsym contains each symbol once and every symbol has aux.
+        unsafe {
+            ctx.symbols.par_for_each_aux_mut(exported, |i, _, aux| {
+                aux.djb_hash = entries[i].hash;
+            });
+        }
+        entries.par_sort_unstable_by(|a, b| (a.bucket, a.name).cmp(&(b.bucket, b.name)));
+        exported
+            .par_iter_mut()
+            .zip(&mut dynstr_entries[first_exported + 1..])
+            .zip(entries)
+            .for_each(|((id, string), entry)| {
+                *id = entry.id;
+                string.name = entry.name;
+            });
+        gnu_hash.num_buckets = num_buckets;
+        gnu_hash.num_exported = num_exported;
+    }
+
+    let offset = ctx.dynstr.hdr.shdr.sh_size.get();
+    // SAFETY: .dynsym contains each symbol once and every symbol has aux.
+    unsafe {
+        ctx.symbols.par_for_each_aux_mut(&syms, |i, _, aux| {
+            let idx = (i as u32).checked_add(1).unwrap();
+            assert_ne!(idx, u32::MAX);
+            aux.dynsym_idx = idx;
+        });
+    }
+    dynstr_entries[1..first_exported + 1]
+        .par_iter_mut()
+        .zip(&syms[..first_exported])
+        .for_each(|(entry, &id)| entry.name = ctx.symbols[id].name());
+
+    // Scan block totals, then assign individual offsets in parallel.
+    let mut offsets: Vec<u64> = dynstr_entries[1..]
+        .par_chunks(1024)
+        .map(|entries| entries.iter().map(|e| e.name.len() as u64 + 1).sum())
+        .collect();
+    let mut end = offset;
+    for total in &mut offsets {
+        let size = *total;
+        *total = end;
+        end += size;
+    }
+    dynstr_entries[1..]
+        .par_chunks_mut(1024)
+        .zip(offsets)
+        .for_each(|(entries, mut off)| {
+            for entry in entries {
+                entry.offset = off;
+                off += entry.name.len() as u64 + 1;
+            }
+        });
+    ctx.dynstr.hdr.shdr.sh_size.set(end);
+    ctx.dynsym.dynstr_entries = dynstr_entries;
+    ctx.dynsym.symbols[1..]
+        .par_iter_mut()
+        .zip(syms)
+        .for_each(|(slot, id)| *slot = Some(id));
+
+    // ELF's symbol table sh_info holds the offset of the first global symbol.
+    ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
+}
+
+pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("compute_symtab_size");
+    if E::NEEDS_THUNK {
+        let mut n = 0;
+        for &id in &ctx.chunks {
+            if let ChunkId::Output(osec) = id {
+                for thunk in &mut ctx.output_sections[osec.index()].thunks {
+                    thunk.name = format!("thunk{n}");
+                    n += 1;
+                }
+            }
+        }
+    }
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        chunks::compute_symtab_size(ctx, id);
+    }
+
+    let obj_plans: Vec<crate::input_files::SymtabPlan> = {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .objs
+            .par_iter()
+            .map(|f| f.plan_symtab(ctx_ref, f.id()))
+            .collect()
+    };
+    let dso_plans: Vec<crate::input_files::SymtabPlan> = {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .dsos
+            .par_iter()
+            .map(|f| f.plan_symtab(ctx_ref, f.id()))
+            .collect()
+    };
+    for (file, plan) in ctx.objs.iter_mut().zip(obj_plans) {
+        file.base.apply_symtab_plan(plan);
+    }
+    for (file, plan) in ctx.dsos.iter_mut().zip(dso_plans) {
+        file.base.apply_symtab_plan(plan);
+    }
+}
+
+pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("apply_version_script");
+
+    // Assign versions to symbols specified with `extern "C++"` or
+    // wildcard patterns first.
+    let mut matcher = GlobBuilder::default();
+    let mut cpp_matcher = GlobBuilder::default();
+
+    // The "local:" label has a special meaning in the version script.
+    // It can appear in any VERSION clause, and it hides matched symbols
+    // unless other non-local patterns match to them. In other words,
+    // "local:" has lower precedence than other version definitions.
+    //
+    // If two or more non-local patterns match to the same symbol, the
+    // last one takes precedence.
+    let mut patterns: Vec<&VersionPattern> = ctx.version_patterns.iter().collect();
+    patterns.sort_by_key(|p| p.ver_idx as u32 != VER_NDX_LOCAL);
+
+    let has_wildcard = |s: &[u8]| s.iter().any(|&c| matches!(c, b'*' | b'?' | b'['));
+    let mut priority = 0;
+    for (i, v) in patterns.iter().enumerate() {
+        if i > 0 && v.ver_idx != patterns[i - 1].ver_idx {
+            priority = i as i64;
+        }
+        if v.is_cpp {
+            if !cpp_matcher.add(v.pattern, priority) {
+                fatal!(
+                    "invalid version pattern: {}",
+                    crate::util::display(v.pattern)
+                );
+            }
+        } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, priority) {
+            fatal!(
+                "invalid version pattern: {}",
+                crate::util::display(v.pattern)
+            );
+        }
+    }
+
+    let matcher = matcher.build();
+    let cpp_matcher = cpp_matcher.build();
+    if !matcher.is_empty() || !cpp_matcher.is_empty() {
+        ctx.symbols.par_for_each_global_mut(|sym| {
+            if !matches!(sym.file(), Some(FileId::Obj(_))) {
+                return;
+            }
+
+            let mut m = matcher.find(sym.name());
+
+            // Match non-mangled symbols against the C++ pattern as well.
+            // Weird, but required to match other linkers' behavior.
+            if !cpp_matcher.is_empty() {
+                let demangled = crate::util::demangle::demangle_cpp(sym.name());
+                let name: &[u8] = demangled.as_deref().map_or(sym.name(), str::as_bytes);
+                m = m.max(cpp_matcher.find(name));
+            }
+
+            if m != -1 {
+                sym.ver_idx = patterns[m as usize].ver_idx;
+            }
+        });
+    }
+
+    // Next, assign versions to symbols specified by exact name.
+    // In other words, exact matches have higher precedence over
+    // wildcard or `extern "C++"` patterns.
+    for v in &patterns {
+        if !v.is_cpp && !has_wildcard(v.pattern) {
+            let id = ctx.symbols.get_or_intern(v.pattern);
+            let sym = &ctx.symbols[id];
+            if sym.file().is_none() && !ctx.args.undefined_version {
+                warn!(
+                    "{}: cannot assign version `{}` to symbol `{sym}`: symbol not found",
+                    v.source.display(),
+                    crate::util::display(v.ver_str)
+                );
+            }
+            if matches!(sym.file(), Some(FileId::Obj(_))) {
+                ctx.symbols[id].ver_idx = v.ver_idx;
+            }
+        }
+    }
+}
+
+pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
+    let args = &ctx.args;
+    if !args.shared {
+        return;
+    }
+    let _t = ctx.timer("parse_symbol_version");
+
+    let verdefs: HashMap<&[u8], u16> = args
+        .version_definitions
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (v.as_ref(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
+        .collect();
+
+    for file in &ctx.objs {
+        if ctx.is_internal(file.id()) {
+            continue;
+        }
+        let file_id = FileId::Obj(file.id());
+        for i in file.base.first_global..file.base.elf_syms.len() {
+            // Match VERSION part of symbol foo@VERSION with version definitions.
+            if !file.has_symver[i - file.base.first_global] {
+                continue;
+            }
+            let id = file.base.symbols[i];
+            if ctx.symbols[id].file() != Some(file_id) {
+                continue;
+            }
+            let name = file.base.symbol_name_in(i);
+            let at = memchr::memchr(b'@', name).unwrap();
+            let mut ver = &name[at + 1..];
+            let mut is_default = false;
+            if let Some(rest) = ver.strip_prefix(b"@") {
+                is_default = true;
+                ver = rest;
+            }
+
+            // Empty version (`foo@@`) is the unversioned default; export it
+            // globally, overriding any `local: *` from apply_version_script().
+            if ver.is_empty() {
+                ctx.symbols[id].ver_idx = VER_NDX_GLOBAL as u16;
+                continue;
+            }
+            let Some(&ver_idx) = verdefs.get(ver) else {
+                error!(
+                    "{}: symbol {} has undefined version {}",
+                    file,
+                    ctx.symbols[id],
+                    crate::util::display(ver)
+                );
+                continue;
+            };
+            let ver_idx = if is_default {
+                ver_idx
+            } else {
+                ver_idx | VERSYM_HIDDEN as u16
+            };
+            ctx.symbols[id].ver_idx = ver_idx;
+
+            // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
+            // hides `foo` so that all references to `foo` are resolved to a
+            // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
+            // defined, the default one takes precedence.
+            let sym_name = ctx.symbols[id].name();
+            if let Some(id2) = ctx.symbols.lookup(sym_name) {
+                if id2 != id && ctx.symbols[id2].file() == Some(file_id) {
+                    let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
+                    if !file.has_symver[sym2_idx - file.base.first_global] {
+                        let v2 = ctx.symbols[id2].ver_idx as u32;
+                        if v2 == ctx.default_version as u32
+                            || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
+                        {
+                            ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn should_export<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
+    if sym.visibility() == STV_HIDDEN {
+        return false;
+    }
+    match sym.ver_idx as u32 {
+        VER_NDX_UNSPECIFIED => {
+            if ctx.args.dynamic_list_data {
+                let ty = sym.ty();
+                if ty != STT_FUNC && ty != STT_GNU_IFUNC {
+                    return true;
+                }
+            }
+            if ctx.args.shared {
+                return match sym.file() {
+                    Some(FileId::Obj(id)) => !ctx.objs[id.index()].exclude_libs,
+                    _ => true,
+                };
+            }
+            ctx.args.export_dynamic
+        }
+        VER_NDX_LOCAL => false,
+        _ => true,
+    }
+}
+
+fn is_protected<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
+    if sym.visibility() == STV_PROTECTED {
+        return true;
+    }
+    match ctx.args.bsymbolic {
+        BsymbolicKind::All => true,
+        BsymbolicKind::None => false,
+        BsymbolicKind::Functions => sym.ty() == STT_FUNC,
+        BsymbolicKind::NonWeak => !sym.is_weak(),
+        BsymbolicKind::NonWeakFunctions => !sym.is_weak() && sym.ty() == STT_FUNC,
+    }
+}
+
+pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("compute_import_export");
+
+    // If we are creating an executable, we want to export symbols referenced
+    // by DSOs unless they are explicitly marked as local by a version script.
+    let mut exports: Vec<SymbolId> = Vec::new();
+    if !ctx.args.shared {
+        let symbols = &ctx.symbols;
+        exports = ctx
+            .dsos
+            .par_iter()
+            .flat_map_iter(|file| {
+                file.base.symbols.iter().copied().filter(|&id| {
+                    let sym = &symbols[id];
+                    matches!(sym.file(), Some(FileId::Obj(_)))
+                        && sym.visibility() != STV_HIDDEN
+                        && sym.ver_idx as u32 != VER_NDX_LOCAL
+                })
+            })
+            .collect();
+    }
+    for id in exports {
+        ctx.symbols[id].set_exported(true);
+    }
+
+    // Export symbols that are not hidden or marked as local.
+    // We also want to mark imported symbols as such.
+    let updates: Vec<(SymbolId, bool, bool, bool)> = {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .objs
+            .par_iter()
+            .flat_map_iter(|file| {
+                let file_id = FileId::Obj(file.id());
+                file.base
+                    .global_symbols()
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter_map(move |(i, id)| {
+                        let sym = &ctx_ref.symbols[id];
+
+                        // If we are using a symbol in a DSO, we need to import it.
+                        if let Some(FileId::Dso(_)) = sym.file() {
+                            // Shared symbols remain weak only if every undefined
+                            // reference is weak. Fragment dummies have no ElfSym.
+                            let strong = file
+                                .base
+                                .elf_syms
+                                .get(file.base.first_global + i)
+                                .is_some_and(|esym| esym.is_undef() && !esym.is_weak());
+                            return Some((id, true, false, strong));
+                        }
+
+                        // If we have a definition of a symbol, we may want to export it.
+                        if sym.file() == Some(file_id) && should_export(ctx_ref, sym) {
+                            // Exported symbols are marked as imported as well by default
+                            // for DSOs.
+                            let imported = ctx_ref.args.shared && !is_protected(ctx_ref, sym);
+                            return Some((id, imported, true, false));
+                        }
+                        None
+                    })
+            })
+            .collect()
+    };
+    for (id, imported, exported, strong) in updates {
+        let sym = &mut ctx.symbols[id];
+        if imported {
+            sym.set_imported(true);
+        }
+        if exported {
+            sym.set_exported(true);
+        }
+        if strong {
+            sym.set_weak(false);
+        }
+    }
+
+    // Apply --dynamic-list, --export-dynamic-symbol and
+    // --export-dynamic-symbol-list options.
+    //
+    // The semantics of these options vary depending on whether we are
+    // creating an executalbe or a shared object.
+    //
+    // For executable, matched symbols are exported.
+    //
+    // For shared objects, matched symbols are imported if it is already
+    // exported so that they are interposable. In other words, symbols
+    // that did not match will be bound locally within the output file,
+    // effectively turning them into protected symbols.
+    let shared = ctx.args.shared;
+    let handle_match = |sym: &mut Symbol| {
+        if shared {
+            if sym.is_exported() {
+                sym.set_imported(true);
+            }
+        } else if matches!(sym.file(), Some(FileId::Obj(_))) && sym.visibility() != STV_HIDDEN {
+            sym.set_exported(true);
+        }
+    };
+
+    let mut matcher = GlobBuilder::default();
+    let mut cpp_matcher = GlobBuilder::default();
+    for p in &ctx.dynamic_list_patterns {
+        if p.is_cpp {
+            if !cpp_matcher.add(p.pattern, 1) {
+                fatal!(
+                    "{}: invalid dynamic list entry: {}",
+                    p.source.display(),
+                    crate::util::display(p.pattern)
+                );
+            }
+            continue;
+        }
+        if p.pattern.iter().any(|&c| matches!(c, b'*' | b'?' | b'[')) {
+            if !matcher.add(p.pattern, 1) {
+                fatal!(
+                    "{}: invalid dynamic list entry: {}",
+                    p.source.display(),
+                    crate::util::display(p.pattern)
+                );
+            }
+            continue;
+        }
+        let id = ctx.symbols.get_or_intern(p.pattern);
+        handle_match(&mut ctx.symbols[id]);
+    }
+
+    let matcher = matcher.build();
+    let cpp_matcher = cpp_matcher.build();
+    if !matcher.is_empty() || !cpp_matcher.is_empty() {
+        ctx.symbols.par_for_each_global_mut(|sym| {
+            if !matches!(sym.file(), Some(FileId::Obj(_))) || (shared && !sym.is_exported()) {
+                return;
+            }
+            let matched = matcher.find(sym.name()) != -1
+                || (!cpp_matcher.is_empty() && {
+                    let demangled = crate::util::demangle::demangle_cpp(sym.name());
+                    let name: &[u8] = demangled.as_deref().map_or(sym.name(), str::as_bytes);
+                    cpp_matcher.find(name) != -1
+                });
+            if matched {
+                handle_match(sym);
+            }
+        });
+    }
+}
+
+// Compute the "address-taken" bit for each input section.
+//
+// As a space-saving optimization, we want to merge two read-only objects
+// into a single object if their contents are equivalent. That
+// optimization is called the Identical Code Folding or ICF.
+//
+// A catch is that comparing object contents is not enough to determine if
+// two objects can be merged safely; we need to take care of pointer
+// equivalence.
+//
+// In C/C++, two pointers are equivalent if and only if they are taken for
+// the same object. Merging two objects into a single object can break
+// this assumption because two distinctive pointers would become
+// equivalent as a result of merging. We can still merge one object with
+// another if no pointer to the object was taken in code, because without
+// a pointer, comparing its address becomes moot.
+//
+// In mold, each input section has an "address-taken" bit. If there is a
+// pointer-taking reference to the object, it's set to true. At the ICF
+// stage, we merge only objects whose addresses were not taken.
+//
+// For functions, address-taking relocations are separated from
+// non-address-taking ones. For example, x86-64 uses R_X86_64_PLT32 for
+// direct function calls (e.g., "call foo" to call the function foo) while
+// R_X86_64_PC32 or R_X86_64_GOT32 are used for pointer-taking operations.
+//
+// Unfortunately, for data, we can't distinguish between address-taking
+// relocations and non-address-taking ones. LLVM generates an "address
+// significance" table in the ".llvm_addrsig" section to mark symbols
+// whose addresses are taken in code. If that table is available, we use
+// that information in this function. Otherwise, we conservatively assume
+// that all data items are address-taken.
+pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("compute_address_significance");
+    let ctx_ref: &Context<E> = ctx;
+
+    ctx_ref.objs.par_iter().for_each(|file| {
+        // If .llvm_addrsig is available, use it.
+        if let Some(sec) = &file.llvm_addrsig {
+            let mut p = sec.contents();
+            while !p.is_empty() {
+                let idx = crate::util::read_uleb(&mut p) as usize;
+                let sym = &ctx_ref.symbols[file.base.symbols[idx]];
+                if let Some(r) = sym.input_section() {
+                    ctx_ref.input_section(r).set_address_taken();
+                }
+            }
+            return;
+        }
+
+        // Otherwise, infer address significance.
+        for isec in file.input_sections() {
+            if !isec.is_alive() || !isec.is_alloc() {
+                continue;
+            }
+            if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
+                isec.set_address_taken();
+            }
+            for r in isec.rels(file) {
+                if !r.is_func_call::<E>() {
+                    let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
+                    if let Some(dst) = sym.input_section_ref(ctx_ref) {
+                        if dst.sh_flags & SHF_EXECINSTR as u64 != 0 {
+                            dst.set_address_taken();
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let mark = |id: SymbolId| {
+        if let Some(r) = ctx_ref.symbols[id].input_section() {
+            ctx_ref.input_section(r).set_address_taken();
+        }
+    };
+    // Some symbols' pointer values are leaked to the dynamic section.
+    mark(ctx_ref.syms.entry);
+    mark(ctx_ref.syms.init);
+    mark(ctx_ref.syms.fini);
+    // Exported symbols are conservatively considered address-taken.
+    for &id in ctx_ref.dynsym.symbols.iter().flatten() {
+        if ctx_ref.symbols[id].is_exported() {
+            mark(id);
+        }
+    }
+}
+
+// We want to sort output chunks in the following order.
+//
+//   <ELF header>
+//   <program header>
+//   .interp
+//   .note
+//   .hash
+//   .gnu.hash
+//   .dynsym
+//   .dynstr
+//   .gnu.version
+//   .gnu.version_r
+//   .rela.dyn
+//   .rela.plt
+//   <readonly data>
+//   <code>
+//   <tdata>
+//   <tbss>
+//   <writable relro data>
+//   .got
+//   .toc
+//   <writable relro bss>
+//   .relro_padding
+//   <writable non-relro data>
+//   <writable non-relro bss>
+//   <non-memory-allocated sections>
+//   <section header>
+//   .gdb_index
+//
+// .interp and some other linker-synthesized sections are placed at the
+// beginning of a file because they are needed by loader. Especially on
+// a hard drive with spinning disks, it is important to read these
+// sections in a single seek.
+//
+// .note sections are also placed at the beginning so that they are
+// included in a core crash dump even if it's truncated by ulimit. In
+// particular, if .note.gnu.build-id is in a truncated core file, you
+// can at least identify which executable has crashed.
+//
+// .gdb_index cannot be constructed before applying relocations to
+// other debug sections, so we create it after completing other part
+// of the output file and append it to the very end of the file.
+//
+// A PT_NOTE segment will contain multiple .note sections if exist,
+// but there's no way to represent a gap between .note sections.
+// Therefore, we sort .note sections by decreasing alignment
+// requirement. I believe each .note section size is a multiple of its
+// alignment, so by sorting them by alignment, we should be able to
+// avoid a gap between .note sections.
+//
+// .toc is placed right after .got for PPC64. PPC-specific .toc section
+// contains data that may be accessed with a 16-bit offset relative to
+// %r2. %r2 is set to .got + 32 KiB. Therefore, .toc needs to be within
+// [.got, .got + 64 KiB).
+//
+// Other file layouts are possible, but this layout is chosen to keep
+// the number of segments as few as possible.
+fn sort_output_sections_regular<E: Arch>(ctx: &mut Context<E>) {
+    let rank1 = |ctx: &Context<E>, id: ChunkId| -> i64 {
+        let hdr = ctx.chunk_header(id);
+        let ty = hdr.shdr.sh_type.get();
+        let flags = hdr.shdr.sh_flags.get();
+        match id {
+            ChunkId::Ehdr => return 0,
+            ChunkId::Phdr => return 1,
+            ChunkId::Interp => return 2,
+            _ if ty == SHT_NOTE && flags & SHF_ALLOC as u64 != 0 => return 3,
+            ChunkId::Hash => return 4,
+            ChunkId::GnuHash => return 5,
+            ChunkId::Dynsym => return 6,
+            ChunkId::Dynstr => return 7,
+            ChunkId::Versym => return 8,
+            ChunkId::Verneed => return 9,
+            ChunkId::RelDyn => return 10,
+            ChunkId::RelPlt => return 11,
+            ChunkId::Shdr => return i32::MAX as i64 - 1,
+            ChunkId::GdbIndex => return i32::MAX as i64,
+            _ => {}
+        }
+        let alloc = flags & SHF_ALLOC as u64 != 0;
+        let writable = flags & SHF_WRITE as u64 != 0;
+        let exec = flags & SHF_EXECINSTR as u64 != 0;
+        let tls = flags & SHF_TLS as u64 != 0;
+        let relro = hdr.is_relro;
+        let is_bss = ty == SHT_NOBITS;
+        (1 << 10)
+            | ((!alloc as i64) << 9)
+            | ((writable as i64) << 8)
+            | ((exec as i64) << 7)
+            | ((!tls as i64) << 6)
+            | ((!relro as i64) << 5)
+            | ((is_bss as i64) << 4)
+    };
+    // Ties are broken by additional rules
+    let rank2 = |ctx: &Context<E>, id: ChunkId| -> i64 {
+        let hdr = ctx.chunk_header(id);
+        if hdr.shdr.sh_type.get() == SHT_NOTE {
+            return -(hdr.shdr.sh_addralign.get() as i64);
+        }
+        match id {
+            ChunkId::Got => 2,
+            _ if hdr.name == b".toc" => 3,
+            ChunkId::RelroPadding => i64::MAX,
+            _ => 0,
+        }
+    };
+    let mut chunks = std::mem::take(&mut ctx.chunks);
+    chunks.sort_by_cached_key(|&id| (rank1(ctx, id), rank2(ctx, id), ctx.chunk_header(id).name));
+    ctx.chunks = chunks;
+}
+
+fn section_order_group<E: Arch>(ctx: &Context<E>, id: ChunkId) -> &'static str {
+    let hdr = ctx.chunk_header(id);
+    if hdr.shdr.sh_type.get() == SHT_NOBITS {
+        "BSS"
+    } else if hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
+        "TEXT"
+    } else if hdr.shdr.sh_flags.get() & SHF_WRITE as u64 != 0 {
+        "DATA"
+    } else {
+        "RODATA"
+    }
+}
+
+// Sort sections according to a --section-order argument.
+fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
+    let rank = |ctx: &Context<E>, id: ChunkId| -> i64 {
+        let hdr = ctx.chunk_header(id);
+        let flags = hdr.shdr.sh_flags.get();
+        match id {
+            ChunkId::Ehdr if flags & SHF_ALLOC as u64 == 0 => return -2,
+            ChunkId::Phdr if flags & SHF_ALLOC as u64 == 0 => return -1,
+            ChunkId::Shdr => return i32::MAX as i64,
+            _ if flags & SHF_ALLOC as u64 == 0 => return i32::MAX as i64 - 1,
+            _ => {}
+        }
+        let name = hdr.name;
+        let order = &ctx.args.section_order;
+        if let Some(i) = order
+            .iter()
+            .position(|o| matches!(o, SectionOrder::Section(n) if n == name))
+        {
+            return i as i64;
+        }
+        let group = section_order_group(ctx, id);
+        if let Some(i) = order
+            .iter()
+            .position(|o| matches!(o, SectionOrder::Group(n) if n.eq_ignore_ascii_case(group)))
+        {
+            return i as i64;
+        }
+        error!(
+            "--section-order: missing section specification for {}",
+            hdr.name
+        );
+        0
+    };
+    // It is an error if a section order cannot be determined by a given
+    // section order list.
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let r = rank(ctx, id);
+        ctx.chunk_header_mut(id).sect_order = r;
+    }
+    // Sort output sections by --section-order
+    let mut chunks = std::mem::take(&mut ctx.chunks);
+    chunks.sort_by_key(|&id| ctx.chunk_header(id).sect_order);
+    ctx.chunks = chunks;
+}
+
+pub fn sort_output_sections<E: Arch>(ctx: &mut Context<E>) {
+    if ctx.args.section_order.is_empty() {
+        sort_output_sections_regular(ctx);
+    } else {
+        sort_output_sections_by_order(ctx);
+    }
+}
+
+fn tls_segment_alignment<E: Arch>(ctx: &Context<E>) -> u64 {
+    ctx.chunks
+        .iter()
+        .map(|&id| ctx.chunk_header(id))
+        .filter(|h| h.shdr.sh_flags.get() & SHF_TLS as u64 != 0)
+        .map(|h| h.shdr.sh_addralign.get())
+        .max()
+        .unwrap_or(1)
+        .max(1)
+}
+
+// This function assigns virtual addresses to output sections. Assigning
+// addresses is a bit tricky because we want to pack sections as tightly
+// as possible while not violating the constraints imposed by the hardware
+// and the OS kernel. Specifically, we need to satisfy the following
+// constraints:
+//
+// - Memory protection (readable, writable and executable) works at page
+//   granularity. Therefore, if we want to set different memory attributes
+//   to two sections, we need to place them into separate pages.
+//
+// - The ELF spec requires that a section's file offset is congruent to
+//   its virtual address modulo the page size. For example, a section at
+//   virtual address 0x401234 on x86-64 (4 KiB, or 0x1000 byte page
+//   system) can be at file offset 0x3234 or 0x50234 but not at 0x1000.
+//
+// We need to insert paddings between sections if we can't satisfy the
+// above constraints without them.
+//
+// We don't want to waste too much memory and disk space for paddings.
+// There are a few tricks we can use to minimize paddings as below:
+//
+// - We want to place sections with the same memory attributes
+//   contiguous as possible.
+//
+// - We can map the same file region to memory more than once. For
+//   example, we can write code (with R and X bits) and read-only data
+//   (with R bit) adjacent on file and map it twice as the last page of
+//   the executable segment and the first page of the read-only data
+//   segment. This doesn't save memory but saves disk space.
+fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
+    const RELRO: u64 = 1 << 32;
+    let flags_of = |ctx: &Context<E>, id: ChunkId| -> u64 {
+        let flags = chunks::to_phdr_flags(ctx, id) as u64;
+        if ctx.args.z_relro && ctx.chunk_header(id).is_relro {
+            flags | RELRO
+        } else {
+            flags
+        }
+    };
+    let is_tls = |ctx: &Context<E>, id: ChunkId| {
+        ctx.chunk_header(id).shdr.sh_flags.get() & SHF_TLS as u64 != 0
+    };
+    let is_tbss = |ctx: &Context<E>, id: ChunkId| {
+        let shdr = &ctx.chunk_header(id).shdr;
+        shdr.sh_flags.get() & SHF_TLS as u64 != 0 && shdr.sh_type.get() == SHT_NOBITS
+    };
+
+    // Assign virtual addresses
+    let mut addr = ctx.args.image_base;
+    let page_size = ctx.args.page_size;
+    let mut i = 0;
+    while i < ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        if !ctx.chunk_header(id).is_alloc() {
+            i += 1;
+            continue;
+        }
+
+        // .relro_padding is a padding section to extend a PT_GNU_RELRO
+        // segment to cover an entire page. Technically, we don't need a
+        // .relro_padding section because we can leave a trailing part of a
+        // segment an unused space. However, the `strip` command would delete
+        // such an unused trailing part and make an executable invalid.
+        // So we add a dummy section.
+        if id == ChunkId::RelroPadding {
+            let hdr = ctx.chunk_header_mut(id);
+            hdr.shdr.sh_addr.set(addr);
+            hdr.shdr.sh_size.set(align_to(addr, page_size) - addr);
+            addr += page_size;
+            i += 1;
+            continue;
+        }
+
+        // Handle --section-start first
+        let name = ctx.chunk_header(id).name;
+        if let Some(&start) = ctx.args.section_start.get(name) {
+            addr = start;
+            let hdr = ctx.chunk_header_mut(id);
+            hdr.shdr.sh_addr.set(addr);
+            addr += hdr.shdr.sh_size.get();
+            i += 1;
+            continue;
+        }
+
+        // Memory protection works at page size granularity. We need to
+        // put sections with different memory attributes into different
+        // pages. We do it by inserting paddings here.
+        if i > 0 && ctx.chunks[i - 1] != ChunkId::RelroPadding {
+            let flags1 = flags_of(ctx, ctx.chunks[i - 1]);
+            let flags2 = flags_of(ctx, id);
+            if !ctx.args.nmagic && flags1 != flags2 {
+                match ctx.args.z_separate_code {
+                    SeparateCodeKind::SeparateLoadableSegments => addr = align_to(addr, page_size),
+                    SeparateCodeKind::SeparateCode
+                        if (flags1 & PF_X as u64) != (flags2 & PF_X as u64) =>
+                    {
+                        addr = align_to(addr, page_size)
+                    }
+                    _ => {
+                        if !addr.is_multiple_of(page_size) {
+                            addr += page_size;
+                        }
+                    }
+                }
+            }
+        }
+
+        // TLS sections are included only in PT_LOAD but also in PT_TLS.
+        // We align the first TLS section so that the PT_TLS segment starts
+        // at an address that meets the segment's alignment requirement.
+        if is_tls(ctx, id) && (i == 0 || !is_tls(ctx, ctx.chunks[i - 1])) {
+            addr = align_to(addr, tls_segment_alignment(ctx));
+        }
+
+        // TLS BSS sections are laid out so that they overlap with the
+        // subsequent non-tbss sections. Overlapping is fine because a STT_TLS
+        // segment contains an initialization image for newly-created threads,
+        // and no one except the runtime reads its contents. Even the runtime
+        // doesn't need a BSS part of a TLS initialization image; it just
+        // leaves zero-initialized bytes as-is instead of copying zeros.
+        // So no one really read tbss at runtime.
+        //
+        // We can instead allocate a dedicated virtual address space to tbss,
+        // but that would be just a waste of the address and disk space.
+        if is_tbss(ctx, id) {
+            let mut addr2 = addr;
+            loop {
+                let hdr = ctx.chunk_header_mut(ctx.chunks[i]);
+                addr2 = align_to(addr2, hdr.shdr.sh_addralign.get());
+                hdr.shdr.sh_addr.set(addr2);
+                addr2 += hdr.shdr.sh_size.get();
+                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, ctx.chunks[i + 1]) {
+                    break;
+                }
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+
+        let hdr = ctx.chunk_header_mut(id);
+        addr = align_to(addr, hdr.shdr.sh_addralign.get());
+        hdr.shdr.sh_addr.set(addr);
+        addr += hdr.shdr.sh_size.get();
+        i += 1;
+    }
+}
+
+fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
+    let vec: Vec<ChunkId> = ctx
+        .chunks
+        .iter()
+        .copied()
+        .filter(|&c| ctx.chunk_header(c).is_alloc())
+        .collect();
+    let mut addr = ctx.args.image_base;
+    let page_size = ctx.args.page_size;
+    let mut i = 0;
+
+    for j in 0..ctx.args.section_order.len() {
+        let ord = &ctx.args.section_order[j];
+        match ord {
+            SectionOrder::Section(_) | SectionOrder::Group(_) => {
+                while i < vec.len() && ctx.chunk_header(vec[i]).sect_order == j as i64 {
+                    // Memory protection works on page size granularity. We need to
+                    // put sections with different memory attributes into different
+                    // pages. We do it by inserting a padding.
+                    if i != 0 {
+                        let flags1 = chunks::to_phdr_flags(ctx, vec[i - 1]);
+                        let flags2 = chunks::to_phdr_flags(ctx, vec[i]);
+                        if flags1 != flags2 {
+                            match ctx.args.z_separate_code {
+                                SeparateCodeKind::SeparateLoadableSegments => {
+                                    addr = align_to(addr, page_size)
+                                }
+                                SeparateCodeKind::SeparateCode
+                                    if (flags1 & PF_X) != (flags2 & PF_X) =>
+                                {
+                                    addr = align_to(addr, page_size)
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    let hdr = ctx.chunk_header_mut(vec[i]);
+                    addr = align_to(addr, hdr.shdr.sh_addralign.get());
+                    hdr.shdr.sh_addr.set(addr);
+                    addr += hdr.shdr.sh_size.get();
+                    i += 1;
+                }
+            }
+            SectionOrder::Addr { value, token } => {
+                if addr != ctx.args.image_base && *value < addr {
+                    error!("--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
+                        value,
+                        token
+                    );
+                }
+                addr = *value;
+            }
+            SectionOrder::Align(value) => addr = align_to(addr, *value),
+            SectionOrder::Symbol(name) => {
+                let id = ctx.symbols.get_or_intern(name);
+                ctx.symbols[id].value = addr;
+            }
+        }
+    }
+}
+
+// Returns the smallest integer N that satisfies N >= val and
+// N % align == skew % align.
+//
+// Section's file offset must be congruent to its virtual address modulo
+// the page size. We use this function to satisfy that requirement.
+fn align_with_skew(val: u64, align: u64, skew: u64) -> u64 {
+    val + (skew.wrapping_sub(val) & (align - 1))
+}
+
+// Assign file offsets to output sections.
+fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
+    let page_size = ctx.args.page_size;
+    let mut fileoff = 0u64;
+    let mut i = 0;
+
+    while i < ctx.chunks.len() {
+        let first = ctx.chunk_header(ctx.chunks[i]).shdr;
+        if first.sh_flags.get() & SHF_ALLOC as u64 == 0 {
+            fileoff = align_to(fileoff, first.sh_addralign.get());
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
+            fileoff += first.sh_size.get();
+            i += 1;
+            continue;
+        }
+        if first.sh_type.get() == SHT_NOBITS {
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
+            i += 1;
+            continue;
+        }
+
+        if first.sh_addralign.get() > page_size {
+            fileoff = align_to(fileoff, first.sh_addralign.get());
+        } else {
+            fileoff = align_with_skew(fileoff, page_size, first.sh_addr.get());
+        }
+
+        // Assign ALLOC sections contiguous file offsets as long as they
+        // are contiguous in memory.
+        loop {
+            let shdr = ctx.chunk_header(ctx.chunks[i]).shdr;
+            let offset = fileoff + shdr.sh_addr.get() - first.sh_addr.get();
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(offset);
+            i += 1;
+            if i >= ctx.chunks.len() {
+                break;
+            }
+            let next = ctx.chunk_header(ctx.chunks[i]).shdr;
+            if next.sh_flags.get() & SHF_ALLOC as u64 == 0 || next.sh_type.get() == SHT_NOBITS {
+                break;
+            }
+            // If --start-section is given, addresses may not increase
+            // monotonically.
+            if next.sh_addr.get() < first.sh_addr.get() {
+                break;
+            }
+            let prev = ctx.chunk_header(ctx.chunks[i - 1]).shdr;
+            // This section requires larger alignment, we need to adjust the
+            // offset to ensure offset % align == vaddr % align.
+            if next.sh_addralign.get() > page_size
+                && next.sh_addralign.get() > prev.sh_addralign.get()
+            {
+                break;
+            }
+            // If --start-section is given, there may be a large gap between
+            // sections. We don't want to allocate a disk space for a gap if
+            // exists.
+            let gap = next.sh_addr.get() - prev.sh_addr.get() - prev.sh_size.get();
+            if gap >= page_size {
+                break;
+            }
+        }
+
+        let last = ctx.chunk_header(ctx.chunks[i - 1]).shdr;
+        fileoff = last.sh_offset.get() + last.sh_size.get();
+
+        while i < ctx.chunks.len() {
+            let shdr = ctx.chunk_header(ctx.chunks[i]).shdr;
+            if shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 || shdr.sh_type.get() != SHT_NOBITS {
+                break;
+            }
+            ctx.chunk_header_mut(ctx.chunks[i])
+                .shdr
+                .sh_offset
+                .set(fileoff);
+            i += 1;
+        }
+    }
+    fileoff
+}
+
+// Remove debug sections from ctx.chunks and save them to ctx.debug_chunks.
+// This is for --separate-debug-file.
+pub fn separate_debug_sections<E: Arch>(ctx: &mut Context<E>) {
+    let is_debug = |ctx: &Context<E>, id: ChunkId| {
+        let hdr = ctx.chunk_header(id);
+        !hdr.is_alloc()
+            && (matches!(id, ChunkId::GdbIndex | ChunkId::Symtab | ChunkId::Strtab)
+                || hdr.name.starts_with(b".debug_"))
+    };
+    let (debug, rest): (Vec<ChunkId>, Vec<ChunkId>) =
+        ctx.chunks.iter().partition(|&&id| is_debug(ctx, id));
+    ctx.chunks = rest;
+    ctx.debug_chunks = debug;
+}
+
+pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
+    // Update sh_size for each chunk.
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        chunks::update_shdr(ctx, id);
+    }
+
+    // Remove empty chunks.
+    let chunks = std::mem::take(&mut ctx.chunks);
+    ctx.chunks = chunks
+        .into_iter()
+        .filter(|&id| {
+            matches!(
+                id,
+                ChunkId::Output(_) | ChunkId::GdbIndex | ChunkId::Placeholder(_)
+            ) || ctx.chunk_header(id).shdr.sh_size.get() != 0
+        })
+        .collect();
+
+    // Set section indices.
+    let mut shndx = 1u32;
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        if !id.is_header() {
+            ctx.chunk_header_mut(id).shndx = shndx;
+            shndx += 1;
+        }
+    }
+
+    if shndx >= SHN_LORESERVE && ctx.chunks.contains(&ChunkId::Symtab) && ctx.symtab_shndx.is_none()
+    {
+        let mut sec = chunks::symtab_shndx::new_header();
+        sec.shndx = shndx;
+        shndx += 1;
+        sec.shdr.sh_link.set(ctx.symtab.shndx);
+        ctx.symtab_shndx = Some(sec);
+        ctx.chunks.push(ChunkId::SymtabShndx);
+    }
+
+    if let Some(shdr) = &mut ctx.shdr {
+        let size = shndx as u64 * ElfShdr::<E>::size() as u64;
+        shdr.shdr.sh_size.set(size);
+    }
+
+    // Some types of section header refer to other section by index.
+    // Recompute all section headers to fill such fields with correct values.
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        chunks::update_shdr(ctx, id);
+    }
+
+    if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
+        let n = ctx.symtab.shdr.sh_size.get() / std::mem::size_of::<ElfSym<E>>() as u64;
+        symtab_shndx.shdr.sh_size.set(n * 4);
+    }
+}
+
+// Assign virtual addresses and file offsets to output sections.
+pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
+    let _t = ctx.timer("set_osec_offsets");
+    loop {
+        if ctx.args.section_order.is_empty() {
+            set_virtual_addresses_regular(ctx);
+        } else {
+            set_virtual_addresses_by_order(ctx);
+        }
+
+        if ctx.args.pack_dyn_relocs_android {
+            let before = ctx.reldyn.hdr.shdr.sh_size.get();
+            crate::chunks::reldyn::update_shdr(ctx);
+            if before != ctx.reldyn.hdr.shdr.sh_size.get() {
+                continue;
+            }
+        }
+        crate::error::checkpoint();
+
+        // Assigning new offsets may change the contents and the length
+        // of the program header, so repeat it until converge.
+        let fileoff = set_file_offsets(ctx);
+        if ctx.phdr.is_some() {
+            let before = ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size.get();
+            chunks::update_phdr(ctx);
+            if before < ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size.get() {
+                continue;
+            }
+        }
+        return fileoff;
+    }
+}
+
+fn num_irelative_relocs<E: Arch>(ctx: &Context<E>) -> u64 {
+    let mut n = 0u64;
+    n += ctx
+        .got
+        .got_syms
+        .iter()
+        .filter(|&&id| ctx.symbols[id].is_ifunc())
+        .count() as u64;
+    n
+}
+
+fn to_paddr<E: Arch>(ctx: &Context<E>, vaddr: u64) -> u64 {
+    if let Some(phdr) = &ctx.phdr {
+        for p in &phdr.phdrs {
+            if p.p_type().get() == PT_LOAD
+                && p.p_vaddr().get() <= vaddr
+                && vaddr < p.p_vaddr().get() + p.p_memsz().get()
+            {
+                return p.p_paddr().get() + (vaddr - p.p_vaddr().get());
+            }
+        }
+    }
+    0
+}
+
+pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
+    fn start<E: Arch>(
+        ctx: &mut Context<E>,
+        sym: Option<SymbolId>,
+        chunk: Option<ChunkId>,
+        bias: i64,
+    ) {
+        if let (Some(sym), Some(chunk)) = (sym, chunk) {
+            let addr = ctx.chunk_header(chunk).shdr.sh_addr.get();
+            let s = ctx.set_symbol_output_chunk(sym, chunk);
+            s.value = addr.wrapping_add(bias as u64);
+        }
+    }
+    fn stop<E: Arch>(
+        ctx: &mut Context<E>,
+        sym: Option<SymbolId>,
+        chunk: Option<ChunkId>,
+        bias: i64,
+    ) {
+        if let (Some(sym), Some(chunk)) = (sym, chunk) {
+            let shdr = ctx.chunk_header(chunk).shdr;
+            let s = ctx.set_symbol_output_chunk(sym, chunk);
+            s.value = (shdr.sh_addr.get() + shdr.sh_size.get()).wrapping_add(bias as u64);
+        }
+    }
+
+    let sections: Vec<ChunkId> = ctx
+        .chunks
+        .iter()
+        .copied()
+        .filter(|&c| !c.is_header() && ctx.chunk_header(c).is_alloc())
+        .collect();
+    let find = |ctx: &Context<E>, name: &[u8]| {
+        sections
+            .iter()
+            .copied()
+            .find(|&c| ctx.chunk_header(c).name == name)
+    };
+    let first = sections.first().copied();
+
+    // __bss_start
+    if let Some(bss) = find(ctx, b".bss") {
+        start(ctx, ctx.syms.bss_start, Some(bss), 0);
+    }
+
+    if let Some(ehdr) = &ctx.ehdr {
+        if ehdr.is_alloc() {
+            let addr = ehdr.shdr.sh_addr.get();
+            for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
+                if let (Some(sym), Some(first)) = (sym, first) {
+                    let s = ctx.set_symbol_output_chunk(sym, first);
+                    s.value = addr;
+                }
+            }
+        }
+    }
+
+    if let (Some(sym), Some(first)) = (ctx.syms.dso_handle, first) {
+        let addr = ctx.chunk_header(first).shdr.sh_addr.get();
+        let s = ctx.set_symbol_output_chunk(sym, first);
+        s.value = addr;
+    }
+
+    // __rel_iplt_start and __rel_iplt_end. These symbols need to be
+    // defined in a statically-linked non-relocatable executable because
+    // such executable lacks the .dynamic section and thus there's no way
+    // to find ifunc relocations other than these symbols.
+    if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
+        let n = num_irelative_relocs(ctx) as i64 * std::mem::size_of::<ElfRel<E>>() as i64;
+        stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
+        stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
+    } else {
+        // If the symbols are not ncessary, we turn them to absolute
+        // symbols at address 0.
+        for sym in [ctx.syms.rel_iplt_start, ctx.syms.rel_iplt_end]
+            .into_iter()
+            .flatten()
+        {
+            ctx.symbols[sym].clear_origin();
+        }
+    }
+
+    // __{init,fini}_array_{start,end}
+    for &chunk in &sections {
+        match ctx.chunk_header(chunk).shdr.sh_type.get() {
+            SHT_INIT_ARRAY => {
+                start(ctx, ctx.syms.init_array_start, Some(chunk), 0);
+                stop(ctx, ctx.syms.init_array_end, Some(chunk), 0);
+            }
+            SHT_PREINIT_ARRAY => {
+                start(ctx, ctx.syms.preinit_array_start, Some(chunk), 0);
+                stop(ctx, ctx.syms.preinit_array_end, Some(chunk), 0);
+            }
+            SHT_FINI_ARRAY => {
+                start(ctx, ctx.syms.fini_array_start, Some(chunk), 0);
+                stop(ctx, ctx.syms.fini_array_end, Some(chunk), 0);
+            }
+            _ => {}
+        }
+    }
+
+    // _end, _etext, _edata and the like
+    for &chunk in &sections {
+        let shdr = ctx.chunk_header(chunk).shdr;
+        if shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
+            stop(ctx, ctx.syms.end_, Some(chunk), 0);
+            stop(ctx, ctx.syms.end, Some(chunk), 0);
+        }
+        if shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
+            stop(ctx, ctx.syms.etext_, Some(chunk), 0);
+            stop(ctx, ctx.syms.etext, Some(chunk), 0);
+        }
+        if shdr.sh_type.get() != SHT_NOBITS && shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
+            stop(ctx, ctx.syms.edata_, Some(chunk), 0);
+            stop(ctx, ctx.syms.edata, Some(chunk), 0);
+        }
+    }
+
+    // _DYNAMIC
+    let dynamic = ctx.dynamic.as_ref().map(|_| ChunkId::Dynamic);
+    start(ctx, ctx.syms.dynamic, dynamic, 0);
+
+    // _GLOBAL_OFFSET_TABLE_. I don't know why, but for the sake of
+    // compatibility with existing code, it must be set to the beginning of
+    // .got.plt instead of .got only on i386 and x86-64.
+    let got = if E::IS_X86 {
+        ChunkId::GotPlt
+    } else {
+        ChunkId::Got
+    };
+    start(ctx, ctx.syms.global_offset_table, Some(got), 0);
+
+    // _PROCEDURE_LINKAGE_TABLE_. We need this on SPARC.
+    start(ctx, ctx.syms.procedure_linkage_table, Some(ChunkId::Plt), 0);
+
+    // _TLS_MODULE_BASE_. This symbol is used to obtain the address of
+    // the TLS block in the TLSDESC model. I believe GCC and Clang don't
+    // create a reference to it, but Intel compiler seems to be using
+    // this symbol.
+    if let (Some(sym), Some(first)) = (ctx.syms.tls_module_base, first) {
+        let dtp = ctx.dtp_addr;
+        let s = ctx.set_symbol_output_chunk(sym, first);
+        s.value = dtp;
+    }
+
+    // __GNU_EH_FRAME_HDR
+    let eh_frame_hdr = ctx.eh_frame_hdr.as_ref().map(|_| ChunkId::EhFrameHdr);
+    start(ctx, ctx.syms.gnu_eh_frame_hdr, eh_frame_hdr, 0);
+
+    // RISC-V's __global_pointer$
+    if let Some(sym) = ctx.syms.global_pointer {
+        match find(ctx, b".sdata") {
+            Some(c) => start(ctx, Some(sym), Some(c), 0x800),
+            None => start(ctx, Some(sym), first, 0),
+        }
+    }
+    // ARM32's __exidx_{start,end}
+    if ctx.syms.exidx_start.is_some() {
+        if let Some(c) = find(ctx, b".ARM.exidx") {
+            start(ctx, ctx.syms.exidx_start, Some(c), 0);
+            stop(ctx, ctx.syms.exidx_end, Some(c), 0);
+        }
+    }
+    // PPC64's ".TOC." symbol.
+    if E::IS_PPC64 {
+        if let Some(c) = find(ctx, b".got").or_else(|| find(ctx, b".toc")) {
+            start(ctx, ctx.syms.toc, Some(c), 0x8000);
+        } else if let (Some(sym), Some(first)) = (ctx.syms.toc, first) {
+            let s = ctx.set_symbol_output_chunk(sym, first);
+            s.value = 0;
+        }
+    }
+
+    // PPC64's _{save,rest}gpr{0,1}_{14,15,16,...,31} symbols
+    if E::FAMILY == Family::Ppc64V2 {
+        for (i, &(label, _)) in crate::arch::ppc64v2::SAVE_RESTORE_INSNS.iter().enumerate() {
+            if label.is_empty() {
+                continue;
+            }
+            let sym = ctx.get_symbol(label.as_bytes());
+            if ctx.symbols[sym].file() == ctx.internal_obj.map(FileId::Obj) {
+                start(
+                    ctx,
+                    Some(sym),
+                    Some(ChunkId::Ppc64SaveRestore),
+                    (i * 4) as i64,
+                );
+            }
+        }
+    }
+
+    // __start_ and __stop_ symbols
+    for &chunk in &sections {
+        if let Some(name) = start_stop_name(ctx, chunk) {
+            let name = name.as_ref();
+            let s = ctx.get_symbol(&[b"__start_", name].concat());
+            start(ctx, Some(s), Some(chunk), 0);
+            let e = ctx.get_symbol(&[b"__stop_", name].concat());
+            stop(ctx, Some(e), Some(chunk), 0);
+
+            if ctx.args.physical_image_base.is_some() {
+                let shdr = ctx.chunk_header(chunk).shdr;
+                let paddr = to_paddr(ctx, shdr.sh_addr.get());
+                let x = ctx.get_symbol(&[b"__phys_start_", name].concat());
+                ctx.set_symbol_output_chunk(x, chunk).value = paddr;
+                let y = ctx.get_symbol(&[b"__phys_stop_", name].concat());
+                ctx.set_symbol_output_chunk(y, chunk).value = paddr + shdr.sh_size.get();
+            }
+        }
+    }
+
+    // --defsym=sym=value symbols
+    for (name, value) in &ctx.args.defsyms {
+        let sym = ctx.symbols.get_or_intern(name);
+        match value {
+            DefsymValue::Addr(addr) => {
+                let s = &mut ctx.symbols[sym];
+                s.clear_origin();
+                s.value = *addr;
+            }
+            DefsymValue::Symbol(target) => {
+                let sym2 = ctx.symbols.get_or_intern(target);
+                let (value, origin, vis) = {
+                    let s2 = &ctx.symbols[sym2];
+                    (s2.value, s2.origin_state(), s2.visibility())
+                };
+                let s = &mut ctx.symbols[sym];
+                s.value = value;
+                s.set_origin_state(origin);
+                s.set_visibility(vis);
+            }
+        }
+    }
+
+    // --section-order symbols
+    for i in 0..ctx.args.section_order.len() {
+        let ord = &ctx.args.section_order[i];
+        if let SectionOrder::Symbol(name) = ord {
+            let sym = ctx.symbols.get_or_intern(name);
+            if let Some(first) = first {
+                let _ = ctx.set_symbol_output_chunk(sym, first);
+            }
+        }
+    }
+}
+
+pub fn compress_debug_sections<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("compress_debug_sections");
+
+    // Since this pass is embarassingly parallel, we want to use all
+    // available cores by default.
+    let compressed: Vec<_> = ctx
+        .chunks
+        .par_iter()
+        .enumerate()
+        .filter(|&(_, &id)| {
+            let hdr = ctx.chunk_header(id);
+            !hdr.is_alloc() && hdr.shdr.sh_size.get() != 0 && hdr.name.starts_with(b".debug_")
+        })
+        .map(|(i, &id)| (i, compressed::new(ctx, id)))
+        .collect();
+    for (i, sec) in compressed {
+        ctx.compressed_sections.push(sec);
+        ctx.chunks[i] = ChunkId::Compressed(ctx.compressed_sections.len() as u32 - 1);
+    }
+}
+
+// BLAKE3 is a cryptographic hash function just like SHA256.
+// We use it instead of SHA256 because it's faster.
+pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped: bool) {
+    let _t = ctx.timer("write_build_id");
+    let contents: Vec<u8> = match &ctx.args.build_id {
+        BuildId::Hex(value) => value.clone(),
+        BuildId::Hash(size) => {
+            const SHARD: usize = 4 * 1024 * 1024; // 4 MiB
+            let hashes: Vec<[u8; 32]> = buf
+                .par_chunks_mut(SHARD)
+                .enumerate()
+                .map(|(i, shard)| {
+                    let hash = *blake3::hash(shard).as_bytes();
+                    // Make the kernel page out the file contents we've just written
+                    // so that subsequent close(2) call will become quicker.
+                    if i > 0 && is_mmapped {
+                        #[cfg(not(windows))]
+                        // SAFETY: the shard is part of the output mapping; the
+                        // advice only drops the process's mapping of pages
+                        // that are backed by the file.
+                        unsafe {
+                            libc::madvise(
+                                shard.as_mut_ptr() as *mut libc::c_void,
+                                shard.len(),
+                                libc::MADV_DONTNEED,
+                            )
+                        };
+                    }
+                    hash
+                })
+                .collect();
+            let digest = *blake3::hash(hashes.as_flattened()).as_bytes();
+            digest[..*size].to_vec()
+        }
+        BuildId::Uuid => {
+            let mut bytes = [0u8; 16];
+            crate::util::random_bytes(&mut bytes);
+            // Indicate that this is UUIDv4 as defined by RFC4122
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            bytes.to_vec()
+        }
+        BuildId::None => unreachable!(),
+    };
+    ctx.buildid.as_mut().unwrap().contents = contents;
+    let hdr = ctx.buildid.as_ref().unwrap().hdr.shdr;
+    let start = hdr.sh_offset.get() as usize;
+    let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
+    build_id::copy_buf(ctx, &mut buf[start..end]);
+}
+
+// A .gnu_debuglink section contains a filename and a CRC32 checksum of a
+// debug info file. When we are writing a .gnu_debuglink, we don't know
+// its CRC32 checksum because we haven't created a debug info file. So we
+// write a dummy value instead.
+//
+// We can't choose a random value as a dummy value for build
+// reproducibility. We also don't want to write a fixed value for all
+// files because the CRC checksum is in this section to prevent using
+// wrong file on debugging. gdb rejects a debug info file if its CRC
+// doesn't match with the one in .gdb_debuglink.
+//
+// Therefore, we'll try to make our CRC checksum as unique as possible.
+// We'll remember that checksum, and after creating a debug info file, add
+// a few bytes of garbage at the end of it so that the debug info file's
+// CRC checksum becomes the one that we have precomputed.
+pub fn write_gnu_debuglink<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8]) {
+    let _t = ctx.timer("write_gnu_debuglink");
+    let crc = match &ctx.buildid {
+        Some(buildid) => crc32fast::hash(&buildid.contents),
+        None => {
+            const SHARD: usize = 4 * 1024 * 1024;
+            let hashes: Vec<u8> = buf
+                .par_chunks(SHARD)
+                .flat_map_iter(|s| xxhash_rust::xxh3::xxh3_64(s).to_le_bytes())
+                .collect();
+            crc32fast::hash(&hashes)
+        }
+    };
+    ctx.gnu_debuglink.as_mut().unwrap().crc32 = crc;
+    let hdr = ctx.gnu_debuglink.as_ref().unwrap().hdr.shdr;
+    let start = hdr.sh_offset.get() as usize;
+    let end = (hdr.sh_offset.get() + hdr.sh_size.get()) as usize;
+    gnu_debuglink::copy_buf(ctx, &mut buf[start..end]);
+}
+
+/// The CRC32 of a large buffer, computed in parallel.
+fn crc32_parallel(buf: &[u8]) -> u32 {
+    const SHARD: usize = 1024 * 1024; // 1 MiB
+    buf.par_chunks(SHARD)
+        .map(|shard| {
+            let mut hasher = crc32fast::Hasher::new();
+            hasher.update(shard);
+            hasher
+        })
+        .reduce(crc32fast::Hasher::new, |mut a, b| {
+            a.combine(&b);
+            a
+        })
+        .finalize()
+}
+
+// This function "forges" a CRC. That is, given the current and a desired
+// CRC32 value, crc32_solve() returns a binary blob to add to the end of
+// the original data to yield the desired CRC. Trailing garbage is ignored
+// by many bianry file formats, so you can create a file with a desired
+// CRC using crc32_solve(). We need it for --separate-debug-file.
+fn crc32_solve(current: u32, desired: u32) -> [u8; 4] {
+    const POLY: u32 = 0xedb8_8320;
+    let mut x = !desired;
+
+    // Each iteration computes x = (x * x^-1) mod poly.
+    for _ in 0..32 {
+        x = x.rotate_left(1);
+        x ^= (x & 1) * (POLY << 1);
+    }
+    (x ^ !current).to_le_bytes()
+}
+
+// Write a separate debug file. This function is called after we finish
+// writing to the usual output file.
+pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("write_separate_debug_file");
+
+    // Open an output file early
+    let mut output = OutputFile::open_locked(&ctx.args.separate_debug_file, 0o666);
+
+    // We want to write to the debug info file in background so that the
+    // user doesn't have to wait for it to complete.
+    if ctx.args.detach {
+        crate::subprocess::notify_parent();
+    }
+
+    // .gnu_debuglink belongs only in the main file. A NOBITS placeholder
+    // in the debug file is treated as a corrupt debug link by ELF tools.
+    ctx.chunks.retain(|&id| id != ChunkId::GnuDebuglink);
+
+    // Renumber the original chunks as symbols still refer to them after
+    // we replace them with dummy sections below.
+    let debuglink_shndx = ctx.gnu_debuglink.as_ref().unwrap().hdr.shndx;
+    let remap = |idx: u32| if idx > debuglink_shndx { idx - 1 } else { idx };
+
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let hdr = ctx.chunk_header_mut(id);
+        hdr.shndx = remap(hdr.shndx);
+        let shdr = &mut hdr.shdr;
+        shdr.sh_link.set(remap(shdr.sh_link.get()));
+        if shdr.sh_flags.get() & SHF_INFO_LINK as u64 != 0
+            || matches!(shdr.sh_type.get(), SHT_REL | SHT_RELA)
+        {
+            shdr.sh_info.set(remap(shdr.sh_info.get()));
+        }
+    }
+
+    // Restore debug info sections that had been set aside while we were
+    // creating the main file.
+    let num_chunks = ctx.chunks.len();
+    let debug_chunks = std::mem::take(&mut ctx.debug_chunks);
+    ctx.chunks.extend(debug_chunks);
+
+    // Preserve the remaining sections from the main file, though most can
+    // be empty as if they were bss sections. Convert them to dummy sections.
+    for i in 0..num_chunks {
+        let id = ctx.chunks[i];
+        if id.is_header()
+            || id == ChunkId::Shstrtab
+            || ctx.chunk_header(id).shdr.sh_type.get() == SHT_NOTE
+        {
+            continue;
+        }
+        let hdr = ctx.chunk_header(id);
+        let mut placeholder =
+            ChunkHeader::<E>::with_name(hdr.name, SHT_NOBITS, hdr.shdr.sh_flags.get());
+        placeholder.shdr = hdr.shdr;
+        placeholder.shdr.sh_type.set(SHT_NOBITS);
+        placeholder.shndx = hdr.shndx;
+        ctx.placeholders.push(placeholder);
+        ctx.chunks[i] = ChunkId::Placeholder(ctx.placeholders.len() as u32 - 1);
+    }
+
+    for i in num_chunks..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        chunks::compute_section_size(ctx, id);
+    }
+    sort_debug_info_sections(ctx);
+
+    // Handle --compress-debug-info
+    if ctx.args.compress_debug_sections != crate::cmdline::DebugCompression::None {
+        compress_debug_sections(ctx);
+    }
+
+    // Recompute section header contents since we have added debug sections
+    compute_section_headers(ctx);
+
+    // Assign file offsets to sections
+    let page_size = ctx.args.page_size;
+    let mut fileoff = 0;
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let shdr = &mut ctx.chunk_header_mut(id).shdr;
+        if shdr.sh_type.get() == SHT_NOBITS {
+            shdr.sh_offset.set(fileoff);
+        } else if shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
+            fileoff = align_with_skew(fileoff, page_size, shdr.sh_addr.get());
+            shdr.sh_offset.set(fileoff);
+            fileoff += shdr.sh_size.get();
+        } else {
+            fileoff = align_to(fileoff, shdr.sh_addralign.get());
+            shdr.sh_offset.set(fileoff);
+            fileoff += shdr.sh_size.get();
+        }
+    }
+
+    // The program header keeps its size, since the placeholders' addresses
+    // were laid out around it.
+    if let Some(n) = ctx.phdr.as_ref().map(|p| p.phdrs.len()) {
+        chunks::update_phdr(ctx);
+        let phdr = ctx.phdr.as_mut().unwrap();
+        phdr.phdrs.resize(n, ElfPhdr::<E>::default());
+        let size = (n * std::mem::size_of::<ElfPhdr<E>>()) as u64;
+        phdr.hdr.shdr.sh_size.set(size);
+    }
+
+    // Write to a separate debug file
+    output.resize(fileoff);
+    crate::driver::copy_chunks(ctx, output.buf());
+
+    if ctx.gdb_index.is_some() {
+        crate::gdb_index::build_tables_now(ctx);
+        crate::gdb_index::write(ctx, &mut output);
+    }
+
+    // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
+    // the .gnu_debuglink section in the main executable matches with the
+    // debug info file's CRC32 checksum.
+    let trailer = crc32_solve(
+        crc32_parallel(output.buf()),
+        ctx.gnu_debuglink.as_ref().unwrap().crc32,
+    );
+    let len = output.len();
+    output.extend(trailer.len());
+    output.buf()[len..].copy_from_slice(&trailer);
+    output.close();
+}
+
+// Write Makefile-style dependency rules to a file specified by
+// --dependency-file. This is analogous to the compiler's -M flag.
+pub fn write_dependency_file<E: Arch>(ctx: &Context<E>) {
+    let mut deps = Vec::new();
+    let mut seen = HashSet::new();
+    for mf in crate::mapped_file::file_pool() {
+        if mf.is_dependency() && mf.parent.is_none() {
+            let path = crate::util::clean_path(&mf.name);
+            if seen.insert(path.clone()) {
+                deps.push(path);
+            }
+        }
+    }
+
+    let destination = if ctx.args.dependency_file == std::path::Path::new("-") {
+        ReportOutput::Stdout
+    } else {
+        ReportOutput::File(ctx.args.dependency_file.clone())
+    };
+    destination.with_writer("--dependency-file", |out| {
+        out.write_all(ctx.args.output.as_os_str().as_encoded_bytes())?;
+        out.write_all(b":")?;
+        for path in &deps {
+            out.write_all(b" ")?;
+            out.write_all(path.as_os_str().as_encoded_bytes())?;
+        }
+        out.write_all(b"\n")?;
+        for path in &deps {
+            out.write_all(b"\n")?;
+            out.write_all(path.as_os_str().as_encoded_bytes())?;
+            out.write_all(b":\n")?;
+        }
+        Ok(())
+    });
+}
+
+pub fn show_stats<E: Arch>(ctx: &Context<E>) {
+    let mut defined = 0;
+    let mut undefined = 0;
+    let mut reloc_alloc = 0;
+    let mut reloc_nonalloc = 0;
+    let mut comdats = 0;
+    let mut removed_comdat_mem = 0;
+    let mut unique_comdats = 0;
+    let mut num_cies = 0;
+    let mut num_unique_cies = 0;
+    let mut num_fdes = 0;
+    for file in &ctx.objs {
+        defined += file.base.first_global as i64 - 1;
+        undefined += (file.base.symbols.len() - file.base.first_global) as i64;
+        for isec in (0..file.sections.len())
+            .filter_map(|shndx| file.section(shndx))
+            .filter(|isec| isec.is_alive())
+        {
+            let count = isec.relocations(ctx).count() as i64;
+            if isec.is_alloc() {
+                reloc_alloc += count;
+            } else {
+                reloc_nonalloc += count;
+            }
+        }
+        comdats += file.comdat_groups.len() as i64;
+        for group in &file.comdat_groups {
+            if group.is_owner() {
+                unique_comdats += 1;
+            } else {
+                removed_comdat_mem += file.comdat_members(group).count() as i64;
+            }
+        }
+        num_cies += file.cies.len() as i64;
+        num_unique_cies += file.cies.iter().filter(|cie| cie.is_leader).count() as i64;
+        num_fdes += file.fdes.len() as i64;
+    }
+
+    // Final-state statistics need no global registration or atomic increments.
+    // Preserve the counters that were present even when their value was zero.
+    let mut stats = Vec::new();
+    if !ctx.objs.is_empty() {
+        stats.extend([
+            ("defined_syms", defined),
+            ("undefined_syms", undefined),
+            ("reloc_alloc", reloc_alloc),
+            ("reloc_nonalloc", reloc_nonalloc),
+            ("comdats", comdats),
+            ("removed_comdat_mem", removed_comdat_mem),
+            ("unique_comdats", unique_comdats),
+            ("num_cies", num_cies),
+        ]);
+        if num_unique_cies != 0 {
+            stats.push(("num_unique_cies", num_unique_cies));
+        }
+        stats.push(("num_fdes", num_fdes));
+    }
+    stats.extend([
+        (
+            "total_input_bytes",
+            crate::mapped_file::file_pool()
+                .iter()
+                .map(|mf| mf.size() as i64)
+                .sum(),
+        ),
+        (
+            "input_sections",
+            ctx.objs.iter().map(|file| file.sections.len() as i64).sum(),
+        ),
+        ("output_chunks", ctx.chunks.len() as i64),
+        ("num_objs", ctx.objs.len() as i64),
+        ("num_dsos", ctx.dsos.len() as i64),
+        (
+            "merged_strings",
+            ctx.merged_sections
+                .iter()
+                .map(|section| section.fragments.len() as i64)
+                .sum(),
+        ),
+    ]);
+    if E::NEEDS_THUNK {
+        stats.push((
+            "thunk_bytes",
+            ctx.chunks
+                .iter()
+                .filter_map(|id| id.as_output_section())
+                .flat_map(|id| &ctx.output_sections[id.index()].thunks)
+                .map(|thunk| thunk.size() as i64)
+                .sum(),
+        ));
+    }
+    if E::IS_RISCV || E::IS_LOONGARCH {
+        let mut count = 0;
+        for id in ctx.chunks.iter().filter_map(|id| id.as_output_section()) {
+            let osec = &ctx.output_sections[id.index()];
+            if osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
+                for &member in &osec.members {
+                    count += ctx.input_section(member).r_deltas().len() as i64;
+                }
+            }
+        }
+        stats.push(("shrunk_relocs", count));
+    }
+    Counter::print(stats);
+    for section in &ctx.merged_sections {
+        crate::chunks::merged::print_stats(section);
+    }
+}
+
+// Intel CET and Arm BTI are relatively new CPU features to enhance security by
+// protecting control flow integrity. If the feature is enabled, indirect
+// branches (i.e. branch instructions that take a register instead of an
+// immediate) must land on a "landing pad" instruction, or a CPU-level fault
+// will raise. That prevents an attacker from branching to a middle of a random
+// function, making ROP or JOP much harder to conduct.
+//
+// On x86-64, the landing pad instruction is ENDBR64. On ARM64, it's `bti c`.
+// In both cases the instruction is a repurposed NOP so that the same binary
+// still runs on older hardware that doesn't support the feature.
+//
+// The problem here is that the compiler always emits a landing pad at the
+// beginning of a global function because it doesn't know whether or not the
+// function's address is taken in other translation units. As a result, the
+// resulting binary contains more landing pads than necessary.
+//
+// This function rewrites a landing pad with a nop if the function's address
+// was not actually taken. We can do what the compiler cannot because we
+// know about all translation units.
+pub fn rewrite_endbr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+    let _t = ctx.timer("rewrite_endbr");
+
+    // The landing pad instruction and the NOP that replaces it. Both are 4
+    // bytes long. ARM64 instructions are always little-endian, even in the
+    // big-endian ABI, so the byte patterns below are the same for ARM64BE.
+    let (landing_pad, nop) = match E::FAMILY {
+        Family::X86_64 => (
+            [0xf3, 0x0f, 0x1e, 0xfa], // endbr64
+            [0x0f, 0x1f, 0x40, 0x00], // nopl 0x0(%rax)
+        ),
+        Family::Arm64 => (
+            [0x5f, 0x24, 0x03, 0xd5], // bti c
+            [0x1f, 0x20, 0x03, 0xd5], // nop
+        ),
+        _ => unreachable!(),
+    };
+
+    let output_offset = |isec: &InputSection<E>| -> Option<u64> {
+        let osec = &ctx.output_sections[isec.output_section?.index()];
+        Some(osec.hdr.shdr.sh_offset.get() + isec.offset())
+    };
+
+    // Rewrite all landing pad instructions referred to by function symbols
+    // with NOPs. We handle only global symbols because the compiler doesn't
+    // emit a landing pad for a file-scoped function in the first place if its
+    // address is not taken within the file.
+    for file in &ctx.objs {
+        for &id in file.base.global_symbols() {
+            let sym = &ctx.symbols[id];
+            if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
+                continue;
+            }
+            let Some(isec) = sym.input_section_ref(ctx) else {
+                continue;
+            };
+            if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
+                continue;
+            }
+            let Some(base) = output_offset(isec) else {
+                continue;
+            };
+            let pos = (base + sym.value) as usize;
+            if buf.get(pos..pos + 4) == Some(&landing_pad) {
+                buf[pos..pos + 4].copy_from_slice(&nop);
+            }
+        }
+    }
+
+    let mut write_back = |isec: Option<&InputSection<E>>, offset: i64| {
+        // If isec has a landing pad at a given offset, copy that instruction to
+        // the output buffer, possibly overwriting a nop written in the above
+        // loop.
+        let Some(isec) = isec else { return };
+        let size = isec.contents().len() as i64;
+        if isec.sh_flags & SHF_EXECINSTR as u64 == 0 || offset < 0 || offset > size - 4 {
+            return;
+        }
+        let Some(base) = output_offset(isec) else {
+            return;
+        };
+        if isec.contents()[offset as usize..offset as usize + 4] == landing_pad {
+            let pos = (base as i64 + offset) as usize;
+            buf[pos..pos + 4].copy_from_slice(&landing_pad);
+        }
+    };
+
+    // Write back landing pad instructions if they are referred to by
+    // address-taking relocations.
+    for file in &ctx.objs {
+        for isec in file.input_sections() {
+            if !isec.is_alive() || !isec.is_alloc() {
+                continue;
+            }
+            for rel in isec.rels(file) {
+                if rel.is_func_call::<E>() {
+                    continue;
+                }
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                let target = sym.input_section_ref(ctx);
+                if sym.st_type() == STT_SECTION {
+                    write_back(target, rel.r_addend());
+                } else {
+                    write_back(target, sym.value as i64);
+                }
+            }
+        }
+    }
+
+    // We record addresses of some symbols in the ELF header, .dynamic or in
+    // .dynsym. We need to retain landing pads for such symbols.
+    let mut keep = |id: SymbolId| {
+        let sym = &ctx.symbols[id];
+        write_back(sym.input_section_ref(ctx), sym.value as i64);
+    };
+
+    keep(ctx.syms.entry);
+    keep(ctx.syms.init);
+    keep(ctx.syms.fini);
+
+    for &id in ctx.dynsym.symbols.iter().flatten() {
+        if ctx.symbols[id].is_exported() {
+            keep(id);
+        }
+    }
+
+    // A range extension thunk reaches its target with an indirect branch, so
+    // a thunked function still needs its landing pad even if it's only ever
+    // called directly. thunk->symbols has been reduced to the symbols that
+    // actually need a thunk by remove_redundant_thunks().
+    if E::NEEDS_THUNK {
+        for osec in &ctx.output_sections {
+            for thunk in &osec.thunks {
+                for &id in &thunk.symbols {
+                    keep(id);
+                }
+            }
+        }
+    }
+}

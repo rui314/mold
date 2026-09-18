@@ -1,0 +1,12 @@
+[package]
+name = "mold-target-m68k"
+version.workspace = true
+edition.workspace = true
+description = "The mold linker instantiated for m68k"
+license.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold.workspace = true

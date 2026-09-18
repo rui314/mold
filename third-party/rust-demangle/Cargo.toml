@@ -1,3 +1,0 @@
-[workspace]
-members = ["test-harness"]
-default-members = ["test-harness"]
