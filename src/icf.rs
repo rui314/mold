@@ -86,6 +86,7 @@ use rayon::prelude::*;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
+use crate::fatal;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, Symbol, is_c_identifier};
@@ -420,7 +421,9 @@ fn gather_sections<E: Target>(ctx: &Context<E>) -> Vec<SectionRef> {
         file_indices.push(file_indices.last().unwrap() + count);
     }
     let total = *file_indices.last().unwrap();
-    assert!(u32::try_from(total).is_ok(), "too many ICF-eligible sections");
+    if u32::try_from(total).is_err() {
+        fatal!("--icf: too many eligible sections");
+    }
     let mut sections = vec![SectionRef { file: ObjId(0), shndx: 0 }; total];
 
     let mut rest = sections.as_mut_slice();
@@ -498,7 +501,7 @@ fn gather_edges<E: Target>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
         .for_each(|(count, &r)| for_each_edge::<E>(ctx, r, |_| *count += 1));
     let mut sum = 0u32;
     for count in &mut indices {
-        let next = sum.checked_add(*count).expect("too many ICF edges");
+        let next = sum.checked_add(*count).unwrap_or_else(|| fatal!("--icf: too many edges"));
         *count = sum;
         sum = next;
     }
