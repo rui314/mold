@@ -1442,10 +1442,10 @@ impl<E: Arch> ObjectFile<E> {
 
             // Handle --wrap option
             if esym.is_undef() && !args.wrap.is_empty() {
-                if let Some(real) = name.strip_prefix(b"__real_") {
-                    if args.wrap.contains(real) {
-                        key = &key[7..];
-                    }
+                if let Some(real) = name.strip_prefix(b"__real_")
+                    && args.wrap.contains(real)
+                {
+                    key = &key[7..];
                 } else if args.wrap.contains(key) {
                     key = leak_bytes([b"__wrap_", key].concat());
                 }

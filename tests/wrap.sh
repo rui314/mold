@@ -41,3 +41,29 @@ $QEMU $t/exe | grep '^wrap_foo$'
 
 $CC -B. -o $t/exe $t/a.so $t/c.o -Wl,-wrap,foo
 $QEMU $t/exe | grep '^foo$'
+
+# A wrapped symbol may itself have a name that starts with `__real_`.
+cat <<EOF | $CC -fPIC -shared -o $t/d.so -xc -
+#include <stdio.h>
+
+void __real_bar() {
+  printf("real_bar\n");
+}
+EOF
+
+cat <<EOF | $CC -c -o $t/e.o -xc -
+#include <stdio.h>
+
+void __real_bar();
+
+void __wrap___real_bar() {
+  printf("wrap_real_bar\n");
+}
+
+int main() {
+  __real_bar();
+}
+EOF
+
+$CC -B. -o $t/exe $t/d.so $t/e.o -Wl,-wrap,__real_bar
+$QEMU $t/exe | grep '^wrap_real_bar$'
