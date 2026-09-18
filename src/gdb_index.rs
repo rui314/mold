@@ -247,7 +247,7 @@ impl<'a, E: Target> Reader<'a, E> {
     }
 
     fn take(&mut self, n: usize) -> &'a [u8] {
-        let Some(bytes) = self.data.get(self.pos..self.pos + n) else {
+        let Some(bytes) = self.data.get(self.pos..).and_then(|rest| rest.get(..n)) else {
             fatal!("--gdb-index: truncated debug info");
         };
         self.pos += n;
@@ -329,8 +329,11 @@ fn parse_unit_header<E: Target>(data: &[u8], pos: usize) -> UnitHeader {
         fatal!("--gdb-index: DWARF version {version} is not supported");
     }
 
+    let Some(size) = unit_length.checked_add(initial_length_size) else {
+        fatal!("--gdb-index: corrupted unit header");
+    };
     let mut hdr = UnitHeader {
-        size: unit_length + initial_length_size,
+        size,
         header_size: 0,
         abbrev_offset: 0,
         type_die_offset: 0,
@@ -476,14 +479,14 @@ fn read_rnglist<E: Target>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Ve
             DW_RLE_startx_length => {
                 let (a, len) = (r.uleb(), r.uleb());
                 let start = addr_at(a);
-                vec.push((start, start + len));
+                vec.push((start, start.wrapping_add(len)));
             }
             DW_RLE_offset_pair => {
                 let (a, b) = (r.uleb(), r.uleb());
                 // If the base is 0, this address range is for an eliminated
                 // section. We only emit it if it's alive.
                 if base != 0 {
-                    vec.push((base + a, base + b));
+                    vec.push((base.wrapping_add(a), base.wrapping_add(b)));
                 }
             }
             DW_RLE_base_address => base = r.uint(E::WORD_SIZE),
@@ -494,7 +497,7 @@ fn read_rnglist<E: Target>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Ve
             DW_RLE_start_length => {
                 let a = r.uint(E::WORD_SIZE);
                 let len = r.uleb();
-                vec.push((a, a + len));
+                vec.push((a, a.wrapping_add(len)));
             }
             kind => fatal!("--gdb-index: unknown .debug_rnglists entry kind: {kind:#x}"),
         }
@@ -534,7 +537,12 @@ fn read_address_ranges<E: Target>(secs: &RangeSections, cu: &Compunit) -> Vec<(u
             DW_AT_low_pc => low_pc = Some((form, val)),
             DW_AT_high_pc => high_pc = Some((form, val)),
             DW_AT_rnglists_base => rnglists_base = Some(val),
-            DW_AT_addr_base => addrx = &secs.addr[val as usize..],
+            DW_AT_addr_base => {
+                addrx = secs
+                    .addr
+                    .get(val as usize..)
+                    .unwrap_or_else(|| fatal!("--gdb-index: DW_AT_addr_base is out of range"));
+            }
             DW_AT_ranges => ranges = Some((form, val)),
             _ => {}
         }
@@ -581,7 +589,7 @@ fn read_address_ranges<E: Target>(secs: &RangeSections, cu: &Compunit) -> Vec<(u
         DW_FORM_addr => hi_val,
         DW_FORM_addrx | DW_FORM_addrx1 | DW_FORM_addrx2 | DW_FORM_addrx4 => addr_at(hi_val),
         DW_FORM_udata | DW_FORM_data1 | DW_FORM_data2 | DW_FORM_data4 | DW_FORM_data8 => {
-            lo + hi_val
+            lo.wrapping_add(hi_val)
         }
         _ => fatal!("--gdb-index: unhandled form for DW_AT_high_pc: {hi_form:#x}"),
     };
@@ -722,7 +730,7 @@ fn read_debug_units<E: Target>(file: &GdbInputFile, file_idx: u32) -> FileUnits 
                 }),
                 kind => fatal!("--gdb-index: unknown unit type: {kind:#x}"),
             }
-            pos += unit.size as usize;
+            pos = pos.saturating_add(unit.size as usize);
         }
     }
     units
@@ -766,7 +774,7 @@ fn read_pubnames<E: Target>(file: &GdbInputFile, units: &mut FileUnits) {
             let (set_size, offset_size, field_offset) = if r.u32() == u32::MAX {
                 // Header of one GNU pubnames or pubtypes set in DWARF64 format.
                 let size = r.u64();
-                (size + 12, 8, pos as u64 + 14)
+                (size.saturating_add(12), 8, pos as u64 + 14)
             } else {
                 // Header of one GNU pubnames or pubtypes set in DWARF32 format.
                 r.pos = pos;
@@ -783,7 +791,7 @@ fn read_pubnames<E: Target>(file: &GdbInputFile, units: &mut FileUnits) {
                     display_file(&file.filename, file.archive_name)
                 );
             };
-            let end = pos + set_size as usize;
+            let end = pos.saturating_add(set_size as usize);
             while r.pos < end {
                 if r.offset(offset_size) == 0 {
                     break;
