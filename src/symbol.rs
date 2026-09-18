@@ -138,7 +138,7 @@ pub const NEEDS_TLSGD: u8 = 1 << 4;
 pub const NEEDS_TLSDESC: u8 = 1 << 5;
 pub const NEEDS_PPC_OPD: u8 = 1 << 6; // for PPCv1
 
-// Flags for Symbol<E>::get_addr()
+// Flags for Symbol::addr_with()
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AddrFlags {
     // Request an address other than .plt
@@ -361,7 +361,7 @@ const EXPORTED: u16 = 1 << 2;
 // In this case, we use the address of the `foo`'s PLT entry in the
 // main executable (whose address is fixed at link-time) as its
 // address. In order to guarantee pointer equality, we also need to
-// fill foo's GOT entries in DSOs with the addres of the foo's PLT
+// fill foo's GOT entries in DSOs with the address of the foo's PLT
 // entry instead of `foo`'s real address. We can do that by setting a
 // symbol value to `foo`'s dynamic symbol. If a symbol value is set,
 // the dynamic loader initialize `foo`'s GOT entries with that value
@@ -397,7 +397,7 @@ const CANONICAL: u16 = 1 << 3;
 // A copy relocation instructs the loader to copy data from a DSO to a
 // specified location in the main executable. By using this feature,
 // we can copy `foo`'s data to a BSS region at runtime. With that,
-// we can apply relocations agianst `foo` as if `foo` existed in the
+// we can apply relocations against `foo` as if `foo` existed in the
 // main executable's BSS area, whose address is known at link-time.
 //
 // Copy relocations are used only by position-dependent executables.
@@ -1222,7 +1222,7 @@ impl Symbol {
     }
 
     pub fn demangled(&self) -> Option<String> {
-        // The legacy Rust mangling scheme is indistinguishtable from C++.
+        // The legacy Rust mangling scheme is indistinguishable from C++.
         // We don't want to accidentally demangle C++ symbols as Rust ones.
         // So, the legacy mangling scheme will be demangled only when we
         // know the object file was created by rustc.

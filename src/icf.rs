@@ -63,21 +63,6 @@
 //! For Chromium, mold's ICF finishes in less than 1 second with 20 threads,
 //! whereas lld takes 5 seconds and gold takes 50 seconds under the same
 //! conditions.
-//!
-//! Identical Code Folding.
-//!
-//! ICF merges read-only sections with identical contents, metadata and
-//! relocations. Two relocations count as identical if they refer to
-//! sections that are themselves identical, which makes this a graph
-//! problem: sections are vertices and relocations are edges, and two
-//! vertices are equivalent if their (possibly infinite) unfoldings into
-//! trees are equal.
-//!
-//! The approach is to hash each section together with the hashes of the
-//! sections it refers to, repeatedly: after n rounds a section's digest
-//! covers its references up to depth n. The number of distinct digests
-//! can only grow, so once two rounds produce the same count the partition
-//! into equivalence classes has converged.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
