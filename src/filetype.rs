@@ -205,20 +205,10 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
     let name = match e_machine {
         EM_386 => "i386",
         EM_X86_64 => "x86_64",
-        EM_ARM => {
-            if is_le {
-                "arm32"
-            } else {
-                "arm32be"
-            }
-        }
-        EM_AARCH64 => {
-            if is_le {
-                "arm64"
-            } else {
-                "arm64be"
-            }
-        }
+        EM_ARM if is_le => "arm32",
+        EM_ARM => "arm32be",
+        EM_AARCH64 if is_le => "arm64",
+        EM_AARCH64 => "arm64be",
         EM_RISCV => match (is_le, is_64) {
             (true, true) => "riscv64",
             (true, false) => "riscv32",
@@ -244,20 +234,10 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
         EM_S390X => "s390x",
         EM_SPARC64 => "sparc64",
         EM_68K => "m68k",
-        EM_SH => {
-            if is_le {
-                "sh4"
-            } else {
-                "sh4be"
-            }
-        }
-        EM_LOONGARCH => {
-            if is_64 {
-                "loongarch64"
-            } else {
-                "loongarch32"
-            }
-        }
+        EM_SH if is_le => "sh4",
+        EM_SH => "sh4be",
+        EM_LOONGARCH if is_64 => "loongarch64",
+        EM_LOONGARCH => "loongarch32",
         _ => return None,
     };
     Some(name)
