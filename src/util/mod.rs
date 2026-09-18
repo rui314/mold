@@ -244,40 +244,49 @@ pub(crate) fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
     buf[i] = (value & 0x7f) as u8;
 }
 
-/// Reads an unsigned LEB128 value, advancing `bytes` past it.
+/// Reads an unsigned LEB128 value, advancing `bytes` past it, or returns
+/// `None` if the value is truncated.
 #[inline]
-pub(crate) fn read_uleb(bytes: &mut &[u8]) -> u64 {
+pub(crate) fn try_read_uleb(bytes: &mut &[u8]) -> Option<u64> {
     let mut value = 0;
     let mut shift = 0;
     loop {
-        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
+        let (&byte, rest) = bytes.split_first()?;
         *bytes = rest;
         if shift < 64 {
             value |= ((byte & 0x7f) as u64) << shift;
         }
         shift += 7;
         if byte & 0x80 == 0 {
-            return value;
+            return Some(value);
         }
     }
 }
 
-/// Reads a signed LEB128 value, advancing `bytes` past it.
+/// Reads a signed LEB128 value, advancing `bytes` past it, or returns
+/// `None` if the value is truncated.
 #[inline]
-pub(crate) fn read_sleb(bytes: &mut &[u8]) -> i64 {
+pub(crate) fn try_read_sleb(bytes: &mut &[u8]) -> Option<i64> {
     let mut value = 0u64;
     let mut shift = 0;
     loop {
-        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
+        let (&byte, rest) = bytes.split_first()?;
         *bytes = rest;
         if shift < 64 {
             value |= ((byte & 0x7f) as u64) << shift;
         }
         shift += 7;
         if byte & 0x80 == 0 {
-            return if shift < 64 { sign_extend(value, shift) } else { value as i64 };
+            return Some(if shift < 64 { sign_extend(value, shift) } else { value as i64 });
         }
     }
+}
+
+/// Reads an unsigned LEB128 value from data known to be complete, such as
+/// a section being relocated.
+#[inline]
+pub(crate) fn read_uleb(bytes: &mut &[u8]) -> u64 {
+    try_read_uleb(bytes).expect("truncated LEB128")
 }
 
 /// Fills `buf` with random bytes from the operating system.
@@ -354,8 +363,14 @@ mod tests {
             let mut buf = Vec::new();
             encode_sleb(&mut buf, value);
             let mut slice = buf.as_slice();
-            assert_eq!(read_sleb(&mut slice), value);
+            assert_eq!(try_read_sleb(&mut slice), Some(value));
         }
+    }
+
+    #[test]
+    fn leb128_truncated() {
+        assert_eq!(try_read_uleb(&mut &[0x80u8, 0x80][..]), None);
+        assert_eq!(try_read_sleb(&mut &[0xffu8][..]), None);
     }
 
     #[test]
