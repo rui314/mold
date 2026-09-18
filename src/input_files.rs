@@ -2040,6 +2040,9 @@ impl<E: Target> ObjectFile<E> {
                 }
                 let begin_offset = pos;
                 let end_offset = pos + size + 4;
+                if size < 4 || end_offset > contents.len() {
+                    fatal!("{}: corrupted .eh_frame section", isec.display(self));
+                }
                 let id = E::read_u32(&contents[pos + 4..]);
                 pos = end_offset;
 
@@ -2188,11 +2191,15 @@ impl<E: Target> ObjectFile<E> {
             let hdr_len = SFrameHeader::<E>::size() + hdr.auxhdr_len as usize;
             let fde_off = hdr_len + hdr.fdeoff.get() as usize;
             let fre_off = hdr_len + hdr.freoff.get() as usize;
+            let num_fdes = hdr.num_fdes.get() as usize;
+            if fde_off + num_fdes * SFrameFdeIdx::<E>::size() > data.len() {
+                fatal!("{}: corrupted .sframe section", isec.display(self));
+            }
             let rels = isec.rels(self);
             let mut rel_idx = 0;
             let mut new_fdes = Vec::new();
 
-            for i in 0..hdr.num_fdes.get() as usize {
+            for i in 0..num_fdes {
                 let idx_off = fde_off + i * SFrameFdeIdx::<E>::size();
                 let ent = SFrameFdeIdx::<E>::parse(&data[idx_off..]);
 
@@ -2211,7 +2218,11 @@ impl<E: Target> ObjectFile<E> {
                 let Some(func) = self.symbol_section(rel.r_sym() as usize) else {
                     continue;
                 };
-                let fre = &data[off..off + sframe_fre_block_size::<E>(data, off)];
+                let Some(fre) = sframe_fre_block_size::<E>(data, off)
+                    .and_then(|size| data.get(off..off + size))
+                else {
+                    fatal!("{}: corrupted .sframe section", isec.display(self));
+                };
                 new_fdes.push(SFrameFde {
                     section: func.shndx,
                     sym: self.base.symbols[rel.r_sym() as usize],
@@ -2935,18 +2946,20 @@ fn truncated_cie<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>) -> ! {
 // a 5-byte attribute header followed by a series of frame row
 // entries, each of which is a start address (whose width is given by
 // the attribute header), a one-byte info field and a number of
-// variable-width data words encoded in that info field.
-fn sframe_fre_block_size<E: Target>(data: &[u8], offset: usize) -> usize {
-    let num_fres = E::read_u16(&data[offset..]) as usize;
-    let addr_size = 1usize << bits(data[offset + 2] as u64, 3, 0);
+// variable-width data words encoded in that info field. Returns None if
+// the block runs past the end of the section.
+fn sframe_fre_block_size<E: Target>(data: &[u8], offset: usize) -> Option<usize> {
+    let hdr = data.get(offset..offset + 5)?;
+    let num_fres = E::read_u16(hdr) as usize;
+    let addr_size = 1usize << bits(hdr[2] as u64, 3, 0);
     let mut p = offset + 5;
     for _ in 0..num_fres {
-        let info = data[p + addr_size] as u64;
+        let info = *data.get(p + addr_size)? as u64;
         let num_words = bits(info, 4, 1) as usize;
         let word_size = 1usize << bits(info, 6, 5);
         p += addr_size + 1 + num_words * word_size;
     }
-    p - offset
+    Some(p - offset)
 }
 
 // SharedFile represents an input .so file.
