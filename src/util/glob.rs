@@ -127,10 +127,10 @@ impl Pattern {
     }
 
     fn matches(&self, s: &[u8]) -> bool {
-        if let Some(Token::Str(suffix)) = self.tokens.last() {
-            if !s.ends_with(suffix) {
-                return false;
-            }
+        if let Some(Token::Str(suffix)) = self.tokens.last()
+            && !s.ends_with(suffix)
+        {
+            return false;
         }
 
         let mut x = 0;

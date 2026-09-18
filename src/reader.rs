@@ -205,26 +205,22 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
         if job.is_lib {
             continue;
         }
-        if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
-            if get_file_type(ctx, mf) != FileType::Text {
-                if let Some(target) =
-                    filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf)
-                {
-                    return target;
-                }
-            }
+        if let Some(mf) = open_file(&ctx.args.chroot, &job.name)
+            && get_file_type(ctx, mf) != FileType::Text
+            && let Some(target) = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf)
+        {
+            return target;
         }
     }
     for job in jobs {
         if job.is_lib {
             continue;
         }
-        if let Some(mf) = open_file(&ctx.args.chroot, &job.name) {
-            if get_file_type(ctx, mf) == FileType::Text {
-                if let Some(target) = crate::linker_script::output_target(ctx, &job.rctx, mf) {
-                    return target;
-                }
-            }
+        if let Some(mf) = open_file(&ctx.args.chroot, &job.name)
+            && get_file_type(ctx, mf) == FileType::Text
+            && let Some(target) = crate::linker_script::output_target(ctx, &job.rctx, mf)
+        {
+            return target;
         }
     }
     fatal!("-m option is missing");
@@ -236,15 +232,15 @@ fn open_library<E: Arch>(
     path: &std::path::Path,
 ) -> Option<&'static MappedFile> {
     let mf = open_file(&ctx.args.chroot, path)?;
-    if let Some(target) = get_machine_type(ctx, rctx, mf) {
-        if target != E::NAME {
-            warn!(
-                "{}: skipping incompatible file: {target} (e_machine {})",
-                path.display(),
-                E::E_MACHINE
-            );
-            return None;
-        }
+    if let Some(target) = get_machine_type(ctx, rctx, mf)
+        && target != E::NAME
+    {
+        warn!(
+            "{}: skipping incompatible file: {target} (e_machine {})",
+            path.display(),
+            E::E_MACHINE
+        );
+        return None;
     }
     Some(mf)
 }

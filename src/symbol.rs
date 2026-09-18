@@ -1219,10 +1219,10 @@ impl Symbol {
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if demangle_enabled() {
-            if let Some(name) = self.demangled() {
-                return f.write_str(&name);
-            }
+        if demangle_enabled()
+            && let Some(name) = self.demangled()
+        {
+            return f.write_str(&name);
         }
         write!(f, "{}", self.name())
     }

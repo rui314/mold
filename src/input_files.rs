@@ -1360,11 +1360,11 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Marks a section dead along with its FDEs.
     pub fn kill_section(&self, shndx: usize) {
-        if let Some(isec) = self.section(shndx) {
-            if isec.kill() {
-                for fde in isec.fdes(self) {
-                    fde.kill();
-                }
+        if let Some(isec) = self.section(shndx)
+            && isec.kill()
+        {
+            for fde in isec.fdes(self) {
+                fde.kill();
             }
         }
     }
@@ -2005,10 +2005,10 @@ impl<E: Arch> ObjectFile<E> {
             sym.set_sym_idx(i as u32);
             sym.set_esym(esym);
             sym.set_rust(self.is_rust_obj);
-            if let Some(shndx) = shndx {
-                if let Some(section) = self.section_id(shndx) {
-                    sym.set_input_section(section);
-                }
+            if let Some(shndx) = shndx
+                && let Some(section) = self.section_id(shndx)
+            {
+                sym.set_input_section(section);
             }
             slots[next].write(sym);
             self.base.symbols[i] = SymbolId(base_id.0 + next as u32);
@@ -2848,10 +2848,10 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
         if ctx.args.discard_locals {
             return false;
         }
-        if let Some(isec) = sym.input_section_ref(ctx) {
-            if isec.sh_flags & SHF_MERGE as u64 != 0 {
-                return false;
-            }
+        if let Some(isec) = sym.input_section_ref(ctx)
+            && isec.sh_flags & SHF_MERGE as u64 != 0
+        {
+            return false;
         }
     }
     true

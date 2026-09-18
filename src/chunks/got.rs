@@ -149,16 +149,16 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
         let idx = sym.got_idx(&ctx.symbols).unwrap();
 
         // IFUNC always needs to be fixed up by the dynamic linker.
-        if let Some(r_irelative) = E::R_IRELATIVE {
-            if sym.is_ifunc() {
-                if sym.is_pde_ifunc(ctx) {
-                    add(idx, sym.plt_addr(ctx), R_NONE, None);
-                    add(idx + 1, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
-                } else {
-                    add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
-                }
-                continue;
+        if let Some(r_irelative) = E::R_IRELATIVE
+            && sym.is_ifunc()
+        {
+            if sym.is_pde_ifunc(ctx) {
+                add(idx, sym.plt_addr(ctx), R_NONE, None);
+                add(idx + 1, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
+            } else {
+                add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
             }
+            continue;
         }
 
         if sym.is_imported() {

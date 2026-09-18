@@ -849,10 +849,11 @@ impl<E: Arch> InputSection<E> {
         // If the section was dead due to ICF, we don't want to emit debug
         // info for that section but want to set real values to .debug_line so
         // that users can set a breakpoint inside a merged section.
-        if let Some(isec) = isec {
-            if isec.is_icf_removed() && name == b".debug_line" {
-                return None;
-            }
+        if let Some(isec) = isec
+            && isec.is_icf_removed()
+            && name == b".debug_line"
+        {
+            return None;
         }
 
         // 0 is an invalid value in most debug info sections, so we use it

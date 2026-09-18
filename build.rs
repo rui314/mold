@@ -43,17 +43,15 @@ fn git_hash(source_dir: &Path) -> Option<String> {
     let reftable = git_path("reftable/tables.list").filter(|p| p.exists());
     if let Some(head) = git_path("HEAD").filter(|p| p.exists()) {
         println!("cargo:rerun-if-changed={}", head.display());
-        if let Ok(contents) = std::fs::read_to_string(&head) {
-            if let Some(reference) =
+        if let Ok(contents) = std::fs::read_to_string(&head)
+            && let Some(reference) =
                 contents.strip_prefix("ref: ").map(str::trim).filter(|_| reftable.is_none())
-            {
-                if let Some(path) = git_path(reference) {
-                    // A packed reference may acquire a loose file later.
-                    // Watch its nearest existing directory until that happens.
-                    if let Some(path) = path.ancestors().find(|p| p.exists()) {
-                        println!("cargo:rerun-if-changed={}", path.display());
-                    }
-                }
+            && let Some(path) = git_path(reference)
+        {
+            // A packed reference may acquire a loose file later.
+            // Watch its nearest existing directory until that happens.
+            if let Some(path) = path.ancestors().find(|p| p.exists()) {
+                println!("cargo:rerun-if-changed={}", path.display());
             }
         }
     }

@@ -261,17 +261,13 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                 let id2 = file.symbols2[i];
                 let target =
                     if id2 != SymbolId::NONE { ctx.symbols[id2].file() } else { sym.file() };
-                if let Some(target) = target {
-                    if (!target.is_dso() || !ctx.args.allow_shlib_undefined)
-                        && ctx.file(target).mark_reachable()
-                    {
-                        found.push(target);
-                        if sym.is_traced() {
-                            out!(
-                                "trace-symbol: {file} keeps {} for {sym}",
-                                ctx.file_display(target)
-                            );
-                        }
+                if let Some(target) = target
+                    && (!target.is_dso() || !ctx.args.allow_shlib_undefined)
+                    && ctx.file(target).mark_reachable()
+                {
+                    found.push(target);
+                    if sym.is_traced() {
+                        out!("trace-symbol: {file} keeps {} for {sym}", ctx.file_display(target));
                     }
                 }
             }
@@ -741,11 +737,11 @@ pub fn resolve_symbols<E: Arch>(ctx: &mut Context<E>) {
 
         let mut roots = Vec::new();
         for &id in &hidden {
-            if let Some(file) = ctx.symbols[id].file() {
-                if !ctx.file(file).is_reachable() {
-                    ctx.file(file).set_reachable(true);
-                    roots.push(file);
-                }
+            if let Some(file) = ctx.symbols[id].file()
+                && !ctx.file(file).is_reachable()
+            {
+                ctx.file(file).set_reachable(true);
+                roots.push(file);
             }
         }
         mark_live_files(ctx, roots);
@@ -1723,10 +1719,10 @@ pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
             // Skip if one side is an LTO IR object and the other is not.
             // The LTO backend resolves conflicts between IR and regular objects
             // on its own; only IR-vs-IR duplicates need to be caught here.
-            if let FileId::Obj(o) = owner {
-                if ctx.objs[o.index()].is_lto_input() != file.is_lto_input() {
-                    continue;
-                }
+            if let FileId::Obj(o) = owner
+                && ctx.objs[o.index()].is_lto_input() != file.is_lto_input()
+            {
+                continue;
             }
             error!("duplicate symbol: {file}: {}: {sym}", ctx.file_display(owner));
         }
@@ -1762,15 +1758,16 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
             return;
         }
         let sym2 = &ctx.symbols[id2];
-        if let Some(FileId::Obj(_)) = sym2.file() {
-            if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
-                let file = &ctx.objs[obj.index()];
-                error!(
-                    "duplicate symbol: {file}: {}: {}",
-                    ctx.file_display(sym2.file().unwrap()),
-                    crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
-                );
-            }
+        if let Some(FileId::Obj(_)) = sym2.file()
+            && !sym2.is_weak()
+            && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN)
+        {
+            let file = &ctx.objs[obj.index()];
+            error!(
+                "duplicate symbol: {file}: {}: {}",
+                ctx.file_display(sym2.file().unwrap()),
+                crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
+            );
         }
     });
     crate::error::checkpoint();
@@ -1895,19 +1892,18 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
     };
     let check = |file: &dyn std::fmt::Display, file_id: FileId, sym: &Symbol, st_type2: u32| {
         let esym1 = &sym.esym(ctx);
-        if let Some(owner) = sym.file() {
-            if owner != file_id
-                && esym1.st_type() != STT_NOTYPE
-                && st_type2 != STT_NOTYPE
-                && canonicalize(esym1.st_type()) != canonicalize(st_type2)
-            {
-                warn!(
-                    "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
-                    ctx.file_display(owner),
-                    stt_to_string(esym1.st_type()),
-                    stt_to_string(st_type2)
-                );
-            }
+        if let Some(owner) = sym.file()
+            && owner != file_id
+            && esym1.st_type() != STT_NOTYPE
+            && st_type2 != STT_NOTYPE
+            && canonicalize(esym1.st_type()) != canonicalize(st_type2)
+        {
+            warn!(
+                "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
+                ctx.file_display(owner),
+                stt_to_string(esym1.st_type()),
+                stt_to_string(st_type2)
+            );
         }
     };
 
@@ -2249,10 +2245,10 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     // create_range_extension_thunks is not thread-safe
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
-        if let ChunkId::Output(osec) = id {
-            if needs_thunks(ctx, id) {
-                crate::thunks::create_range_extension_thunks(ctx, osec);
-            }
+        if let ChunkId::Output(osec) = id
+            && needs_thunks(ctx, id)
+        {
+            crate::thunks::create_range_extension_thunks(ctx, osec);
         }
     }
 
@@ -2349,10 +2345,10 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
 
         {
             let sym = &ctx.symbols[id];
-            if let Some(owner) = sym.file() {
-                if !sym.is_undef() || ctx.file(owner).priority <= priority {
-                    continue;
-                }
+            if let Some(owner) = sym.file()
+                && (!sym.is_undef() || ctx.file(owner).priority <= priority)
+            {
+                continue;
             }
         }
 
@@ -2895,16 +2891,17 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
             // defined, the default one takes precedence.
             let sym_name = ctx.symbols[id].name();
-            if let Some(id2) = ctx.symbols.lookup(sym_name) {
-                if id2 != id && ctx.symbols[id2].file() == Some(file_id) {
-                    let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
-                    if !file.has_symver[sym2_idx - file.base.first_global] {
-                        let v2 = ctx.symbols[id2].ver_idx as u32;
-                        if v2 == ctx.default_version as u32
-                            || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
-                        {
-                            ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
-                        }
+            if let Some(id2) = ctx.symbols.lookup(sym_name)
+                && id2 != id
+                && ctx.symbols[id2].file() == Some(file_id)
+            {
+                let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
+                if !file.has_symver[sym2_idx - file.base.first_global] {
+                    let v2 = ctx.symbols[id2].ver_idx as u32;
+                    if v2 == ctx.default_version as u32
+                        || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
+                    {
+                        ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
                     }
                 }
             }
@@ -3155,10 +3152,10 @@ pub fn compute_address_significance<E: Arch>(ctx: &mut Context<E>) {
             for r in isec.rels(file) {
                 if !r.is_func_call::<E>() {
                     let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
-                    if let Some(dst) = sym.input_section_ref(ctx_ref) {
-                        if dst.sh_flags & SHF_EXECINSTR as u64 != 0 {
-                            dst.set_address_taken();
-                        }
+                    if let Some(dst) = sym.input_section_ref(ctx_ref)
+                        && dst.sh_flags & SHF_EXECINSTR as u64 != 0
+                    {
+                        dst.set_address_taken();
                     }
                 }
             }
@@ -3820,14 +3817,14 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         start(ctx, ctx.syms.bss_start, Some(bss), 0);
     }
 
-    if let Some(ehdr) = &ctx.ehdr {
-        if ehdr.is_alloc() {
-            let addr = ehdr.shdr.sh_addr.get();
-            for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
-                if let (Some(sym), Some(first)) = (sym, first) {
-                    let s = ctx.set_symbol_output_chunk(sym, first);
-                    s.value = addr;
-                }
+    if let Some(ehdr) = &ctx.ehdr
+        && ehdr.is_alloc()
+    {
+        let addr = ehdr.shdr.sh_addr.get();
+        for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
+            if let (Some(sym), Some(first)) = (sym, first) {
+                let s = ctx.set_symbol_output_chunk(sym, first);
+                s.value = addr;
             }
         }
     }
@@ -3925,11 +3922,11 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         }
     }
     // ARM32's __exidx_{start,end}
-    if ctx.syms.exidx_start.is_some() {
-        if let Some(c) = find(ctx, b".ARM.exidx") {
-            start(ctx, ctx.syms.exidx_start, Some(c), 0);
-            stop(ctx, ctx.syms.exidx_end, Some(c), 0);
-        }
+    if ctx.syms.exidx_start.is_some()
+        && let Some(c) = find(ctx, b".ARM.exidx")
+    {
+        start(ctx, ctx.syms.exidx_start, Some(c), 0);
+        stop(ctx, ctx.syms.exidx_end, Some(c), 0);
     }
     // PPC64's ".TOC." symbol.
     if E::IS_PPC64 {

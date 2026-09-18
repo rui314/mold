@@ -1933,10 +1933,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         parse_report_output(path.as_os_str()).unwrap_or(ReportOutput::Stdout)
     });
 
-    if !directory.as_os_str().is_empty() {
-        if let Err(e) = std::env::set_current_dir(&directory) {
-            fatal!("chdir failed: {}: {e}", directory.display());
-        }
+    if !directory.as_os_str().is_empty()
+        && let Err(e) = std::env::set_current_dir(&directory)
+    {
+        fatal!("chdir failed: {}: {e}", directory.display());
     }
 
     if !a.sysroot.as_os_str().is_empty() {

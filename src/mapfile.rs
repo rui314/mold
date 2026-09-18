@@ -22,10 +22,11 @@ fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<Sym
         let file_id = FileId::Obj(file.id());
         for &id in &file.base.symbols {
             let sym = &ctx.symbols[id];
-            if sym.file() == Some(file_id) && sym.ty() != STT_SECTION {
-                if let Some(r) = sym.input_section() {
-                    map.entry(r).or_default().push(id);
-                }
+            if sym.file() == Some(file_id)
+                && sym.ty() != STT_SECTION
+                && let Some(r) = sym.input_section()
+            {
+                map.entry(r).or_default().push(id);
             }
         }
     }

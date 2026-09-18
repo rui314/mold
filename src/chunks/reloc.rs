@@ -83,11 +83,11 @@ fn symidx_addend<'a, E: Arch>(
     let file = &ctx.objs[isec.file.index()];
     let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
 
-    if !isec.is_alloc() {
-        if let Some((frag, addend)) = isec.fragment(ctx, rel, cache) {
-            let msec = &ctx.merged_sections[frag.section.index()];
-            return (msec.hdr.shndx, msec.fragments.get(frag.entry).offset() as i64 + addend);
-        }
+    if !isec.is_alloc()
+        && let Some((frag, addend)) = isec.fragment(ctx, rel, cache)
+    {
+        let msec = &ctx.merged_sections[frag.section.index()];
+        return (msec.hdr.shndx, msec.fragments.get(frag.entry).offset() as i64 + addend);
     }
 
     if sym.st_type() == STT_SECTION {
@@ -105,24 +105,6 @@ fn symidx_addend<'a, E: Arch>(
     }
     // A dead debug section can refer to a COMDAT-eliminated section.
     output_symidx_addend(ctx, sym, || isec.rel_addend(rel)).unwrap_or((0, 0))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::arch::I386;
-    use crate::cmdline::Args;
-
-    #[test]
-    fn discarded_section_does_not_read_implicit_addend() {
-        let ctx = Context::<I386>::new(Args::default(), Vec::new());
-        let mut sym = Symbol::new(BStr::new(b".text"));
-        let mut esym = ElfSym::<I386>::default();
-        esym.set_type(STT_SECTION);
-        sym.set_esym(&esym);
-
-        assert_eq!(output_symidx_addend(&ctx, &sym, || panic!("read discarded relocation")), None);
-    }
 }
 
 /// Writes the relocations. With `-r` on a REL target, the addends are
@@ -154,12 +136,30 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Opt
             let out_addend = if E::FAMILY == crate::arch::Family::Sh4 { 0 } else { addend };
             out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
 
-            if ctx.args.relocatable {
-                if let Some(osec_buf) = osec_buf.as_deref_mut() {
-                    let loc = (isec.offset() + rel.r_offset()) as usize;
-                    E::write_addend(&mut osec_buf[loc..], addend, rel);
-                }
+            if ctx.args.relocatable
+                && let Some(osec_buf) = osec_buf.as_deref_mut()
+            {
+                let loc = (isec.offset() + rel.r_offset()) as usize;
+                E::write_addend(&mut osec_buf[loc..], addend, rel);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::I386;
+    use crate::cmdline::Args;
+
+    #[test]
+    fn discarded_section_does_not_read_implicit_addend() {
+        let ctx = Context::<I386>::new(Args::default(), Vec::new());
+        let mut sym = Symbol::new(BStr::new(b".text"));
+        let mut esym = ElfSym::<I386>::default();
+        esym.set_type(STT_SECTION);
+        sym.set_esym(&esym);
+
+        assert_eq!(output_symidx_addend(&ctx, &sym, || panic!("read discarded relocation")), None);
     }
 }

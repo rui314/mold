@@ -322,10 +322,10 @@ fn write_shdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.fill(0);
 
     let mut first = ElfShdr::<E>::default();
-    if let Some(shstrtab) = &ctx.shstrtab {
-        if shstrtab.shndx >= SHN_LORESERVE {
-            first.sh_link.set(shstrtab.shndx);
-        }
+    if let Some(shstrtab) = &ctx.shstrtab
+        && shstrtab.shndx >= SHN_LORESERVE
+    {
+        first.sh_link.set(shstrtab.shndx);
     }
     let shnum = buf.len() / size;
     if shnum > u16::MAX as usize {
@@ -427,10 +427,10 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     chunks.sort_by_key(|&id| ctx.chunk_header(id).shdr.sh_addr.get());
 
     // Create a PT_PHDR for the program header itself.
-    if let Some(phdr) = &ctx.phdr {
-        if phdr.hdr.is_alloc() {
-            define(&mut vec, PT_PHDR, PF_R, &phdr.hdr.shdr);
-        }
+    if let Some(phdr) = &ctx.phdr
+        && phdr.hdr.is_alloc()
+    {
+        define(&mut vec, PT_PHDR, PF_R, &phdr.hdr.shdr);
     }
 
     // Create a PT_INTERP.
@@ -507,11 +507,11 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     }
 
     // Add PT_DYNAMIC
-    if let Some(osec) = &ctx.dynamic {
-        if osec.shdr.sh_size.get() != 0 {
-            let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
-            define(&mut vec, PT_DYNAMIC, flags, &osec.shdr);
-        }
+    if let Some(osec) = &ctx.dynamic
+        && osec.shdr.sh_size.get() != 0
+    {
+        let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
+        define(&mut vec, PT_DYNAMIC, flags, &osec.shdr);
     }
 
     // Add PT_GNU_EH_FRAME
@@ -530,10 +530,10 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     }
 
     // Create a PT_RISCV_ATTRIBUTES
-    if let Some(osec) = &ctx.riscv_attributes {
-        if osec.hdr.shdr.sh_size.get() != 0 {
-            define(&mut vec, PT_RISCV_ATTRIBUTES, PF_R, &osec.hdr.shdr);
-        }
+    if let Some(osec) = &ctx.riscv_attributes
+        && osec.hdr.shdr.sh_size.get() != 0
+    {
+        define(&mut vec, PT_RISCV_ATTRIBUTES, PF_R, &osec.hdr.shdr);
     }
 
     // Create a PT_ARM_EDXIDX
@@ -596,26 +596,26 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // that they can be directly read/executed from ROM. If a gap between
     // two segments is two page size or larger, we give up and pack segments
     // tightly so that we don't waste too much ROM area.
-    if let Some(base) = ctx.args.physical_image_base {
-        if let Some(first) = vec.iter().position(|p| p.p_type().get() == PT_LOAD) {
-            let mut addr = base;
-            let mut in_sync = vec[first].p_vaddr().get() == addr;
-            vec[first].p_paddr_mut().set(addr);
-            addr += vec[first].p_memsz().get();
+    if let Some(base) = ctx.args.physical_image_base
+        && let Some(first) = vec.iter().position(|p| p.p_type().get() == PT_LOAD)
+    {
+        let mut addr = base;
+        let mut in_sync = vec[first].p_vaddr().get() == addr;
+        vec[first].p_paddr_mut().set(addr);
+        addr += vec[first].p_memsz().get();
 
-            for p in vec[first + 1..].iter_mut().take_while(|p| p.p_type().get() == PT_LOAD) {
-                if in_sync
-                    && addr <= p.p_vaddr().get()
-                    && p.p_vaddr().get() < addr + ctx.args.page_size * 2
-                {
-                    let vaddr = p.p_vaddr().get();
-                    p.p_paddr_mut().set(vaddr);
-                    addr = vaddr + p.p_memsz().get();
-                } else {
-                    in_sync = false;
-                    p.p_paddr_mut().set(addr);
-                    addr += p.p_memsz().get();
-                }
+        for p in vec[first + 1..].iter_mut().take_while(|p| p.p_type().get() == PT_LOAD) {
+            if in_sync
+                && addr <= p.p_vaddr().get()
+                && p.p_vaddr().get() < addr + ctx.args.page_size * 2
+            {
+                let vaddr = p.p_vaddr().get();
+                p.p_paddr_mut().set(vaddr);
+                addr = vaddr + p.p_memsz().get();
+            } else {
+                in_sync = false;
+                p.p_paddr_mut().set(addr);
+                addr += p.p_memsz().get();
             }
         }
     }

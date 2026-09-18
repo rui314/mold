@@ -250,12 +250,12 @@ fn native_machine() -> String {
         return canonical_machine(&machine.to_string_lossy());
     }
 
-    if let Ok(output) = Command::new("cc").arg("-dumpmachine").output() {
-        if output.status.success() {
-            let triple = String::from_utf8_lossy(&output.stdout);
-            if !triple.trim().is_empty() {
-                return machine_from_triple(&triple);
-            }
+    if let Ok(output) = Command::new("cc").arg("-dumpmachine").output()
+        && output.status.success()
+    {
+        let triple = String::from_utf8_lossy(&output.stdout);
+        if !triple.trim().is_empty() {
+            return machine_from_triple(&triple);
         }
     }
     canonical_machine(env::consts::ARCH)

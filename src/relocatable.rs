@@ -127,10 +127,10 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
             }
             let id = file.base.symbols[i];
             let sym = &ctx.symbols[id];
-            if let Some(owner) = sym.file() {
-                if !sym.is_undef() || ctx.file(owner).priority <= priority {
-                    continue;
-                }
+            if let Some(owner) = sym.file()
+                && (!sym.is_undef() || ctx.file(owner).priority <= priority)
+            {
+                continue;
             }
             let sym = &mut ctx.symbols[id];
             sym.set_file(FileId::Obj(file.id()));

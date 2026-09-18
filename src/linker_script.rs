@@ -141,17 +141,16 @@ fn resolve_path<E: Arch>(
     let chroot = &ctx.args.chroot;
     let open = |path: &Path| -> Option<&'static MappedFile> {
         let mf = open_file(chroot, path)?;
-        if check_target {
-            if let Some(target) = reader::get_machine_type(ctx, rctx, mf) {
-                if target != E::NAME {
-                    warn!(
-                        "{}: skipping incompatible file: {target} (e_machine {})",
-                        path.display(),
-                        E::E_MACHINE
-                    );
-                    return None;
-                }
-            }
+        if check_target
+            && let Some(target) = reader::get_machine_type(ctx, rctx, mf)
+            && target != E::NAME
+        {
+            warn!(
+                "{}: skipping incompatible file: {target} (e_machine {})",
+                path.display(),
+                E::E_MACHINE
+            );
+            return None;
         }
         Some(mf)
     };
@@ -425,11 +424,11 @@ impl<'a, E: Arch> Script<'a, E> {
             tok = self.skip(tok, "{");
             tok = self.read_version_script_commands(tok, ver_str, ver_idx, true, false);
             tok = self.skip(tok, "}");
-            if let Some(&t) = tok.first() {
-                if t != b";" {
-                    // A parent version, e.g. `} VER_1.0;`
-                    tok = &tok[1..];
-                }
+            if let Some(&t) = tok.first()
+                && t != b";"
+            {
+                // A parent version, e.g. `} VER_1.0;`
+                tok = &tok[1..];
             }
             tok = self.skip(tok, ";");
         }

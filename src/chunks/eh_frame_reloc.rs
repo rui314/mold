@@ -67,10 +67,11 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<
         rel.set_r_sym(r_sym);
         if E::IS_RELA {
             rel.set_r_addend(addend);
-        } else if ctx.args.relocatable && is_section {
-            if let Some(eh) = eh_frame_buf {
-                E::write_addend(&mut eh[offset as usize..], addend, r);
-            }
+        } else if ctx.args.relocatable
+            && is_section
+            && let Some(eh) = eh_frame_buf
+        {
+            E::write_addend(&mut eh[offset as usize..], addend, r);
         }
         out[n] = rel;
         n += 1;

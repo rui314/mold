@@ -199,15 +199,15 @@ fn carve<'a>(rest: &mut &'a mut [u8], pos: &mut usize, start: usize, len: usize)
 // size as well.
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
-    if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size().get() != 0 {
-        if let Some(isec) = sym.input_section_ref(ctx) {
-            if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
-                let end = esym.st_value().get() + esym.st_size().get();
-                return (esym.st_size().get() as i64 + esym.st_value().get() as i64
-                    - sym.value as i64
-                    - r_delta(isec, end)) as u64;
-            }
-        }
+    if (E::IS_RISCV || E::IS_LOONGARCH)
+        && esym.st_size().get() != 0
+        && let Some(isec) = sym.input_section_ref(ctx)
+        && isec.sh_flags & SHF_EXECINSTR as u64 != 0
+    {
+        let end = esym.st_value().get() + esym.st_size().get();
+        return (esym.st_size().get() as i64 + esym.st_value().get() as i64
+            - sym.value as i64
+            - r_delta(isec, end)) as u64;
     }
     esym.st_size().get()
 }

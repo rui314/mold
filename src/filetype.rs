@@ -111,18 +111,18 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
         let syms = records_from_bytes::<ElfSym<E>>(bytes).iter();
         let skip = |ty: u32| ty == STT_NOTYPE || ty == STT_FILE || ty == STT_SECTION;
 
-        if let Some(sym) = syms.skip(1).find(|s| !skip(s.st_type())) {
-            if sym.st_shndx().get() as u32 == SHN_COMMON {
-                let Some(strtab) = shdrs.get(shdr.sh_link.get() as usize) else {
-                    return false;
-                };
-                let name = crate::util::cstr_at(
-                    data,
-                    strtab.sh_offset.get() as usize + sym.st_name().get() as usize,
-                );
-                if name.starts_with(b"__gnu_lto_") {
-                    return true;
-                }
+        if let Some(sym) = syms.skip(1).find(|s| !skip(s.st_type()))
+            && sym.st_shndx().get() as u32 == SHN_COMMON
+        {
+            let Some(strtab) = shdrs.get(shdr.sh_link.get() as usize) else {
+                return false;
+            };
+            let name = crate::util::cstr_at(
+                data,
+                strtab.sh_offset.get() as usize + sym.st_name().get() as usize,
+            );
+            if name.starts_with(b"__gnu_lto_") {
+                return true;
             }
         }
         break;

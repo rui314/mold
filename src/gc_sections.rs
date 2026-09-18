@@ -189,30 +189,30 @@ fn visit_section<'scope, E: Arch>(
         // defined. A single such reference can keep an enormous number of
         // sections alive, so we spread the fanout over threads instead
         // of marking the sections one by one.
-        if let Some(name) = start_stop_name(sym.name()) {
-            if let Some(sections) = map.get(name) {
-                // Mark targets in parallel. mark_section returns true only for
-                // newly marked sections, which the batch visitor must then visit
-                // unconditionally.
-                sections.par_chunks(GC_BATCH).for_each(|sections| {
-                    let mut found = Vec::with_capacity(sections.len());
-                    for &target in sections {
-                        if mark_section(target) {
-                            found.push(target);
-                        }
+        if let Some(name) = start_stop_name(sym.name())
+            && let Some(sections) = map.get(name)
+        {
+            // Mark targets in parallel. mark_section returns true only for
+            // newly marked sections, which the batch visitor must then visit
+            // unconditionally.
+            sections.par_chunks(GC_BATCH).for_each(|sections| {
+                let mut found = Vec::with_capacity(sections.len());
+                for &target in sections {
+                    if mark_section(target) {
+                        found.push(target);
                     }
-                    if !found.is_empty() {
-                        visit_batch(ctx, &found, map, scope);
-                    }
-                });
-            }
+                }
+                if !found.is_empty() {
+                    visit_batch(ctx, &found, map, scope);
+                }
+            });
         }
     }
 
-    if E::FAMILY == Family::Arm32 {
-        if let Some(exidx) = isec.exidx() {
-            mark(file.section_at(exidx));
-        }
+    if E::FAMILY == Family::Arm32
+        && let Some(exidx) = isec.exidx()
+    {
+        mark(file.section_at(exidx));
     }
 }
 
