@@ -70,11 +70,7 @@ impl NameLen {
     fn get(self, strtab: &'static [u8], offset: usize) -> &'static [u8] {
         let rest = strtab.get(offset..).unwrap_or(&[]);
         let lower = self.lower_bound().min(rest.len());
-        let len = if self.is_long() {
-            lower + cstr_at(rest, lower).len()
-        } else {
-            lower
-        };
+        let len = if self.is_long() { lower + cstr_at(rest, lower).len() } else { lower };
         &rest[..len]
     }
 }
@@ -141,10 +137,7 @@ pub trait FileInPool {
 
 impl<T: FileInPool> Default for FileList<T> {
     fn default() -> FileList<T> {
-        FileList {
-            pool: Vec::new(),
-            live: Vec::new(),
-        }
+        FileList { pool: Vec::new(), live: Vec::new() }
     }
 }
 
@@ -186,9 +179,7 @@ impl<T: FileInPool> FileList<T> {
     }
 
     pub fn first(&self) -> Option<&T> {
-        self.live
-            .first()
-            .map(|&index| self.pool[index as usize].as_ref())
+        self.live.first().map(|&index| self.pool[index as usize].as_ref())
     }
 
     /// Returns the nth live file; stable pool indices may contain holes.
@@ -197,18 +188,11 @@ impl<T: FileInPool> FileList<T> {
     }
 
     pub fn iter(&self) -> FileIter<'_, T> {
-        FileIter {
-            pool: &self.pool,
-            live: self.live.iter(),
-        }
+        FileIter { pool: &self.pool, live: self.live.iter() }
     }
 
     pub fn iter_mut(&mut self) -> FileIterMut<'_, T> {
-        FileIterMut {
-            pool: &mut self.pool,
-            live: &self.live,
-            offset: 0,
-        }
+        FileIterMut { pool: &mut self.pool, live: &self.live, offset: 0 }
     }
 
     /// Iterates over the pool, including files erased from the live vector.
@@ -220,9 +204,7 @@ impl<T: FileInPool> FileList<T> {
     where
         T: Sync,
     {
-        self.live
-            .par_iter()
-            .map(|&index| self.pool[index as usize].as_ref())
+        self.live.par_iter().map(|&index| self.pool[index as usize].as_ref())
     }
 
     pub fn par_iter_mut(&mut self) -> impl IndexedParallelIterator<Item = &mut T>
@@ -292,9 +274,7 @@ impl<'a, T> Iterator for FileIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {
-        self.live
-            .next()
-            .map(|&index| self.pool[index as usize].as_ref())
+        self.live.next().map(|&index| self.pool[index as usize].as_ref())
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -304,9 +284,7 @@ impl<'a, T> Iterator for FileIter<'a, T> {
 
 impl<'a, T> DoubleEndedIterator for FileIter<'a, T> {
     fn next_back(&mut self) -> Option<&'a T> {
-        self.live
-            .next_back()
-            .map(|&index| self.pool[index as usize].as_ref())
+        self.live.next_back().map(|&index| self.pool[index as usize].as_ref())
     }
 }
 
@@ -471,9 +449,7 @@ impl<E: Layout> InputFile<E> {
         // Since it is a 16-bit integer field, it's not large enough to
         // represent >65535 sections. If an object file contains more than 65535
         // sections, the actual number is stored to sh_size field.
-        let first = data
-            .get(shoff..shoff + shdr_size)
-            .map(record_from_bytes::<ElfShdr<E>>);
+        let first = data.get(shoff..shoff + shdr_size).map(record_from_bytes::<ElfShdr<E>>);
         let num_sections = match (ehdr.e_shnum.get(), first) {
             (0, Some(first)) => first.sh_size.get() as usize,
             (n, _) => n as usize,
@@ -575,9 +551,7 @@ impl<E: Layout> InputFile<E> {
     }
 
     pub fn find_section(&self, sh_type: u32) -> Option<usize> {
-        self.shdrs
-            .iter()
-            .position(|shdr| shdr.sh_type.get() == sh_type)
+        self.shdrs.iter().position(|shdr| shdr.sh_type.get() == sh_type)
     }
 
     #[inline]
@@ -606,14 +580,12 @@ impl<E: Layout> InputFile<E> {
 
     // Find the source filename. It should be listed in symtab as STT_FILE.
     pub fn source_name(&self, symbols: &SymbolTable) -> Option<&'static [u8]> {
-        self.local_symbols()
-            .iter()
-            .map(|&id| &symbols[id])
-            .find(|sym| sym.ty() == STT_FILE)
-            .map(|sym| {
+        self.local_symbols().iter().map(|&id| &symbols[id]).find(|sym| sym.ty() == STT_FILE).map(
+            |sym| {
                 let name: &'static BStr = sym.name();
                 &**name
-            })
+            },
+        )
     }
 }
 
@@ -634,10 +606,7 @@ impl ComdatGroupRef {
 
     fn new(sect_idx: u32, signature: SymbolId) -> ComdatGroupRef {
         assert!(signature.0 < Self::IS_OWNER);
-        ComdatGroupRef {
-            sect_idx,
-            signature_and_owner: signature.0,
-        }
+        ComdatGroupRef { sect_idx, signature_and_owner: signature.0 }
     }
 
     #[inline]
@@ -702,9 +671,7 @@ struct DecodedRelocations<R> {
 
 impl<R> DecodedRelocations<R> {
     fn new(records: Box<[R]>) -> DecodedRelocations<R> {
-        DecodedRelocations {
-            records: UnsafeCell::new(records),
-        }
+        DecodedRelocations { records: UnsafeCell::new(records) }
     }
 
     fn as_slice(&self) -> &[R] {
@@ -735,9 +702,7 @@ impl<R> DecodedRelocations<R> {
 
 impl<R: fmt::Debug> fmt::Debug for DecodedRelocations<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("DecodedRelocations")
-            .field(&self.as_slice())
-            .finish()
+        f.debug_tuple("DecodedRelocations").field(&self.as_slice()).finish()
     }
 }
 
@@ -895,12 +860,7 @@ pub(crate) fn display_file<'a>(
         if archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(filename))
         } else {
-            write!(
-                f,
-                "{}({})",
-                crate::util::clean_path(archive_name).display(),
-                filename
-            )
+            write!(f, "{}({})", crate::util::clean_path(archive_name).display(), filename)
         }
     })
 }
@@ -1015,12 +975,7 @@ impl<E: Layout> Iterator for CrelReader<'_, E> {
             self.addend = self.addend.wrapping_add(util::read_sleb(&mut self.data));
         }
 
-        Some(ElfRel::<E>::new(
-            self.offset,
-            self.r_type as u32,
-            self.r_sym as u32,
-            self.addend,
-        ))
+        Some(ElfRel::<E>::new(self.offset, self.r_type as u32, self.r_sym as u32, self.addend))
     }
 
     #[inline]
@@ -1200,9 +1155,7 @@ impl<E: Arch> ObjectFile<E> {
     #[inline]
     pub(crate) fn shndx_from(&self, idx: usize, st_shndx: u16) -> usize {
         if st_shndx as u32 == SHN_XINDEX {
-            self.symtab_shndx
-                .get(idx)
-                .map_or(0, |bytes| E::Endian::read_u32(bytes)) as usize
+            self.symtab_shndx.get(idx).map_or(0, |bytes| E::Endian::read_u32(bytes)) as usize
         } else if st_shndx as u32 >= SHN_LORESERVE {
             0
         } else {
@@ -1222,9 +1175,7 @@ impl<E: Arch> ObjectFile<E> {
     /// Returns the logical ID of the section at `shndx`.
     #[inline]
     pub fn section_id(&self, shndx: usize) -> Option<InputSectionId> {
-        self.sections
-            .input_index(shndx)
-            .map(|index| InputSectionId::new(self.id(), index))
+        self.sections.input_index(shndx).map(|index| InputSectionId::new(self.id(), index))
     }
 
     /// Returns a section together with its logical ID without resolving the
@@ -1342,8 +1293,7 @@ impl<E: Arch> ObjectFile<E> {
 
     fn set_decoded_crel(&mut self, index: usize, rels: Box<[E::Rel]>) {
         if self.decoded_crel.len() <= index {
-            self.decoded_crel
-                .resize_with(self.num_elf_sections, || None);
+            self.decoded_crel.resize_with(self.num_elf_sections, || None);
         }
         debug_assert!(self.decoded_crel[index].is_none());
         self.decoded_crel[index] = Some(DecodedRelocations::new(rels));
@@ -1432,10 +1382,7 @@ impl<E: Arch> ObjectFile<E> {
             // sh_info has an index of the first global symbol.
             self.base.first_global = shdr.sh_info.get() as usize;
             let contents = self.base.section_contents(idx);
-            if !contents
-                .len()
-                .is_multiple_of(std::mem::size_of::<ElfSym<E>>())
-            {
+            if !contents.len().is_multiple_of(std::mem::size_of::<ElfSym<E>>()) {
                 fatal!("{self}: corrupted section");
             }
             self.base.elf_syms = Cow::Borrowed(records_from_bytes::<ElfSym<E>>(contents));
@@ -1474,18 +1421,11 @@ impl<E: Arch> ObjectFile<E> {
             }
 
             // Find the name length and version separator in one scan.
-            let strtab = self
-                .base
-                .symbol_strtab
-                .get(esym.st_name().get() as usize..)
-                .unwrap_or_default();
+            let strtab =
+                self.base.symbol_strtab.get(esym.st_name().get() as usize..).unwrap_or_default();
             let pos = memchr::memchr2(0, b'@', strtab).unwrap_or(strtab.len());
-            let len = pos
-                + if strtab.get(pos) == Some(&b'@') {
-                    cstr_at(strtab, pos).len()
-                } else {
-                    0
-                };
+            let len =
+                pos + if strtab.get(pos) == Some(&b'@') { cstr_at(strtab, pos).len() } else { 0 };
             self.base.symbol_name_lengths.push(NameLen::new(len));
             let mut key = &strtab[..len];
             let name = &key[..pos];
@@ -1537,10 +1477,7 @@ impl<E: Arch> ObjectFile<E> {
             let (sh_type, sh_flags) = (shdr.sh_type.get(), shdr.sh_flags.get());
 
             if sh_flags & SHF_EXCLUDE as u64 != 0
-                && self
-                    .base
-                    .section_name(i)
-                    .starts_with(b".gnu.offload_lto_.symtab.")
+                && self.base.section_name(i).starts_with(b".gnu.offload_lto_.symtab.")
             {
                 self.is_gcc_offload_obj = true;
             }
@@ -1593,8 +1530,7 @@ impl<E: Arch> ObjectFile<E> {
                 SymbolId::DISCARDED_COMDAT
             };
             let group_idx = self.comdat_groups.len() as u32;
-            self.comdat_groups
-                .push(ComdatGroupRef::new(i as u32, signature));
+            self.comdat_groups.push(ComdatGroupRef::new(i as u32, signature));
             if !is_own_global {
                 self.pending_comdat_signatures.push(PendingComdatSignature {
                     key: name,
@@ -1809,10 +1745,7 @@ impl<E: Arch> ObjectFile<E> {
                     }
 
                     if name == b".comment"
-                        && self
-                            .base
-                            .section_contents_from_shdr(shdr)
-                            .starts_with(b"rustc ")
+                        && self.base.section_contents_from_shdr(shdr).starts_with(b"rustc ")
                     {
                         self.is_rust_obj = true;
                     }
@@ -2009,9 +1942,7 @@ impl<E: Arch> ObjectFile<E> {
         if self.base.elf_syms.is_empty() {
             return 0;
         }
-        1 + (1..self.base.first_global)
-            .filter(|&i| !self.is_discarded_comdat(i))
-            .count()
+        1 + (1..self.base.first_global).filter(|&i| !self.is_discarded_comdat(i)).count()
     }
 
     /// Fills in the local symbols. `slots` has `num_local_symbols()`
@@ -2178,10 +2109,7 @@ impl<E: Arch> ObjectFile<E> {
                         );
                     }
                     // The function may belong to a discarded COMDAT group.
-                    if self
-                        .symbol_section(rels[rel_begin].r_sym() as usize)
-                        .is_none()
-                    {
+                    if self.symbol_section(rels[rel_begin].r_sym() as usize).is_none() {
                         continue;
                     }
                     new_fdes.push(FdeRecord::new(begin_offset as u32, rel_begin as u32));
@@ -2278,11 +2206,7 @@ impl<E: Arch> ObjectFile<E> {
                 fatal!("{}: corrupted .sframe section", isec.display(self));
             }
             if hdr.abi_arch != abi {
-                fatal!(
-                    "{}: .sframe is incompatible with {}",
-                    isec.display(self),
-                    E::NAME
-                );
+                fatal!("{}: .sframe is incompatible with {}", isec.display(self), E::NAME);
             }
             // We support only SFrame Version 3. A section written in an older
             // version (e.g. by an old assembler) isn't an error; we just ignore
@@ -2354,10 +2278,11 @@ impl<E: Arch> ObjectFile<E> {
             else {
                 continue;
             };
-            sections
-                .regular_section_mut(i)
-                .expect("a regular section")
-                .uncompress(self, name, self.base.shdrs[i].sh_size.get() as usize);
+            sections.regular_section_mut(i).expect("a regular section").uncompress(
+                self,
+                name,
+                self.base.shdrs[i].sh_size.get() as usize,
+            );
             sections.set_merge_info(i, parent);
         }
         self.sections = sections;
@@ -2431,10 +2356,7 @@ impl<E: Arch> ObjectFile<E> {
             let Some((frag, offset)) = m.fragment(esym.st_value().get()) else {
                 fatal!("{self}: bad symbol value: {}", esym.st_value().get());
             };
-            let frag = FragmentRef {
-                section: m.parent,
-                entry: frag,
-            };
+            let frag = FragmentRef { section: m.parent, entry: frag };
             symbols.with_symbol(sym_id, |sym| {
                 // If the symbol resolved to a definition in another file, leave it
                 // alone. Overwriting it would discard the chosen definition, and since
@@ -2534,10 +2456,7 @@ impl<E: Arch> ObjectFile<E> {
                             fatal!("{self}: bad relocation at {}", record.r_sym());
                         };
                         (
-                            FragmentRef {
-                                section: m.parent,
-                                entry: frag,
-                            },
+                            FragmentRef { section: m.parent, entry: frag },
                             (in_frag_offset - addend) as u64,
                         )
                     })
@@ -2548,11 +2467,7 @@ impl<E: Arch> ObjectFile<E> {
 
                 let dummy_idx = (self.base.elf_syms.len() + fragments.len()) as u32;
 
-                fragments.push(FragmentSymbol {
-                    fragment: frag,
-                    value,
-                    sym_idx: record.r_sym(),
-                });
+                fragments.push(FragmentSymbol { fragment: frag, value, sym_idx: record.r_sym() });
 
                 rel.set_r_sym(dummy_idx);
             }
@@ -2645,11 +2560,7 @@ impl<E: Arch> ObjectFile<E> {
             } else {
                 (SHF_ALLOC | SHF_WRITE) as u64
             });
-            let name: &'static [u8] = if sym.ty() == STT_TLS {
-                b".tls_common"
-            } else {
-                b".common"
-            };
+            let name: &'static [u8] = if sym.ty() == STT_TLS { b".tls_common" } else { b".common" };
 
             self.elf_sections2.push(shdr);
             let shndx = self.num_elf_sections + self.elf_sections2.len() - 1;
@@ -2842,11 +2753,7 @@ pub struct SymtabEntries<'a> {
 
 impl<'a> SymtabEntries<'a> {
     pub fn new(syms: &'a mut [u8], xindex: Option<&'a mut [u8]>) -> SymtabEntries<'a> {
-        SymtabEntries {
-            syms,
-            xindex,
-            len: 0,
-        }
+        SymtabEntries { syms, xindex, len: 0 }
     }
 
     fn push<E: Arch>(&mut self, esym: ElfSym<E>, xindex: u32) {
@@ -2866,13 +2773,7 @@ impl<'a> SymtabBlock<'a> {
         strtab: &'a mut [u8],
         strtab_base: u64,
     ) -> SymtabBlock<'a> {
-        SymtabBlock {
-            locals,
-            globals,
-            strtab,
-            strtab_base,
-            strtab_len: 0,
-        }
+        SymtabBlock { locals, globals, strtab, strtab_base, strtab_len: 0 }
     }
 
     /// Zeroes reserved space that was not used by emitted symbols.
@@ -2967,10 +2868,7 @@ fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, dat
             DW_EH_PE_absptr => E::WORD_SIZE as u8,
             DW_EH_PE_udata4 | DW_EH_PE_sdata4 => 4,
             DW_EH_PE_udata8 | DW_EH_PE_sdata8 => 8,
-            _ => fatal!(
-                "{}: unsupported FDE pointer encoding: {enc}",
-                isec.display(file)
-            ),
+            _ => fatal!("{}: unsupported FDE pointer encoding: {enc}", isec.display(file)),
         }
     };
 
@@ -3042,10 +2940,7 @@ fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, dat
 
     // We support only raw absolute and PC-relative pointers.
     if enc & 0xf0 != 0 && enc as u32 & 0xf0 != DW_EH_PE_pcrel {
-        fatal!(
-            "{}: unsupported FDE pointer encoding: {enc}",
-            isec.display(file)
-        );
+        fatal!("{}: unsupported FDE pointer encoding: {enc}", isec.display(file));
     }
     ptr_size(enc)
 }
@@ -3120,29 +3015,23 @@ impl<E: Arch> SharedFile<E> {
     /// The strings of the dynamic entries with the given tag, such as the
     /// DT_NEEDED libraries.
     fn dynamic_strings(&self, tag: u64) -> impl Iterator<Item = &'static [u8]> + '_ {
-        self.base
-            .find_section(SHT_DYNAMIC)
-            .into_iter()
-            .flat_map(move |idx| {
-                let shdr = &self.base.shdrs[idx];
-                let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
-                self.base
-                    .section_contents(idx)
-                    .chunks_exact(ElfDyn::<E>::size())
-                    .map(ElfDyn::<E>::parse)
-                    .filter(move |entry| entry.d_tag.get() == tag)
-                    .map(move |entry| cstr_at(strtab, entry.d_val.get() as usize))
-            })
+        self.base.find_section(SHT_DYNAMIC).into_iter().flat_map(move |idx| {
+            let shdr = &self.base.shdrs[idx];
+            let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
+            self.base
+                .section_contents(idx)
+                .chunks_exact(ElfDyn::<E>::size())
+                .map(ElfDyn::<E>::parse)
+                .filter(move |entry| entry.d_tag.get() == tag)
+                .map(move |entry| cstr_at(strtab, entry.d_val.get() as usize))
+        })
     }
 
     fn get_soname(&self) -> &'static [u8] {
         if let Some(soname) = self.dynamic_strings(DT_SONAME as u64).next() {
             return soname;
         }
-        let mf = self
-            .base
-            .mf
-            .expect("a shared object is backed by an input mapping");
+        let mf = self.base.mf.expect("a shared object is backed by an input mapping");
         let name = if mf.given_fullpath {
             mf.name.as_os_str()
         } else {
@@ -3156,9 +3045,7 @@ impl<E: Arch> SharedFile<E> {
             return;
         };
         let symtab_shdr = &self.base.shdrs[symtab_idx];
-        self.base.symbol_strtab = self
-            .base
-            .section_contents(symtab_shdr.sh_link.get() as usize);
+        self.base.symbol_strtab = self.base.section_contents(symtab_shdr.sh_link.get() as usize);
         self.soname = self.get_soname();
         self.version_strings = self.read_version_strings();
 
@@ -3231,11 +3118,7 @@ impl<E: Arch> SharedFile<E> {
             // resolve_symbols only consults versyms[] for defined symbols
             // (see SharedFile::resolve_symbols), so VER_NDX_GLOBAL is fine
             // for undefined entries.
-            self.versyms.push(if esym.is_undef() {
-                VER_NDX_GLOBAL as u16
-            } else {
-                ver
-            });
+            self.versyms.push(if esym.is_undef() { VER_NDX_GLOBAL as u16 } else { ver });
 
             let name = cstr_at(self.base.symbol_strtab, esym.st_name().get() as usize);
             let has_version = ver as u32 != VER_NDX_GLOBAL
@@ -3275,17 +3158,9 @@ impl<E: Arch> SharedFile<E> {
             };
             self.base.symbols.push(SymbolId::DISCARDED_COMDAT);
             self.symbols2.push(SymbolId::NONE);
-            bins.record(
-                key,
-                name.len(),
-                SymbolSlot::new(self.base.symbols.last_mut().unwrap()),
-            );
+            bins.record(key, name.len(), SymbolSlot::new(self.base.symbols.last_mut().unwrap()));
             if let Some(key) = alias {
-                bins.record(
-                    key,
-                    name.len(),
-                    SymbolSlot::new(self.symbols2.last_mut().unwrap()),
-                );
+                bins.record(key, name.len(), SymbolSlot::new(self.symbols2.last_mut().unwrap()));
             }
         }
 
@@ -3349,9 +3224,7 @@ impl<E: Arch> SharedFile<E> {
 
         if let Some(idx) = self.base.find_section(SHT_GNU_VERDEF) {
             let verdef = self.base.section_contents(idx);
-            let strtab = self
-                .base
-                .section_contents(self.base.shdrs[idx].sh_link.get() as usize);
+            let strtab = self.base.section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
                 let ver = ElfVerdef::<E>::parse(&verdef[pos..]);
@@ -3359,10 +3232,7 @@ impl<E: Arch> SharedFile<E> {
                     fatal!("{self}: symbol version too large");
                 }
                 let aux = ElfVerdaux::<E>::parse(&verdef[pos + ver.vd_aux.get() as usize..]);
-                set(
-                    ver.vd_ndx.get() as usize,
-                    cstr_at(strtab, aux.vda_name.get() as usize),
-                );
+                set(ver.vd_ndx.get() as usize, cstr_at(strtab, aux.vda_name.get() as usize));
                 if ver.vd_next.get() == 0 {
                     break;
                 }
@@ -3372,9 +3242,7 @@ impl<E: Arch> SharedFile<E> {
 
         if let Some(idx) = self.base.find_section(SHT_GNU_VERNEED) {
             let verneed = self.base.section_contents(idx);
-            let strtab = self
-                .base
-                .section_contents(self.base.shdrs[idx].sh_link.get() as usize);
+            let strtab = self.base.section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
                 let vn = ElfVerneed::<E>::parse(&verneed[pos..]);
@@ -3560,11 +3428,7 @@ unsafe impl Sync for SymbolEditor<'_> {}
 
 impl<'a> SymbolEditor<'a> {
     pub(crate) fn new(symbols: &'a mut [Symbol]) -> SymbolEditor<'a> {
-        SymbolEditor {
-            symbols: symbols.as_mut_ptr(),
-            len: symbols.len(),
-            _symbols: PhantomData,
-        }
+        SymbolEditor { symbols: symbols.as_mut_ptr(), len: symbols.len(), _symbols: PhantomData }
     }
 
     #[inline]
@@ -3602,12 +3466,7 @@ impl<'a, E: Arch> SymbolResolver<'a, E> {
         dsos: &'a FileList<SharedFile<E>>,
         default_version: u16,
     ) -> SymbolResolver<'a, E> {
-        SymbolResolver {
-            editor: SymbolEditor::new(symbols),
-            objs,
-            dsos,
-            default_version,
-        }
+        SymbolResolver { editor: SymbolEditor::new(symbols), objs, dsos, default_version }
     }
 
     #[inline]

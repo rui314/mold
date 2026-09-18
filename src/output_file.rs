@@ -141,12 +141,7 @@ fn preallocate(file: &File, offset: u64, size: u64) {
     unsafe {
         let mut fs: libc::statfs = std::mem::zeroed();
         if libc::fstatfs(file.as_raw_fd(), &mut fs) != 0 || fs.f_type != libc::TMPFS_MAGIC as _ {
-            libc::fallocate(
-                file.as_raw_fd(),
-                0,
-                offset as libc::off_t,
-                size as libc::off_t,
-            );
+            libc::fallocate(file.as_raw_fd(), 0, offset as libc::off_t, size as libc::off_t);
         }
     }
 }
@@ -190,11 +185,7 @@ impl OutputFile {
     #[cfg(not(windows))]
     fn publish_output_buffer(&self) {
         match &self.storage {
-            Storage::File {
-                map: Some(map),
-                len,
-                ..
-            } => {
+            Storage::File { map: Some(map), len, .. } => {
                 set_output_buffer_range(map.as_ptr() as usize, *len);
             }
             _ => set_output_buffer_range(0, 0),
@@ -251,12 +242,7 @@ impl OutputFile {
             if !overwrite_in_place || std::fs::rename(path, &tmp).is_err() {
                 return None;
             }
-            match open_options(perm)
-                .read(true)
-                .write(true)
-                .create(true)
-                .open(&tmp)
-            {
+            match open_options(perm).read(true).write(true).create(true).open(&tmp) {
                 Ok(file) => Some(file),
                 Err(_) => {
                     let _ = std::fs::remove_file(&tmp);
@@ -277,8 +263,7 @@ impl OutputFile {
 
         set_permissions(&file, perm)
             .unwrap_or_else(|e| fatal!("{}: fchmod failed: {e}", tmp.display()));
-        file.set_len(size)
-            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
+        file.set_len(size).unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
         preallocate(&file, 0, size);
 
         let map = map_file(&file, size)
@@ -286,11 +271,7 @@ impl OutputFile {
         let output = OutputFile {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
-            storage: Storage::File {
-                file,
-                map,
-                len: size as usize,
-            },
+            storage: Storage::File { file, map, len: size as usize },
             perm,
         };
         #[cfg(not(windows))]
@@ -323,11 +304,7 @@ impl OutputFile {
         OutputFile {
             path: path.to_path_buf(),
             tmp_path: None,
-            storage: Storage::File {
-                file,
-                map: None,
-                len: 0,
-            },
+            storage: Storage::File { file, map: None, len: 0 },
             perm,
         }
     }
@@ -358,11 +335,7 @@ impl OutputFile {
 
     pub fn buf(&mut self) -> &mut [u8] {
         match &mut self.storage {
-            Storage::File {
-                map: Some(map),
-                len,
-                ..
-            } => &mut map[..*len],
+            Storage::File { map: Some(map), len, .. } => &mut map[..*len],
             Storage::File { map: None, .. } => &mut [],
             Storage::Memory(vec) => &mut vec[..],
         }
@@ -454,11 +427,7 @@ impl OutputFile {
                 std::mem::forget(old);
             }
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!(
-                    "cannot rename {} to {}: {e}",
-                    tmp.display(),
-                    self.path.display()
-                )
+                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path.display())
             });
             set_tmpfile(None);
         }

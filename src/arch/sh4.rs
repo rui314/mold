@@ -142,11 +142,8 @@ where
     const PLT_HDR_SIZE: u64 = 16;
     const PLT_SIZE: u64 = 20;
     const PLTGOT_SIZE: u64 = 12;
-    const TRAP: &'static [u8] = if End::IS_LITTLE {
-        &[0xfd, 0xff]
-    } else {
-        &[0xff, 0xfd]
-    }; // illegal
+    // illegal instruction
+    const TRAP: &'static [u8] = if End::IS_LITTLE { &[0xfd, 0xff] } else { &[0xff, 0xfd] };
 
     const R_COPY: u32 = R_SH_COPY;
     const R_GLOB_DAT: u32 = R_SH_GLOB_DAT;
@@ -248,10 +245,7 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOT_ENTRY
             Self::write_insns(buf, &INSN);
-            End::write_u32(
-                &mut buf[8..],
-                got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
-            );
+            End::write_u32(&mut buf[8..], got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32);
         } else {
             const INSN: [u16; 4] = [
                 0xd001, //    mov.l   1f, r0
@@ -372,10 +366,9 @@ where
 
             match rel.r_type() {
                 R_SH_DIR32 => End::write_u32(loc, tombstone.unwrap_or(sa) as u32),
-                R_SH_TLS_LDO_32 => End::write_u32(
-                    loc,
-                    tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
-                ),
+                R_SH_TLS_LDO_32 => {
+                    End::write_u32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
+                }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

@@ -104,14 +104,8 @@ impl Arch for X86_64 {
         buf[..32].copy_from_slice(&INSN);
         let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
-        write_u32(
-            &mut buf[8..],
-            gotplt.wrapping_sub(plt).wrapping_sub(4) as u32,
-        );
-        write_u32(
-            &mut buf[14..],
-            gotplt.wrapping_sub(plt).wrapping_sub(2) as u32,
-        );
+        write_u32(&mut buf[8..], gotplt.wrapping_sub(plt).wrapping_sub(4) as u32);
+        write_u32(&mut buf[14..], gotplt.wrapping_sub(plt).wrapping_sub(2) as u32);
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -147,10 +141,7 @@ impl Arch for X86_64 {
             0xcc, 0xcc, // (padding)
         ];
         buf[..8].copy_from_slice(&INSN);
-        let disp = sym
-            .got_pltgot_addr(ctx)
-            .wrapping_sub(sym.plt_addr(ctx))
-            .wrapping_sub(6);
+        let disp = sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(6);
         write_u32(&mut buf[2..], disp as u32);
     }
 
@@ -263,8 +254,7 @@ impl Arch for X86_64 {
                     if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
                         i += 1;
                     } else {
-                        ctx.needs_tlsld
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        ctx.needs_tlsld.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 R_X86_64_GOTTPOFF | R_X86_64_CODE_4_GOTTPOFF => {
@@ -381,10 +371,9 @@ impl Arch for X86_64 {
                 R_X86_64_GOTPC64 => {
                     write_u64(&mut buf[off..], got_base.wrapping_add(a).wrapping_sub(p))
                 }
-                R_X86_64_GOTPCREL => write32s(
-                    buf,
-                    g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
-                ),
+                R_X86_64_GOTPCREL => {
+                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
+                }
                 R_X86_64_GOTPCREL64 => write_u64(
                     &mut buf[off..],
                     g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
@@ -406,10 +395,7 @@ impl Arch for X86_64 {
                             continue;
                         }
                     }
-                    write32s(
-                        buf,
-                        g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
-                    );
+                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
                 }
                 R_X86_64_TLSGD => {
                     if sym.has_tlsgd(&ctx.symbols) {
@@ -434,10 +420,9 @@ impl Arch for X86_64 {
                     }
                 }
                 R_X86_64_DTPOFF32 => write32s(buf, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
-                R_X86_64_DTPOFF64 => write_u64(
-                    &mut buf[off..],
-                    s.wrapping_add(a).wrapping_sub(ctx.dtp_addr),
-                ),
+                R_X86_64_DTPOFF64 => {
+                    write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
+                }
                 R_X86_64_TPOFF32 => write32s(buf, s.wrapping_add(a).wrapping_sub(ctx.tp_addr)),
                 R_X86_64_TPOFF64 => {
                     write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr))
@@ -523,10 +508,9 @@ impl Arch for X86_64 {
                     }
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().get().wrapping_add(a)),
-                R_X86_64_SIZE64 => write_u64(
-                    &mut buf[off..],
-                    sym.esym(ctx).st_size().get().wrapping_add(a),
-                ),
+                R_X86_64_SIZE64 => {
+                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().get().wrapping_add(a))
+                }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }
@@ -586,30 +570,24 @@ impl Arch for X86_64 {
                 },
                 R_X86_64_DTPOFF64 => match isec.tombstone_with_file(ctx, file, sym, frag) {
                     Some(v) => write_u64(&mut buf[off..], v),
-                    None => write_u64(
-                        &mut buf[off..],
-                        s.wrapping_add(a).wrapping_sub(ctx.dtp_addr),
-                    ),
+                    None => {
+                        write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
+                    }
                 },
                 R_X86_64_GOTOFF64 => write_u64(
                     &mut buf[off..],
-                    s.wrapping_add(a)
-                        .wrapping_sub(ctx.gotplt.shdr.sh_addr.get()),
+                    s.wrapping_add(a).wrapping_sub(ctx.gotplt.shdr.sh_addr.get()),
                 ),
                 R_X86_64_GOTPC64 => {
                     // PC-relative relocation doesn't make sense for non-memory-allocated
                     // section, but GCC 6.3.0 seems to create this reloc for
                     // _GLOBAL_OFFSET_TABLE_.
-                    write_u64(
-                        &mut buf[off..],
-                        ctx.gotplt.shdr.sh_addr.get().wrapping_add(a),
-                    )
+                    write_u64(&mut buf[off..], ctx.gotplt.shdr.sh_addr.get().wrapping_add(a))
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().get().wrapping_add(a)),
-                R_X86_64_SIZE64 => write_u64(
-                    &mut buf[off..],
-                    sym.esym(ctx).st_size().get().wrapping_add(a),
-                ),
+                R_X86_64_SIZE64 => {
+                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().get().wrapping_add(a))
+                }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

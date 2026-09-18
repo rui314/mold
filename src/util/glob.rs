@@ -328,13 +328,7 @@ struct TrieNode {
 
 impl Default for TrieNode {
     fn default() -> Self {
-        TrieNode {
-            value: -1,
-            suffix_link: -1,
-            first_child: -1,
-            next_sibling: -1,
-            ch: 0,
-        }
+        TrieNode { value: -1, suffix_link: -1, first_child: -1, next_sibling: -1, ch: 0 }
     }
 }
 
@@ -366,11 +360,7 @@ impl AhoCorasick {
         }
         let child = self.nodes.len() as i32;
         let sibling = self.nodes[node as usize].first_child;
-        self.nodes.push(TrieNode {
-            next_sibling: sibling,
-            ch,
-            ..TrieNode::default()
-        });
+        self.nodes.push(TrieNode { next_sibling: sibling, ch, ..TrieNode::default() });
         self.nodes[node as usize].first_child = child;
         if node == 0 {
             self.root_children[ch as usize] = child;
@@ -542,24 +532,15 @@ impl GlobBuilder {
             return true;
         }
         if is_literal(pat) {
-            self.glob.exacts.push(Literal {
-                pat: pat.to_vec(),
-                value,
-            });
+            self.glob.exacts.push(Literal { pat: pat.to_vec(), value });
             return true;
         }
         if let Some(prefix) = pat.strip_suffix(b"*").filter(|p| is_literal(p)) {
-            self.glob.prefixes.push(Literal {
-                pat: prefix.to_vec(),
-                value,
-            });
+            self.glob.prefixes.push(Literal { pat: prefix.to_vec(), value });
             return true;
         }
         if let Some(suffix) = pat.strip_prefix(b"*").filter(|p| is_literal(p)) {
-            self.glob.suffixes.push(Literal {
-                pat: suffix.to_vec(),
-                value,
-            });
+            self.glob.suffixes.push(Literal { pat: suffix.to_vec(), value });
             return true;
         }
         // If the pattern requires only a single substring search, the
@@ -585,8 +566,7 @@ impl GlobBuilder {
         }
 
         // For duplicate names, retain the largest value.
-        glob.exacts
-            .sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
+        glob.exacts.sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
         glob.exacts.dedup_by(|a, b| a.pat == b.pat);
         if glob.patterns.len() >= 64 {
             glob.nfa = Nfa::compile(&glob.patterns);
@@ -674,24 +654,15 @@ mod tests {
     #[test]
     fn shared_priorities_preserve_highest_match() {
         let mut g = GlobBuilder::default();
-        for (pattern, priority) in [
-            ("*", 0),
-            ("*inner*", 2),
-            ("prefix*", 2),
-            ("*suffix", 2),
-            ("exact", 3),
-            ("p?efix*", 4),
-        ] {
+        for (pattern, priority) in
+            [("*", 0), ("*inner*", 2), ("prefix*", 2), ("*suffix", 2), ("exact", 3), ("p?efix*", 4)]
+        {
             assert!(g.add(pattern.as_bytes(), priority));
         }
         let g = g.build();
-        for (name, expected) in [
-            ("none", 0),
-            ("hasinnersuffix", 2),
-            ("suffix", 2),
-            ("exact", 3),
-            ("prefixsuffix", 4),
-        ] {
+        for (name, expected) in
+            [("none", 0), ("hasinnersuffix", 2), ("suffix", 2), ("exact", 3), ("prefixsuffix", 4)]
+        {
             assert_eq!(g.find(name.as_bytes()), expected);
         }
         let mut g = GlobBuilder::default();

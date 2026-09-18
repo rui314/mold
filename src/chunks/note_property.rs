@@ -20,10 +20,7 @@ impl<E: Arch> NotePropertySection<E> {
     pub fn new() -> NotePropertySection<E> {
         let mut hdr = ChunkHeader::<E>::new(".note.gnu.property", SHT_NOTE, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        NotePropertySection {
-            hdr,
-            contents: Vec::new(),
-        }
+        NotePropertySection { hdr, contents: Vec::new() }
     }
 }
 
@@ -44,15 +41,9 @@ fn entry_size<E: Arch>() -> usize {
 // Merges input files' .note.gnu.property values.
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     // Obtain the list of keys
-    let files: Vec<&crate::input_files::ObjectFile<E>> = ctx
-        .objs
-        .iter()
-        .filter(|file| !ctx.is_internal(file.id()))
-        .collect();
-    let keys: BTreeSet<u32> = files
-        .iter()
-        .flat_map(|f| f.gnu_properties.keys().copied())
-        .collect();
+    let files: Vec<&crate::input_files::ObjectFile<E>> =
+        ctx.objs.iter().filter(|file| !ctx.is_internal(file.id())).collect();
+    let keys: BTreeSet<u32> = files.iter().flat_map(|f| f.gnu_properties.keys().copied()).collect();
     let value = |f: &crate::input_files::ObjectFile<E>, key: u32| {
         f.gnu_properties.get(&key).copied().unwrap_or(0)
     };
@@ -63,10 +54,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         if (GNU_PROPERTY_X86_UINT32_AND_LO..=GNU_PROPERTY_X86_UINT32_AND_HI).contains(&key) {
             // An AND feature is set if all input objects have the property and
             // the feature.
-            map.insert(
-                key,
-                files.iter().fold(u32::MAX, |acc, f| acc & value(f, key)),
-            );
+            map.insert(key, files.iter().fold(u32::MAX, |acc, f| acc & value(f, key)));
         } else if (GNU_PROPERTY_X86_UINT32_OR_LO..=GNU_PROPERTY_X86_UINT32_OR_HI).contains(&key) {
             // An OR feature is set if some input object has the feature.
             map.insert(key, files.iter().fold(0, |acc, f| acc | value(f, key)));

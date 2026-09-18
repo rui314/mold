@@ -128,10 +128,7 @@ impl Arch for Ppc32 {
     const PLT_HDR_SIZE: u64 = 64;
     const PLT_SIZE: u64 = 36;
     const PLTGOT_SIZE: u64 = 36;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
-        header_size: 0,
-        entry_size: 36,
-    });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 36 });
     const TRAP: &'static [u8] = &[0x7f, 0xe0, 0x00, 0x08]; // trap
 
     const R_COPY: u32 = R_PPC_COPY;
@@ -257,9 +254,7 @@ impl Arch for Ppc32 {
     ) {
         let file = &ctx.objs[isec.file.index()];
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
-        let got2 = file
-            .got2
-            .map_or(0, |shndx| file.section_at(shndx).addr(ctx));
+        let got2 = file.got2.map_or(0, |shndx| file.section_at(shndx).addr(ctx));
 
         for rel in rels {
             if rel.r_type() == R_NONE {
@@ -344,10 +339,9 @@ impl Arch for Ppc32 {
 
             match rel.r_type() {
                 R_PPC_ADDR32 => write_ub32(loc, tombstone.unwrap_or(sa) as u32),
-                R_PPC_DTPREL32 => write_ub32(
-                    loc,
-                    tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
-                ),
+                R_PPC_DTPREL32 => {
+                    write_ub32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
+                }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

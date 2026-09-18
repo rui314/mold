@@ -358,10 +358,7 @@ pub const SAVE_RESTORE_INSNS: &[(&str, u32)] = &[
 
 /// The contents of the `.save_restore_regs` section.
 pub fn save_restore_contents() -> Vec<u8> {
-    SAVE_RESTORE_INSNS
-        .iter()
-        .flat_map(|&(_, insn)| insn.to_le_bytes())
-        .collect()
+    SAVE_RESTORE_INSNS.iter().flat_map(|&(_, insn)| insn.to_le_bytes()).collect()
 }
 
 impl Arch for Ppc64V2 {
@@ -374,10 +371,7 @@ impl Arch for Ppc64V2 {
     const PLT_HDR_SIZE: u64 = 52;
     const PLT_SIZE: u64 = 4;
     const PLTGOT_SIZE: u64 = 0;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
-        header_size: 0,
-        entry_size: 24,
-    });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
     const TRAP: &'static [u8] = &[0x08, 0x00, 0xe0, 0x7f]; // trap
 
     const R_COPY: u32 = R_PPC64_COPY;

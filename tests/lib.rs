@@ -30,86 +30,22 @@ struct TargetSpec {
 
 // Keep this list in the same order as mold's test/CMakeLists.txt.
 const TARGETS: &[TargetSpec] = &[
-    TargetSpec {
-        machine: "x86_64",
-        triple: "x86_64-linux-gnu",
-        qemu: "qemu-x86_64",
-    },
-    TargetSpec {
-        machine: "i686",
-        triple: "i686-linux-gnu",
-        qemu: "qemu-i386",
-    },
-    TargetSpec {
-        machine: "aarch64",
-        triple: "aarch64-linux-gnu",
-        qemu: "qemu-aarch64",
-    },
-    TargetSpec {
-        machine: "aarch64_be",
-        triple: "aarch64_be-linux-gnu",
-        qemu: "qemu-aarch64_be",
-    },
-    TargetSpec {
-        machine: "arm",
-        triple: "arm-linux-gnueabihf",
-        qemu: "qemu-arm",
-    },
-    TargetSpec {
-        machine: "armeb",
-        triple: "armeb-linux-gnueabihf",
-        qemu: "qemu-armeb",
-    },
-    TargetSpec {
-        machine: "riscv64",
-        triple: "riscv64-linux-gnu",
-        qemu: "qemu-riscv64",
-    },
-    TargetSpec {
-        machine: "riscv32",
-        triple: "riscv32-linux-gnu",
-        qemu: "qemu-riscv32",
-    },
-    TargetSpec {
-        machine: "ppc",
-        triple: "powerpc-linux-gnu",
-        qemu: "qemu-ppc",
-    },
-    TargetSpec {
-        machine: "ppc64",
-        triple: "powerpc64-linux-gnu",
-        qemu: "qemu-ppc64",
-    },
-    TargetSpec {
-        machine: "ppc64le",
-        triple: "powerpc64le-linux-gnu",
-        qemu: "qemu-ppc64le",
-    },
-    TargetSpec {
-        machine: "sparc64",
-        triple: "sparc64-linux-gnu",
-        qemu: "qemu-sparc64",
-    },
-    TargetSpec {
-        machine: "s390x",
-        triple: "s390x-linux-gnu",
-        qemu: "qemu-s390x",
-    },
-    TargetSpec {
-        machine: "sh4",
-        triple: "sh4-linux-gnu",
-        qemu: "qemu-sh4",
-    },
-    TargetSpec {
-        machine: "sh4aeb",
-        triple: "sh4aeb-linux-gnu",
-        qemu: "qemu-sh4eb",
-    },
-    TargetSpec {
-        machine: "m68k",
-        triple: "m68k-linux-gnu",
-        qemu: "qemu-m68k",
-    },
+    TargetSpec { machine: "x86_64", triple: "x86_64-linux-gnu", qemu: "qemu-x86_64" },
+    TargetSpec { machine: "i686", triple: "i686-linux-gnu", qemu: "qemu-i386" },
+    TargetSpec { machine: "aarch64", triple: "aarch64-linux-gnu", qemu: "qemu-aarch64" },
+    TargetSpec { machine: "aarch64_be", triple: "aarch64_be-linux-gnu", qemu: "qemu-aarch64_be" },
+    TargetSpec { machine: "arm", triple: "arm-linux-gnueabihf", qemu: "qemu-arm" },
+    TargetSpec { machine: "armeb", triple: "armeb-linux-gnueabihf", qemu: "qemu-armeb" },
+    TargetSpec { machine: "riscv64", triple: "riscv64-linux-gnu", qemu: "qemu-riscv64" },
+    TargetSpec { machine: "riscv32", triple: "riscv32-linux-gnu", qemu: "qemu-riscv32" },
+    TargetSpec { machine: "ppc", triple: "powerpc-linux-gnu", qemu: "qemu-ppc" },
+    TargetSpec { machine: "ppc64", triple: "powerpc64-linux-gnu", qemu: "qemu-ppc64" },
+    TargetSpec { machine: "ppc64le", triple: "powerpc64le-linux-gnu", qemu: "qemu-ppc64le" },
+    TargetSpec { machine: "sparc64", triple: "sparc64-linux-gnu", qemu: "qemu-sparc64" },
+    TargetSpec { machine: "s390x", triple: "s390x-linux-gnu", qemu: "qemu-s390x" },
+    TargetSpec { machine: "sh4", triple: "sh4-linux-gnu", qemu: "qemu-sh4" },
+    TargetSpec { machine: "sh4aeb", triple: "sh4aeb-linux-gnu", qemu: "qemu-sh4eb" },
+    TargetSpec { machine: "m68k", triple: "m68k-linux-gnu", qemu: "qemu-m68k" },
     TargetSpec {
         machine: "loongarch64",
         triple: "loongarch64-linux-gnu",
@@ -127,21 +63,11 @@ struct Target {
 
 impl Target {
     fn native(machine: String) -> Target {
-        Target {
-            label: machine.clone(),
-            machine,
-            triple: None,
-            cpu: None,
-        }
+        Target { label: machine.clone(), machine, triple: None, cpu: None }
     }
 
     fn cross(machine: String, triple: String) -> Target {
-        Target {
-            label: machine.clone(),
-            machine,
-            triple: Some(triple),
-            cpu: None,
-        }
+        Target { label: machine.clone(), machine, triple: Some(triple), cpu: None }
     }
 }
 
@@ -228,10 +154,7 @@ fn usage() -> ! {
 }
 
 fn parse_usize(value: Option<String>) -> usize {
-    value
-        .and_then(|s| s.parse().ok())
-        .filter(|&n| n != 0)
-        .unwrap_or_else(|| usage())
+    value.and_then(|s| s.parse().ok()).filter(|&n| n != 0).unwrap_or_else(|| usage())
 }
 
 fn parse_options() -> Options {
@@ -293,14 +216,7 @@ fn parse_options() -> Options {
         }
     }
 
-    Options {
-        jobs,
-        mode,
-        cpu,
-        patterns,
-        timeout,
-        list,
-    }
+    Options { jobs, mode, cpu, patterns, timeout, list }
 }
 
 fn canonical_machine(machine: &str) -> String {
@@ -383,10 +299,7 @@ fn all_targets(native: &str) -> (Vec<Target>, Vec<&'static TargetSpec>) {
         if spec.machine == native {
             targets.push(Target::native(native.to_owned()));
         } else if command_exists(spec.qemu) && command_exists(&format!("{}-gcc", spec.triple)) {
-            targets.push(Target::cross(
-                spec.machine.to_owned(),
-                spec.triple.to_owned(),
-            ));
+            targets.push(Target::cross(spec.machine.to_owned(), spec.triple.to_owned()));
         } else {
             unavailable.push(spec);
         }
@@ -452,10 +365,7 @@ fn clear_results(dir: &Path) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     for entry in fs::read_dir(dir)? {
         let path = entry?.path();
-        if matches!(
-            path.extension().and_then(OsStr::to_str),
-            Some("log" | "status")
-        ) {
+        if matches!(path.extension().and_then(OsStr::to_str), Some("log" | "status")) {
             fs::remove_file(path)?;
         }
     }
@@ -558,9 +468,8 @@ fn log_says_skipped(path: &Path) -> bool {
 fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome, String> {
     let log = File::create(&job.log)
         .map_err(|err| format!("cannot create {}: {err}", job.log.display()))?;
-    let stderr = log
-        .try_clone()
-        .map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
+    let stderr =
+        log.try_clone().map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
     let mut command = Command::new(&job.script);
     command
         .current_dir(root)
@@ -578,15 +487,11 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
     // A timeout must also kill compiler and QEMU children.
     #[cfg(unix)]
     command.process_group(0);
-    let mut child = command
-        .spawn()
-        .map_err(|err| format!("cannot run {}: {err}", job.script.display()))?;
+    let mut child =
+        command.spawn().map_err(|err| format!("cannot run {}: {err}", job.script.display()))?;
     let start = Instant::now();
     loop {
-        match child
-            .try_wait()
-            .map_err(|err| format!("cannot wait for test: {err}"))?
-        {
+        match child.try_wait().map_err(|err| format!("cannot wait for test: {err}"))? {
             Some(status) => {
                 return Ok(if !status.success() {
                     Outcome::Fail
@@ -620,10 +525,7 @@ fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
     // Keep failed test directories for diagnosis, but do not retain the
     // successful tests' potentially large temporary files.
     if matches!(outcome, Outcome::Pass | Outcome::Skip) {
-        let dir = root
-            .join("out/test")
-            .join(&job.target.label)
-            .join(&job.name);
+        let dir = root.join("out/test").join(&job.target.label).join(&job.name);
         match fs::remove_dir_all(&dir) {
             Ok(()) => {}
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -635,11 +537,7 @@ fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
     }
 
     if let Err(err) = fs::write(&job.status_file, format!("{}\n", outcome.status())) {
-        eprintln!(
-            "{}: cannot write {}: {err}",
-            job.name,
-            job.status_file.display()
-        );
+        eprintln!("{}: cannot write {}: {err}", job.name, job.status_file.display());
     }
     TestResult {
         target: Arc::clone(&job.target),
@@ -681,11 +579,7 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResul
                     "FAIL {}:{}{} ({})",
                     result.target.label,
                     result.name,
-                    if result.outcome == Outcome::Timeout {
-                        " [timeout]"
-                    } else {
-                        ""
-                    },
+                    if result.outcome == Outcome::Timeout { " [timeout]" } else { "" },
                     result.log.display()
                 );
             }
@@ -708,11 +602,8 @@ fn print_inventory(jobs: &[TestJob], unavailable: &[&TargetSpec]) {
     }
     println!("total: tests={}", jobs.len());
     if !unavailable.is_empty() {
-        let targets = unavailable
-            .iter()
-            .map(|target| target.machine)
-            .collect::<Vec<_>>()
-            .join(", ");
+        let targets =
+            unavailable.iter().map(|target| target.machine).collect::<Vec<_>>().join(", ");
         println!("unavailable: {targets}");
     }
 }
@@ -720,30 +611,18 @@ fn print_inventory(jobs: &[TestJob], unavailable: &[&TargetSpec]) {
 fn print_summary(results: &[TestResult]) -> bool {
     let mut by_target: BTreeMap<&str, Counts> = BTreeMap::new();
     for result in results {
-        by_target
-            .entry(&result.target.label)
-            .or_default()
-            .add(result.outcome);
+        by_target.entry(&result.target.label).or_default().add(result.outcome);
     }
 
     let mut total = Counts::default();
     for (target, counts) in &by_target {
-        println!(
-            "{target}: pass={} skip={} fail={}",
-            counts.pass, counts.skip, counts.fail
-        );
+        println!("{target}: pass={} skip={} fail={}", counts.pass, counts.skip, counts.fail);
         total.merge(counts);
     }
     if by_target.len() > 1 {
-        println!(
-            "total: pass={} skip={} fail={}",
-            total.pass, total.skip, total.fail
-        );
+        println!("total: pass={} skip={} fail={}", total.pass, total.skip, total.fail);
     } else {
-        println!(
-            "pass={} skip={} fail={}",
-            total.pass, total.skip, total.fail
-        );
+        println!("pass={} skip={} fail={}", total.pass, total.skip, total.fail);
     }
     total.fail == 0
 }
@@ -755,28 +634,19 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
         std::process::exit(1);
     });
     let (targets, unavailable) = selected_targets(&options);
-    let jobs = make_jobs(
-        cases_dirs,
-        &work_dir,
-        targets,
-        &options.patterns,
-        !options.list,
-    )
-    .unwrap_or_else(|err| {
-        eprintln!("mold-tests: {err}");
-        std::process::exit(1);
-    });
+    let jobs = make_jobs(cases_dirs, &work_dir, targets, &options.patterns, !options.list)
+        .unwrap_or_else(|err| {
+            eprintln!("mold-tests: {err}");
+            std::process::exit(1);
+        });
 
     if options.list {
         print_inventory(&jobs, &unavailable);
         return ExitCode::SUCCESS;
     }
     if options.mode == Mode::All && !unavailable.is_empty() {
-        let targets = unavailable
-            .iter()
-            .map(|target| target.machine)
-            .collect::<Vec<_>>()
-            .join(", ");
+        let targets =
+            unavailable.iter().map(|target| target.machine).collect::<Vec<_>>().join(", ");
         eprintln!("skipping targets without both compiler and QEMU: {targets}");
     }
 

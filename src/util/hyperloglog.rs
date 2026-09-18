@@ -36,20 +36,14 @@ impl HyperLogLog {
 
     #[inline]
     pub fn cardinality(&self) -> u64 {
-        let z: f64 = self
-            .registers
-            .iter()
-            .map(|&r| 2f64.powi(-i32::from(r)))
-            .sum();
+        let z: f64 = self.registers.iter().map(|&r| 2f64.powi(-i32::from(r))).sum();
         (Self::ALPHA * (Self::NUM_REGISTERS * Self::NUM_REGISTERS) as f64 / z) as u64
     }
 }
 
 impl Default for HyperLogLog {
     fn default() -> Self {
-        HyperLogLog {
-            registers: [0; Self::NUM_REGISTERS],
-        }
+        HyperLogLog { registers: [0; Self::NUM_REGISTERS] }
     }
 }
 

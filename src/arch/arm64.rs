@@ -73,17 +73,11 @@ fn or_insn(loc: &mut [u8], v: u32) {
 }
 
 fn write_adrp(loc: &mut [u8], val: u64) {
-    or_insn(
-        loc,
-        ((bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5)) as u32,
-    );
+    or_insn(loc, ((bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5)) as u32);
 }
 
 fn write_adr(loc: &mut [u8], val: u64) {
-    or_insn(
-        loc,
-        ((bits(val, 1, 0) << 29) | (bits(val, 20, 2) << 5)) as u32,
-    );
+    or_insn(loc, ((bits(val, 1, 0) << 29) | (bits(val, 20, 2) << 5)) as u32);
 }
 
 /// Rewrites a MOV to MOVZ or MOVN, whichever represents `val`.
@@ -134,10 +128,8 @@ where
         i: usize,
     ) -> bool {
         let rel = &rels[i];
-        if !matches!(
-            rel.r_type(),
-            R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC
-        ) || !ctx.args.relax
+        if !matches!(rel.r_type(), R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC)
+            || !ctx.args.relax
         {
             return false;
         }
@@ -151,10 +143,7 @@ where
         }
         let s = sym.addr(ctx);
         let p = isec.addr(ctx) + rel.r_offset();
-        let val = s
-            .wrapping_add(rel.r_addend() as u64)
-            .wrapping_sub(p)
-            .wrapping_sub(4) as i64;
+        let val = s.wrapping_add(rel.r_addend() as u64).wrapping_sub(p).wrapping_sub(4) as i64;
         let off = rel.r_offset() as usize;
         let loc = &isec.contents()[off..];
         is_int(val, 21)
@@ -181,10 +170,7 @@ where
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
-        header_size: 0,
-        entry_size: 24,
-    });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
     const SFRAME_ABI: Option<u8> = Some(if End::IS_LITTLE {
         SFRAME_ABI_AARCH64_ENDIAN_LITTLE
     } else {
@@ -557,15 +543,11 @@ where
                     End::write_u32(loc, pcrel as u32);
                 }
                 R_AARCH64_PREL64 => End::write_u64(loc, pcrel),
-                R_AARCH64_LD64_GOT_LO12_NC => or_insn(
-                    loc,
-                    (bits(g().wrapping_add(got).wrapping_add(a), 11, 3) << 10) as u32,
-                ),
+                R_AARCH64_LD64_GOT_LO12_NC => {
+                    or_insn(loc, (bits(g().wrapping_add(got).wrapping_add(a), 11, 3) << 10) as u32)
+                }
                 R_AARCH64_LD64_GOTPAGE_LO15 => {
-                    let val = g()
-                        .wrapping_add(got)
-                        .wrapping_add(a)
-                        .wrapping_sub(page(got));
+                    let val = g().wrapping_add(got).wrapping_add(a).wrapping_sub(page(got));
                     check(val as i64, 0, 1 << 15);
                     or_insn(loc, (bits(val, 14, 3) << 10) as u32);
                 }
@@ -574,10 +556,9 @@ where
                     check(val as i64, -(1 << 32), 1 << 32);
                     write_adrp(loc, val);
                 }
-                R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC => or_insn(
-                    loc,
-                    (bits(sym.gottp_addr(ctx).wrapping_add(a), 11, 3) << 10) as u32,
-                ),
+                R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC => {
+                    or_insn(loc, (bits(sym.gottp_addr(ctx).wrapping_add(a), 11, 3) << 10) as u32)
+                }
                 R_AARCH64_TLSLE_MOVW_TPREL_G0 => {
                     check(tprel as i64, -(1 << 15), 1 << 15);
                     write_movn_movz(loc, tprel as i64);
@@ -608,10 +589,9 @@ where
                     check(val as i64, -(1 << 32), 1 << 32);
                     write_adrp(loc, val);
                 }
-                R_AARCH64_TLSGD_ADD_LO12_NC => or_insn(
-                    loc,
-                    (bits(sym.tlsgd_addr(ctx).wrapping_add(a), 11, 0) << 10) as u32,
-                ),
+                R_AARCH64_TLSGD_ADD_LO12_NC => {
+                    or_insn(loc, (bits(sym.tlsgd_addr(ctx).wrapping_add(a), 11, 0) << 10) as u32)
+                }
                 // ARM64 TLSDESC uses the following code sequence to materialize
                 // a TP-relative address in x0.
                 //

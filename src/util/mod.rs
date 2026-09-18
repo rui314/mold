@@ -212,11 +212,7 @@ pub(crate) fn read_sleb(bytes: &mut &[u8]) -> i64 {
         }
         shift += 7;
         if byte & 0x80 == 0 {
-            return if shift < 64 {
-                sign_extend(value, shift)
-            } else {
-                value as i64
-            };
+            return if shift < 64 { sign_extend(value, shift) } else { value as i64 };
         }
     }
 }
@@ -243,18 +239,14 @@ pub(crate) fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
 /// Normalizes a path lexically, resolving `.` and `..` components without
 /// consulting the file system.
 pub(crate) fn path_clean(path: &str) -> String {
-    clean_path(std::path::Path::new(path))
-        .to_string_lossy()
-        .into_owned()
+    clean_path(std::path::Path::new(path)).to_string_lossy().into_owned()
 }
 
 /// Converts bytes from a response file or linker script to an OS string.
 /// Unix paths can contain arbitrary non-NUL bytes.
 pub(crate) fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
     use bstr::ByteSlice;
-    bytes
-        .to_os_str()
-        .unwrap_or_else(|_| crate::fatal!("invalid OS string: {}", display(bytes)))
+    bytes.to_os_str().unwrap_or_else(|_| crate::fatal!("invalid OS string: {}", display(bytes)))
 }
 
 /// Normalizes an OS path without resolving symlinks.

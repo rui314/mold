@@ -63,21 +63,13 @@ pub fn main(
 }
 
 fn target_traits<E: Arch>() -> TargetTraits {
-    TargetTraits {
-        name: E::NAME,
-        is_rela: E::IS_RELA,
-        family: E::FAMILY,
-        page_size: E::PAGE_SIZE,
-    }
+    TargetTraits { name: E::NAME, is_rela: E::IS_RELA, family: E::FAMILY, page_size: E::PAGE_SIZE }
 }
 
 fn thread_count(args: &Args) -> usize {
     // mold doesn't scale well with too many threads, so limit it to 32.
-    args.thread_count.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map_or(1, |n| n.get())
-            .min(32)
-    })
+    args.thread_count
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(32))
 }
 
 /// Links for the target `E`, or reports the target the inputs are actually
@@ -153,12 +145,11 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
                 ctx.dynamic_list_patterns.extend(patterns);
             }
             cmdline::DynamicListSource::Pattern(pattern) => {
-                ctx.dynamic_list_patterns
-                    .push(crate::linker_script::DynamicPattern {
-                        pattern: crate::util::leak_bytes(pattern),
-                        source: std::path::Path::new("<command line>"),
-                        is_cpp: false,
-                    });
+                ctx.dynamic_list_patterns.push(crate::linker_script::DynamicPattern {
+                    pattern: crate::util::leak_bytes(pattern),
+                    source: std::path::Path::new("<command line>"),
+                    is_cpp: false,
+                });
             }
         }
     }
@@ -428,10 +419,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     let gdb_table_workers = (threads * 3 / 8).clamp(1, 12);
     let mut gdb_table_job = if ctx.gdb_index.is_some() && ctx.gnu_debuglink.is_none() {
         let timer = t_all.handle();
-        let mut data = ctx
-            .gdb_index_data
-            .take()
-            .expect("missing .gdb_index input data");
+        let mut data = ctx.gdb_index_data.take().expect("missing .gdb_index input data");
         crate::gdb_index::prepare_tables(&ctx, &mut data);
         Some(Background::spawn(".gdb_index table", move || {
             let timer = timer.child("build_gdb_index_tables");
@@ -636,11 +624,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
 
 fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
     let hdr = ctx.chunk_header(id);
-    let size = if hdr.shdr.sh_type.get() == SHT_NOBITS {
-        0
-    } else {
-        hdr.shdr.sh_size.get()
-    };
+    let size = if hdr.shdr.sh_type.get() == SHT_NOBITS { 0 } else { hdr.shdr.sh_size.get() };
     let offset = hdr.shdr.sh_offset.get();
     offset..offset + size
 }
@@ -665,10 +649,8 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut last: Vec<Task> = Vec::new();
     let is_reloc_sec = |id: ChunkId| {
         let ty = ctx.chunk_header(id).shdr.sh_type.get();
-        matches!(
-            id,
-            ChunkId::Reloc(_) | ChunkId::EhFrameReloc | ChunkId::SFrameReloc
-        ) || ty == SHT_REL
+        matches!(id, ChunkId::Reloc(_) | ChunkId::EhFrameReloc | ChunkId::SFrameReloc)
+            || ty == SHT_REL
             || (E::FAMILY == arch::Family::Sh4 && ty == SHT_RELA)
     };
 
@@ -688,23 +670,13 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             }
             ChunkId::Reloc(i) => {
                 let osec = ctx.reloc_sections[i as usize].output_section;
-                last.push(Task {
-                    chunk: id,
-                    extra: [Some(ChunkId::Output(osec)), None],
-                });
+                last.push(Task { chunk: id, extra: [Some(ChunkId::Output(osec)), None] });
             }
-            ChunkId::EhFrameReloc => last.push(Task {
-                chunk: id,
-                extra: [Some(ChunkId::EhFrame), None],
-            }),
-            _ if is_reloc_sec(id) => last.push(Task {
-                chunk: id,
-                extra: [None; 2],
-            }),
-            _ => first.push(Task {
-                chunk: id,
-                extra: [None; 2],
-            }),
+            ChunkId::EhFrameReloc => {
+                last.push(Task { chunk: id, extra: [Some(ChunkId::EhFrame), None] })
+            }
+            _ if is_reloc_sec(id) => last.push(Task { chunk: id, extra: [None; 2] }),
+            _ => first.push(Task { chunk: id, extra: [None; 2] }),
         }
     }
 
@@ -728,12 +700,8 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     passes::report_undef_errors(ctx);
 
     // Zero-clear paddings between chunks
-    let mut ranges: Vec<Range<u64>> = ctx
-        .chunks
-        .iter()
-        .map(|&id| file_range(ctx, id))
-        .filter(|r| !r.is_empty())
-        .collect();
+    let mut ranges: Vec<Range<u64>> =
+        ctx.chunks.iter().map(|&id| file_range(ctx, id)).filter(|r| !r.is_empty()).collect();
     ranges.sort_by_key(|r| r.start);
     let mut pos = 0usize;
     for r in ranges {
@@ -770,26 +738,21 @@ fn run_tasks<E: Arch>(
         })
         .collect();
 
-    work.into_par_iter()
-        .for_each(|(task, own, [extra1, extra2])| {
-            let name = ctx.chunk_header(task.chunk).name;
-            let name = if name.is_empty() {
-                bstr::BStr::new("(header)")
-            } else {
-                name
-            };
-            let _t = timer.child(name);
-            match task.chunk {
-                ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, extra1),
-                ChunkId::Symtab => {
-                    let strtab = extra1.unwrap();
-                    chunks::symtab::copy_buf(ctx, own, strtab, extra2);
-                }
-                ChunkId::Reloc(i) => chunks::reloc::copy_buf(ctx, i, own, extra1),
-                ChunkId::EhFrameReloc => chunks::eh_frame_reloc::copy_buf(ctx, own, extra1),
-                id => chunks::copy_buf(ctx, id, own),
+    work.into_par_iter().for_each(|(task, own, [extra1, extra2])| {
+        let name = ctx.chunk_header(task.chunk).name;
+        let name = if name.is_empty() { bstr::BStr::new("(header)") } else { name };
+        let _t = timer.child(name);
+        match task.chunk {
+            ChunkId::EhFrame => chunks::eh_frame::copy_buf(ctx, own, extra1),
+            ChunkId::Symtab => {
+                let strtab = extra1.unwrap();
+                chunks::symtab::copy_buf(ctx, own, strtab, extra2);
             }
-        });
+            ChunkId::Reloc(i) => chunks::reloc::copy_buf(ctx, i, own, extra1),
+            ChunkId::EhFrameReloc => chunks::eh_frame_reloc::copy_buf(ctx, own, extra1),
+            id => chunks::copy_buf(ctx, id, own),
+        }
+    });
 
     // .eh_frame_hdr's header, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {

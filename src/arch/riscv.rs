@@ -105,10 +105,7 @@ fn b(val: u64, hi: u32, lo: u32) -> u32 {
 }
 
 fn write_itype(loc: &mut [u8], val: u64) {
-    write32(
-        loc,
-        (insn32(loc) & 0b000000_00000_11111_111_11111_1111111) | (b(val, 11, 0) << 20),
-    );
+    write32(loc, (insn32(loc) & 0b000000_00000_11111_111_11111_1111111) | (b(val, 11, 0) << 20));
 }
 
 fn write_stype(loc: &mut [u8], val: u64) {
@@ -125,10 +122,7 @@ fn write_btype(loc: &mut [u8], val: u64) {
         | b(val, 10, 5) << 25
         | b(val, 4, 1) << 8
         | (bit(val, 11) as u32) << 7;
-    write32(
-        loc,
-        (insn32(loc) & 0b000000_11111_11111_111_00000_1111111) | imm,
-    );
+    write32(loc, (insn32(loc) & 0b000000_11111_11111_111_00000_1111111) | imm);
 }
 
 fn write_utype(loc: &mut [u8], val: u64) {
@@ -149,10 +143,7 @@ fn write_jtype(loc: &mut [u8], val: u64) {
         | b(val, 10, 1) << 21
         | (bit(val, 11) as u32) << 20
         | b(val, 19, 12) << 12;
-    write32(
-        loc,
-        (insn32(loc) & 0b000000_00000_00000_000_11111_1111111) | imm,
-    );
+    write32(loc, (insn32(loc) & 0b000000_00000_00000_000_11111_1111111) | imm);
 }
 
 fn write_citype(loc: &mut [u8], val: u64) {
@@ -191,10 +182,7 @@ fn write_cjtype(loc: &mut [u8], val: u64) {
 
 fn set_rs1(loc: &mut [u8], rs1: u32) {
     debug_assert!(rs1 < 32);
-    write32(
-        loc,
-        (insn32(loc) & 0b111111_11111_00000_111_11111_1111111) | (rs1 << 15),
-    );
+    write32(loc, (insn32(loc) & 0b111111_11111_00000_111_11111_1111111) | (rs1 << 15));
 }
 
 fn rd(loc: &[u8]) -> u32 {
@@ -313,21 +301,9 @@ where
     const R_ABS: u32 = if IS_64 { R_RISCV_64 } else { R_RISCV_32 };
     const R_RELATIVE: u32 = R_RISCV_RELATIVE;
     const R_IRELATIVE: Option<u32> = Some(R_RISCV_IRELATIVE);
-    const R_DTPOFF: u32 = if IS_64 {
-        R_RISCV_TLS_DTPREL64
-    } else {
-        R_RISCV_TLS_DTPREL32
-    };
-    const R_TPOFF: u32 = if IS_64 {
-        R_RISCV_TLS_TPREL64
-    } else {
-        R_RISCV_TLS_TPREL32
-    };
-    const R_DTPMOD: u32 = if IS_64 {
-        R_RISCV_TLS_DTPMOD64
-    } else {
-        R_RISCV_TLS_DTPMOD32
-    };
+    const R_DTPOFF: u32 = if IS_64 { R_RISCV_TLS_DTPREL64 } else { R_RISCV_TLS_DTPREL32 };
+    const R_TPOFF: u32 = if IS_64 { R_RISCV_TLS_TPREL64 } else { R_RISCV_TLS_TPREL32 };
+    const R_DTPMOD: u32 = if IS_64 { R_RISCV_TLS_DTPMOD64 } else { R_RISCV_TLS_DTPMOD32 };
     const R_TLSDESC: Option<u32> = Some(R_RISCV_TLSDESC);
     const R_FUNCALL: &'static [u32] = &[R_RISCV_CALL, R_RISCV_CALL_PLT];
 
@@ -393,10 +369,7 @@ where
     }
 
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
-        write_plt_stub::<IS_64>(
-            buf,
-            sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)),
-        );
+        write_plt_stub::<IS_64>(buf, sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)));
     }
 
     fn apply_eh_reloc(
@@ -967,10 +940,7 @@ where
         // Records that `d` bytes go away at relocation `r`.
         fn record<R: RelRecord>(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &R, d: i64) {
             *delta += d;
-            deltas.push(RelocDelta {
-                offset: r.r_offset(),
-                delta: *delta,
-            });
+            deltas.push(RelocDelta { offset: r.r_offset(), delta: *delta });
         }
 
         for i in 0..rels.len() {
@@ -1089,10 +1059,9 @@ where
                     //  sw   t0, %tprel_lo(foo)(tp)
                     //
                     // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-                    let val = sym
-                        .addr(ctx)
-                        .wrapping_add(r.r_addend() as u64)
-                        .wrapping_sub(ctx.tp_addr) as i64;
+                    let val =
+                        sym.addr(ctx).wrapping_add(r.r_addend() as u64).wrapping_sub(ctx.tp_addr)
+                            as i64;
                     if is_int(val, 12) {
                         remove(4);
                     }
@@ -1230,9 +1199,7 @@ fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension<'_>>> {
         let name = &element[..major_start];
         let ok_name = name.bytes().next().is_some_and(|c| c.is_ascii_lowercase())
             && name.bytes().last().is_some_and(|c| c.is_ascii_lowercase())
-            && name
-                .bytes()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+            && name.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
         if !ok_name {
             return None;
         }
@@ -1255,11 +1222,7 @@ fn merge_extensions<'a>(x: &[Extension<'a>], y: &[Extension<'a>]) -> Option<Vec<
     // Merge ISA extension strings
     while let (Some(a), Some(b)) = (x.first(), y.first()) {
         if a.name == b.name {
-            result.push(if (a.major, a.minor) < (b.major, b.minor) {
-                *b
-            } else {
-                *a
-            });
+            result.push(if (a.major, a.minor) < (b.major, b.minor) { *b } else { *a });
             x = &x[1..];
             y = &y[1..];
         } else if extension_precedes(a.name, b.name) {

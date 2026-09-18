@@ -152,18 +152,10 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
         for rel in cie.rels(file) {
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
             let loc = (rel.r_offset() - cie.input_offset as u64) as usize;
-            let val = sym
-                .addr(ctx)
-                .wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
+            let val =
+                sym.addr(ctx).wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
             let p = sh_addr + cie.output_offset as u64 + loc as u64;
-            E::apply_eh_reloc(
-                ctx,
-                file.section_at(cie.section),
-                rel,
-                &mut dst[loc..],
-                p,
-                val,
-            );
+            E::apply_eh_reloc(ctx, file.section_at(cie.section), rel, &mut dst[loc..], p, val);
         }
     };
 
@@ -177,12 +169,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     let mut items: Vec<Item<E>> = ctx
         .objs
         .iter()
-        .map(|file| Item {
-            file,
-            cies: Vec::new(),
-            fdes: None,
-            hdr_entries: None,
-        })
+        .map(|file| Item { file, cies: Vec::new(), fdes: None, hdr_entries: None })
         .collect();
 
     for (fi, file) in ctx.objs.iter().enumerate() {
@@ -234,10 +221,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             dst[..contents.len()].copy_from_slice(contents);
 
             let cie = &file.cies[fde.cie_idx as usize];
-            E::Endian::write_u32(
-                &mut dst[4..],
-                (offset + 4 - cie.output_offset as u64) as u32,
-            );
+            E::Endian::write_u32(&mut dst[4..], (offset + 4 - cie.output_offset as u64) as u32);
             if ctx.args.relocatable {
                 continue;
             }
@@ -248,18 +232,10 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             for (j, rel) in rels.iter().enumerate() {
                 let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
                 let loc = (rel.r_offset() - fde.input_offset as u64) as usize;
-                let val = sym
-                    .addr(ctx)
-                    .wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
+                let val =
+                    sym.addr(ctx).wrapping_add(file.section_at(cie.section).rel_addend(rel) as u64);
                 let p = sh_addr + offset + loc as u64;
-                E::apply_eh_reloc(
-                    ctx,
-                    file.section_at(cie.section),
-                    rel,
-                    &mut dst[loc..],
-                    p,
-                    val,
-                );
+                E::apply_eh_reloc(ctx, file.section_at(cie.section), rel, &mut dst[loc..], p, val);
                 if j == 0 {
                     func_addr = val;
                 }
@@ -334,8 +310,5 @@ pub fn check_range<E: Arch>(
 
 /// Fatal error for `.eh_frame` contents that can't be handled.
 pub fn unsupported<E: Arch>(rel: &ElfRel<E>) -> ! {
-    fatal!(
-        "unsupported relocation in .eh_frame: {}",
-        rel.type_name::<E>()
-    )
+    fatal!("unsupported relocation in .eh_frame: {}", rel.type_name::<E>())
 }

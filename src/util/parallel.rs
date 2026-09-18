@@ -44,10 +44,8 @@ pub(crate) fn stable_partition<T: Copy + Send + Sync>(
     } else {
         values.par_iter().map(&pred).collect()
     };
-    let counts: Vec<usize> = matches
-        .par_chunks(BLOCK)
-        .map(|chunk| chunk.iter().filter(|&&v| v).count())
-        .collect();
+    let counts: Vec<usize> =
+        matches.par_chunks(BLOCK).map(|chunk| chunk.iter().filter(|&&v| v).count()).collect();
     let num_matches = counts.iter().sum();
     if num_matches == 0 || num_matches == values.len() {
         return num_matches;
@@ -66,11 +64,8 @@ pub(crate) fn stable_partition<T: Copy + Send + Sync>(
             (matched, unmatched)
         })
         .collect();
-    parts
-        .into_par_iter()
-        .zip(values.par_chunks(BLOCK))
-        .zip(matches.par_chunks(BLOCK))
-        .for_each(|(((yes, no), input), flags)| {
+    parts.into_par_iter().zip(values.par_chunks(BLOCK)).zip(matches.par_chunks(BLOCK)).for_each(
+        |(((yes, no), input), flags)| {
             let (mut y, mut n) = (0, 0);
             for (&value, &matched) in input.iter().zip(flags) {
                 if matched {
@@ -81,7 +76,8 @@ pub(crate) fn stable_partition<T: Copy + Send + Sync>(
                     n += 1;
                 }
             }
-        });
+        },
+    );
     values
         .par_chunks_mut(BLOCK)
         .zip(output.par_chunks(BLOCK))
@@ -95,15 +91,10 @@ mod tests {
 
     #[test]
     fn background_job_joins_on_one_worker() {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .unwrap()
-            .install(|| {
-                let job =
-                    Background::spawn("test", || (0..100usize).into_par_iter().sum::<usize>());
-                assert_eq!(job.join(), 4950);
-            });
+        rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap().install(|| {
+            let job = Background::spawn("test", || (0..100usize).into_par_iter().sum::<usize>());
+            assert_eq!(job.join(), 4950);
+        });
     }
 
     #[test]

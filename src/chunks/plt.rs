@@ -29,10 +29,7 @@ impl<E: Arch> PltSection<E> {
         } else {
             hdr.shdr.sh_addralign.set(16);
         }
-        PltSection {
-            hdr,
-            symbols: Vec::new(),
-        }
+        PltSection { hdr, symbols: Vec::new() }
     }
 }
 
@@ -115,11 +112,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
         .par_iter()
         .map(|&id| ctx.symbols[id].name().len() as u64 + "$plt".len() as u64 + 1)
         .sum();
-    plt.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 {
-        n * 3 + 2
-    } else {
-        n
-    };
+    plt.hdr.num_local_symtab = if E::FAMILY == Family::Arm32 { n * 3 + 2 } else { n };
     plt.hdr.strtab_size = strtab_size;
 }
 

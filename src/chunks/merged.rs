@@ -153,10 +153,7 @@ impl<E: Arch> BackgroundMerge<E> {
                 }
                 let input = file.section_at(info.shndx);
                 members[info.parent.index()].push(BackgroundMember {
-                    reference: SectionRef {
-                        file: file.id(),
-                        shndx: info.shndx,
-                    },
+                    reference: SectionRef { file: file.id(), shndx: info.shndx },
                     info: info.clone(),
                     data: input.contents(),
                     filename: file.base.filename.clone(),
@@ -278,11 +275,7 @@ impl<E: Layout> MergedSection<E> {
         let flags = sh_flags & !(SHF_GROUP as u64) & !(SHF_COMPRESSED as u64);
         let mut entsize = shdr.sh_entsize.get();
         if entsize == 0 {
-            entsize = if sh_flags & SHF_STRINGS as u64 != 0 {
-                1
-            } else {
-                shdr.sh_addralign.get()
-            };
+            entsize = if sh_flags & SHF_STRINGS as u64 != 0 { 1 } else { shdr.sh_addralign.get() };
         }
         if entsize == 0 {
             return None;
@@ -290,24 +283,14 @@ impl<E: Layout> MergedSection<E> {
 
         let name = merged_output_name(args, name, flags, entsize, addralign);
         let sh_type = shdr.sh_type.get();
-        let key = MergedSectionKey {
-            name: BStr::new(&name),
-            flags,
-            sh_type,
-            entsize,
-        };
+        let key = MergedSectionKey { name: BStr::new(&name), flags, sh_type, entsize };
         if let Some((_, id)) = cache.entries.iter().find(|(k, _)| *k == key) {
             return Some(*id);
         }
         let mut remember = |id, name: &'static BStr| {
             // Bound lookup cost even when --unique creates many sections.
             if cache.entries.len() < 32 {
-                let key = MergedSectionKey {
-                    name,
-                    flags,
-                    sh_type,
-                    entsize,
-                };
+                let key = MergedSectionKey { name, flags, sh_type, entsize };
                 cache.entries.push((key, id));
             }
             Some(id)
@@ -355,9 +338,7 @@ impl<E: Layout> MergedSection<E> {
         // Non-memory-allocated strings are typically identifiers used by debug info.
         // To remove such strings, use the `strip` command.
         let is_alive = !gc_sections || !self.is_alloc();
-        let (id, frag, _) = self
-            .map
-            .insert_with(data, hash, || SectionFragment::new(is_alive));
+        let (id, frag, _) = self.map.insert_with(data, hash, || SectionFragment::new(is_alive));
         // Most insertions find the fragment there already, so the alignment
         // is only written when it grows: an atomic update on every insertion
         // would bounce the cache line of a popular fragment between cores.
@@ -375,12 +356,7 @@ impl<E: Layout> MergedSection<E> {
 /// Splits the members into fragments and deduplicates them.
 pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
     let timers = ctx.timers.clone();
-    let Context {
-        objs,
-        merged_sections,
-        args,
-        ..
-    } = ctx;
+    let Context { objs, merged_sections, args, .. } = ctx;
     let msec = &merged_sections[id.index()];
     let gc_sections = args.gc_sections;
 
@@ -402,9 +378,8 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
         .fold(HyperLogLog::default, |mut sketch, (file, shndx)| {
             let mut slots = std::mem::take(&mut file.sections);
             for &i in shndx {
-                let (m, isec) = slots
-                    .merge_info_with_section_mut(i as usize)
-                    .expect("a mergeable section");
+                let (m, isec) =
+                    slots.merge_info_with_section_mut(i as usize).expect("a mergeable section");
                 let name = isec.name(file);
                 m.split_contents::<E>(file, isec.contents(), name, msec, &mut sketch);
             }
@@ -471,13 +446,7 @@ pub fn resolve_sections<E: Arch>(
     members: &mut [Vec<ResolveMember<'_>>],
     options: ResolveOptions<'_>,
 ) {
-    let ResolveOptions {
-        allocated_only,
-        gc_sections,
-        comment,
-        cmdline_args,
-        timers,
-    } = options;
+    let ResolveOptions { allocated_only, gc_sections, comment, cmdline_args, timers } = options;
     let t = timers.start("split_contents");
     let estimates: Vec<Option<HyperLogLog>> = sections
         .par_iter()
@@ -504,15 +473,12 @@ pub fn resolve_sections<E: Arch>(
 
     // We aim 2/3 occupation ratio
     let t = timers.start("resize");
-    sections
-        .par_iter_mut()
-        .zip(&estimates)
-        .for_each(|(section, estimate)| {
-            if let Some(estimate) = estimate {
-                section.estimation = estimate.cardinality();
-                section.map = ConcurrentMap::with_capacity(section.estimation as usize * 3 / 2);
-            }
-        });
+    sections.par_iter_mut().zip(&estimates).for_each(|(section, estimate)| {
+        if let Some(estimate) = estimate {
+            section.estimation = estimate.cardinality();
+            section.map = ConcurrentMap::with_capacity(section.estimation as usize * 3 / 2);
+        }
+    });
     drop(t);
 
     let t = timers.start("resolve_contents");
@@ -522,9 +488,7 @@ pub fn resolve_sections<E: Arch>(
         .filter(|(section, _)| !section.resolved && (!allocated_only || section.is_alloc()))
         .for_each(|(section, members)| {
             members.par_iter_mut().for_each(|member| {
-                member
-                    .merge_info
-                    .resolve_contents(member.data, section, gc_sections);
+                member.merge_info.resolve_contents(member.data, section, gc_sections);
             });
         });
     drop(t);
@@ -540,11 +504,7 @@ pub fn resolve_sections<E: Arch>(
             }
 
             // Compute section alignment
-            let p2align = members
-                .iter()
-                .map(|member| member.merge_info.p2align)
-                .max()
-                .unwrap_or(0);
+            let p2align = members.iter().map(|member| member.merge_info.p2align).max().unwrap_or(0);
             section.hdr.shdr.sh_addralign.set(1 << p2align);
             section.fragments = std::mem::take(&mut section.map).freeze();
             section.resolved = true;
@@ -621,37 +581,25 @@ pub fn layout<E: Layout>(msec: &mut MergedSection<E>) {
                     far_size += frags.key(entry).len() as u64;
                 }
             }
-            ShardLayout {
-                near_size,
-                far_size,
-                fragments,
-            }
+            ShardLayout { near_size, far_size, fragments }
         })
         .collect();
 
     let addralign = msec.hdr.shdr.sh_addralign.get();
     let mut shard_offsets = Vec::with_capacity(NUM_SHARDS * 2 + 1);
     shard_offsets.push(0);
-    for size in shards
-        .iter()
-        .map(|shard| shard.near_size)
-        .chain(shards.iter().map(|shard| shard.far_size))
+    for size in
+        shards.iter().map(|shard| shard.near_size).chain(shards.iter().map(|shard| shard.far_size))
     {
-        shard_offsets.push(align_to(
-            shard_offsets.last().copied().unwrap() + size,
-            addralign,
-        ));
+        shard_offsets.push(align_to(shard_offsets.last().copied().unwrap() + size, addralign));
     }
 
     shards.par_iter().enumerate().for_each(|(i, shard)| {
         for &entry in &shard.fragments {
             let frag = frags.get(entry);
             if frag.is_alive() {
-                let base = if frag.is_32bit() {
-                    shard_offsets[i]
-                } else {
-                    shard_offsets[i + NUM_SHARDS]
-                };
+                let base =
+                    if frag.is_32bit() { shard_offsets[i] } else { shard_offsets[i + NUM_SHARDS] };
                 frag.set_offset(frag.offset() + base);
             }
         }
@@ -707,10 +655,5 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
 }
 
 pub fn print_stats<E: Layout>(msec: &MergedSection<E>) {
-    out!(
-        "{} estimation={} actual={}",
-        msec.hdr.name,
-        msec.estimation,
-        msec.fragments.len()
-    );
+    out!("{} estimation={} actual={}", msec.hdr.name, msec.estimation, msec.fragments.len());
 }

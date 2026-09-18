@@ -277,11 +277,7 @@ impl<E: Arch> Context<E> {
             fini: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.fini))),
             ..SyntheticSymbols::default()
         };
-        let timers = if args.perf {
-            Timers::new()
-        } else {
-            Timers::disabled()
-        };
+        let timers = if args.perf { Timers::new() } else { Timers::disabled() };
 
         Context {
             reldyn: RelDynSection::<E>::new(&args),
@@ -364,18 +360,13 @@ impl<E: Arch> Context<E> {
     /// Returns this worker's symbol bin. Looking it up once per file keeps the
     /// synchronization cost outside the per-symbol loop.
     pub(crate) fn symbol_bin(&self) -> MutexGuard<'_, Bins<SymbolSlot>> {
-        self.symbol_bins
-            .get_or_init(|| WorkerLocal::new(Bins::new))
-            .get()
+        self.symbol_bins.get_or_init(|| WorkerLocal::new(Bins::new)).get()
     }
 
     /// Takes all keys recorded since the previous gather, leaving empty bins
     /// in place for an LTO output file to use before the second gather.
     pub(crate) fn take_symbol_bins(&mut self) -> Vec<Bins<SymbolSlot>> {
-        self.symbol_bins
-            .get_mut()
-            .map(|bins| bins.take().collect())
-            .unwrap_or_default()
+        self.symbol_bins.get_mut().map(|bins| bins.take().collect()).unwrap_or_default()
     }
 
     pub fn get_symbol(&mut self, name: &[u8]) -> SymbolId {
@@ -438,10 +429,7 @@ impl<E: Arch> Context<E> {
 
     /// The address of a PPC64 ELFv1 function descriptor.
     pub fn opd_addr(&self, idx: u32) -> u64 {
-        let opd = self
-            .ppc64_opd
-            .as_ref()
-            .expect("PPC64 ELFv1 has an .opd section");
+        let opd = self.ppc64_opd.as_ref().expect("PPC64 ELFv1 has an .opd section");
         opd.hdr.shdr.sh_addr.get() + idx as u64 * crate::chunks::opd::ENTRY_SIZE
     }
 
@@ -476,18 +464,12 @@ impl<E: Arch> Context<E> {
 
     /// Finds the first chunk of a section type.
     pub fn find_chunk_by_type(&self, sh_type: u32) -> Option<ChunkId> {
-        self.chunks
-            .iter()
-            .copied()
-            .find(|&c| self.chunk_header(c).shdr.sh_type.get() == sh_type)
+        self.chunks.iter().copied().find(|&c| self.chunk_header(c).shdr.sh_type.get() == sh_type)
     }
 
     /// Finds the first chunk with a name.
     pub fn find_chunk_by_name(&self, name: &[u8]) -> Option<ChunkId> {
-        self.chunks
-            .iter()
-            .copied()
-            .find(|&c| self.chunk_header(c).name == name)
+        self.chunks.iter().copied().find(|&c| self.chunk_header(c).name == name)
     }
 
     /// Starts a `--perf` timer for a pass.

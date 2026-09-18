@@ -103,10 +103,7 @@ fn thm2<End: Endian>(loc: &[u8]) -> u16 {
 fn write_arm_mov<End: Endian>(loc: &mut [u8], val: u32) {
     let imm12 = b(val as u64, 11, 0);
     let imm4 = b(val as u64, 15, 12);
-    End::write_u32(
-        loc,
-        (End::read_u32(loc) & 0xfff0_f000) | (imm4 << 16) | imm12,
-    );
+    End::write_u32(loc, (End::read_u32(loc) & 0xfff0_f000) | (imm4 << 16) | imm12);
 }
 
 fn write_thm_b21<End: Endian>(loc: &mut [u8], val: u32) {
@@ -158,11 +155,7 @@ fn write_thm_mov<End: Endian>(loc: &mut [u8], val: u32) {
 /// Sets the second halfword's bit that turns a Thumb BLX into a BL, or
 /// clears it for the reverse.
 fn set_thm_bl<End: Endian>(loc: &mut [u8], is_bl: bool) {
-    let second = if is_bl {
-        thm2::<End>(loc) | 0x1000
-    } else {
-        thm2::<End>(loc) & !0x1000
-    };
+    let second = if is_bl { thm2::<End>(loc) | 0x1000 } else { thm2::<End>(loc) & !0x1000 };
     End::write_u16(&mut loc[2..], second);
 }
 
@@ -302,10 +295,7 @@ where
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
-        header_size: 16,
-        entry_size: 16,
-    });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 16, entry_size: 16 });
     const TRAP: &'static [u8] = &[0xff, 0xde]; // udf
 
     const R_COPY: u32 = R_ARM_COPY;
@@ -318,13 +308,8 @@ where
     const R_TPOFF: u32 = R_ARM_TLS_TPOFF32;
     const R_DTPMOD: u32 = R_ARM_TLS_DTPMOD32;
     const R_TLSDESC: Option<u32> = Some(R_ARM_TLS_DESC);
-    const R_FUNCALL: &'static [u32] = &[
-        R_ARM_JUMP24,
-        R_ARM_THM_JUMP24,
-        R_ARM_CALL,
-        R_ARM_THM_CALL,
-        R_ARM_PLT32,
-    ];
+    const R_FUNCALL: &'static [u32] =
+        &[R_ARM_JUMP24, R_ARM_THM_JUMP24, R_ARM_CALL, R_ARM_THM_CALL, R_ARM_PLT32];
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         arm32_rel_to_string(r_type)
@@ -360,9 +345,7 @@ where
         write_code(buf, &PLT_ENTRY);
         End::write_u32(
             &mut buf[12..],
-            sym.gotplt_addr(ctx)
-                .wrapping_sub(sym.plt_addr(ctx))
-                .wrapping_sub(12) as u32,
+            sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(12) as u32,
         );
     }
 
@@ -370,9 +353,7 @@ where
         write_code(buf, &PLT_ENTRY);
         End::write_u32(
             &mut buf[12..],
-            sym.got_pltgot_addr(ctx)
-                .wrapping_sub(sym.plt_addr(ctx))
-                .wrapping_sub(12) as u32,
+            sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(12) as u32,
         );
     }
 
@@ -417,9 +398,9 @@ where
                     scan_pcrel(ctx, isec, sym, &rel)
                 }
                 R_ARM_TLS_GD32 => sym.add_flags(NEEDS_TLSGD),
-                R_ARM_TLS_LDM32 => ctx
-                    .needs_tlsld
-                    .store(true, std::sync::atomic::Ordering::Relaxed),
+                R_ARM_TLS_LDM32 => {
+                    ctx.needs_tlsld.store(true, std::sync::atomic::Ordering::Relaxed)
+                }
                 R_ARM_TLS_IE32 => sym.add_flags(NEEDS_GOTTP),
                 R_ARM_TLS_CALL | R_ARM_THM_TLS_CALL => scan_tlsdesc(ctx, sym),
                 R_ARM_TLS_LE32 => check_tlsle(ctx, isec, sym, &rel),
@@ -483,12 +464,7 @@ where
             let tlsdesc_trampoline = || {
                 let i = osec.thunks.partition_point(|thunk| thunk.addr(osec) <= p);
                 osec.thunks.get(i).map_or_else(
-                    || {
-                        fatal!(
-                            "{}: no TLSDESC trampoline after the call",
-                            isec.display(file)
-                        )
-                    },
+                    || fatal!("{}: no TLSDESC trampoline after the call", isec.display(file)),
                     |thunk| thunk.addr(osec),
                 )
             };
@@ -530,10 +506,9 @@ where
                 }
                 R_ARM_BASE_PREL => write32(loc, got.wrapping_add(a).wrapping_sub(p) as u32),
                 R_ARM_GOTOFF32 => write32(loc, (sa | t).wrapping_sub(got) as u32),
-                R_ARM_GOT_PREL | R_ARM_TARGET2 => write32(
-                    loc,
-                    got.wrapping_add(g()).wrapping_add(a).wrapping_sub(p) as u32,
-                ),
+                R_ARM_GOT_PREL | R_ARM_TARGET2 => {
+                    write32(loc, got.wrapping_add(g()).wrapping_add(a).wrapping_sub(p) as u32)
+                }
                 R_ARM_GOT_BREL => write32(loc, g().wrapping_add(a) as u32),
                 R_ARM_CALL => {
                     if sym.is_remaining_undef_weak() {
@@ -546,10 +521,7 @@ where
                     let is_bl = insn & 0xff00_0000 == 0xeb00_0000;
                     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
                     if !is_bl && !is_blx {
-                        fatal!(
-                            "{}: R_ARM_CALL refers to neither BL nor BLX",
-                            isec.display(file)
-                        );
+                        fatal!("{}: R_ARM_CALL refers to neither BL nor BLX", isec.display(file));
                     }
                     if is_int(pcrel as i64, 26) {
                         if t != 0 {
@@ -586,9 +558,8 @@ where
                     if sym.is_remaining_undef_weak() {
                         write32(loc, ARM_NOP); // NOP
                     } else {
-                        let val = if t != 0 { arm_thunk() } else { s }
-                            .wrapping_add(a)
-                            .wrapping_sub(p);
+                        let val =
+                            if t != 0 { arm_thunk() } else { s }.wrapping_add(a).wrapping_sub(p);
                         write32(loc, (End::read_u32(loc) & 0xff00_0000) | b(val, 25, 2));
                     }
                 }
@@ -624,29 +595,23 @@ where
                 }
                 R_ARM_PREL31 => {
                     check(pcrel as i64, -(1 << 30), 1 << 30);
-                    write32(
-                        loc,
-                        (End::read_u32(loc) & 0x8000_0000) | (pcrel as u32 & 0x7fff_ffff),
-                    );
+                    write32(loc, (End::read_u32(loc) & 0x8000_0000) | (pcrel as u32 & 0x7fff_ffff));
                 }
                 R_ARM_THM_MOVW_ABS_NC => write_thm_mov::<End>(loc, (sa | t) as u32),
                 R_ARM_MOVT_PREL => write_arm_mov::<End>(loc, (pcrel >> 16) as u32),
                 R_ARM_THM_MOVT_PREL => write_thm_mov::<End>(loc, (pcrel >> 16) as u32),
                 R_ARM_MOVT_ABS => write_arm_mov::<End>(loc, (sa >> 16) as u32),
                 R_ARM_THM_MOVT_ABS => write_thm_mov::<End>(loc, (sa >> 16) as u32),
-                R_ARM_TLS_GD32 => write32(
-                    loc,
-                    sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32,
-                ),
-                R_ARM_TLS_LDM32 => write32(
-                    loc,
-                    ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(p) as u32,
-                ),
+                R_ARM_TLS_GD32 => {
+                    write32(loc, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32)
+                }
+                R_ARM_TLS_LDM32 => {
+                    write32(loc, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(p) as u32)
+                }
                 R_ARM_TLS_LDO32 => write32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
-                R_ARM_TLS_IE32 => write32(
-                    loc,
-                    sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32,
-                ),
+                R_ARM_TLS_IE32 => {
+                    write32(loc, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32)
+                }
                 R_ARM_TLS_LE32 => write32(loc, sa.wrapping_sub(ctx.tp_addr) as u32),
                 // ARM32 TLSDESC uses the following code sequence to materialize
                 // a TP-relative address in r0.
@@ -687,10 +652,8 @@ where
                         let adjust = if a & 1 != 0 { 5 } else { 8 };
                         write32(
                             loc,
-                            sym.gottp_addr(ctx)
-                                .wrapping_sub(p)
-                                .wrapping_add(a)
-                                .wrapping_sub(adjust) as u32,
+                            sym.gottp_addr(ctx).wrapping_sub(p).wrapping_add(a).wrapping_sub(adjust)
+                                as u32,
                         );
                     } else {
                         write32(loc, s.wrapping_sub(ctx.tp_addr) as u32);
@@ -832,10 +795,9 @@ where
             R_ARM_MOVW_PREL_NC | R_ARM_MOVW_ABS_NC | R_ARM_MOVT_PREL | R_ARM_MOVT_ABS => {
                 write_arm_mov::<End>(loc, val as u32)
             }
-            R_ARM_PREL31 => End::write_u32(
-                loc,
-                (End::read_u32(loc) & 0x8000_0000) | (val as u32 & 0x7fff_ffff),
-            ),
+            R_ARM_PREL31 => {
+                End::write_u32(loc, (End::read_u32(loc) & 0x8000_0000) | (val as u32 & 0x7fff_ffff))
+            }
             R_ARM_THM_MOVW_PREL_NC
             | R_ARM_THM_MOVW_ABS_NC
             | R_ARM_THM_MOVT_PREL
@@ -861,10 +823,7 @@ where
                 let j1 = bit(thm(1), 13);
                 let imm6 = bits(thm(0), 5, 0);
                 let imm11 = bits(thm(1), 10, 0);
-                sign_extend(
-                    (s << 20) | (j2 << 19) | (j1 << 18) | (imm6 << 12) | (imm11 << 1),
-                    21,
-                )
+                sign_extend((s << 20) | (j2 << 19) | (j1 << 18) | (imm6 << 12) | (imm11 << 1), 21)
             }
             R_ARM_THM_CALL | R_ARM_THM_JUMP24 | R_ARM_THM_TLS_CALL => {
                 // https://developer.arm.com/documentation/ddi0597/2024-12/Base-Instructions/BL--BLX--immediate---Branch-with-Link-and-optional-Exchange--immediate--
@@ -875,10 +834,7 @@ where
                 let i2 = (j2 ^ s) ^ 1;
                 let imm10 = bits(thm(0), 9, 0);
                 let imm11 = bits(thm(1), 10, 0);
-                sign_extend(
-                    (s << 24) | (i1 << 23) | (i2 << 22) | (imm10 << 12) | (imm11 << 1),
-                    25,
-                )
+                sign_extend((s << 24) | (i1 << 23) | (i2 << 22) | (imm10 << 12) | (imm11 << 1), 25)
             }
             R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 | R_ARM_TLS_CALL => sign_extend(arm(), 24) << 2,
             R_ARM_MOVW_PREL_NC | R_ARM_MOVW_ABS_NC | R_ARM_MOVT_PREL | R_ARM_MOVT_ABS => {

@@ -27,10 +27,7 @@ impl<E: Layout> Ppc64OpdSection<E> {
     pub fn new() -> Ppc64OpdSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".opd", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.shdr.sh_addralign.set(8);
-        Ppc64OpdSection {
-            hdr,
-            symbols: Vec::new(),
-        }
+        Ppc64OpdSection { hdr, symbols: Vec::new() }
     }
 }
 
@@ -42,15 +39,10 @@ impl<E: Layout> Default for Ppc64OpdSection<E> {
 
 /// A descriptor holds the function's own address, not that of its PLT
 /// entry or of the descriptor itself.
-const ENTRY_POINT: AddrFlags = AddrFlags {
-    no_plt: true,
-    no_opd: true,
-};
+const ENTRY_POINT: AddrFlags = AddrFlags { no_plt: true, no_opd: true };
 
 fn section<E: Arch>(ctx: &Context<E>) -> &Ppc64OpdSection<E> {
-    ctx.ppc64_opd
-        .as_ref()
-        .expect("PPC64 ELFv1 has an .opd section")
+    ctx.ppc64_opd.as_ref().expect("PPC64 ELFv1 has an .opd section")
 }
 
 fn toc<E: Arch>(ctx: &Context<E>) -> u64 {
@@ -58,10 +50,7 @@ fn toc<E: Arch>(ctx: &Context<E>) -> u64 {
 }
 
 pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
-    let opd = ctx
-        .ppc64_opd
-        .as_mut()
-        .expect("PPC64 ELFv1 has an .opd section");
+    let opd = ctx.ppc64_opd.as_mut().expect("PPC64 ELFv1 has an .opd section");
     let idx = opd.symbols.len() as u32;
     assert_ne!(idx, u32::MAX);
     ctx.symbols.aux_mut(sym).opd_idx = idx;

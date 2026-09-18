@@ -51,10 +51,7 @@ mod tests {
 
     #[test]
     fn rust_legacy_with_suffix() {
-        assert_eq!(
-            demangle_rust(b"_ZN2ns7versionEv").as_deref(),
-            Some("ns::versionv")
-        );
+        assert_eq!(demangle_rust(b"_ZN2ns7versionEv").as_deref(), Some("ns::versionv"));
         assert_eq!(demangle_rust(b"_ZN3foo3barE").as_deref(), Some("foo::bar"));
         assert_eq!(demangle_rust(b"_ZN3foo").as_deref(), None);
         assert_eq!(demangle_rust(b"main"), None);

@@ -39,10 +39,7 @@ pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
 //
 // This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
 fn contains_variant_pcs<E: Arch>(ctx: &Context<E>) -> bool {
-    ctx.plt
-        .symbols
-        .iter()
-        .any(|&id| ctx.symbols[id].esym(ctx).arm64_variant_pcs())
+    ctx.plt.symbols.iter().any(|&id| ctx.symbols[id].esym(ctx).arm64_variant_pcs())
 }
 
 fn sym_addr_if_defined<E: Arch>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
@@ -56,28 +53,18 @@ fn sym_addr_if_defined<E: Arch>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
 fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     let dynstr = &ctx.dynstr;
     let plt = &ctx.plt;
-    let (rel, relsz, relent) = if E::IS_RELA {
-        (DT_RELA, DT_RELASZ, DT_RELAENT)
-    } else {
-        (DT_REL, DT_RELSZ, DT_RELENT)
-    };
+    let (rel, relsz, relent) =
+        if E::IS_RELA { (DT_RELA, DT_RELASZ, DT_RELAENT) } else { (DT_REL, DT_RELSZ, DT_RELENT) };
 
     for dso in &ctx.dsos {
         define(DT_NEEDED, dynstr.find_string(dso.soname));
     }
     if !ctx.args.rpaths.is_empty() {
-        let tag = if ctx.args.enable_new_dtags {
-            DT_RUNPATH
-        } else {
-            DT_RPATH
-        };
+        let tag = if ctx.args.enable_new_dtags { DT_RUNPATH } else { DT_RPATH };
         define(tag, dynstr.find_string(ctx.args.rpaths.as_encoded_bytes()));
     }
     if !ctx.args.soname.is_empty() {
-        define(
-            DT_SONAME,
-            dynstr.find_string(ctx.args.soname.as_encoded_bytes()),
-        );
+        define(DT_SONAME, dynstr.find_string(ctx.args.soname.as_encoded_bytes()));
     }
     for s in &ctx.args.auxiliary {
         define(DT_AUXILIARY, dynstr.find_string(s));
@@ -158,10 +145,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     if ctx.find_chunk_by_type(SHT_PREINIT_ARRAY).is_some() {
         let start = value(ctx.syms.preinit_array_start);
         define(DT_PREINIT_ARRAY, start);
-        define(
-            DT_PREINIT_ARRAYSZ,
-            value(ctx.syms.preinit_array_end) - start,
-        );
+        define(DT_PREINIT_ARRAYSZ, value(ctx.syms.preinit_array_end) - start);
     }
     if ctx.find_chunk_by_type(SHT_FINI_ARRAY).is_some() {
         let start = value(ctx.syms.fini_array_start);
@@ -247,12 +231,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
         define(DT_AARCH64_VARIANT_PCS, 0);
     }
     // RISC-V has the same feature but with a different name.
-    if E::IS_RISCV
-        && plt
-            .symbols
-            .iter()
-            .any(|&id| ctx.symbols[id].esym(ctx).riscv_variant_cc())
-    {
+    if E::IS_RISCV && plt.symbols.iter().any(|&id| ctx.symbols[id].esym(ctx).riscv_variant_cc()) {
         define(DT_RISCV_VARIANT_CC, 0);
     }
     if E::FAMILY == Family::Ppc32 {
@@ -293,16 +272,10 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-    debug_assert_eq!(
-        ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize,
-        buf.len()
-    );
+    debug_assert_eq!(ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize, buf.len());
     let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());
     for_each_entry(ctx, |d_tag, d_val| {
-        let entry = ElfDyn::<E> {
-            d_tag: E::Word::new(d_tag as u64),
-            d_val: E::Word::new(d_val),
-        };
+        let entry = ElfDyn::<E> { d_tag: E::Word::new(d_tag as u64), d_val: E::Word::new(d_val) };
         entry.write(slots.next().unwrap());
     });
     debug_assert!(slots.next().is_none());

@@ -65,10 +65,7 @@ fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
         )
     };
     if entries == libc::MAP_FAILED {
-        panic!(
-            "mmap of {bufsize} bytes failed: {}",
-            std::io::Error::last_os_error()
-        );
+        panic!("mmap of {bufsize} bytes failed: {}", std::io::Error::last_os_error());
     }
     entries.cast()
 }
@@ -146,10 +143,7 @@ unsafe impl<T: Send + Sync> Sync for ConcurrentMap<T> {}
 impl<T> Default for ConcurrentMap<T> {
     /// A map without buckets, to be replaced before use.
     fn default() -> Self {
-        ConcurrentMap {
-            entries: ptr::null_mut(),
-            nbuckets: 0,
-        }
+        ConcurrentMap { entries: ptr::null_mut(), nbuckets: 0 }
     }
 }
 
@@ -168,16 +162,12 @@ impl<T> ConcurrentMap<T> {
     }
 
     fn bufsize(nbuckets: usize) -> usize {
-        std::mem::size_of::<Entry<T>>()
-            .checked_mul(nbuckets)
-            .expect("table size overflow")
+        std::mem::size_of::<Entry<T>>().checked_mul(nbuckets).expect("table size overflow")
     }
 
     /// The number of entries, counted.
     fn len(&self) -> usize {
-        (0..self.nbuckets)
-            .filter(|&idx| self.is_occupied(idx))
-            .count()
+        (0..self.nbuckets).filter(|&idx| self.is_occupied(idx)).count()
     }
 
     fn entry(&self, idx: usize) -> &Entry<T> {
@@ -458,9 +448,7 @@ impl<T> FrozenMap<T> {
         (0..NUM_SHARDS)
             .into_par_iter()
             .flat_map_iter(|shard| {
-                self.sorted_entries(shard)
-                    .into_iter()
-                    .map(|id| self.entry_ref(id))
+                self.sorted_entries(shard).into_iter().map(|id| self.entry_ref(id))
             })
             .collect()
     }

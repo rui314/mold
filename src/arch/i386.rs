@@ -99,9 +99,8 @@ impl Arch for I386 {
             buf[..16].copy_from_slice(&INSN);
             write_u32(
                 &mut buf[3..],
-                gotplt
-                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get()))
-                    .wrapping_add(4) as u32,
+                gotplt.wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())).wrapping_add(4)
+                    as u32,
             );
         } else {
             const INSN: [u8; 16] = [
@@ -129,8 +128,7 @@ impl Arch for I386 {
             write_u32(&mut buf[1..], reloc_offset as u32);
             write_u32(
                 &mut buf[7..],
-                sym.gotplt_addr(ctx)
-                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
+                sym.gotplt_addr(ctx).wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
             );
         } else {
             const INSN: [u8; 16] = [
@@ -153,8 +151,8 @@ impl Arch for I386 {
             buf[..8].copy_from_slice(&INSN);
             write_u32(
                 &mut buf[2..],
-                sym.got_pltgot_addr(ctx)
-                    .wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
+                sym.got_pltgot_addr(ctx).wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get()))
+                    as u32,
             );
         } else {
             const INSN: [u8; 8] = [
@@ -203,10 +201,7 @@ impl Arch for I386 {
 
             if rel.r_type() == R_386_TLS_GD || rel.r_type() == R_386_TLS_LDM {
                 let next = rels.get(i).map(|r| r.r_type());
-                if !matches!(
-                    next,
-                    Some(R_386_PLT32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X)
-                ) {
+                if !matches!(next, Some(R_386_PLT32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X)) {
                     fatal!(
                         "{}: {} must be followed by PLT or GOT32",
                         isec.display(file),
@@ -250,8 +245,7 @@ impl Arch for I386 {
                     if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
                         i += 1;
                     } else {
-                        ctx.needs_tlsld
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        ctx.needs_tlsld.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 R_386_TLS_GOTDESC => scan_tlsdesc(ctx, sym),
@@ -346,10 +340,9 @@ impl Arch for I386 {
                     &mut buf[off..],
                     sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                 ),
-                R_386_TLS_LE => write_u32(
-                    &mut buf[off..],
-                    s.wrapping_add(a).wrapping_sub(ctx.tp_addr) as u32,
-                ),
+                R_386_TLS_LE => {
+                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr) as u32)
+                }
                 R_386_TLS_IE => {
                     write_u32(&mut buf[off..], sym.gottp_addr(ctx).wrapping_add(a) as u32)
                 }
@@ -377,10 +370,9 @@ impl Arch for I386 {
                         relax_ld_to_le(buf, off, next, ctx.tp_addr.wrapping_sub(ctx.tls_begin));
                     }
                 }
-                R_386_TLS_LDO_32 => write_u32(
-                    &mut buf[off..],
-                    s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32,
-                ),
+                R_386_TLS_LDO_32 => {
+                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32)
+                }
                 R_386_SIZE32 => write_u32(
                     &mut buf[off..],
                     (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,

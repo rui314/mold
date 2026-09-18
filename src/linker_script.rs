@@ -42,14 +42,8 @@ pub struct Script<'a, E: Arch> {
 }
 
 fn get_line(input: &[u8], pos: usize) -> (usize, &[u8]) {
-    let start = input[..pos]
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .map_or(0, |i| i + 1);
-    let end = input[pos..]
-        .iter()
-        .position(|&b| b == b'\n')
-        .map_or(input.len(), |i| pos + i);
+    let start = input[..pos].iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+    let end = input[pos..].iter().position(|&b| b == b'\n').map_or(input.len(), |i| pos + i);
     (start, &input[start..end])
 }
 
@@ -74,11 +68,7 @@ fn syntax_error(mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
     let label = format!("{}:{}: ", mf.name.display(), lineno);
     let indent = "mold: fatal: ".len() + label.len();
     let column = pos - line_start;
-    fatal!(
-        "{label}{}\n{}^ {msg}",
-        util::display(line),
-        " ".repeat(indent + column)
-    );
+    fatal!("{label}{}\n{}^ {msg}", util::display(line), " ".repeat(indent + column));
 }
 
 fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
@@ -117,7 +107,8 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
             continue;
         }
 
-        let is_word_char = |b: u8| b >= 0x80 || b.is_ascii_alphanumeric() || b"_.$/\\~=+[]*?-!^:".contains(&b);
+        let is_word_char =
+            |b: u8| b >= 0x80 || b.is_ascii_alphanumeric() || b"_.$/\\~=+[]*?-!^:".contains(&b);
         let len = match input.iter().position(|&b| !is_word_char(b)) {
             Some(0) => 1,
             Some(pos) => pos,
@@ -153,8 +144,11 @@ fn resolve_path<E: Arch>(
         if check_target {
             if let Some(target) = reader::get_machine_type(ctx, rctx, mf) {
                 if target != E::NAME {
-                    warn!("{}: skipping incompatible file: {target} (e_machine {})",
-                        path.display(), E::E_MACHINE);
+                    warn!(
+                        "{}: skipping incompatible file: {target} (e_machine {})",
+                        path.display(),
+                        E::E_MACHINE
+                    );
                     return None;
                 }
             }
@@ -386,11 +380,7 @@ impl<'a, E: Arch> Script<'a, E> {
                 continue;
             }
 
-            let idx = if is_global {
-                ver_idx
-            } else {
-                VER_NDX_LOCAL as u16
-            };
+            let idx = if is_global { ver_idx } else { VER_NDX_LOCAL as u16 };
             if t == b"*" {
                 self.ctx.default_version = idx;
             } else {

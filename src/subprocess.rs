@@ -25,10 +25,7 @@ pub fn fork_child() {
             eprintln!("mold: pipe failed");
             std::process::exit(1);
         }
-        (
-            OwnedFd::from_raw_fd(pipefd[0]),
-            OwnedFd::from_raw_fd(pipefd[1]),
-        )
+        (OwnedFd::from_raw_fd(pipefd[0]), OwnedFd::from_raw_fd(pipefd[1]))
     };
     // SAFETY: this runs before the linker starts its worker threads. The
     // parent only waits for completion and exits; the child continues linking.
@@ -109,11 +106,7 @@ extern "C" fn on_signal(
         let msg = b"mold: failed to write to an output file. Disk full?\n";
         // SAFETY: write is async-signal-safe.
         unsafe {
-            libc::write(
-                libc::STDERR_FILENO,
-                msg.as_ptr() as *const libc::c_void,
-                msg.len(),
-            );
+            libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const libc::c_void, msg.len());
         }
     }
     crate::output_file::cleanup();
@@ -159,13 +152,9 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
         self_path.parent().map(|p| p.join("mold-wrapper.so")),
         // If not found, search $(MOLD_LIBDIR)/mold, which is /usr/local/lib/mold
         // by default.
-        Some(std::path::PathBuf::from(
-            "/usr/local/lib/mold/mold-wrapper.so",
-        )),
+        Some(std::path::PathBuf::from("/usr/local/lib/mold/mold-wrapper.so")),
         // Look for ../lib/mold/mold-wrapper.so
-        self_path
-            .parent()
-            .map(|p| p.join("../lib/mold/mold-wrapper.so")),
+        self_path.parent().map(|p| p.join("../lib/mold/mold-wrapper.so")),
     ];
     // Get the mold-wrapper.so path
     let Some(dso) = candidates.into_iter().flatten().find(|p| p.is_file()) else {
@@ -177,14 +166,10 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
     std::env::set_var("MOLD_PATH", &self_path);
 
     use std::os::unix::process::CommandExt;
-    let cmd = std::path::Path::new(&argv[2])
-        .file_name()
-        .unwrap_or_default();
+    let cmd = std::path::Path::new(&argv[2]).file_name().unwrap_or_default();
     // If ld, ld.lld or ld.gold is specified, run mold instead
     let err = if cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold" {
-        std::process::Command::new(&self_path)
-            .args(&argv[3..])
-            .exec()
+        std::process::Command::new(&self_path).args(&argv[3..]).exec()
     } else {
         std::process::Command::new(&argv[2]).args(&argv[3..]).exec()
     };

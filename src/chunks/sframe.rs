@@ -27,11 +27,7 @@ impl<E: Layout> SFrameSection<E> {
     pub fn new() -> SFrameSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(8);
-        SFrameSection {
-            hdr,
-            header: SFrameHeader::<E>::default(),
-            fdes: Vec::new(),
-        }
+        SFrameSection { hdr, header: SFrameHeader::<E>::default(), fdes: Vec::new() }
     }
 }
 
@@ -79,11 +75,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         magic: U16::new(SFRAME_MAGIC),
         version: 3,
         flags: SFRAME_F_FDE_FUNC_START_PCREL
-            | if ctx.args.relocatable {
-                0
-            } else {
-                SFRAME_F_FDE_SORTED
-            },
+            | if ctx.args.relocatable { 0 } else { SFRAME_F_FDE_SORTED },
         abi_arch: abi,
         cfa_fixed_ra_offset: if E::FAMILY == Family::X86_64 { -8 } else { 0 },
         num_fdes: U32::new(fdes.len() as u32),
@@ -113,9 +105,7 @@ pub fn sort<E: Arch>(ctx: &mut Context<E>) {
     // each entry in that same order.
     let addr = |ctx: &Context<E>, (fi, i): (ObjId, u32)| {
         let fde = &ctx.objs[fi.index()].sframe_fdes[i as usize];
-        ctx.symbols[fde.sym]
-            .addr(ctx)
-            .wrapping_add(fde.addend as u64)
+        ctx.symbols[fde.sym].addr(ctx).wrapping_add(fde.addend as u64)
     };
     let mut fdes = std::mem::take(&mut ctx.sframe.fdes);
     fdes.sort_by_key(|&f| addr(ctx, f));
@@ -146,9 +136,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         let func_start_offset = if ctx.args.relocatable {
             0
         } else {
-            let func_addr = ctx.symbols[fde.sym]
-                .addr(ctx)
-                .wrapping_add(fde.addend as u64);
+            let func_addr = ctx.symbols[fde.sym].addr(ctx).wrapping_add(fde.addend as u64);
             let field_addr =
                 sframe.hdr.shdr.sh_addr.get() + hdr_size as u64 + (i * idx_size) as u64;
             func_addr.wrapping_sub(field_addr) as i64

@@ -21,14 +21,9 @@ pub struct RelocSection<E: Layout> {
 
 pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
     let osec = &ctx.output_sections[osec_id.index()];
-    let (prefix, ty) = if E::IS_RELA {
-        (b".rela".as_slice(), SHT_RELA)
-    } else {
-        (b".rel".as_slice(), SHT_REL)
-    };
-    let name = BStr::new(crate::util::leak_bytes(
-        [prefix, osec.hdr.name.as_ref()].concat(),
-    ));
+    let (prefix, ty) =
+        if E::IS_RELA { (b".rela".as_slice(), SHT_RELA) } else { (b".rel".as_slice(), SHT_REL) };
+    let name = BStr::new(crate::util::leak_bytes([prefix, osec.hdr.name.as_ref()].concat()));
     let mut hdr = ChunkHeader::<E>::with_name(name, ty, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
@@ -44,11 +39,7 @@ pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<
         sum += isec.rels(file).len() as u64;
     }
     hdr.shdr.sh_size.set(sum * entsize);
-    RelocSection {
-        hdr,
-        output_section: osec_id,
-        offsets,
-    }
+    RelocSection { hdr, output_section: osec_id, offsets }
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
@@ -95,10 +86,7 @@ fn symidx_addend<'a, E: Arch>(
     if !isec.is_alloc() {
         if let Some((frag, addend)) = isec.fragment(ctx, rel, cache) {
             let msec = &ctx.merged_sections[frag.section.index()];
-            return (
-                msec.hdr.shndx,
-                msec.fragments.get(frag.entry).offset() as i64 + addend,
-            );
+            return (msec.hdr.shndx, msec.fragments.get(frag.entry).offset() as i64 + addend);
         }
     }
 
@@ -133,10 +121,7 @@ mod tests {
         esym.set_type(STT_SECTION);
         sym.set_esym(&esym);
 
-        assert_eq!(
-            output_symidx_addend(&ctx, &sym, || panic!("read discarded relocation")),
-            None
-        );
+        assert_eq!(output_symidx_addend(&ctx, &sym, || panic!("read discarded relocation")), None);
     }
 }
 
@@ -166,11 +151,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Opt
             // than in r_addend, and the relocation records we emit here are
             // meant to be consumed as if they were in an object file, so we
             // follow that convention.
-            let out_addend = if E::FAMILY == crate::arch::Family::Sh4 {
-                0
-            } else {
-                addend
-            };
+            let out_addend = if E::FAMILY == crate::arch::Family::Sh4 { 0 } else { addend };
             out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
 
             if ctx.args.relocatable {

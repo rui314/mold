@@ -41,12 +41,7 @@ impl<E: Arch> GnuHashSection<E> {
     pub fn new() -> GnuHashSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".gnu.hash", SHT_GNU_HASH, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        GnuHashSection {
-            hdr,
-            num_buckets: 0,
-            num_bloom: 1,
-            num_exported: 0,
-        }
+        GnuHashSection { hdr, num_buckets: 0, num_bloom: 1, num_exported: 0 }
     }
 }
 
@@ -63,9 +58,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let word = E::WORD_SIZE as u64;
     let gh = ctx.gnu_hash.as_mut().unwrap();
     // We allocate 12 bits for each symbol in the bloom filter.
-    gh.num_bloom = ((gh.num_exported as u64 * 12) / (word * 8))
-        .max(1)
-        .next_power_of_two() as u32;
+    gh.num_bloom = ((gh.num_exported as u64 * 12) / (word * 8)).max(1).next_power_of_two() as u32;
     gh.hdr.shdr.sh_size.set(
         GnuHashSection::<E>::HEADER_SIZE
             + gh.num_bloom as u64 * word // Bloom filter
@@ -125,10 +118,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         // least-significant bit 1.
         let h = ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash;
         let last = i + 1 == syms.len() || indices[i] != indices[i + 1];
-        E::Endian::write_u32(
-            &mut buf[table_off + i * 4..],
-            if last { h | 1 } else { h & !1 },
-        );
+        E::Endian::write_u32(&mut buf[table_off + i * 4..], if last { h | 1 } else { h & !1 });
     }
 }
 

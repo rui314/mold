@@ -191,11 +191,7 @@ impl<E: Endian> U24<E> {
 
     #[inline(always)]
     pub fn set(&mut self, value: u32) {
-        let bytes = if E::IS_LITTLE {
-            value.to_le_bytes()
-        } else {
-            value.to_be_bytes()
-        };
+        let bytes = if E::IS_LITTLE { value.to_le_bytes() } else { value.to_be_bytes() };
         if E::IS_LITTLE {
             self.bytes.copy_from_slice(&bytes[..3]);
         } else {

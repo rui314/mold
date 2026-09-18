@@ -78,24 +78,19 @@ fn encode_path(basedir: &OsStr, path: &Path) -> Vec<u8> {
 
 impl TarWriter {
     pub fn open(output_path: &Path, basedir: &OsStr) -> io::Result<TarWriter> {
-        Ok(TarWriter {
-            out: File::create(output_path)?,
-            basedir: basedir.to_os_string(),
-        })
+        Ok(TarWriter { out: File::create(output_path)?, basedir: basedir.to_os_string() })
     }
 
     pub fn append(&mut self, path: &Path, data: &[u8]) -> io::Result<()> {
         let attr = encode_path(&self.basedir, path);
         // Write PAX header
-        self.out
-            .write_all(&ustar_header(b"/", b"", attr.len() as u64, b'x'))?;
+        self.out.write_all(&ustar_header(b"/", b"", attr.len() as u64, b'x'))?;
         // Write pathname
         self.out.write_all(&attr)?;
         self.pad()?;
 
         // Write Ustar header
-        self.out
-            .write_all(&ustar_header(b"", b"0000664", data.len() as u64, b'0'))?;
+        self.out.write_all(&ustar_header(b"", b"0000664", data.len() as u64, b'0'))?;
         // Write file contents
         self.out.write_all(data)?;
         self.pad()?;

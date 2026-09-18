@@ -44,12 +44,8 @@ pub fn acquire_global_lock() {
         let name = String::from_utf8_lossy(&name);
         std::path::PathBuf::from(format!("/tmp/mold-lock-{name}"))
     };
-    let Ok(file) = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .open(path)
+    let Ok(file) =
+        OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(path)
     else {
         return;
     };

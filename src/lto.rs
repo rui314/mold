@@ -138,17 +138,11 @@ struct TagValue {
 
 impl TagValue {
     fn int(tag: c_int, val: c_int) -> TagValue {
-        TagValue {
-            tag,
-            data: TagData { val },
-        }
+        TagValue { tag, data: TagData { val } }
     }
 
     fn ptr(tag: c_int, ptr: *const c_void) -> TagValue {
-        TagValue {
-            tag,
-            data: TagData { ptr },
-        }
+        TagValue { tag, data: TagData { ptr } }
     }
 }
 
@@ -483,10 +477,7 @@ unsafe fn get_symbols<E: Arch>(
     let ctx = &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>);
     let psyms = std::slice::from_raw_parts_mut(psyms, nsyms as usize);
     let handle = handle as *const MappedFile;
-    let Some(file) = ctx
-        .objs
-        .iter()
-        .find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
+    let Some(file) = ctx.objs.iter().find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {
         return LDPS_BAD_HANDLE;
     };
@@ -550,9 +541,7 @@ unsafe extern "C" fn get_api_version(
     // The plugin reads the string after this function has returned
     static LINKER_VERSION: OnceLock<CString> = OnceLock::new();
     *linker_identifier = c"mold".as_ptr();
-    *linker_version = LINKER_VERSION
-        .get_or_init(|| CString::new(VERSION).unwrap())
-        .as_ptr();
+    *linker_version = LINKER_VERSION.get_or_init(|| CString::new(VERSION).unwrap()).as_ptr();
     if LAPI_V1 <= maximal_api_supported {
         HOOKS.lock().unwrap().gcc_api_v1 = true;
         return LAPI_V1;
@@ -625,11 +614,7 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         }
         let onload = dynamic_symbol(handle, c"onload".as_ptr());
         if onload.is_null() {
-            fatal!(
-                "failed to load plugin {}: {}",
-                ctx.args.plugin.display(),
-                dlerror_string()
-            );
+            fatal!("failed to load plugin {}: {}", ctx.args.plugin.display(), dlerror_string());
         }
         std::mem::transmute::<*mut c_void, OnloadFn>(onload)
     };
@@ -652,18 +637,12 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         tv.push(TagValue::ptr(LDPT_OPTION, cstr(opt)));
     }
     tv.extend([
-        TagValue::ptr(
-            LDPT_REGISTER_CLAIM_FILE_HOOK,
-            register_claim_file_hook as *const c_void,
-        ),
+        TagValue::ptr(LDPT_REGISTER_CLAIM_FILE_HOOK, register_claim_file_hook as *const c_void),
         TagValue::ptr(
             LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK,
             register_all_symbols_read_hook as *const c_void,
         ),
-        TagValue::ptr(
-            LDPT_REGISTER_CLEANUP_HOOK,
-            register_cleanup_hook as *const c_void,
-        ),
+        TagValue::ptr(LDPT_REGISTER_CLEANUP_HOOK, register_cleanup_hook as *const c_void),
         TagValue::ptr(LDPT_ADD_SYMBOLS, add_symbols as *const c_void),
         TagValue::ptr(LDPT_GET_SYMBOLS, get_symbols_v1 as *const c_void),
         TagValue::ptr(LDPT_ADD_INPUT_FILE, add_input_file::<E> as *const c_void),
@@ -672,39 +651,17 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
         TagValue::ptr(LDPT_ADD_INPUT_LIBRARY, add_input_library as *const c_void),
         TagValue::ptr(
             LDPT_OUTPUT_NAME,
-            CString::new(ctx.args.output.as_os_str().as_encoded_bytes())
-                .unwrap()
-                .into_raw() as *const c_void,
+            CString::new(ctx.args.output.as_os_str().as_encoded_bytes()).unwrap().into_raw()
+                as *const c_void,
         ),
-        TagValue::ptr(
-            LDPT_SET_EXTRA_LIBRARY_PATH,
-            set_extra_library_path as *const c_void,
-        ),
+        TagValue::ptr(LDPT_SET_EXTRA_LIBRARY_PATH, set_extra_library_path as *const c_void),
         TagValue::ptr(LDPT_GET_VIEW, get_view as *const c_void),
-        TagValue::ptr(
-            LDPT_GET_INPUT_SECTION_COUNT,
-            get_input_section_count as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_GET_INPUT_SECTION_TYPE,
-            get_input_section_type as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_GET_INPUT_SECTION_NAME,
-            get_input_section_name as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_GET_INPUT_SECTION_CONTENTS,
-            get_input_section_contents as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_UPDATE_SECTION_ORDER,
-            update_section_order as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_ALLOW_SECTION_ORDERING,
-            allow_section_ordering as *const c_void,
-        ),
+        TagValue::ptr(LDPT_GET_INPUT_SECTION_COUNT, get_input_section_count as *const c_void),
+        TagValue::ptr(LDPT_GET_INPUT_SECTION_TYPE, get_input_section_type as *const c_void),
+        TagValue::ptr(LDPT_GET_INPUT_SECTION_NAME, get_input_section_name as *const c_void),
+        TagValue::ptr(LDPT_GET_INPUT_SECTION_CONTENTS, get_input_section_contents as *const c_void),
+        TagValue::ptr(LDPT_UPDATE_SECTION_ORDER, update_section_order as *const c_void),
+        TagValue::ptr(LDPT_ALLOW_SECTION_ORDERING, allow_section_ordering as *const c_void),
         TagValue::ptr(LDPT_ADD_SYMBOLS_V2, add_symbols as *const c_void),
         TagValue::ptr(LDPT_GET_SYMBOLS_V2, get_symbols_v2::<E> as *const c_void),
         TagValue::ptr(
@@ -720,14 +677,8 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
             LDPT_GET_INPUT_SECTION_ALIGNMENT,
             get_input_section_alignment as *const c_void,
         ),
-        TagValue::ptr(
-            LDPT_GET_INPUT_SECTION_SIZE,
-            get_input_section_size as *const c_void,
-        ),
-        TagValue::ptr(
-            LDPT_REGISTER_NEW_INPUT_HOOK,
-            register_new_input_hook as *const c_void,
-        ),
+        TagValue::ptr(LDPT_GET_INPUT_SECTION_SIZE, get_input_section_size as *const c_void),
+        TagValue::ptr(LDPT_REGISTER_NEW_INPUT_HOOK, register_new_input_hook as *const c_void),
         TagValue::ptr(LDPT_GET_WRAP_SYMBOLS, get_wrap_symbols as *const c_void),
         TagValue::ptr(LDPT_GET_API_VERSION, get_api_version as *const c_void),
         TagValue::int(LDPT_NULL, 0),
@@ -760,9 +711,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
     let file = File::open(&container.name)
         .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name.display()));
     let input = PluginInputFile {
-        name: CString::new(container.name.as_os_str().as_encoded_bytes())
-            .unwrap()
-            .into_raw(),
+        name: CString::new(container.name.as_os_str().as_encoded_bytes()).unwrap().into_raw(),
         #[cfg(not(windows))]
         fd: file.as_raw_fd(),
         #[cfg(windows)]
@@ -830,13 +779,7 @@ pub fn read_lto_object<E: Arch>(
         comdat_keys.push(sym.comdat_key.map(leak_bytes));
     }
     // Create mold's object instance
-    Some(ObjectFile::<E>::lto_input(
-        mf,
-        archive_name,
-        elf_syms,
-        leak_bytes(strtab),
-        comdat_keys,
-    ))
+    Some(ObjectFile::<E>::lto_input(mf, archive_name, elf_syms, leak_bytes(strtab), comdat_keys))
 }
 
 /// This function restarts mold itself with `--:lto-pass2` and
@@ -854,11 +797,8 @@ pub fn read_lto_object<E: Arch>(
 ///
 /// This is an ugly hack and should be removed once GCC adopts the v3 API.
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
-    let mut args: Vec<Cow<'_, OsStr>> = ctx
-        .cmdline_args
-        .iter()
-        .map(|arg| Cow::Borrowed(arg.as_ref()))
-        .collect();
+    let mut args: Vec<Cow<'_, OsStr>> =
+        ctx.cmdline_args.iter().map(|arg| Cow::Borrowed(arg.as_ref())).collect();
     for file in &ctx.objs {
         if file.is_lto_input() && !file.base.is_reachable() {
             let mut arg = OsString::from("--:ignore-ir-file=");
@@ -876,10 +816,8 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
     #[cfg(windows)]
     let err = {
         let path = CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
-        let args: Vec<CString> = args
-            .iter()
-            .map(|arg| CString::new(arg.as_encoded_bytes()).unwrap())
-            .collect();
+        let args: Vec<CString> =
+            args.iter().map(|arg| CString::new(arg.as_encoded_bytes()).unwrap()).collect();
         let mut argv: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
         argv.push(ptr::null());
         // SAFETY: path and every argument are NUL-terminated and argv ends in null.
@@ -924,9 +862,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         let id = ctx.symbols.get_or_intern(name);
         ctx.symbols[id].set_referenced_by_regular_obj(true);
         for prefix in [b"__wrap_", b"__real_"] {
-            let id = ctx
-                .symbols
-                .get_or_intern(&[prefix, name.as_slice()].concat());
+            let id = ctx.symbols.get_or_intern(&[prefix, name.as_slice()].concat());
             ctx.symbols[id].set_referenced_by_regular_obj(true);
         }
     }
@@ -939,11 +875,8 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
     // Object files containing .gnu.offload_lto_.* sections need to be
     // given to the LTO backend. Such sections contains code and data for
     // peripherails (typically GPUs).
-    let claim_file = HOOKS
-        .lock()
-        .unwrap()
-        .claim_file
-        .expect("the plugin registered a claim_file hook");
+    let claim_file =
+        HOOKS.lock().unwrap().claim_file.expect("the plugin registered a claim_file hook");
     for file in &ctx.objs {
         if file.base.is_reachable() && !file.is_lto_input() && file.is_gcc_offload_obj {
             let (input, _file) = plugin_input_file(file.base.mf.unwrap());

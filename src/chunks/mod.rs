@@ -197,10 +197,7 @@ impl<E: Layout> ChunkHeader<E> {
     }
 
     pub fn with_name(name: &'static BStr, sh_type: u32, sh_flags: u64) -> ChunkHeader<E> {
-        ChunkHeader {
-            name,
-            ..ChunkHeader::<E>::new("", sh_type, sh_flags)
-        }
+        ChunkHeader { name, ..ChunkHeader::<E>::new("", sh_type, sh_flags) }
     }
 
     pub fn is_alloc(&self) -> bool {
@@ -242,10 +239,7 @@ impl<E: Arch> OutputPhdr<E> {
     pub fn new(sh_flags: u64) -> OutputPhdr<E> {
         let mut hdr = ChunkHeader::<E>::new("PHDR", 0, sh_flags);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        OutputPhdr {
-            hdr,
-            phdrs: Vec::new(),
-        }
+        OutputPhdr { hdr, phdrs: Vec::new() }
     }
 }
 
@@ -274,11 +268,8 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut ehdr = ElfEhdr::<E>::default();
     ehdr.e_ident[..4].copy_from_slice(b"\x7fELF");
     ehdr.e_ident[EI_CLASS as usize] = if E::IS_64 { ELFCLASS64 } else { ELFCLASS32 } as u8;
-    ehdr.e_ident[EI_DATA as usize] = if E::IS_LITTLE_ENDIAN {
-        ELFDATA2LSB
-    } else {
-        ELFDATA2MSB
-    } as u8;
+    ehdr.e_ident[EI_DATA as usize] =
+        if E::IS_LITTLE_ENDIAN { ELFDATA2LSB } else { ELFDATA2MSB } as u8;
     ehdr.e_ident[EI_VERSION as usize] = EV_CURRENT as u8;
     ehdr.e_machine.set(E::E_MACHINE as u16);
     ehdr.e_version.set(EV_CURRENT);
@@ -308,8 +299,7 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 
     if let Some(phdr) = &ctx.phdr {
         ehdr.e_phoff.set(phdr.hdr.shdr.sh_offset.get());
-        ehdr.e_phentsize
-            .set(std::mem::size_of::<ElfPhdr<E>>() as u16);
+        ehdr.e_phentsize.set(std::mem::size_of::<ElfPhdr<E>>() as u16);
         ehdr.e_phnum
             .set((phdr.hdr.shdr.sh_size.get() / std::mem::size_of::<ElfPhdr<E>>() as u64) as u16);
     }
@@ -321,11 +311,7 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         // large value there. If it is >65535, the real value is stored to
         // the zero'th section's sh_size field.
         let shnum = shdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64;
-        ehdr.e_shnum.set(if shnum <= u16::MAX as u64 {
-            shnum as u16
-        } else {
-            0
-        });
+        ehdr.e_shnum.set(if shnum <= u16::MAX as u64 { shnum as u16 } else { 0 });
     }
 
     ehdr.write(buf);
@@ -369,10 +355,7 @@ pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
     // .text is not readable if --execute-only
     if exec && ctx.args.execute_only {
         if write {
-            error!(
-                "--execute-only is not compatible with writable section: {}",
-                hdr.name
-            );
+            error!("--execute-only is not compatible with writable section: {}", hdr.name);
         }
         return PF_X;
     }
@@ -398,8 +381,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
             // significant for segments with zero on-file size. We still want to
             // keep it congruent with the virtual address modulo page size
             // because some loaders (at least FreeBSD's) are picky about it.
-            phdr.p_offset_mut()
-                .set(shdr.sh_addr.get() % ctx.args.page_size);
+            phdr.p_offset_mut().set(shdr.sh_addr.get() % ctx.args.page_size);
         } else {
             phdr.p_offset_mut().set(shdr.sh_offset.get());
             phdr.p_filesz_mut().set(shdr.sh_size.get());
@@ -563,11 +545,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // contain any segments. It controls executable bit of stack area.
     let mut stack = ElfPhdr::<E>::default();
     stack.p_type_mut().set(PT_GNU_STACK);
-    stack.p_flags_mut().set(if ctx.args.z_execstack {
-        PF_R | PF_W | PF_X
-    } else {
-        PF_R | PF_W
-    });
+    stack.p_flags_mut().set(if ctx.args.z_execstack { PF_R | PF_W | PF_X } else { PF_R | PF_W });
     stack.p_memsz_mut().set(ctx.args.z_stack_size);
     stack.p_align_mut().set(1);
     vec.push(stack);
@@ -625,10 +603,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
             vec[first].p_paddr_mut().set(addr);
             addr += vec[first].p_memsz().get();
 
-            for p in vec[first + 1..]
-                .iter_mut()
-                .take_while(|p| p.p_type().get() == PT_LOAD)
-            {
+            for p in vec[first + 1..].iter_mut().take_while(|p| p.p_type().get() == PT_LOAD) {
                 if in_sync
                     && addr <= p.p_vaddr().get()
                     && p.p_vaddr().get() < addr + ctx.args.page_size * 2
@@ -645,10 +620,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         }
     }
 
-    vec.resize(
-        vec.len() + ctx.args.spare_program_headers.max(0) as usize,
-        ElfPhdr::<E>::default(),
-    );
+    vec.resize(vec.len() + ctx.args.spare_program_headers.max(0) as usize, ElfPhdr::<E>::default());
     vec
 }
 

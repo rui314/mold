@@ -93,10 +93,7 @@ fn new_shared_file<E: Arch>(
     mf: &'static MappedFile,
 ) -> SharedFile<E> {
     if rctx.is_static {
-        fatal!(
-            "{}: attempted static link of a dynamic object",
-            mf.name.display()
-        );
+        fatal!("{}: attempted static link of a dynamic object", mf.name.display());
     }
     check_machine_type(ctx, mf);
     let mut file = SharedFile::<E>::new(mf, &mut ctx.symbol_bin());
@@ -180,13 +177,11 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
             let file = new_object_file(ctx, rctx, mf, Path::new(""));
-            ctx.pending_files
-                .push(Loaded::Obj(rctx.pos.clone(), Box::new(file)));
+            ctx.pending_files.push(Loaded::Obj(rctx.pos.clone(), Box::new(file)));
         }
         FileType::ElfDso => {
             let file = new_shared_file(ctx, rctx, mf);
-            ctx.pending_files
-                .push(Loaded::Dso(rctx.pos.clone(), Box::new(file)));
+            ctx.pending_files.push(Loaded::Dso(rctx.pos.clone(), Box::new(file)));
         }
         FileType::Ar | FileType::ThinAr => {
             for child in archive_file::read_archive_members(&ctx.args.chroot, mf) {
@@ -424,8 +419,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     lto_jobs.sort_by(|(a, ..), (b, ..)| a.pos.cmp(&b.pos));
     for (rctx, mf, archive_name) in lto_jobs {
         if let Some(file) = new_lto_object(ctx, &rctx, mf, archive_name) {
-            ctx.pending_files
-                .push(Loaded::Obj(rctx.pos, Box::new(file)));
+            ctx.pending_files.push(Loaded::Obj(rctx.pos, Box::new(file)));
         }
     }
 

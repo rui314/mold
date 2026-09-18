@@ -11,11 +11,8 @@ use crate::input_files::ObjectFile;
 // EhFrameRelocSection contains relocation records for .eh_frame. It is used
 // only for relocatable outputs (an .o file rather than an executable or .so).
 pub fn new_header<E: Arch>() -> ChunkHeader<E> {
-    let (name, ty) = if E::IS_RELA {
-        (".rela.eh_frame", SHT_RELA)
-    } else {
-        (".rel.eh_frame", SHT_REL)
-    };
+    let (name, ty) =
+        if E::IS_RELA { (".rela.eh_frame", SHT_RELA) } else { (".rel.eh_frame", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
@@ -28,12 +25,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         .objs
         .par_iter()
         .map(|file| {
-            let cies: usize = file
-                .cies
-                .iter()
-                .filter(|c| c.is_leader)
-                .map(|c| c.rels(file).len())
-                .sum();
+            let cies: usize =
+                file.cies.iter().filter(|c| c.is_leader).map(|c| c.rels(file).len()).sum();
             let fdes: usize = file.fdes.iter().map(|f| f.rels(file).len()).sum();
             cies + fdes
         })

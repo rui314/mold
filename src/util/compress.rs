@@ -142,7 +142,6 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
 
 impl Compressor {
     pub fn zlib(input: &[u8], level: u32) -> Compressor {
-
         // Compress each shard
         let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
             .par_chunks(SHARD_SIZE)

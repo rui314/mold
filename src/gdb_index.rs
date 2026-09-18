@@ -94,10 +94,7 @@ struct NameType {
 
 impl NameType {
     fn new(hash: u64, kind: u8, name: &'static [u8]) -> NameType {
-        NameType {
-            hash_and_type: (hash << 8) | kind as u64,
-            name: name.as_ptr() as usize,
-        }
+        NameType { hash_and_type: (hash << 8) | kind as u64, name: name.as_ptr() as usize }
     }
 
     fn hash(self) -> u64 {
@@ -141,9 +138,7 @@ union NameRecord {
 
 impl NameRecord {
     fn new(hash: u64, kind: u8, name: &'static [u8]) -> NameRecord {
-        NameRecord {
-            nametype: NameType::new(hash, kind, name),
-        }
+        NameRecord { nametype: NameType::new(hash, kind, name) }
     }
 
     fn nametype(self) -> NameType {
@@ -251,11 +246,7 @@ struct Reader<'a, E: Arch> {
 
 impl<'a, E: Arch> Reader<'a, E> {
     fn new(data: &'a [u8], pos: usize) -> Reader<'a, E> {
-        Reader {
-            data,
-            pos,
-            marker: std::marker::PhantomData,
-        }
+        Reader { data, pos, marker: std::marker::PhantomData }
     }
 
     fn take(&mut self, n: usize) -> &'a [u8] {
@@ -567,10 +558,8 @@ fn read_address_ranges<E: Arch>(secs: &RangeSections, cu: &Compunit) -> Vec<(u64
         let Some(list_base) = rnglists_base else {
             fatal!("--gdb-index: missing DW_AT_rnglists_base");
         };
-        let mut entry = Reader::<E>::new(
-            secs.rnglists,
-            (list_base + val * hdr.offset_size as u64) as usize,
-        );
+        let mut entry =
+            Reader::<E>::new(secs.rnglists, (list_base + val * hdr.offset_size as u64) as usize);
         let offset = entry.offset(hdr.offset_size);
         let mut r = Reader::<E>::new(secs.rnglists, (list_base + offset) as usize);
         return read_rnglist::<E>(&mut r, addrx, base);
@@ -661,22 +650,12 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress(
-                    &display_file(&filename, archive_name),
-                    section_name,
-                    input_size,
-                );
-                debug_info.push(DebugInfoInput {
-                    shndx,
-                    contents: isec.contents(),
-                });
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
+                debug_info.push(DebugInfoInput { shndx, contents: isec.contents() });
             }
 
             let mut pubnames = Vec::new();
-            for shndx in [file.debug_pubnames, file.debug_pubtypes]
-                .into_iter()
-                .flatten()
-            {
+            for shndx in [file.debug_pubnames, file.debug_pubtypes].into_iter().flatten() {
                 let Some(section_name) = file.section(shndx as usize).map(|isec| isec.name(file))
                 else {
                     continue;
@@ -685,11 +664,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress(
-                    &display_file(&filename, archive_name),
-                    section_name,
-                    input_size,
-                );
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();
@@ -706,23 +681,14 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                         });
                     }
                 }
-                pubnames.push(PubnamesInput {
-                    contents: isec.contents(),
-                    relocations,
-                });
+                pubnames.push(PubnamesInput { contents: isec.contents(), relocations });
             }
 
             if debug_info.is_empty() && pubnames.is_empty() {
                 return None;
             }
 
-            Some(GdbInputFile {
-                file: file_id,
-                filename,
-                archive_name,
-                debug_info,
-                pubnames,
-            })
+            Some(GdbInputFile { file: file_id, filename, archive_name, debug_info, pubnames })
         })
         .collect()
 }
@@ -780,16 +746,10 @@ fn pubnames_unit<'a>(
 
     // Units are appended in input section and contribution offset order, so both
     // the CU and TU vectors are sorted by this key.
-    if let Ok(i) = units
-        .cus
-        .binary_search_by_key(&key, |cu| (cu.shndx, cu.offset))
-    {
+    if let Ok(i) = units.cus.binary_search_by_key(&key, |cu| (cu.shndx, cu.offset)) {
         return Some(&mut units.cus[i].names);
     }
-    if let Ok(i) = units
-        .tus
-        .binary_search_by_key(&key, |tu| (tu.shndx, tu.offset))
-    {
+    if let Ok(i) = units.tus.binary_search_by_key(&key, |tu| (tu.shndx, tu.offset)) {
         return Some(&mut units.tus[i].names);
     }
     None
@@ -832,11 +792,7 @@ fn read_pubnames<E: Arch>(file: &GdbInputFile, units: &mut FileUnits) {
                 }
                 let kind = r.u8();
                 let name = r.cstr();
-                names.push(NameRecord::new(
-                    xxhash_rust::xxh3::xxh3_64(name),
-                    kind,
-                    name,
-                ));
+                names.push(NameRecord::new(xxhash_rust::xxh3::xxh3_64(name), kind, name));
             }
             pos = end;
         }
@@ -894,10 +850,7 @@ fn initialize_gdb_name(name: *const u8) -> (u32, NameEntry) {
         if c.is_ascii_uppercase() {
             c = c.to_ascii_lowercase();
         }
-        hash = hash
-            .wrapping_mul(67)
-            .wrapping_add(c as u32)
-            .wrapping_sub(113);
+        hash = hash.wrapping_mul(67).wrapping_add(c as u32).wrapping_sub(113);
         size += 1;
     }
     (
@@ -1047,20 +1000,17 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
             offset
         })
         .collect();
-    entries
-        .par_chunks(chunk_size)
-        .zip(chunk_offsets)
-        .for_each(|(chunk, mut size)| {
-            for &entry_ref in chunk {
-                // SAFETY: entries contains each map entry exactly once, so
-                // parallel chunks update disjoint values.
-                let entry = unsafe { &mut *entry_ref.value_mut_ptr(&names) };
-                entry.type_vector_offset = size.type_bytes;
-                entry.name_offset = pool_size.type_bytes + size.name_bytes;
-                size.type_bytes += entry.count.load(Ordering::Relaxed) * 4 + 4;
-                size.name_bytes += entry_ref.key_len(&names) as u32 + 1;
-            }
-        });
+    entries.par_chunks(chunk_size).zip(chunk_offsets).for_each(|(chunk, mut size)| {
+        for &entry_ref in chunk {
+            // SAFETY: entries contains each map entry exactly once, so
+            // parallel chunks update disjoint values.
+            let entry = unsafe { &mut *entry_ref.value_mut_ptr(&names) };
+            entry.type_vector_offset = size.type_bytes;
+            entry.name_offset = pool_size.type_bytes + size.name_bytes;
+            size.type_bytes += entry.count.load(Ordering::Relaxed) * 4 + 4;
+            size.name_bytes += entry_ref.key_len(&names) as u32 + 1;
+        }
+    });
     let ht_size = (entries.len() as u32 * 5 / 4 + 1).next_power_of_two();
     GdbIndexData {
         cus,
@@ -1111,15 +1061,12 @@ fn limited_parallel_for_mut_init<T: Send, S: Send>(
 
     let workers = workers.max(1).min(values.len());
     let chunk_size = values.len().div_ceil(workers);
-    values
-        .par_chunks_mut(chunk_size)
-        .enumerate()
-        .for_each(|(chunk_idx, chunk)| {
-            let mut state = init();
-            for (i, value) in chunk.iter_mut().enumerate() {
-                op(&mut state, chunk_idx * chunk_size + i, value);
-            }
-        });
+    values.par_chunks_mut(chunk_size).enumerate().for_each(|(chunk_idx, chunk)| {
+        let mut state = init();
+        for (i, value) in chunk.iter_mut().enumerate() {
+            op(&mut state, chunk_idx * chunk_size + i, value);
+        }
+    });
 }
 
 /// Build the name lookup table and the constant pool for .gdb_index. They
@@ -1197,39 +1144,34 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
 
     // Prefix each type vector with its length and sort it for deterministic
     // output. Store the NUL-terminated name at its assigned string-pool offset.
-    limited_parallel_for_mut_init(
-        &mut data.entries,
-        workers,
-        Vec::new,
-        |scratch, _, entry_ref| {
-            let entry_ref = *entry_ref;
-            let entry = entry_ref.value(names);
-            let count = entry.count.load(Ordering::Relaxed);
-            let words = (pool_addr as *mut u32).wrapping_add(entry.type_vector_offset as usize / 4);
-            // SAFETY: every occurrence filled its distinct value slot above;
-            // writing the prefix completes this vector before a slice is made.
-            unsafe { words.write(count) };
-            let values = unsafe { std::slice::from_raw_parts_mut(words.add(1), count as usize) };
-            if values.len() < 256 {
-                values.sort_unstable();
-            } else {
-                radix_sort(values, scratch);
-            }
-            // SAFETY: the prefix and all count values are now initialized.
-            let words = unsafe { std::slice::from_raw_parts_mut(words, count as usize + 1) };
-            for word in &mut *words {
-                *word = word.to_le();
-            }
-            let key = entry_ref.key(names);
-            let name = (pool_addr as *mut u8).wrapping_add(entry.name_offset as usize);
-            // SAFETY: prefix-scan offsets assign this entry a distinct
-            // key.len()+1 byte range in the name pool.
-            unsafe {
-                name.copy_from_nonoverlapping(key.as_ptr(), key.len());
-                name.add(key.len()).write(0);
-            }
-        },
-    );
+    limited_parallel_for_mut_init(&mut data.entries, workers, Vec::new, |scratch, _, entry_ref| {
+        let entry_ref = *entry_ref;
+        let entry = entry_ref.value(names);
+        let count = entry.count.load(Ordering::Relaxed);
+        let words = (pool_addr as *mut u32).wrapping_add(entry.type_vector_offset as usize / 4);
+        // SAFETY: every occurrence filled its distinct value slot above;
+        // writing the prefix completes this vector before a slice is made.
+        unsafe { words.write(count) };
+        let values = unsafe { std::slice::from_raw_parts_mut(words.add(1), count as usize) };
+        if values.len() < 256 {
+            values.sort_unstable();
+        } else {
+            radix_sort(values, scratch);
+        }
+        // SAFETY: the prefix and all count values are now initialized.
+        let words = unsafe { std::slice::from_raw_parts_mut(words, count as usize + 1) };
+        for word in &mut *words {
+            *word = word.to_le();
+        }
+        let key = entry_ref.key(names);
+        let name = (pool_addr as *mut u8).wrapping_add(entry.name_offset as usize);
+        // SAFETY: prefix-scan offsets assign this entry a distinct
+        // key.len()+1 byte range in the name pool.
+        unsafe {
+            name.copy_from_nonoverlapping(key.as_ptr(), key.len());
+            name.add(key.len()).write(0);
+        }
+    });
 
     // Box<[u32]> rounds the byte allocation up to a whole word; initialize only
     // those padding bytes, which are not part of the serialized tables.
@@ -1269,13 +1211,8 @@ pub fn build_tables_now<E: Arch>(ctx: &mut Context<E>) {
     ctx.gdb_index_data = Some(build_tables(timer, data, rayon::current_num_threads()));
 }
 
-const RANGE_SECTION_NAMES: [&[u8]; 5] = [
-    b".debug_info",
-    b".debug_abbrev",
-    b".debug_ranges",
-    b".debug_addr",
-    b".debug_rnglists",
-];
+const RANGE_SECTION_NAMES: [&[u8]; 5] =
+    [b".debug_info", b".debug_abbrev", b".debug_ranges", b".debug_addr", b".debug_rnglists"];
 
 /// Whether GDB index construction needs a section's relocated contents.
 pub(crate) fn needs_section_contents(name: &[u8]) -> bool {
@@ -1291,10 +1228,7 @@ fn section_contents<'a, E: Arch>(ctx: &'a Context<E>, buf: &'a [u8], name: &[u8]
             continue;
         }
         if let ChunkId::Compressed(i) = id {
-            return ctx.compressed_sections[i as usize]
-                .uncompressed_data
-                .as_deref()
-                .unwrap_or(&[]);
+            return ctx.compressed_sections[i as usize].uncompressed_data.as_deref().unwrap_or(&[]);
         }
         return &buf[hdr.shdr.sh_offset.get() as usize
             ..(hdr.shdr.sh_offset.get() + hdr.shdr.sh_size.get()) as usize];
@@ -1326,13 +1260,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         let buf = output.buf();
         let [info, abbrev, ranges, addr, rnglists] =
             RANGE_SECTION_NAMES.map(|name| section_contents(ctx, buf, name));
-        let secs = RangeSections {
-            info,
-            abbrev,
-            ranges,
-            addr,
-            rnglists,
-        };
+        let secs = RangeSections { info, abbrev, ranges, addr, rnglists };
         data.cus.par_iter_mut().for_each(|cu| {
             cu.ranges = read_address_ranges::<E>(&secs, cu);
             cu.ranges.retain(|&(start, end)| start != 0 && start != end);
@@ -1406,10 +1334,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     data.cus
         .par_iter()
         .enumerate()
-        .zip(split_at_offsets(
-            &mut buf[ranges_offset..symtab_offset],
-            &range_offsets,
-        ))
+        .zip(split_at_offsets(&mut buf[ranges_offset..symtab_offset], &range_offsets))
         .for_each(|((i, cu), buf)| {
             for (range, entry) in cu.ranges.iter().zip(buf.chunks_exact_mut(20)) {
                 entry[..8].copy_from_slice(&range.0.to_le_bytes());
@@ -1420,10 +1345,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
 
     let symtab_size = data.ht_size as usize * 8;
     let tables = words_as_bytes(&data.tables);
-    parallel_copy(
-        &mut buf[symtab_offset..symtab_offset + symtab_size],
-        &tables[..symtab_size],
-    );
+    parallel_copy(&mut buf[symtab_offset..symtab_offset + symtab_size], &tables[..symtab_size]);
     parallel_copy(
         &mut buf[const_pool_offset..size],
         &tables[symtab_size..symtab_size + size - const_pool_offset],

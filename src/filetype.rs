@@ -25,9 +25,8 @@ fn is_text_file(data: &[u8]) -> bool {
 
 /// Whether an ELF relocatable object is really a GCC LTO object.
 fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
-    let Some(ehdr) = data
-        .get(..std::mem::size_of::<ElfEhdr<E>>())
-        .map(record_from_bytes::<ElfEhdr<E>>)
+    let Some(ehdr) =
+        data.get(..std::mem::size_of::<ElfEhdr<E>>()).map(record_from_bytes::<ElfEhdr<E>>)
     else {
         return false;
     };
@@ -76,9 +75,7 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
         ehdr.e_shstrndx.get() as usize
     };
     let shstrtab_offset = if has_gcc_plugin {
-        shdrs
-            .get(shstrtab_idx)
-            .map(|shdr| shdr.sh_offset.get() as usize)
+        shdrs.get(shstrtab_idx).map(|shdr| shdr.sh_offset.get() as usize)
     } else {
         None
     };
@@ -162,11 +159,7 @@ pub fn get_file_type(plugin: &std::path::Path, mf: &MappedFile) -> FileType {
                 (false, true) => is_gcc_lto_obj::<arch::M68k>(data, has_gcc_plugin),
                 (false, false) => is_gcc_lto_obj::<arch::Sparc64>(data, has_gcc_plugin),
             };
-            return if is_lto {
-                FileType::GccLtoObj
-            } else {
-                FileType::ElfObj
-            };
+            return if is_lto { FileType::GccLtoObj } else { FileType::ElfObj };
         }
         if e_type == ET_DYN {
             return FileType::ElfDso;
@@ -289,10 +282,7 @@ pub fn get_machine_type(
         FileType::ElfObj | FileType::ElfDso | FileType::GccLtoObj => get_elf_target(mf.data()),
         FileType::Ar | FileType::ThinAr => archive_file::read_archive_members(chroot, mf)
             .find(|child| {
-                matches!(
-                    get_file_type(plugin, child),
-                    FileType::ElfObj | FileType::GccLtoObj
-                )
+                matches!(get_file_type(plugin, child), FileType::ElfObj | FileType::GccLtoObj)
             })
             .and_then(|child| get_elf_target(child.data())),
         _ => None,

@@ -180,9 +180,7 @@ impl DigestMap {
             // The round number wrapped around, making stale slot stamps
             // ambiguous, so reset the table. In practice, ICF converges long
             // before this point.
-            self.slots
-                .par_iter()
-                .for_each(|slot| slot.hi.store(0, Ordering::Relaxed));
+            self.slots.par_iter().for_each(|slot| slot.hi.store(0, Ordering::Relaxed));
             self.round = 1;
         }
     }
@@ -244,9 +242,7 @@ impl DigestMap {
             loop {
                 let current = SectionRef::decode(cur);
                 if candidate_priority
-                    >= ctx
-                        .section(current)
-                        .priority(&ctx.objs[current.file.index()])
+                    >= ctx.section(current).priority(&ctx.objs[current.file.index()])
                 {
                     break;
                 }
@@ -428,17 +424,8 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
         file_indices.push(file_indices.last().unwrap() + count);
     }
     let total = *file_indices.last().unwrap();
-    assert!(
-        u32::try_from(total).is_ok(),
-        "too many ICF-eligible sections"
-    );
-    let mut sections = vec![
-        SectionRef {
-            file: ObjId(0),
-            shndx: 0,
-        };
-        total
-    ];
+    assert!(u32::try_from(total).is_ok(), "too many ICF-eligible sections");
+    let mut sections = vec![SectionRef { file: ObjId(0), shndx: 0 }; total];
 
     let mut rest = sections.as_mut_slice();
     let mut section_chunks = Vec::with_capacity(ctx.objs.len());
@@ -449,25 +436,20 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
     }
 
     // Fill `sections` contents.
-    ctx.objs
-        .par_iter()
-        .zip(section_chunks.into_par_iter())
-        .enumerate()
-        .for_each(|(fi, (file, out))| {
+    ctx.objs.par_iter().zip(section_chunks.into_par_iter()).enumerate().for_each(
+        |(fi, (file, out))| {
             let base = file_indices[fi];
             let mut local = 0;
             for isec in file.input_sections() {
                 if isec.icf_index().is_some() {
                     isec.set_icf_index((base + local) as u32);
-                    out[local] = SectionRef {
-                        file: file.id(),
-                        shndx: isec.shndx,
-                    };
+                    out[local] = SectionRef { file: file.id(), shndx: isec.shndx };
                     local += 1;
                 }
             }
             debug_assert_eq!(local, out.len());
-        });
+        },
+    );
 
     sections
 }
@@ -528,17 +510,14 @@ fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
     let mut values = vec![0; *indices.last().unwrap() as usize];
     // Split at vertex boundaries so each task owns a disjoint slice of
     // the edge array.
-    rayon::iter::split(
-        (0..sections.len(), values.as_mut_slice()),
-        |(range, out)| {
-            if range.len() <= 1 {
-                return ((range, out), None);
-            }
-            let mid = range.start + range.len() / 2;
-            let (left, right) = out.split_at_mut((indices[mid] - indices[range.start]) as usize);
-            ((range.start..mid, left), Some((mid..range.end, right)))
-        },
-    )
+    rayon::iter::split((0..sections.len(), values.as_mut_slice()), |(range, out)| {
+        if range.len() <= 1 {
+            return ((range, out), None);
+        }
+        let mid = range.start + range.len() / 2;
+        let (left, right) = out.split_at_mut((indices[mid] - indices[range.start]) as usize);
+        ((range.start..mid, left), Some((mid..range.end, right)))
+    })
     .for_each(|(range, out)| {
         let base = indices[range.start] as usize;
         let mut i = 0;
@@ -609,11 +588,7 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
         for (leader, members) in &leaders {
             writeln!(out, "selected section {}", ctx.section_display(*leader))?;
             for m in members {
-                writeln!(
-                    out,
-                    "  removing identical section {}",
-                    ctx.section_display(*m)
-                )?;
+                writeln!(out, "  removing identical section {}", ctx.section_display(*m))?;
                 saved += ctx.section(*leader).contents().len();
             }
         }
@@ -636,10 +611,7 @@ pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
     // `digests` holds the current digest of each vertex.
     let mut digests: Vec<Digest> = {
         let _t = ctx.timer("compute_digests");
-        sections
-            .par_iter()
-            .map(|&r| compute_digest(ctx, &key, r))
-            .collect()
+        sections.par_iter().map(|&r| compute_digest(ctx, &key, r)).collect()
     };
 
     let edges = gather_edges(ctx, &sections);

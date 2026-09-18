@@ -19,11 +19,7 @@ pub struct Counter {
 
 impl Counter {
     pub const fn new(name: &'static str) -> Counter {
-        Counter {
-            name,
-            value: AtomicI64::new(0),
-            registered: Once::new(),
-        }
+        Counter { name, value: AtomicI64::new(0), registered: Once::new() }
     }
 
     pub fn enable() {
@@ -152,13 +148,7 @@ fn rusage() -> (f64, f64) {
     // SAFETY: all FILETIME pointers are valid outputs and the pseudo-handle
     // returned by GetCurrentProcess is always valid in this process.
     unsafe {
-        GetProcessTimes(
-            GetCurrentProcess(),
-            &mut creation,
-            &mut exit,
-            &mut kernel,
-            &mut user,
-        );
+        GetProcessTimes(GetCurrentProcess(), &mut creation, &mut exit, &mut kernel, &mut user);
     }
     let to_secs = |time: FileTime| {
         let ticks = (u64::from(time.high) << 32) | u64::from(time.low);
@@ -175,9 +165,7 @@ impl Default for Timers {
 
 impl Timers {
     pub fn new() -> Self {
-        Timers {
-            records: Some(Arc::new(Mutex::new(Vec::new()))),
-        }
+        Timers { records: Some(Arc::new(Mutex::new(Vec::new()))) }
     }
 
     /// Skips clock reads, system calls and shared recording when --perf is off.
@@ -186,11 +174,7 @@ impl Timers {
     }
 
     fn inactive(&self) -> Timer {
-        Timer {
-            timers: self.clone(),
-            index: 0,
-            stopped: true,
-        }
+        Timer { timers: self.clone(), index: 0, stopped: true }
     }
 
     /// Starts a timer whose nesting is inferred from completed time intervals.
@@ -216,11 +200,7 @@ impl Timers {
             parent,
             children: Vec::new(),
         });
-        Timer {
-            timers: self.clone(),
-            index,
-            stopped: false,
-        }
+        Timer { timers: self.clone(), index, stopped: false }
     }
 
     fn stop(&self, index: usize) {
@@ -282,10 +262,7 @@ impl Timer {
     }
 
     pub fn handle(&self) -> TimerHandle {
-        TimerHandle {
-            timers: self.timers.clone(),
-            parent: self.index,
-        }
+        TimerHandle { timers: self.timers.clone(), parent: self.index }
     }
 
     pub fn stop(&mut self) {
@@ -326,9 +303,7 @@ mod tests {
         let mut records = timers.records.as_ref().unwrap().lock().unwrap();
         let start = records[0].start;
         for (record, (begin, end)) in
-            records
-                .iter_mut()
-                .zip([(0, 100), (10, 40), (15, 25), (20, 70), (50, 80), (60, 65)])
+            records.iter_mut().zip([(0, 100), (10, 40), (15, 25), (20, 70), (50, 80), (60, 65)])
         {
             record.start = start + std::time::Duration::from_millis(begin);
             record.end = Some(start + std::time::Duration::from_millis(end));
@@ -336,10 +311,7 @@ mod tests {
         nest_records(&mut records);
         let children: Vec<_> = records.iter().map(|r| r.children.clone()).collect();
         drop(records);
-        assert_eq!(
-            children,
-            [vec![1, 3, 4, 5], vec![2], vec![], vec![], vec![], vec![]]
-        );
+        assert_eq!(children, [vec![1, 3, 4, 5], vec![2], vec![], vec![], vec![], vec![]]);
     }
 
     #[test]
@@ -348,9 +320,7 @@ mod tests {
             let mut root = timers.start("root");
             let child = root.child("child");
             let handle = root.handle();
-            std::thread::spawn(move || drop(handle.child("background")))
-                .join()
-                .unwrap();
+            std::thread::spawn(move || drop(handle.child("background"))).join().unwrap();
             drop(child);
             root.stop();
             root.stop();

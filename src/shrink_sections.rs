@@ -55,7 +55,6 @@
 //! makes the linker implementation a bit simpler because we don't need to
 //! worry about oscillation.
 
-
 use rayon::prelude::*;
 
 use crate::arch::Arch;
@@ -117,9 +116,7 @@ pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
     let Context { objs, .. } = ctx;
     objs.par_iter_mut().zip(shrunk).for_each(|(file, shrunk)| {
         for (shndx, deltas) in shrunk {
-            let isec = file
-                .section_mut(shndx as usize)
-                .expect("no such input section");
+            let isec = file.section_mut(shndx as usize).expect("no such input section");
             isec.sh_size -= deltas.last().unwrap().delta as u64;
             isec.set_r_deltas(deltas.into_boxed_slice());
         }

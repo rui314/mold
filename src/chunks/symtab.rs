@@ -26,11 +26,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     let mut nsyms = 1u32;
 
     // Section symbols
-    nsyms += ctx
-        .chunks
-        .iter()
-        .filter(|&&id| ctx.chunk_header(id).shndx != 0)
-        .count() as u32;
+    nsyms += ctx.chunks.iter().filter(|&&id| ctx.chunk_header(id).shndx != 0).count() as u32;
 
     // Linker-synthesized symbols
     for i in 0..ctx.chunks.len() {
@@ -57,11 +53,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     }
 
     let first_global = ctx.objs.first().map_or(nsyms, |f| f.base.global_symtab_idx);
-    let size = if nsyms == 1 {
-        0
-    } else {
-        nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64
-    };
+    let size = if nsyms == 1 { 0 } else { nsyms as u64 * std::mem::size_of::<ElfSym<E>>() as u64 };
     ctx.symtab.shdr.sh_info.set(first_global);
     ctx.symtab.shdr.sh_link.set(ctx.strtab.shndx);
     ctx.symtab.shdr.sh_size.set(size);
@@ -159,15 +151,9 @@ pub fn copy_buf<E: Arch>(
     let (mut rest, mut pos) = (symtab, 0);
     let (mut xrest, mut xpos) = (xindex, 0);
     let mut entries = |(start, count): (u32, u32)| {
-        let syms = carve(
-            &mut rest,
-            &mut pos,
-            start as usize * size,
-            count as usize * size,
-        );
-        let xindex = xrest
-            .as_mut()
-            .map(|x| carve(x, &mut xpos, start as usize * 4, count as usize * 4));
+        let syms = carve(&mut rest, &mut pos, start as usize * size, count as usize * size);
+        let xindex =
+            xrest.as_mut().map(|x| carve(x, &mut xpos, start as usize * 4, count as usize * 4));
         (syms, xindex)
     };
     let locals: Vec<_> = parts.iter().map(|p| entries(p.locals)).collect();
@@ -177,12 +163,8 @@ pub fn copy_buf<E: Arch>(
         .zip(locals)
         .map(|(part, (lsyms, lx))| {
             let (gsyms, gx) = entries(part.globals);
-            let strtab = carve(
-                &mut srest,
-                &mut spos,
-                part.strtab.0 as usize,
-                part.strtab.1 as usize,
-            );
+            let strtab =
+                carve(&mut srest, &mut spos, part.strtab.0 as usize, part.strtab.1 as usize);
             let block = SymtabBlock::new(
                 SymtabEntries::new(lsyms, lx),
                 SymtabEntries::new(gsyms, gx),
@@ -193,12 +175,11 @@ pub fn copy_buf<E: Arch>(
         })
         .collect();
 
-    work.into_par_iter()
-        .for_each(|(writer, mut block)| match writer {
-            Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
-            Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
-            Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
-        });
+    work.into_par_iter().for_each(|(writer, mut block)| match writer {
+        Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
+        Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
+        Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
+    });
 }
 
 /// Splits `len` bytes starting at `start` off `rest`, which begins
@@ -335,9 +316,8 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     let m = file
                         .merge_info(file.shndx_at_in(sym.sym_idx() as usize))
                         .expect("mergeable section");
-                    let (frag, addend) = m
-                        .fragment(sym.esym(ctx).st_value().get())
-                        .expect("fragment");
+                    let (frag, addend) =
+                        m.fragment(sym.esym(ctx).st_value().get()).expect("fragment");
                     let msec = &ctx.merged_sections[m.parent.index()];
                     shndx = Some(msec.hdr.shndx);
                     esym.set_visibility(sym.visibility());
@@ -349,8 +329,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     // Symbol in a regular section
                     shndx = Some(st_shndx_of(sym, isec));
                     esym.set_visibility(sym.visibility());
-                    esym.st_value_mut()
-                        .set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+                    esym.st_value_mut().set(sym.addr_with(ctx, AddrFlags::NO_PLT));
                 }
             }
         }

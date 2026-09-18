@@ -25,10 +25,7 @@ impl<E: Layout> VersymSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version", SHT_GNU_VERSYM, SHF_ALLOC as u64);
         hdr.shdr.sh_entsize.set(2);
         hdr.shdr.sh_addralign.set(2);
-        VersymSection {
-            hdr,
-            contents: Vec::new(),
-        }
+        VersymSection { hdr, contents: Vec::new() }
     }
 }
 

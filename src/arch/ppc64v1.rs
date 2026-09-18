@@ -169,10 +169,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         let Some(opd) = file
             .input_sections()
             .find(|s| s.name(file) == ".opd")
-            .map(|s| SectionRef {
-                file: s.file,
-                shndx: s.shndx,
-            })
+            .map(|s| SectionRef { file: s.file, shndx: s.shndx })
         else {
             return;
         };
@@ -180,12 +177,8 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
         file.kill_section(opd.shndx as usize);
 
         let local_symbols = &file.base.symbols;
-        let rels_at: HashMap<u64, ElfRel<Ppc64V1>> = file
-            .section_at(opd.shndx)
-            .rels(file)
-            .iter()
-            .map(|r| (r.r_offset(), *r))
-            .collect();
+        let rels_at: HashMap<u64, ElfRel<Ppc64V1>> =
+            file.section_at(opd.shndx).rels(file).iter().map(|r| (r.r_offset(), *r)).collect();
 
         // Move symbols from .opd to .text.
         let mut descriptors: Vec<(u64, u32)> = Vec::new(); // (offset in .opd, local symbol index)
@@ -294,10 +287,7 @@ impl Arch for Ppc64V1 {
     const PLT_HDR_SIZE: u64 = 44;
     const PLT_SIZE: u64 = 8;
     const PLTGOT_SIZE: u64 = 0;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout {
-        header_size: 0,
-        entry_size: 28,
-    });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 28 });
     const TRAP: &'static [u8] = &[0x7f, 0xe0, 0x00, 0x08]; // trap
 
     const R_COPY: u32 = R_PPC64_COPY;
@@ -363,19 +353,13 @@ impl Arch for Ppc64V1 {
         if idx < 0x8000 {
             write_insns(buf, &[0x3800_0000, 0x4b00_0000]); // li r0, PLT_INDEX; b plt0
             or32(buf, idx);
-            or32(
-                &mut buf[4..],
-                plt0.wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(4) & 0x00ff_ffff,
-            );
+            or32(&mut buf[4..], plt0.wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(4) & 0x00ff_ffff);
         } else {
             // lis r0, PLT_INDEX@high; ori r0, r0, PLT_INDEX@lo; b plt0
             write_insns(buf, &[0x3c00_0000, 0x6000_0000, 0x4b00_0000]);
             or32(buf, high(idx));
             or32(&mut buf[4..], lo(idx));
-            or32(
-                &mut buf[8..],
-                plt0.wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(8) & 0x00ff_ffff,
-            );
+            or32(&mut buf[8..], plt0.wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(8) & 0x00ff_ffff);
         }
     }
 

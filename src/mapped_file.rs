@@ -102,9 +102,7 @@ impl MappedFile {
         let file = File::open(path)?;
 
         let display = path.display();
-        let metadata = file
-            .metadata()
-            .unwrap_or_else(|e| fatal!("{display}: fstat failed: {e}"));
+        let metadata = file.metadata().unwrap_or_else(|e| fatal!("{display}: fstat failed: {e}"));
         let size = metadata.len();
 
         // True if `data` is a memory mapping of the file rather than a copy of

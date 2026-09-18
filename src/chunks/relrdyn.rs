@@ -40,11 +40,7 @@ use crate::util::endian::Endian;
 //
 // .relr.dyn is designed to store base relocations in a space-efficient way.
 pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
-    let ty = if args.use_android_relr_tags {
-        SHT_ANDROID_RELR
-    } else {
-        SHT_RELR
-    };
+    let ty = if args.use_android_relr_tags { SHT_ANDROID_RELR } else { SHT_RELR };
     let mut hdr = ChunkHeader::<E>::new(".relr.dyn", ty, SHF_ALLOC as u64);
     hdr.shdr.sh_entsize.set(E::WORD_SIZE as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -57,11 +53,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
         for &val in &hdr.relr {
-            let v = if val & 1 != 0 {
-                val
-            } else {
-                hdr.shdr.sh_addr.get() + val
-            };
+            let v = if val & 1 != 0 { val } else { hdr.shdr.sh_addr.get() + val };
             if E::IS_64 {
                 E::Endian::write_u64(&mut buf[i * w..], v);
             } else {

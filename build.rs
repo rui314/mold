@@ -37,21 +37,15 @@ fn git_hash(source_dir: &Path) -> Option<String> {
             return None;
         }
         let path = PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
-        Some(if path.is_absolute() {
-            path
-        } else {
-            source_dir.join(path)
-        })
+        Some(if path.is_absolute() { path } else { source_dir.join(path) })
     };
 
     let reftable = git_path("reftable/tables.list").filter(|p| p.exists());
     if let Some(head) = git_path("HEAD").filter(|p| p.exists()) {
         println!("cargo:rerun-if-changed={}", head.display());
         if let Ok(contents) = std::fs::read_to_string(&head) {
-            if let Some(reference) = contents
-                .strip_prefix("ref: ")
-                .map(str::trim)
-                .filter(|_| reftable.is_none())
+            if let Some(reference) =
+                contents.strip_prefix("ref: ").map(str::trim).filter(|_| reftable.is_none())
             {
                 if let Some(path) = git_path(reference) {
                     // A packed reference may acquire a loose file later.
@@ -63,24 +57,13 @@ fn git_hash(source_dir: &Path) -> Option<String> {
             }
         }
     }
-    for path in git_path("packed-refs")
-        .into_iter()
-        .chain(reftable)
-        .filter(|p| p.exists())
-    {
+    for path in git_path("packed-refs").into_iter().chain(reftable).filter(|p| p.exists()) {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(source_dir)
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let output =
+        Command::new("git").arg("-C").arg(source_dir).args(["rev-parse", "HEAD"]).output().ok()?;
+    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn main() {

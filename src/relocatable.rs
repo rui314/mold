@@ -109,9 +109,7 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
     }
     for sec in sections {
         ctx.comdat_group_sections.push(sec);
-        ctx.chunks.push(ChunkId::ComdatGroup(
-            ctx.comdat_group_sections.len() as u32 - 1,
-        ));
+        ctx.chunks.push(ChunkId::ComdatGroup(ctx.comdat_group_sections.len() as u32 - 1));
     }
 }
 

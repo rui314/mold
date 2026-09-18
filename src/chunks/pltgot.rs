@@ -22,10 +22,7 @@ impl<E: Layout> PltGotSection<E> {
         let mut hdr =
             ChunkHeader::<E>::new(".plt.got", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
         hdr.shdr.sh_addralign.set(16);
-        PltGotSection {
-            hdr,
-            symbols: Vec::new(),
-        }
+        PltGotSection { hdr, symbols: Vec::new() }
     }
 }
 

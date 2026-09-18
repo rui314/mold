@@ -134,14 +134,8 @@ pub struct AddrFlags {
 }
 
 impl AddrFlags {
-    pub const NO_PLT: AddrFlags = AddrFlags {
-        no_plt: true,
-        no_opd: false,
-    };
-    pub const NO_OPD: AddrFlags = AddrFlags {
-        no_plt: false,
-        no_opd: true,
-    };
+    pub const NO_PLT: AddrFlags = AddrFlags { no_plt: true, no_opd: false };
+    pub const NO_OPD: AddrFlags = AddrFlags { no_plt: false, no_opd: true };
 }
 
 // Rarely used fields for dynamic symbols. Because mold allocates tens of
@@ -772,8 +766,7 @@ impl Symbol {
 
     #[inline]
     pub fn has_plt(&self, symbols: &SymbolTable) -> bool {
-        self.aux(symbols)
-            .is_some_and(|a| a.plt_idx != u32::MAX || a.pltgot_idx != u32::MAX)
+        self.aux(symbols).is_some_and(|a| a.plt_idx != u32::MAX || a.pltgot_idx != u32::MAX)
     }
 
     #[inline]
@@ -820,8 +813,7 @@ impl Symbol {
         &self,
         ctx: &'a Context<E>,
     ) -> Option<&'a InputSection<E>> {
-        self.input_section()
-            .map(|section| ctx.input_section(section))
+        self.input_section().map(|section| ctx.input_section(section))
     }
 
     #[inline]
@@ -1035,11 +1027,7 @@ impl Symbol {
 
         if self.has_copyrel() {
             std::hint::cold_path();
-            let chunk = if self.is_copyrel_readonly() {
-                &ctx.copyrel_relro
-            } else {
-                &ctx.copyrel
-            };
+            let chunk = if self.is_copyrel_readonly() { &ctx.copyrel_relro } else { &ctx.copyrel };
             return chunk.hdr.shdr.sh_addr.get() + self.value;
         }
 
@@ -1628,8 +1616,7 @@ impl SymbolTable {
             .collect();
 
         let count: usize = fresh.iter().map(Vec::len).sum();
-        self.aux
-            .par_extend((0..count).into_par_iter().map(|_| SymbolAux::default()));
+        self.aux.par_extend((0..count).into_par_iter().map(|_| SymbolAux::default()));
         let mut next = first;
         let parts: Vec<_> = fresh
             .into_iter()
@@ -1660,9 +1647,7 @@ impl SymbolTable {
 
     pub fn lookup(&self, key: &[u8]) -> Option<SymbolId> {
         let hash = hash_key(key);
-        self.shards[shard_of(hash)]
-            .get(&Query { hash, key })
-            .copied()
+        self.shards[shard_of(hash)].get(&Query { hash, key }).copied()
     }
 
     /// Interns the keys recorded in `bins` all at once and hands each slot
@@ -1679,9 +1664,8 @@ impl SymbolTable {
         const BLOCK_SIZE: usize = 256;
         let count: usize = bins.iter().flat_map(|bin| &bin.0).map(Vec::len).sum();
         let first = self.symbols.len();
-        let capacity = count
-            .saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1))
-            .saturating_add(additional_capacity);
+        let capacity =
+            count.saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1)).saturating_add(additional_capacity);
         let old_capacity = self.symbols.capacity();
         self.symbols.reserve(capacity);
         if self.symbols.capacity() != old_capacity {
@@ -1824,10 +1808,7 @@ impl SymbolTable {
             // SAFETY: reserve made the entire tail available, even though it
             // is outside the vector's initialized length.
             slots: AtomicPtr::new(unsafe {
-                self.symbols
-                    .as_mut_ptr()
-                    .add(first)
-                    .cast::<MaybeUninit<Symbol>>()
+                self.symbols.as_mut_ptr().add(first).cast::<MaybeUninit<Symbol>>()
             }),
             first,
             next: AtomicUsize::new(0),
@@ -1853,10 +1834,7 @@ impl SymbolTable {
 
     /// The ids of all named (global) symbols.
     pub fn global_ids(&self) -> impl Iterator<Item = SymbolId> + '_ {
-        self.globals
-            .iter()
-            .flatten()
-            .flat_map(|range| range.clone().map(SymbolId))
+        self.globals.iter().flatten().flat_map(|range| range.clone().map(SymbolId))
     }
 
     /// Applies `f` to all named symbols in parallel, one task per map shard.

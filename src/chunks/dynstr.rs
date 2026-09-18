@@ -75,10 +75,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         .collect();
     parts.into_par_iter().for_each(|(chunk, out)| {
         for entry in chunk {
-            write_cstr(
-                &mut out[(entry.offset - chunk[0].offset) as usize..],
-                entry.name,
-            );
+            write_cstr(&mut out[(entry.offset - chunk[0].offset) as usize..], entry.name);
         }
     });
 }

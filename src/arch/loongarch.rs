@@ -103,11 +103,7 @@ fn hi20(val: u64, pc: u64) -> u64 {
 // Compensating all the sign-extensions is a bit complicated. The
 // psABI gives the following formula.
 fn higher(val: u64, pc: u64) -> u64 {
-    let compensation = if val & 0x800 != 0 {
-        0x1000u64.wrapping_sub(0x1_0000_0000)
-    } else {
-        0
-    };
+    let compensation = if val & 0x800 != 0 { 0x1000u64.wrapping_sub(0x1_0000_0000) } else { 0 };
     let val = val.wrapping_add(0x8000_0000).wrapping_add(compensation);
     page(val).wrapping_sub(page(pc.wrapping_sub(8)))
 }
@@ -179,10 +175,7 @@ fn rj(insn: u32) -> u32 {
 
 fn set_rj(loc: &mut [u8], rj: u32) {
     debug_assert!(rj < 32);
-    set_insn(
-        loc,
-        (insn(loc) & 0b111111_1111111111111111_00000_11111) | (rj << 5),
-    );
+    set_insn(loc, (insn(loc) & 0b111111_1111111111111111_00000_11111) | (rj << 5));
 }
 
 /// Rewrites the instruction at `loc` into `pcaddi $rd, imm`, keeping
@@ -214,11 +207,7 @@ fn add_bits(loc: &mut [u8], size: u32, val: u64, subtract: bool) {
 
 fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
     let cur = read_uleb(&mut &*loc);
-    let val = if subtract {
-        cur.wrapping_sub(val)
-    } else {
-        cur.wrapping_add(val)
-    };
+    let val = if subtract { cur.wrapping_sub(val) } else { cur.wrapping_add(val) };
     overwrite_uleb(loc, val);
 }
 
@@ -255,10 +244,7 @@ fn is_relaxable_got_load<E: Arch>(
 
 /// Relocations that only guide relaxation and never relocate anything.
 fn is_marker(r_type: u32) -> bool {
-    matches!(
-        r_type,
-        R_NONE | R_LARCH_RELAX | R_LARCH_MARK_LA | R_LARCH_MARK_PCREL | R_LARCH_ALIGN
-    )
+    matches!(r_type, R_NONE | R_LARCH_RELAX | R_LARCH_MARK_LA | R_LARCH_MARK_PCREL | R_LARCH_ALIGN)
 }
 
 const PLT_ENTRY_64: [u32; 4] = [
@@ -315,26 +301,11 @@ where
     const R_ABS: u32 = if IS_64 { R_LARCH_64 } else { R_LARCH_32 };
     const R_RELATIVE: u32 = R_LARCH_RELATIVE;
     const R_IRELATIVE: Option<u32> = Some(R_LARCH_IRELATIVE);
-    const R_DTPOFF: u32 = if IS_64 {
-        R_LARCH_TLS_DTPREL64
-    } else {
-        R_LARCH_TLS_DTPREL32
-    };
-    const R_TPOFF: u32 = if IS_64 {
-        R_LARCH_TLS_TPREL64
-    } else {
-        R_LARCH_TLS_TPREL32
-    };
-    const R_DTPMOD: u32 = if IS_64 {
-        R_LARCH_TLS_DTPMOD64
-    } else {
-        R_LARCH_TLS_DTPMOD32
-    };
-    const R_TLSDESC: Option<u32> = Some(if IS_64 {
-        R_LARCH_TLS_DESC64
-    } else {
-        R_LARCH_TLS_DESC32
-    });
+    const R_DTPOFF: u32 = if IS_64 { R_LARCH_TLS_DTPREL64 } else { R_LARCH_TLS_DTPREL32 };
+    const R_TPOFF: u32 = if IS_64 { R_LARCH_TLS_TPREL64 } else { R_LARCH_TLS_TPREL32 };
+    const R_DTPMOD: u32 = if IS_64 { R_LARCH_TLS_DTPMOD64 } else { R_LARCH_TLS_DTPMOD32 };
+    const R_TLSDESC: Option<u32> =
+        Some(if IS_64 { R_LARCH_TLS_DESC64 } else { R_LARCH_TLS_DESC32 });
     const R_FUNCALL: &'static [u32] = &[R_LARCH_B26, R_LARCH_CALL36];
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
@@ -712,11 +683,7 @@ where
                         // Rewrite PCADDU18I + JIRL to B or BL
                         debug_assert_eq!(removed, 4);
                         let jirl = insn(&contents[rel.r_offset() as usize + 4..]);
-                        let opcode = if rd(jirl) == 0 {
-                            0x5000_0000
-                        } else {
-                            0x5400_0000
-                        };
+                        let opcode = if rd(jirl) == 0 { 0x5000_0000 } else { 0x5400_0000 };
                         set_insn(loc, opcode);
                         write_d10k16(loc, pcrel >> 2);
                         if ctx.args.emit_relocs {
@@ -900,10 +867,9 @@ where
                 R_LARCH_SUB16 => add_bits(loc, 16, sa, true),
                 R_LARCH_SUB32 => add_bits(loc, 32, sa, true),
                 R_LARCH_SUB64 => add_bits(loc, 64, sa, true),
-                R_LARCH_TLS_DTPREL32 => write_ul32(
-                    loc,
-                    tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
-                ),
+                R_LARCH_TLS_DTPREL32 => {
+                    write_ul32(loc, tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
+                }
                 R_LARCH_TLS_DTPREL64 => {
                     write_ul64(loc, tombstone().unwrap_or(sa.wrapping_sub(ctx.dtp_addr)))
                 }
@@ -928,10 +894,7 @@ where
         // Records that `d` bytes go away at relocation `r`.
         fn record<R: RelRecord>(deltas: &mut Vec<RelocDelta>, delta: &mut i64, r: &R, d: i64) {
             *delta += d;
-            deltas.push(RelocDelta {
-                offset: r.r_offset(),
-                delta: *delta,
-            });
+            deltas.push(RelocDelta { offset: r.r_offset(), delta: *delta });
         }
 
         for i in 0..rels.len() {
@@ -1002,10 +965,9 @@ where
                 //
                 // addi.d  $t0, $tp, <tp-offset>
                 R_LARCH_TLS_LE_HI20_R | R_LARCH_TLS_LE_ADD_R => {
-                    let val = sym
-                        .addr(ctx)
-                        .wrapping_add(r.r_addend() as u64)
-                        .wrapping_sub(ctx.tp_addr) as i64;
+                    let val =
+                        sym.addr(ctx).wrapping_add(r.r_addend() as u64).wrapping_sub(ctx.tp_addr)
+                            as i64;
                     if is_int(val, 12) {
                         remove(4);
                     }
@@ -1076,10 +1038,9 @@ where
                 R_LARCH_TLS_DESC_PC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let p = isec.addr(ctx) + r.r_offset();
-                        let dist = sym
-                            .tlsdesc_addr(ctx)
-                            .wrapping_add(r.r_addend() as u64)
-                            .wrapping_sub(p) as i64;
+                        let dist =
+                            sym.tlsdesc_addr(ctx).wrapping_add(r.r_addend() as u64).wrapping_sub(p)
+                                as i64;
                         if is_int(dist, 22) {
                             remove(4);
                         }
@@ -1095,10 +1056,9 @@ where
                 R_LARCH_TLS_DESC_LD
                     if !sym.has_tlsdesc(&ctx.symbols) && !sym.has_gottp(&ctx.symbols) =>
                 {
-                    let val = sym
-                        .addr(ctx)
-                        .wrapping_add(r.r_addend() as u64)
-                        .wrapping_sub(ctx.tp_addr) as i64;
+                    let val =
+                        sym.addr(ctx).wrapping_add(r.r_addend() as u64).wrapping_sub(ctx.tp_addr)
+                            as i64;
                     if (0..0x1000).contains(&val) {
                         remove(4);
                     }

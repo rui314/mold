@@ -7,11 +7,7 @@ use crate::elf::*;
 
 // .rel.plt contains relocation information for .plt.
 pub fn new_header<E: Arch>() -> ChunkHeader<E> {
-    let (name, ty) = if E::IS_RELA {
-        (".rela.plt", SHT_RELA)
-    } else {
-        (".rel.plt", SHT_REL)
-    };
+    let (name, ty) = if E::IS_RELA { (".rela.plt", SHT_RELA) } else { (".rel.plt", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
     let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
     hdr.shdr.sh_entsize.set(entsize);

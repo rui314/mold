@@ -62,6 +62,5 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.compressed_sections[i as usize];
     sec.chdr.write(buf);
-    sec.compressor
-        .write_to(&mut buf[std::mem::size_of::<ElfChdr<E>>()..]);
+    sec.compressor.write_to(&mut buf[std::mem::size_of::<ElfChdr<E>>()..]);
 }

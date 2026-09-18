@@ -167,10 +167,9 @@ pub fn tp_addr<E: Arch>(phdr: &ElfPhdr<E>) -> u64 {
         // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
         // and %a0/%a1 on s390x) refers to past the end of the TLS block for
         // historical reasons. TLVs are accessed with negative offsets from TP.
-        Family::X86_64 | Family::I386 | Family::Sparc64 | Family::S390x => align_to(
-            phdr.p_vaddr().get() + phdr.p_memsz().get(),
-            phdr.p_align().get(),
-        ),
+        Family::X86_64 | Family::I386 | Family::Sparc64 | Family::S390x => {
+            align_to(phdr.p_vaddr().get() + phdr.p_memsz().get(), phdr.p_align().get())
+        }
         // On ARM and SH4, the runtime appends two words at the beginning
         // of TLV template image when copying TLVs to the TLS block, so we need
         // to offset it.

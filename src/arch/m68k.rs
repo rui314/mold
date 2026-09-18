@@ -90,9 +90,7 @@ impl Arch for M68k {
         );
         write_ub32(
             &mut buf[10..],
-            sym.gotplt_addr(ctx)
-                .wrapping_sub(sym.plt_addr(ctx))
-                .wrapping_sub(8) as u32,
+            sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(8) as u32,
         );
     }
 
@@ -101,9 +99,7 @@ impl Arch for M68k {
         buf[..8].copy_from_slice(&INSN);
         write_ub32(
             &mut buf[4..],
-            sym.got_pltgot_addr(ctx)
-                .wrapping_sub(sym.plt_addr(ctx))
-                .wrapping_sub(2) as u32,
+            sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(2) as u32,
         );
     }
 
@@ -271,10 +267,9 @@ impl Arch for M68k {
 
             match rel.r_type() {
                 R_68K_32 => write_ub32(loc, tombstone.unwrap_or(sa) as u32),
-                R_68K_TLS_LDO32 => write_ub32(
-                    loc,
-                    tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32,
-                ),
+                R_68K_TLS_LDO32 => {
+                    write_ub32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
+                }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

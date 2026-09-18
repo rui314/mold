@@ -36,10 +36,7 @@ impl SectionRef {
 
     #[inline]
     pub(crate) fn decode(value: u64) -> SectionRef {
-        SectionRef {
-            file: ObjId((value >> 32) as u32),
-            shndx: value as u32,
-        }
+        SectionRef { file: ObjId((value >> 32) as u32), shndx: value as u32 }
     }
 }
 
@@ -55,10 +52,7 @@ const _: () = assert!(std::mem::size_of::<InputSectionId>() == 8);
 
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
-    pub(crate) const NONE: InputSectionId = InputSectionId {
-        file: ObjId(0),
-        index: u32::MAX,
-    };
+    pub(crate) const NONE: InputSectionId = InputSectionId { file: ObjId(0), index: u32::MAX };
 
     #[inline]
     pub(crate) fn new(file: ObjId, index: u32) -> InputSectionId {
@@ -71,10 +65,7 @@ impl InputSectionId {
 
     #[inline]
     pub(crate) const fn from_raw(value: u64) -> InputSectionId {
-        InputSectionId {
-            file: ObjId((value >> 32) as u32),
-            index: (value as u32).wrapping_sub(1),
-        }
+        InputSectionId { file: ObjId((value >> 32) as u32), index: (value as u32).wrapping_sub(1) }
     }
 
     #[inline]
@@ -338,10 +329,7 @@ impl<E: Arch> InputSection<E> {
 
     #[inline]
     pub fn section_ref(&self) -> SectionRef {
-        SectionRef {
-            file: self.file,
-            shndx: self.shndx,
-        }
+        SectionRef { file: self.file, shndx: self.shndx }
     }
 
     #[inline]
@@ -479,11 +467,8 @@ impl<E: Arch> InputSection<E> {
         num_elf_sections: usize,
     ) -> &'static BStr {
         if self.shndx as usize >= num_elf_sections {
-            let name: &[u8] = if self.sh_flags & SHF_TLS as u64 != 0 {
-                b".tls_common"
-            } else {
-                b".common"
-            };
+            let name: &[u8] =
+                if self.sh_flags & SHF_TLS as u64 != 0 { b".tls_common" } else { b".common" };
             return BStr::new(name);
         }
 
@@ -606,10 +591,7 @@ impl<E: Arch> InputSection<E> {
         }
         let begin = self.fde_begin as usize;
         let end = begin
-            + file.fdes[begin..]
-                .iter()
-                .position(|fde| fde.is_last)
-                .expect("unterminated FDE run")
+            + file.fdes[begin..].iter().position(|fde| fde.is_last).expect("unterminated FDE run")
             + 1;
         &file.fdes[begin..end]
     }
@@ -633,12 +615,7 @@ impl<E: Arch> InputSection<E> {
             Some((frag, addend)) => (ctx.fragment_addr(frag), addend as u64),
             None => (sym.addr(ctx), self.rel_addend(rel) as u64),
         };
-        Some(NonAllocReloc {
-            sym,
-            s,
-            a,
-            frag: frag.map(|(f, _)| f),
-        })
+        Some(NonAllocReloc { sym, s, a, frag: frag.map(|(f, _)| f) })
     }
 
     /// The addend of a relocation against this section.
@@ -811,22 +788,14 @@ impl<E: Arch> InputSection<E> {
         }
         let m = cache.section?;
         let addend = self.rel_addend(rel);
-        let value = if cache.is_section {
-            cache.value.wrapping_add(addend as u64)
-        } else {
-            cache.value
-        };
+        let value =
+            if cache.is_section { cache.value.wrapping_add(addend as u64) } else { cache.value };
         let (frag, offset) = m.fragment_with_hint(value, &mut cache.next)?;
         if let Some(&entry) = m.fragments.get(cache.next + 7) {
-            ctx.merged_sections[m.parent.index()]
-                .fragments
-                .prefetch(entry);
+            ctx.merged_sections[m.parent.index()].fragments.prefetch(entry);
         }
         Some((
-            FragmentRef {
-                section: m.parent,
-                entry: frag,
-            },
+            FragmentRef { section: m.parent, entry: frag },
             offset + if cache.is_section { 0 } else { addend },
         ))
     }
@@ -893,11 +862,7 @@ impl<E: Arch> InputSection<E> {
         // 0 is an invalid value in most debug info sections, so we use it
         // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
         // the terminator marker, so we use 1 if that's the case.
-        Some(if name == b".debug_loc" || name == b".debug_ranges" {
-            1
-        } else {
-            0
-        })
+        Some(if name == b".debug_loc" || name == b".debug_ranges" { 1 } else { 0 })
     }
 
     /// Test if the symbol a given relocation refers to has already been resolved.
@@ -972,12 +937,7 @@ impl<E: Arch> InputSection<E> {
             sym
         );
         if let Some(owner) = find_comdat_owner(ctx, file, rel.r_sym() as usize) {
-            write!(
-                msg,
-                "\n>>> prevailing definition is in {}",
-                ctx.objs[owner.index()]
-            )
-            .unwrap();
+            write!(msg, "\n>>> prevailing definition is in {}", ctx.objs[owner.index()]).unwrap();
         }
         error!("{msg}");
     }
@@ -1000,12 +960,7 @@ impl<E: Arch> InputSection<E> {
             write!(msg, ":({func})").unwrap();
         }
         msg.push('\n');
-        ctx.undef_errors
-            .lock()
-            .unwrap()
-            .entry(sym_id)
-            .or_default()
-            .push(msg);
+        ctx.undef_errors.lock().unwrap().entry(sym_id).or_default().push(msg);
     }
 
     /// Copies the section to `buf` and applies relocations.
@@ -1032,9 +987,7 @@ impl<E: Arch> InputSection<E> {
                 .copy_from_slice(&contents[..deltas[0].offset as usize]);
 
             for (i, d) in deltas.iter().enumerate() {
-                let end = deltas
-                    .get(i + 1)
-                    .map_or(contents.len(), |n| n.offset as usize);
+                let end = deltas.get(i + 1).map_or(contents.len(), |n| n.offset as usize);
                 let removed = removed_bytes(deltas, i) as usize;
                 let src_start = d.offset as usize + removed;
                 let dst_start = (d.offset as i64 + removed as i64 - d.delta) as usize;
@@ -1354,10 +1307,7 @@ fn record_size<E: Layout>(contents: &[u8], offset: u32) -> usize {
 fn rels_in<E: Layout>(rels: &[E::Rel], begin: u32, end: usize) -> &[E::Rel] {
     let begin = begin as usize;
     let rest = &rels[begin..];
-    let count = rest
-        .iter()
-        .take_while(|r| (r.r_offset() as usize) < end)
-        .count();
+    let count = rest.iter().take_while(|r| (r.r_offset() as usize) < end).count();
     &rels[begin..begin + count]
 }
 
@@ -1572,10 +1522,7 @@ impl MergeInfo {
         sketch: &mut HyperLogLog,
     ) {
         if data.len() > u32::MAX as usize {
-            fatal!(
-                "{}: mergeable section too large",
-                format_args!("{file}:({name})")
-            );
+            fatal!("{}: mergeable section too large", format_args!("{file}:({name})"));
         }
         let entsize = parent.hdr.shdr.sh_entsize.get() as usize;
 
@@ -1594,10 +1541,7 @@ impl MergeInfo {
             let mut pos = 0;
             while pos < data.len() {
                 let Some(end) = find_null(data, pos, entsize) else {
-                    fatal!(
-                        "{}: string is not null terminated",
-                        format_args!("{file}:({name})")
-                    );
+                    fatal!("{}: string is not null terminated", format_args!("{file}:({name})"));
                 };
                 add_fragment(pos, end + entsize - pos);
                 pos = end + entsize;
@@ -1637,12 +1581,8 @@ impl MergeInfo {
             if let Some(&hash) = self.hashes.get(i + LOOKAHEAD) {
                 parent.map.prefetch(hash);
             }
-            let id = parent.insert(
-                self.contents(data, i),
-                self.hashes[i],
-                self.p2align,
-                gc_sections,
-            );
+            let id =
+                parent.insert(self.contents(data, i), self.hashes[i], self.p2align, gc_sections);
             self.fragments.push(id);
         }
 
@@ -1653,14 +1593,8 @@ impl MergeInfo {
     /// Finds the fragment containing `offset` and the offset within it.
     #[inline]
     pub fn fragment(&self, offset: u64) -> Option<(EntryId, i64)> {
-        let idx = self
-            .frag_offsets
-            .partition_point(|&o| o as u64 <= offset)
-            .checked_sub(1)?;
-        Some((
-            self.fragments[idx],
-            offset as i64 - self.frag_offsets[idx] as i64,
-        ))
+        let idx = self.frag_offsets.partition_point(|&o| o as u64 <= offset).checked_sub(1)?;
+        Some((self.fragments[idx], offset as i64 - self.frag_offsets[idx] as i64))
     }
 
     #[inline]
@@ -1668,21 +1602,12 @@ impl MergeInfo {
         let mut idx = *next;
         if idx >= self.frag_offsets.len()
             || offset < self.frag_offsets[idx] as u64
-            || self
-                .frag_offsets
-                .get(idx + 1)
-                .is_some_and(|&o| o as u64 <= offset)
+            || self.frag_offsets.get(idx + 1).is_some_and(|&o| o as u64 <= offset)
         {
-            idx = self
-                .frag_offsets
-                .partition_point(|&o| o as u64 <= offset)
-                .checked_sub(1)?;
+            idx = self.frag_offsets.partition_point(|&o| o as u64 <= offset).checked_sub(1)?;
         }
         *next = idx + 1;
-        Some((
-            self.fragments[idx],
-            offset as i64 - self.frag_offsets[idx] as i64,
-        ))
+        Some((self.fragments[idx], offset as i64 - self.frag_offsets[idx] as i64))
     }
 
     #[inline]
@@ -1726,11 +1651,7 @@ const SECTION_INDEX_MASK: u32 = !HAS_MERGE_INFO;
 
 impl<E: Arch> Default for SectionList<E> {
     fn default() -> Self {
-        SectionList {
-            indices: Vec::new(),
-            inputs: Vec::new(),
-            merge_info: Vec::new(),
-        }
+        SectionList { indices: Vec::new(), inputs: Vec::new(), merge_info: Vec::new() }
     }
 }
 
@@ -1839,8 +1760,7 @@ impl<E: Arch> SectionList<E> {
         debug_assert!(self.merge_info.len() < SECTION_INDEX_MASK as usize);
         let input_index = value - 1;
         let input = &self.inputs[input_index as usize];
-        self.merge_info
-            .push(MergeInfo::new(parent, input_index, input));
+        self.merge_info.push(MergeInfo::new(parent, input_index, input));
         self.indices[shndx] = HAS_MERGE_INFO | self.merge_info.len() as u32;
     }
 
@@ -1855,10 +1775,7 @@ impl<E: Arch> SectionList<E> {
         }
         let merge_info_idx = ((value & SECTION_INDEX_MASK) - 1) as usize;
         let input_index = self.merge_info[merge_info_idx].input_index;
-        Some((
-            &mut self.merge_info[merge_info_idx],
-            &self.inputs[input_index as usize],
-        ))
+        Some((&mut self.merge_info[merge_info_idx], &self.inputs[input_index as usize]))
     }
 
     /// The regular sections in section order.
@@ -1876,16 +1793,13 @@ impl<E: Arch> SectionList<E> {
         file: ObjId,
     ) -> impl Iterator<Item = (InputSectionId, &mut InputSection<E>)> {
         let indices = &self.indices;
-        self.inputs
-            .iter_mut()
-            .enumerate()
-            .filter_map(move |(input_index, section)| {
-                let value = indices[section.shndx as usize];
-                (value != 0 && value & HAS_MERGE_INFO == 0).then(|| {
-                    debug_assert_eq!(value as usize, input_index + 1);
-                    (InputSectionId::new(file, input_index as u32), section)
-                })
+        self.inputs.iter_mut().enumerate().filter_map(move |(input_index, section)| {
+            let value = indices[section.shndx as usize];
+            (value != 0 && value & HAS_MERGE_INFO == 0).then(|| {
+                debug_assert_eq!(value as usize, input_index + 1);
+                (InputSectionId::new(file, input_index as u32), section)
             })
+        })
     }
 
     pub fn merge_infos(&self) -> impl Iterator<Item = &MergeInfo> {
@@ -1912,10 +1826,7 @@ mod tests {
     fn fragment_hint_handles_sequential_repeated_and_backward_offsets() {
         let map = crate::util::concurrent_map::ConcurrentMap::with_capacity(12);
         let fragments = (0..12)
-            .map(|i| {
-                map.insert_with(&b"abcdefghijkl"[i..i + 1], i as u64, || ())
-                    .0
-            })
+            .map(|i| map.insert_with(&b"abcdefghijkl"[i..i + 1], i as u64, || ()).0)
             .collect();
         let info = MergeInfo {
             parent: MergedSectionId(0),
@@ -1928,16 +1839,9 @@ mod tests {
         };
         let mut next = 0;
         for offset in [0, 5, 8, 11, 11, 6, 35, 38, 35, 5, 4, 8] {
-            assert_eq!(
-                info.fragment_with_hint(offset, &mut next),
-                info.fragment(offset)
-            );
+            assert_eq!(info.fragment_with_hint(offset, &mut next), info.fragment(offset));
         }
-        let empty = MergeInfo {
-            fragments: Vec::new(),
-            frag_offsets: Vec::new(),
-            ..info
-        };
+        let empty = MergeInfo { fragments: Vec::new(), frag_offsets: Vec::new(), ..info };
         assert_eq!(empty.fragment_with_hint(0, &mut next), None);
     }
 }

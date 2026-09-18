@@ -41,10 +41,7 @@ impl<'a> ArHeader<'a> {
     fn parse(bytes: &'a [u8]) -> Option<Self> {
         let bytes = bytes.get(..HEADER_SIZE)?;
         let size = parse_decimal(&bytes[48..58]);
-        Some(ArHeader {
-            name: &bytes[..16],
-            size,
-        })
+        Some(ArHeader { name: &bytes[..16], size })
     }
 
     fn is_strtab(&self) -> bool {
@@ -76,11 +73,7 @@ impl<'a> ArHeader<'a> {
         }
 
         // Short fileanme
-        let end = self
-            .name
-            .iter()
-            .position(|&b| b == b'/')
-            .unwrap_or(self.name.len());
+        let end = self.name.iter().position(|&b| b == b'/').unwrap_or(self.name.len());
         PathBuf::from(util::os_str(&self.name[..end]))
     }
 }
@@ -135,10 +128,7 @@ fn archive_members(
             }
 
             if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-                fatal!(
-                    "{}: filename is not stored as a long filename",
-                    mf.name.display()
-                );
+                fatal!("{}: filename is not stored as a long filename", mf.name.display());
             }
 
             // Read the name field

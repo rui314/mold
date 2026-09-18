@@ -21,10 +21,7 @@ fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
         return true;
     }
     flags & SHF_GNU_RETAIN != 0
-        || matches!(
-            ty,
-            SHT_NOTE | SHT_INIT_ARRAY | SHT_FINI_ARRAY | SHT_PREINIT_ARRAY
-        )
+        || matches!(ty, SHT_NOTE | SHT_INIT_ARRAY | SHT_FINI_ARRAY | SHT_PREINIT_ARRAY)
         || name.starts_with(b".ctors")
         || name.starts_with(b".dtors")
         || name.starts_with(b".init")
@@ -130,8 +127,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection<E>
 
 #[inline]
 fn start_stop_name(name: &[u8]) -> Option<&[u8]> {
-    name.strip_prefix(b"__start_")
-        .or_else(|| name.strip_prefix(b"__stop_"))
+    name.strip_prefix(b"__start_").or_else(|| name.strip_prefix(b"__stop_"))
 }
 
 fn visit_section<'scope, E: Arch>(
@@ -254,9 +250,7 @@ fn mark<'a, E: Arch>(
     let _t = ctx.timer("mark");
 
     rayon::scope(|scope| {
-        roots
-            .par_chunks(GC_BATCH)
-            .for_each(|batch| visit_batch(ctx, batch, map, scope));
+        roots.par_chunks(GC_BATCH).for_each(|batch| visit_batch(ctx, batch, map, scope));
     });
 }
 
@@ -273,10 +267,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
                 if isec.is_alive() && !isec.is_visited() {
                     file.kill_section(isec.shndx as usize);
                     if report {
-                        removed.push(SectionRef {
-                            file: isec.file,
-                            shndx: isec.shndx,
-                        });
+                        removed.push(SectionRef { file: isec.file, shndx: isec.shndx });
                     }
                 }
             }

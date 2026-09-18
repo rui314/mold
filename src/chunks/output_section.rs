@@ -73,11 +73,7 @@ unsafe impl Sync for OutputBuffer<'_> {}
 impl<'a> OutputBuffer<'a> {
     #[inline]
     pub(crate) fn new(buf: &'a mut [u8]) -> OutputBuffer<'a> {
-        OutputBuffer {
-            ptr: buf.as_mut_ptr(),
-            len: buf.len(),
-            marker: PhantomData,
-        }
+        OutputBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), marker: PhantomData }
     }
 
     /// Runs `f` on one range owned by the current parallel-loop iteration.
@@ -178,11 +174,7 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
                 off = align_to(off, 1 << isec.p2align()) + isec.sh_size;
                 align = align.max(1 << isec.p2align());
             }
-            Group {
-                size: off,
-                offset: 0,
-                align,
-            }
+            Group { size: off, offset: 0, align }
         })
         .collect();
 
@@ -194,18 +186,15 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     }
 
     // Assign offsets to input sections.
-    osec.members
-        .par_chunks(GROUP_SIZE)
-        .zip(&groups)
-        .for_each(|(members, g)| {
-            let mut off = g.offset;
-            for &m in members {
-                let isec = ctx.input_section(m);
-                off = align_to(off, 1 << isec.p2align());
-                isec.set_offset(off);
-                off += isec.sh_size;
-            }
-        });
+    osec.members.par_chunks(GROUP_SIZE).zip(&groups).for_each(|(members, g)| {
+        let mut off = g.offset;
+        for &m in members {
+            let isec = ctx.input_section(m);
+            off = align_to(off, 1 << isec.p2align());
+            isec.set_offset(off);
+            off += isec.sh_size;
+        }
+    });
     off
 }
 
@@ -221,11 +210,9 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
     members.par_iter().enumerate().for_each(|(i, &member)| {
         let isec = ctx.input_section(member);
         let start = isec.offset() as usize;
-        let next_start = members
-            .get(i + 1)
-            .map_or(osec.hdr.shdr.sh_size.get() as usize, |&next| {
-                ctx.input_section(next).offset() as usize
-            });
+        let next_start = members.get(i + 1).map_or(osec.hdr.shdr.sh_size.get() as usize, |&next| {
+            ctx.input_section(next).offset() as usize
+        });
         // SAFETY: output-section member offsets are ordered and each
         // iteration owns the bytes up to the next member.
         unsafe {
@@ -325,22 +312,14 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
 }
 
 pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
-    ctx.output_sections[id.index()]
-        .dynrel_offsets
-        .last()
-        .copied()
-        .unwrap_or(0)
+    ctx.output_sections[id.index()].dynrel_offsets.last().copied().unwrap_or(0)
 }
 
 /// Marks the base relocations that RELR can encode and returns their
 /// offsets within the section.
 pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;
-    let Context {
-        objs,
-        output_sections,
-        ..
-    } = ctx;
+    let Context { objs, output_sections, .. } = ctx;
     let osec = &mut output_sections[id.index()];
     let nshards = osec.dynrel_offsets.len().saturating_sub(1);
     let mut relr_offsets = vec![0u64; nshards + 1];
@@ -393,10 +372,8 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
     debug_assert_eq!(out.len(), count);
     let slices = crate::output_file::split_at_offsets(out, &offsets[..nshards]);
 
-    osec.abs_rels
-        .par_chunks(DYNREL_SHARD_SIZE)
-        .zip(slices.into_par_iter())
-        .for_each(|(rels, slots)| {
+    osec.abs_rels.par_chunks(DYNREL_SHARD_SIZE).zip(slices.into_par_iter()).for_each(
+        |(rels, slots)| {
             let mut i = 0;
             for r in rels {
                 let sym = &ctx.symbols[r.sym];
@@ -409,12 +386,9 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
                 }
                 let rel = match r.kind {
                     AbsRelKind::None | AbsRelKind::Relr => None,
-                    AbsRelKind::BaseRel => Some(ElfRel::<E>::new(
-                        p,
-                        E::R_RELATIVE,
-                        0,
-                        s.wrapping_add(a as u64) as i64,
-                    )),
+                    AbsRelKind::BaseRel => {
+                        Some(ElfRel::<E>::new(p, E::R_RELATIVE, 0, s.wrapping_add(a as u64) as i64))
+                    }
                     AbsRelKind::IFunc => E::R_IRELATIVE.map(|r_type| {
                         let val = sym.addr_with(ctx, AddrFlags::NO_PLT).wrapping_add(a as u64);
                         ElfRel::<E>::new(p, r_type, 0, val as i64)
@@ -432,27 +406,20 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
                 }
             }
             debug_assert_eq!(i, slots.len());
-        });
+        },
+    );
 }
 
 fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRelKind {
     if sym.is_ifunc() {
-        return if sym.is_pde_ifunc(ctx) {
-            AbsRelKind::None
-        } else {
-            AbsRelKind::IFunc
-        };
+        return if sym.is_pde_ifunc(ctx) { AbsRelKind::None } else { AbsRelKind::IFunc };
     }
     if sym.is_absolute() {
         return AbsRelKind::None;
     }
     // True if the symbol's address is in the output file.
     if !sym.is_imported() || sym.flags() & NEEDS_CANONICAL != 0 {
-        return if ctx.args.pic {
-            AbsRelKind::BaseRel
-        } else {
-            AbsRelKind::None
-        };
+        return if ctx.args.pic { AbsRelKind::BaseRel } else { AbsRelKind::None };
     }
     AbsRelKind::DynRel
 }
@@ -487,16 +454,13 @@ pub fn scan_abs_relocations<E: Arch>(
         .flat_map_iter(|&m| {
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
-            isec.rels(file)
-                .iter()
-                .filter(|r| is_absrel::<E>(r))
-                .map(move |r| AbsRel {
-                    isec: m,
-                    offset: r.r_offset(),
-                    sym: file.base.symbols[r.r_sym() as usize],
-                    addend: isec.rel_addend(r),
-                    kind: AbsRelKind::None,
-                })
+            isec.rels(file).iter().filter(|r| is_absrel::<E>(r)).map(move |r| AbsRel {
+                isec: m,
+                offset: r.r_offset(),
+                sym: file.base.symbols[r.r_sym() as usize],
+                addend: isec.rel_addend(r),
+                kind: AbsRelKind::None,
+            })
         })
         .collect();
 

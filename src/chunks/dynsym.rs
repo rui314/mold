@@ -34,11 +34,7 @@ impl<E: Arch> DynsymSection<E> {
         let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
         hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        DynsymSection {
-            hdr,
-            symbols: Vec::new(),
-            dynstr_entries: Vec::new(),
-        }
+        DynsymSection { hdr, symbols: Vec::new(), dynstr_entries: Vec::new() }
     }
 
     #[inline]
@@ -86,10 +82,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             }
         });
     if overflow.load(Ordering::Relaxed) {
-        let nshdrs = ctx
-            .shdr
-            .as_ref()
-            .map_or(0, |s| s.shdr.sh_size.get() / ElfShdr::<E>::size() as u64);
+        let nshdrs =
+            ctx.shdr.as_ref().map_or(0, |s| s.shdr.sh_size.get() / ElfShdr::<E>::size() as u64);
         error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
             ctx.args.output.display()
         );

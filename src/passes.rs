@@ -52,12 +52,8 @@ pub fn apply_exclude_libs<E: Arch>(ctx: &mut Context<E>) {
     }
     for file in &mut ctx.objs {
         if !file.archive_name.as_os_str().is_empty()
-            && (set.contains(
-                file.archive_name
-                    .file_name()
-                    .unwrap_or_default()
-                    .as_encoded_bytes(),
-            ) || set.contains(b"ALL".as_slice()))
+            && (set.contains(file.archive_name.file_name().unwrap_or_default().as_encoded_bytes())
+                || set.contains(b"ALL".as_slice()))
         {
             file.exclude_libs = true;
         }
@@ -78,16 +74,10 @@ pub fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
                 .iter()
                 .any(|o| matches!(o, SectionOrder::Section(n) if n == name.as_bytes()))
         };
-        let ehdr_flags = if ctx.args.section_order.is_empty() || find("EHDR") {
-            SHF_ALLOC as u64
-        } else {
-            0
-        };
-        let phdr_flags = if ctx.args.section_order.is_empty() || find("PHDR") {
-            SHF_ALLOC as u64
-        } else {
-            0
-        };
+        let ehdr_flags =
+            if ctx.args.section_order.is_empty() || find("EHDR") { SHF_ALLOC as u64 } else { 0 };
+        let phdr_flags =
+            if ctx.args.section_order.is_empty() || find("PHDR") { SHF_ALLOC as u64 } else { 0 };
         ctx.ehdr = Some(chunks::new_ehdr::<E>(ehdr_flags));
         chunks.push(ChunkId::Ehdr);
         ctx.phdr = Some(OutputPhdr::<E>::new(phdr_flags));
@@ -269,11 +259,8 @@ fn mark_live_file<E: Arch>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                 // from an archive. resolve_default_symver redirects symbols[] to the
                 // bare name, so follow the original versioned symbol in symbols2[].
                 let id2 = file.symbols2[i];
-                let target = if id2 != SymbolId::NONE {
-                    ctx.symbols[id2].file()
-                } else {
-                    sym.file()
-                };
+                let target =
+                    if id2 != SymbolId::NONE { ctx.symbols[id2].file() } else { sym.file() };
                 if let Some(target) = target {
                     if (!target.is_dso() || !ctx.args.allow_shlib_undefined)
                         && ctx.file(target).mark_reachable()
@@ -297,12 +284,7 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
     // Symbols named on the command line pull in their files, and keep
     // their sections under --gc-sections; so does the entry point.
     let args = &ctx.args;
-    let names: Vec<Vec<u8>> = args
-        .undefined
-        .iter()
-        .chain(&args.require_defined)
-        .cloned()
-        .collect();
+    let names: Vec<Vec<u8>> = args.undefined.iter().chain(&args.require_defined).cloned().collect();
     for name in names {
         let id = ctx.get_symbol(&name);
         ctx.symbols[id].set_gc_root(true);
@@ -315,12 +297,7 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
 
     if !ctx.args.undefined_glob.is_empty() {
         let roots: Vec<SymbolId> = {
-            let Context {
-                objs,
-                symbols,
-                args,
-                ..
-            } = &*ctx;
+            let Context { objs, symbols, args, .. } = &*ctx;
             objs.par_iter()
                 .flat_map_iter(|file| {
                     file.base.global_symbols().iter().copied().filter(|&id| {
@@ -368,12 +345,7 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
 // `foo@VER1` by removing the version part and see if `foo` has version
 // `VER1`. If it does, that's the symbol we are looking for.
 fn resolve_default_symver<E: Arch>(ctx: &mut Context<E>) {
-    let Context {
-        objs,
-        dsos,
-        symbols,
-        ..
-    } = ctx;
+    let Context { objs, dsos, symbols, .. } = ctx;
     objs.par_iter_mut().for_each(|file| {
         let start = file.base.first_global.min(file.base.symbols.len());
         for id in &mut file.base.symbols[start..] {
@@ -430,11 +402,8 @@ pub fn gather_symbols<E: Arch>(ctx: &mut Context<E>) {
         .par_iter()
         .filter(|file| file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed)
         .map(|file| {
-            let locals = if file.base.elf_syms.is_empty() {
-                0
-            } else {
-                file.base.first_global.max(1)
-            };
+            let locals =
+                if file.base.elf_syms.is_empty() { 0 } else { file.base.first_global.max(1) };
             let fragments = if file.archive_name.as_os_str().is_empty() || file.base.is_reachable()
             {
                 file.crel_fragment_dummy_upper_bound()
@@ -466,13 +435,7 @@ fn current_rank<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
 /// each symbol's lock before comparing and updating its definition.
 fn resolve_symbols_pass<E: Arch>(ctx: &mut Context<E>, files: &[FileId], only_reachable: bool) {
     let _t = ctx.timer("resolve_symbols_pass");
-    let Context {
-        objs,
-        dsos,
-        symbols,
-        default_version,
-        ..
-    } = ctx;
+    let Context { objs, dsos, symbols, default_version, .. } = ctx;
     let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
     files.par_iter().for_each(|&id| match id {
         FileId::Obj(id) => {
@@ -493,13 +456,7 @@ fn resolve_symbols_pass<E: Arch>(ctx: &mut Context<E>, files: &[FileId], only_re
 /// Resolves the rare hidden-symbol retry while ignoring DSO definitions.
 fn resolve_skip_dso_symbols_pass<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("resolve_symbols_pass");
-    let Context {
-        objs,
-        dsos,
-        symbols,
-        default_version,
-        ..
-    } = ctx;
+    let Context { objs, dsos, symbols, default_version, .. } = ctx;
     let resolver = SymbolResolver::new(symbols.as_mut_slice(), objs, dsos, *default_version);
     objs.par_iter().for_each(|file| {
         file.resolve_skip_dso_symbols(&resolver, file.id());
@@ -620,8 +577,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                 sym.record_comdat_owner(pending.priority);
             }
         });
-        objs.par_iter_mut()
-            .for_each(|file| file.pending_comdat_signatures = Vec::new());
+        objs.par_iter_mut().for_each(|file| file.pending_comdat_signatures = Vec::new());
     }
 
     // IR objects name their COMDAT groups per symbol.
@@ -682,8 +638,7 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 
     // Restore sym_idx before the final symbol-resolution pass.
-    ctx.symbols
-        .par_for_each_global_mut(|sym| sym.set_sym_idx(u32::MAX));
+    ctx.symbols.par_for_each_global_mut(|sym| sym.set_sym_idx(u32::MAX));
 
     drop(t);
 
@@ -705,21 +660,10 @@ fn parse_input_sections<E: Arch>(ctx: &mut Context<E>) {
                 && !file.is_lto_input()
                 && !file.sections_parsed
         })
-        .map(|file| {
-            if file.base.elf_syms.is_empty() {
-                0
-            } else {
-                file.base.first_global.max(1)
-            }
-        })
+        .map(|file| if file.base.elf_syms.is_empty() { 0 } else { file.base.first_global.max(1) })
         .sum();
     {
-        let Context {
-            objs,
-            symbols,
-            args,
-            ..
-        } = ctx;
+        let Context { objs, symbols, args, .. } = ctx;
         symbols.with_parallel_appender(maximum, |allocator| {
             objs.par_iter_mut().for_each(|file| {
                 if !file.base.is_reachable() {
@@ -947,12 +891,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     // original InputSections remain stored but are marked dead.
     let t = ctx.timer("convert_mergeable_sections");
     {
-        let Context {
-            objs,
-            merged_sections,
-            args,
-            ..
-        } = ctx;
+        let Context { objs, merged_sections, args, .. } = ctx;
         let merged = RwLock::new(std::mem::take(merged_sections));
         // Keep a cache for each actual worker, including across Rayon jobs.
         let caches = WorkerLocal::new(crate::chunks::merged::MergedSectionCache::default);
@@ -972,10 +911,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
         for m in file.merge_infos() {
             ctx.merged_sections[m.parent.index()]
                 .members
-                .push(SectionRef {
-                    file: file.id(),
-                    shndx: m.shndx,
-                });
+                .push(SectionRef { file: file.id(), shndx: m.shndx });
         }
     }
     drop(t);
@@ -996,12 +932,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
     drop(t);
 
     let _t = ctx.timer("reattach_section_pieces");
-    let Context {
-        objs,
-        symbols,
-        merged_sections,
-        ..
-    } = ctx;
+    let Context { objs, symbols, merged_sections, .. } = ctx;
 
     let editor = SymbolEditor::new(symbols.as_mut_slice());
     let fragments: Vec<_> = objs
@@ -1031,15 +962,13 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                     (first, head, fragments)
                 })
                 .collect();
-            objs.par_iter_mut()
-                .zip(parts)
-                .for_each(|(file, (first, slots, fragments))| {
-                    file.base.symbols.reserve(fragments.len());
-                    for (i, (slot, fragment)) in slots.iter_mut().zip(fragments).enumerate() {
-                        slot.write(fragment.into_symbol(file));
-                        file.base.symbols.push(SymbolId((first + i) as u32));
-                    }
-                });
+            objs.par_iter_mut().zip(parts).for_each(|(file, (first, slots, fragments))| {
+                file.base.symbols.reserve(fragments.len());
+                for (i, (slot, fragment)) in slots.iter_mut().zip(fragments).enumerate() {
+                    slot.write(fragment.into_symbol(file));
+                    file.base.symbols.push(SymbolId((first + i) as u32));
+                }
+            });
         });
     }
 }
@@ -1047,12 +976,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
 pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("convert_common_symbols");
     let default_version = ctx.default_version;
-    let Context {
-        objs,
-        symbols,
-        args,
-        ..
-    } = ctx;
+    let Context { objs, symbols, args, .. } = ctx;
     for file in objs {
         file.convert_common_symbols(args, file.id(), symbols, default_version);
     }
@@ -1109,13 +1033,9 @@ fn output_name<E: Arch>(
     }
 
     if args.z_keep_text_section_prefix {
-        for prefix in [
-            ".text.hot.",
-            ".text.unknown.",
-            ".text.unlikely.",
-            ".text.startup.",
-            ".text.exit.",
-        ] {
+        for prefix in
+            [".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.", ".text.exit."]
+        {
             let stem = &prefix[..prefix.len() - 1];
             if name == stem.as_bytes() || name.starts_with(prefix.as_bytes()) {
                 return BStr::new(stem.as_bytes());
@@ -1196,10 +1116,7 @@ struct CachedOutputSection {
     group: usize,
 }
 
-type OutputSectionShared<E> = (
-    HashMap<OutputSectionKey, OutputSectionId>,
-    Vec<OutputSection<E>>,
-);
+type OutputSectionShared<E> = (HashMap<OutputSectionKey, OutputSectionId>, Vec<OutputSection<E>>);
 
 // PT_GNU_RELRO segment is a security mechanism to make more pages
 // read-only than we could have done without it.
@@ -1255,10 +1172,8 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
                 let num_elf_sections = file.num_elf_sections;
                 let shdrs = &file.base.shdrs;
                 let extra_shdrs = &file.elf_sections2;
-                for (member, isec) in file
-                    .sections
-                    .regular_ids_mut(file_id)
-                    .filter(|(_, isec)| isec.is_alive())
+                for (member, isec) in
+                    file.sections.regular_ids_mut(file_id).filter(|(_, isec)| isec.is_alive())
                 {
                     let name = isec.name_in(shstrtab, num_elf_sections);
                     let sh_type = if isec.is_nobits() {
@@ -1295,11 +1210,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
                             sections.push(OutputSection::<E>::new(key.0, key.1));
                             OutputSectionId::new(sections.len() as u32 - 1)
                         });
-                        CachedOutputSection {
-                            section,
-                            file: None,
-                            group: 0,
-                        }
+                        CachedOutputSection { section, file: None, group: 0 }
                     });
                     if cached.file != Some(file_id) {
                         cached.file = Some(file_id);
@@ -1350,12 +1261,7 @@ pub fn create_output_sections<E: Arch>(ctx: &mut Context<E>) {
 
             let sh_flags = parts.iter().fold(0, |flags, g| flags | g.sh_flags);
             let p2align = parts.iter().map(|g| g.p2align).max().unwrap_or(0);
-            (
-                OutputSectionId::new(index as u32),
-                members,
-                sh_flags,
-                p2align,
-            )
+            (OutputSectionId::new(index as u32), members, sh_flags, p2align)
         })
         .collect();
     for (id, members, sh_flags, p2align) in flattened {
@@ -1438,9 +1344,7 @@ fn start_stop_name<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Option<Cow<'static
     if ctx.args.start_stop {
         let name = hdr.name.strip_prefix(b".").unwrap_or(hdr.name);
         return Some(Cow::Owned(
-            name.iter()
-                .map(|&b| if b.is_ascii_alphanumeric() { b } else { b'_' })
-                .collect(),
+            name.iter().map(|&b| if b.is_ascii_alphanumeric() { b } else { b'_' }).collect(),
         ));
     }
     None
@@ -1586,8 +1490,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
         let id = ctx.objs[obj_id.index()].base.symbols[i];
         if ctx.symbols[id].file() == Some(FileId::Obj(obj_id)) {
-            ctx.set_symbol_output_chunk(id, ChunkId::Symtab)
-                .set_imported(false);
+            ctx.set_symbol_output_chunk(id, ChunkId::Symtab).set_imported(false);
         }
     }
 
@@ -1634,18 +1537,15 @@ pub fn apply_section_align<E: Arch>(ctx: &mut Context<E>) {
 pub fn check_cet_errors<E: Arch>(ctx: &Context<E>) {
     let warning = ctx.args.z_cet_report == CetReportKind::Warning;
     let has_feature = |file: &ObjectFile<E>, feature: u32| {
-        file.gnu_properties
-            .get(&GNU_PROPERTY_X86_FEATURE_1_AND)
-            .is_some_and(|v| v & feature != 0)
+        file.gnu_properties.get(&GNU_PROPERTY_X86_FEATURE_1_AND).is_some_and(|v| v & feature != 0)
     };
     for file in &ctx.objs {
         if ctx.is_internal(file.id()) {
             continue;
         }
-        for (feature, name) in [
-            (GNU_PROPERTY_X86_FEATURE_1_IBT, "IBT"),
-            (GNU_PROPERTY_X86_FEATURE_1_SHSTK, "SHSTK"),
-        ] {
+        for (feature, name) in
+            [(GNU_PROPERTY_X86_FEATURE_1_IBT, "IBT"), (GNU_PROPERTY_X86_FEATURE_1_SHSTK, "SHSTK")]
+        {
             if !has_feature(file, feature) {
                 if warning {
                     warn!("{file}: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
@@ -1675,16 +1575,12 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
         let mut print = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
             let kind = if is_weak { 'w' } else { 'u' };
             match sym.input_section() {
-                Some(sec) => writeln!(
-                    out,
-                    "{src}\t{}\t{kind}\t{sym}",
-                    ctx.input_section_display(sec)
-                ),
-                None => writeln!(
-                    out,
-                    "{src}\t{}\t{kind}\t{sym}",
-                    ctx.file_display(sym.file().unwrap())
-                ),
+                Some(sec) => {
+                    writeln!(out, "{src}\t{}\t{kind}\t{sym}", ctx.input_section_display(sec))
+                }
+                None => {
+                    writeln!(out, "{src}\t{}\t{kind}\t{sym}", ctx.file_display(sym.file().unwrap()))
+                }
             }
         };
 
@@ -1762,25 +1658,15 @@ pub fn write_repro_file<E: Arch>(ctx: &Context<E>) {
     let mut name = ctx.args.output.as_os_str().to_os_string();
     name.push(".repro.tar");
     let path = std::path::PathBuf::from(name);
-    let mut basedir = ctx
-        .args
-        .output
-        .file_name()
-        .unwrap_or_default()
-        .to_os_string();
+    let mut basedir = ctx.args.output.file_name().unwrap_or_default().to_os_string();
     basedir.push(".repro");
     let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
         .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
 
     let write = |tar: &mut crate::util::tar::TarWriter, name: &std::path::Path, data: &[u8]| {
-        tar.append(name, data)
-            .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
+        tar.append(name, data).unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
     };
-    write(
-        &mut tar,
-        std::path::Path::new("response.txt"),
-        &create_response_file(ctx),
-    );
+    write(&mut tar, std::path::Path::new("response.txt"), &create_response_file(ctx));
     write(
         &mut tar,
         std::path::Path::new("version.txt"),
@@ -1842,10 +1728,7 @@ pub fn check_duplicate_symbols<E: Arch>(ctx: &Context<E>) {
                     continue;
                 }
             }
-            error!(
-                "duplicate symbol: {file}: {}: {sym}",
-                ctx.file_display(owner)
-            );
+            error!("duplicate symbol: {file}: {}: {sym}", ctx.file_display(owner));
         }
     });
     crate::error::checkpoint();
@@ -1861,40 +1744,35 @@ pub fn check_symbol_version_conflicts<E: Arch>(ctx: &Context<E>) {
         return;
     }
     let _t = ctx.timer("check_symbol_version_conflicts");
-    ctx.dynsym
-        .symbols
-        .par_iter()
-        .skip(1)
-        .flatten()
-        .for_each(|&id| {
-            let sym = &ctx.symbols[id];
-            let Some(FileId::Obj(obj)) = sym.file() else {
-                return;
-            };
-            if sym.is_weak()
-                || sym.ver_idx as u32 == VER_NDX_UNSPECIFIED
-                || sym.ver_idx as u32 & VERSYM_HIDDEN == 0
-            {
-                return;
+    ctx.dynsym.symbols.par_iter().skip(1).flatten().for_each(|&id| {
+        let sym = &ctx.symbols[id];
+        let Some(FileId::Obj(obj)) = sym.file() else {
+            return;
+        };
+        if sym.is_weak()
+            || sym.ver_idx as u32 == VER_NDX_UNSPECIFIED
+            || sym.ver_idx as u32 & VERSYM_HIDDEN == 0
+        {
+            return;
+        }
+        let Some(id2) = ctx.symbols.lookup(sym.name()) else {
+            return;
+        };
+        if id2 == id {
+            return;
+        }
+        let sym2 = &ctx.symbols[id2];
+        if let Some(FileId::Obj(_)) = sym2.file() {
+            if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
+                let file = &ctx.objs[obj.index()];
+                error!(
+                    "duplicate symbol: {file}: {}: {}",
+                    ctx.file_display(sym2.file().unwrap()),
+                    crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
+                );
             }
-            let Some(id2) = ctx.symbols.lookup(sym.name()) else {
-                return;
-            };
-            if id2 == id {
-                return;
-            }
-            let sym2 = &ctx.symbols[id2];
-            if let Some(FileId::Obj(_)) = sym2.file() {
-                if !sym2.is_weak() && sym2.ver_idx as u32 == (sym.ver_idx as u32 & !VERSYM_HIDDEN) {
-                    let file = &ctx.objs[obj.index()];
-                    error!(
-                        "duplicate symbol: {file}: {}: {}",
-                        ctx.file_display(sym2.file().unwrap()),
-                        crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
-                    );
-                }
-            }
-        });
+        }
+    });
     crate::error::checkpoint();
 }
 
@@ -1959,10 +1837,8 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     // Skip test if we don't have a complete set of shared object files
     // for the program, because if there's a missing .so, an undefined
     // symbol might be defined by that library.
-    let complete = ctx.dsos.iter().all(|dso| {
-        dso.dt_needed()
-            .all(|needed| ctx.dso_sonames.contains(needed))
-    });
+    let complete =
+        ctx.dsos.iter().all(|dso| dso.dt_needed().all(|needed| ctx.dso_sonames.contains(needed)));
 
     if complete {
         ctx.dsos.par_iter().for_each(|file| {
@@ -1994,12 +1870,7 @@ pub fn check_shlib_undefined<E: Arch>(ctx: &mut Context<E>) {
     for file in &ctx.dsos {
         file.base.set_reachable(!file.base.as_needed);
     }
-    let Context {
-        objs,
-        dsos,
-        symbols,
-        ..
-    } = ctx;
+    let Context { objs, dsos, symbols, .. } = ctx;
     objs.par_iter().for_each(|file| {
         for &id in file.base.global_symbols() {
             if let Some(FileId::Dso(dso)) = symbols[id].file() {
@@ -2200,10 +2071,7 @@ pub fn sort_debug_info_sections<E: Arch>(ctx: &mut Context<E>) {
     // Unless DWARF32 and DWARF64 debug info come from different files, it
     // doesn't make sense to sort sections.
     let has_dwarf32 = ctx.objs.iter().any(|f| f.is_dwarf32);
-    let has_dwarf64 = ctx
-        .objs
-        .iter()
-        .any(|f| !f.is_dwarf32 && !f.debug_info_sections.is_empty());
+    let has_dwarf64 = ctx.objs.iter().any(|f| !f.is_dwarf32 && !f.debug_info_sections.is_empty());
     if !has_dwarf32 || !has_dwarf64 {
         return;
     }
@@ -2250,21 +2118,16 @@ pub fn fixup_ctors_in_init_array<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("fixup_ctors_in_init_array");
     let word = E::WORD_SIZE;
 
-    for (osec_name, prefix) in [
-        (&b".init_array"[..], &b".ctors"[..]),
-        (&b".fini_array"[..], &b".dtors"[..]),
-    ] {
+    for (osec_name, prefix) in
+        [(&b".init_array"[..], &b".ctors"[..]), (&b".fini_array"[..], &b".dtors"[..])]
+    {
         let Some(ChunkId::Output(id)) = ctx.find_chunk_by_name(osec_name) else {
             continue;
         };
         let members = &ctx.output_sections[id.index()].members;
         for &m in members {
             let section_ref = ctx.input_section(m).section_ref();
-            if !ctx
-                .input_section(m)
-                .name(&ctx.objs[section_ref.file.index()])
-                .starts_with(prefix)
-            {
+            if !ctx.input_section(m).name(&ctx.objs[section_ref.file.index()]).starts_with(prefix) {
                 continue;
             }
             let file = &ctx.objs[section_ref.file.index()];
@@ -2328,17 +2191,14 @@ pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
             && name != b".fini_array"
     };
     let mode = ctx.args.shuffle_sections;
-    ctx.output_sections
-        .par_iter_mut()
-        .filter(|o| is_eligible(o))
-        .for_each(|osec| match mode {
-            ShuffleSections::Shuffle(seed) => {
-                let s = seed.wrapping_add(xxhash_rust::xxh3::xxh3_64(osec.hdr.name));
-                shuffle(&mut osec.members, s);
-            }
-            ShuffleSections::Reverse => osec.members.reverse(),
-            ShuffleSections::None => {}
-        });
+    ctx.output_sections.par_iter_mut().filter(|o| is_eligible(o)).for_each(|osec| match mode {
+        ShuffleSections::Shuffle(seed) => {
+            let s = seed.wrapping_add(xxhash_rust::xxh3::xxh3_64(osec.hdr.name));
+            shuffle(&mut osec.members, s);
+        }
+        ShuffleSections::Reverse => osec.members.reverse(),
+        ShuffleSections::None => {}
+    });
 }
 
 pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
@@ -2516,11 +2376,7 @@ pub fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
             sym.set_weak(false);
             sym.set_imported(is_imported);
             sym.set_exported(false);
-            sym.ver_idx = if is_imported {
-                VER_NDX_UNSPECIFIED as u16
-            } else {
-                default_version
-            };
+            sym.ver_idx = if is_imported { VER_NDX_UNSPECIFIED as u16 } else { default_version };
         };
 
         let visibility = ctx.symbols[id].visibility();
@@ -2575,21 +2431,14 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
     // Scan relocations to find dynamic symbols.
     {
         let ctx_ref: &Context<E> = ctx;
-        ctx_ref
-            .objs
-            .par_iter()
-            .for_each(|file| file.scan_relocations(ctx_ref));
+        ctx_ref.objs.par_iter().for_each(|file| file.scan_relocations(ctx_ref));
     }
     // Exit if there was a relocation that refers an undefined symbol.
     crate::error::checkpoint();
 
     // Word-size absolute relocations (e.g. R_X86_64_64) are handled
     // separately because they can be promoted to dynamic relocations.
-    let results: Vec<(
-        OutputSectionId,
-        Vec<crate::chunks::output_section::AbsRel>,
-        Vec<u64>,
-    )> = {
+    let results: Vec<(OutputSectionId, Vec<crate::chunks::output_section::AbsRel>, Vec<u64>)> = {
         let ctx_ref: &Context<E> = ctx;
         (0..ctx_ref.output_sections.len())
             .into_par_iter()
@@ -2669,10 +2518,7 @@ pub fn scan_relocations<E: Arch>(ctx: &mut Context<E>) {
         if let Some(&next) = syms.get(i + 64) {
             crate::util::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
         }
-        if let Some(aux) = syms
-            .get(i + 16)
-            .and_then(|&id| ctx.symbols[id].aux(&ctx.symbols))
-        {
+        if let Some(aux) = syms.get(i + 16).and_then(|&id| ctx.symbols[id].aux(&ctx.symbols)) {
             crate::util::prefetch(std::ptr::from_ref(aux).cast());
         }
         let flags = ctx.symbols[id].flags();
@@ -2740,9 +2586,7 @@ pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
         return;
     }
     let mut errors: Vec<(SymbolId, Vec<String>)> =
-        std::mem::take(&mut *ctx.undef_errors.lock().unwrap())
-            .into_iter()
-            .collect();
+        std::mem::take(&mut *ctx.undef_errors.lock().unwrap()).into_iter().collect();
     errors.sort_by_key(|e| e.0);
 
     for (id, messages) in errors {
@@ -2752,12 +2596,7 @@ pub fn report_undef_errors<E: Arch>(ctx: &Context<E>) {
             msg.push_str(m);
         }
         if messages.len() > MAX_ERRORS {
-            writeln!(
-                msg,
-                ">>> referenced {} more times",
-                messages.len() - MAX_ERRORS
-            )
-            .unwrap();
+            writeln!(msg, ">>> referenced {} more times", messages.len() - MAX_ERRORS).unwrap();
         }
         // Remove the trailing '\n' because Error/Warn adds it automatically
         msg.pop();
@@ -2774,11 +2613,8 @@ pub fn create_reloc_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_reloc_sections");
 
     // Create .rela.* sections
-    let ids: Vec<OutputSectionId> = ctx
-        .chunks
-        .iter()
-        .filter_map(|c| c.as_output_section())
-        .collect();
+    let ids: Vec<OutputSectionId> =
+        ctx.chunks.iter().filter_map(|c| c.as_output_section()).collect();
     let secs: Vec<reloc::RelocSection<E>> = {
         let ctx_ref: &Context<E> = ctx;
         ids.par_iter().map(|&id| reloc::new(ctx_ref, id)).collect()
@@ -2825,12 +2661,7 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
             .map(|&id| {
                 let name: &'static [u8] = ctx.symbols[id].name();
                 let hash = gnu_hash::djb_hash(name);
-                Entry {
-                    bucket: hash % num_buckets,
-                    name,
-                    id,
-                    hash,
-                }
+                Entry { bucket: hash % num_buckets, name, id, hash }
             })
             .collect();
         // SAFETY: .dynsym contains each symbol once and every symbol has aux.
@@ -2877,21 +2708,15 @@ pub fn sort_dynsyms<E: Arch>(ctx: &mut Context<E>) {
         *total = end;
         end += size;
     }
-    dynstr_entries[1..]
-        .par_chunks_mut(1024)
-        .zip(offsets)
-        .for_each(|(entries, mut off)| {
-            for entry in entries {
-                entry.offset = off;
-                off += entry.name.len() as u64 + 1;
-            }
-        });
+    dynstr_entries[1..].par_chunks_mut(1024).zip(offsets).for_each(|(entries, mut off)| {
+        for entry in entries {
+            entry.offset = off;
+            off += entry.name.len() as u64 + 1;
+        }
+    });
     ctx.dynstr.hdr.shdr.sh_size.set(end);
     ctx.dynsym.dynstr_entries = dynstr_entries;
-    ctx.dynsym.symbols[1..]
-        .par_iter_mut()
-        .zip(syms)
-        .for_each(|(slot, id)| *slot = Some(id));
+    ctx.dynsym.symbols[1..].par_iter_mut().zip(syms).for_each(|(slot, id)| *slot = Some(id));
 
     // ELF's symbol table sh_info holds the offset of the first global symbol.
     ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
@@ -2917,19 +2742,11 @@ pub fn create_output_symtab<E: Arch>(ctx: &mut Context<E>) {
 
     let obj_plans: Vec<crate::input_files::SymtabPlan> = {
         let ctx_ref: &Context<E> = ctx;
-        ctx_ref
-            .objs
-            .par_iter()
-            .map(|f| f.plan_symtab(ctx_ref, f.id()))
-            .collect()
+        ctx_ref.objs.par_iter().map(|f| f.plan_symtab(ctx_ref, f.id())).collect()
     };
     let dso_plans: Vec<crate::input_files::SymtabPlan> = {
         let ctx_ref: &Context<E> = ctx;
-        ctx_ref
-            .dsos
-            .par_iter()
-            .map(|f| f.plan_symtab(ctx_ref, f.id()))
-            .collect()
+        ctx_ref.dsos.par_iter().map(|f| f.plan_symtab(ctx_ref, f.id())).collect()
     };
     for (file, plan) in ctx.objs.iter_mut().zip(obj_plans) {
         file.base.apply_symtab_plan(plan);
@@ -2965,16 +2782,10 @@ pub fn apply_version_script<E: Arch>(ctx: &mut Context<E>) {
         }
         if v.is_cpp {
             if !cpp_matcher.add(v.pattern, priority) {
-                fatal!(
-                    "invalid version pattern: {}",
-                    crate::util::display(v.pattern)
-                );
+                fatal!("invalid version pattern: {}", crate::util::display(v.pattern));
             }
         } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, priority) {
-            fatal!(
-                "invalid version pattern: {}",
-                crate::util::display(v.pattern)
-            );
+            fatal!("invalid version pattern: {}", crate::util::display(v.pattern));
         }
     }
 
@@ -3075,11 +2886,7 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
                 );
                 continue;
             };
-            let ver_idx = if is_default {
-                ver_idx
-            } else {
-                ver_idx | VERSYM_HIDDEN as u16
-            };
+            let ver_idx = if is_default { ver_idx } else { ver_idx | VERSYM_HIDDEN as u16 };
             ctx.symbols[id].ver_idx = ver_idx;
 
             // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
@@ -3176,35 +2983,30 @@ pub fn compute_import_export<E: Arch>(ctx: &mut Context<E>) {
             .par_iter()
             .flat_map_iter(|file| {
                 let file_id = FileId::Obj(file.id());
-                file.base
-                    .global_symbols()
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .filter_map(move |(i, id)| {
-                        let sym = &ctx_ref.symbols[id];
+                file.base.global_symbols().iter().copied().enumerate().filter_map(move |(i, id)| {
+                    let sym = &ctx_ref.symbols[id];
 
-                        // If we are using a symbol in a DSO, we need to import it.
-                        if let Some(FileId::Dso(_)) = sym.file() {
-                            // Shared symbols remain weak only if every undefined
-                            // reference is weak. Fragment dummies have no ElfSym.
-                            let strong = file
-                                .base
-                                .elf_syms
-                                .get(file.base.first_global + i)
-                                .is_some_and(|esym| esym.is_undef() && !esym.is_weak());
-                            return Some((id, true, false, strong));
-                        }
+                    // If we are using a symbol in a DSO, we need to import it.
+                    if let Some(FileId::Dso(_)) = sym.file() {
+                        // Shared symbols remain weak only if every undefined
+                        // reference is weak. Fragment dummies have no ElfSym.
+                        let strong = file
+                            .base
+                            .elf_syms
+                            .get(file.base.first_global + i)
+                            .is_some_and(|esym| esym.is_undef() && !esym.is_weak());
+                        return Some((id, true, false, strong));
+                    }
 
-                        // If we have a definition of a symbol, we may want to export it.
-                        if sym.file() == Some(file_id) && should_export(ctx_ref, sym) {
-                            // Exported symbols are marked as imported as well by default
-                            // for DSOs.
-                            let imported = ctx_ref.args.shared && !is_protected(ctx_ref, sym);
-                            return Some((id, imported, true, false));
-                        }
-                        None
-                    })
+                    // If we have a definition of a symbol, we may want to export it.
+                    if sym.file() == Some(file_id) && should_export(ctx_ref, sym) {
+                        // Exported symbols are marked as imported as well by default
+                        // for DSOs.
+                        let imported = ctx_ref.args.shared && !is_protected(ctx_ref, sym);
+                        return Some((id, imported, true, false));
+                    }
+                    None
+                })
             })
             .collect()
     };
@@ -3517,9 +3319,8 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
         }
         let name = hdr.name;
         let order = &ctx.args.section_order;
-        if let Some(i) = order
-            .iter()
-            .position(|o| matches!(o, SectionOrder::Section(n) if n == name))
+        if let Some(i) =
+            order.iter().position(|o| matches!(o, SectionOrder::Section(n) if n == name))
         {
             return i as i64;
         }
@@ -3530,10 +3331,7 @@ fn sort_output_sections_by_order<E: Arch>(ctx: &mut Context<E>) {
         {
             return i as i64;
         }
-        error!(
-            "--section-order: missing section specification for {}",
-            hdr.name
-        );
+        error!("--section-order: missing section specification for {}", hdr.name);
         0
     };
     // It is an error if a section order cannot be determined by a given
@@ -3717,12 +3515,8 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
 }
 
 fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
-    let vec: Vec<ChunkId> = ctx
-        .chunks
-        .iter()
-        .copied()
-        .filter(|&c| ctx.chunk_header(c).is_alloc())
-        .collect();
+    let vec: Vec<ChunkId> =
+        ctx.chunks.iter().copied().filter(|&c| ctx.chunk_header(c).is_alloc()).collect();
     let mut addr = ctx.args.image_base;
     let page_size = ctx.args.page_size;
     let mut i = 0;
@@ -3796,19 +3590,13 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         let first = ctx.chunk_header(ctx.chunks[i]).shdr;
         if first.sh_flags.get() & SHF_ALLOC as u64 == 0 {
             fileoff = align_to(fileoff, first.sh_addralign.get());
-            ctx.chunk_header_mut(ctx.chunks[i])
-                .shdr
-                .sh_offset
-                .set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i]).shdr.sh_offset.set(fileoff);
             fileoff += first.sh_size.get();
             i += 1;
             continue;
         }
         if first.sh_type.get() == SHT_NOBITS {
-            ctx.chunk_header_mut(ctx.chunks[i])
-                .shdr
-                .sh_offset
-                .set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i]).shdr.sh_offset.set(fileoff);
             i += 1;
             continue;
         }
@@ -3824,10 +3612,7 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
         loop {
             let shdr = ctx.chunk_header(ctx.chunks[i]).shdr;
             let offset = fileoff + shdr.sh_addr.get() - first.sh_addr.get();
-            ctx.chunk_header_mut(ctx.chunks[i])
-                .shdr
-                .sh_offset
-                .set(offset);
+            ctx.chunk_header_mut(ctx.chunks[i]).shdr.sh_offset.set(offset);
             i += 1;
             if i >= ctx.chunks.len() {
                 break;
@@ -3866,10 +3651,7 @@ fn set_file_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
             if shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 || shdr.sh_type.get() != SHT_NOBITS {
                 break;
             }
-            ctx.chunk_header_mut(ctx.chunks[i])
-                .shdr
-                .sh_offset
-                .set(fileoff);
+            ctx.chunk_header_mut(ctx.chunks[i]).shdr.sh_offset.set(fileoff);
             i += 1;
         }
     }
@@ -3903,10 +3685,8 @@ pub fn compute_section_headers<E: Arch>(ctx: &mut Context<E>) {
     ctx.chunks = chunks
         .into_iter()
         .filter(|&id| {
-            matches!(
-                id,
-                ChunkId::Output(_) | ChunkId::GdbIndex | ChunkId::Placeholder(_)
-            ) || ctx.chunk_header(id).shdr.sh_size.get() != 0
+            matches!(id, ChunkId::Output(_) | ChunkId::GdbIndex | ChunkId::Placeholder(_))
+                || ctx.chunk_header(id).shdr.sh_size.get() != 0
         })
         .collect();
 
@@ -3983,12 +3763,7 @@ pub fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
 
 fn num_irelative_relocs<E: Arch>(ctx: &Context<E>) -> u64 {
     let mut n = 0u64;
-    n += ctx
-        .got
-        .got_syms
-        .iter()
-        .filter(|&&id| ctx.symbols[id].is_ifunc())
-        .count() as u64;
+    n += ctx.got.got_syms.iter().filter(|&&id| ctx.symbols[id].is_ifunc()).count() as u64;
     n
 }
 
@@ -4039,10 +3814,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
         .filter(|&c| !c.is_header() && ctx.chunk_header(c).is_alloc())
         .collect();
     let find = |ctx: &Context<E>, name: &[u8]| {
-        sections
-            .iter()
-            .copied()
-            .find(|&c| ctx.chunk_header(c).name == name)
+        sections.iter().copied().find(|&c| ctx.chunk_header(c).name == name)
     };
     let first = sections.first().copied();
 
@@ -4080,10 +3852,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     } else {
         // If the symbols are not ncessary, we turn them to absolute
         // symbols at address 0.
-        for sym in [ctx.syms.rel_iplt_start, ctx.syms.rel_iplt_end]
-            .into_iter()
-            .flatten()
-        {
+        for sym in [ctx.syms.rel_iplt_start, ctx.syms.rel_iplt_end].into_iter().flatten() {
             ctx.symbols[sym].clear_origin();
         }
     }
@@ -4131,11 +3900,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
     // _GLOBAL_OFFSET_TABLE_. I don't know why, but for the sake of
     // compatibility with existing code, it must be set to the beginning of
     // .got.plt instead of .got only on i386 and x86-64.
-    let got = if E::IS_X86 {
-        ChunkId::GotPlt
-    } else {
-        ChunkId::Got
-    };
+    let got = if E::IS_X86 { ChunkId::GotPlt } else { ChunkId::Got };
     start(ctx, ctx.syms.global_offset_table, Some(got), 0);
 
     // _PROCEDURE_LINKAGE_TABLE_. We need this on SPARC.
@@ -4187,12 +3952,7 @@ pub fn fix_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
             }
             let sym = ctx.get_symbol(label.as_bytes());
             if ctx.symbols[sym].file() == ctx.internal_obj.map(FileId::Obj) {
-                start(
-                    ctx,
-                    Some(sym),
-                    Some(ChunkId::Ppc64SaveRestore),
-                    (i * 4) as i64,
-                );
+                start(ctx, Some(sym), Some(ChunkId::Ppc64SaveRestore), (i * 4) as i64);
             }
         }
     }
@@ -4509,10 +4269,8 @@ pub fn write_separate_debug_file<E: Arch>(ctx: &mut Context<E>) {
     // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
     // the .gnu_debuglink section in the main executable matches with the
     // debug info file's CRC32 checksum.
-    let trailer = crc32_solve(
-        crc32_parallel(output.buf()),
-        ctx.gnu_debuglink.as_ref().unwrap().crc32,
-    );
+    let trailer =
+        crc32_solve(crc32_parallel(output.buf()), ctx.gnu_debuglink.as_ref().unwrap().crc32);
     let len = output.len();
     output.extend(trailer.len());
     output.buf()[len..].copy_from_slice(&trailer);
@@ -4615,24 +4373,15 @@ pub fn show_stats<E: Arch>(ctx: &Context<E>) {
     stats.extend([
         (
             "total_input_bytes",
-            crate::mapped_file::file_pool()
-                .iter()
-                .map(|mf| mf.size() as i64)
-                .sum(),
+            crate::mapped_file::file_pool().iter().map(|mf| mf.size() as i64).sum(),
         ),
-        (
-            "input_sections",
-            ctx.objs.iter().map(|file| file.sections.len() as i64).sum(),
-        ),
+        ("input_sections", ctx.objs.iter().map(|file| file.sections.len() as i64).sum()),
         ("output_chunks", ctx.chunks.len() as i64),
         ("num_objs", ctx.objs.len() as i64),
         ("num_dsos", ctx.dsos.len() as i64),
         (
             "merged_strings",
-            ctx.merged_sections
-                .iter()
-                .map(|section| section.fragments.len() as i64)
-                .sum(),
+            ctx.merged_sections.iter().map(|section| section.fragments.len() as i64).sum(),
         ),
     ]);
     if E::NEEDS_THUNK {

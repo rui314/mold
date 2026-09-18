@@ -68,10 +68,7 @@ fn or12(loc: &mut [u8], val: u64) {
 /// Writes a 20-bit displacement, which is split into a 12-bit low part
 /// and an 8-bit high part.
 fn write_mid20(loc: &mut [u8], val: u64) {
-    write_ub32(
-        loc,
-        read_ub32(loc) | ((bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8)) as u32,
-    );
+    write_ub32(loc, read_ub32(loc) | ((bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8)) as u32);
 }
 
 /// Whether the GOT-loading LGRL at `loc` (opcode 0xc4?8, preceded by
@@ -245,8 +242,7 @@ impl Arch for S390x {
                     if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
                         // Do nothing
                     } else {
-                        ctx.needs_tlsld
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        ctx.needs_tlsld.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 R_390_TLS_LE32 | R_390_TLS_LE64 => check_tlsle(ctx, isec, sym, rel),

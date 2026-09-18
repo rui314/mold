@@ -186,9 +186,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
     // Initialize input sections with a dummy offset so that we can
     // distinguish sections whose addresses have been assigned from those
     // whose addresses have not.
-    members
-        .par_iter()
-        .for_each(|&member| ctx.input_section(member).set_offset(UNPLACED));
+    members.par_iter().for_each(|&member| ctx.input_section(member).set_offset(UNPLACED));
 
     let distance = E::branch_distance() as u64;
     let batch = batch_size::<E>();
@@ -230,11 +228,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
             });
 
         // Find the first section that is within branch range of C.
-        let c_offset = if c == d {
-            offset
-        } else {
-            ctx.input_section(members[c]).offset()
-        };
+        let c_offset = if c == d { offset } else { ctx.input_section(members[c]).offset() };
         a += members[a..b].partition_point(|&member| {
             ctx.input_section(member).offset() < c_offset.saturating_sub(distance)
         });
@@ -276,12 +270,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
                 })
         };
         // Add symbols to the thunk
-        let mut thunk = Thunk {
-            offset,
-            symbols,
-            offsets: Vec::new(),
-            name: String::new(),
-        };
+        let mut thunk = Thunk { offset, symbols, offsets: Vec::new(), name: String::new() };
         // Now that we know the number of symbols in the thunk, we can compute
         // the thunk's size.
         thunk.offsets = thunk.fixed_offsets::<E>();
@@ -306,10 +295,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
         thunks.par_iter_mut().for_each(|thunk| {
             thunk.symbols.sort_by_key(|&id| {
                 let sym = &ctx.symbols[id];
-                (
-                    sym.file().map_or(0, |f| ctx.file(f).priority),
-                    sym.sym_idx(),
-                )
+                (sym.file().map_or(0, |f| ctx.file(f).priority), sym.sym_idx())
             });
         });
     }
@@ -342,22 +328,19 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
     {
         let ctx: &Context<E> = ctx;
         for &id in &sections {
-            ctx.output_sections[id.index()]
-                .members
-                .par_iter()
-                .for_each(|&m| {
-                    let isec = ctx.input_section(m);
-                    let file = &ctx.objs[isec.file.index()];
-                    for rel in isec.rels(file) {
-                        if !rel.is_func_call::<E>() {
-                            continue;
-                        }
-                        let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-                        if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
-                            sym.mark();
-                        }
+            ctx.output_sections[id.index()].members.par_iter().for_each(|&m| {
+                let isec = ctx.input_section(m);
+                let file = &ctx.objs[isec.file.index()];
+                for rel in isec.rels(file) {
+                    if !rel.is_func_call::<E>() {
+                        continue;
                     }
-                });
+                    let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                    if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
+                        sym.mark();
+                    }
+                }
+            });
         }
     }
 

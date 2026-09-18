@@ -10,34 +10,24 @@ pub(crate) struct WorkerLocal<T>(Vec<Worker<T>>);
 
 impl<T> WorkerLocal<T> {
     pub fn new(init: impl Fn() -> T) -> Self {
-        Self(
-            (0..=rayon::current_num_threads())
-                .map(|_| Worker(Mutex::new(init())))
-                .collect(),
-        )
+        Self((0..=rayon::current_num_threads()).map(|_| Worker(Mutex::new(init()))).collect())
     }
 
     pub fn get(&self) -> MutexGuard<'_, T> {
         let fallback = self.0.len() - 1;
-        let worker = rayon::current_thread_index()
-            .unwrap_or(fallback)
-            .min(fallback);
+        let worker = rayon::current_thread_index().unwrap_or(fallback).min(fallback);
         self.0[worker].0.lock().unwrap()
     }
 
     pub fn into_values(self) -> impl Iterator<Item = T> {
-        self.0
-            .into_iter()
-            .map(|worker| worker.0.into_inner().unwrap())
+        self.0.into_iter().map(|worker| worker.0.into_inner().unwrap())
     }
 
     pub fn take(&mut self) -> impl Iterator<Item = T> + '_
     where
         T: Default,
     {
-        self.0
-            .iter_mut()
-            .map(|worker| std::mem::take(worker.0.get_mut().unwrap()))
+        self.0.iter_mut().map(|worker| std::mem::take(worker.0.get_mut().unwrap()))
     }
 }
 
@@ -48,16 +38,11 @@ mod tests {
 
     #[test]
     fn reuses_worker_storage_and_keeps_an_outside_slot() {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(2)
-            .build()
-            .unwrap();
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
         let mut slots = pool.install(|| {
             let slots = WorkerLocal::new(Vec::new);
             for batch in 0..3 {
-                (0..100)
-                    .into_par_iter()
-                    .for_each(|i| slots.get().push(batch * 100 + i));
+                (0..100).into_par_iter().for_each(|i| slots.get().push(batch * 100 + i));
             }
             slots
         });

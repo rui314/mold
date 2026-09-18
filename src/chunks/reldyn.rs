@@ -33,11 +33,7 @@ impl<E: Arch> RelDynSection<E> {
         let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
         hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(align);
-        RelDynSection {
-            hdr,
-            android_encoded: Vec::new(),
-            keep_android_size: false,
-        }
+        RelDynSection { hdr, android_encoded: Vec::new(), keep_android_size: false }
     }
 }
 
@@ -100,11 +96,8 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    let size: u64 = ctx
-        .chunks
-        .iter()
-        .map(|&id| ctx.chunk_header(id).relr.len() as u64 * word)
-        .sum();
+    let size: u64 =
+        ctx.chunks.iter().map(|&id| ctx.chunk_header(id).relr.len() as u64 * word).sum();
     if let Some(relrdyn) = &mut ctx.relrdyn {
         relrdyn.shdr.sh_size.set(size);
     }

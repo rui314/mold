@@ -68,11 +68,7 @@ pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.symbols.aux_mut(sym).got_idx = idx;
     // An IFUNC symbol uses two GOT slots in a position-dependent
     // executable.
-    let increment = if is_pde_ifunc {
-        2 * word::<E>()
-    } else {
-        word::<E>()
-    };
+    let increment = if is_pde_ifunc { 2 * word::<E>() } else { word::<E>() };
     ctx.got.hdr.shdr.sh_size.set(size.wrapping_add(increment));
     ctx.got.got_syms.push(sym);
 }
@@ -143,12 +139,7 @@ struct GotEntry {
 // Their addresses are not unique; each thread has its own copy of TLVs.
 fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
     let mut add = |idx: u32, val: u64, r_type: u32, sym: Option<SymbolId>| {
-        emit(GotEntry {
-            idx,
-            val,
-            r_type,
-            sym,
-        });
+        emit(GotEntry { idx, val, r_type, sym });
     };
     let got = &ctx.got;
 
@@ -162,19 +153,9 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
             if sym.is_ifunc() {
                 if sym.is_pde_ifunc(ctx) {
                     add(idx, sym.plt_addr(ctx), R_NONE, None);
-                    add(
-                        idx + 1,
-                        sym.addr_with(ctx, AddrFlags::NO_PLT),
-                        r_irelative,
-                        None,
-                    );
+                    add(idx + 1, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
                 } else {
-                    add(
-                        idx,
-                        sym.addr_with(ctx, AddrFlags::NO_PLT),
-                        r_irelative,
-                        None,
-                    );
+                    add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), r_irelative, None);
                 }
                 continue;
             }
@@ -185,12 +166,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
             add(idx, 0, E::R_GLOB_DAT, Some(id));
         } else if ctx.args.pic && sym.is_relative() {
             // We know the symbol's address, but it needs a base relocation.
-            add(
-                idx,
-                sym.addr_with(ctx, AddrFlags::NO_PLT),
-                E::R_RELATIVE,
-                None,
-            );
+            add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), E::R_RELATIVE, None);
         } else {
             // We know the symbol's exact run-time address at link-time.
             add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), R_NONE, None);
@@ -209,22 +185,12 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
             // If we are creating a shared library, we know the TLV's offset
             // within the current TLS block. We don't know the module ID though.
             add(idx, 0, E::R_DTPMOD, None);
-            add(
-                idx + 1,
-                sym.addr(ctx).wrapping_sub(ctx.dtp_addr),
-                R_NONE,
-                None,
-            );
+            add(idx + 1, sym.addr(ctx).wrapping_sub(ctx.dtp_addr), R_NONE, None);
         } else {
             // If we are creating an executable, we know both the module ID and
             // the offset. Module ID 1 indicates the main executable.
             add(idx, 1, R_NONE, None);
-            add(
-                idx + 1,
-                sym.addr(ctx).wrapping_sub(ctx.dtp_addr),
-                R_NONE,
-                None,
-            );
+            add(idx + 1, sym.addr(ctx).wrapping_sub(ctx.dtp_addr), R_NONE, None);
         }
     }
 
@@ -241,12 +207,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
             if sym.is_imported() {
                 add(idx, 0, r_tlsdesc, Some(id));
             } else {
-                add(
-                    idx,
-                    sym.addr(ctx).wrapping_sub(ctx.tls_begin),
-                    r_tlsdesc,
-                    None,
-                );
+                add(idx, sym.addr(ctx).wrapping_sub(ctx.tls_begin), r_tlsdesc, None);
             }
         }
     }
@@ -261,12 +222,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
         } else if ctx.args.shared {
             // If we know the offset within the current thread vector,
             // let the dynamic linker to adjust it.
-            add(
-                idx,
-                sym.addr(ctx).wrapping_sub(ctx.tls_begin),
-                E::R_TPOFF,
-                None,
-            );
+            add(idx, sym.addr(ctx).wrapping_sub(ctx.tls_begin), E::R_TPOFF, None);
         } else {
             // Otherwise, we know the offset from the thread pointer (TP) at
             // link-time, so we can fill the GOT entry directly.
@@ -348,9 +304,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
         let rel = ElfRel::<E>::new(
             ctx.got.hdr.shdr.sh_addr.get() + ent.idx as u64 * word::<E>(),
             ent.r_type,
-            ent.sym
-                .and_then(|s| ctx.symbols[s].dynsym_idx(&ctx.symbols))
-                .unwrap_or(0),
+            ent.sym.and_then(|s| ctx.symbols[s].dynsym_idx(&ctx.symbols)).unwrap_or(0),
             ent.val as i64,
         );
         let is_relr = rel.r_type() == E::R_RELATIVE && rel.r_offset().is_multiple_of(word::<E>());

@@ -41,16 +41,11 @@ pub fn create<E: Arch>(ctx: &mut Context<E>) {
     }) else {
         return;
     };
-    let ChunkId::Output(osec) = ctx.chunks[i] else {
-        unreachable!()
-    };
+    let ChunkId::Output(osec) = ctx.chunks[i] else { unreachable!() };
 
     let mut hdr = ChunkHeader::<E>::new(".ARM.exidx", SHT_ARM_EXIDX, SHF_ALLOC as u64);
     hdr.shdr.sh_addralign.set(4);
-    ctx.arm_exidx = Some(ArmExidxSection {
-        hdr,
-        output_section: osec,
-    });
+    ctx.arm_exidx = Some(ArmExidxSection { hdr, output_section: osec });
     ctx.chunks[i] = ChunkId::ArmExidx;
 
     // The input sections are consumed here rather than copied.
@@ -153,16 +148,13 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     // records by address, we first translate them so that the addresses
     // are relative to the beginning of the section.
     let is_relative = |val: u32| val != CANTUNWIND && val & 0x8000_0000 == 0;
-    entries
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(i, (addr, val))| {
-            let offset = (i * ENTRY_SIZE) as u32;
-            *addr = (sign_extend(*addr as u64, 31) as u32).wrapping_add(offset);
-            if is_relative(*val) {
-                *val = 0x7fff_ffff & val.wrapping_add(offset);
-            }
-        });
+    entries.par_iter_mut().enumerate().for_each(|(i, (addr, val))| {
+        let offset = (i * ENTRY_SIZE) as u32;
+        *addr = (sign_extend(*addr as u64, 31) as u32).wrapping_add(offset);
+        if is_relative(*val) {
+            *val = 0x7fff_ffff & val.wrapping_add(offset);
+        }
+    });
     entries.sort_by_key(|&(addr, _)| addr);
 
     // Remove duplicate adjacent entries. That is, if two adjacent functions
@@ -171,16 +163,13 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     entries.dedup_by_key(|&mut (_, val)| val);
 
     // Make addresses relative to themselves.
-    entries
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(i, (addr, val))| {
-            let offset = (i * ENTRY_SIZE) as u32;
-            *addr = 0x7fff_ffff & addr.wrapping_sub(offset);
-            if is_relative(*val) {
-                *val = 0x7fff_ffff & val.wrapping_sub(offset);
-            }
-        });
+    entries.par_iter_mut().enumerate().for_each(|(i, (addr, val))| {
+        let offset = (i * ENTRY_SIZE) as u32;
+        *addr = 0x7fff_ffff & addr.wrapping_sub(offset);
+        if is_relative(*val) {
+            *val = 0x7fff_ffff & val.wrapping_sub(offset);
+        }
+    });
 
     buf.truncate(entries.len() * ENTRY_SIZE);
     for (i, (addr, val)) in entries.iter().enumerate() {

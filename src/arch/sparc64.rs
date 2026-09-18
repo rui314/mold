@@ -191,10 +191,7 @@ impl Arch for Sparc64 {
             }
             let plt1 = plt + Self::PLT_SIZE;
             or32(buf, bits(entry - plt, 21, 0));
-            or32(
-                &mut buf[4..],
-                bits(plt1.wrapping_sub(entry).wrapping_sub(4), 20, 2),
-            );
+            or32(&mut buf[4..], bits(plt1.wrapping_sub(entry).wrapping_sub(4), 20, 2));
         } else {
             const INSN: [u32; 6] = [
                 0x8a10_000f, // mov  %o7, %g5
@@ -209,10 +206,7 @@ impl Arch for Sparc64 {
             }
             let call = entry + 4;
             let ptroff = plt_ptr_offset(ctx.plt.symbols.len(), idx);
-            or32(
-                &mut buf[12..],
-                bits((plt + ptroff).wrapping_sub(call), 12, 0),
-            );
+            or32(&mut buf[12..], bits((plt + ptroff).wrapping_sub(call), 12, 0));
 
             // The data pointer initially holds (.PLT0 - call) so that the first call
             // jumps to .PLT0, where the loader's lazy resolver lives. The resolver
@@ -236,9 +230,7 @@ impl Arch for Sparc64 {
         }
         write_ub64(
             &mut buf[24..],
-            sym.got_pltgot_addr(ctx)
-                .wrapping_sub(sym.plt_addr(ctx))
-                .wrapping_sub(4),
+            sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(4),
         );
     }
 
@@ -526,11 +518,7 @@ impl Arch for Sparc64 {
                 R_SPARC_PC22 | R_SPARC_PCPLT22 | R_SPARC_PC_LM22 => or32(loc, bits(pcrel, 31, 10)),
                 R_SPARC_OLO10 => or32(
                     loc,
-                    bits(
-                        bits(sa, 9, 0).wrapping_add(u64::from(rel.r_type_data.get())),
-                        12,
-                        0,
-                    ),
+                    bits(bits(sa, 9, 0).wrapping_add(u64::from(rel.r_type_data.get())), 12, 0),
                 ),
                 R_SPARC_HH22 => or32(loc, bits(sa, 63, 42)),
                 R_SPARC_HM10 => or32(loc, bits(sa, 41, 32)),
@@ -545,20 +533,12 @@ impl Arch for Sparc64 {
                     if sym.has_tlsgd(&ctx.symbols) {
                         or32(
                             loc,
-                            bits(
-                                sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got),
-                                31,
-                                10,
-                            ),
+                            bits(sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got), 31, 10),
                         );
                     } else if sym.has_gottp(&ctx.symbols) {
                         or32(
                             loc,
-                            bits(
-                                sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got),
-                                31,
-                                10,
-                            ),
+                            bits(sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got), 31, 10),
                         );
                     } else {
                         or32(loc, bits(!sa.wrapping_sub(ctx.tp_addr), 31, 10));
@@ -580,10 +560,7 @@ impl Arch for Sparc64 {
                     } else {
                         // add %rs1, %rs2, %rd → xor %rs1, $imm, %rd
                         write_ub32(loc, 0x8018_2000 | rs1 | rd);
-                        or32(
-                            loc,
-                            bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000,
-                        );
+                        or32(loc, bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000);
                     }
                 }
                 R_SPARC_TLS_GD_ADD => {
@@ -599,10 +576,7 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_TLS_GD_CALL => {
                     if sym.has_tlsgd(&ctx.symbols) {
-                        or32(
-                            loc,
-                            bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2),
-                        );
+                        or32(loc, bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2));
                     } else if sym.has_gottp(&ctx.symbols) {
                         // When we rewrite a branch instruction with a non-branch one,
                         // we need to swap the instruction and the following one so that
@@ -622,11 +596,7 @@ impl Arch for Sparc64 {
                     if ctx.got.has_tlsld() {
                         or32(
                             loc,
-                            bits(
-                                ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got),
-                                31,
-                                10,
-                            ),
+                            bits(ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got), 31, 10),
                         );
                     } else {
                         or32(loc, bits(ctx.tp_addr.wrapping_sub(ctx.tls_begin), 31, 10));
@@ -649,33 +619,23 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_TLS_LDM_CALL => {
                     if ctx.got.has_tlsld() {
-                        or32(
-                            loc,
-                            bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2),
-                        );
+                        or32(loc, bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2));
                     } else {
                         write_ub32(loc, 0x0100_0000); // nop
                     }
                 }
                 R_SPARC_TLS_LDO_HIX22 => or32(loc, bits(sa.wrapping_sub(ctx.dtp_addr), 31, 10)),
                 R_SPARC_TLS_LDO_LOX10 => or32(loc, bits(sa.wrapping_sub(ctx.dtp_addr), 9, 0)),
-                R_SPARC_TLS_IE_HI22 => or32(
-                    loc,
-                    bits(
-                        sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got),
-                        31,
-                        10,
-                    ),
-                ),
-                R_SPARC_TLS_IE_LO10 => or32(
-                    loc,
-                    bits(sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got), 9, 0),
-                ),
+                R_SPARC_TLS_IE_HI22 => {
+                    or32(loc, bits(sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got), 31, 10))
+                }
+                R_SPARC_TLS_IE_LO10 => {
+                    or32(loc, bits(sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got), 9, 0))
+                }
                 R_SPARC_TLS_LE_HIX22 => or32(loc, bits(!sa.wrapping_sub(ctx.tp_addr), 31, 10)),
-                R_SPARC_TLS_LE_LOX10 => or32(
-                    loc,
-                    bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000,
-                ),
+                R_SPARC_TLS_LE_LOX10 => {
+                    or32(loc, bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000)
+                }
                 R_SPARC_SIZE32 => {
                     write_ub32(loc, sym.esym(ctx).st_size().get().wrapping_add(a) as u32)
                 }

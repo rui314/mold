@@ -22,10 +22,7 @@ impl<E: Layout> VerneedSection<E> {
     pub fn new() -> VerneedSection<E> {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version_r", SHT_GNU_VERNEED, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
-        VerneedSection {
-            hdr,
-            contents: Vec::new(),
-        }
+        VerneedSection { hdr, contents: Vec::new() }
     }
 }
 
@@ -51,10 +48,7 @@ impl<E: Layout> Default for VerneedSection<E> {
 // about this dummy version name and simply ignores it.
 fn is_glibc2<E: Layout>(dso: &crate::input_files::SharedFile<E>) -> bool {
     dso.soname.starts_with(b"libc.so.")
-        && dso
-            .version_strings
-            .iter()
-            .any(|v| v.starts_with(b"GLIBC_2."))
+        && dso.version_strings.iter().any(|v| v.starts_with(b"GLIBC_2."))
 }
 
 pub fn construct<E: Arch>(ctx: &mut Context<E>) {
