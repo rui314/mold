@@ -1,18 +1,18 @@
 //! Input sections and the records the linker parses out of them.
 
 use std::fmt::{self, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use bstr::BStr;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::merged::{MergedSection, MergedSectionId};
 use crate::chunks::OutputSectionId;
+use crate::chunks::merged::{MergedSection, MergedSectionId};
 use crate::cmdline::UnresolvedKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
-use crate::symbol::{Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC};
+use crate::symbol::{NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, Symbol, SymbolId};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
 use crate::util::endian::Endian;
@@ -249,11 +249,7 @@ pub struct InputSection<E: Arch> {
 
 #[inline]
 fn to_p2align(alignment: u64) -> u8 {
-    if alignment == 0 {
-        0
-    } else {
-        alignment.trailing_zeros() as u8
-    }
+    if alignment == 0 { 0 } else { alignment.trailing_zeros() as u8 }
 }
 
 /// Resolved S and A for a nonallocated relocation. Keep its fragment so the
@@ -1033,22 +1029,14 @@ impl<E: Arch> InputSection<E> {
 
 /// The number of bytes removed at delta `i`.
 pub fn removed_bytes(deltas: &[RelocDelta], i: usize) -> i64 {
-    if i == 0 {
-        deltas[0].delta
-    } else {
-        deltas[i].delta - deltas[i - 1].delta
-    }
+    if i == 0 { deltas[0].delta } else { deltas[i].delta - deltas[i - 1].delta }
 }
 
 /// The total number of bytes removed before `offset`.
 pub fn r_delta<E: Arch>(isec: &InputSection<E>, offset: u64) -> i64 {
     let deltas = isec.r_deltas();
     let i = deltas.partition_point(|d| d.offset < offset);
-    if i == 0 {
-        0
-    } else {
-        deltas[i - 1].delta
-    }
+    if i == 0 { 0 } else { deltas[i - 1].delta }
 }
 
 /// Find the prevailing group having the same signature as the discarded group
@@ -1096,7 +1084,8 @@ fn do_action<E: Arch>(
 ) {
     match action {
         Action::None => {}
-        Action::Error => error!("{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
+        Action::Error => error!(
+            "{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
             rel.type_name::<E>(),
             rel.r_offset(),
@@ -1200,7 +1189,8 @@ pub fn check_tlsle<E: Arch>(
     rel: &ElfRel<E>,
 ) {
     if ctx.args.shared {
-        error!("{}: relocation {} against `{}` can not be used when making a shared object; recompile with -fPIC",
+        error!(
+            "{}: relocation {} against `{}` can not be used when making a shared object; recompile with -fPIC",
             isec.display(&ctx.objs[isec.file.index()]),
             rel.type_name::<E>(),
             sym

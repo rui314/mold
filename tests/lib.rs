@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -499,7 +499,7 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
                     Outcome::Skip
                 } else {
                     Outcome::Pass
-                })
+                });
             }
             None if start.elapsed() < timeout => thread::sleep(Duration::from_millis(20)),
             None => {
@@ -560,13 +560,15 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResul
             let jobs = &jobs;
             let next = &next;
             let sender = sender.clone();
-            scope.spawn(move || loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                let Some(job) = jobs.get(index) else {
-                    break;
-                };
-                if sender.send(run_job(root, job, options.timeout)).is_err() {
-                    break;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(job) = jobs.get(index) else {
+                        break;
+                    };
+                    if sender.send(run_job(root, job, options.timeout)).is_err() {
+                        break;
+                    }
                 }
             });
         }
@@ -651,11 +653,7 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     }
 
     let results = run_jobs(&work_dir, jobs, &options);
-    if print_summary(&results) {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
+    if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
 #[cfg(test)]

@@ -192,19 +192,11 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
     let is_64 = data[EI_CLASS as usize] == ELFCLASS64 as u8;
     let read_u16 = |off: usize| {
         let b = [data[off], data[off + 1]];
-        if is_le {
-            u16::from_le_bytes(b)
-        } else {
-            u16::from_be_bytes(b)
-        }
+        if is_le { u16::from_le_bytes(b) } else { u16::from_be_bytes(b) }
     };
     let read_u32 = |off: usize| {
         let b = [data[off], data[off + 1], data[off + 2], data[off + 3]];
-        if is_le {
-            u32::from_le_bytes(b)
-        } else {
-            u32::from_be_bytes(b)
-        }
+        if is_le { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
     };
     let e_machine = read_u16(18) as u32;
     // e_flags follows the three word-sized fields after e_version.

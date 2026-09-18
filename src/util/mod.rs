@@ -266,11 +266,7 @@ pub(crate) fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
             other => out.push(other),
         }
     }
-    if out.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        out
-    }
+    if out.as_os_str().is_empty() { PathBuf::from(".") } else { out }
 }
 
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.

@@ -11,7 +11,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
-use crate::symbol::{is_c_identifier, OriginValue, SymbolId};
+use crate::symbol::{OriginValue, SymbolId, is_c_identifier};
 
 fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
     let ty = isec.sh_type(file);

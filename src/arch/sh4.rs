@@ -67,8 +67,8 @@ use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
-use crate::input_sections::{check_tlsle, scan_pcrel, InputSection};
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::input_sections::{InputSection, check_tlsle, scan_pcrel};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ul32};
 use crate::{error, fatal};
 
@@ -160,11 +160,7 @@ where
     }
 
     fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
-        if addend_in_place(rel.r_type()) {
-            End::read_u32(loc) as i32 as i64
-        } else {
-            0
-        }
+        if addend_in_place(rel.r_type()) { End::read_u32(loc) as i32 as i64 } else { 0 }
     }
 
     fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {

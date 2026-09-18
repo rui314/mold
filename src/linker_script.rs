@@ -12,7 +12,7 @@ use crate::arch::Arch;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
-use crate::mapped_file::{apply_chroot, must_open_file, open_file, MappedFile};
+use crate::mapped_file::{MappedFile, apply_chroot, must_open_file, open_file};
 use crate::reader;
 use crate::util;
 use crate::{fatal, warn};

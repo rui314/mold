@@ -41,11 +41,7 @@ pub fn new_header<E: Arch>() -> ChunkHeader<E> {
 }
 
 pub fn entry_size<E: Arch>() -> usize {
-    if E::FAMILY == Family::S390x {
-        8
-    } else {
-        4
-    }
+    if E::FAMILY == Family::S390x { 8 } else { 4 }
 }
 
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {

@@ -6,7 +6,7 @@ use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::{r_delta, FragmentLookup, InputSection};
+use crate::input_sections::{FragmentLookup, InputSection, r_delta};
 use crate::symbol::{OriginValue, Symbol};
 
 // RelocSection represents a relocation table for an output file.

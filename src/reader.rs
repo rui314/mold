@@ -19,7 +19,7 @@ use crate::context::Context;
 use crate::filetype::{self, FileType};
 use crate::input_files::{ObjectFile, SharedFile};
 use crate::linker_script::Script;
-use crate::mapped_file::{must_open_file, open_file, MappedFile};
+use crate::mapped_file::{MappedFile, must_open_file, open_file};
 use crate::util::perf::Counter;
 use crate::util::worker_local::WorkerLocal;
 use crate::{fatal, out, warn};

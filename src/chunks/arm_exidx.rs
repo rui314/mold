@@ -15,7 +15,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::{output_section, ChunkHeader, ChunkId, OutputSectionId};
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, output_section};
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::endian::Endian;

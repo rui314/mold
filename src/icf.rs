@@ -89,7 +89,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
-use crate::symbol::{is_c_identifier, OriginValue, Symbol};
+use crate::symbol::{OriginValue, Symbol, is_c_identifier};
 use crate::util::perf::Counter;
 use crate::util::siphash::SipHash13_128;
 

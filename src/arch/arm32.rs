@@ -55,11 +55,11 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{
-    check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, InputSectionId,
+    InputSection, InputSectionId, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc,
 };
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{write_ul32, BigEndian, Endian, LittleEndian, Ub32, Ul32};
+use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ul32, write_ul32};
 use crate::util::{align_to, bit, bits, is_int, sign_extend};
 use crate::{error, fatal};
 
@@ -316,11 +316,7 @@ where
     }
 
     fn eflags(_ctx: &Context<Self>) -> u32 {
-        if End::IS_LITTLE {
-            EF_ARM_EABI_VER5
-        } else {
-            EF_ARM_EABI_VER5 | EF_ARM_BE8
-        }
+        if End::IS_LITTLE { EF_ARM_EABI_VER5 } else { EF_ARM_EABI_VER5 | EF_ARM_BE8 }
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

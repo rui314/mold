@@ -47,10 +47,10 @@ use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
-use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{read_ub32, write_ub16, write_ub32, BigEndian, Ub32};
+use crate::util::endian::{BigEndian, Ub32, read_ub32, write_ub16, write_ub32};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 

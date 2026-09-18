@@ -13,8 +13,8 @@ use std::io::{self, Read};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(not(windows))]
 use rayon::prelude::*;

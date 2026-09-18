@@ -6,8 +6,8 @@
 
 use std::fmt;
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Whether to demangle symbol names in diagnostics. This is process-wide
 /// state so that `Display` implementations, which have no access to the

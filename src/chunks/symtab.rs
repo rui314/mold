@@ -3,11 +3,11 @@
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family};
-use crate::chunks::{self, strtab, ChunkHeader, ChunkId};
+use crate::chunks::{self, ChunkHeader, ChunkId, strtab};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{SymtabBlock, SymtabEntries};
-use crate::input_sections::{r_delta, InputSection};
+use crate::input_sections::{InputSection, r_delta};
 use crate::symbol::{AddrFlags, OriginValue, Symbol};
 use crate::util::endian::Endian;
 

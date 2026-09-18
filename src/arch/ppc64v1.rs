@@ -56,13 +56,13 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::NonAllocReloc;
-use crate::input_sections::{check_tlsle, InputSection, SectionRef};
+use crate::input_sections::{InputSection, SectionRef, check_tlsle};
 use crate::symbol::{
-    AddrFlags, Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD,
+    AddrFlags, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD, Symbol,
 };
 use crate::thunks::Thunk;
 use crate::util::endian::{
-    read_ub16, read_ub32, write_ub16, write_ub32, write_ub64, BigEndian, Ub64,
+    BigEndian, Ub64, read_ub16, read_ub32, write_ub16, write_ub32, write_ub64,
 };
 use crate::util::{bits, is_int};
 use crate::{error, fatal};

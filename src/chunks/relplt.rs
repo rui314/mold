@@ -1,7 +1,7 @@
 //! `.rel.plt` and `.rela.plt`, relocations for PLT entries.
 
 use crate::arch::Arch;
-use crate::chunks::{plt, ChunkHeader};
+use crate::chunks::{ChunkHeader, plt};
 use crate::context::Context;
 use crate::elf::*;
 

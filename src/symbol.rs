@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 // Atomic accesses use relaxed ordering unless stronger synchronization is
 // required, matching C++ mold's default atomic wrapper.

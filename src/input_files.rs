@@ -27,8 +27,8 @@ use crate::input_sections::{
 };
 use crate::mapped_file::MappedFile;
 use crate::symbol::{
-    hash_key, Bins, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
-    SymbolTable, NEEDS_PLT,
+    Bins, NEEDS_PLT, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
+    SymbolTable, hash_key,
 };
 use crate::util::endian::Endian;
 use crate::util::perf::Counter;
@@ -1354,11 +1354,7 @@ impl<E: Arch> ObjectFile<E> {
         let is_little_endian = self.base.is_little_endian;
         bytes.chunks_exact(4).skip(1).map(move |b| {
             let b = [b[0], b[1], b[2], b[3]];
-            if is_little_endian {
-                u32::from_le_bytes(b)
-            } else {
-                u32::from_be_bytes(b)
-            }
+            if is_little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
         })
     }
 
@@ -1701,7 +1697,8 @@ impl<E: Arch> ObjectFile<E> {
                     if name == b".note.GNU-stack" && !args.relocatable {
                         if flags & SHF_EXECINSTR as u64 != 0 {
                             if !args.z_execstack && !args.z_execstack_if_needed {
-                                warn!("{self}: this file may cause a segmentation fault because it requires an executable stack. See https://github.com/rui314/mold/tree/main/docs/execstack.md for more info."
+                                warn!(
+                                    "{self}: this file may cause a segmentation fault because it requires an executable stack. See https://github.com/rui314/mold/tree/main/docs/execstack.md for more info."
                                 );
                             }
                             self.needs_executable_stack = true;
@@ -1815,7 +1812,8 @@ impl<E: Arch> ObjectFile<E> {
                             // It exists only in DWARF 4, has been removed in DWARF 5 and neither
                             // GCC nor Clang generate it by default (-fdebug-types-section is
                             // needed). As such there is probably little need to support it.
-                            fatal!("{self}: mold's --gdb-index is not compatible with .debug_types; to fix this error, remove -fdebug-types-section and recompile"
+                            fatal!(
+                                "{self}: mold's --gdb-index is not compatible with .debug_types; to fix this error, remove -fdebug-types-section and recompile"
                             );
                         }
                     }
@@ -2494,13 +2492,15 @@ impl<E: Arch> ObjectFile<E> {
             for rel in cie.rels(self) {
                 let sym = &ctx.symbols[self.base.symbols[rel.r_sym() as usize]];
                 if ctx.args.pic && rel.r_type() == E::R_ABS {
-                    error!("{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",
+                    error!(
+                        "{self}: relocation {} in .eh_frame can not be used when making a position-independent output; recompile with -fPIE or -fPIC",
                         rel.type_name::<E>()
                     );
                 }
                 if sym.is_imported() {
                     if sym.ty() != STT_FUNC {
-                        fatal!("{self}: {sym}: .eh_frame CIE record with an external data reference is not supported"
+                        fatal!(
+                            "{self}: {sym}: .eh_frame CIE record with an external data reference is not supported"
                         );
                     }
                     sym.add_flags(NEEDS_PLT);
@@ -3380,11 +3380,7 @@ fn symbol_rank_from_fields(
     if is_dso || is_in_archive {
         return if st_bind == STB_WEAK { 4 } else { 3 };
     }
-    if st_bind == STB_WEAK {
-        2
-    } else {
-        1
-    }
+    if st_bind == STB_WEAK { 2 } else { 1 }
 }
 
 #[inline]

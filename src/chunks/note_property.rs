@@ -31,11 +31,7 @@ impl<E: Arch> Default for NotePropertySection<E> {
 }
 
 fn entry_size<E: Arch>() -> usize {
-    if E::IS_64 {
-        16
-    } else {
-        12
-    }
+    if E::IS_64 { 16 } else { 12 }
 }
 
 // Merges input files' .note.gnu.property values.

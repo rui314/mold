@@ -62,11 +62,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
 /// Position-independent output relocates both the entry point and the
 /// TOC pointer at load time.
 pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
-    if ctx.args.pic {
-        section(ctx).symbols.len() as u64 * 2
-    } else {
-        0
-    }
+    if ctx.args.pic { section(ctx).symbols.len() as u64 * 2 } else { 0 }
 }
 
 pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {

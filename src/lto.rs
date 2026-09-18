@@ -21,7 +21,7 @@
 //! state, so this module does too.
 
 use std::borrow::Cow;
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString, OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString, c_char, c_int, c_uint, c_void};
 use std::fs::File;
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
@@ -40,7 +40,7 @@ use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, ObjectFile, ObjectOrigin};
-use crate::mapped_file::{must_open_file, MappedFile};
+use crate::mapped_file::{MappedFile, must_open_file};
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
 use crate::{fatal, out, warn};
@@ -504,11 +504,7 @@ unsafe fn get_symbols<E: Arch>(
                 if sym.referenced_by_regular_obj() {
                     LDPR_PREVAILING_DEF
                 } else if sym.is_exported() {
-                    if is_v2 {
-                        LDPR_PREVAILING_DEF
-                    } else {
-                        LDPR_PREVAILING_DEF_IRONLY_EXP
-                    }
+                    if is_v2 { LDPR_PREVAILING_DEF } else { LDPR_PREVAILING_DEF_IRONLY_EXP }
                 } else {
                     LDPR_PREVAILING_DEF_IRONLY
                 }
@@ -734,7 +730,8 @@ pub fn read_lto_object<E: Arch>(
     archive_name: &'static std::path::Path,
 ) -> Option<ObjectFile<E>> {
     if ctx.args.plugin.as_os_str().is_empty() {
-        fatal!("{}: unable to handle this LTO object file because the -plugin option was not provided. \
+        fatal!(
+            "{}: unable to handle this LTO object file because the -plugin option was not provided. \
              Please make sure you added -flto not only when creating object files but also when linking \
              the final executable.",
             mf.name.display()
@@ -755,7 +752,8 @@ pub fn read_lto_object<E: Arch>(
 
     if claimed == 0 {
         if mf.parent.is_none() && mf.thin_parent.is_none() {
-            fatal!("{}: not claimed by the LTO plugin; please make sure you are using the same compiler of the \
+            fatal!(
+                "{}: not claimed by the LTO plugin; please make sure you are using the same compiler of the \
                  same version for all object files",
                 mf.name.display()
             );

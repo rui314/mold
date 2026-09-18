@@ -64,10 +64,10 @@ use crate::chunks::plt::SPARC_NUM_SMALL_PLT;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
-use crate::input_sections::{check_tlsle, scan_absrel, scan_pcrel, InputSection};
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::util::endian::{
-    read_ub16, read_ub32, write_ub16, write_ub32, write_ub64, BigEndian, Ub64,
+    BigEndian, Ub64, read_ub16, read_ub32, write_ub16, write_ub32, write_ub64,
 };
 use crate::util::{bit, bits};
 use crate::{error, fatal};

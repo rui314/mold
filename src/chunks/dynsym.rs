@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::symtab::to_output_esym;
 use crate::chunks::ChunkHeader;
+use crate::chunks::symtab::to_output_esym;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
@@ -84,7 +84,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     if overflow.load(Ordering::Relaxed) {
         let nshdrs =
             ctx.shdr.as_ref().map_or(0, |s| s.shdr.sh_size.get() / ElfShdr::<E>::size() as u64);
-        error!("{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
+        error!(
+            "{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
             ctx.args.output.display()
         );
     }

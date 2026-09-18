@@ -10,10 +10,10 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-#[cfg(not(windows))]
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 #[cfg(windows)]
 use std::sync::Mutex;
+#[cfg(not(windows))]
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
 use memmap2::MmapMut;
 #[cfg(not(windows))]

@@ -20,7 +20,7 @@ use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::output_section::OutputSection;
 use crate::chunks::verdef::VerdefSection;
 use crate::chunks::{
-    self, compressed, copyrel, dynsym, reloc, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId,
+    self, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId, compressed, copyrel, dynsym, reloc,
 };
 use crate::cmdline::{
     BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
@@ -29,15 +29,15 @@ use crate::cmdline::{
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{
-    resolved_symbol_rank, symbol_resolution_rank, ComdatGroupRef, FileId, FileList, ObjId,
-    ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
+    ComdatGroupRef, FileId, FileList, ObjId, ObjectFile, ObjectOrigin, SymbolEditor,
+    SymbolResolver, resolved_symbol_rank, symbol_resolution_rank,
 };
 use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
 use crate::output_file::OutputFile;
 use crate::symbol::{
-    is_c_identifier, Bins, Symbol, SymbolId, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT,
-    NEEDS_PPC_OPD, NEEDS_TLSDESC, NEEDS_TLSGD,
+    Bins, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSDESC,
+    NEEDS_TLSGD, Symbol, SymbolId, is_c_identifier,
 };
 use crate::util::glob::GlobBuilder;
 use crate::util::perf::Counter;
@@ -1901,7 +1901,8 @@ pub fn check_symbol_types<E: Arch>(ctx: &Context<E>) {
                 && st_type2 != STT_NOTYPE
                 && canonicalize(esym1.st_type()) != canonicalize(st_type2)
             {
-                warn!("symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
+                warn!(
+                    "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
                     ctx.file_display(owner),
                     stt_to_string(esym1.st_type()),
                     stt_to_string(st_type2)
@@ -3399,11 +3400,7 @@ fn set_virtual_addresses_regular<E: Arch>(ctx: &mut Context<E>) {
     const RELRO: u64 = 1 << 32;
     let flags_of = |ctx: &Context<E>, id: ChunkId| -> u64 {
         let flags = chunks::to_phdr_flags(ctx, id) as u64;
-        if ctx.args.z_relro && ctx.chunk_header(id).is_relro {
-            flags | RELRO
-        } else {
-            flags
-        }
+        if ctx.args.z_relro && ctx.chunk_header(id).is_relro { flags | RELRO } else { flags }
     };
     let is_tls = |ctx: &Context<E>, id: ChunkId| {
         ctx.chunk_header(id).shdr.sh_flags.get() & SHF_TLS as u64 != 0
@@ -3555,9 +3552,9 @@ fn set_virtual_addresses_by_order<E: Arch>(ctx: &mut Context<E>) {
             }
             SectionOrder::Addr { value, token } => {
                 if addr != ctx.args.image_base && *value < addr {
-                    error!("--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
-                        value,
-                        token
+                    error!(
+                        "--section-order: address goes backward: requested {:#x} < current {addr:#x} (at token '{}')",
+                        value, token
                     );
                 }
                 addr = *value;

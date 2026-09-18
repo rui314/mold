@@ -12,7 +12,7 @@ use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
-use crate::output_file::{split_ranges, OutputFile};
+use crate::output_file::{OutputFile, split_ranges};
 use crate::util::parallel::Background;
 use crate::{error, fatal, passes};
 

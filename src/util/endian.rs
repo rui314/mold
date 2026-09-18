@@ -42,43 +42,23 @@ pub trait Endian: Copy + Default + Eq + Send + Sync + fmt::Debug + 'static {
     const IS_LITTLE: bool;
 
     fn read_u16(bytes: &[u8]) -> u16 {
-        if Self::IS_LITTLE {
-            read_ul16(bytes)
-        } else {
-            read_ub16(bytes)
-        }
+        if Self::IS_LITTLE { read_ul16(bytes) } else { read_ub16(bytes) }
     }
 
     fn read_u32(bytes: &[u8]) -> u32 {
-        if Self::IS_LITTLE {
-            read_ul32(bytes)
-        } else {
-            read_ub32(bytes)
-        }
+        if Self::IS_LITTLE { read_ul32(bytes) } else { read_ub32(bytes) }
     }
 
     fn read_u64(bytes: &[u8]) -> u64 {
-        if Self::IS_LITTLE {
-            read_ul64(bytes)
-        } else {
-            read_ub64(bytes)
-        }
+        if Self::IS_LITTLE { read_ul64(bytes) } else { read_ub64(bytes) }
     }
 
     fn read_i32(bytes: &[u8]) -> i32 {
-        if Self::IS_LITTLE {
-            read_il32(bytes)
-        } else {
-            read_ib32(bytes)
-        }
+        if Self::IS_LITTLE { read_il32(bytes) } else { read_ib32(bytes) }
     }
 
     fn read_i64(bytes: &[u8]) -> i64 {
-        if Self::IS_LITTLE {
-            read_il64(bytes)
-        } else {
-            read_ib64(bytes)
-        }
+        if Self::IS_LITTLE { read_il64(bytes) } else { read_ib64(bytes) }
     }
 
     fn write_u16(bytes: &mut [u8], value: u16) {

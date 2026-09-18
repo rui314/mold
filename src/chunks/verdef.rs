@@ -3,9 +3,9 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
+use crate::chunks::ChunkHeader;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::hash::elf_hash;
-use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;

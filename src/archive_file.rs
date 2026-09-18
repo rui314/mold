@@ -160,11 +160,7 @@ pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> impl Iterator<I
 }
 
 fn member_path(mf: &MappedFile, name: PathBuf) -> PathBuf {
-    if name.is_absolute() {
-        name
-    } else {
-        mf.name.parent().unwrap_or(Path::new(".")).join(name)
-    }
+    if name.is_absolute() { name } else { mf.name.parent().unwrap_or(Path::new(".")).join(name) }
 }
 
 /// Opens members as they are consumed. Parallel readers can instead schedule

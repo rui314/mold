@@ -31,12 +31,12 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{
-    check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, RelocDelta,
+    InputSection, RelocDelta, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc,
 };
 use crate::shrink_sections::compute_distance;
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::util::endian::{
-    read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64, LittleEndian, Ul32, Ul64,
+    LittleEndian, Ul32, Ul64, read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64,
 };
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
 use crate::{error, fatal};
@@ -189,11 +189,7 @@ fn write_pcaddi(loc: &mut [u8], val: u64) {
 /// relocation families that debug info and tables are built from.
 fn add_bits(loc: &mut [u8], size: u32, val: u64, subtract: bool) {
     let apply = |cur: u64| {
-        if subtract {
-            cur.wrapping_sub(val)
-        } else {
-            cur.wrapping_add(val)
-        }
+        if subtract { cur.wrapping_sub(val) } else { cur.wrapping_add(val) }
     };
     match size {
         6 => loc[0] = (loc[0] & 0b1100_0000) | (apply(loc[0] as u64) as u8 & 0b0011_1111),

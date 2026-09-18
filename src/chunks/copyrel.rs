@@ -40,12 +40,14 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     };
     let dso = &ctx.dsos[dso_id.index()];
     if sym.esym(ctx).st_visibility() == STV_PROTECTED {
-        error!("{dso}: cannot create a copy relocation for protected symbol '{sym}'; recompile with -fPIC"
+        error!(
+            "{dso}: cannot create a copy relocation for protected symbol '{sym}'; recompile with -fPIC"
         );
         return;
     }
     if !ctx.args.z_copyreloc {
-        error!("-z nocopyreloc: {dso}: cannot create a copy relocation for symbol '{sym}'; recompile with -fPIC"
+        error!(
+            "-z nocopyreloc: {dso}: cannot create a copy relocation for symbol '{sym}'; recompile with -fPIC"
         );
         return;
     }

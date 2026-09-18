@@ -8,8 +8,8 @@
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::sync::atomic::Ordering;
 use std::sync::RwLock;
+use std::sync::atomic::Ordering;
 
 use bstr::BStr;
 use rayon::prelude::*;

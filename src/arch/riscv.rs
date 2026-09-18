@@ -29,10 +29,10 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{
-    check_tlsle, r_delta, scan_absrel, scan_pcrel, scan_tlsdesc, InputSection, RelocDelta,
+    InputSection, RelocDelta, check_tlsle, r_delta, scan_absrel, scan_pcrel, scan_tlsdesc,
 };
 use crate::shrink_sections::compute_distance;
-use crate::symbol::{Symbol, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ub64, Ul32, Ul64};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};
@@ -322,7 +322,9 @@ where
                 ret |= EF_RISCV_RVC;
             }
             if flags & EF_RISCV_FLOAT_ABI != ret & EF_RISCV_FLOAT_ABI {
-                error!("{file}: cannot link object files with different floating-point ABI from {first}");
+                error!(
+                    "{file}: cannot link object files with different floating-point ABI from {first}"
+                );
             }
             if flags & EF_RISCV_RVE != ret & EF_RISCV_RVE {
                 error!("{file}: cannot link object files with different EF_RISCV_RVE from {first}");

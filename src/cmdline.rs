@@ -857,11 +857,7 @@ fn parse_number(opt: &str, value: &str) -> i64 {
     };
     let n = parse_c_number(digits).unwrap_or_else(|| fatal!("option -{opt}: not a number: {value}"))
         as i64;
-    if negative {
-        n.wrapping_neg()
-    } else {
-        n
-    }
+    if negative { n.wrapping_neg() } else { n }
 }
 
 fn from_hex(c: u8) -> u8 {
@@ -1292,7 +1288,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             out!("{VERSION}");
             std::process::exit(0);
         } else if cursor.read_flag("V") {
-            out!("{VERSION}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
+            out!(
+                "{VERSION}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
                  aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
                  elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
                  elf64_s390\n   elf64_sparc\n   m68kelf\n   shlelf_linux\n   shelf_linux\n   \
@@ -1540,7 +1537,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 s if s.starts_with("zlib:") => {
                     let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(0..=9).contains(&level) {
-                        fatal!("invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
+                        fatal!(
+                            "invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
                         );
                     }
                     DebugCompression::Zlib(level as u32)
@@ -1548,7 +1546,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 s if s.starts_with("zstd:") => {
                     let level = parse_number("compress-debug-sections", &s[5..]);
                     if !(1..=22).contains(&level) {
-                        fatal!("invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
+                        fatal!(
+                            "invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
                         );
                     }
                     DebugCompression::Zstd(level as i32)
@@ -1810,7 +1809,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             be8 = value;
         } else if read_arg!("format") || read_arg!("b") {
             if arg == "binary" {
-                fatal!("mold does not support `-b binary`. If you want to convert a binary file into an \
+                fatal!(
+                    "mold does not support `-b binary`. If you want to convert a binary file into an \
                      object file, use `objcopy -I binary -O default <input-file> <output-file.o>` instead."
                 );
             }
@@ -1911,7 +1911,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             );
             cursor.index += 2;
         } else if cursor.text() == "-dynamic" {
-            fatal!("unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
+            fatal!(
+                "unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
         } else {
             fatal!("unknown command line option: {}", cursor.current().to_string_lossy());
@@ -1979,11 +1980,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
 
     let report_undefined = report_undefined.unwrap_or(!a.shared);
     a.unresolved_symbols = if report_undefined {
-        if error_unresolved_symbols {
-            UnresolvedKind::Error
-        } else {
-            UnresolvedKind::Warn
-        }
+        if error_unresolved_symbols { UnresolvedKind::Error } else { UnresolvedKind::Warn }
     } else {
         UnresolvedKind::Ignore
     };

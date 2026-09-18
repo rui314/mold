@@ -71,7 +71,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::input_files::display_file;
-use crate::output_file::{split_at_offsets, OutputFile};
+use crate::output_file::{OutputFile, split_at_offsets};
 use crate::util::endian::Endian;
 use std::borrow::Cow;
 use std::path::Path;
@@ -390,14 +390,18 @@ fn find_cu_abbrev<'a, E: Arch>(
     loop {
         let code = abbrev.uleb();
         if code == 0 {
-            fatal!("--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record");
+            fatal!(
+                "--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record"
+            );
         }
         let tag = abbrev.uleb(); // tag
         abbrev.u8(); // skip has_children byte
         if code == abbrev_code {
             // Found a record
             if tag != DW_TAG_compile_unit as u64 && tag != DW_TAG_skeleton_unit as u64 {
-                fatal!("--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}");
+                fatal!(
+                    "--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}"
+                );
             }
             return abbrev;
         }

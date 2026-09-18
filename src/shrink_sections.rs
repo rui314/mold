@@ -62,7 +62,7 @@ use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
-use crate::input_sections::{r_delta, InputSection, RelocDelta};
+use crate::input_sections::{InputSection, RelocDelta, r_delta};
 use crate::symbol::Symbol;
 
 /// Returns the distance between a relocated place and a symbol.

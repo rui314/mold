@@ -8,8 +8,8 @@
 use rayon::prelude::*;
 
 use crate::arch::Arch;
-use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::chunks::ChunkHeader;
+use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
