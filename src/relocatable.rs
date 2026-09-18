@@ -104,7 +104,11 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
                     members.push(ChunkId::Output(osec));
                 }
             }
-            sections.push(ComdatGroupSection::new(sym, members));
+            // All members may have been discarded, e.g. by --strip-debug.
+            // An empty group section is rejected by other tools, so drop it.
+            if !members.is_empty() {
+                sections.push(ComdatGroupSection::new(sym, members));
+            }
         }
     }
     for sec in sections {
