@@ -2586,10 +2586,15 @@ impl<E: Arch> ObjectFile<E> {
         let file_id = FileId::Obj(id);
 
         // Symbols in dead sections and fragments are dropped along with them.
+        // A mergeable section dies when it is split into fragments, but its
+        // symbols live on; their values are computed from the fragments.
         let is_alive = |sym: &Symbol| -> bool {
             match sym.origin() {
                 OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
-                OriginValue::InputSection(section) => ctx.input_section(section).is_alive(),
+                OriginValue::InputSection(section) => {
+                    let isec = ctx.input_section(section);
+                    isec.is_alive() || self.merge_info(isec.shndx as usize).is_some()
+                }
                 _ => true,
             }
         };

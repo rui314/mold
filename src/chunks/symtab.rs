@@ -308,14 +308,11 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     esym.set_type(STT_FUNC);
                     esym.set_visibility(sym.visibility());
                     esym.st_value_mut().set(sym.plt_addr(ctx));
-                } else if isec.sh_flags & SHF_MERGE as u64 != 0
-                    && isec.sh_flags & SHF_ALLOC as u64 == 0
+                } else if let Some(m) = ctx.objs[isec.file.index()].merge_info(isec.shndx as usize)
                 {
-                    // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
-                    let file = &ctx.objs[isec.file.index()];
-                    let m = file
-                        .merge_info(file.shndx_at_in(sym.sym_idx() as usize))
-                        .expect("mergeable section");
+                    // Symbol in a mergeable section that was split into fragments
+                    // but whose symbols were not attached to them, which is the
+                    // case for non-SHF_ALLOC sections such as .debug_str
                     let (frag, addend) =
                         m.fragment(sym.esym(ctx).st_value().get()).expect("fragment");
                     let msec = &ctx.merged_sections[m.parent.index()];
