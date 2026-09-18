@@ -312,7 +312,7 @@ impl Target for X86_64 {
             let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got_base);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 32);
                 write_u32(&mut buf[off..], val as u32);
@@ -521,7 +521,7 @@ impl Target for X86_64 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
@@ -529,7 +529,7 @@ impl Target for X86_64 {
             };
             let off = rel.r_offset() as usize;
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 32);
                 write_u32(&mut buf[off..], val as u32);

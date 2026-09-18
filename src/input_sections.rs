@@ -742,18 +742,19 @@ impl<E: Target> InputSection<E> {
         *self.extra.r_deltas_mut() = deltas;
     }
 
-    /// Reports a relocation whose value doesn't fit in the field.
+    /// Reports a relocation whose value doesn't fit in the field. The
+    /// record is passed in rather than looked up because the caller may
+    /// hold the relocation table mutably.
     #[inline(always)]
-    pub fn check_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
+    pub fn check_range(&self, ctx: &Context<E>, rel: &ElfRel<E>, val: i64, lo: i64, hi: i64) {
         if val < lo || hi <= val {
-            self.report_out_of_range(ctx, rel_idx, val, lo, hi);
+            self.report_out_of_range(ctx, rel, val, lo, hi);
         }
     }
 
     #[cold]
-    fn report_out_of_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
+    fn report_out_of_range(&self, ctx: &Context<E>, rel: &ElfRel<E>, val: i64, lo: i64, hi: i64) {
         let file = &ctx.objs[self.file.index()];
-        let rel = self.relocations(ctx).nth(rel_idx).expect("relocation index");
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",

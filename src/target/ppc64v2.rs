@@ -555,7 +555,7 @@ impl Target for Ppc64V2 {
         let toc = toc(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
 
-        for (i, rel) in rels.iter().enumerate() {
+        for rel in rels {
             if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
@@ -583,7 +583,7 @@ impl Target for Ppc64V2 {
                 R_PPC64_TOC16_HA => write_ul16(loc, ha(sa.wrapping_sub(toc)) as u16),
                 R_PPC64_TOC16_LO => write_ul16(loc, lo(sa.wrapping_sub(toc)) as u16),
                 R_PPC64_TOC16_DS => {
-                    isec.check_range(ctx, i, sa.wrapping_sub(toc) as i64, -(1 << 15), 1 << 15);
+                    isec.check_range(ctx, rel, sa.wrapping_sub(toc) as i64, -(1 << 15), 1 << 15);
                     or16(loc, sa.wrapping_sub(toc) & 0xfffc);
                 }
                 R_PPC64_TOC16_LO_DS => or16(loc, sa.wrapping_sub(toc) & 0xfffc),
@@ -681,7 +681,7 @@ impl Target for Ppc64V2 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
@@ -696,7 +696,7 @@ impl Target for Ppc64V2 {
                     None => write_ul64(loc, sa),
                 },
                 R_PPC64_ADDR32 => {
-                    isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
+                    isec.check_range(ctx, &rel, sa as i64, 0, 1 << 32);
                     write_ul32(loc, sa as u32);
                 }
                 R_PPC64_DTPREL64 => write_ul64(loc, sa.wrapping_sub(ctx.dtp_addr)),
