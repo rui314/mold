@@ -10,13 +10,13 @@ use crate::util::endian::Endian;
 #[inline]
 pub fn djb_hash(name: &[u8]) -> u32 {
     let mut h: u32 = 5381;
-    let mut chunks = name.chunks_exact(4);
-    for p in &mut chunks {
+    let (chunks, remainder) = name.as_chunks::<4>();
+    for p in chunks {
         let a = p[0] as u32 * 33 + p[1] as u32;
         let b = p[2] as u32 * 33 + p[3] as u32;
         h = h.wrapping_mul(1185921).wrapping_add(a * 1089 + b);
     }
-    for &c in chunks.remainder() {
+    for &c in remainder {
         h = h.wrapping_mul(33).wrapping_add(c as u32);
     }
     h

@@ -1340,7 +1340,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         .enumerate()
         .zip(split_at_offsets(&mut buf[ranges_offset..symtab_offset], &range_offsets))
         .for_each(|((i, cu), buf)| {
-            for (range, entry) in cu.ranges.iter().zip(buf.chunks_exact_mut(20)) {
+            for (range, entry) in cu.ranges.iter().zip(buf.as_chunks_mut::<20>().0) {
                 entry[..8].copy_from_slice(&range.0.to_le_bytes());
                 entry[8..16].copy_from_slice(&range.1.to_le_bytes());
                 entry[16..20].copy_from_slice(&(i as u32).to_le_bytes());
