@@ -1051,10 +1051,8 @@ impl<E: Arch> ObjectFile<E> {
     /// Creates the internal object file that holds linker-synthesized
     /// symbols.
     pub fn internal() -> Self {
-        let mut file = Self::with_base(
-            InputFile::<E>::empty(Cow::Borrowed("<internal>")),
-            Path::new(""),
-        );
+        let mut file =
+            Self::with_base(InputFile::<E>::empty(Cow::Borrowed("<internal>")), Path::new(""));
         file.sections_parsed = true;
         file.base.set_reachable(true);
         file

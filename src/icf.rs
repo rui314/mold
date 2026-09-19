@@ -167,11 +167,7 @@ struct DigestSlot {
 impl DigestMap {
     fn new(n: usize) -> Self {
         let len = n.saturating_mul(2).next_power_of_two();
-        Self {
-            round: 1,
-            mask: len - 1,
-            slots: (0..len).map(|_| DigestSlot::default()).collect(),
-        }
+        Self { round: 1, mask: len - 1, slots: (0..len).map(|_| DigestSlot::default()).collect() }
     }
 
     fn next_round(&mut self) {

@@ -138,7 +138,9 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     output_section::write_to(ctx, sec.output_section, &mut buf);
     let sentinel_addr = base + ((num_entries - 1) * ENTRY_SIZE) as u64;
     let mut entries: Vec<(u32, u32)> = buf
-        .as_chunks::<ENTRY_SIZE>().0.iter()
+        .as_chunks::<ENTRY_SIZE>()
+        .0
+        .iter()
         .map(|e| (E::Endian::read_u32(e), E::Endian::read_u32(&e[4..])))
         .collect();
     // Fill in sentinel fields

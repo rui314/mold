@@ -1470,11 +1470,7 @@ pub(crate) struct FragmentLookup<'a> {
 impl MergeInfo {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    fn new<E: Arch>(
-        parent: MergedSectionId,
-        input_index: u32,
-        section: &InputSection<E>,
-    ) -> Self {
+    fn new<E: Arch>(parent: MergedSectionId, input_index: u32, section: &InputSection<E>) -> Self {
         section.kill();
         Self {
             parent,
