@@ -1,11 +1,6 @@
 /target
-/out
 /dist
-/ld
-/mold-wrapper.so
-/mold
-/bench/
+/bench
+/.claude
+/.codex
 *~
-# Byproducts of tests that write into the working directory
-/exe
-/sde-cet-checker-out.txt
