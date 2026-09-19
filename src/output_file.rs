@@ -27,7 +27,8 @@ static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(not(windows))]
 static TMPFILE: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
 
-fn set_tmpfile(path: Option<&Path>) {
+/// Registers the path that a fatal error or signal removes.
+pub fn set_tmpfile(path: Option<&Path>) {
     #[cfg(not(windows))]
     {
         // Published paths live until process exit: a signal on another thread

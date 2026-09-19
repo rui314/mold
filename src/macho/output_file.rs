@@ -23,25 +23,12 @@
 //! block.
 
 use std::os::unix::fs::{FileExt, PermissionsExt};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use crate::fatal;
-
-/// The output path of the in-progress link, removed on a fatal error so
-/// that a failed link doesn't leave a partial file behind.
-static OUTPUT_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
-
-/// Removes a partially-written output file after a fatal error.
-pub fn cleanup() {
-    if let Ok(mut guard) = OUTPUT_PATH.lock()
-        && let Some(path) = guard.take()
-    {
-        let _ = std::fs::remove_file(path);
-    }
-}
 
 /// The output buffer as the writer threads see it: a bare pointer,
 /// because the linking thread keeps its &mut to the buffer while ranges
@@ -98,7 +85,9 @@ impl OutputFile {
         // kernel caches code signature state per vnode, so a fresh file
         // avoids stale-signature kills.
         let _ = std::fs::remove_file(path);
-        *OUTPUT_PATH.lock().unwrap() = Some(PathBuf::from(path));
+        // A fatal error or a crash signal removes the partial output
+        // through the linker's shared registry.
+        crate::output_file::set_tmpfile(Some(Path::new(path)));
 
         let file =
             std::fs::File::create(path).unwrap_or_else(|e| fatal!("cannot write {path}: {e}"));
@@ -161,7 +150,7 @@ impl OutputFile {
         {
             fatal!("cannot chmod {}: {e}", self.path);
         }
-        *OUTPUT_PATH.lock().unwrap() = None;
+        crate::output_file::set_tmpfile(None);
     }
 }
 

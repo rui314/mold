@@ -79,6 +79,8 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     if std::env::var_os("MOLD_NO_FORK").is_none() {
         crate::subprocess::fork_child();
     }
+    // A crash removes the partial output, as it does for the ELF linker.
+    crate::subprocess::install_signal_handler();
 
     let mut ctx: Context<E> = Context::new(args);
     crate::error::set_suppress_warnings(ctx.args.suppress_warnings);
