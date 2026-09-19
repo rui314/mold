@@ -10,11 +10,11 @@
 //!
 //! Records whose ELF32 and ELF64 forms have the same field order are generic
 //! over the target word type. Symbols, program headers and compression
-//! headers have genuinely different layouts and convert as complete records
-//! when target-independent bookkeeping needs them. Thus the big tables —
-//! section headers, symbols and relocations — stay in the input files rather
-//! than being copied. [`Arch`](crate::arch::Arch) selects the layout at
-//! compile time.
+//! headers have genuinely different layouts, so they exist in two forms
+//! behind a common trait, and [`Layout`] names the form a target uses. Thus
+//! the big tables — section headers, symbols and relocations — stay in the
+//! input files rather than being copied. [`Arch`](crate::arch::Arch) selects
+//! the layout at compile time.
 
 use std::fmt;
 
@@ -29,9 +29,9 @@ use crate::util::endian::*;
 pub trait Layout: Copy + Default + fmt::Debug + Send + Sync + 'static {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
-    type Sym: SymbolRecord<Endian = Self::Endian, Word = Self::Word>;
-    type Phdr: PhdrRecord<Endian = Self::Endian, Word = Self::Word>;
-    type Chdr: ChdrRecord<Endian = Self::Endian, Word = Self::Word>;
+    type Sym: SymbolRecord<Endian = Self::Endian>;
+    type Phdr: PhdrRecord<Endian = Self::Endian>;
+    type Chdr: ChdrRecord<Endian = Self::Endian>;
     type Rel: RelRecord<Endian = Self::Endian>;
     const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
@@ -206,7 +206,6 @@ const _: () = assert!(std::mem::align_of::<Elf64Phdr<LittleEndian>>() == 1);
 /// its file representation.
 pub trait PhdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
-    type Word: ElfWord<Endian = Self::Endian>;
 
     fn p_type(&self) -> u32;
     fn set_p_type(&mut self, value: u32);
@@ -227,11 +226,10 @@ pub trait PhdrRecord: FileRecord + fmt::Debug {
 }
 
 macro_rules! impl_phdr_record {
-    ($record:ident, $word:ident) => {
+    ($record:ident) => {
 #[rustfmt::skip]
         impl<E: Endian> PhdrRecord for $record<E> {
             type Endian = E;
-            type Word = $word<E>;
 
             fn p_type(&self) -> u32 { self.p_type.get() }
             fn set_p_type(&mut self, value: u32) { self.p_type.set(value) }
@@ -253,8 +251,8 @@ macro_rules! impl_phdr_record {
     };
 }
 
-impl_phdr_record!(Elf64Phdr, U64);
-impl_phdr_record!(Elf32Phdr, U32);
+impl_phdr_record!(Elf64Phdr);
+impl_phdr_record!(Elf32Phdr);
 
 pub type ElfPhdr<E> = <E as Layout>::Phdr;
 
@@ -297,7 +295,6 @@ const _: () = assert!(std::mem::align_of::<Elf64Sym<LittleEndian>>() == 1);
 /// representation.
 pub trait SymbolRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
-    type Word: ElfWord<Endian = Self::Endian>;
 
     fn st_name(&self) -> u32;
     fn set_st_name(&mut self, value: u32);
@@ -364,11 +361,10 @@ pub trait SymbolRecord: FileRecord + fmt::Debug {
 }
 
 macro_rules! impl_symbol_record {
-    ($record:ident, $word:ident) => {
+    ($record:ident) => {
 #[rustfmt::skip]
         impl<E: Endian> SymbolRecord for $record<E> {
             type Endian = E;
-            type Word = $word<E>;
 
             fn st_name(&self) -> u32 { self.st_name.get() }
             fn set_st_name(&mut self, value: u32) { self.st_name.set(value) }
@@ -413,8 +409,8 @@ macro_rules! impl_symbol_record {
     };
 }
 
-impl_symbol_record!(Elf64Sym, U64);
-impl_symbol_record!(Elf32Sym, U32);
+impl_symbol_record!(Elf64Sym);
+impl_symbol_record!(Elf32Sym);
 
 pub type ElfSym<E> = <E as Layout>::Sym;
 
@@ -739,7 +735,6 @@ const _: () = assert!(std::mem::align_of::<Elf64Chdr<LittleEndian>>() == 1);
 /// its file representation.
 pub trait ChdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
-    type Word: ElfWord<Endian = Self::Endian>;
 
     fn ch_type(&self) -> u32;
     fn set_ch_type(&mut self, value: u32);
@@ -750,11 +745,10 @@ pub trait ChdrRecord: FileRecord + fmt::Debug {
 }
 
 macro_rules! impl_chdr_record {
-    ($record:ident, $word:ident) => {
+    ($record:ident) => {
 #[rustfmt::skip]
         impl<E: Endian> ChdrRecord for $record<E> {
             type Endian = E;
-            type Word = $word<E>;
 
             fn ch_type(&self) -> u32 { self.ch_type.get() }
             fn set_ch_type(&mut self, value: u32) { self.ch_type.set(value) }
@@ -768,8 +762,8 @@ macro_rules! impl_chdr_record {
     };
 }
 
-impl_chdr_record!(Elf64Chdr, U64);
-impl_chdr_record!(Elf32Chdr, U32);
+impl_chdr_record!(Elf64Chdr);
+impl_chdr_record!(Elf32Chdr);
 
 pub type ElfChdr<E> = <E as Layout>::Chdr;
 
