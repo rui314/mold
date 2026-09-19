@@ -17,6 +17,12 @@ pub struct UnwindInfoSection {
     pub personalities: Vec<SymbolId>,
 }
 
+impl Default for UnwindInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnwindInfoSection {
     pub fn new() -> UnwindInfoSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__unwind_info");

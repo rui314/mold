@@ -33,6 +33,12 @@ pub struct SymtabSection {
     pub output_sym_indices: Vec<u32>,
 }
 
+impl Default for SymtabSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymtabSection {
     pub fn new() -> SymtabSection {
         SymtabSection {
@@ -54,6 +60,12 @@ pub struct StrtabSection {
     pub hdr: ChunkHeader,
 }
 
+impl Default for StrtabSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StrtabSection {
     pub fn new() -> StrtabSection {
         StrtabSection { hdr: ChunkHeader::linkedit() }
@@ -65,6 +77,12 @@ impl StrtabSection {
 #[derive(Debug)]
 pub struct IndirectSymtabSection {
     pub hdr: ChunkHeader,
+}
+
+impl Default for IndirectSymtabSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IndirectSymtabSection {

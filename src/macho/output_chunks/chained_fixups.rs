@@ -26,6 +26,12 @@ pub struct ChainedFixupsSection {
     pub ordinals: std::collections::HashMap<SymbolId, usize>,
 }
 
+impl Default for ChainedFixupsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChainedFixupsSection {
     pub fn new() -> ChainedFixupsSection {
         ChainedFixupsSection {
@@ -94,7 +100,7 @@ pub fn build_chained_fixups<E: Arch>(ctx: &Context<E>) -> ChainedFixups {
     let push16 = |buf: &mut Vec<u8>, v: u16| buf.extend_from_slice(&v.to_le_bytes());
     let push64 = |buf: &mut Vec<u8>, v: u64| buf.extend_from_slice(&v.to_le_bytes());
     let pad8 = |buf: &mut Vec<u8>| {
-        while buf.len() % 8 != 0 {
+        while !buf.len().is_multiple_of(8) {
             buf.push(0);
         }
     };
@@ -324,7 +330,7 @@ pub fn collect_fixups<E: Arch>(
                     // A chain link's stride is 4 bytes, so a fixup at an
                     // unaligned address is unrepresentable. ld64 diagnoses
                     // the offending input section rather than the output.
-                    if addr % 4 != 0 {
+                    if !addr.is_multiple_of(4) {
                         fatal!(
                             "{}({},{}): unaligned base relocation",
                             file_display(&ctx.objs[isec.file as usize]),

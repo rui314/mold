@@ -289,10 +289,10 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>) {
     if ctx.args.warn_duplicate_libraries {
         let mut seen = std::collections::HashSet::new();
         for arg in &ctx.args.inputs {
-            if let InputArg::Lib(name, _) = arg {
-                if !seen.insert(name.clone()) {
-                    crate::warn!("ignoring duplicate libraries: '-l{name}'");
-                }
+            if let InputArg::Lib(name, _) = arg
+                && !seen.insert(name.clone())
+            {
+                crate::warn!("ignoring duplicate libraries: '-l{name}'");
             }
         }
     }
@@ -306,10 +306,10 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>) {
     {
         let mut stubs: Vec<&'static MappedFile> = Vec::new();
         let consider = |path: &std::path::Path, stubs: &mut Vec<&'static MappedFile>| {
-            if let Some(mf) = crate::macho::files::open(path) {
-                if get_file_type(std::path::Path::new(""), mf) == FileType::Tapi {
-                    stubs.push(mf);
-                }
+            if let Some(mf) = crate::macho::files::open(path)
+                && get_file_type(std::path::Path::new(""), mf) == FileType::Tapi
+            {
+                stubs.push(mf);
             }
         };
         for arg in &inputs {
@@ -339,10 +339,10 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>) {
         let mut deps: Vec<&'static MappedFile> = Vec::new();
         for tbd in &wave1 {
             for name in &tbd.external_reexports {
-                if let Some(dep) = crate::macho::input_files::find_reexport_file(ctx, name) {
-                    if get_file_type(std::path::Path::new(""), dep) == FileType::Tapi {
-                        deps.push(dep);
-                    }
+                if let Some(dep) = crate::macho::input_files::find_reexport_file(ctx, name)
+                    && get_file_type(std::path::Path::new(""), dep) == FileType::Tapi
+                {
+                    deps.push(dep);
                 }
             }
         }
@@ -515,10 +515,10 @@ pub fn load_autolink_deps<E: Arch>(ctx: &mut Context<E>) -> Autolinked {
                 None
             }
         };
-        if let Some(path) = path {
-            if let Some(mf) = crate::macho::files::open(&path) {
-                collect_file(ctx, mf, false, false, false, false, &mut queue);
-            }
+        if let Some(path) = path
+            && let Some(mf) = crate::macho::files::open(&path)
+        {
+            collect_file(ctx, mf, false, false, false, false, &mut queue);
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
@@ -568,15 +568,15 @@ pub fn claim_new_dylibs<E: Arch>(ctx: &mut Context<E>, first: usize) {
 /// each archive member has been parsed already, and resolution ranks
 /// competing definitions (strong > weak > lazy archive member or dylib
 /// > common), breaking ties by input order. A liveness walk then marks
-/// the archive members whose definitions are actually referenced, and
-/// a second round restricted to live files settles the final owners.
-/// Adds the object that owns what the linker synthesizes: the
-/// sections standing for merged Objective-C records, folded class
-/// references or tentative definitions, and symbols such as
-/// __mh_execute_header. It takes part in every pass like an input
-/// object with no symbol table of its own, so no pass has to treat
-/// synthesized sections and symbols as fileless. mold-rust's
-/// create_internal_file.
+/// > the archive members whose definitions are actually referenced, and
+/// > a second round restricted to live files settles the final owners.
+/// > Adds the object that owns what the linker synthesizes: the
+/// > sections standing for merged Objective-C records, folded class
+/// > references or tentative definitions, and symbols such as
+/// > __mh_execute_header. It takes part in every pass like an input
+/// > object with no symbol table of its own, so no pass has to treat
+/// > synthesized sections and symbols as fileless. mold-rust's
+/// > create_internal_file.
 pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
     ctx.internal_obj = Some(ctx.objs.len());
     ctx.objs.push(input_files::ObjectFile::internal());
@@ -735,12 +735,12 @@ fn do_resolve<E: Arch>(ctx: &mut Context<E>, only_alive: bool) {
             _ => return None,
         };
         let mut align_term = 0u64;
-        if class == 1 && nlist.n_type() == N_SECT {
-            if let Some((isec, _)) =
+        if class == 1
+            && nlist.n_type() == N_SECT
+            && let Some((isec, _)) =
                 crate::macho::input_files::find_subsec(isecs_for_rank, &obj.subsecs, nlist.n_value)
-            {
-                align_term = 63 - isecs_for_rank[isec].p2align as u64;
-            }
+        {
+            align_term = 63 - isecs_for_rank[isec].p2align as u64;
         }
         Some((class << 40) | (align_term << 32) | obj.priority as u64)
     };
@@ -832,7 +832,7 @@ fn do_resolve<E: Arch>(ctx: &mut Context<E>, only_alive: bool) {
     let commons: Vec<(crate::macho::symbol::SymbolId, u64, u8)> = ctx
         .objs
         .par_iter()
-        .filter(|obj| (!only_alive || obj.is_alive) && obj.is_alive)
+        .filter(|obj| obj.is_alive)
         .flat_map_iter(|obj| {
             let r = obj.global_range();
             obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(nlist, &sym_id)| {
@@ -921,14 +921,14 @@ fn mark_live_objects<E: Arch>(ctx: &mut Context<E>) {
     let mut root_syms: Vec<&str> = vec![ctx.args.entry.as_str()];
     root_syms.extend(ctx.args.forced_undefined.iter().map(String::as_str));
     for name in root_syms {
-        if let Some(id) = ctx.symbols.get(name) {
-            if let Some(FileId::Obj(owner)) = ctx.symbols[id].file() {
-                let owner = owner as usize;
-                if !ctx.objs[owner].is_alive {
-                    ctx.objs[owner].is_alive = true;
-                    ctx.why_load.insert(owner, ctx.symbols[id].name());
-                    queue.push(owner);
-                }
+        if let Some(id) = ctx.symbols.get(name)
+            && let Some(FileId::Obj(owner)) = ctx.symbols[id].file()
+        {
+            let owner = owner as usize;
+            if !ctx.objs[owner].is_alive {
+                ctx.objs[owner].is_alive = true;
+                ctx.why_load.insert(owner, ctx.symbols[id].name());
+                queue.push(owner);
             }
         }
     }
@@ -988,27 +988,26 @@ pub fn do_lto<E: Arch>(ctx: &mut Context<E>) -> bool {
         let executable = ctx.args.output_type == MH_EXECUTE;
         let mut preserve: Vec<std::ffi::CString> = Vec::new();
         for sym in &ctx.symbols.syms {
-            if let Some(FileId::Obj(idx)) = sym.file() {
-                if ctx.objs[idx as usize].is_alive
-                    && ctx.objs[idx as usize].lto_module.is_some()
-                    && sym.is_extern()
+            if let Some(FileId::Obj(idx)) = sym.file()
+                && ctx.objs[idx as usize].is_alive
+                && ctx.objs[idx as usize].lto_module.is_some()
+                && sym.is_extern()
+            {
+                if executable
+                    && !ctx.args.export_dynamic
+                    && !sym.is_used()
+                    && sym.name() != ctx.args.entry
+                    && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
+                    && !ctx
+                        .args
+                        .exported_symbols
+                        .as_ref()
+                        .is_some_and(|list| list.iter().any(|n| n == sym.name()))
                 {
-                    if executable
-                        && !ctx.args.export_dynamic
-                        && !sym.is_used()
-                        && sym.name() != ctx.args.entry
-                        && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
-                        && !ctx
-                            .args
-                            .exported_symbols
-                            .as_ref()
-                            .is_some_and(|list| list.iter().any(|n| n == sym.name()))
-                    {
-                        continue;
-                    }
-                    if let Ok(name) = std::ffi::CString::new(sym.name()) {
-                        preserve.push(name);
-                    }
+                    continue;
+                }
+                if let Ok(name) = std::ffi::CString::new(sym.name()) {
+                    preserve.push(name);
                 }
             }
         }
@@ -1032,10 +1031,10 @@ pub fn do_lto<E: Arch>(ctx: &mut Context<E>) -> bool {
     // gets stabs pointing at them), and for LTO code that object
     // exists only inside the linker - Xcode passes a path under the
     // dSYM staging directory so dsymutil can find it afterwards.
-    if let Some(path) = &ctx.args.object_path_lto {
-        if std::fs::write(path, &data).is_err() {
-            fatal!("-object_path_lto: cannot write {path}");
-        }
+    if let Some(path) = &ctx.args.object_path_lto
+        && std::fs::write(path, &data).is_err()
+    {
+        fatal!("-object_path_lto: cannot write {path}");
     }
 
     // Retire the placeholders: the compiled object provides the real
@@ -1087,7 +1086,7 @@ pub fn convert_common_symbols<E: Arch>(ctx: &mut Context<E>) {
         ctx.isecs.push(InputSection {
             file,
             shndx,
-            p2align: p2align as u8,
+            p2align,
             input_addr: 0,
             size: size as u32,
             contents: 0,
@@ -1299,7 +1298,7 @@ pub fn merge_literals<E: Arch>(ctx: &mut Context<E>) {
     for fold in folds {
         for (loser, winner) in fold {
             let p2align = ctx.isecs[loser as usize].p2align;
-            ctx.isecs[loser as usize].replacement = winner as u32;
+            ctx.isecs[loser as usize].replacement = winner;
             let w = &mut ctx.isecs[winner as usize];
             w.p2align = w.p2align.max(p2align);
         }
@@ -1476,14 +1475,13 @@ pub fn create_objc_msgsend_stubs<E: Arch>(ctx: &mut Context<E>) {
 
         // The stub machinery itself references _objc_msgSend; resolve
         // it now, since regular resolution has already run.
-        if !ctx.symbols[id].is_defined() {
-            if let Some(dylib) = ctx.dylibs.iter().position(|d| d.exports.contains("_objc_msgSend"))
-            {
-                let sym = &mut ctx.symbols[id];
-                sym.set_file(FileId::Dylib((dylib) as u32));
-                sym.set_is_imported(true);
-                sym.set_is_extern(true);
-            }
+        if !ctx.symbols[id].is_defined()
+            && let Some(dylib) = ctx.dylibs.iter().position(|d| d.exports.contains("_objc_msgSend"))
+        {
+            let sym = &mut ctx.symbols[id];
+            sym.set_file(FileId::Dylib((dylib) as u32));
+            sym.set_is_imported(true);
+            sym.set_is_extern(true);
         }
 
         // Build the __objc_methname contents: one NUL-terminated string
@@ -1591,7 +1589,7 @@ pub fn hide_all_exports<E: Arch>(ctx: &mut Context<E>) {
 /// __swift5_typeref strings come with or without a pad byte from
 /// one object to the next, and ld64 discards the losers regardless)
 /// - C++ guarantees identical weak instantiations, but any other
-/// mismatch means something odd, and keeping the copy is safe.
+///   mismatch means something odd, and keeping the copy is safe.
 pub fn coalesce_weak_defs<E: Arch>(ctx: &mut Context<E>) {
     // A C++ debug link has millions of weak-def nlists (every inline
     // and template instance), so the scan that finds each losing copy
@@ -1905,13 +1903,13 @@ pub fn dead_strip_dylibs<E: Arch>(ctx: &mut Context<E>) {
     let mut bound = vec![0u32; ctx.dylibs.len()];
     let mut weak = vec![0u32; ctx.dylibs.len()];
     for sym in &ctx.symbols.syms {
-        if let Some(FileId::Dylib(idx)) = sym.file() {
-            if idx != u32::MAX {
-                used[idx as usize] = true;
-                if sym.is_used() {
-                    bound[idx as usize] += 1;
-                    weak[idx as usize] += sym.is_weak_ref() as u32;
-                }
+        if let Some(FileId::Dylib(idx)) = sym.file()
+            && idx != u32::MAX
+        {
+            used[idx as usize] = true;
+            if sym.is_used() {
+                bound[idx as usize] += 1;
+                weak[idx as usize] += sym.is_weak_ref() as u32;
             }
         }
     }
@@ -1931,10 +1929,10 @@ pub fn dead_strip_dylibs<E: Arch>(ctx: &mut Context<E>) {
     }
 
     for sym in &mut ctx.symbols.syms {
-        if let Some(FileId::Dylib(idx)) = sym.file() {
-            if idx != u32::MAX {
-                sym.set_file(FileId::Dylib(remap[idx as usize] as u32));
-            }
+        if let Some(FileId::Dylib(idx)) = sym.file()
+            && idx != u32::MAX
+        {
+            sym.set_file(FileId::Dylib(remap[idx as usize] as u32));
         }
     }
 
@@ -2432,10 +2430,10 @@ pub fn convert_objc_method_lists<E: Arch>(ctx: &mut Context<E>) {
     let mut seen: hashbrown::HashSet<u32> = hashbrown::HashSet::new();
     let mut classes_seen: hashbrown::HashSet<(u32, u64)> = hashbrown::HashSet::new();
     let mut note = |ctx: &Context<E>, r: Option<ObjcRef>, lists: &mut Vec<u32>| {
-        if let Some((isec, 0)) = r.and_then(|r| objc_ref_location(ctx, r)) {
-            if seen.insert(isec) {
-                lists.push(isec);
-            }
+        if let Some((isec, 0)) = r.and_then(|r| objc_ref_location(ctx, r))
+            && seen.insert(isec)
+        {
+            lists.push(isec);
         }
     };
     fn visit_class<E: Arch>(
@@ -2610,10 +2608,10 @@ pub fn convert_objc_method_lists<E: Arch>(ctx: &mut Context<E>) {
     // The lists' own symbols (__OBJC_$_INSTANCE_METHODS_Foo ...) follow
     // them into __objc_methlist.
     for id in 0..ctx.symbols.syms.len() {
-        if let Some(isec) = ctx.symbols[id].input_section() {
-            if let Some(&synth) = repoint.get(&isec) {
-                ctx.symbols[id].set_input_section(Some(synth));
-            }
+        if let Some(isec) = ctx.symbols[id].input_section()
+            && let Some(&synth) = repoint.get(&isec)
+        {
+            ctx.symbols[id].set_input_section(Some(synth));
         }
     }
 }
@@ -2680,6 +2678,9 @@ fn objc_cstring_at<E: Arch>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<Stri
 /// in the expected shape, is left alone. Runs after the method lists
 /// have been rewritten in relative form, when it merges those; with
 /// classic lists the merged list is a classic one.
+/// Emits a rewritten Objective-C metadata blob and returns its subsection.
+type NewBlob<'a, E> = dyn FnMut(&mut Context<E>, &'static str, Vec<DataField>) -> u32 + 'a;
+
 pub fn merge_objc_categories<E: Arch>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !ctx.args.objc_category_merging.unwrap_or(true) {
         return;
@@ -3215,11 +3216,7 @@ pub fn merge_objc_categories<E: Arch>(ctx: &mut Context<E>) {
                           methods: Option<u32>,
                           protocols: Option<u32>,
                           props: Option<u32>,
-                          new_blob: &mut dyn FnMut(
-            &mut Context<E>,
-            &'static str,
-            Vec<DataField>,
-        ) -> u32| {
+                          new_blob: &mut NewBlob<'_, E>| {
             let data = ctx.isecs[ro.0 as usize].data()[ro.1 as usize..ro.1 as usize + 16].to_vec();
             let flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
             let has_swift_initializer = flags & (1 << 6) != 0;
@@ -4494,7 +4491,7 @@ pub fn plan_object_stabs<E: Arch>(
     }
     // n_value is the object's modification time, which dsymutil and
     // lldb compare against the file they find (0 disables the check).
-    let mtime = std::fs::metadata(&obj.mf.name_str())
+    let mtime = std::fs::metadata(obj.mf.name_str())
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -4514,7 +4511,7 @@ pub fn plan_object_stabs<E: Arch>(
             continue;
         }
         let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-        let isec_id = ctx.resolve_isec(isec as usize);
+        let isec_id = ctx.resolve_isec(isec);
         let isec = &ctx.isecs[isec_id];
         if !isec.is_alive() {
             continue;
@@ -4684,10 +4681,10 @@ pub fn create_output_symtab<E: Arch>(
                     }
                     // -non_global_symbols_keep_list / _strip_list
                     // filter local symbols by name; stabs unaffected.
-                    if let Some(keep) = &ctx_ref.args.local_keep_list {
-                        if !keep.iter().any(|p| crate::macho::util::glob_match(p, sym.name())) {
-                            continue;
-                        }
+                    if let Some(keep) = &ctx_ref.args.local_keep_list
+                        && !keep.iter().any(|p| crate::macho::util::glob_match(p, sym.name()))
+                    {
+                        continue;
                     }
                     if ctx_ref
                         .args
@@ -4847,7 +4844,7 @@ pub fn create_output_symtab<E: Arch>(
             n_desc |= N_WEAK_DEF;
         }
         let ent = NList { n_strx, n_type, n_sect, n_desc, n_value: 0 };
-        data.entries.push((ent, Some(i as u32)));
+        data.entries.push((ent, Some(i)));
     }
     data.nextdef = data.entries.len() as u32 - data.nlocal;
 
@@ -5001,10 +4998,10 @@ pub fn create_output_symtab<E: Arch>(
     // Record each global symbol's index for the indirect symbol table.
     data.output_sym_indices = vec![u32::MAX; ctx.symbols.syms.len()];
     for (i, (_, sym)) in data.entries.iter().enumerate() {
-        if let Some(id) = sym {
-            if ctx.symbols[*id].is_extern() {
-                data.output_sym_indices[*id as usize] = i as u32;
-            }
+        if let Some(id) = sym
+            && ctx.symbols[*id].is_extern()
+        {
+            data.output_sym_indices[*id as usize] = i as u32;
         }
     }
 
@@ -5348,13 +5345,13 @@ fn order_file_ranks<E: Arch>(ctx: &Context<E>) -> Option<Vec<u64>> {
             if line.is_empty() {
                 continue;
             }
-            if let Some((first, rest)) = line.split_once(':') {
-                if ARCHS.contains(&first.trim()) {
-                    if first.trim() != E::NAME {
-                        continue;
-                    }
-                    line = rest.trim();
+            if let Some((first, rest)) = line.split_once(':')
+                && ARCHS.contains(&first.trim())
+            {
+                if first.trim() != E::NAME {
+                    continue;
                 }
+                line = rest.trim();
             }
             let (file, name) = match line.split_once(':') {
                 Some((file, name)) => (Some(file.trim().to_string()), name.trim()),
@@ -5382,7 +5379,7 @@ fn order_file_ranks<E: Arch>(ctx: &Context<E>) -> Option<Vec<u64>> {
                 None => true,
             };
             if applies {
-                let isec = ctx.resolve_isec(isec as usize);
+                let isec = ctx.resolve_isec(isec);
                 ranks[isec] = ranks[isec].min(*r);
             }
         }
@@ -5415,14 +5412,14 @@ pub fn add_entry_stub<E: Arch>(ctx: &mut Context<E>) {
     if ctx.args.output_type != MH_EXECUTE {
         return;
     }
-    if let Some(id) = ctx.symbols.get(&ctx.args.entry) {
-        if ctx.symbols[id].is_imported() {
-            add_stub(ctx, id);
-            if ctx.lazy_binding() {
-                ensure_stub_binder(ctx);
-            } else {
-                add_got(ctx, id);
-            }
+    if let Some(id) = ctx.symbols.get(&ctx.args.entry)
+        && ctx.symbols[id].is_imported()
+    {
+        add_stub(ctx, id);
+        if ctx.lazy_binding() {
+            ensure_stub_binder(ctx);
+        } else {
+            add_got(ctx, id);
         }
     }
 }

@@ -75,6 +75,9 @@ pub fn load_plugin(path: Option<&str>) -> Plugin {
                 if sym.is_null() {
                     fatal!("libLTO does not provide {}", $name);
                 }
+                // The function pointer type is the field's, which differs per
+                // expansion, so it cannot be spelled here.
+                #[allow(clippy::missing_transmute_annotations)]
                 std::mem::transmute(sym)
             }};
         }

@@ -48,6 +48,12 @@ pub struct InitOffsetsSection {
     pub init_funcs: Vec<(usize, u64)>,
 }
 
+impl Default for InitOffsetsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InitOffsetsSection {
     pub fn new() -> InitOffsetsSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__init_offsets");
@@ -77,6 +83,12 @@ pub struct FunctionStartsSection {
     pub contents: Vec<u8>,
 }
 
+impl Default for FunctionStartsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FunctionStartsSection {
     pub fn new() -> FunctionStartsSection {
         FunctionStartsSection { hdr: ChunkHeader::linkedit(), contents: Vec::new() }
@@ -103,6 +115,12 @@ pub struct DataInCodeSection {
     pub entries: Vec<(u32, u16, u16)>,
 }
 
+impl Default for DataInCodeSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataInCodeSection {
     pub fn new() -> DataInCodeSection {
         DataInCodeSection { hdr: ChunkHeader::linkedit(), entries: Vec::new() }
@@ -127,6 +145,12 @@ pub mod data_in_code {
 #[derive(Debug)]
 pub struct CodeSignatureSection {
     pub hdr: ChunkHeader,
+}
+
+impl Default for CodeSignatureSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CodeSignatureSection {
@@ -179,10 +203,10 @@ pub fn rehash_pages(data: &[u8], hashes: &mut [[u8; SHA256_SIZE]], range: std::o
     let page = CS_PAGE_SIZE as usize;
     let first = range.start / page;
     let last = range.end.div_ceil(page).min(hashes.len());
-    for i in first..last {
+    for (i, hash) in hashes.iter_mut().enumerate().take(last).skip(first) {
         let start = i * page;
         let end = (start + page).min(data.len());
-        crate::macho::util::sha256(&data[start..end], &mut hashes[i]);
+        crate::macho::util::sha256(&data[start..end], hash);
     }
 }
 
@@ -276,7 +300,7 @@ pub fn build_data_in_code<E: Arch>(ctx: &Context<E>) -> Vec<(u32, u16, u16)> {
             else {
                 continue;
             };
-            let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
+            let isec = &ctx.isecs[ctx.resolve_isec(isec)];
             if isec.is_alive() {
                 let fileoff = ctx.chunk_header(isec.output_section().unwrap()).fileoff
                     + isec.offset as u64

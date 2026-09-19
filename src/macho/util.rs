@@ -65,10 +65,11 @@ pub fn sha256(data: &[u8], out: &mut [u8; 32]) {
 /// A diagnostic spelling only: symbol lookup and output use the
 /// original name. Mach-O adds an underscore to the Itanium ABI name.
 pub fn demangle(name: &str) -> std::borrow::Cow<'_, str> {
-    if crate::error::demangle_enabled() && name.starts_with("__Z") {
-        if let Some(text) = crate::util::demangle::demangle_cpp(&name.as_bytes()[1..]) {
-            return text.into();
-        }
+    if crate::error::demangle_enabled()
+        && name.starts_with("__Z")
+        && let Some(text) = crate::util::demangle::demangle_cpp(&name.as_bytes()[1..])
+    {
+        return text.into();
     }
     name.into()
 }

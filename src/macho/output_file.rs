@@ -36,10 +36,10 @@ static OUTPUT_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Removes a partially-written output file after a fatal error.
 pub fn cleanup() {
-    if let Ok(mut guard) = OUTPUT_PATH.lock() {
-        if let Some(path) = guard.take() {
-            let _ = std::fs::remove_file(path);
-        }
+    if let Ok(mut guard) = OUTPUT_PATH.lock()
+        && let Some(path) = guard.take()
+    {
+        let _ = std::fs::remove_file(path);
     }
 }
 

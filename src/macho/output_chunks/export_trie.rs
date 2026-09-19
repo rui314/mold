@@ -15,6 +15,12 @@ pub struct ExportTrieSection {
     pub contents: Vec<u8>,
 }
 
+impl Default for ExportTrieSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExportTrieSection {
     pub fn new() -> ExportTrieSection {
         ExportTrieSection { hdr: ChunkHeader::linkedit(), contents: Vec::new() }
@@ -83,11 +89,11 @@ fn build_trie(names: &[(&'static str, Export)], depth: usize) -> TrieNode {
     use rayon::prelude::*;
     let mut node = TrieNode::default();
     let mut rest = names;
-    if let Some(&(name, export)) = rest.first() {
-        if name.len() == depth {
-            node.export = Some(export);
-            rest = &rest[1..];
-        }
+    if let Some(&(name, export)) = rest.first()
+        && name.len() == depth
+    {
+        node.export = Some(export);
+        rest = &rest[1..];
     }
     let mut groups: Vec<&[(&'static str, Export)]> = Vec::new();
     while let Some(&(first, _)) = rest.first() {
@@ -147,10 +153,10 @@ pub fn encode_export_trie<E: Arch>(ctx: &Context<E>, sorted_globals: &[SymbolId]
             let same_name = target.is_some_and(|t| ctx.symbols[t].name() == sym.name());
             // Explicit reexports survive restrictions on local exports.
             if !same_name {
-                if let Some(exported) = &ctx.args.exported_symbols {
-                    if !exported.iter().any(|pat| pat == sym.name()) {
-                        return None;
-                    }
+                if let Some(exported) = &ctx.args.exported_symbols
+                    && !exported.iter().any(|pat| pat == sym.name())
+                {
+                    return None;
                 }
                 if ctx.args.unexported_symbols.iter().any(|pat| pat == sym.name()) {
                     return None;
@@ -200,7 +206,7 @@ pub fn encode_export_trie<E: Arch>(ctx: &Context<E>, sorted_globals: &[SymbolId]
     // '_', so the root has one child).
     const FANOUT: usize = 8;
     fn count(node: &mut TrieNode) -> u32 {
-        node.children.sort_by(|a, b| a.0.cmp(&b.0));
+        node.children.sort_by(|a, b| a.0.cmp(b.0));
         let below: u32 = if node.children.len() >= FANOUT {
             node.children.par_iter_mut().map(|(_, c)| count(c)).sum()
         } else {
@@ -367,7 +373,7 @@ pub fn encode_export_trie<E: Arch>(ctx: &Context<E>, sorted_globals: &[SymbolId]
             debug_assert_eq!(p, end - start);
         });
     }
-    while buf.len() % 8 != 0 {
+    while !buf.len().is_multiple_of(8) {
         buf.push(0);
     }
     buf

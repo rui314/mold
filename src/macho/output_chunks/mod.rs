@@ -203,6 +203,12 @@ pub struct OutputMachHeader {
     pub hdr: ChunkHeader,
 }
 
+impl Default for OutputMachHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputMachHeader {
     pub fn new() -> OutputMachHeader {
         let mut hdr = ChunkHeader::new("__TEXT", "");
@@ -246,7 +252,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Stubs => got::stubs::copy_buf(ctx, buf),
         ChunkId::StubHelper => got::stub_helper::copy_buf(ctx, buf),
         ChunkId::LazyPtrs => got::lazy_ptrs::copy_buf(ctx, buf),
-        ChunkId::Got => got::got::copy_buf(ctx, buf),
+        ChunkId::Got => got::copy_buf(ctx, buf),
         ChunkId::ThreadPtrs => got::thread_ptrs::copy_buf(ctx, buf),
         ChunkId::ObjcStubs => objc::objc_stubs::copy_buf(ctx, buf),
         ChunkId::ObjcMethlist => objc::objc_methlist::copy_buf(ctx, buf),
@@ -275,7 +281,7 @@ fn to_vec(record: &impl FileRecord) -> Vec<u8> {
 fn append_string(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(s.as_bytes());
     buf.push(0);
-    while buf.len() % 8 != 0 {
+    while !buf.len().is_multiple_of(8) {
         buf.push(0);
     }
 }

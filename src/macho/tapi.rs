@@ -298,19 +298,17 @@ fn parse_json(file: &str, text: &'static str, arch: &str) -> TbdFile {
         .get("install_names")
         .map(Json::arr)
         .and_then(|a| a.iter().find(|g| applies(g, &target)))
+        && let Some(s) = name.get("name").and_then(Json::str)
     {
-        if let Some(s) = name.get("name").and_then(Json::str) {
-            tbd.install_name = s.to_string();
-        }
+        tbd.install_name = s.to_string();
     }
     if let Some(v) = main
         .get("current_versions")
         .map(Json::arr)
         .and_then(|a| a.iter().find(|g| applies(g, &target)))
+        && let Some(s) = v.get("version").and_then(Json::str)
     {
-        if let Some(s) = v.get("version").and_then(Json::str) {
-            tbd.current_version = parse_version(s);
-        }
+        tbd.current_version = parse_version(s);
     }
     for flags in main.get("flags").map(Json::arr).unwrap_or(&[]) {
         if applies(flags, &target)
@@ -555,12 +553,12 @@ fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
             // Flow lists may span lines. Consume them once as a single field.
             let value_offset = value.as_ptr() as usize - text.as_ptr() as usize;
             let rest = text[value_offset..].trim_start();
-            if rest.starts_with('[') {
-                if let Some(close) = rest.find(']') {
-                    value = &rest[..close + 1];
-                    let end = value.as_ptr() as usize - text.as_ptr() as usize + value.len();
-                    next = memchr_from(bytes, b'\n', end).map_or(bytes.len(), |i| i + 1);
-                }
+            if rest.starts_with('[')
+                && let Some(close) = rest.find(']')
+            {
+                value = &rest[..close + 1];
+                let end = value.as_ptr() as usize - text.as_ptr() as usize + value.len();
+                next = memchr_from(bytes, b'\n', end).map_or(bytes.len(), |i| i + 1);
             }
             docs.last_mut().unwrap().push(YamlField {
                 indent: raw.len() - line.len(),
@@ -572,6 +570,18 @@ fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
         pos = next;
     }
     docs
+}
+
+// Apple's macOS SDK describes many system libraries only as arm64e.
+// Use that ABI-compatible slice for arm64 only when no arm64 slice exists.
+fn select_arch<'a>(arch: &'a str, available: impl Iterator<Item = &'a str>) -> &'a str {
+    let mut exact = false;
+    let mut arm64e = false;
+    for name in available {
+        exact |= name == arch;
+        arm64e |= name == "arm64e";
+    }
+    if arch == "arm64" && !exact && arm64e { "arm64e" } else { arch }
 }
 
 #[cfg(test)]
@@ -688,16 +698,4 @@ exports:
         assert!(x86.tlv_exports.is_empty());
         assert_eq!(x86.external_reexports, ["/x86"]);
     }
-}
-
-// Apple's macOS SDK describes many system libraries only as arm64e.
-// Use that ABI-compatible slice for arm64 only when no arm64 slice exists.
-fn select_arch<'a>(arch: &'a str, available: impl Iterator<Item = &'a str>) -> &'a str {
-    let mut exact = false;
-    let mut arm64e = false;
-    for name in available {
-        exact |= name == arch;
-        arm64e |= name == "arm64e";
-    }
-    if arch == "arm64" && !exact && arm64e { "arm64e" } else { arch }
 }

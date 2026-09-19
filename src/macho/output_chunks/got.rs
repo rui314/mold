@@ -16,6 +16,12 @@ pub struct StubsSection {
     pub symbols: Vec<SymbolId>,
 }
 
+impl Default for StubsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StubsSection {
     pub fn new() -> StubsSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__stubs");
@@ -46,6 +52,12 @@ pub struct StubHelperSection {
     pub dyld_private_isec: u32,
 }
 
+impl Default for StubHelperSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StubHelperSection {
     pub fn new() -> StubHelperSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__stub_helper");
@@ -68,6 +80,12 @@ pub mod stub_helper {
 #[derive(Debug)]
 pub struct LazyPtrsSection {
     pub hdr: ChunkHeader,
+}
+
+impl Default for LazyPtrsSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LazyPtrsSection {
@@ -105,6 +123,12 @@ pub struct GotSection {
     pub objc_classref_slots: Vec<u32>,
 }
 
+impl Default for GotSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GotSection {
     pub fn new() -> GotSection {
         let mut hdr = ChunkHeader::new("__DATA", "__got");
@@ -114,16 +138,12 @@ impl GotSection {
     }
 }
 
-pub mod got {
-    use super::*;
-
-    pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        // Slots for imported symbols stay zero; dyld fills them via
-        // the bind stream.
-        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if !ctx.symbols[id].is_imported() {
-                buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
-            }
+pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+    // Slots for imported symbols stay zero; dyld fills them via
+    // the bind stream.
+    for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+        if !ctx.symbols[id].is_imported() {
+            buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
         }
     }
 }
@@ -135,6 +155,12 @@ pub struct ThreadPtrsSection {
     pub hdr: ChunkHeader,
     /// Thread-local symbols with a __thread_ptrs slot, in slot order.
     pub symbols: Vec<SymbolId>,
+}
+
+impl Default for ThreadPtrsSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ThreadPtrsSection {

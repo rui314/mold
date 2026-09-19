@@ -18,6 +18,12 @@ pub struct RebaseInfoSection {
     pub contents: Vec<u8>,
 }
 
+impl Default for RebaseInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RebaseInfoSection {
     pub fn new() -> RebaseInfoSection {
         RebaseInfoSection { hdr: ChunkHeader::linkedit(), contents: Vec::new() }
@@ -39,6 +45,12 @@ pub struct BindInfoSection {
     pub hdr: ChunkHeader,
     /// The stream, built during layout.
     pub contents: Vec<u8>,
+}
+
+impl Default for BindInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BindInfoSection {
@@ -66,6 +78,12 @@ pub struct WeakBindInfoSection {
     pub contents: Vec<u8>,
 }
 
+impl Default for WeakBindInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WeakBindInfoSection {
     pub fn new() -> WeakBindInfoSection {
         WeakBindInfoSection { hdr: ChunkHeader::linkedit(), contents: Vec::new() }
@@ -90,6 +108,12 @@ pub struct LazyBindInfoSection {
     /// in it (what its stub helper entry pushes for dyld_stub_binder).
     pub contents: Vec<u8>,
     pub offsets: Vec<u32>,
+}
+
+impl Default for LazyBindInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LazyBindInfoSection {
@@ -344,10 +368,10 @@ pub fn build_bind_info<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
             {
                 continue;
             }
-            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
-                if ctx.symbols[id].is_imported() {
-                    binds.push((base + rel.offset as u64, id, rel.addend));
-                }
+            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
+                && ctx.symbols[id].is_imported()
+            {
+                binds.push((base + rel.offset as u64, id, rel.addend));
             }
         }
     }
@@ -453,10 +477,10 @@ pub fn build_weak_bind_info<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
             {
                 continue;
             }
-            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
-                if ctx.binds_weak_lookup(id) {
-                    binds.push((id, base + rel.offset as u64));
-                }
+            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
+                && ctx.binds_weak_lookup(id)
+            {
+                binds.push((id, base + rel.offset as u64));
             }
         }
     }

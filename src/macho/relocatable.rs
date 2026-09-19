@@ -412,7 +412,7 @@ pub fn link<E: Arch>(ctx: &mut Context<E>) {
             return None;
         };
         let entsize = *entsize_of.get(&osec)?;
-        let k = if entsize == 0 { 0 } else { addend as u64 / entsize };
+        let k = (addend as u64).checked_div(entsize).unwrap_or(0);
         renamed.get(&(t, k)).copied()
     };
 
@@ -682,7 +682,7 @@ pub fn link<E: Arch>(ctx: &mut Context<E>) {
         });
     }
     let nundef = nlists_out.len() as u32 - nlocal - nextdef;
-    while strtab.len() % 8 != 0 {
+    while !strtab.len().is_multiple_of(8) {
         strtab.push(0);
     }
 
@@ -800,7 +800,7 @@ pub fn link<E: Arch>(ctx: &mut Context<E>) {
             match r {
                 EhRec::Cie(c) => {
                     let cie = &ctx.cies[c];
-                    eh_data.extend_from_slice(&cie.data);
+                    eh_data.extend_from_slice(cie.data);
                     if let Some(p) = cie.personality {
                         let Some(&symnum) = index_of_sym.get(&p) else {
                             fatal!("-r: unwind personality lost: {}", ctx.symbols[p]);
@@ -821,7 +821,7 @@ pub fn link<E: Arch>(ctx: &mut Context<E>) {
                 EhRec::Fde(f) => {
                     let fde = &ctx.fdes[f];
                     let me = entry_symnum[eh_local[i]];
-                    eh_data.extend_from_slice(&fde.data);
+                    eh_data.extend_from_slice(fde.data);
                     let o = off as usize;
                     // CIE pointer.
                     let cie_sym = entry_symnum[cie_local[&(fde.cie as usize)]];

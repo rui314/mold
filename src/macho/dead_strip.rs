@@ -111,18 +111,17 @@ pub fn dead_strip<E: Arch>(ctx: &mut Context<E>) {
     // -u retains the atom as well as extracting its containing archive
     // member. It may name a private external, unlike an export root.
     for name in &ctx.args.forced_undefined {
-        if let Some(id) = ctx.symbols.get(name) {
-            if let Some(isec) = ctx.symbols[id].input_section() {
-                mark(ctx, &mut pred, &mut stack, isec as usize, usize::MAX);
-            }
+        if let Some(id) = ctx.symbols.get(name)
+            && let Some(isec) = ctx.symbols[id].input_section()
+        {
+            mark(ctx, &mut pred, &mut stack, isec as usize, usize::MAX);
         }
     }
-    if ctx.args.output_type == MH_EXECUTE {
-        if let Some(id) = ctx.symbols.get(&ctx.args.entry) {
-            if let Some(isec) = ctx.symbols[id].input_section().map(|i| i as usize) {
-                mark(ctx, &mut pred, &mut stack, isec, usize::MAX);
-            }
-        }
+    if ctx.args.output_type == MH_EXECUTE
+        && let Some(id) = ctx.symbols.get(&ctx.args.entry)
+        && let Some(isec) = ctx.symbols[id].input_section().map(|i| i as usize)
+    {
+        mark(ctx, &mut pred, &mut stack, isec, usize::MAX);
     }
 
     // Propagate liveness. mold's gc-sections walks the graph in
@@ -160,10 +159,10 @@ pub fn dead_strip<E: Arch>(ctx: &mut Context<E>) {
                 }
                 personality = personality.or(ctx.cies[ctx.fdes[fde].cie as usize].personality);
             }
-            if let Some(p) = personality {
-                if let Some(isec) = ctx.symbols[p].input_section().map(|i| i as usize) {
-                    out.push(isec);
-                }
+            if let Some(p) = personality
+                && let Some(isec) = ctx.symbols[p].input_section().map(|i| i as usize)
+            {
+                out.push(isec);
             }
         }
     };
@@ -186,7 +185,6 @@ pub fn dead_strip<E: Arch>(ctx: &mut Context<E>) {
             gc: &'s Gc<'s, E>,
             id: usize,
             depth: usize,
-            scope: &rayon::Scope<'s>,
             next: &mut Vec<usize>,
         ) {
             let mut targets = Vec::new();
@@ -216,17 +214,17 @@ pub fn dead_strip<E: Arch>(ctx: &mut Context<E>) {
                     personality =
                         personality.or(gc.ctx.cies[gc.ctx.fdes[fde].cie as usize].personality);
                 }
-                if let Some(p) = personality {
-                    if let Some(isec) = gc.ctx.symbols[p].input_section().map(|i| i as usize) {
-                        targets.push(isec);
-                    }
+                if let Some(p) = personality
+                    && let Some(isec) = gc.ctx.symbols[p].input_section().map(|i| i as usize)
+                {
+                    targets.push(isec);
                 }
             }
             for t in targets {
                 let t = gc.redirects[t];
                 if gc.ctx.isecs[t].mark_visited() {
                     if depth < 3 {
-                        visit_section(gc, t, depth + 1, scope, next);
+                        visit_section(gc, t, depth + 1, next);
                     } else {
                         next.push(t);
                     }
@@ -240,7 +238,7 @@ pub fn dead_strip<E: Arch>(ctx: &mut Context<E>) {
         ) {
             let mut next = Vec::with_capacity(GC_BATCH);
             for id in batch {
-                visit_section(gc, id, 0, scope, &mut next);
+                visit_section(gc, id, 0, &mut next);
                 if next.len() >= GC_BATCH {
                     let found = std::mem::replace(&mut next, Vec::with_capacity(GC_BATCH));
                     scope.spawn(move |scope| visit_batch(gc, found, scope));

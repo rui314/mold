@@ -447,7 +447,9 @@ impl SymbolTable {
             Old(SymbolId),
             New(u32),
         }
-        let results: Vec<(Vec<(u32, Resolved)>, Vec<(&'static str, u64)>)> = self
+        // One shard's interning results: the resolved slots and the new keys.
+        type ShardResult = (Vec<(u32, Resolved)>, Vec<(&'static str, u64)>);
+        let results: Vec<ShardResult> = self
             .shards
             .par_iter_mut()
             .zip(bins)

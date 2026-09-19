@@ -67,10 +67,10 @@ pub fn link<E: Arch>(cmdline: &[String]) -> Result<i32, String> {
     let cmdline = cmdline::expand_response_files(cmdline);
     let args = cmdline::parse_args(&cmdline);
 
-    if let Some(arch) = &args.arch {
-        if arch != E::NAME {
-            return Err(arch.clone());
-        }
+    if let Some(arch) = &args.arch
+        && arch != E::NAME
+    {
+        return Err(arch.clone());
     }
 
     // Fork so exit latency (unmapping every input) hides behind the

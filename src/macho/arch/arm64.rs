@@ -200,7 +200,10 @@ impl Arch for Arm64 {
                             if let Some(size) = ldr_size(l) {
                                 let target =
                                     adrp_target(a, locs[0].1) + (((l >> 10) & 0xfff) as u64) * size;
-                                if size == 8 && target % 4 == 0 && in_adr_range(target, locs[1].1) {
+                                if size == 8
+                                    && target.is_multiple_of(4)
+                                    && in_adr_range(target, locs[1].1)
+                                {
                                     put(buf, 0, NOP);
                                     put(buf, 1, make_ldr_lit(target, locs[1].1, l & 0x1f, size));
                                 }
@@ -233,15 +236,18 @@ impl Arch for Arm64 {
                             continue;
                         }
                         let base = adrp_target(a, locs[0].1) + ((d >> 10) & 0xfff) as u64;
-                        if let Some(size) = ldr_size(l) {
-                            if (l >> 5) & 0x1f == d & 0x1f {
-                                let target = base + (((l >> 10) & 0xfff) as u64) * size;
-                                if size == 8 && target % 4 == 0 && in_adr_range(target, locs[2].1) {
-                                    put(buf, 0, NOP);
-                                    put(buf, 1, NOP);
-                                    put(buf, 2, make_ldr_lit(target, locs[2].1, l & 0x1f, size));
-                                    continue;
-                                }
+                        if let Some(size) = ldr_size(l)
+                            && (l >> 5) & 0x1f == d & 0x1f
+                        {
+                            let target = base + (((l >> 10) & 0xfff) as u64) * size;
+                            if size == 8
+                                && target.is_multiple_of(4)
+                                && in_adr_range(target, locs[2].1)
+                            {
+                                put(buf, 0, NOP);
+                                put(buf, 1, NOP);
+                                put(buf, 2, make_ldr_lit(target, locs[2].1, l & 0x1f, size));
+                                continue;
                             }
                         }
                         if in_adr_range(base, locs[1].1) {
@@ -392,7 +398,7 @@ impl Arch for Arm64 {
 
             // A relocation refers to either a symbol or a section.
             let (target, addend) = if r.is_extern() {
-                (RelocTarget::Sym(r.r_symbolnum() as u32), addend)
+                (RelocTarget::Sym(r.r_symbolnum()), addend)
             } else {
                 let addr = if r.is_pcrel() {
                     (hdr.addr + r.r_address as u64).wrapping_add_signed(addend)

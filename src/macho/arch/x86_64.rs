@@ -170,7 +170,7 @@ impl Arch for X86_64 {
             let is_subtracted = i > 0 && rels[i - 1].r_type() == X86_64_RELOC_SUBTRACTOR;
 
             let (target, addend) = if r.is_extern() {
-                (RelocTarget::Sym(r.r_symbolnum() as u32), addend)
+                (RelocTarget::Sym(r.r_symbolnum()), addend)
             } else {
                 let addr = if r.is_pcrel() {
                     (hdr.addr + r.r_address as u64 + 4).wrapping_add_signed(addend)

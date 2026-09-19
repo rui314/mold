@@ -43,6 +43,12 @@ pub struct ObjcStubsSection {
     pub msgsend_sym: Option<SymbolId>,
 }
 
+impl Default for ObjcStubsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ObjcStubsSection {
     pub fn new() -> ObjcStubsSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__objc_stubs");
@@ -79,6 +85,12 @@ pub struct ObjcMethlistSection {
     pub hdr: ChunkHeader,
     /// The rewritten lists, each with its synthetic subsection here.
     pub lists: Vec<ObjcMethList>,
+}
+
+impl Default for ObjcMethlistSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ObjcMethlistSection {
@@ -135,6 +147,12 @@ pub struct ObjcImageInfoSection {
     pub hdr: ChunkHeader,
     /// The merged flags word.
     pub flags: u32,
+}
+
+impl Default for ObjcImageInfoSection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ObjcImageInfoSection {

@@ -157,7 +157,7 @@ pub fn find_subsec(
         return None;
     }
     let id = subsecs[i - 1] as usize;
-    let isec = &isecs[id as usize];
+    let isec = &isecs[id];
     if addr < isec.input_addr as u64 + isec.size as u64
         || (isec.size as u64 == 0 && addr == isec.input_addr as u64)
     {
@@ -279,7 +279,7 @@ pub struct StagedObject {
 fn nlists_slice(data: &'static [u8], off: usize, n: usize) -> Option<&'static [NList]> {
     let bytes = n.checked_mul(size_of::<NList>())?;
     if off.checked_add(bytes)? > data.len()
-        || (data.as_ptr() as usize + off) % std::mem::align_of::<NList>() != 0
+        || !(data.as_ptr() as usize + off).is_multiple_of(std::mem::align_of::<NList>())
     {
         return None;
     }
@@ -325,14 +325,13 @@ impl StagedObject {
 /// and the split is used only if it really is partitioned.
 fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<u32> {
     let n = nlists.len() as u32;
-    if let Some(d) = dysym {
-        if d.ilocalsym == 0
-            && d.iextdefsym == d.nlocalsym
-            && d.iundefsym == d.iextdefsym + d.nextdefsym
-            && d.iundefsym + d.nundefsym == n
-        {
-            return Some(d.iextdefsym);
-        }
+    if let Some(d) = dysym
+        && d.ilocalsym == 0
+        && d.iextdefsym == d.nlocalsym
+        && d.iundefsym == d.iextdefsym + d.nextdefsym
+        && d.iundefsym + d.nundefsym == n
+    {
+        return Some(d.iextdefsym);
     }
     let is_local = |nl: &NList| nl.is_stab() || !nl.is_extern();
     let first = nlists.iter().position(|nl| !is_local(nl)).unwrap_or(nlists.len());
@@ -465,10 +464,9 @@ pub fn stage_object<E: Arch>(
                 && nlist.n_type() == N_SECT
                 && nlist.n_desc & N_ALT_ENTRY == 0
                 && nlist.n_sect >= 1
+                && let Some(points) = split_points.get_mut(nlist.n_sect as usize - 1)
             {
-                if let Some(points) = split_points.get_mut(nlist.n_sect as usize - 1) {
-                    points.push(nlist.n_value);
-                }
+                points.push(nlist.n_value);
             }
         }
     }
@@ -609,7 +607,7 @@ pub fn stage_object<E: Arch>(
                         return None;
                     }
                     let &last = by_ordinal[sect_pos as usize].last()?;
-                    Some((last as usize, isecs[last as usize].size as u64))
+                    Some((last, isecs[last].size as u64))
                 });
                 let Some((tsub, toff)) = found else {
                     fatal!("{}: relocation against a discarded section", mf.name_str());
@@ -622,7 +620,7 @@ pub fn stage_object<E: Arch>(
         let mut pos = 0;
         for &sub in &by_ordinal[i] {
             let sub_off = (isecs[sub].input_addr as u64 - sect.addr) as u32;
-            let end = sub_off + isecs[sub].size as u32;
+            let end = sub_off + isecs[sub].size;
             let start = obj_relocs.len();
             while pos < rels.len() && rels[pos].offset < end {
                 let mut rel = rels[pos];
@@ -648,7 +646,7 @@ pub fn stage_object<E: Arch>(
     if let Some(hdr) =
         sect_hdrs.iter().find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
     {
-        parse_compact_unwind::<E>(hdr, &isecs, &subsecs, &nlists, data, mf.name_str(), &mut unwind);
+        parse_compact_unwind(hdr, &isecs, &subsecs, &nlists, data, mf.name_str(), &mut unwind);
     }
 
     if let Some(hdr) =
@@ -844,7 +842,7 @@ pub fn integrate_objects<E: Arch>(
                     rec.fde_idx += base.fde as u32;
                 }
                 if rec.personality_sym != UNWIND_NONE {
-                    rec.personality_sym = syms[rec.personality_sym as usize] as u32;
+                    rec.personality_sym = syms[rec.personality_sym as usize];
                 }
             }
             for cie in &mut st.cies {
@@ -912,13 +910,11 @@ pub fn integrate_objects<E: Arch>(
         let ptr = RawPtr(dst.as_mut_ptr());
         let ptr = &ptr;
         parts.into_par_iter().for_each(|(base, items)| {
-            let mut p = base;
-            for item in items {
+            for (p, item) in (base..).zip(items) {
                 // SAFETY: the ranges are disjoint across parts and lie
                 // within the reserved capacity; every slot is written
                 // exactly once.
                 unsafe { ptr.0.add(p).write(item) };
-                p += 1;
             }
         });
         unsafe { dst.set_len(old + add) };
@@ -1007,7 +1003,7 @@ pub fn integrate_object_with<E: Arch>(
         }
         // The personality was recorded as a local symbol index.
         if rec.personality_sym != UNWIND_NONE {
-            rec.personality_sym = syms[rec.personality_sym as usize] as u32;
+            rec.personality_sym = syms[rec.personality_sym as usize];
         }
         // Extend or open the subsection's record range (grouped input).
         let isec = &mut ctx.isecs[rec.isec as usize];
@@ -1211,7 +1207,7 @@ impl UnwindRecord {
 /// section is an array of 32-byte entries whose pointer fields are set by
 /// relocations.
 #[allow(clippy::too_many_arguments)]
-fn parse_compact_unwind<E: Arch>(
+fn parse_compact_unwind(
     hdr: &MachSection,
     isecs: &[InputSection],
     subsecs: &[crate::macho::input_sections::InputSectionId],
@@ -1239,7 +1235,7 @@ fn parse_compact_unwind<E: Arch>(
         }
     };
     const ENTRY_SIZE: usize = 32;
-    if hdr.size % ENTRY_SIZE as u64 != 0 {
+    if !hdr.size.is_multiple_of(ENTRY_SIZE as u64) {
         fatal!("{file_name}: invalid __compact_unwind section size");
     }
 
@@ -1607,7 +1603,7 @@ fn parse_eh_frame<E: Arch>(
         let mut lsda = None;
         if out_cies[cie].lsda_size != 0 {
             let mut pos = 24;
-            read_uleb_at(&rec, &mut pos);
+            read_uleb_at(rec, &mut pos);
             let cell = i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap());
             let lsda_addr = (input_addr as u64 + pos as u64).wrapping_add_signed(cell as i64);
             let Some((lsda_isec, lsda_off)) = find_local(lsda_addr) else {
@@ -1709,7 +1705,8 @@ pub fn defined_symbol_names(mf: &MappedFile) -> Vec<&'static str> {
             let strtab: &[u8] = &data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize];
             // SAFETY: input files are leaked, so the string table lives
             // for the rest of the process.
-            let strtab: &'static [u8] = validate_strtab(unsafe { std::mem::transmute(strtab) });
+            let strtab: &'static [u8] =
+                validate_strtab(unsafe { std::mem::transmute::<&[u8], &[u8]>(strtab) });
             for nlist in &nlists {
                 if !nlist.is_stab()
                     && nlist.is_extern()
@@ -1975,7 +1972,8 @@ pub fn parse_dylib_binary<E: Arch>(ctx: &mut Context<E>, mf: &'static MappedFile
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
         // SAFETY: input files are leaked, so the string table lives for
         // the rest of the process.
-        let strtab: &'static [u8] = validate_strtab(unsafe { std::mem::transmute(strtab) });
+        let strtab: &'static [u8] =
+            validate_strtab(unsafe { std::mem::transmute::<&[u8], &[u8]>(strtab) });
         // A TLV export is recognizable by its section: n_sect names a
         // S_THREAD_LOCAL_VARIABLES section (the __thread_vars
         // descriptors).
@@ -2208,7 +2206,8 @@ pub fn parse_bundle_loader<E: Arch>(ctx: &mut Context<E>, mf: &'static MappedFil
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
         // SAFETY: input files are leaked, so the string table lives for
         // the rest of the process.
-        let strtab: &'static [u8] = validate_strtab(unsafe { std::mem::transmute(strtab) });
+        let strtab: &'static [u8] =
+            validate_strtab(unsafe { std::mem::transmute::<&[u8], &[u8]>(strtab) });
         let tlv_sects = thread_local_section_ordinals(data, &hdr);
         let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
         for nlist in &nlists[range] {
@@ -2297,7 +2296,8 @@ fn dylib_binary_exports(
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
         // SAFETY: input files are leaked, so the string table lives for
         // the rest of the process.
-        let strtab: &'static [u8] = validate_strtab(unsafe { std::mem::transmute(strtab) });
+        let strtab: &'static [u8] =
+            validate_strtab(unsafe { std::mem::transmute::<&[u8], &[u8]>(strtab) });
         let tlv_sects = thread_local_section_ordinals(data, &hdr);
         let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
         for nlist in &nlists[range] {
@@ -2328,10 +2328,10 @@ fn dylib_binary_exports(
 /// carry the "(for architecture ...)" suffix the loader adds.
 fn dir_of(path: &str) -> String {
     let path = path.split_once("(for architecture").map_or(path, |(p, _)| p);
-    if let Ok(real) = std::fs::canonicalize(path) {
-        if let Some(dir) = real.parent() {
-            return dir.to_string_lossy().into_owned();
-        }
+    if let Ok(real) = std::fs::canonicalize(path)
+        && let Some(dir) = real.parent()
+    {
+        return dir.to_string_lossy().into_owned();
     }
     match path.rsplit_once('/') {
         Some((dir, _)) => dir.to_string(),
@@ -2438,23 +2438,22 @@ fn interpret_ld_symbols<E: Arch>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
                 install_name = Some(f[0].to_string());
             }
         } else if let Some(rest) = name.strip_prefix("$ld$add$os") {
-            if let Some((ver, sym)) = rest.split_once('$') {
-                if tapi::parse_version(ver) == minos {
-                    added.push(sym);
-                }
+            if let Some((ver, sym)) = rest.split_once('$')
+                && tapi::parse_version(ver) == minos
+            {
+                added.push(sym);
             }
         } else if let Some(rest) = name.strip_prefix("$ld$hide$os") {
-            if let Some((ver, sym)) = rest.split_once('$') {
-                if tapi::parse_version(ver) == minos {
-                    hidden.insert(sym);
-                }
+            if let Some((ver, sym)) = rest.split_once('$')
+                && tapi::parse_version(ver) == minos
+            {
+                hidden.insert(sym);
             }
-        } else if let Some(rest) = name.strip_prefix("$ld$install_name$os") {
-            if let Some((ver, new_name)) = rest.split_once('$') {
-                if tapi::parse_version(ver) == minos {
-                    install_name = Some(new_name.to_string());
-                }
-            }
+        } else if let Some(rest) = name.strip_prefix("$ld$install_name$os")
+            && let Some((ver, new_name)) = rest.split_once('$')
+            && tapi::parse_version(ver) == minos
+        {
+            install_name = Some(new_name.to_string());
         }
     }
 
