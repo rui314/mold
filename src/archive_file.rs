@@ -89,7 +89,7 @@ fn parse_decimal(bytes: &[u8]) -> usize {
 
 /// Iterates over the members of an archive as (name, body) pairs, skipping
 /// the symbol table and string table.
-fn archive_members(
+pub fn archive_members(
     mf: &'static MappedFile,
     thin: bool,
 ) -> impl Iterator<Item = (PathBuf, &'static [u8])> {

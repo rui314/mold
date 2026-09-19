@@ -44,8 +44,16 @@ pub fn must_open(path: &Path) -> &'static MappedFile {
 }
 
 /// Splits an archive into its members, skipping the `__.SYMDEF` index.
+/// A member is named `archive(member)`, the spelling ld64 uses in its
+/// diagnostics and in the debug-note stabs of a relocatable output.
 pub fn read_archive_members(mf: &'static MappedFile) -> Vec<&'static MappedFile> {
-    crate::archive_file::read_archive_members(Path::new(""), mf).collect()
+    let base = mf.data().as_ptr() as usize;
+    crate::archive_file::archive_members(mf, false)
+        .map(|(name, body)| {
+            let full = format!("{}({})", mf.name_str(), name.display());
+            mf.slice(PathBuf::from(full), body.as_ptr() as usize - base, body.len())
+        })
+        .collect()
 }
 
 /// The file name as text, which is how the Mach-O linker reports and
