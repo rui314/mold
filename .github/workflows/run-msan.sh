@@ -12,6 +12,10 @@ export CFLAGS_x86_64_unknown_linux_gnu='-fsanitize=memory -fsanitize-memory-trac
 export LIBZ_SYS_STATIC=1
 export MSAN_OPTIONS=halt_on_error=1
 
+# The instrumented linker is too slow unoptimized for the heaviest tests
+# to finish within the per-test timeout.
+export CARGO_PROFILE_DEV_OPT_LEVEL=1
+
 # Use instrumentable implementations instead of BLAKE3/Zstd assembly, and
 # select mold as well as mold-cli so Cargo enables its dependency features.
 args=(

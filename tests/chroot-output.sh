@@ -15,5 +15,5 @@ for mode in executable relocatable; do
   ./mold $flags --chroot "$root" /a.o -o "$output"
   test -f "$root$output"
   not test -e "$output"
-  readelf -h "$root$output" | grep -q ELF
+  readelf -h "$root$output" | grep ELF
 done
