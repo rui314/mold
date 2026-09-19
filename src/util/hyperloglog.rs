@@ -27,7 +27,7 @@ impl HyperLogLog {
     /// Combines two estimators, as if every value had been inserted into
     /// one of them.
     #[inline]
-    pub fn merged(mut self, other: &HyperLogLog) -> HyperLogLog {
+    pub fn merged(mut self, other: &Self) -> Self {
         for (a, b) in self.registers.iter_mut().zip(&other.registers) {
             *a = (*a).max(*b);
         }
@@ -43,7 +43,7 @@ impl HyperLogLog {
 
 impl Default for HyperLogLog {
     fn default() -> Self {
-        HyperLogLog { registers: [0; Self::NUM_REGISTERS] }
+        Self { registers: [0; Self::NUM_REGISTERS] }
     }
 }
 

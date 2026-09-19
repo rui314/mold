@@ -17,12 +17,12 @@ pub struct ComdatGroupSection<E: Layout> {
 }
 
 impl<E: Layout> ComdatGroupSection<E> {
-    pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> ComdatGroupSection<E> {
+    pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> Self {
         let mut hdr = ChunkHeader::<E>::new(".group", SHT_GROUP, 0);
         hdr.shdr.sh_entsize.set(4);
         hdr.shdr.sh_addralign.set(4);
         hdr.shdr.sh_size.set((members.len() * 4 + 4) as u64);
-        ComdatGroupSection { hdr, sym, members }
+        Self { hdr, sym, members }
     }
 }
 

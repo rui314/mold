@@ -246,10 +246,10 @@ pub enum BuildId {
 impl BuildId {
     pub fn size(&self) -> usize {
         match self {
-            BuildId::None => 0,
-            BuildId::Hex(value) => value.len(),
-            BuildId::Hash(size) => *size,
-            BuildId::Uuid => 16,
+            Self::None => 0,
+            Self::Hex(value) => value.len(),
+            Self::Hash(size) => *size,
+            Self::Uuid => 16,
         }
     }
 }
@@ -396,7 +396,7 @@ pub struct ReaderContext {
 
 impl ReaderContext {
     // Returns a context for the next file found inside the current file.
-    pub fn next_child(&mut self) -> ReaderContext {
+    pub fn next_child(&mut self) -> Self {
         let mut child = self.clone();
         child.pos.push(self.num_children);
         child.num_children = 0;
@@ -553,7 +553,7 @@ pub struct Args {
 
 impl Default for Args {
     fn default() -> Self {
-        Args {
+        Self {
             bsymbolic: BsymbolicKind::None,
             build_id: BuildId::default(),
             z_cet_report: CetReportKind::None,

@@ -123,8 +123,8 @@ impl EntryId {
     }
 
     #[inline]
-    pub(crate) fn from_raw(raw: u32) -> EntryId {
-        EntryId(raw)
+    pub(crate) fn from_raw(raw: u32) -> Self {
+        Self(raw)
     }
 }
 
@@ -143,7 +143,7 @@ unsafe impl<T: Send + Sync> Sync for ConcurrentMap<T> {}
 impl<T> Default for ConcurrentMap<T> {
     /// A map without buckets, to be replaced before use.
     fn default() -> Self {
-        ConcurrentMap { entries: ptr::null_mut(), nbuckets: 0 }
+        Self { entries: ptr::null_mut(), nbuckets: 0 }
     }
 }
 
@@ -158,7 +158,7 @@ impl<T> ConcurrentMap<T> {
         // SAFETY: the range is the fresh allocation; the advice is only a
         // hint on targets that support it.
         unsafe { crate::util::madvise_hugepage(entries.cast(), bufsize) };
-        ConcurrentMap { entries, nbuckets }
+        Self { entries, nbuckets }
     }
 
     fn bufsize(nbuckets: usize) -> usize {
@@ -352,7 +352,7 @@ pub struct FrozenMap<T>(ConcurrentMap<T>);
 
 impl<T> Default for FrozenMap<T> {
     fn default() -> Self {
-        FrozenMap(ConcurrentMap::default())
+        Self(ConcurrentMap::default())
     }
 }
 

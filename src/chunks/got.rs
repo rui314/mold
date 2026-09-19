@@ -22,7 +22,7 @@ pub struct GotSection<E: Layout> {
 }
 
 impl<E: Arch> GotSection<E> {
-    pub fn new() -> GotSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".got", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = true;
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -31,7 +31,7 @@ impl<E: Arch> GotSection<E> {
         // as reserved slots, so we allocate two more for them.
         let reserved = if E::FAMILY == Family::S390x { 3 } else { 1 };
         hdr.shdr.sh_size.set(reserved * E::WORD_SIZE as u64);
-        GotSection {
+        Self {
             hdr,
             got_syms: Vec::new(),
             tlsgd_syms: Vec::new(),

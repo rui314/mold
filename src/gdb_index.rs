@@ -93,8 +93,8 @@ struct NameType {
 }
 
 impl NameType {
-    fn new(hash: u64, kind: u8, name: &'static [u8]) -> NameType {
-        NameType { hash_and_type: (hash << 8) | kind as u64, name: name.as_ptr() as usize }
+    fn new(hash: u64, kind: u8, name: &'static [u8]) -> Self {
+        Self { hash_and_type: (hash << 8) | kind as u64, name: name.as_ptr() as usize }
     }
 
     fn hash(self) -> u64 {
@@ -105,7 +105,7 @@ impl NameType {
         self.hash_and_type as u8
     }
 
-    fn same_name(self, other: NameType) -> bool {
+    fn same_name(self, other: Self) -> bool {
         self.hash_and_type == other.hash_and_type
             // SAFETY: public names point into NUL-terminated debug sections
             // that remain live for the complete link.
@@ -137,7 +137,7 @@ union NameRecord {
 }
 
 impl NameRecord {
-    fn new(hash: u64, kind: u8, name: &'static [u8]) -> NameRecord {
+    fn new(hash: u64, kind: u8, name: &'static [u8]) -> Self {
         NameRecord { nametype: NameType::new(hash, kind, name) }
     }
 
@@ -245,7 +245,7 @@ struct Reader<'a, E: Arch> {
 }
 
 impl<'a, E: Arch> Reader<'a, E> {
-    fn new(data: &'a [u8], pos: usize) -> Reader<'a, E> {
+    fn new(data: &'a [u8], pos: usize) -> Self {
         Reader { data, pos, marker: std::marker::PhantomData }
     }
 

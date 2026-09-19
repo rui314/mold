@@ -18,11 +18,11 @@ pub struct PltGotSection<E: Layout> {
 }
 
 impl<E: Layout> PltGotSection<E> {
-    pub fn new() -> PltGotSection<E> {
+    pub fn new() -> Self {
         let mut hdr =
             ChunkHeader::<E>::new(".plt.got", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
         hdr.shdr.sh_addralign.set(16);
-        PltGotSection { hdr, symbols: Vec::new() }
+        Self { hdr, symbols: Vec::new() }
     }
 }
 

@@ -32,10 +32,10 @@ pub struct SymbolId(pub u32);
 
 impl SymbolId {
     // Local symbols in discarded COMDAT sections all use one zero-valued symbol.
-    pub const DISCARDED_COMDAT: SymbolId = SymbolId(0);
+    pub const DISCARDED_COMDAT: Self = Self(0);
 
     /// No symbol. Used where an optional id must remain four bytes.
-    pub const NONE: SymbolId = SymbolId(u32::MAX);
+    pub const NONE: Self = Self(u32::MAX);
 
     #[inline]
     pub fn index(self) -> usize {
@@ -70,23 +70,23 @@ pub(crate) enum OriginValue {
 }
 
 impl Origin {
-    const NONE: Origin = Origin(0);
+    const NONE: Self = Self(0);
 
-    fn new(value: OriginValue) -> Origin {
+    fn new(value: OriginValue) -> Self {
         match value {
-            OriginValue::None => Origin::NONE,
+            OriginValue::None => Self::NONE,
             OriginValue::InputSection(section) => {
                 debug_assert_ne!(section, InputSectionId::NONE);
-                Origin(section.raw() << 2 | SECTION_TAG)
+                Self(section.raw() << 2 | SECTION_TAG)
             }
-            OriginValue::OutputChunk(chunk) => Origin(u64::from(chunk.0) << 2 | CHUNK_TAG),
+            OriginValue::OutputChunk(chunk) => Self(u64::from(chunk.0) << 2 | CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
                 // FragmentRef contains two u32 indices. One billion merged sections
                 // are enough to leave the low two bits available for the tag.
                 assert!(fragment.section.0 < 1 << 30, "too many merged sections");
-                Origin(fragment.raw() << 2 | FRAGMENT_TAG)
+                Self(fragment.raw() << 2 | FRAGMENT_TAG)
             }
-            OriginValue::Symbol(symbol) => Origin(u64::from(symbol.0) << 2 | SYMBOL_TAG),
+            OriginValue::Symbol(symbol) => Self(u64::from(symbol.0) << 2 | SYMBOL_TAG),
         }
     }
 
@@ -134,8 +134,8 @@ pub struct AddrFlags {
 }
 
 impl AddrFlags {
-    pub const NO_PLT: AddrFlags = AddrFlags { no_plt: true, no_opd: false };
-    pub const NO_OPD: AddrFlags = AddrFlags { no_plt: false, no_opd: true };
+    pub const NO_PLT: Self = Self { no_plt: true, no_opd: false };
+    pub const NO_OPD: Self = Self { no_plt: false, no_opd: true };
 }
 
 // Rarely used fields for dynamic symbols. Because mold allocates tens of
@@ -187,12 +187,12 @@ impl SymbolFile {
     const NONE: u32 = u32::MAX;
 
     #[inline]
-    fn none() -> SymbolFile {
-        SymbolFile(Self::NONE)
+    fn none() -> Self {
+        Self(Self::NONE)
     }
 
     #[inline]
-    fn some(file: FileId) -> SymbolFile {
+    fn some(file: FileId) -> Self {
         let raw = match file {
             FileId::Obj(id) => {
                 debug_assert!(id.0 < Self::DSO);
@@ -203,7 +203,7 @@ impl SymbolFile {
                 id.0 | Self::DSO
             }
         };
-        SymbolFile(raw)
+        Self(raw)
     }
 
     #[inline]
@@ -462,9 +462,9 @@ symbol_bits! {
 
 impl Symbol {
     #[inline]
-    pub fn new(name: &'static BStr) -> Symbol {
+    pub fn new(name: &'static BStr) -> Self {
         let name_len = u32::try_from(name.len()).expect("symbol name is larger than 4 GiB");
-        Symbol {
+        Self {
             name_ptr: name.as_ptr() as usize,
             name_len,
             mu: AtomicU8::new(0),
@@ -550,7 +550,7 @@ impl Symbol {
     ///
     /// `ptr` must point to a live Symbol.
     #[inline]
-    pub(crate) unsafe fn skip_dso_at(ptr: *const Symbol) -> bool {
+    pub(crate) unsafe fn skip_dso_at(ptr: *const Self) -> bool {
         let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
         unsafe { &*mu }.load(Ordering::Relaxed) & SYMBOL_SKIP_DSO != 0
     }
@@ -564,8 +564,8 @@ impl Symbol {
     /// must use this function.
     #[inline]
     pub(crate) unsafe fn with_resolution_lock<R>(
-        ptr: *mut Symbol,
-        f: impl FnOnce(&mut Symbol) -> R,
+        ptr: *mut Self,
+        f: impl FnOnce(&mut Self) -> R,
     ) -> R {
         let mu = unsafe { std::ptr::addr_of!((*ptr).mu) };
         let mut unlocked = 0;
@@ -1332,8 +1332,8 @@ impl<S> Default for Bins<S> {
 }
 
 impl<S> Bins<S> {
-    pub fn new() -> Bins<S> {
-        Bins((0..NUM_SHARDS).map(|_| Vec::new()).collect())
+    pub fn new() -> Self {
+        Self((0..NUM_SHARDS).map(|_| Vec::new()).collect())
     }
 
     /// Records `key` and the slot that receives its symbol id.
@@ -1371,8 +1371,8 @@ unsafe impl Sync for SymbolSlot {}
 
 impl SymbolSlot {
     #[inline]
-    pub(crate) fn new(slot: &mut SymbolId) -> SymbolSlot {
-        SymbolSlot(NonNull::from(slot))
+    pub(crate) fn new(slot: &mut SymbolId) -> Self {
+        Self(NonNull::from(slot))
     }
 
     #[inline]
@@ -1514,8 +1514,8 @@ impl Default for SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn new() -> SymbolTable {
-        let mut table = SymbolTable {
+    pub fn new() -> Self {
+        let mut table = Self {
             symbols: Vec::new(),
             aux: Vec::new(),
             shards: (0..NUM_SHARDS).map(|_| ShardMap::default()).collect(),

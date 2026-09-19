@@ -19,7 +19,7 @@ pub struct PltSection<E: Layout> {
 }
 
 impl<E: Arch> PltSection<E> {
-    pub fn new() -> PltSection<E> {
+    pub fn new() -> Self {
         let mut hdr =
             ChunkHeader::<E>::new(".plt", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
         if E::IS_SPARC {
@@ -29,7 +29,7 @@ impl<E: Arch> PltSection<E> {
         } else {
             hdr.shdr.sh_addralign.set(16);
         }
-        PltSection { hdr, symbols: Vec::new() }
+        Self { hdr, symbols: Vec::new() }
     }
 }
 

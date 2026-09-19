@@ -62,12 +62,12 @@ struct Target {
 }
 
 impl Target {
-    fn native(machine: String) -> Target {
-        Target { label: machine.clone(), machine, triple: None, cpu: None }
+    fn native(machine: String) -> Self {
+        Self { label: machine.clone(), machine, triple: None, cpu: None }
     }
 
-    fn cross(machine: String, triple: String) -> Target {
-        Target { label: machine.clone(), machine, triple: Some(triple), cpu: None }
+    fn cross(machine: String, triple: String) -> Self {
+        Self { label: machine.clone(), machine, triple: Some(triple), cpu: None }
     }
 }
 
@@ -107,9 +107,9 @@ enum Outcome {
 impl Outcome {
     fn status(self) -> &'static str {
         match self {
-            Outcome::Pass => "pass",
-            Outcome::Skip => "skip",
-            Outcome::Fail | Outcome::Timeout => "fail",
+            Self::Pass => "pass",
+            Self::Skip => "skip",
+            Self::Fail | Self::Timeout => "fail",
         }
     }
 }
@@ -137,7 +137,7 @@ impl Counts {
         }
     }
 
-    fn merge(&mut self, other: &Counts) {
+    fn merge(&mut self, other: &Self) {
         self.pass += other.pass;
         self.skip += other.skip;
         self.fail += other.fail;

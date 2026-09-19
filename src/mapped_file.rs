@@ -83,10 +83,10 @@ pub struct MappedFile {
     pub given_fullpath: bool,
 
     /// The archive this file is a member of.
-    pub parent: Option<&'static MappedFile>,
+    pub parent: Option<&'static Self>,
 
     /// The thin archive this file is a member of.
-    pub thin_parent: Option<&'static MappedFile>,
+    pub thin_parent: Option<&'static Self>,
 
     // For --dependency-file
     pub is_dependency: AtomicBool,
@@ -98,7 +98,7 @@ unsafe impl Send for MappedFile {}
 unsafe impl Sync for MappedFile {}
 
 impl MappedFile {
-    fn open_impl(path: &Path) -> io::Result<&'static MappedFile> {
+    fn open_impl(path: &Path) -> io::Result<&'static Self> {
         let file = File::open(path)?;
 
         let display = path.display();
@@ -136,7 +136,7 @@ impl MappedFile {
             NonNull::from(Box::leak(Box::new(map)).as_mut())
         };
 
-        let mf = util::leak(MappedFile {
+        let mf = util::leak(Self {
             name: path.to_path_buf(),
             data,
             given_fullpath: true,
@@ -152,7 +152,7 @@ impl MappedFile {
     }
 
     /// Opens a file, returning `None` if it doesn't exist.
-    pub fn open(path: impl AsRef<Path>) -> Option<&'static MappedFile> {
+    pub fn open(path: impl AsRef<Path>) -> Option<&'static Self> {
         let path = path.as_ref();
         match Self::open_impl(path) {
             Ok(mf) => Some(mf),
@@ -162,17 +162,17 @@ impl MappedFile {
     }
 
     /// Opens a file that must exist.
-    pub fn must_open(path: impl AsRef<Path>) -> &'static MappedFile {
+    pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();
         Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
     }
 
     /// Returns a view of a member of this archive.
-    pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static MappedFile {
+    pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static Self {
         assert!(start <= self.size() && size <= self.size() - start);
         // SAFETY: the checked range lies in the same allocation.
         let data = unsafe { self.data.cast::<u8>().add(start) };
-        let mf = util::leak(MappedFile {
+        let mf = util::leak(Self {
             name,
             data: NonNull::slice_from_raw_parts(data, size),
             given_fullpath: true,
@@ -185,9 +185,9 @@ impl MappedFile {
     }
 
     /// Opens a member whose bytes are stored outside this thin archive.
-    pub fn open_thin_member(&'static self, chroot: &Path, path: &Path) -> &'static MappedFile {
+    pub fn open_thin_member(&'static self, chroot: &Path, path: &Path) -> &'static Self {
         let member = must_open_file(chroot, path);
-        util::leak(MappedFile {
+        util::leak(Self {
             name: member.name.clone(),
             data: member.data,
             given_fullpath: true,

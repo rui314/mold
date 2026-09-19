@@ -242,10 +242,10 @@ fn merged_output_name(
 }
 
 impl<E: Layout> MergedSection<E> {
-    fn new(name: &'static BStr, flags: u64, sh_type: u32, entsize: u64) -> MergedSection<E> {
+    fn new(name: &'static BStr, flags: u64, sh_type: u32, entsize: u64) -> Self {
         let mut hdr = ChunkHeader::<E>::with_name(name, sh_type, flags);
         hdr.shdr.sh_entsize.set(entsize);
-        MergedSection {
+        Self {
             hdr,
             members: Vec::new(),
             map: ConcurrentMap::default(),
@@ -262,7 +262,7 @@ impl<E: Layout> MergedSection<E> {
     /// existing section, so the list is only write-locked to add one.
     pub fn get_instance(
         args: &Args,
-        sections: &RwLock<Vec<MergedSection<E>>>,
+        sections: &RwLock<Vec<Self>>,
         name: &'static BStr,
         shdr: &ElfShdr<E>,
         cache: &mut MergedSectionCache,
@@ -295,7 +295,7 @@ impl<E: Layout> MergedSection<E> {
             }
             Some(id)
         };
-        let find = |sections: &[MergedSection<E>]| {
+        let find = |sections: &[Self]| {
             sections
                 .iter()
                 .enumerate()
@@ -323,7 +323,7 @@ impl<E: Layout> MergedSection<E> {
             Cow::Borrowed(name) => name,
             Cow::Owned(name) => crate::util::leak_bytes(name),
         });
-        sections.push(MergedSection::new(name, flags, sh_type, entsize));
+        sections.push(Self::new(name, flags, sh_type, entsize));
         remember(MergedSectionId(sections.len() as u32 - 1), name)
     }
 

@@ -141,7 +141,7 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
 }
 
 impl Compressor {
-    pub fn zlib(input: &[u8], level: u32) -> Compressor {
+    pub fn zlib(input: &[u8], level: u32) -> Self {
         // Compress each shard
         let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
             .par_chunks(SHARD_SIZE)
@@ -153,30 +153,30 @@ impl Compressor {
         for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
             checksum = adler32_combine(checksum, *adler, shard.len() as u64);
         }
-        Compressor::Zlib { shards, checksum }
+        Self::Zlib { shards, checksum }
     }
 
-    pub fn zstd(input: &[u8], level: i32) -> Compressor {
+    pub fn zstd(input: &[u8], level: i32) -> Self {
         // Compress each shard
         let shards = input
             .par_chunks(SHARD_SIZE)
             .map(|shard| zstd::bulk::compress(shard, level).expect("zstd compression failed"))
             .collect();
-        Compressor::Zstd { shards }
+        Self::Zstd { shards }
     }
 
     pub fn compressed_size(&self) -> usize {
         // Comput the total size
         match self {
             // the header and the trailer
-            Compressor::Zlib { shards, .. } => 8 + shards.iter().map(Vec::len).sum::<usize>(),
-            Compressor::Zstd { shards } => shards.iter().map(Vec::len).sum(),
+            Self::Zlib { shards, .. } => 8 + shards.iter().map(Vec::len).sum::<usize>(),
+            Self::Zstd { shards } => shards.iter().map(Vec::len).sum(),
         }
     }
 
     pub fn write_to(&self, buf: &mut [u8]) {
         match self {
-            Compressor::Zlib { shards, checksum } => {
+            Self::Zlib { shards, checksum } => {
                 // Write a zlib-format header
                 buf[0] = 0x78;
                 buf[1] = 0x9c;
@@ -194,7 +194,7 @@ impl Compressor {
                 buf[pos + 1] = 0;
                 buf[pos + 2..pos + 6].copy_from_slice(&checksum.to_be_bytes());
             }
-            Compressor::Zstd { shards } => {
+            Self::Zstd { shards } => {
                 // Copy compressed data
                 let mut pos = 0;
                 for shard in shards {

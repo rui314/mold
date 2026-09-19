@@ -147,7 +147,7 @@ impl Arch for X86_64 {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection<X86_64>,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -170,7 +170,7 @@ impl Arch for X86_64 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<X86_64>) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         // Linker has to create data structures in an output file to apply
         // some type of relocations. For example, if a relocation refers a GOT
         // or a PLT entry of a symbol, linker has to create an entry in .got
@@ -290,7 +290,7 @@ impl Arch for X86_64 {
     // scan_relocations().
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection<X86_64>,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -528,7 +528,7 @@ impl Arch for X86_64 {
     //
     // Relocations against non-SHF_ALLOC sections are not scanned by
     // scan_relocations.
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<X86_64>, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {

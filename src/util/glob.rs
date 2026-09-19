@@ -39,7 +39,7 @@ struct Pattern {
 }
 
 impl Pattern {
-    fn compile(mut pat: &[u8], value: i64) -> Option<Pattern> {
+    fn compile(mut pat: &[u8], value: i64) -> Option<Self> {
         let mut tokens: Vec<Token> = Vec::new();
 
         while let Some((&c, rest)) = pat.split_first() {
@@ -123,7 +123,7 @@ impl Pattern {
                 _ => push_char(&mut tokens, c),
             }
         }
-        Some(Pattern { tokens, value })
+        Some(Self { tokens, value })
     }
 
     fn matches(&self, s: &[u8]) -> bool {
@@ -213,7 +213,7 @@ struct Nfa {
 }
 
 impl Nfa {
-    fn compile(patterns: &[Pattern]) -> Nfa {
+    fn compile(patterns: &[Pattern]) -> Self {
         let mut num_states = 0;
         for pattern in patterns {
             num_states += 1;
@@ -227,7 +227,7 @@ impl Nfa {
         }
 
         let num_words = num_states.div_ceil(64);
-        let mut nfa = Nfa {
+        let mut nfa = Self {
             initial_states: vec![0; num_words],
             star_states: vec![0; num_words],
             accept_states: vec![0; num_words],
@@ -328,7 +328,7 @@ struct TrieNode {
 
 impl Default for TrieNode {
     fn default() -> Self {
-        TrieNode { value: -1, suffix_link: -1, first_child: -1, next_sibling: -1, ch: 0 }
+        Self { value: -1, suffix_link: -1, first_child: -1, next_sibling: -1, ch: 0 }
     }
 }
 

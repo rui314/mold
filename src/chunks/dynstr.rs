@@ -18,8 +18,8 @@ pub struct DynstrSection<E: Layout> {
 }
 
 impl<E: Layout> DynstrSection<E> {
-    pub fn new() -> DynstrSection<E> {
-        DynstrSection {
+    pub fn new() -> Self {
+        Self {
             hdr: ChunkHeader::<E>::new(".dynstr", SHT_STRTAB, SHF_ALLOC as u64),
             strings: HashMap::new(),
         }

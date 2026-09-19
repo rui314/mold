@@ -17,10 +17,10 @@ pub struct NotePropertySection<E: Layout> {
 }
 
 impl<E: Arch> NotePropertySection<E> {
-    pub fn new() -> NotePropertySection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".note.gnu.property", SHT_NOTE, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        NotePropertySection { hdr, contents: Vec::new() }
+        Self { hdr, contents: Vec::new() }
     }
 }
 

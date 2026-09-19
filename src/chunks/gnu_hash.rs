@@ -38,10 +38,10 @@ impl<E: Arch> GnuHashSection<E> {
     pub const HEADER_SIZE: u64 = 16;
     pub const BLOOM_SHIFT: u32 = 26;
 
-    pub fn new() -> GnuHashSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.hash", SHT_GNU_HASH, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        GnuHashSection { hdr, num_buckets: 0, num_bloom: 1, num_exported: 0 }
+        Self { hdr, num_buckets: 0, num_bloom: 1, num_exported: 0 }
     }
 }
 

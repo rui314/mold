@@ -205,7 +205,7 @@ impl OutputFile {
         size: u64,
         perm: u32,
         overwrite_in_place: bool,
-    ) -> OutputFile {
+    ) -> Self {
         let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
         let mut output = Self::open_impl(&path, size, perm, overwrite_in_place);
         if let Some(filler) = args.filler {
@@ -214,11 +214,11 @@ impl OutputFile {
         output
     }
 
-    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> OutputFile {
+    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> Self {
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
         if is_special {
-            return OutputFile {
+            return Self {
                 path: path.to_path_buf(),
                 tmp_path: None,
                 storage: Storage::Memory(vec![0; size as usize]),
@@ -268,7 +268,7 @@ impl OutputFile {
 
         let map = map_file(&file, size)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", path.display()));
-        let output = OutputFile {
+        let output = Self {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
             storage: Storage::File { file, map, len: size as usize },
@@ -285,7 +285,7 @@ impl OutputFile {
     /// stale one is not picked up by accident; [`Self::resize`] gives it its
     /// size.
     #[cfg(not(windows))]
-    pub fn open_locked(path: &Path, perm: u32) -> OutputFile {
+    pub fn open_locked(path: &Path, perm: u32) -> Self {
         let mut file = open_options(perm)
             .read(true)
             .write(true)
@@ -301,7 +301,7 @@ impl OutputFile {
         // it's ready.
         file.write_all(&[0; 256])
             .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
-        OutputFile {
+        Self {
             path: path.to_path_buf(),
             tmp_path: None,
             storage: Storage::File { file, map: None, len: 0 },

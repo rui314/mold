@@ -483,8 +483,8 @@ unsafe impl Send for ComdatSymbolSlot {}
 unsafe impl Sync for ComdatSymbolSlot {}
 
 impl ComdatSymbolSlot {
-    fn new(group: &mut ComdatGroupRef) -> ComdatSymbolSlot {
-        ComdatSymbolSlot(NonNull::from(group.signature_word_mut()))
+    fn new(group: &mut ComdatGroupRef) -> Self {
+        Self(NonNull::from(group.signature_word_mut()))
     }
 
     fn assign(self, id: SymbolId) {

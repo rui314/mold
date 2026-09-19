@@ -18,7 +18,7 @@ pub struct RelDynSection<E: Layout> {
 }
 
 impl<E: Arch> RelDynSection<E> {
-    pub fn new(args: &crate::cmdline::Args) -> RelDynSection<E> {
+    pub fn new(args: &crate::cmdline::Args) -> Self {
         let (name, ty, android_ty) = if E::IS_RELA {
             (".rela.dyn", SHT_RELA, SHT_ANDROID_RELA)
         } else {
@@ -33,7 +33,7 @@ impl<E: Arch> RelDynSection<E> {
         let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
         hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(align);
-        RelDynSection { hdr, android_encoded: Vec::new(), keep_android_size: false }
+        Self { hdr, android_encoded: Vec::new(), keep_android_size: false }
     }
 }
 

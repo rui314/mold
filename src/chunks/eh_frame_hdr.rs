@@ -20,11 +20,11 @@ pub struct EhFrameHdrSection<E: Layout> {
 impl<E: Layout> EhFrameHdrSection<E> {
     pub const HEADER_SIZE: u64 = 12;
 
-    pub fn new() -> EhFrameHdrSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".eh_frame_hdr", SHT_PROGBITS, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
         hdr.shdr.sh_size.set(Self::HEADER_SIZE);
-        EhFrameHdrSection { hdr, num_fdes: 0 }
+        Self { hdr, num_fdes: 0 }
     }
 }
 
