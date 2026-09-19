@@ -18,7 +18,7 @@ echo 'int foo() { return 0; }' |
 # __divti3 call. Some lower it inline (e.g. POWER10), and 32-bit targets
 # don't support __int128 at all.
 echo 'volatile long long x, y; __int128 f() { return (__int128)x / y; }' |
-  $GXX -O2 -S -o - -xc++ - 2> /dev/null | grep -q __divti3 || skip
+  $GXX -O2 -S -o - -xc++ - 2> /dev/null | grep __divti3 || skip
 
 # GCC emits the function-local static of an inline function as an
 # STB_GNU_UNIQUE symbol in a COMDAT group. The non-weak binding is what turns
@@ -44,7 +44,7 @@ extern "C" __int128 __divti3(__int128 a, __int128 b) {
 }
 EOF
 
-readelf -sW $t/a.o | grep -q 'UNIQUE.*_ZZ4bumpvE3cnt' || skip
+readelf -sW $t/a.o | grep 'UNIQUE.*_ZZ4bumpvE3cnt' || skip
 
 ar rcs $t/libutil.a $t/a.o
 

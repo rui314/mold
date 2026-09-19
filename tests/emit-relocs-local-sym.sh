@@ -12,7 +12,7 @@
 # objcopy afterwards.
 
 echo | $CC -c -o $t/a.o -xc -
-if readelf -h $t/a.o | grep -q ELF64; then
+if readelf -h $t/a.o | grep ELF64; then
   reloc=BFD_RELOC_64
 else
   reloc=BFD_RELOC_32

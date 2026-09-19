@@ -11,7 +11,7 @@ cat <<EOF | $CC -mabi=elfv2 -c -o $t/a.o -xc - 2> /dev/null || skip
 int main() {}
 EOF
 
-readelf -h $t/a.o | grep -q abiv2 || skip
+readelf -h $t/a.o | grep abiv2 || skip
 
 ! ./mold -m elf64ppc -o $t/exe $t/a.o 2> $t/log
 grep 'unknown machine type' $t/log

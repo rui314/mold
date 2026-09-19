@@ -31,4 +31,4 @@ not grep -q "removing identical section.*caller_local" $t/out
 not grep -q "removing identical section.*caller_global" $t/out
 
 # Also check with nm to be sure they have different addresses
-nm $t/libtest.so | grep -E 'caller_local|caller_global' | awk '{print $1}' | uniq | wc -l | grep -q 2
+nm $t/libtest.so | grep -E 'caller_local|caller_global' | awk '{print $1}' | uniq | wc -l | grep 2

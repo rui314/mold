@@ -16,7 +16,7 @@ seq 1 70000 | sed 's/.*/.section .padding.&,""/' > $t/padding.s
 $GCC -S -flto -fno-fat-lto-objects -o $t/a.s $t/a.c
 cat $t/padding.s >> $t/a.s
 $GCC -c -o $t/a.o $t/a.s
-readelf -h $t/a.o | grep -q 'Number of section headers: *0 '
+readelf -h $t/a.o | grep 'Number of section headers: *0 '
 
 $GCC -B. -o $t/exe1 -flto $t/a.o
 $QEMU $t/exe1
@@ -26,7 +26,7 @@ $QEMU $t/exe1
 $GCC -S -flto -ffat-lto-objects -o $t/b.s $t/a.c
 cat $t/padding.s >> $t/b.s
 $GCC -c -o $t/b.o $t/b.s
-readelf -h $t/b.o | grep -q 'Number of section headers: *0 '
+readelf -h $t/b.o | grep 'Number of section headers: *0 '
 
 $GCC -B. -o $t/exe2 $t/b.o --verbose |& grep -- -fwpa
 $QEMU $t/exe2

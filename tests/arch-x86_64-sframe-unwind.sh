@@ -10,7 +10,7 @@
 cat <<EOF | $CC -Wa,--gsframe -o $t/probe.o -c -xc - 2>/dev/null || skip
 int main() { return 0; }
 EOF
-readelf --sframe=.sframe $t/probe.o 2>/dev/null | grep -q SFRAME_VERSION_3 || skip
+readelf --sframe=.sframe $t/probe.o 2>/dev/null | grep SFRAME_VERSION_3 || skip
 
 # Skip unless libsframe and its header are available.
 echo 'int main(){return 0;}' | \

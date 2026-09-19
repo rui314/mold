@@ -13,8 +13,8 @@ $CC -o $t/a.o -c -g -gdwarf64 $t/a.c || skip
 seq 0 499 | sed 's/.*/void dwarf32_fn_&() {}/' > $t/b.c
 $CC -o $t/b.o -c -g -gdwarf32 $t/b.c
 
-readelf -p .debug_str $t/a.o | grep -q dwarf64_fn_0 || skip
-readelf -p .debug_str $t/b.o | grep -q dwarf32_fn_0 || skip
+readelf -p .debug_str $t/a.o | grep dwarf64_fn_0 || skip
+readelf -p .debug_str $t/b.o | grep dwarf32_fn_0 || skip
 
 echo 'int main() {}' | $CC -o $t/c.o -c -xc - -g
 

@@ -10,7 +10,7 @@ cat <<EOF | $CC -c -g3 -o $t/a.o -xc -
 int main() { return FOO; }
 EOF
 
-readelf --section-groups $t/a.o | grep -q debug_macro || skip
+readelf --section-groups $t/a.o | grep debug_macro || skip
 
 ./mold -r --strip-debug -o $t/b.o $t/a.o
 readelf --section-groups $t/b.o > $t/log

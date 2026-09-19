@@ -10,7 +10,7 @@
 cat <<EOF | $CC -Wa,--gsframe -o $t/probe.o -c -xc - 2>/dev/null || skip
 int main() { return 0; }
 EOF
-readelf --sframe=.sframe $t/probe.o 2>/dev/null | grep -q SFRAME_VERSION_3 || skip
+readelf --sframe=.sframe $t/probe.o 2>/dev/null | grep SFRAME_VERSION_3 || skip
 
 # Compile two translation units, each with several functions, so that the
 # linker has to merge and sort more than one .sframe section.
@@ -35,7 +35,7 @@ grep -q SFRAME_VERSION_3 $t/log
 grep -q SFRAME_F_FDE_SORTED $t/log
 
 # A PT_GNU_SFRAME segment must point at the section.
-readelf -Wl $t/exe | grep -q GNU_SFRAME
+readelf -Wl $t/exe | grep GNU_SFRAME
 
 # Verify that the FDEs really are sorted by function address.
 prev=0
@@ -81,7 +81,7 @@ $QEMU $t/comdat
 readelf --sframe=.sframe $t/r.o > $t/rlog
 grep -q SFRAME_VERSION_3 $t/rlog
 [ "$(readelf -SW $t/r.o | grep -cw GNU_SFRAME)" = 1 ]
-readelf -SW $t/r.o | grep -q '\.rela\.sframe'
+readelf -SW $t/r.o | grep '\.rela\.sframe'
 
 # The relocatable object must link into a working executable that still
 # describes every function from the original inputs.
