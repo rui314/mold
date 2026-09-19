@@ -22,7 +22,7 @@ use crate::{error, fatal};
 
 /// Visits CIEs in input order, reusing the value assigned to an equivalent
 /// leader. The visitor only updates layout/ICF metadata, not CIE contents.
-pub(crate) fn deduplicate_cies<E: Arch>(
+pub fn deduplicate_cies<E: Arch>(
     ctx: &mut Context<E>,
     mut assign: impl FnMut(&mut CieRecord, Option<u32>) -> u32,
 ) {

@@ -45,14 +45,14 @@ impl SymbolId {
 
 /// Index into the owning context's append-only output-chunk registry.
 #[derive(Clone, Copy)]
-pub(crate) struct SymbolChunkId(pub(crate) u32);
+pub struct SymbolChunkId(pub(crate) u32);
 
 // Origin stores an input-section id, an output-chunk id, or compact
 // ids for section fragments and symbols in one word. The low two bits identify
 // which representation it contains.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub(crate) struct Origin(u64);
+pub struct Origin(u64);
 
 const ORIGIN_TAG_MASK: u64 = 0b11;
 const SECTION_TAG: u64 = 0;
@@ -61,7 +61,7 @@ const FRAGMENT_TAG: u64 = 2;
 const SYMBOL_TAG: u64 = 3;
 
 #[derive(Clone, Copy)]
-pub(crate) enum OriginValue {
+pub enum OriginValue {
     None,
     InputSection(InputSectionId),
     OutputChunk(SymbolChunkId),
@@ -1362,7 +1362,7 @@ impl<S> Bins<S> {
 /// Files allocate their complete symbol-id arrays before recording keys and
 /// keep them alive until `gather`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SymbolSlot(NonNull<SymbolId>);
+pub struct SymbolSlot(NonNull<SymbolId>);
 
 // SAFETY: each slot is recorded exactly once and written by the one shard
 // that owns its key. The owner file remains alive until gathering finishes.

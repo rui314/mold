@@ -4,7 +4,7 @@
 //! selected with const generic parameters. This implementation is based on
 //! the reference implementation at https://github.com/rui314/siphash.
 
-pub(crate) struct SipHashTmpl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize> {
+pub struct SipHashTmpl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize> {
     v0: u64,
     v1: u64,
     v2: u64,
@@ -134,7 +134,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     }
 }
 
-pub(crate) type SipHash13_128 = SipHashTmpl<1, 3, 128>;
+pub type SipHash13_128 = SipHashTmpl<1, 3, 128>;
 
 #[cfg(test)]
 mod tests {

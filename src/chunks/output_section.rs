@@ -60,7 +60,7 @@ pub struct OutputSection<E: Layout> {
 }
 
 /// A pointer to an output buffer whose disjoint ranges are written in parallel.
-pub(crate) struct OutputBuffer<'a> {
+pub struct OutputBuffer<'a> {
     ptr: *mut u8,
     len: usize,
     marker: PhantomData<&'a mut [u8]>,

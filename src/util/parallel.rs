@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
 /// An owned Rayon job whose result is needed by a later linker pass.
-pub(crate) struct Background<T> {
+pub struct Background<T> {
     receiver: std::sync::mpsc::Receiver<T>,
     name: &'static str,
 }
@@ -34,7 +34,7 @@ impl<T: Send + 'static> Background<T> {
 
 /// Stably partitions a slice, returning the number of matching elements.
 /// Each block scatters into disjoint ranges computed from its match count.
-pub(crate) fn stable_partition<T: Copy + Send + Sync>(
+pub fn stable_partition<T: Copy + Send + Sync>(
     values: &mut [T],
     pred: impl Fn(&T) -> bool + Sync,
 ) -> usize {

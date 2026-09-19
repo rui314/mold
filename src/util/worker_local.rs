@@ -6,7 +6,7 @@ struct Worker<T>(Mutex<T>);
 
 /// Persistent scratch storage per Rayon worker, plus a slot for callers
 /// outside the pool. Look up and lock once per file, not once per symbol.
-pub(crate) struct WorkerLocal<T>(Vec<Worker<T>>);
+pub struct WorkerLocal<T>(Vec<Worker<T>>);
 
 impl<T> WorkerLocal<T> {
     pub fn new(init: impl Fn() -> T) -> Self {

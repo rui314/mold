@@ -86,7 +86,7 @@ pub struct DsoId(pub u32);
 /// A fragment symbol awaiting its slot in the central symbol vector.
 /// Keep only the varying fields here so that growing file-local vectors does
 /// not repeatedly copy full Symbols.
-pub(crate) struct FragmentSymbol {
+pub struct FragmentSymbol {
     fragment: FragmentRef,
     value: u64,
     sym_idx: u32,
@@ -642,7 +642,7 @@ const _: () = assert!(std::mem::size_of::<ComdatGroupRef>() == 8);
 /// An exceptional COMDAT signature that must be interned by name. Most groups
 /// use their file's existing global symbol and need only `ComdatGroupRef`.
 #[derive(Debug)]
-pub(crate) struct PendingComdatSignature {
+pub struct PendingComdatSignature {
     pub key: &'static [u8],
     pub group_idx: u32,
     pub name_len: u32,
@@ -852,10 +852,7 @@ impl<E: Arch> ObjectFile<E> {
 
 /// Formats a file the way it appears in diagnostics before the file
 /// object exists.
-pub(crate) fn display_file<'a>(
-    filename: &'a str,
-    archive_name: &'a Path,
-) -> impl fmt::Display + 'a {
+pub fn display_file<'a>(filename: &'a str, archive_name: &'a Path) -> impl fmt::Display + 'a {
     fmt::from_fn(move |f| {
         if archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(filename))
@@ -3415,7 +3412,7 @@ pub fn resolved_symbol_rank(sym: &Symbol, is_dso: bool, is_in_archive: bool, pri
 
 /// An exclusive view of the symbol table shared by file-parallel passes.
 /// Individual symbols are serialized by their byte-sized spin locks.
-pub(crate) struct SymbolEditor<'a> {
+pub struct SymbolEditor<'a> {
     symbols: *mut Symbol,
     len: usize,
     _symbols: PhantomData<&'a mut [Symbol]>,

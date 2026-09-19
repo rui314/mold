@@ -58,7 +58,7 @@ fn set_output_buffer_range(start: usize, len: usize) {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn output_buffer_contains(addr: usize) -> bool {
+pub fn output_buffer_contains(addr: usize) -> bool {
     let start = OUTPUT_BUFFER_START.load(Ordering::SeqCst);
     let end = OUTPUT_BUFFER_END.load(Ordering::SeqCst);
     start != 0 && start <= addr && addr < end

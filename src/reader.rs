@@ -25,7 +25,7 @@ use crate::util::worker_local::WorkerLocal;
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
-pub(crate) enum Loaded<E: Arch> {
+pub enum Loaded<E: Arch> {
     Obj(Vec<u32>, Box<ObjectFile<E>>),
     Dso(Vec<u32>, Box<SharedFile<E>>),
 }

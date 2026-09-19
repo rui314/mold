@@ -1219,7 +1219,7 @@ const RANGE_SECTION_NAMES: [&[u8]; 5] =
     [b".debug_info", b".debug_abbrev", b".debug_ranges", b".debug_addr", b".debug_rnglists"];
 
 /// Whether GDB index construction needs a section's relocated contents.
-pub(crate) fn needs_section_contents(name: &[u8]) -> bool {
+pub fn needs_section_contents(name: &[u8]) -> bool {
     RANGE_SECTION_NAMES.contains(&name)
 }
 

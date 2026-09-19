@@ -97,7 +97,7 @@ unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
 }
 
 /// A stable reference to an occupied map entry.
-pub(crate) struct MapEntryRef<T>(NonNull<Entry<T>>);
+pub struct MapEntryRef<T>(NonNull<Entry<T>>);
 
 impl<T> Clone for MapEntryRef<T> {
     fn clone(&self) -> Self {

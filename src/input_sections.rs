@@ -254,7 +254,7 @@ fn to_p2align(alignment: u64) -> u8 {
 
 /// Resolved S and A for a nonallocated relocation. Keep its fragment so the
 /// target can apply tombstones only to relocation kinds that support them.
-pub(crate) struct NonAllocReloc<'a> {
+pub struct NonAllocReloc<'a> {
     pub sym: &'a Symbol,
     pub s: u64,
     pub a: u64,
@@ -1228,7 +1228,7 @@ pub fn check_tlsle<E: Arch>(
 // Note that we assume that the first relocation entry for an FDE
 // always points to the function that the FDE is associated to.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum RelocationSpan {
+pub enum RelocationSpan {
     Input(&'static [u8]),
     SideTable(u32),
 }
@@ -1460,7 +1460,7 @@ pub struct MergeInfo {
 /// Keeping this on the caller's stack avoids sharing state between sections
 /// or retaining references across separate links.
 #[derive(Default)]
-pub(crate) struct FragmentLookup<'a> {
+pub struct FragmentLookup<'a> {
     sym_idx: Option<u32>,
     section: Option<&'a MergeInfo>,
     value: u64,

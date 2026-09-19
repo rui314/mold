@@ -1,7 +1,7 @@
 /// Prefetches a cache line for a future read, preferring the L1 cache.
 /// Targets without a supported prefetch instruction ignore the hint.
 #[inline]
-pub(crate) fn prefetch(_ptr: *const u8) {
+pub fn prefetch(_ptr: *const u8) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     // SAFETY: SSE is part of our x86 baseline. PREFETCHT0 is a non-faulting
     // hint and changes no registers or memory.

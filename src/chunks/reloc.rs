@@ -55,7 +55,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
 /// are replaced by output section symbols, with their offsets in the addend.
 /// A section without an output section has no surviving symbol reference.
 #[inline]
-pub(crate) fn output_symidx_addend<E: Arch>(
+pub fn output_symidx_addend<E: Arch>(
     ctx: &Context<E>,
     sym: &Symbol,
     addend: impl FnOnce() -> i64,

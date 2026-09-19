@@ -265,7 +265,7 @@ impl MappedFile {
     }
 }
 
-pub(crate) fn apply_chroot<'a>(chroot: &Path, path: &'a Path) -> Cow<'a, Path> {
+pub fn apply_chroot<'a>(chroot: &Path, path: &'a Path) -> Cow<'a, Path> {
     if path.is_absolute() && !chroot.as_os_str().is_empty() {
         Cow::Owned(chroot.join(util::clean_path(path).strip_prefix("/").unwrap_or(path)))
     } else {
