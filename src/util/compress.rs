@@ -122,7 +122,7 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     // https://github.com/ianlancetaylor/libbacktrace/pull/87
     let mut nbits = 0;
     // SAFETY: stream is initialized and nbits is a valid output pointer.
-    let status = unsafe { deflate_pending(stream, std::ptr::null_mut(), &mut nbits) };
+    let status = unsafe { deflate_pending(stream, std::ptr::null_mut(), &raw mut nbits) };
     assert_eq!(status, libz_sys::Z_OK);
     if nbits == 5 {
         // SAFETY: stream is initialized and has enough pending-buffer space.

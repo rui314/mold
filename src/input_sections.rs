@@ -832,7 +832,8 @@ impl<E: Arch> InputSection<E> {
 
         let isec = sym.input_section_ref(ctx);
         let discarded = sym.file().is_none() && sym.name().is_empty() && !sym.is_fragment_dummy();
-        let discarded = discarded && std::ptr::eq(sym, &ctx.symbols[SymbolId::DISCARDED_COMDAT]);
+        let discarded =
+            discarded && std::ptr::eq(sym, &raw const ctx.symbols[SymbolId::DISCARDED_COMDAT]);
 
         // Setting a tombstone is a special feature for a dead debug section.
         match isec {

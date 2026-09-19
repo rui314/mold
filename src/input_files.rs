@@ -3639,14 +3639,14 @@ mod tests {
         for _ in 0..17 {
             files.push(Box::new(File { index: 0, value: 0 }));
         }
-        let first = &files[0] as *const File;
+        let first = &raw const files[0];
         files.retain(|file| file.index % 2 == 0);
         files.par_iter_mut().enumerate().for_each(|(i, file)| {
             assert_eq!(file.index, i as u32 * 2);
             file.value = i as u32 + 1;
         });
         assert_eq!(files.pool_len(), 17);
-        assert_eq!(&files[0] as *const File, first);
+        assert_eq!(&raw const files[0], first);
         for (i, file) in files.pool_iter().enumerate() {
             assert_eq!(file.value, if i % 2 == 0 { i as u32 / 2 + 1 } else { 0 });
         }

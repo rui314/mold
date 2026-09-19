@@ -134,7 +134,7 @@ unsafe extern "system" {
 fn rusage() -> (f64, f64) {
     // SAFETY: `usage` is a valid, writable rusage struct.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+    unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut usage) };
     let to_secs = |t: libc::timeval| t.tv_sec as f64 + t.tv_usec as f64 / 1_000_000.0;
     (to_secs(usage.ru_utime), to_secs(usage.ru_stime))
 }

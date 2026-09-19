@@ -39,11 +39,11 @@ pub fn fork_child() {
             // Parent
             drop(writer);
             let mut buf = [0u8; 1];
-            if libc::read(reader.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, 1) == 1 {
+            if libc::read(reader.as_raw_fd(), buf.as_mut_ptr().cast(), 1) == 1 {
                 libc::_exit(0);
             }
             let mut status = 0;
-            libc::waitpid(pid, &mut status, 0);
+            libc::waitpid(pid, &raw mut status, 0);
             if libc::WIFEXITED(status) {
                 libc::_exit(libc::WEXITSTATUS(status));
             }
@@ -70,7 +70,7 @@ pub fn notify_parent() {
     let buf = [1u8];
     // SAFETY: writer owns a valid pipe write end.
     unsafe {
-        libc::write(writer.as_raw_fd(), buf.as_ptr() as *const libc::c_void, 1);
+        libc::write(writer.as_raw_fd(), buf.as_ptr().cast(), 1);
     }
 }
 
@@ -106,7 +106,7 @@ extern "C" fn on_signal(
         let msg = b"mold: failed to write to an output file. Disk full?\n";
         // SAFETY: write is async-signal-safe.
         unsafe {
-            libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const libc::c_void, msg.len());
+            libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len());
         }
     }
     crate::output_file::cleanup();
@@ -129,10 +129,10 @@ pub fn install_signal_handler() {
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = on_signal as *const () as libc::sighandler_t;
-        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigemptyset(&raw mut action.sa_mask);
         action.sa_flags = libc::SA_SIGINFO;
-        libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut());
-        libc::sigaction(libc::SIGBUS, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGSEGV, &raw const action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGBUS, &raw const action, std::ptr::null_mut());
     }
 }
 

@@ -330,7 +330,7 @@ unsafe extern "C" fn add_symbols(
 
 /// Receives an object file the plugin compiled.
 unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
-    let ctx = unsafe { &mut *(CONTEXT.load(Ordering::Acquire) as *mut Context<E>) };
+    let ctx = unsafe { &mut *CONTEXT.load(Ordering::Acquire).cast::<Context<E>>() };
     let path = crate::util::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
     let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
@@ -368,8 +368,8 @@ unsafe extern "C" fn set_extra_library_path(_path: *const c_char) -> c_int {
 }
 
 unsafe extern "C" fn get_view(handle: *const c_void, view: *mut *const c_void) -> c_int {
-    let mf = unsafe { &*(handle as *const MappedFile) };
-    unsafe { *view = mf.data().as_ptr() as *const c_void };
+    let mf = unsafe { &*handle.cast::<MappedFile>() };
+    unsafe { *view = mf.data().as_ptr().cast() };
     LDPS_OK
 }
 
@@ -477,7 +477,7 @@ unsafe fn get_symbols<E: Arch>(
 ) -> c_int {
     let ctx = unsafe { &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>) };
     let psyms = unsafe { std::slice::from_raw_parts_mut(psyms, nsyms as usize) };
-    let handle = handle as *const MappedFile;
+    let handle = handle.cast::<MappedFile>();
     let Some(file) = ctx.objs.iter().find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {
         return LDPS_BAD_HANDLE;
@@ -717,7 +717,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
         fd: file.as_raw_handle(),
         offset: mf.offset() as u64,
         filesize: mf.size() as u64,
-        handle: mf as *const MappedFile as *mut c_void,
+        handle: std::ptr::from_ref(mf) as *mut c_void,
     };
     (input, file)
 }
@@ -747,7 +747,7 @@ pub fn read_lto_object<E: Arch>(
     let mut claimed: c_int = 0;
     // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
     // SAFETY: `input` describes an open file.
-    unsafe { claim_file(&input, &mut claimed) };
+    unsafe { claim_file(&raw const input, &raw mut claimed) };
     drop(file);
 
     if claimed == 0 {
@@ -883,7 +883,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
             let (input, _file) = plugin_input_file(file.base.mf.unwrap());
             let mut claimed: c_int = 0;
             // SAFETY: `input` describes an open file.
-            unsafe { claim_file(&input, &mut claimed) };
+            unsafe { claim_file(&raw const input, &raw mut claimed) };
         }
     }
 
@@ -893,7 +893,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         .unwrap()
         .all_symbols_read
         .expect("the plugin registered an all_symbols_read hook");
-    CONTEXT.store(ctx as *mut Context<E> as *mut c_void, Ordering::Release);
+    CONTEXT.store(std::ptr::from_mut(ctx).cast(), Ordering::Release);
     // SAFETY: the callbacks are the only users of the context until the
     // hook returns.
     let status = unsafe { all_symbols_read() };

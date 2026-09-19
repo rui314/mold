@@ -4049,7 +4049,7 @@ pub fn write_build_id<E: Arch>(ctx: &mut Context<E>, buf: &mut [u8], is_mmapped:
                         // that are backed by the file.
                         unsafe {
                             libc::madvise(
-                                shard.as_mut_ptr() as *mut libc::c_void,
+                                shard.as_mut_ptr().cast(),
                                 shard.len(),
                                 libc::MADV_DONTNEED,
                             )

@@ -280,7 +280,7 @@ impl<T> ConcurrentMap<T> {
                             (*ent.value.get()).write(value);
                             *ent.keylen.get() = keylen;
                         }
-                        ent.key.store(key as *mut u8, Ordering::Release);
+                        ent.key.store(key.cast_mut(), Ordering::Release);
                         return (EntryId(idx as u32), self.value_at(idx), true);
                     }
                     Err(current) => ptr = current,
