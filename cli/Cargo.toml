@@ -37,6 +37,8 @@ mold-target-sh4 = { path = "../arch/sh4", optional = true }
 mold-target-sh4be = { path = "../arch/sh4be", optional = true }
 mold-target-loongarch64 = { path = "../arch/loongarch64", optional = true }
 mold-target-loongarch32 = { path = "../arch/loongarch32", optional = true }
+mold-target-macho-arm64 = { path = "../arch/macho-arm64", optional = true }
+mold-target-macho-x86_64 = { path = "../arch/macho-x86_64", optional = true }
 
 [dev-dependencies]
 mold-tests = { path = "../tests" }
@@ -47,6 +49,7 @@ mold-tests = { path = "../tests" }
 default = [
     "x86_64", "i386", "arm32", "arm32be", "arm64", "arm64be", "riscv64", "riscv64be", "riscv32", "riscv32be",
     "ppc64v2", "ppc32", "ppc64v1", "s390x", "sparc64", "m68k", "sh4", "sh4be", "loongarch64", "loongarch32",
+    "macho-arm64", "macho-x86_64",
 ]
 system-allocator = []
 x86_64 = ["dep:mold-target-x86_64"]
@@ -69,3 +72,5 @@ sh4 = ["dep:mold-target-sh4"]
 sh4be = ["dep:mold-target-sh4be"]
 loongarch64 = ["dep:mold-target-loongarch64"]
 loongarch32 = ["dep:mold-target-loongarch32"]
+macho-arm64 = ["dep:mold-target-macho-arm64"]
+macho-x86_64 = ["dep:mold-target-macho-x86_64"]

@@ -16,6 +16,15 @@ pub enum FileType {
     Text,
     GccLtoObj,
     LlvmBitcode,
+    /// A Mach-O relocatable object.
+    MachObj,
+    /// A Mach-O dynamic library or bundle.
+    MachDylib,
+    /// A TAPI text-based dylib stub (.tbd), a YAML or JSON description of
+    /// a dylib that ships in SDKs in place of the binary.
+    Tapi,
+    /// A Mach-O universal (fat) file.
+    Fat,
 }
 
 fn is_text_file(data: &[u8]) -> bool {
@@ -170,6 +179,9 @@ pub fn get_file_type(plugin: &std::path::Path, mf: &MappedFile) -> FileType {
     if data.starts_with(b"!<arch>\n") {
         return FileType::Ar;
     }
+    if let Some(kind) = macho_file_type(mf) {
+        return kind;
+    }
     if data.starts_with(b"!<thin>\n") {
         return FileType::ThinAr;
     }
@@ -259,4 +271,37 @@ pub fn get_machine_type(
             .and_then(|child| get_elf_target(child.data())),
         _ => None,
     }
+}
+
+/// Classifies Mach-O inputs, which are recognized by their magic numbers or,
+/// for TAPI stubs, by their text.
+fn macho_file_type(mf: &MappedFile) -> Option<FileType> {
+    use crate::macho::format::{FAT_MAGIC, MH_DYLIB, MH_MAGIC_64, MH_OBJECT};
+    let data = mf.data();
+    let magic = data.get(..4).map(|m| u32::from_le_bytes(m.try_into().unwrap()))?;
+    if magic == MH_MAGIC_64 && data.len() >= 16 {
+        let filetype = u32::from_le_bytes(data[12..16].try_into().unwrap());
+        return Some(match filetype {
+            MH_OBJECT => FileType::MachObj,
+            MH_DYLIB => FileType::MachDylib,
+            _ => FileType::Unknown,
+        });
+    }
+    // The fat header is big-endian.
+    if magic.swap_bytes() == FAT_MAGIC {
+        return Some(FileType::Fat);
+    }
+    if data.starts_with(b"--- !tapi-tbd") || data.starts_with(b"---\narchs:") {
+        return Some(FileType::Tapi);
+    }
+    // TBD version 5 is JSON; the version key may come last in the file
+    // (Xcode's eager-linking stubs put it there), so a .tbd that starts
+    // with '{' is taken as one.
+    if data.starts_with(b"{")
+        && (mf.name.extension().is_some_and(|e| e == "tbd")
+            || memchr::memmem::find(data, b"tapi_tbd_version").is_some())
+    {
+        return Some(FileType::Tapi);
+    }
+    None
 }

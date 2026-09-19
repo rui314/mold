@@ -189,6 +189,19 @@ impl MappedFile {
         })
     }
 
+    /// Wraps bytes that live for the rest of the process, such as a
+    /// synthesized input, as a file of their own.
+    pub fn from_static(name: PathBuf, data: &'static mut [u8]) -> &'static Self {
+        util::leak(Self {
+            name,
+            data: SyncUnsafeCell::from_mut(data),
+            given_fullpath: true,
+            parent: None,
+            thin_parent: None,
+            is_dependency: AtomicBool::new(true),
+        })
+    }
+
     pub fn size(&self) -> usize {
         self.data.len()
     }

@@ -21,6 +21,7 @@ pub(crate) mod lto;
 #[cfg(all(target_os = "windows", target_env = "msvc"))]
 #[path = "lto_win32.rs"]
 pub(crate) mod lto;
+pub mod macho;
 pub(crate) mod mapfile;
 pub(crate) mod mapped_file;
 pub(crate) mod output_file;

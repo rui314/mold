@@ -72,7 +72,51 @@ fn link_for_target(target: &str, cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<
     std::process::exit(1);
 }
 
+type MachoLinkFn = fn(&[String]) -> Result<i32, String>;
+
+/// The Mach-O targets, selected when the executable is invoked as
+/// `ld64.mold`, the way `ld.mold` selects the ELF linker.
+const MACHO_TARGETS: &[(&str, MachoLinkFn)] = &[
+    #[cfg(feature = "macho-arm64")]
+    ("arm64", mold_target_macho_arm64::link),
+    #[cfg(feature = "macho-x86_64")]
+    ("x86_64", mold_target_macho_x86_64::link),
+];
+
+fn link_for_macho_target(target: &str, cmdline: &[String]) -> Result<i32, String> {
+    for &(name, link) in MACHO_TARGETS {
+        if name == target {
+            return link(cmdline);
+        }
+    }
+    eprintln!(
+        "mold: unsupported target: {target}; rebuild mold with the appropriate target support"
+    );
+    std::process::exit(1);
+}
+
+/// Whether the executable was invoked under a name that selects the
+/// Mach-O linker: `ld64.mold`, or `ld64` itself when installed as such.
+fn invoked_as_ld64() -> bool {
+    std::env::args_os().next().is_some_and(|arg0| {
+        std::path::Path::new(&arg0)
+            .file_name()
+            .is_some_and(|name| name.as_encoded_bytes().starts_with(b"ld64"))
+    })
+}
+
 fn main() {
+    if invoked_as_ld64() {
+        if MACHO_TARGETS.is_empty() {
+            eprintln!(
+                "mold: no Mach-O targets enabled; rebuild mold with the appropriate target support"
+            );
+            std::process::exit(1);
+        }
+        let argv: Vec<String> = std::env::args().collect();
+        let status = mold::macho::driver::main(argv, link_for_macho_target);
+        std::process::exit(status);
+    }
     let Some(&(initial_target, _)) = TARGETS.first() else {
         eprintln!("mold: no targets enabled; rebuild mold with the appropriate target support");
         std::process::exit(1);
