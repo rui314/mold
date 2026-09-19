@@ -9,7 +9,6 @@ use crate::chunks::hash::elf_hash;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
-use crate::util::endian::{U16, U32};
 
 // .gnu.version contains a parallel table for .dynsym to specify symbol
 // versions of defined symbols. This section appears only in .so files,

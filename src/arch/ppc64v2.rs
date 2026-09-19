@@ -93,9 +93,7 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{
-    LittleEndian, Ul64, read_ul16, read_ul32, write_ul16, write_ul32, write_ul64,
-};
+use crate::util::endian::{read_ul16, read_ul32, write_ul16, write_ul32, write_ul64};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -103,11 +101,11 @@ use crate::{error, fatal};
 pub struct Ppc64V2;
 
 impl Layout for Ppc64V2 {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
+    const IS_LITTLE: bool = true;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 

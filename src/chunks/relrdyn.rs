@@ -4,7 +4,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // .relr.dyn is a relatively new section to contain base relocation
 // information.
@@ -55,9 +54,9 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         for &val in &hdr.relr {
             let v = if val & 1 != 0 { val } else { hdr.shdr.sh_addr.get() + val };
             if E::IS_64 {
-                E::Endian::write_u64(&mut buf[i * w..], v);
+                E::write_u64(&mut buf[i * w..], v);
             } else {
-                E::Endian::write_u32(&mut buf[i * w..], v as u32);
+                E::write_u32(&mut buf[i * w..], v as u32);
             }
             i += 1;
         }

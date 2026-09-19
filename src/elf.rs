@@ -5,8 +5,9 @@
 //! also be unaligned because archives align members to only two bytes. Creating
 //! ordinary integer references into such data would be invalid.
 //!
-//! Integer fields use [`crate::util::endian`] to handle target endianness
-//! and unaligned access.
+//! Integer fields are the byte-backed [`U32`], [`U64`] and related types,
+//! which take the target [`Layout`] and read and write in its byte order
+//! at any alignment.
 //!
 //! Records whose ELF32 and ELF64 forms have the same field order are generic
 //! over the target word type. Symbols, program headers and compression
@@ -17,25 +18,134 @@
 //! the layout at compile time.
 
 use std::fmt;
+use std::marker::PhantomData;
 
 pub use crate::elf_consts::*;
 
-use crate::arch::{Arch, I386, X86_64};
+use crate::arch::{Arch, I386, Sparc64, X86_64};
 use crate::util::endian::*;
 
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
 /// relocation record format. Targets implement this through [`Arch`].
 pub trait Layout: Copy + Default + fmt::Debug + Send + Sync + 'static {
-    type Endian: Endian;
-    type Word: ElfWord<Endian = Self::Endian>;
-    type Sym: SymbolRecord<Endian = Self::Endian>;
-    type Phdr: PhdrRecord<Endian = Self::Endian>;
-    type Chdr: ChdrRecord<Endian = Self::Endian>;
-    type Rel: RelRecord<Endian = Self::Endian>;
+    const IS_LITTLE: bool;
+    type Word: ElfWord;
+    type Sym: SymbolRecord;
+    type Phdr: PhdrRecord;
+    type Chdr: ChdrRecord;
+    type Rel: RelRecord;
     const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
+
+    // Integers in the target's byte order, for section contents and other
+    // data that is not a record.
+    fn read_u16(bytes: &[u8]) -> u16 {
+        if Self::IS_LITTLE { read_ul16(bytes) } else { read_ub16(bytes) }
+    }
+
+    fn read_u32(bytes: &[u8]) -> u32 {
+        if Self::IS_LITTLE { read_ul32(bytes) } else { read_ub32(bytes) }
+    }
+
+    fn read_u64(bytes: &[u8]) -> u64 {
+        if Self::IS_LITTLE { read_ul64(bytes) } else { read_ub64(bytes) }
+    }
+
+    fn read_i32(bytes: &[u8]) -> i32 {
+        if Self::IS_LITTLE { read_il32(bytes) } else { read_ib32(bytes) }
+    }
+
+    fn read_i64(bytes: &[u8]) -> i64 {
+        if Self::IS_LITTLE { read_il64(bytes) } else { read_ib64(bytes) }
+    }
+
+    fn write_u16(bytes: &mut [u8], value: u16) {
+        if Self::IS_LITTLE { write_ul16(bytes, value) } else { write_ub16(bytes, value) }
+    }
+
+    fn write_u32(bytes: &mut [u8], value: u32) {
+        if Self::IS_LITTLE { write_ul32(bytes, value) } else { write_ub32(bytes, value) }
+    }
+
+    fn write_u64(bytes: &mut [u8], value: u64) {
+        if Self::IS_LITTLE { write_ul64(bytes, value) } else { write_ub64(bytes, value) }
+    }
+
+    fn write_i32(bytes: &mut [u8], value: i32) {
+        if Self::IS_LITTLE { write_il32(bytes, value) } else { write_ib32(bytes, value) }
+    }
+
+    fn write_i64(bytes: &mut [u8], value: i64) {
+        if Self::IS_LITTLE { write_il64(bytes, value) } else { write_ib64(bytes, value) }
+    }
+}
+
+/// An integer stored in the target's byte order. The type carries the
+/// layout so that a record field needs no accessor of its own.
+macro_rules! endian_integer {
+    ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub struct $name<E: Layout> {
+            bytes: [u8; $size],
+            layout: PhantomData<E>,
+        }
+
+        impl<E: Layout> $name<E> {
+            #[inline(always)]
+            pub fn new(value: $int) -> Self {
+                let mut result = Self::default();
+                result.set(value);
+                result
+            }
+
+            #[inline(always)]
+            pub fn get(&self) -> $int {
+                E::$read(&self.bytes)
+            }
+
+            #[inline(always)]
+            pub fn set(&mut self, value: $int) {
+                E::$write(&mut self.bytes, value);
+            }
+        }
+    };
+}
+
+endian_integer!(U16, u16, 2, read_u16, write_u16);
+endian_integer!(U32, u32, 4, read_u32, write_u32);
+endian_integer!(U64, u64, 8, read_u64, write_u64);
+endian_integer!(I32, i32, 4, read_i32, write_i32);
+endian_integer!(I64, i64, 8, read_i64, write_i64);
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct U24<E: Layout> {
+    bytes: [u8; 3],
+    layout: PhantomData<E>,
+}
+
+impl<E: Layout> U24<E> {
+    #[inline(always)]
+    pub fn get(&self) -> u32 {
+        if E::IS_LITTLE {
+            u32::from_le_bytes([self.bytes[0], self.bytes[1], self.bytes[2], 0])
+        } else {
+            u32::from_be_bytes([0, self.bytes[0], self.bytes[1], self.bytes[2]])
+        }
+    }
+
+    #[inline(always)]
+    pub fn set(&mut self, value: u32) {
+        let bytes = if E::IS_LITTLE { value.to_le_bytes() } else { value.to_be_bytes() };
+        if E::IS_LITTLE {
+            self.bytes.copy_from_slice(&bytes[..3]);
+        } else {
+            self.bytes.copy_from_slice(&bytes[1..]);
+        }
+    }
 }
 
 /// A record stored in its target-dependent file representation.
@@ -114,19 +224,19 @@ pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfEhdr<E: Layout> {
     pub e_ident: [u8; 16],
-    pub e_type: U16<E::Endian>,
-    pub e_machine: U16<E::Endian>,
-    pub e_version: U32<E::Endian>,
+    pub e_type: U16<E>,
+    pub e_machine: U16<E>,
+    pub e_version: U32<E>,
     pub e_entry: E::Word,
     pub e_phoff: E::Word,
     pub e_shoff: E::Word,
-    pub e_flags: U32<E::Endian>,
-    pub e_ehsize: U16<E::Endian>,
-    pub e_phentsize: U16<E::Endian>,
-    pub e_phnum: U16<E::Endian>,
-    pub e_shentsize: U16<E::Endian>,
-    pub e_shnum: U16<E::Endian>,
-    pub e_shstrndx: U16<E::Endian>,
+    pub e_flags: U32<E>,
+    pub e_ehsize: U16<E>,
+    pub e_phentsize: U16<E>,
+    pub e_phnum: U16<E>,
+    pub e_shentsize: U16<E>,
+    pub e_shnum: U16<E>,
+    pub e_shstrndx: U16<E>,
 }
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
@@ -142,14 +252,14 @@ const _: () = assert!(std::mem::align_of::<ElfEhdr<X86_64>>() == 1);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfShdr<E: Layout> {
-    pub sh_name: U32<E::Endian>,
-    pub sh_type: U32<E::Endian>,
+    pub sh_name: U32<E>,
+    pub sh_type: U32<E>,
     pub sh_flags: E::Word,
     pub sh_addr: E::Word,
     pub sh_offset: E::Word,
     pub sh_size: E::Word,
-    pub sh_link: U32<E::Endian>,
-    pub sh_info: U32<E::Endian>,
+    pub sh_link: U32<E>,
+    pub sh_info: U32<E>,
     pub sh_addralign: E::Word,
     pub sh_entsize: E::Word,
 }
@@ -166,7 +276,7 @@ const _: () = assert!(std::mem::align_of::<ElfShdr<X86_64>>() == 1);
 /// A program header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Phdr<E: Endian> {
+pub struct Elf64Phdr<E: Layout> {
     pub p_type: U32<E>,
     pub p_flags: U32<E>,
     pub p_offset: U64<E>,
@@ -179,7 +289,7 @@ pub struct Elf64Phdr<E: Endian> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Phdr<E: Endian> {
+pub struct Elf32Phdr<E: Layout> {
     pub p_type: U32<E>,
     pub p_offset: U32<E>,
     pub p_vaddr: U32<E>,
@@ -192,21 +302,19 @@ pub struct Elf32Phdr<E: Endian> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Endian> FileRecord for Elf64Phdr<E> {}
+unsafe impl<E: Layout> FileRecord for Elf64Phdr<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Endian> FileRecord for Elf32Phdr<E> {}
+unsafe impl<E: Layout> FileRecord for Elf32Phdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Phdr<LittleEndian>>() == 32);
-const _: () = assert!(std::mem::size_of::<Elf64Phdr<LittleEndian>>() == 56);
-const _: () = assert!(std::mem::align_of::<Elf32Phdr<LittleEndian>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Phdr<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::size_of::<Elf32Phdr<I386>>() == 32);
+const _: () = assert!(std::mem::size_of::<Elf64Phdr<X86_64>>() == 56);
+const _: () = assert!(std::mem::align_of::<Elf32Phdr<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Phdr<X86_64>>() == 1);
 
 /// The common interface of the two physical program-header layouts.
 /// Accessors take and return host integers; the record itself stays in
 /// its file representation.
 pub trait PhdrRecord: FileRecord + fmt::Debug {
-    type Endian: Endian;
-
     fn p_type(&self) -> u32;
     fn set_p_type(&mut self, value: u32);
     fn p_flags(&self) -> u32;
@@ -228,8 +336,7 @@ pub trait PhdrRecord: FileRecord + fmt::Debug {
 macro_rules! impl_phdr_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Endian> PhdrRecord for $record<E> {
-            type Endian = E;
+        impl<E: Layout> PhdrRecord for $record<E> {
 
             fn p_type(&self) -> u32 { self.p_type.get() }
             fn set_p_type(&mut self, value: u32) { self.p_type.set(value) }
@@ -259,7 +366,7 @@ pub type ElfPhdr<E> = <E as Layout>::Phdr;
 /// A symbol table entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Sym<E: Endian> {
+pub struct Elf64Sym<E: Layout> {
     pub st_name: U32<E>,
     st_info: u8,
     st_other: u8,
@@ -270,7 +377,7 @@ pub struct Elf64Sym<E: Endian> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Sym<E: Endian> {
+pub struct Elf32Sym<E: Layout> {
     pub st_name: U32<E>,
     pub st_value: U32<E>,
     pub st_size: U32<E>,
@@ -281,21 +388,19 @@ pub struct Elf32Sym<E: Endian> {
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
 // not insert padding between fields with alignment one.
-unsafe impl<E: Endian> FileRecord for Elf64Sym<E> {}
+unsafe impl<E: Layout> FileRecord for Elf64Sym<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Endian> FileRecord for Elf32Sym<E> {}
+unsafe impl<E: Layout> FileRecord for Elf32Sym<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Sym<LittleEndian>>() == 16);
-const _: () = assert!(std::mem::size_of::<Elf64Sym<LittleEndian>>() == 24);
-const _: () = assert!(std::mem::align_of::<Elf32Sym<LittleEndian>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Sym<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::size_of::<Elf32Sym<I386>>() == 16);
+const _: () = assert!(std::mem::size_of::<Elf64Sym<X86_64>>() == 24);
+const _: () = assert!(std::mem::align_of::<Elf32Sym<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Sym<X86_64>>() == 1);
 
 /// The common interface of the two physical symbol layouts. Accessors
 /// take and return host integers; the record itself stays in its file
 /// representation.
 pub trait SymbolRecord: FileRecord + fmt::Debug {
-    type Endian: Endian;
-
     fn st_name(&self) -> u32;
     fn set_st_name(&mut self, value: u32);
     fn st_value(&self) -> u64;
@@ -363,8 +468,7 @@ pub trait SymbolRecord: FileRecord + fmt::Debug {
 macro_rules! impl_symbol_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Endian> SymbolRecord for $record<E> {
-            type Endian = E;
+        impl<E: Layout> SymbolRecord for $record<E> {
 
             fn st_name(&self) -> u32 { self.st_name.get() }
             fn set_st_name(&mut self, value: u32) { self.st_name.set(value) }
@@ -416,8 +520,6 @@ pub type ElfSym<E> = <E as Layout>::Sym;
 
 /// A word-sized unsigned integer in an ELF file.
 pub trait ElfWord: FileRecord + fmt::Debug {
-    type Endian: Endian;
-
     fn new(value: u64) -> Self;
     fn get(&self) -> u64;
     fn set(&mut self, value: u64);
@@ -426,11 +528,9 @@ pub trait ElfWord: FileRecord + fmt::Debug {
 }
 
 // SAFETY: U32 is a transparent wrapper around a byte array.
-unsafe impl<E: Endian> FileRecord for U32<E> {}
+unsafe impl<E: Layout> FileRecord for U32<E> {}
 
-impl<E: Endian> ElfWord for U32<E> {
-    type Endian = E;
-
+impl<E: Layout> ElfWord for U32<E> {
     #[inline(always)]
     fn new(value: u64) -> Self {
         Self::new(value as u32)
@@ -453,11 +553,9 @@ impl<E: Endian> ElfWord for U32<E> {
 }
 
 // SAFETY: U64 is a transparent wrapper around a byte array.
-unsafe impl<E: Endian> FileRecord for U64<E> {}
+unsafe impl<E: Layout> FileRecord for U64<E> {}
 
-impl<E: Endian> ElfWord for U64<E> {
-    type Endian = E;
-
+impl<E: Layout> ElfWord for U64<E> {
     #[inline(always)]
     fn new(value: u64) -> Self {
         Self::new(value)
@@ -481,7 +579,6 @@ impl<E: Endian> ElfWord for U64<E> {
 
 /// An ELF relocation record in its target-dependent file representation.
 pub trait RelRecord: FileRecord + fmt::Debug {
-    type Endian: Endian;
     const IS_RELA: bool;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self;
@@ -579,7 +676,6 @@ fn r_info_type<E: Layout>(r_info: u64) -> u32 {
 
 #[rustfmt::skip]
 impl<E: Layout> RelRecord for ElfRela<E> {
-    type Endian = E::Endian;
     const IS_RELA: bool = true;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
@@ -602,7 +698,6 @@ impl<E: Layout> RelRecord for ElfRela<E> {
 
 #[rustfmt::skip]
 impl<E: Layout> RelRecord for ElfRelNoAddend<E> {
-    type Endian = E::Endian;
     const IS_RELA: bool = false;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
@@ -627,16 +722,16 @@ impl<E: Layout> RelRecord for ElfRelNoAddend<E> {
 //
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Sparc64Rela {
-    r_offset: Ub64,
-    r_sym: Ub32,
+    r_offset: U64<Sparc64>,
+    r_sym: U32<Sparc64>,
     // SPARC keeps a second addend in the upper bits of the type field;
     // its backend separates the two.
-    pub(crate) r_type_data: Ub24, // SPARC-specific: used for R_SPARC_OLO10
+    pub(crate) r_type_data: U24<Sparc64>, // SPARC-specific: used for R_SPARC_OLO10
     /// The relocation type proper, without the second addend.
     r_type: u8,
-    r_addend: Ib64,
+    r_addend: I64<Sparc64>,
 }
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
@@ -648,7 +743,6 @@ const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
 
 #[rustfmt::skip]
 impl RelRecord for Sparc64Rela {
-    type Endian = BigEndian;
     const IS_RELA: bool = true;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
@@ -704,7 +798,7 @@ const _: () = assert!(std::mem::align_of::<ElfDyn<X86_64>>() == 1);
 /// The header of a compressed section.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Chdr<E: Endian> {
+pub struct Elf64Chdr<E: Layout> {
     pub ch_type: U32<E>,
     pub ch_reserved: U32<E>,
     pub ch_size: U64<E>,
@@ -713,7 +807,7 @@ pub struct Elf64Chdr<E: Endian> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Chdr<E: Endian> {
+pub struct Elf32Chdr<E: Layout> {
     pub ch_type: U32<E>,
     pub ch_size: U32<E>,
     pub ch_addralign: U32<E>,
@@ -721,21 +815,19 @@ pub struct Elf32Chdr<E: Endian> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Endian> FileRecord for Elf64Chdr<E> {}
+unsafe impl<E: Layout> FileRecord for Elf64Chdr<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Endian> FileRecord for Elf32Chdr<E> {}
+unsafe impl<E: Layout> FileRecord for Elf32Chdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Chdr<LittleEndian>>() == 12);
-const _: () = assert!(std::mem::size_of::<Elf64Chdr<LittleEndian>>() == 24);
-const _: () = assert!(std::mem::align_of::<Elf32Chdr<LittleEndian>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Chdr<LittleEndian>>() == 1);
+const _: () = assert!(std::mem::size_of::<Elf32Chdr<I386>>() == 12);
+const _: () = assert!(std::mem::size_of::<Elf64Chdr<X86_64>>() == 24);
+const _: () = assert!(std::mem::align_of::<Elf32Chdr<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<Elf64Chdr<X86_64>>() == 1);
 
 /// The common interface of the two physical compression-header layouts.
 /// Accessors take and return host integers; the record itself stays in
 /// its file representation.
 pub trait ChdrRecord: FileRecord + fmt::Debug {
-    type Endian: Endian;
-
     fn ch_type(&self) -> u32;
     fn set_ch_type(&mut self, value: u32);
     fn ch_size(&self) -> u64;
@@ -747,8 +839,7 @@ pub trait ChdrRecord: FileRecord + fmt::Debug {
 macro_rules! impl_chdr_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Endian> ChdrRecord for $record<E> {
-            type Endian = E;
+        impl<E: Layout> ChdrRecord for $record<E> {
 
             fn ch_type(&self) -> u32 { self.ch_type.get() }
             fn set_ch_type(&mut self, value: u32) { self.ch_type.set(value) }
@@ -771,9 +862,9 @@ pub type ElfChdr<E> = <E as Layout>::Chdr;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfNhdr<E: Layout> {
-    pub n_namesz: U32<E::Endian>,
-    pub n_descsz: U32<E::Endian>,
-    pub n_type: U32<E::Endian>,
+    pub n_namesz: U32<E>,
+    pub n_descsz: U32<E>,
+    pub n_type: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
@@ -787,11 +878,11 @@ const _: () = assert!(std::mem::align_of::<ElfNhdr<I386>>() == 1);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfVerneed<E: Layout> {
-    pub vn_version: U16<E::Endian>,
-    pub vn_cnt: U16<E::Endian>,
-    pub vn_file: U32<E::Endian>,
-    pub vn_aux: U32<E::Endian>,
-    pub vn_next: U32<E::Endian>,
+    pub vn_version: U16<E>,
+    pub vn_cnt: U16<E>,
+    pub vn_file: U32<E>,
+    pub vn_aux: U32<E>,
+    pub vn_next: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
@@ -804,11 +895,11 @@ const _: () = assert!(std::mem::size_of::<ElfVerneed<I386>>() == 16);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfVernaux<E: Layout> {
-    pub vna_hash: U32<E::Endian>,
-    pub vna_flags: U16<E::Endian>,
-    pub vna_other: U16<E::Endian>,
-    pub vna_name: U32<E::Endian>,
-    pub vna_next: U32<E::Endian>,
+    pub vna_hash: U32<E>,
+    pub vna_flags: U16<E>,
+    pub vna_other: U16<E>,
+    pub vna_name: U32<E>,
+    pub vna_next: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
@@ -821,13 +912,13 @@ const _: () = assert!(std::mem::size_of::<ElfVernaux<I386>>() == 16);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfVerdef<E: Layout> {
-    pub vd_version: U16<E::Endian>,
-    pub vd_flags: U16<E::Endian>,
-    pub vd_ndx: U16<E::Endian>,
-    pub vd_cnt: U16<E::Endian>,
-    pub vd_hash: U32<E::Endian>,
-    pub vd_aux: U32<E::Endian>,
-    pub vd_next: U32<E::Endian>,
+    pub vd_version: U16<E>,
+    pub vd_flags: U16<E>,
+    pub vd_ndx: U16<E>,
+    pub vd_cnt: U16<E>,
+    pub vd_hash: U32<E>,
+    pub vd_aux: U32<E>,
+    pub vd_next: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
@@ -840,8 +931,8 @@ const _: () = assert!(std::mem::size_of::<ElfVerdef<I386>>() == 20);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfVerdaux<E: Layout> {
-    pub vda_name: U32<E::Endian>,
-    pub vda_next: U32<E::Endian>,
+    pub vda_name: U32<E>,
+    pub vda_next: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
@@ -859,18 +950,18 @@ const _: () = assert!(std::mem::size_of::<ElfVerdaux<I386>>() == 8);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SFrameHeader<E: Layout> {
-    pub magic: U16<E::Endian>,
+    pub magic: U16<E>,
     pub version: u8,
     pub flags: u8,
     pub abi_arch: u8,
     pub cfa_fixed_fp_offset: i8,
     pub cfa_fixed_ra_offset: i8,
     pub auxhdr_len: u8,
-    pub num_fdes: U32<E::Endian>,
-    pub num_fres: U32<E::Endian>,
-    pub fre_len: U32<E::Endian>,
-    pub fdeoff: U32<E::Endian>,
-    pub freoff: U32<E::Endian>,
+    pub num_fdes: U32<E>,
+    pub num_fres: U32<E>,
+    pub fre_len: U32<E>,
+    pub fdeoff: U32<E>,
+    pub freoff: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
@@ -886,9 +977,9 @@ const _: () = assert!(std::mem::align_of::<SFrameHeader<I386>>() == 1);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SFrameFdeIdx<E: Layout> {
-    pub func_start_offset: I64<E::Endian>,
-    pub func_size: U32<E::Endian>,
-    pub func_start_fre_off: U32<E::Endian>,
+    pub func_start_offset: I64<E>,
+    pub func_size: U32<E>,
+    pub func_start_fre_off: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert

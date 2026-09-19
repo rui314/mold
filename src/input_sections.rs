@@ -15,7 +15,6 @@ use crate::input_files::{ObjId, ObjectFile};
 use crate::symbol::{NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, Symbol, SymbolId};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
-use crate::util::endian::Endian;
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Counter;
 use crate::util::{self, cstr_at, leak_bytes};
@@ -1289,7 +1288,7 @@ impl CieRecord {
 /// plus the field itself.
 #[inline]
 fn record_size<E: Layout>(contents: &[u8], offset: u32) -> usize {
-    E::Endian::read_u32(&contents[offset as usize..]) as usize + 4
+    E::read_u32(&contents[offset as usize..]) as usize + 4
 }
 
 /// The relocations of a `.eh_frame` record: those from index `begin`

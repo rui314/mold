@@ -4,7 +4,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
 // are sorted by their dcorresponding function addresses, so tha the
@@ -53,6 +52,6 @@ pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let eh_frame = ctx.eh_frame.shdr.sh_addr.get();
     let hdr = sec.hdr.shdr.sh_addr.get();
     let offset = eh_frame.wrapping_sub(hdr).wrapping_sub(4);
-    E::Endian::write_u32(&mut buf[4..], offset as u32);
-    E::Endian::write_u32(&mut buf[8..], sec.num_fdes as u32);
+    E::write_u32(&mut buf[4..], offset as u32);
+    E::write_u32(&mut buf[8..], sec.num_fdes as u32);
 }

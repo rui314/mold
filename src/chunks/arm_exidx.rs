@@ -18,7 +18,6 @@ use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, output_section};
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 use crate::util::sign_extend;
 
 const CANTUNWIND: u32 = 1;
@@ -141,7 +140,7 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         .as_chunks::<ENTRY_SIZE>()
         .0
         .iter()
-        .map(|e| (E::Endian::read_u32(e), E::Endian::read_u32(&e[4..])))
+        .map(|e| (E::read_u32(e), E::read_u32(&e[4..])))
         .collect();
     // Fill in sentinel fields
     entries[num_entries - 1] = (text_end(ctx).wrapping_sub(sentinel_addr) as u32, CANTUNWIND);
@@ -175,8 +174,8 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
 
     buf.truncate(entries.len() * ENTRY_SIZE);
     for (i, (addr, val)) in entries.iter().enumerate() {
-        E::Endian::write_u32(&mut buf[i * ENTRY_SIZE..], *addr);
-        E::Endian::write_u32(&mut buf[i * ENTRY_SIZE + 4..], *val);
+        E::write_u32(&mut buf[i * ENTRY_SIZE..], *addr);
+        E::write_u32(&mut buf[i * ENTRY_SIZE + 4..], *val);
     }
     buf
 }

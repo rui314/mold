@@ -43,18 +43,17 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{LittleEndian, Ul32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct I386;
 
 impl Layout for I386 {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
+    const IS_LITTLE: bool = true;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
 }
 

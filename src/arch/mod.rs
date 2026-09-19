@@ -39,7 +39,6 @@ use crate::elf::{ElfRel, Layout, RelRecord};
 use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
-use crate::util::endian::Endian;
 
 /// Coarse target families, for the few places where generic code needs
 /// target-specific behavior that doesn't warrant a trait hook.
@@ -101,7 +100,7 @@ pub trait Arch: Layout {
     /// Relocation types that denote a function call.
     const R_FUNCALL: &'static [u32];
 
-    const IS_LITTLE_ENDIAN: bool = Self::Endian::IS_LITTLE;
+    const IS_LITTLE_ENDIAN: bool = Self::IS_LITTLE;
     const SUPPORTS_IFUNC: bool = Self::R_IRELATIVE.is_some();
     const SUPPORTS_TLSDESC: bool = Self::R_TLSDESC.is_some();
     const SUPPORTS_SFRAME: bool = Self::SFRAME_ABI.is_some();

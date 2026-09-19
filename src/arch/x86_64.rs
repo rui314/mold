@@ -32,7 +32,6 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{LittleEndian, Ul64};
 use crate::util::is_int;
 use crate::{error, fatal};
 
@@ -40,11 +39,11 @@ use crate::{error, fatal};
 pub struct X86_64;
 
 impl Layout for X86_64 {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
+    const IS_LITTLE: bool = true;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 

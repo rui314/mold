@@ -4,7 +4,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
 // contents of the section is usually a cryptogrpahic hash of the output
@@ -38,9 +37,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.buildid.as_ref().unwrap();
     buf.fill(0);
-    E::Endian::write_u32(buf, 4); // Name size
-    E::Endian::write_u32(&mut buf[4..], ctx.args.build_id.size() as u32); // Hash size
-    E::Endian::write_u32(&mut buf[8..], NT_GNU_BUILD_ID);
+    E::write_u32(buf, 4); // Name size
+    E::write_u32(&mut buf[4..], ctx.args.build_id.size() as u32); // Hash size
+    E::write_u32(&mut buf[8..], NT_GNU_BUILD_ID);
     buf[12..16].copy_from_slice(b"GNU\0"); // Name string
     buf[16..16 + sec.contents.len()].copy_from_slice(&sec.contents); // Build ID
 }

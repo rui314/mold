@@ -61,9 +61,7 @@ use crate::symbol::{
     AddrFlags, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD, Symbol,
 };
 use crate::thunks::Thunk;
-use crate::util::endian::{
-    BigEndian, Ub64, read_ub16, read_ub32, write_ub16, write_ub32, write_ub64,
-};
+use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -71,11 +69,11 @@ use crate::{error, fatal};
 pub struct Ppc64V1;
 
 impl Layout for Ppc64V1 {
-    type Endian = BigEndian;
-    type Word = Ub64;
-    type Sym = Elf64Sym<BigEndian>;
-    type Phdr = Elf64Phdr<BigEndian>;
-    type Chdr = Elf64Chdr<BigEndian>;
+    const IS_LITTLE: bool = false;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 

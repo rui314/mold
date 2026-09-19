@@ -6,7 +6,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::{AddrFlags, SymbolId};
-use crate::util::endian::Endian;
 
 // .got is a linker-synthesized constant pool whose entry size is the same
 // as the pointer size. It is used to store runtime addresses of global
@@ -322,9 +321,9 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let w = word::<E>() as usize;
     let write = |buf: &mut [u8], idx: usize, val: u64| {
         if E::IS_64 {
-            E::Endian::write_u64(&mut buf[idx * w..], val);
+            E::write_u64(&mut buf[idx * w..], val);
         } else {
-            E::Endian::write_u32(&mut buf[idx * w..], val as u32);
+            E::write_u32(&mut buf[idx * w..], val as u32);
         }
     };
 

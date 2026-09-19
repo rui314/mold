@@ -5,7 +5,6 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::align_to;
-use crate::util::endian::Endian;
 use crate::util::write_cstr;
 
 // .note.package is an optional hint section that can contain arbitrary
@@ -29,9 +28,9 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let content_size = ctx.note_package.shdr.sh_size.get() as u32 - 16;
     buf.fill(0);
-    E::Endian::write_u32(buf, 4); // Name size
-    E::Endian::write_u32(&mut buf[4..], content_size);
-    E::Endian::write_u32(&mut buf[8..], NT_FDO_PACKAGING_METADATA);
+    E::write_u32(buf, 4); // Name size
+    E::write_u32(&mut buf[4..], content_size);
+    E::write_u32(&mut buf[8..], NT_FDO_PACKAGING_METADATA);
     buf[12..16].copy_from_slice(b"FDO\0");
     write_cstr(&mut buf[16..], &ctx.args.package_metadata); // Content
 }

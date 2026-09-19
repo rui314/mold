@@ -4,7 +4,6 @@ use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // The hash function for .hash.
 pub fn elf_hash(name: &[u8]) -> u32 {
@@ -60,17 +59,13 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let entry = entry_size::<E>();
     let write = |buf: &mut [u8], i: usize, v: u32| {
         if entry == 8 {
-            E::Endian::write_u64(&mut buf[i * 8..], v as u64);
+            E::write_u64(&mut buf[i * 8..], v as u64);
         } else {
-            E::Endian::write_u32(&mut buf[i * 4..], v);
+            E::write_u32(&mut buf[i * 4..], v);
         }
     };
     let read = |buf: &[u8], i: usize| -> u32 {
-        if entry == 8 {
-            E::Endian::read_u64(&buf[i * 8..]) as u32
-        } else {
-            E::Endian::read_u32(&buf[i * 4..])
-        }
+        if entry == 8 { E::read_u64(&buf[i * 8..]) as u32 } else { E::read_u32(&buf[i * 4..]) }
     };
 
     let n = ctx.dynsym.symbols.len();

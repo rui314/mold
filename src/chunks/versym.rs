@@ -4,7 +4,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // .gnu.version section contains version indices as a parallel array for
 // .dynsym. If a dynamic symbol is a defined one, its version information
@@ -43,6 +42,6 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &v) in ctx.versym.contents.iter().enumerate() {
-        E::Endian::write_u16(&mut buf[i * 2..], v);
+        E::write_u16(&mut buf[i * 2..], v);
     }
 }

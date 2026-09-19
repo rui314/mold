@@ -4,7 +4,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 /// The hash function for `.gnu.hash`.
 #[inline]
@@ -74,10 +73,10 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let word = E::WORD_SIZE;
     let first_exported = ctx.dynsym.symbols.len() - gh.num_exported as usize;
 
-    E::Endian::write_u32(buf, gh.num_buckets);
-    E::Endian::write_u32(&mut buf[4..], first_exported as u32);
-    E::Endian::write_u32(&mut buf[8..], gh.num_bloom);
-    E::Endian::write_u32(&mut buf[12..], GnuHashSection::<E>::BLOOM_SHIFT);
+    E::write_u32(buf, gh.num_buckets);
+    E::write_u32(&mut buf[4..], first_exported as u32);
+    E::write_u32(&mut buf[8..], gh.num_bloom);
+    E::write_u32(&mut buf[12..], GnuHashSection::<E>::BLOOM_SHIFT);
 
     let syms = &ctx.dynsym.symbols[first_exported..];
     if syms.is_empty() {
@@ -96,19 +95,16 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
             | (1u64 << ((h >> GnuHashSection::<E>::BLOOM_SHIFT) as usize % word_bits));
         let slot = &mut buf[bloom_off + idx * word..];
         if E::IS_64 {
-            E::Endian::write_u64(slot, E::Endian::read_u64(slot) | bits);
+            E::write_u64(slot, E::read_u64(slot) | bits);
         } else {
-            E::Endian::write_u32(slot, E::Endian::read_u32(slot) | bits as u32);
+            E::write_u32(slot, E::read_u32(slot) | bits as u32);
         }
     }
 
     // Write hash bucket indices
     let buckets_off = bloom_off + gh.num_bloom as usize * word;
     for (i, &bucket) in indices.iter().enumerate().rev() {
-        E::Endian::write_u32(
-            &mut buf[buckets_off + bucket as usize * 4..],
-            (first_exported + i) as u32,
-        );
+        E::write_u32(&mut buf[buckets_off + bucket as usize * 4..], (first_exported + i) as u32);
     }
 
     // Write a hash table
@@ -118,7 +114,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         // least-significant bit 1.
         let h = ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash;
         let last = i + 1 == syms.len() || indices[i] != indices[i + 1];
-        E::Endian::write_u32(&mut buf[table_off + i * 4..], if last { h | 1 } else { h & !1 });
+        E::write_u32(&mut buf[table_off + i * 4..], if last { h | 1 } else { h & !1 });
     }
 }
 

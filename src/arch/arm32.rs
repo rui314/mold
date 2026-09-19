@@ -44,8 +44,6 @@
 //! output; see [`swap_code_bytes`]. Linker-synthesized code is written
 //! in little-endian form to begin with.
 
-use std::marker::PhantomData;
-
 use rayon::prelude::*;
 
 use crate::arch::{Arch, Family, ThunkLayout};
@@ -59,31 +57,33 @@ use crate::input_sections::{
 };
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ul32, write_ul32};
+use crate::util::endian::write_ul32;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Arm32Target<End>(PhantomData<End>);
+pub struct Arm32Target<const LE: bool>;
 
-pub type Arm32 = Arm32Target<LittleEndian>;
-pub type Arm32Be = Arm32Target<BigEndian>;
+pub type Arm32 = Arm32Target<true>;
+pub type Arm32Be = Arm32Target<false>;
 
-impl Layout for Arm32Target<LittleEndian> {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
+// One impl per byte order rather than one generic impl keeps Self::Word
+// abstract in the generic Arch impl, so word accessors return u64 there.
+impl Layout for Arm32Target<true> {
+    const IS_LITTLE: bool = true;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
 }
 
-impl Layout for Arm32Target<BigEndian> {
-    type Endian = BigEndian;
-    type Word = Ub32;
-    type Sym = Elf32Sym<BigEndian>;
-    type Phdr = Elf32Phdr<BigEndian>;
-    type Chdr = Elf32Chdr<BigEndian>;
+impl Layout for Arm32Target<false> {
+    const IS_LITTLE: bool = false;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
 }
 
@@ -96,67 +96,65 @@ fn bt(val: u64, n: u32) -> u32 {
 }
 
 /// The second halfword of a 32-bit Thumb instruction.
-fn thm2<End: Endian>(loc: &[u8]) -> u16 {
-    End::read_u16(&loc[2..])
+fn thm2<E: Layout>(loc: &[u8]) -> u16 {
+    E::read_u16(&loc[2..])
 }
 
-fn write_arm_mov<End: Endian>(loc: &mut [u8], val: u32) {
+fn write_arm_mov<E: Layout>(loc: &mut [u8], val: u32) {
     let imm12 = b(val as u64, 11, 0);
     let imm4 = b(val as u64, 15, 12);
-    End::write_u32(loc, (End::read_u32(loc) & 0xfff0_f000) | (imm4 << 16) | imm12);
+    E::write_u32(loc, (E::read_u32(loc) & 0xfff0_f000) | (imm4 << 16) | imm12);
 }
 
-fn write_thm_b21<End: Endian>(loc: &mut [u8], val: u32) {
+fn write_thm_b21<E: Layout>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let (s, j2, j1) = (bt(v, 20), bt(v, 19), bt(v, 18));
     let imm6 = b(v, 17, 12);
     let imm11 = b(v, 11, 1);
-    End::write_u16(
+    E::write_u16(
         loc,
-        ((End::read_u16(loc) & 0b1111_1011_1100_0000) as u32 | (s << 10) | imm6) as u16,
+        ((E::read_u16(loc) & 0b1111_1011_1100_0000) as u32 | (s << 10) | imm6) as u16,
     );
     let second =
-        ((thm2::<End>(loc) & 0b1101_0000_0000_0000) as u32 | (j1 << 13) | (j2 << 11) | imm11)
-            as u16;
-    End::write_u16(&mut loc[2..], second);
+        ((thm2::<E>(loc) & 0b1101_0000_0000_0000) as u32 | (j1 << 13) | (j2 << 11) | imm11) as u16;
+    E::write_u16(&mut loc[2..], second);
 }
 
-fn write_thm_b25<End: Endian>(loc: &mut [u8], val: u32) {
+fn write_thm_b25<E: Layout>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let (s, i1, i2) = (bt(v, 24), bt(v, 23), bt(v, 22));
     let j1 = (i1 ^ 1) ^ s;
     let j2 = (i2 ^ 1) ^ s;
     let imm10 = b(v, 21, 12);
     let imm11 = b(v, 11, 1);
-    End::write_u16(
+    E::write_u16(
         loc,
-        ((End::read_u16(loc) & 0b1111_1000_0000_0000) as u32 | (s << 10) | imm10) as u16,
+        ((E::read_u16(loc) & 0b1111_1000_0000_0000) as u32 | (s << 10) | imm10) as u16,
     );
     let second =
-        ((thm2::<End>(loc) & 0b1101_0000_0000_0000) as u32 | (j1 << 13) | (j2 << 11) | imm11)
-            as u16;
-    End::write_u16(&mut loc[2..], second);
+        ((thm2::<E>(loc) & 0b1101_0000_0000_0000) as u32 | (j1 << 13) | (j2 << 11) | imm11) as u16;
+    E::write_u16(&mut loc[2..], second);
 }
 
-fn write_thm_mov<End: Endian>(loc: &mut [u8], val: u32) {
+fn write_thm_mov<E: Layout>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let imm4 = b(v, 15, 12);
     let i = bt(v, 11);
     let imm3 = b(v, 10, 8);
     let imm8 = b(v, 7, 0);
-    End::write_u16(
+    E::write_u16(
         loc,
-        ((End::read_u16(loc) & 0b1111_1011_1111_0000) as u32 | (i << 10) | imm4) as u16,
+        ((E::read_u16(loc) & 0b1111_1011_1111_0000) as u32 | (i << 10) | imm4) as u16,
     );
-    let second = ((thm2::<End>(loc) & 0b1000_1111_0000_0000) as u32 | (imm3 << 12) | imm8) as u16;
-    End::write_u16(&mut loc[2..], second);
+    let second = ((thm2::<E>(loc) & 0b1000_1111_0000_0000) as u32 | (imm3 << 12) | imm8) as u16;
+    E::write_u16(&mut loc[2..], second);
 }
 
 /// Sets the second halfword's bit that turns a Thumb BLX into a BL, or
 /// clears it for the reverse.
-fn set_thm_bl<End: Endian>(loc: &mut [u8], is_bl: bool) {
-    let second = if is_bl { thm2::<End>(loc) | 0x1000 } else { thm2::<End>(loc) & !0x1000 };
-    End::write_u16(&mut loc[2..], second);
+fn set_thm_bl<E: Layout>(loc: &mut [u8], is_bl: bool) {
+    let second = if is_bl { thm2::<E>(loc) | 0x1000 } else { thm2::<E>(loc) & !0x1000 };
+    E::write_u16(&mut loc[2..], second);
 }
 
 // Only function symbols tell in the LSB of their value whether they are
@@ -232,9 +230,9 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
 //
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
-pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [u8])
+pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut [u8])
 where
-    Arm32Target<End>: Layout<Endian = End>,
+    Arm32Target<LE>: Layout,
 {
     let output = OutputBuffer::new(buf);
     ctx.objs.par_iter().for_each(|file| {
@@ -282,13 +280,13 @@ where
     });
 }
 
-impl<End: Endian> Arch for Arm32Target<End>
+impl<const LE: bool> Arch for Arm32Target<LE>
 where
-    Self: Layout<Endian = End>,
+    Self: Layout,
 {
     type InputSectionExtra = u32;
 
-    const NAME: &'static str = if End::IS_LITTLE { "arm32" } else { "arm32be" };
+    const NAME: &'static str = if Self::IS_LITTLE { "arm32" } else { "arm32be" };
     const FAMILY: Family = Family::Arm32;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_ARM;
@@ -316,7 +314,7 @@ where
     }
 
     fn eflags(_ctx: &Context<Self>) -> u32 {
-        if End::IS_LITTLE { EF_ARM_EABI_VER5 } else { EF_ARM_EABI_VER5 | EF_ARM_BE8 }
+        if Self::IS_LITTLE { EF_ARM_EABI_VER5 } else { EF_ARM_EABI_VER5 | EF_ARM_BE8 }
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
@@ -334,12 +332,12 @@ where
         let gotplt_addr = ctx.gotplt.shdr.sh_addr.get();
         let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
         let gotplt = gotplt_addr.wrapping_sub(plt_addr).wrapping_sub(16);
-        End::write_u32(&mut buf[16..], gotplt as u32);
+        Self::write_u32(&mut buf[16..], gotplt as u32);
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         write_code(buf, &PLT_ENTRY);
-        End::write_u32(
+        Self::write_u32(
             &mut buf[12..],
             sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(12) as u32,
         );
@@ -347,7 +345,7 @@ where
 
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         write_code(buf, &PLT_ENTRY);
-        End::write_u32(
+        Self::write_u32(
             &mut buf[12..],
             sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(12) as u32,
         );
@@ -363,8 +361,8 @@ where
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_ARM_ABS32 => End::write_u32(loc, val as u32),
-            R_ARM_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
+            R_ARM_ABS32 => Self::write_u32(loc, val as u32),
+            R_ARM_REL32 => Self::write_u32(loc, val.wrapping_sub(p) as u32),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -465,8 +463,8 @@ where
                 )
             };
             let loc = &mut buf[off..];
-            let write32 = |loc: &mut [u8], v: u32| End::write_u32(loc, v);
-            let write16 = |loc: &mut [u8], v: u16| End::write_u16(loc, v);
+            let write32 = |loc: &mut [u8], v: u32| Self::write_u32(loc, v);
+            let write16 = |loc: &mut [u8], v: u16| Self::write_u16(loc, v);
 
             match rel.r_type() {
                 // Handled as absolute relocations by the output section.
@@ -487,14 +485,14 @@ where
                     let val2 = align_to(pcrel, 4) as i64;
                     let arm = is_arm_func(ctx, sym);
                     if !arm && is_int(val1, 25) {
-                        set_thm_bl::<End>(loc, true);
-                        write_thm_b25::<End>(loc, val1 as u32);
+                        set_thm_bl::<Self>(loc, true);
+                        write_thm_b25::<Self>(loc, val1 as u32);
                     } else if arm && is_int(val2, 25) {
-                        set_thm_bl::<End>(loc, false);
-                        write_thm_b25::<End>(loc, val2 as u32);
+                        set_thm_bl::<Self>(loc, false);
+                        write_thm_b25::<Self>(loc, val2 as u32);
                     } else {
-                        set_thm_bl::<End>(loc, true);
-                        write_thm_b25::<End>(
+                        set_thm_bl::<Self>(loc, true);
+                        write_thm_b25::<Self>(
                             loc,
                             thumb_thunk().wrapping_add(a).wrapping_sub(p) as u32,
                         );
@@ -513,7 +511,7 @@ where
                     }
                     // Just like THM_CALL, ARM_CALL relocation refers to either BL or
                     // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
-                    let insn = End::read_u32(loc);
+                    let insn = Self::read_u32(loc);
                     let is_bl = insn & 0xff00_0000 == 0xeb00_0000;
                     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
                     if !is_bl && !is_blx {
@@ -548,7 +546,7 @@ where
                     if t != 0 || !is_int(val as i64, 26) {
                         val = arm_thunk().wrapping_add(a).wrapping_sub(p);
                     }
-                    write32(loc, (End::read_u32(loc) & 0xff00_0000) | b(val, 25, 2));
+                    write32(loc, (Self::read_u32(loc) & 0xff00_0000) | b(val, 25, 2));
                 }
                 R_ARM_PLT32 => {
                     if sym.is_remaining_undef_weak() {
@@ -556,20 +554,20 @@ where
                     } else {
                         let val =
                             if t != 0 { arm_thunk() } else { s }.wrapping_add(a).wrapping_sub(p);
-                        write32(loc, (End::read_u32(loc) & 0xff00_0000) | b(val, 25, 2));
+                        write32(loc, (Self::read_u32(loc) & 0xff00_0000) | b(val, 25, 2));
                     }
                 }
                 R_ARM_THM_JUMP8 => {
                     check(pcrel as i64, -(1 << 8), 1 << 8);
-                    write16(loc, (End::read_u16(loc) & 0xff00) | b(pcrel, 8, 1) as u16);
+                    write16(loc, (Self::read_u16(loc) & 0xff00) | b(pcrel, 8, 1) as u16);
                 }
                 R_ARM_THM_JUMP11 => {
                     check(pcrel as i64, -(1 << 11), 1 << 11);
-                    write16(loc, (End::read_u16(loc) & 0xf800) | b(pcrel, 11, 1) as u16);
+                    write16(loc, (Self::read_u16(loc) & 0xf800) | b(pcrel, 11, 1) as u16);
                 }
                 R_ARM_THM_JUMP19 => {
                     check(pcrel as i64, -(1 << 20), 1 << 20);
-                    write_thm_b21::<End>(loc, pcrel as u32);
+                    write_thm_b21::<Self>(loc, pcrel as u32);
                 }
                 R_ARM_THM_JUMP24 => {
                     if sym.is_remaining_undef_weak() {
@@ -582,22 +580,25 @@ where
                     if is_arm_func(ctx, sym) || !is_int(val as i64, 25) {
                         val = thumb_thunk().wrapping_add(a).wrapping_sub(p);
                     }
-                    write_thm_b25::<End>(loc, val as u32);
+                    write_thm_b25::<Self>(loc, val as u32);
                 }
-                R_ARM_MOVW_PREL_NC => write_arm_mov::<End>(loc, (sa | t).wrapping_sub(p) as u32),
-                R_ARM_MOVW_ABS_NC => write_arm_mov::<End>(loc, (sa | t) as u32),
+                R_ARM_MOVW_PREL_NC => write_arm_mov::<Self>(loc, (sa | t).wrapping_sub(p) as u32),
+                R_ARM_MOVW_ABS_NC => write_arm_mov::<Self>(loc, (sa | t) as u32),
                 R_ARM_THM_MOVW_PREL_NC => {
-                    write_thm_mov::<End>(loc, (sa | t).wrapping_sub(p) as u32)
+                    write_thm_mov::<Self>(loc, (sa | t).wrapping_sub(p) as u32)
                 }
                 R_ARM_PREL31 => {
                     check(pcrel as i64, -(1 << 30), 1 << 30);
-                    write32(loc, (End::read_u32(loc) & 0x8000_0000) | (pcrel as u32 & 0x7fff_ffff));
+                    write32(
+                        loc,
+                        (Self::read_u32(loc) & 0x8000_0000) | (pcrel as u32 & 0x7fff_ffff),
+                    );
                 }
-                R_ARM_THM_MOVW_ABS_NC => write_thm_mov::<End>(loc, (sa | t) as u32),
-                R_ARM_MOVT_PREL => write_arm_mov::<End>(loc, (pcrel >> 16) as u32),
-                R_ARM_THM_MOVT_PREL => write_thm_mov::<End>(loc, (pcrel >> 16) as u32),
-                R_ARM_MOVT_ABS => write_arm_mov::<End>(loc, (sa >> 16) as u32),
-                R_ARM_THM_MOVT_ABS => write_thm_mov::<End>(loc, (sa >> 16) as u32),
+                R_ARM_THM_MOVW_ABS_NC => write_thm_mov::<Self>(loc, (sa | t) as u32),
+                R_ARM_MOVT_PREL => write_arm_mov::<Self>(loc, (pcrel >> 16) as u32),
+                R_ARM_THM_MOVT_PREL => write_thm_mov::<Self>(loc, (pcrel >> 16) as u32),
+                R_ARM_MOVT_ABS => write_arm_mov::<Self>(loc, (sa >> 16) as u32),
+                R_ARM_THM_MOVT_ABS => write_thm_mov::<Self>(loc, (sa >> 16) as u32),
                 R_ARM_TLS_GD32 => {
                     write32(loc, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32)
                 }
@@ -671,9 +672,9 @@ where
                 R_ARM_THM_TLS_CALL => {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let val = align_to(tlsdesc_trampoline().wrapping_sub(p).wrapping_sub(4), 4);
-                        write_thm_b25::<End>(loc, val as u32);
+                        write_thm_b25::<Self>(loc, val as u32);
                         // rewrite BL with BLX
-                        set_thm_bl::<End>(loc, false);
+                        set_thm_bl::<Self>(loc, false);
                     } else if sym.has_gottp(&ctx.symbols) {
                         // Since `ldr r0, [pc, r0]` is not representable in Thumb,
                         // we use two instructions instead.
@@ -706,8 +707,8 @@ where
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_ARM_ABS32 => End::write_u32(loc, tombstone.unwrap_or(s.wrapping_add(a)) as u32),
-                R_ARM_TLS_LDO32 => End::write_u32(
+                R_ARM_ABS32 => Self::write_u32(loc, tombstone.unwrap_or(s.wrapping_add(a)) as u32),
+                R_ARM_TLS_LDO32 => Self::write_u32(
                     loc,
                     tombstone.unwrap_or(s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)) as u32,
                 ),
@@ -758,12 +759,12 @@ where
             let p = addr + thunk.offsets[i];
             let entry = &mut buf[thunk.offsets[i] as usize..];
             entry[..16].copy_from_slice(&ENTRY);
-            End::write_u32(&mut entry[12..], s.wrapping_sub(p).wrapping_sub(16) as u32);
+            Self::write_u32(&mut entry[12..], s.wrapping_sub(p).wrapping_sub(16) as u32);
         }
     }
 
     fn finish_output(ctx: &Context<Self>, buf: &mut [u8]) {
-        if !End::IS_LITTLE {
+        if !Self::IS_LITTLE {
             swap_code_bytes(ctx, buf);
         }
     }
@@ -775,42 +776,43 @@ where
             R_ARM_ABS32 | R_ARM_REL32 | R_ARM_BASE_PREL | R_ARM_GOTOFF32 | R_ARM_GOT_PREL
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1
-            | R_ARM_TARGET2 => End::write_u32(loc, val as u32),
+            | R_ARM_TARGET2 => Self::write_u32(loc, val as u32),
             R_ARM_THM_JUMP8 => {
-                End::write_u16(loc, (End::read_u16(loc) & 0xff00) | b(v, 8, 1) as u16)
+                Self::write_u16(loc, (Self::read_u16(loc) & 0xff00) | b(v, 8, 1) as u16)
             }
             R_ARM_THM_JUMP11 => {
-                End::write_u16(loc, (End::read_u16(loc) & 0xf800) | b(v, 11, 1) as u16)
+                Self::write_u16(loc, (Self::read_u16(loc) & 0xf800) | b(v, 11, 1) as u16)
             }
-            R_ARM_THM_JUMP19 => write_thm_b21::<End>(loc, val as u32),
+            R_ARM_THM_JUMP19 => write_thm_b21::<Self>(loc, val as u32),
             R_ARM_THM_CALL | R_ARM_THM_JUMP24 | R_ARM_THM_TLS_CALL => {
-                write_thm_b25::<End>(loc, val as u32)
+                write_thm_b25::<Self>(loc, val as u32)
             }
             R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 | R_ARM_TLS_CALL => {
-                End::write_u32(loc, (End::read_u32(loc) & 0xff00_0000) | b(v, 25, 2))
+                Self::write_u32(loc, (Self::read_u32(loc) & 0xff00_0000) | b(v, 25, 2))
             }
             R_ARM_MOVW_PREL_NC | R_ARM_MOVW_ABS_NC | R_ARM_MOVT_PREL | R_ARM_MOVT_ABS => {
-                write_arm_mov::<End>(loc, val as u32)
+                write_arm_mov::<Self>(loc, val as u32)
             }
-            R_ARM_PREL31 => {
-                End::write_u32(loc, (End::read_u32(loc) & 0x8000_0000) | (val as u32 & 0x7fff_ffff))
-            }
+            R_ARM_PREL31 => Self::write_u32(
+                loc,
+                (Self::read_u32(loc) & 0x8000_0000) | (val as u32 & 0x7fff_ffff),
+            ),
             R_ARM_THM_MOVW_PREL_NC
             | R_ARM_THM_MOVW_ABS_NC
             | R_ARM_THM_MOVT_PREL
-            | R_ARM_THM_MOVT_ABS => write_thm_mov::<End>(loc, val as u32),
+            | R_ARM_THM_MOVT_ABS => write_thm_mov::<Self>(loc, val as u32),
             _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
         }
     }
 
     fn get_addend(loc: &[u8], rel: &ElfRel<Self>) -> i64 {
-        let arm = || End::read_u32(loc) as u64;
-        let thm = |i: usize| End::read_u16(&loc[i * 2..]) as u64;
+        let arm = || Self::read_u32(loc) as u64;
+        let thm = |i: usize| Self::read_u16(&loc[i * 2..]) as u64;
         match rel.r_type() {
             R_ARM_ABS32 | R_ARM_REL32 | R_ARM_BASE_PREL | R_ARM_GOTOFF32 | R_ARM_GOT_PREL
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1
-            | R_ARM_TARGET2 => End::read_u32(loc) as i32 as i64,
+            | R_ARM_TARGET2 => Self::read_u32(loc) as i32 as i64,
             R_ARM_THM_JUMP8 => sign_extend(thm(0), 8) << 1,
             R_ARM_THM_JUMP11 => sign_extend(thm(0), 11) << 1,
             R_ARM_THM_JUMP19 => {

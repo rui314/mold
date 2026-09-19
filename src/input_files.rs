@@ -30,7 +30,6 @@ use crate::symbol::{
     Bins, NEEDS_PLT, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, hash_key,
 };
-use crate::util::endian::Endian;
 use crate::util::perf::Counter;
 use crate::util::{self, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb};
 use crate::{error, fatal, out, warn};
@@ -466,7 +465,7 @@ impl<E: Layout> InputFile<E> {
 
         let mut file = Self {
             mf: Some(mf),
-            is_little_endian: E::Endian::IS_LITTLE,
+            is_little_endian: E::IS_LITTLE,
             e_flags: ehdr.e_flags.get(),
             shdrs,
             ..Self::empty(mf.name.to_string_lossy())
@@ -1150,7 +1149,7 @@ impl<E: Arch> ObjectFile<E> {
     #[inline]
     pub(crate) fn shndx_from(&self, idx: usize, st_shndx: u32) -> usize {
         if st_shndx == SHN_XINDEX {
-            self.symtab_shndx.get(idx).map_or(0, |bytes| E::Endian::read_u32(bytes)) as usize
+            self.symtab_shndx.get(idx).map_or(0, |bytes| E::read_u32(bytes)) as usize
         } else if st_shndx >= SHN_LORESERVE {
             0
         } else {
@@ -1497,7 +1496,7 @@ impl<E: Arch> ObjectFile<E> {
             if contents.len() < 4 {
                 fatal!("{self}: empty SHT_GROUP");
             }
-            let kind = E::Endian::read_u32(contents);
+            let kind = E::read_u32(contents);
             if kind == 0 {
                 continue;
             }
@@ -1549,8 +1548,8 @@ impl<E: Arch> ObjectFile<E> {
             }
 
             while desc.len() >= 8 {
-                let ty = E::Endian::read_u32(desc);
-                let size = E::Endian::read_u32(&desc[4..]) as usize;
+                let ty = E::read_u32(desc);
+                let size = E::read_u32(&desc[4..]) as usize;
                 desc = &desc[8..];
 
                 // The majority of currently defined .note.gnu.property
@@ -1562,7 +1561,7 @@ impl<E: Arch> ObjectFile<E> {
                 // - GNU_PROPERTY_STACK_SIZE
                 // - GNU_PROPERTY_NO_COPY_ON_PROTECTED
                 if size == 4 && desc.len() >= 4 {
-                    *self.gnu_properties.entry(ty).or_insert(0) |= E::Endian::read_u32(desc);
+                    *self.gnu_properties.entry(ty).or_insert(0) |= E::read_u32(desc);
                 }
                 desc =
                     &desc[(align_to(size as u64, E::WORD_SIZE as u64) as usize).min(desc.len())..];
@@ -1582,7 +1581,7 @@ impl<E: Arch> ObjectFile<E> {
         let mut data = &data[1..];
 
         while !data.is_empty() {
-            let sz = E::Endian::read_u32(data) as usize;
+            let sz = E::read_u32(data) as usize;
             if data.len() < sz || sz < 4 {
                 fatal!("{self}: corrupted .riscv.attributes section");
             }
@@ -2055,13 +2054,13 @@ impl<E: Arch> ObjectFile<E> {
             let mut rel_idx = 0;
             let mut pos = 0;
             while pos + 4 <= contents.len() {
-                let size = E::Endian::read_u32(&contents[pos..]) as usize;
+                let size = E::read_u32(&contents[pos..]) as usize;
                 if size == 0 {
                     break;
                 }
                 let begin_offset = pos;
                 let end_offset = pos + size + 4;
-                let id = E::Endian::read_u32(&contents[pos + 4..]);
+                let id = E::read_u32(&contents[pos + 4..]);
                 pos = end_offset;
 
                 let rel_begin = rel_idx;
@@ -2110,7 +2109,7 @@ impl<E: Arch> ObjectFile<E> {
             // Associate CIEs to FDEs.
             for fde in &mut new_fdes {
                 let off = fde.input_offset as usize + 4;
-                let cie_offset = E::Endian::read_i32(&contents[off..]) as i64;
+                let cie_offset = E::read_i32(&contents[off..]) as i64;
                 let target = off as i64 - cie_offset;
                 // CIEs were appended in input-offset order.
                 let Ok(ci) = new_cies.binary_search_by_key(&target, |c| i64::from(c.input_offset))
@@ -2239,7 +2238,7 @@ impl<E: Arch> ObjectFile<E> {
                     addend: rel.r_addend(),
                     fre,
                     func_size: ent.func_size.get(),
-                    num_fres: E::Endian::read_u16(&data[off..]) as u32,
+                    num_fres: E::read_u16(&data[off..]) as u32,
                 });
             }
             self.sframe_fdes.extend(new_fdes);
@@ -2657,10 +2656,10 @@ impl<E: Arch> ObjectFile<E> {
             // Note that size doesn't take the size field itself into account, so
             // the actual size of a 64-bit CU including the size field is 12 bytes
             // larger than the value in the size field.
-            if E::Endian::read_u32(&buf) != 0xffff_ffff {
+            if E::read_u32(&buf) != 0xffff_ffff {
                 return true;
             }
-            let first_size = E::Endian::read_u64(&buf[4..]) as usize + 12;
+            let first_size = E::read_u64(&buf[4..]) as usize + 12;
             if first_size as u64 == isec.sh_size {
                 continue;
             }
@@ -2678,10 +2677,10 @@ impl<E: Arch> ObjectFile<E> {
             let contents = isec.contents();
             let mut p = first_size;
             while contents.len() - p >= 12 {
-                if E::Endian::read_u32(&contents[p..]) != 0xffff_ffff {
+                if E::read_u32(&contents[p..]) != 0xffff_ffff {
                     return true;
                 }
-                p += E::Endian::read_u64(&contents[p + 4..]) as usize + 12;
+                p += E::read_u64(&contents[p + 4..]) as usize + 12;
             }
         }
         false
@@ -2758,7 +2757,7 @@ impl<'a> SymtabEntries<'a> {
         let size = std::mem::size_of::<ElfSym<E>>();
         esym.write(&mut self.syms[self.len * size..(self.len + 1) * size]);
         if let Some(entries) = &mut self.xindex {
-            E::Endian::write_u32(&mut entries[self.len * 4..], xindex);
+            E::write_u32(&mut entries[self.len * 4..], xindex);
         }
         self.len += 1;
     }
@@ -2949,7 +2948,7 @@ fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, dat
 // the attribute header), a one-byte info field and a number of
 // variable-width data words encoded in that info field.
 fn sframe_fre_block_size<E: Arch>(data: &[u8], offset: usize) -> usize {
-    let num_fres = E::Endian::read_u16(&data[offset..]) as usize;
+    let num_fres = E::read_u16(&data[offset..]) as usize;
     let addr_size = 1usize << bits(data[offset + 2] as u64, 3, 0);
     let mut p = offset + 5;
     for _ in 0..num_fres {
@@ -3074,7 +3073,7 @@ impl<E: Arch> SharedFile<E> {
             let mut ver = if vers.is_empty() {
                 VER_NDX_GLOBAL as u16
             } else {
-                E::Endian::read_u16(&vers[i]) & !(VERSYM_HIDDEN as u16)
+                E::read_u16(&vers[i]) & !(VERSYM_HIDDEN as u16)
             };
 
             // A version index of 0 (VER_NDX_LOCAL) is valid only for unversioned
@@ -3103,7 +3102,7 @@ impl<E: Arch> SharedFile<E> {
             // `foo@@VERSION` definition instead. Versyms of undefined symbols
             // encode required versions, so they are exempt.
             if !vers.is_empty()
-                && E::Endian::read_u16(&vers[i]) == (VERSYM_HIDDEN | VER_NDX_GLOBAL) as u16
+                && E::read_u16(&vers[i]) == (VERSYM_HIDDEN | VER_NDX_GLOBAL) as u16
                 && !esym.is_undef()
             {
                 continue;
@@ -3144,7 +3143,7 @@ impl<E: Arch> SharedFile<E> {
                 // Versioned undefined symbol
                 let key = versioned_key();
                 (key, Some(key))
-            } else if E::Endian::read_u16(&vers[i]) & VERSYM_HIDDEN as u16 != 0 {
+            } else if E::read_u16(&vers[i]) & VERSYM_HIDDEN as u16 != 0 {
                 // Versioned non-default symbol
                 (versioned_key(), None)
             } else {

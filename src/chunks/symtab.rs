@@ -9,7 +9,6 @@ use crate::elf::*;
 use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::{InputSection, r_delta};
 use crate::symbol::{AddrFlags, OriginValue, Symbol};
-use crate::util::endian::Endian;
 
 // .symtab contains non-dynamic symbols. The section is not needed at
 // runtime and can be stripped from an ELF file without affecting the
@@ -83,7 +82,7 @@ pub fn copy_buf<E: Arch>(
         esym.set_type(STT_SECTION);
         match xindex.as_deref_mut() {
             Some(xindex) => {
-                E::Endian::write_u32(&mut xindex[hdr.shndx as usize * 4..], hdr.shndx);
+                E::write_u32(&mut xindex[hdr.shndx as usize * 4..], hdr.shndx);
                 esym.set_st_shndx(SHN_XINDEX);
             }
             None => esym.set_st_shndx(hdr.shndx),

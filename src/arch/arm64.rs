@@ -20,8 +20,6 @@
 //! Instructions are little-endian even on big-endian targets, where only
 //! data is byte-swapped.
 
-use std::marker::PhantomData;
-
 use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -30,32 +28,22 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub64, Ul64};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
 /// ARM64, in either byte order.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Arm64Target<End>(PhantomData<End>);
+pub struct Arm64Target<const LE: bool>;
 
-pub type Arm64 = Arm64Target<LittleEndian>;
-pub type Arm64Be = Arm64Target<BigEndian>;
+pub type Arm64 = Arm64Target<true>;
+pub type Arm64Be = Arm64Target<false>;
 
-impl Layout for Arm64Target<LittleEndian> {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = ElfRela<Self>;
-}
-
-impl Layout for Arm64Target<BigEndian> {
-    type Endian = BigEndian;
-    type Word = Ub64;
-    type Sym = Elf64Sym<BigEndian>;
-    type Phdr = Elf64Phdr<BigEndian>;
-    type Chdr = Elf64Chdr<BigEndian>;
+impl<const LE: bool> Layout for Arm64Target<LE> {
+    const IS_LITTLE: bool = LE;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
@@ -115,10 +103,7 @@ fn is_add(loc: &[u8]) -> bool {
 
 const NOP: u32 = 0xd503_201f;
 
-impl<End: Endian> Arm64Target<End>
-where
-    Self: Layout<Endian = End>,
-{
+impl<const LE: bool> Arm64Target<LE> {
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
     /// which the psABI allows when the target is within ±1 MiB.
     fn relaxes_adrp_add(
@@ -157,13 +142,10 @@ where
     }
 }
 
-impl<End: Endian> Arch for Arm64Target<End>
-where
-    Self: Layout<Endian = End>,
-{
+impl<const LE: bool> Arch for Arm64Target<LE> {
     type InputSectionExtra = ();
 
-    const NAME: &'static str = if End::IS_LITTLE { "arm64" } else { "arm64be" };
+    const NAME: &'static str = if Self::IS_LITTLE { "arm64" } else { "arm64be" };
     const FAMILY: Family = Family::Arm64;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_AARCH64;
@@ -171,7 +153,7 @@ where
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
-    const SFRAME_ABI: Option<u8> = Some(if End::IS_LITTLE {
+    const SFRAME_ABI: Option<u8> = Some(if Self::IS_LITTLE {
         SFRAME_ABI_AARCH64_ENDIAN_LITTLE
     } else {
         SFRAME_ABI_AARCH64_ENDIAN_BIG
@@ -260,12 +242,12 @@ where
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
         match rel.r_type() {
             R_NONE => {}
-            R_AARCH64_ABS64 => End::write_u64(loc, val),
+            R_AARCH64_ABS64 => Self::write_u64(loc, val),
             R_AARCH64_PREL32 => {
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
-                End::write_u32(loc, val.wrapping_sub(p) as u32);
+                Self::write_u32(loc, val.wrapping_sub(p) as u32);
             }
-            R_AARCH64_PREL64 => End::write_u64(loc, val.wrapping_sub(p)),
+            R_AARCH64_PREL64 => Self::write_u64(loc, val.wrapping_sub(p)),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -523,12 +505,12 @@ where
                 }
                 R_AARCH64_PLT32 => {
                     check(pcrel as i64, -(1 << 31), 1 << 31);
-                    End::write_u32(loc, pcrel as u32);
+                    Self::write_u32(loc, pcrel as u32);
                 }
                 R_AARCH64_GOTPCREL32 => {
                     let val = g().wrapping_add(got).wrapping_add(a).wrapping_sub(p);
                     check(val as i64, -(1 << 31), 1 << 31);
-                    End::write_u32(loc, val as u32);
+                    Self::write_u32(loc, val as u32);
                 }
                 R_AARCH64_CONDBR19 | R_AARCH64_LD_PREL_LO19 => {
                     check(pcrel as i64, -(1 << 20), 1 << 20);
@@ -536,13 +518,13 @@ where
                 }
                 R_AARCH64_PREL16 => {
                     check(pcrel as i64, -(1 << 15), 1 << 16);
-                    End::write_u16(loc, pcrel as u16);
+                    Self::write_u16(loc, pcrel as u16);
                 }
                 R_AARCH64_PREL32 => {
                     check(pcrel as i64, -(1 << 31), 1 << 32);
-                    End::write_u32(loc, pcrel as u32);
+                    Self::write_u32(loc, pcrel as u32);
                 }
-                R_AARCH64_PREL64 => End::write_u64(loc, pcrel),
+                R_AARCH64_PREL64 => Self::write_u64(loc, pcrel),
                 R_AARCH64_LD64_GOT_LO12_NC => {
                     or_insn(loc, (bits(g().wrapping_add(got).wrapping_add(a), 11, 3) << 10) as u32)
                 }
@@ -707,16 +689,16 @@ where
 
             match rel.r_type() {
                 R_AARCH64_ABS64 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => End::write_u64(loc, v),
-                    None => End::write_u64(loc, s.wrapping_add(a)),
+                    Some(v) => Self::write_u64(loc, v),
+                    None => Self::write_u64(loc, s.wrapping_add(a)),
                 },
                 R_AARCH64_ABS32 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 32);
-                    End::write_u32(loc, s.wrapping_add(a) as u32);
+                    Self::write_u32(loc, s.wrapping_add(a) as u32);
                 }
                 R_AARCH64_TLS_DTPREL64 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => End::write_u64(loc, v),
-                    None => End::write_u64(loc, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
+                    Some(v) => Self::write_u64(loc, v),
+                    None => Self::write_u64(loc, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
                 },
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",

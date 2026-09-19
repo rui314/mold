@@ -72,7 +72,6 @@ use crate::elf::*;
 use crate::fatal;
 use crate::input_files::display_file;
 use crate::output_file::{OutputFile, split_at_offsets};
-use crate::util::endian::Endian;
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -261,7 +260,7 @@ impl<'a, E: Arch> Reader<'a, E> {
         let bytes = self.take(n);
         match n {
             1 => bytes[0] as u64,
-            2 => E::Endian::read_u16(bytes) as u64,
+            2 => E::read_u16(bytes) as u64,
             3 => {
                 if E::IS_LITTLE_ENDIAN {
                     bytes[0] as u64 | (bytes[1] as u64) << 8 | (bytes[2] as u64) << 16
@@ -269,8 +268,8 @@ impl<'a, E: Arch> Reader<'a, E> {
                     (bytes[0] as u64) << 16 | (bytes[1] as u64) << 8 | bytes[2] as u64
                 }
             }
-            4 => E::Endian::read_u32(bytes) as u64,
-            8 => E::Endian::read_u64(bytes),
+            4 => E::read_u32(bytes) as u64,
+            8 => E::read_u64(bytes),
             _ => unreachable!("unsupported integer size"),
         }
     }

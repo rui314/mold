@@ -5,7 +5,6 @@ use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::SymbolId;
-use crate::util::endian::Endian;
 
 // ComdatGroupSection represents a comdat group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
@@ -44,8 +43,8 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
 
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.comdat_group_sections[i as usize];
-    E::Endian::write_u32(buf, GRP_COMDAT);
+    E::write_u32(buf, GRP_COMDAT);
     for (j, &member) in sec.members.iter().enumerate() {
-        E::Endian::write_u32(&mut buf[4 + j * 4..], ctx.chunk_header(member).shndx);
+        E::write_u32(&mut buf[4 + j * 4..], ctx.chunk_header(member).shndx);
     }
 }

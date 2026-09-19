@@ -23,18 +23,18 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{BigEndian, Ub32, write_ub16, write_ub32};
+use crate::util::endian::{write_ub16, write_ub32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct M68k;
 
 impl Layout for M68k {
-    type Endian = BigEndian;
-    type Word = Ub32;
-    type Sym = Elf32Sym<BigEndian>;
-    type Phdr = Elf32Phdr<BigEndian>;
-    type Chdr = Elf32Chdr<BigEndian>;
+    const IS_LITTLE: bool = false;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 

@@ -66,9 +66,7 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{
-    BigEndian, Ub64, read_ub16, read_ub32, write_ub16, write_ub32, write_ub64,
-};
+use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
 use crate::util::{bit, bits};
 use crate::{error, fatal};
 
@@ -76,11 +74,11 @@ use crate::{error, fatal};
 pub struct Sparc64;
 
 impl Layout for Sparc64 {
-    type Endian = BigEndian;
-    type Word = Ub64;
-    type Sym = Elf64Sym<BigEndian>;
-    type Phdr = Elf64Phdr<BigEndian>;
-    type Chdr = Elf64Chdr<BigEndian>;
+    const IS_LITTLE: bool = false;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = Sparc64Rela;
 }
 

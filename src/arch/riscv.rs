@@ -20,8 +20,6 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
-use std::marker::PhantomData;
-
 use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -33,52 +31,33 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ub64, Ul32, Ul64};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};
 
 /// RISC-V of a given word size and byte order.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct RiscvTarget<End, const IS_64: bool>(PhantomData<End>);
+pub struct RiscvTarget<const LE: bool, const IS_64: bool>;
 
-pub type Riscv64 = RiscvTarget<LittleEndian, true>;
-pub type Riscv64Be = RiscvTarget<BigEndian, true>;
-pub type Riscv32 = RiscvTarget<LittleEndian, false>;
-pub type Riscv32Be = RiscvTarget<BigEndian, false>;
+pub type Riscv64 = RiscvTarget<true, true>;
+pub type Riscv64Be = RiscvTarget<false, true>;
+pub type Riscv32 = RiscvTarget<true, false>;
+pub type Riscv32Be = RiscvTarget<false, false>;
 
-impl Layout for RiscvTarget<LittleEndian, true> {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
+impl<const LE: bool> Layout for RiscvTarget<LE, true> {
+    const IS_LITTLE: bool = LE;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
-impl Layout for RiscvTarget<BigEndian, true> {
-    type Endian = BigEndian;
-    type Word = Ub64;
-    type Sym = Elf64Sym<BigEndian>;
-    type Phdr = Elf64Phdr<BigEndian>;
-    type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = ElfRela<Self>;
-}
-
-impl Layout for RiscvTarget<LittleEndian, false> {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = ElfRela<Self>;
-}
-
-impl Layout for RiscvTarget<BigEndian, false> {
-    type Endian = BigEndian;
-    type Word = Ub32;
-    type Sym = Elf32Sym<BigEndian>;
-    type Phdr = Elf32Phdr<BigEndian>;
-    type Chdr = Elf32Chdr<BigEndian>;
+impl<const LE: bool> Layout for RiscvTarget<LE, false> {
+    const IS_LITTLE: bool = LE;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
@@ -272,13 +251,13 @@ fn is_got_load_pair<E: Arch>(
             == rd(&contents[rels[i + 2].r_offset() as usize..])
 }
 
-impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64>
+impl<const LE: bool, const IS_64: bool> Arch for RiscvTarget<LE, IS_64>
 where
-    Self: Layout<Endian = End>,
+    Self: Layout,
 {
     type InputSectionExtra = Box<[RelocDelta]>;
 
-    const NAME: &'static str = match (IS_64, End::IS_LITTLE) {
+    const NAME: &'static str = match (IS_64, Self::IS_LITTLE) {
         (true, true) => "riscv64",
         (true, false) => "riscv64be",
         (false, true) => "riscv32",
@@ -385,20 +364,20 @@ where
         let check = |val: i64, lo: i64, hi: i64| eh_frame::check_range(ctx, isec, rel, val, lo, hi);
         match rel.r_type() {
             R_NONE => {}
-            R_RISCV_ADD32 => End::write_u32(loc, End::read_u32(loc).wrapping_add(val as u32)),
+            R_RISCV_ADD32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_add(val as u32)),
             R_RISCV_SUB8 => loc[0] = loc[0].wrapping_sub(val as u8),
-            R_RISCV_SUB16 => End::write_u16(loc, End::read_u16(loc).wrapping_sub(val as u16)),
-            R_RISCV_SUB32 => End::write_u32(loc, End::read_u32(loc).wrapping_sub(val as u32)),
+            R_RISCV_SUB16 => Self::write_u16(loc, Self::read_u16(loc).wrapping_sub(val as u16)),
+            R_RISCV_SUB32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_sub(val as u32)),
             R_RISCV_SUB6 => {
                 loc[0] = (loc[0] & 0b1100_0000) | (loc[0].wrapping_sub(val as u8) & 0b0011_1111)
             }
             R_RISCV_SET6 => loc[0] = (loc[0] & 0b1100_0000) | (val as u8 & 0b0011_1111),
             R_RISCV_SET8 => loc[0] = val as u8,
-            R_RISCV_SET16 => End::write_u16(loc, val as u16),
-            R_RISCV_SET32 => End::write_u32(loc, val as u32),
+            R_RISCV_SET16 => Self::write_u16(loc, val as u16),
+            R_RISCV_SET32 => Self::write_u32(loc, val as u32),
             R_RISCV_32_PCREL => {
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
-                End::write_u32(loc, val.wrapping_sub(p) as u32);
+                Self::write_u32(loc, val.wrapping_sub(p) as u32);
             }
             _ => eh_frame::unsupported::<Self>(rel),
         }
@@ -520,7 +499,7 @@ where
             match rel.r_type() {
                 R_RISCV_32 => {
                     if IS_64 {
-                        End::write_u32(loc, sa as u32);
+                        Self::write_u32(loc, sa as u32);
                     }
                 }
                 // Handled as absolute relocations by the output section.
@@ -815,13 +794,13 @@ where
                     }
                 }
                 R_RISCV_ADD8 => loc[0] = loc[0].wrapping_add(sa as u8),
-                R_RISCV_ADD16 => End::write_u16(loc, End::read_u16(loc).wrapping_add(sa as u16)),
-                R_RISCV_ADD32 => End::write_u32(loc, End::read_u32(loc).wrapping_add(sa as u32)),
-                R_RISCV_ADD64 => End::write_u64(loc, End::read_u64(loc).wrapping_add(sa)),
+                R_RISCV_ADD16 => Self::write_u16(loc, Self::read_u16(loc).wrapping_add(sa as u16)),
+                R_RISCV_ADD32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_add(sa as u32)),
+                R_RISCV_ADD64 => Self::write_u64(loc, Self::read_u64(loc).wrapping_add(sa)),
                 R_RISCV_SUB8 => loc[0] = loc[0].wrapping_sub(sa as u8),
-                R_RISCV_SUB16 => End::write_u16(loc, End::read_u16(loc).wrapping_sub(sa as u16)),
-                R_RISCV_SUB32 => End::write_u32(loc, End::read_u32(loc).wrapping_sub(sa as u32)),
-                R_RISCV_SUB64 => End::write_u64(loc, End::read_u64(loc).wrapping_sub(sa)),
+                R_RISCV_SUB16 => Self::write_u16(loc, Self::read_u16(loc).wrapping_sub(sa as u16)),
+                R_RISCV_SUB32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_sub(sa as u32)),
+                R_RISCV_SUB64 => Self::write_u64(loc, Self::read_u64(loc).wrapping_sub(sa)),
                 R_RISCV_ALIGN => {
                     // A R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
                     // zero or more bytes so that the instruction after R_RISCV_ALIGN is
@@ -854,10 +833,10 @@ where
                 }
                 R_RISCV_SET6 => loc[0] = (loc[0] & 0b1100_0000) | (sa as u8 & 0b0011_1111),
                 R_RISCV_SET8 => loc[0] = sa as u8,
-                R_RISCV_SET16 => End::write_u16(loc, sa as u16),
-                R_RISCV_SET32 => End::write_u32(loc, sa as u32),
-                R_RISCV_PLT32 | R_RISCV_32_PCREL => End::write_u32(loc, pcrel as u32),
-                R_RISCV_GOT32_PCREL => End::write_u32(
+                R_RISCV_SET16 => Self::write_u16(loc, sa as u16),
+                R_RISCV_SET32 => Self::write_u32(loc, sa as u32),
+                R_RISCV_PLT32 | R_RISCV_32_PCREL => Self::write_u32(loc, pcrel as u32),
+                R_RISCV_GOT32_PCREL => Self::write_u32(
                     loc,
                     g().wrapping_add(got).wrapping_add(a).wrapping_sub(p) as u32,
                 ),
@@ -885,34 +864,34 @@ where
             let loc = &mut buf[off..];
 
             match rel.r_type() {
-                R_RISCV_32 => End::write_u32(loc, sa as u32),
+                R_RISCV_32 => Self::write_u32(loc, sa as u32),
                 R_RISCV_64 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => End::write_u64(loc, v),
-                    None => End::write_u64(loc, sa),
+                    Some(v) => Self::write_u64(loc, v),
+                    None => Self::write_u64(loc, sa),
                 },
                 R_RISCV_TLS_DTPREL32 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => End::write_u32(loc, v as u32),
-                    None => End::write_u32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
+                    Some(v) => Self::write_u32(loc, v as u32),
+                    None => Self::write_u32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),
                 },
                 R_RISCV_TLS_DTPREL64 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => End::write_u64(loc, v),
-                    None => End::write_u64(loc, sa.wrapping_sub(ctx.dtp_addr)),
+                    Some(v) => Self::write_u64(loc, v),
+                    None => Self::write_u64(loc, sa.wrapping_sub(ctx.dtp_addr)),
                 },
                 R_RISCV_ADD8 => loc[0] = loc[0].wrapping_add(sa as u8),
-                R_RISCV_ADD16 => End::write_u16(loc, End::read_u16(loc).wrapping_add(sa as u16)),
-                R_RISCV_ADD32 => End::write_u32(loc, End::read_u32(loc).wrapping_add(sa as u32)),
-                R_RISCV_ADD64 => End::write_u64(loc, End::read_u64(loc).wrapping_add(sa)),
+                R_RISCV_ADD16 => Self::write_u16(loc, Self::read_u16(loc).wrapping_add(sa as u16)),
+                R_RISCV_ADD32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_add(sa as u32)),
+                R_RISCV_ADD64 => Self::write_u64(loc, Self::read_u64(loc).wrapping_add(sa)),
                 R_RISCV_SUB8 => loc[0] = loc[0].wrapping_sub(sa as u8),
-                R_RISCV_SUB16 => End::write_u16(loc, End::read_u16(loc).wrapping_sub(sa as u16)),
-                R_RISCV_SUB32 => End::write_u32(loc, End::read_u32(loc).wrapping_sub(sa as u32)),
-                R_RISCV_SUB64 => End::write_u64(loc, End::read_u64(loc).wrapping_sub(sa)),
+                R_RISCV_SUB16 => Self::write_u16(loc, Self::read_u16(loc).wrapping_sub(sa as u16)),
+                R_RISCV_SUB32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_sub(sa as u32)),
+                R_RISCV_SUB64 => Self::write_u64(loc, Self::read_u64(loc).wrapping_sub(sa)),
                 R_RISCV_SUB6 => {
                     loc[0] = (loc[0] & 0b1100_0000) | (loc[0].wrapping_sub(sa as u8) & 0b0011_1111)
                 }
                 R_RISCV_SET6 => loc[0] = (loc[0] & 0b1100_0000) | (sa as u8 & 0b0011_1111),
                 R_RISCV_SET8 => loc[0] = sa as u8,
-                R_RISCV_SET16 => End::write_u16(loc, sa as u16),
-                R_RISCV_SET32 => End::write_u32(loc, sa as u32),
+                R_RISCV_SET16 => Self::write_u16(loc, sa as u16),
+                R_RISCV_SET32 => Self::write_u32(loc, sa as u32),
                 R_RISCV_SET_ULEB128 => overwrite_uleb(loc, sa),
                 R_RISCV_SUB_ULEB128 => {
                     let cur = read_uleb(&mut &loc[..]);
@@ -1312,7 +1291,7 @@ pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let sub_size = 4 + b"riscv\0".len() + sub_sub_size;
     let u32_bytes = |v: u32| {
         let mut bytes = [0u8; 4];
-        E::Endian::write_u32(&mut bytes, v);
+        E::write_u32(&mut bytes, v);
         bytes
     };
     let mut out = vec![b'A']; // Format version

@@ -16,7 +16,6 @@ use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
-use crate::util::endian::Endian;
 use crate::util::is_int;
 use crate::{error, fatal};
 
@@ -221,7 +220,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             dst[..contents.len()].copy_from_slice(contents);
 
             let cie = &file.cies[fde.cie_idx as usize];
-            E::Endian::write_u32(&mut dst[4..], (offset + 4 - cie.output_offset as u64) as u32);
+            E::write_u32(&mut dst[4..], (offset + 4 - cie.output_offset as u64) as u32);
             if ctx.args.relocatable {
                 continue;
             }
@@ -254,37 +253,31 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             // the empty FDE instead of the real one. We write a tombstone
             // value instead.
             let ptr = &dst[8 + cie.fde_ptr_size as usize..];
-            let range = if cie.fde_ptr_size == 4 {
-                E::Endian::read_u32(ptr) as u64
-            } else {
-                E::Endian::read_u64(ptr)
-            };
+            let range =
+                if cie.fde_ptr_size == 4 { E::read_u32(ptr) as u64 } else { E::read_u64(ptr) };
             if range == 0 {
-                E::Endian::write_i32(entry, i32::MAX);
-                E::Endian::write_i32(&mut entry[4..], 0);
+                E::write_i32(entry, i32::MAX);
+                E::write_i32(&mut entry[4..], 0);
             } else {
                 // The table entries are 32-bit offsets from .eh_frame_hdr.
                 if !is_int(func_addr.wrapping_sub(origin) as i64, 32) {
                     let sym = &ctx.symbols[file.base.symbols[rels[0].r_sym() as usize]];
                     error!("{file}: {sym}: address out of range of .eh_frame_hdr");
                 }
-                E::Endian::write_i32(entry, func_addr.wrapping_sub(origin) as i32);
-                E::Endian::write_i32(
-                    &mut entry[4..],
-                    (sh_addr + offset).wrapping_sub(origin) as i32,
-                );
+                E::write_i32(entry, func_addr.wrapping_sub(origin) as i32);
+                E::write_i32(&mut entry[4..], (sh_addr + offset).wrapping_sub(origin) as i32);
             }
         }
     });
 
     // Write a terminator.
-    E::Endian::write_u32(&mut buf[sh_size as usize - 4..], 0);
+    E::write_u32(&mut buf[sh_size as usize - 4..], 0);
 
     // Sort .eh_frame_hdr contents.
     if let Some(table) = hdr_table {
         let (entries, remainder) = table.as_chunks_mut::<8>();
         debug_assert!(remainder.is_empty());
-        entries.par_sort_unstable_by_key(|entry| E::Endian::read_i32(entry));
+        entries.par_sort_unstable_by_key(|entry| E::read_i32(entry));
     }
 }
 

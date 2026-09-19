@@ -59,7 +59,6 @@
 //!    output from the linker contains lots of text relocations. That's not
 //!    a problem with embedded programming, I guess.
 
-use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
 use crate::arch::{Arch, Family};
@@ -69,30 +68,31 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{BigEndian, Endian, LittleEndian, Ub32, Ul32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Sh4Target<End>(PhantomData<End>);
+pub struct Sh4Target<const LE: bool>;
 
-pub type Sh4 = Sh4Target<LittleEndian>;
-pub type Sh4Be = Sh4Target<BigEndian>;
+pub type Sh4 = Sh4Target<true>;
+pub type Sh4Be = Sh4Target<false>;
 
-impl Layout for Sh4Target<LittleEndian> {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
+// One impl per byte order rather than one generic impl keeps Self::Word
+// abstract in the generic Arch impl, so word accessors return u64 there.
+impl Layout for Sh4Target<true> {
+    const IS_LITTLE: bool = true;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
-impl Layout for Sh4Target<BigEndian> {
-    type Endian = BigEndian;
-    type Word = Ub32;
-    type Sym = Elf32Sym<BigEndian>;
-    type Phdr = Elf32Phdr<BigEndian>;
-    type Chdr = Elf32Chdr<BigEndian>;
+impl Layout for Sh4Target<false> {
+    const IS_LITTLE: bool = false;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
@@ -121,21 +121,24 @@ fn addend_in_place(r_type: u32) -> bool {
     )
 }
 
-impl<End: Endian> Sh4Target<End> {
+impl<const LE: bool> Sh4Target<LE>
+where
+    Self: Layout,
+{
     fn write_insns(buf: &mut [u8], insns: &[u16]) {
         for (i, &insn) in insns.iter().enumerate() {
-            End::write_u16(&mut buf[i * 2..], insn);
+            Self::write_u16(&mut buf[i * 2..], insn);
         }
     }
 }
 
-impl<End: Endian> Arch for Sh4Target<End>
+impl<const LE: bool> Arch for Sh4Target<LE>
 where
-    Self: Layout<Endian = End>,
+    Self: Layout,
 {
     type InputSectionExtra = ();
 
-    const NAME: &'static str = if End::IS_LITTLE { "sh4" } else { "sh4be" };
+    const NAME: &'static str = if Self::IS_LITTLE { "sh4" } else { "sh4be" };
     const FAMILY: Family = Family::Sh4;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_SH;
@@ -143,7 +146,7 @@ where
     const PLT_SIZE: u64 = 20;
     const PLTGOT_SIZE: u64 = 12;
     // illegal instruction
-    const TRAP: &'static [u8] = if End::IS_LITTLE { &[0xfd, 0xff] } else { &[0xff, 0xfd] };
+    const TRAP: &'static [u8] = if Self::IS_LITTLE { &[0xfd, 0xff] } else { &[0xff, 0xfd] };
 
     const R_COPY: u32 = R_SH_COPY;
     const R_GLOB_DAT: u32 = R_SH_GLOB_DAT;
@@ -160,12 +163,12 @@ where
     }
 
     fn get_addend(loc: &[u8], rel: &ElfRel<Self>) -> i64 {
-        if addend_in_place(rel.r_type()) { End::read_u32(loc) as i32 as i64 } else { 0 }
+        if addend_in_place(rel.r_type()) { Self::read_u32(loc) as i32 as i64 } else { 0 }
     }
 
     fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel<Self>) {
         if addend_in_place(rel.r_type()) {
-            End::write_u32(loc, val as u32);
+            Self::write_u32(loc, val as u32);
         }
     }
 
@@ -182,7 +185,7 @@ where
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
             let got = ctx.got.hdr.shdr.sh_addr.get();
-            End::write_u32(&mut buf[12..], gotplt.wrapping_sub(got) as u32);
+            Self::write_u32(&mut buf[12..], gotplt.wrapping_sub(got) as u32);
         } else {
             const INSN: [u16; 6] = [
                 0xd202, //    mov.l   1f, r2
@@ -193,7 +196,7 @@ where
                 0xfffd, //    (illegal)
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[12..], gotplt as u32);
+            Self::write_u32(&mut buf[12..], gotplt as u32);
         }
     }
 
@@ -209,7 +212,7 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOTPLT_ENTRY; 2: .long INDEX_IN_RELPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(
+            Self::write_u32(
                 &mut buf[12..],
                 gotplt.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
             );
@@ -223,9 +226,9 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOTPLT_ENTRY; 2: .long INDEX_IN_RELPLT
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[12..], gotplt as u32);
+            Self::write_u32(&mut buf[12..], gotplt as u32);
         }
-        End::write_u32(
+        Self::write_u32(
             &mut buf[16..],
             sym.plt_idx(&ctx.symbols).unwrap() * std::mem::size_of::<ElfRel<Self>>() as u32,
         );
@@ -241,7 +244,7 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOT_ENTRY
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[8..], got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32);
+            Self::write_u32(&mut buf[8..], got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32);
         } else {
             const INSN: [u16; 4] = [
                 0xd001, //    mov.l   1f, r0
@@ -250,7 +253,7 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOT_ENTRY
             Self::write_insns(buf, &INSN);
-            End::write_u32(&mut buf[8..], got as u32);
+            Self::write_u32(&mut buf[8..], got as u32);
         }
     }
 
@@ -264,8 +267,8 @@ where
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_SH_DIR32 => End::write_u32(loc, val as u32),
-            R_SH_REL32 => End::write_u32(loc, val.wrapping_sub(p) as u32),
+            R_SH_DIR32 => Self::write_u32(loc, val as u32),
+            R_SH_REL32 => Self::write_u32(loc, val.wrapping_sub(p) as u32),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -343,7 +346,7 @@ where
                 R_SH_TLS_LE_32 => sa.wrapping_sub(ctx.tp_addr),
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             };
-            End::write_u32(loc, val as u32);
+            Self::write_u32(loc, val as u32);
         }
     }
 
@@ -361,9 +364,9 @@ where
             let loc = &mut buf[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_SH_DIR32 => End::write_u32(loc, tombstone.unwrap_or(sa) as u32),
+                R_SH_DIR32 => Self::write_u32(loc, tombstone.unwrap_or(sa) as u32),
                 R_SH_TLS_LDO_32 => {
-                    End::write_u32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
+                    Self::write_u32(loc, tombstone.unwrap_or(sa.wrapping_sub(ctx.dtp_addr)) as u32)
                 }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",

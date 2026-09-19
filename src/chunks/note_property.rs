@@ -6,7 +6,6 @@ use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::endian::Endian;
 
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.
@@ -87,14 +86,14 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.note_property.as_ref().unwrap();
     buf.fill(0);
-    E::Endian::write_u32(buf, 4); // Name size
-    E::Endian::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size.get() as u32 - 16); // Content size
-    E::Endian::write_u32(&mut buf[8..], NT_GNU_PROPERTY_TYPE_0);
+    E::write_u32(buf, 4); // Name size
+    E::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size.get() as u32 - 16); // Content size
+    E::write_u32(&mut buf[8..], NT_GNU_PROPERTY_TYPE_0);
     buf[12..16].copy_from_slice(b"GNU\0");
     for (i, &(ty, val)) in sec.contents.iter().enumerate() {
         let off = 16 + i * entry_size::<E>();
-        E::Endian::write_u32(&mut buf[off..], ty);
-        E::Endian::write_u32(&mut buf[off + 4..], 4);
-        E::Endian::write_u32(&mut buf[off + 8..], val); // Content
+        E::write_u32(&mut buf[off..], ty);
+        E::write_u32(&mut buf[off + 4..], 4);
+        E::write_u32(&mut buf[off + 8..], val); // Content
     }
 }

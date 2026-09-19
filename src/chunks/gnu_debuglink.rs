@@ -5,7 +5,6 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::util::align_to;
-use crate::util::endian::Endian;
 use crate::util::write_cstr;
 
 // .gnu_debuglink section contains a pathname and its CRC32 checksum for a
@@ -44,5 +43,5 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let filename = ctx.args.separate_debug_file.file_name().unwrap_or_default();
     write_cstr(buf, filename.as_encoded_bytes());
     let n = buf.len();
-    E::Endian::write_u32(&mut buf[n - 4..], sec.crc32);
+    E::write_u32(&mut buf[n - 4..], sec.crc32);
 }

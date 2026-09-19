@@ -15,7 +15,6 @@ use crate::input_sections::{InputSectionId, r_delta};
 use crate::symbol::{AddrFlags, NEEDS_CANONICAL, SymbolId};
 use crate::thunks::Thunk;
 use crate::util::align_to;
-use crate::util::endian::Endian;
 use crate::{error, warn};
 
 /// How a word-size absolute relocation is resolved.
@@ -106,9 +105,9 @@ impl<'a> OutputBuffer<'a> {
         let ptr = unsafe { self.ptr.add(offset as usize) };
         let slot = unsafe { std::slice::from_raw_parts_mut(ptr, E::WORD_SIZE) };
         if E::IS_64 {
-            E::Endian::write_u64(slot, value);
+            E::write_u64(slot, value);
         } else {
-            E::Endian::write_u32(slot, value as u32);
+            E::write_u32(slot, value as u32);
         }
     }
 }

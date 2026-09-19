@@ -35,9 +35,7 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{
-    LittleEndian, Ul32, Ul64, read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64,
-};
+use crate::util::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
 use crate::{error, fatal};
 
@@ -48,20 +46,20 @@ pub type LoongArch64 = LoongArchTarget<true>;
 pub type LoongArch32 = LoongArchTarget<false>;
 
 impl Layout for LoongArchTarget<true> {
-    type Endian = LittleEndian;
-    type Word = Ul64;
-    type Sym = Elf64Sym<LittleEndian>;
-    type Phdr = Elf64Phdr<LittleEndian>;
-    type Chdr = Elf64Chdr<LittleEndian>;
+    const IS_LITTLE: bool = true;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
 impl Layout for LoongArchTarget<false> {
-    type Endian = LittleEndian;
-    type Word = Ul32;
-    type Sym = Elf32Sym<LittleEndian>;
-    type Phdr = Elf32Phdr<LittleEndian>;
-    type Chdr = Elf32Chdr<LittleEndian>;
+    const IS_LITTLE: bool = true;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
 }
 
@@ -274,7 +272,7 @@ impl<const IS_64: bool> LoongArchTarget<IS_64> {
 
 impl<const IS_64: bool> Arch for LoongArchTarget<IS_64>
 where
-    Self: Layout<Endian = LittleEndian>,
+    Self: Layout,
 {
     type InputSectionExtra = Box<[RelocDelta]>;
 

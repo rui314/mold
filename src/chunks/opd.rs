@@ -13,7 +13,6 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::{AddrFlags, SymbolId};
-use crate::util::endian::Endian;
 
 pub const ENTRY_SIZE: u64 = 24;
 
@@ -100,8 +99,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let toc = toc(ctx);
     for (i, &id) in section(ctx).symbols.iter().enumerate() {
         let entry = &mut buf[i * ENTRY_SIZE as usize..];
-        E::Endian::write_u64(entry, ctx.symbols[id].addr_with(ctx, ENTRY_POINT));
-        E::Endian::write_u64(&mut entry[8..], toc);
-        E::Endian::write_u64(&mut entry[16..], 0);
+        E::write_u64(entry, ctx.symbols[id].addr_with(ctx, ENTRY_POINT));
+        E::write_u64(&mut entry[8..], toc);
+        E::write_u64(&mut entry[16..], 0);
     }
 }
