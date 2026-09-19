@@ -38,7 +38,6 @@ memchr = "2.8.3"
 memmap2 = "0.9"
 rayon = "1"
 rustc-demangle = "0.1"
-rustc-hash = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zstd = "0.13"
 
@@ -46,9 +45,4 @@ zstd = "0.13"
 cc = "1"
 
 [profile.release]
-debug = 1
-codegen-units = 16
 panic = "abort"
-
-[profile.dev]
-opt-level = 1
