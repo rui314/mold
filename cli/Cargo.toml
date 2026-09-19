@@ -14,6 +14,13 @@ name = "integration"
 path = "integration.rs"
 harness = false
 
+# The Mach-O shell tests need Apple's toolchain, so this target runs them
+# only on macOS and reports skipping elsewhere.
+[[test]]
+name = "macho"
+path = "macho.rs"
+harness = false
+
 [dependencies]
 mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "cc58b72775b8b5bc89ee37752af61fcb4f7c2909" }
 mold.workspace = true

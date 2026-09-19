@@ -395,7 +395,9 @@ fn replace_file_link(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
-fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
+/// Lays out the work directory. The ELF tests need mold-wrapper.so next
+/// to the linker for `mold -run`; the Mach-O tests do not.
+fn prepare_work_dir(mold: &Path, need_wrapper: bool) -> io::Result<PathBuf> {
     let mold = mold.canonicalize()?;
     let profile_dir = mold.parent().ok_or_else(|| {
         io::Error::new(
@@ -404,7 +406,7 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
         )
     })?;
     let wrapper = profile_dir.join("mold-wrapper.so");
-    if !wrapper.is_file() {
+    if need_wrapper && !wrapper.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("{} does not exist", wrapper.display()),
@@ -418,7 +420,9 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     fs::create_dir_all(&work_dir)?;
     replace_file_link(&mold, &work_dir.join("mold"))?;
     replace_file_link(&mold, &work_dir.join("ld"))?;
-    replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
+    if need_wrapper {
+        replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
+    }
     Ok(work_dir)
 }
 
@@ -465,24 +469,19 @@ fn log_says_skipped(path: &Path) -> bool {
     })
 }
 
-fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome, String> {
+fn run_process(
+    root: &Path,
+    job: &TestJob,
+    timeout: Duration,
+    set_env: &(dyn Fn(&mut Command, &TestJob) + Sync),
+) -> Result<Outcome, String> {
     let log = File::create(&job.log)
         .map_err(|err| format!("cannot create {}: {err}", job.log.display()))?;
     let stderr =
         log.try_clone().map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
     let mut command = Command::new(&job.script);
-    command
-        .current_dir(root)
-        .env("MACHINE", &job.target.machine)
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(stderr));
-    for (name, value) in [("TRIPLE", &job.target.triple), ("CPU", &job.target.cpu)] {
-        if let Some(value) = value {
-            command.env(name, value);
-        } else {
-            command.env_remove(name);
-        }
-    }
+    command.current_dir(root).stdout(Stdio::from(log)).stderr(Stdio::from(stderr));
+    set_env(&mut command, job);
 
     // A timeout must also kill compiler and QEMU children.
     #[cfg(unix)]
@@ -516,8 +515,26 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
     }
 }
 
-fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
-    let mut outcome = run_process(root, job, timeout).unwrap_or_else(|err| {
+/// The ELF scripts read the target from MACHINE, and TRIPLE and CPU when
+/// cross-linking.
+fn elf_env(command: &mut Command, job: &TestJob) {
+    command.env("MACHINE", &job.target.machine);
+    for (name, value) in [("TRIPLE", &job.target.triple), ("CPU", &job.target.cpu)] {
+        if let Some(value) = value {
+            command.env(name, value);
+        } else {
+            command.env_remove(name);
+        }
+    }
+}
+
+fn run_job(
+    root: &Path,
+    job: &TestJob,
+    timeout: Duration,
+    set_env: &(dyn Fn(&mut Command, &TestJob) + Sync),
+) -> TestResult {
+    let mut outcome = run_process(root, job, timeout, set_env).unwrap_or_else(|err| {
         eprintln!("{}: {err}", job.name);
         Outcome::Fail
     });
@@ -548,6 +565,16 @@ fn run_job(root: &Path, job: &TestJob, timeout: Duration) -> TestResult {
 }
 
 fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResult> {
+    run_jobs_with(root, jobs, options, elf_env)
+}
+
+fn run_jobs_with(
+    root: &Path,
+    jobs: Vec<TestJob>,
+    options: &Options,
+    set_env: impl Fn(&mut Command, &TestJob) + Sync,
+) -> Vec<TestResult> {
+    let set_env = &set_env;
     if jobs.is_empty() {
         return Vec::new();
     }
@@ -566,7 +593,7 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResul
                     let Some(job) = jobs.get(index) else {
                         break;
                     };
-                    if sender.send(run_job(root, job, options.timeout)).is_err() {
+                    if sender.send(run_job(root, job, options.timeout, set_env)).is_err() {
                         break;
                     }
                 }
@@ -631,7 +658,7 @@ fn print_summary(results: &[TestResult]) -> bool {
 
 pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     let options = parse_options();
-    let work_dir = prepare_work_dir(mold).unwrap_or_else(|err| {
+    let work_dir = prepare_work_dir(mold, true).unwrap_or_else(|err| {
         eprintln!("mold-tests: {err}");
         std::process::exit(1);
     });
@@ -653,6 +680,74 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     }
 
     let results = run_jobs(&work_dir, jobs, &options);
+    if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// Runs the Mach-O shell tests natively on a macOS host, for the host's
+/// architecture and, when Rosetta is available, for x86-64 as well. The
+/// scripts see the linker under test as `$mold`, invoked as `ld64.mold`,
+/// and the architecture as `$ARCH`.
+pub fn run_macho(cases_dir: &Path, mold: &Path) -> ExitCode {
+    let options = parse_options();
+    let work_dir = prepare_work_dir(mold, false).unwrap_or_else(|err| {
+        eprintln!("mold-tests: {err}");
+        std::process::exit(1);
+    });
+    let mut archs = vec![if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" }];
+    if archs[0] == "arm64"
+        && Command::new("arch")
+            .args(["-x86_64", "/usr/bin/true"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    {
+        archs.push("x86_64");
+    }
+    let scripts = discover_scripts(cases_dir).unwrap_or_else(|err| {
+        eprintln!("mold-tests: {err}");
+        std::process::exit(1);
+    });
+    let ld64 = work_dir.join("ld64.mold");
+    if let Err(err) = replace_file_link(&work_dir.join("mold"), &ld64) {
+        eprintln!("mold-tests: {err}");
+        return ExitCode::FAILURE;
+    }
+
+    let mut jobs = Vec::new();
+    for &arch in &archs {
+        let target = Arc::new(Target {
+            machine: arch.to_owned(),
+            triple: None,
+            cpu: None,
+            label: format!("macho-{arch}"),
+        });
+        let result_dir = work_dir.join("out/test/results").join(&target.label);
+        if !options.list
+            && let Err(err) = clear_results(&result_dir)
+        {
+            eprintln!("mold-tests: {err}");
+            return ExitCode::FAILURE;
+        }
+        for (name, script) in &scripts {
+            if matches_patterns(name, &options.patterns) {
+                jobs.push(TestJob {
+                    target: Arc::clone(&target),
+                    script: script.clone(),
+                    name: name.clone(),
+                    log: result_dir.join(format!("{name}.log")),
+                    status_file: result_dir.join(format!("{name}.status")),
+                });
+            }
+        }
+    }
+    if options.list {
+        print_inventory(&jobs, &[]);
+        return ExitCode::SUCCESS;
+    }
+    let results = run_jobs_with(&work_dir, jobs, &options, |command, job| {
+        command.env("mold", &ld64).env("ARCH", &job.target.machine);
+    });
     if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
