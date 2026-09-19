@@ -75,7 +75,7 @@ impl Layout for Arm32Target<LittleEndian> {
     type Sym = Elf32Sym<LittleEndian>;
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = Elf32RelLe;
+    type Rel = ElfRelNoAddend<Self>;
 }
 
 impl Layout for Arm32Target<BigEndian> {
@@ -84,7 +84,7 @@ impl Layout for Arm32Target<BigEndian> {
     type Sym = Elf32Sym<BigEndian>;
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelBe;
+    type Rel = ElfRelNoAddend<Self>;
 }
 
 fn b(val: u64, hi: u32, lo: u32) -> u32 {

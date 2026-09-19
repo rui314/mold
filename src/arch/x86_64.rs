@@ -45,7 +45,7 @@ impl Layout for X86_64 {
     type Sym = Elf64Sym<LittleEndian>;
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Arch for X86_64 {

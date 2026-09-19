@@ -63,7 +63,7 @@ impl Layout for Ppc32 {
     type Sym = Elf32Sym<BigEndian>;
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 fn lo(x: u64) -> u64 {

@@ -57,7 +57,7 @@ impl Layout for S390x {
     type Sym = Elf64Sym<BigEndian>;
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = Elf64RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 /// Sets the 12-bit displacement field of a halfword.

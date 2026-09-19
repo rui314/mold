@@ -35,7 +35,7 @@ impl Layout for M68k {
     type Sym = Elf32Sym<BigEndian>;
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Arch for M68k {

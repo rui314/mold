@@ -26,7 +26,7 @@ use crate::util::endian::*;
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
 /// relocation record format. Targets implement this through [`Arch`].
-pub trait Layout: Copy + Default + Send + Sync + 'static {
+pub trait Layout: Copy + Default + fmt::Debug + Send + Sync + 'static {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
     type Sym: SymbolRecord<Endian = Self::Endian, Word = Self::Word>;
@@ -425,6 +425,8 @@ pub trait ElfWord: FileRecord + fmt::Debug {
     fn new(value: u64) -> Self;
     fn get(&self) -> u64;
     fn set(&mut self, value: u64);
+    /// The word as a two's complement integer of its own width.
+    fn get_signed(&self) -> i64;
 }
 
 // SAFETY: U32 is a transparent wrapper around a byte array.
@@ -446,6 +448,11 @@ impl<E: Endian> ElfWord for U32<E> {
     #[inline(always)]
     fn set(&mut self, value: u64) {
         Self::set(self, value as u32);
+    }
+
+    #[inline(always)]
+    fn get_signed(&self) -> i64 {
+        i64::from(Self::get(self) as i32)
     }
 }
 
@@ -469,10 +476,15 @@ impl<E: Endian> ElfWord for U64<E> {
     fn set(&mut self, value: u64) {
         Self::set(self, value);
     }
+
+    #[inline(always)]
+    fn get_signed(&self) -> i64 {
+        Self::get(self) as i64
+    }
 }
 
 /// An ELF relocation record in its target-dependent file representation.
-pub trait RelRecord: FileRecord + fmt::Debug + Eq {
+pub trait RelRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     const IS_RELA: bool;
 
@@ -511,73 +523,107 @@ pub trait RelRecord: FileRecord + fmt::Debug + Eq {
 //
 // To keep target-independent code uniform, RelRecord::new always accepts an
 // addend. REL implementations ignore it.
+//
+// r_info packs the symbol index and the relocation type into one word. The
+// two halves would swap places in memory with the byte order if they were
+// separate fields, so the record keeps the word and the accessors split it.
 
+/// A RELA relocation record.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64RelaLe {
-    r_offset: Ul64,
-    r_type: Ul32,
-    r_sym: Ul32,
-    r_addend: Il64,
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ElfRela<E: Layout> {
+    r_offset: E::Word,
+    r_info: E::Word,
+    r_addend: E::Word,
 }
 
+/// A REL relocation record.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64RelaBe {
-    r_offset: Ub64,
-    r_sym: Ub32,
-    r_type: Ub32,
-    r_addend: Ib64,
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ElfRelNoAddend<E: Layout> {
+    r_offset: E::Word,
+    r_info: E::Word,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32RelaLe {
-    r_offset: Ul32,
-    r_type: u8,
-    r_sym: Ul24,
-    r_addend: Il32,
+// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
+// padding between fields with alignment one.
+unsafe impl<E: Layout> FileRecord for ElfRela<E> {}
+// SAFETY: see ElfRela.
+unsafe impl<E: Layout> FileRecord for ElfRelNoAddend<E> {}
+
+const _: () = assert!(std::mem::size_of::<ElfRela<I386>>() == 12);
+const _: () = assert!(std::mem::size_of::<ElfRela<X86_64>>() == 24);
+const _: () = assert!(std::mem::size_of::<ElfRelNoAddend<I386>>() == 8);
+const _: () = assert!(std::mem::size_of::<ElfRelNoAddend<X86_64>>() == 16);
+const _: () = assert!(std::mem::align_of::<ElfRela<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfRela<X86_64>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfRelNoAddend<I386>>() == 1);
+const _: () = assert!(std::mem::align_of::<ElfRelNoAddend<X86_64>>() == 1);
+
+// ELF32 keeps the relocation type in the low 8 bits of r_info and the symbol
+// index above them; ELF64 gives each 32 bits.
+#[inline(always)]
+fn r_info<E: Layout>(r_sym: u32, r_type: u32) -> u64 {
+    if E::IS_64 {
+        u64::from(r_sym) << 32 | u64::from(r_type)
+    } else {
+        u64::from(r_sym) << 8 | u64::from(r_type & 0xff)
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32RelaBe {
-    r_offset: Ub32,
-    r_sym: Ub24,
-    r_type: u8,
-    r_addend: Ib32,
+#[inline(always)]
+fn r_info_sym<E: Layout>(r_info: u64) -> u32 {
+    if E::IS_64 { (r_info >> 32) as u32 } else { (r_info >> 8) as u32 }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64RelLe {
-    r_offset: Ul64,
-    r_type: Ul32,
-    r_sym: Ul32,
+#[inline(always)]
+fn r_info_type<E: Layout>(r_info: u64) -> u32 {
+    if E::IS_64 { r_info as u32 } else { (r_info & 0xff) as u32 }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64RelBe {
-    r_offset: Ub64,
-    r_sym: Ub32,
-    r_type: Ub32,
+#[rustfmt::skip]
+impl<E: Layout> RelRecord for ElfRela<E> {
+    type Endian = E::Endian;
+    const IS_RELA: bool = true;
+
+    fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
+        Self {
+            r_offset: E::Word::new(r_offset),
+            r_info: E::Word::new(r_info::<E>(r_sym, r_type)),
+            r_addend: E::Word::new(r_addend as u64),
+        }
+    }
+
+    fn r_offset(&self) -> u64 { self.r_offset.get() }
+    fn set_r_offset(&mut self, value: u64) { self.r_offset.set(value) }
+    fn r_type(&self) -> u32 { r_info_type::<E>(self.r_info.get()) }
+    fn set_r_type(&mut self, value: u32) { self.r_info.set(r_info::<E>(self.r_sym(), value)) }
+    fn r_sym(&self) -> u32 { r_info_sym::<E>(self.r_info.get()) }
+    fn set_r_sym(&mut self, value: u32) { self.r_info.set(r_info::<E>(value, self.r_type())) }
+    fn r_addend(&self) -> i64 { self.r_addend.get_signed() }
+    fn set_r_addend(&mut self, value: i64) { self.r_addend.set(value as u64) }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32RelLe {
-    r_offset: Ul32,
-    r_type: u8,
-    r_sym: Ul24,
-}
+#[rustfmt::skip]
+impl<E: Layout> RelRecord for ElfRelNoAddend<E> {
+    type Endian = E::Endian;
+    const IS_RELA: bool = false;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32RelBe {
-    r_offset: Ub32,
-    r_sym: Ub24,
-    r_type: u8,
+    fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
+        Self {
+            r_offset: E::Word::new(r_offset),
+            r_info: E::Word::new(r_info::<E>(r_sym, r_type)),
+        }
+    }
+
+    fn r_offset(&self) -> u64 { self.r_offset.get() }
+    fn set_r_offset(&mut self, value: u64) { self.r_offset.set(value) }
+    fn r_type(&self) -> u32 { r_info_type::<E>(self.r_info.get()) }
+    fn set_r_type(&mut self, value: u32) { self.r_info.set(r_info::<E>(self.r_sym(), value)) }
+    fn r_sym(&self) -> u32 { r_info_sym::<E>(self.r_info.get()) }
+    fn set_r_sym(&mut self, value: u32) { self.r_info.set(r_info::<E>(value, self.r_type())) }
+    fn r_addend(&self) -> i64 { 0 }
+    fn set_r_addend(&mut self, _value: i64) {}
 }
 
 //
@@ -597,220 +643,38 @@ pub struct Sparc64Rela {
     r_addend: Ib64,
 }
 
-trait UnsignedField {
-    fn get_u64(&self) -> u64;
-    fn set_u64(&mut self, value: u64);
-}
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
+unsafe impl FileRecord for Sparc64Rela {}
 
-impl UnsignedField for u8 {
-    #[inline(always)]
-    fn get_u64(&self) -> u64 {
-        u64::from(*self)
+const _: () = assert!(std::mem::size_of::<Sparc64Rela>() == 24);
+const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
+
+#[rustfmt::skip]
+impl RelRecord for Sparc64Rela {
+    type Endian = BigEndian;
+    const IS_RELA: bool = true;
+
+    fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
+        let mut rel = Self::default();
+        rel.set_r_offset(r_offset);
+        rel.set_r_type(r_type);
+        rel.set_r_sym(r_sym);
+        rel.set_r_addend(r_addend);
+        rel
     }
 
-    #[inline(always)]
-    fn set_u64(&mut self, value: u64) {
-        *self = value as Self;
-    }
+    fn r_offset(&self) -> u64 { self.r_offset.get() }
+    fn set_r_offset(&mut self, value: u64) { self.r_offset.set(value) }
+    fn r_type(&self) -> u32 { u32::from(self.r_type) }
+    fn set_r_type(&mut self, value: u32) { self.r_type = value as u8 }
+    fn r_sym(&self) -> u32 { self.r_sym.get() }
+    fn set_r_sym(&mut self, value: u32) { self.r_sym.set(value) }
+    fn r_addend(&self) -> i64 { self.r_addend.get() }
+    fn set_r_addend(&mut self, value: i64) { self.r_addend.set(value) }
 }
-
-macro_rules! impl_unsigned_field {
-    ($name:ident) => {
-        impl<E: Endian> UnsignedField for $name<E> {
-            #[inline(always)]
-            fn get_u64(&self) -> u64 {
-                u64::from(self.get())
-            }
-
-            #[inline(always)]
-            fn set_u64(&mut self, value: u64) {
-                self.set(value as _);
-            }
-        }
-    };
-}
-
-impl_unsigned_field!(U24);
-impl_unsigned_field!(U32);
-impl_unsigned_field!(U64);
-
-trait SignedField {
-    fn get_i64(&self) -> i64;
-    fn set_i64(&mut self, value: i64);
-}
-
-macro_rules! impl_signed_field {
-    ($name:ident) => {
-        impl<E: Endian> SignedField for $name<E> {
-            #[inline(always)]
-            fn get_i64(&self) -> i64 {
-                i64::from(self.get())
-            }
-
-            #[inline(always)]
-            fn set_i64(&mut self, value: i64) {
-                self.set(value as _);
-            }
-        }
-    };
-}
-
-impl_signed_field!(I32);
-impl_signed_field!(I64);
-
-macro_rules! impl_rela_record {
-    ($name:ty, $endian:ty) => {
-        // SAFETY: these repr(C) records contain only alignment-one integer
-        // fields, with no padding and no invalid bit patterns.
-        unsafe impl FileRecord for $name {}
-
-        impl RelRecord for $name {
-            type Endian = $endian;
-            const IS_RELA: bool = true;
-
-            #[inline(always)]
-            fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
-                let mut rel = Self::default();
-                rel.set_r_offset(r_offset);
-                rel.set_r_type(r_type);
-                rel.set_r_sym(r_sym);
-                rel.set_r_addend(r_addend);
-                rel
-            }
-
-            #[inline(always)]
-            fn r_offset(&self) -> u64 {
-                self.r_offset.get_u64()
-            }
-
-            #[inline(always)]
-            fn set_r_offset(&mut self, value: u64) {
-                self.r_offset.set_u64(value);
-            }
-
-            #[inline(always)]
-            fn r_type(&self) -> u32 {
-                self.r_type.get_u64() as u32
-            }
-
-            #[inline(always)]
-            fn set_r_type(&mut self, value: u32) {
-                self.r_type.set_u64(u64::from(value));
-            }
-
-            #[inline(always)]
-            fn r_sym(&self) -> u32 {
-                self.r_sym.get_u64() as u32
-            }
-
-            #[inline(always)]
-            fn set_r_sym(&mut self, value: u32) {
-                self.r_sym.set_u64(u64::from(value));
-            }
-
-            #[inline(always)]
-            fn r_addend(&self) -> i64 {
-                self.r_addend.get_i64()
-            }
-
-            #[inline(always)]
-            fn set_r_addend(&mut self, value: i64) {
-                self.r_addend.set_i64(value);
-            }
-        }
-    };
-}
-
-macro_rules! impl_rel_record {
-    ($name:ty, $endian:ty) => {
-        // SAFETY: these repr(C) records contain only alignment-one integer
-        // fields, with no padding and no invalid bit patterns.
-        unsafe impl FileRecord for $name {}
-
-        impl RelRecord for $name {
-            type Endian = $endian;
-            const IS_RELA: bool = false;
-
-            #[inline(always)]
-            fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
-                let mut rel = Self::default();
-                rel.set_r_offset(r_offset);
-                rel.set_r_type(r_type);
-                rel.set_r_sym(r_sym);
-                rel
-            }
-
-            #[inline(always)]
-            fn r_offset(&self) -> u64 {
-                self.r_offset.get_u64()
-            }
-
-            #[inline(always)]
-            fn set_r_offset(&mut self, value: u64) {
-                self.r_offset.set_u64(value);
-            }
-
-            #[inline(always)]
-            fn r_type(&self) -> u32 {
-                self.r_type.get_u64() as u32
-            }
-
-            #[inline(always)]
-            fn set_r_type(&mut self, value: u32) {
-                self.r_type.set_u64(u64::from(value));
-            }
-
-            #[inline(always)]
-            fn r_sym(&self) -> u32 {
-                self.r_sym.get_u64() as u32
-            }
-
-            #[inline(always)]
-            fn set_r_sym(&mut self, value: u32) {
-                self.r_sym.set_u64(u64::from(value));
-            }
-
-            #[inline(always)]
-            fn r_addend(&self) -> i64 {
-                0
-            }
-
-            #[inline(always)]
-            fn set_r_addend(&mut self, _value: i64) {}
-        }
-    };
-}
-
-impl_rela_record!(Elf64RelaLe, LittleEndian);
-impl_rela_record!(Elf64RelaBe, BigEndian);
-impl_rela_record!(Elf32RelaLe, LittleEndian);
-impl_rela_record!(Elf32RelaBe, BigEndian);
-impl_rel_record!(Elf64RelLe, LittleEndian);
-impl_rel_record!(Elf64RelBe, BigEndian);
-impl_rel_record!(Elf32RelLe, LittleEndian);
-impl_rel_record!(Elf32RelBe, BigEndian);
-impl_rela_record!(Sparc64Rela, BigEndian);
 
 pub type ElfRel<E> = <E as Layout>::Rel;
-
-const _: () = assert!(std::mem::size_of::<Elf64RelaLe>() == 24);
-const _: () = assert!(std::mem::size_of::<Elf64RelaBe>() == 24);
-const _: () = assert!(std::mem::size_of::<Elf32RelaLe>() == 12);
-const _: () = assert!(std::mem::size_of::<Elf32RelaBe>() == 12);
-const _: () = assert!(std::mem::size_of::<Elf64RelLe>() == 16);
-const _: () = assert!(std::mem::size_of::<Elf64RelBe>() == 16);
-const _: () = assert!(std::mem::size_of::<Elf32RelLe>() == 8);
-const _: () = assert!(std::mem::size_of::<Elf32RelBe>() == 8);
-const _: () = assert!(std::mem::size_of::<Sparc64Rela>() == 24);
-const _: () = assert!(std::mem::align_of::<Elf64RelaLe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64RelaBe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf32RelaLe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf32RelaBe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64RelLe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64RelBe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf32RelLe>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf32RelBe>() == 1);
-const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
 
 /// Relocation records as they are laid out in a file, read as they are
 /// used rather than copied out. Input files hold tens of millions of

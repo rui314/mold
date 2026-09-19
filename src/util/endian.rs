@@ -180,14 +180,10 @@ impl<E: Endian> U24<E> {
     }
 }
 
-pub(crate) type Ul24 = U24<LittleEndian>;
 pub(crate) type Ul32 = U32<LittleEndian>;
 pub(crate) type Ul64 = U64<LittleEndian>;
-pub(crate) type Il32 = I32<LittleEndian>;
-pub(crate) type Il64 = I64<LittleEndian>;
 
 pub(crate) type Ub24 = U24<BigEndian>;
 pub(crate) type Ub32 = U32<BigEndian>;
 pub(crate) type Ub64 = U64<BigEndian>;
-pub(crate) type Ib32 = I32<BigEndian>;
 pub(crate) type Ib64 = I64<BigEndian>;

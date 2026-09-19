@@ -108,7 +108,7 @@ impl Layout for Ppc64V2 {
     type Sym = Elf64Sym<LittleEndian>;
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 fn lo(x: u64) -> u64 {

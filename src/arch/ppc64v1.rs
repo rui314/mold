@@ -76,7 +76,7 @@ impl Layout for Ppc64V1 {
     type Sym = Elf64Sym<BigEndian>;
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = Elf64RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 fn lo(x: u64) -> u64 {

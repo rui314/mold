@@ -53,7 +53,7 @@ impl Layout for LoongArchTarget<true> {
     type Sym = Elf64Sym<LittleEndian>;
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for LoongArchTarget<false> {
@@ -62,7 +62,7 @@ impl Layout for LoongArchTarget<false> {
     type Sym = Elf32Sym<LittleEndian>;
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = Elf32RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 fn page(val: u64) -> u64 {

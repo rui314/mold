@@ -84,7 +84,7 @@ impl Layout for Sh4Target<LittleEndian> {
     type Sym = Elf32Sym<LittleEndian>;
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = Elf32RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for Sh4Target<BigEndian> {
@@ -93,7 +93,7 @@ impl Layout for Sh4Target<BigEndian> {
     type Sym = Elf32Sym<BigEndian>;
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 /// Whether a relocation stores its addend in the relocated word.

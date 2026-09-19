@@ -47,7 +47,7 @@ impl Layout for Arm64Target<LittleEndian> {
     type Sym = Elf64Sym<LittleEndian>;
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for Arm64Target<BigEndian> {
@@ -56,7 +56,7 @@ impl Layout for Arm64Target<BigEndian> {
     type Sym = Elf64Sym<BigEndian>;
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = Elf64RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 /// Instructions are always little-endian.

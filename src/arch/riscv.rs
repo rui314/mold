@@ -52,7 +52,7 @@ impl Layout for RiscvTarget<LittleEndian, true> {
     type Sym = Elf64Sym<LittleEndian>;
     type Phdr = Elf64Phdr<LittleEndian>;
     type Chdr = Elf64Chdr<LittleEndian>;
-    type Rel = Elf64RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for RiscvTarget<BigEndian, true> {
@@ -61,7 +61,7 @@ impl Layout for RiscvTarget<BigEndian, true> {
     type Sym = Elf64Sym<BigEndian>;
     type Phdr = Elf64Phdr<BigEndian>;
     type Chdr = Elf64Chdr<BigEndian>;
-    type Rel = Elf64RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for RiscvTarget<LittleEndian, false> {
@@ -70,7 +70,7 @@ impl Layout for RiscvTarget<LittleEndian, false> {
     type Sym = Elf32Sym<LittleEndian>;
     type Phdr = Elf32Phdr<LittleEndian>;
     type Chdr = Elf32Chdr<LittleEndian>;
-    type Rel = Elf32RelaLe;
+    type Rel = ElfRela<Self>;
 }
 
 impl Layout for RiscvTarget<BigEndian, false> {
@@ -79,7 +79,7 @@ impl Layout for RiscvTarget<BigEndian, false> {
     type Sym = Elf32Sym<BigEndian>;
     type Phdr = Elf32Phdr<BigEndian>;
     type Chdr = Elf32Chdr<BigEndian>;
-    type Rel = Elf32RelaBe;
+    type Rel = ElfRela<Self>;
 }
 
 // Instructions are always little-endian.
