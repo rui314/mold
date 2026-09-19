@@ -106,7 +106,7 @@ impl Arch for M68k {
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
         _isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -162,7 +162,7 @@ impl Arch for M68k {
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];

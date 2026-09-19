@@ -676,7 +676,7 @@ impl<E: Arch> InputSection<E> {
     }
 
     #[inline]
-    pub fn rels<'a>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         file.relocations(self.relsec_idx())
     }
 
@@ -1234,7 +1234,7 @@ pub enum RelocationSpan {
 
 impl RelocationSpan {
     #[inline]
-    fn rels<E: Arch>(self, file: &ObjectFile<E>) -> &[E::Rel] {
+    fn rels<E: Arch>(self, file: &ObjectFile<E>) -> &[ElfRel<E>] {
         match self {
             Self::Input(data) => rels_from_bytes::<E>(data),
             Self::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
@@ -1276,7 +1276,7 @@ impl CieRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         rels_in::<E>(
             self.relocations.rels(file),
             self.rel_idx,
@@ -1295,7 +1295,7 @@ fn record_size<E: Layout>(contents: &[u8], offset: u32) -> usize {
 /// The relocations of a `.eh_frame` record: those from index `begin`
 /// that apply before `end`.
 #[inline]
-fn rels_in<E: Layout>(rels: &[E::Rel], begin: u32, end: usize) -> &[E::Rel] {
+fn rels_in<E: Layout>(rels: &[ElfRel<E>], begin: u32, end: usize) -> &[ElfRel<E>] {
     let begin = begin as usize;
     let rest = &rels[begin..];
     let count = rest.iter().take_while(|r| (r.r_offset() as usize) < end).count();
@@ -1359,7 +1359,7 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [E::Rel] {
+    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
         rels_in::<E>(cie.relocations.rels(file), self.rel_idx, end)

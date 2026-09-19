@@ -356,7 +356,7 @@ where
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
         _isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -427,7 +427,7 @@ where
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
@@ -723,7 +723,7 @@ where
     /// Thumb and ARM B instructions cannot be converted to BX, so we
     /// always have to make them jump to a thunk to switch processor mode
     /// even if their destinations are reachable.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &Self::Rel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel<Self>) -> bool {
         match rel.r_type() {
             R_ARM_JUMP24 | R_ARM_PLT32 => is_thumb_func(ctx, sym),
             R_ARM_THM_JUMP24 => is_arm_func(ctx, sym),
@@ -768,7 +768,7 @@ where
         }
     }
 
-    fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
+    fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel<Self>) {
         let v = val as u64;
         match rel.r_type() {
             R_ARM_NONE | R_ARM_V4BX => {}
@@ -803,7 +803,7 @@ where
         }
     }
 
-    fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
+    fn get_addend(loc: &[u8], rel: &ElfRel<Self>) -> i64 {
         let arm = || End::read_u32(loc) as u64;
         let thm = |i: usize| End::read_u16(&loc[i * 2..]) as u64;
         match rel.r_type() {

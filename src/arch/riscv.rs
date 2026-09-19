@@ -224,7 +224,7 @@ fn is_hi20(r_type: u32) -> bool {
 fn find_paired_reloc<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
-    rels: &[E::Rel],
+    rels: &[ElfRel<E>],
     sym: &Symbol,
     i: usize,
 ) -> usize {
@@ -256,7 +256,7 @@ fn find_paired_reloc<E: Arch>(
 fn is_got_load_pair<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
-    rels: &[E::Rel],
+    rels: &[ElfRel<E>],
     i: usize,
 ) -> bool {
     let file = &ctx.objs[isec.file.index()];
@@ -377,7 +377,7 @@ where
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -480,7 +480,7 @@ where
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];

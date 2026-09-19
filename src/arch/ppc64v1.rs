@@ -374,7 +374,7 @@ impl Arch for Ppc64V1 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -467,7 +467,7 @@ impl Arch for Ppc64V1 {
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
@@ -587,7 +587,7 @@ impl Arch for Ppc64V1 {
         }
     }
 
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &Self::Rel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel<Self>) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 

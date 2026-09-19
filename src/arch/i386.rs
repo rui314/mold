@@ -167,7 +167,7 @@ impl Arch for I386 {
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
         _isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -264,7 +264,7 @@ impl Arch for I386 {
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
@@ -515,7 +515,7 @@ impl Arch for I386 {
         }
     }
 
-    fn write_addend(loc: &mut [u8], val: i64, rel: &Self::Rel) {
+    fn write_addend(loc: &mut [u8], val: i64, rel: &ElfRel<Self>) {
         match rel.r_type() {
             R_386_NONE | R_386_TLS_DESC_CALL => {}
             R_386_8 | R_386_PC8 => loc[0] = val as u8,
@@ -529,7 +529,7 @@ impl Arch for I386 {
         }
     }
 
-    fn get_addend(loc: &[u8], rel: &Self::Rel) -> i64 {
+    fn get_addend(loc: &[u8], rel: &ElfRel<Self>) -> i64 {
         match rel.r_type() {
             R_386_8 | R_386_PC8 => loc[0] as i8 as i64,
             R_386_16 | R_386_PC16 => i16::from_le_bytes([loc[0], loc[1]]) as i64,

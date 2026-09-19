@@ -445,7 +445,7 @@ impl Arch for Ppc64V2 {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -551,7 +551,7 @@ impl Arch for Ppc64V2 {
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
@@ -719,7 +719,7 @@ impl Arch for Ppc64V2 {
     /// Functions compiled for Power9 or earlier assume that r2 points to
     /// GOT+0x8000, while those for Power10 uses r2 as a scratch register.
     /// We need a thunk to recompute r2 for interworking.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &Self::Rel) -> bool {
+    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel<Self>) -> bool {
         sym.has_plt(&ctx.symbols)
             || (rel.r_type() == R_PPC64_REL24 && !sym.esym(ctx).ppc64_preserves_r2())
             || (rel.r_type() == R_PPC64_REL24_NOTOC && sym.esym(ctx).ppc64_uses_toc())

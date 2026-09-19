@@ -679,12 +679,12 @@ pub type ElfRel<E> = <E as Layout>::Rel;
 /// Relocation records as they are laid out in a file, read as they are
 /// used rather than copied out. Input files hold tens of millions of
 /// relocations, which most passes go through once.
-pub(crate) fn rels_from_bytes<E: Layout>(data: &[u8]) -> &[E::Rel] {
+pub(crate) fn rels_from_bytes<E: Layout>(data: &[u8]) -> &[ElfRel<E>] {
     records_from_bytes(data)
 }
 
 /// Mutably views relocation records in their target-dependent file representation.
-pub(crate) fn rels_from_bytes_mut<E: Layout>(data: &mut [u8]) -> &mut [E::Rel] {
+pub(crate) fn rels_from_bytes_mut<E: Layout>(data: &mut [u8]) -> &mut [ElfRel<E>] {
     records_from_bytes_mut(data)
 }
 

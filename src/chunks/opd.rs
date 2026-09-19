@@ -74,7 +74,7 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
     if !ctx.args.pic {
         debug_assert!(out.is_empty());
         return;

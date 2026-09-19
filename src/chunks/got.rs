@@ -295,7 +295,7 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [E::Rel]) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
     let mut i = 0;
     for_each_entry(ctx, |ent| {
         if ent.r_type == R_NONE {

@@ -35,7 +35,7 @@ pub use sparc64::Sparc64;
 pub use x86_64::X86_64;
 
 use crate::context::Context;
-use crate::elf::{Layout, RelRecord};
+use crate::elf::{ElfRel, Layout, RelRecord};
 use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
@@ -171,7 +171,7 @@ pub trait Arch: Layout {
     fn apply_eh_reloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rel: &Self::Rel,
+        rel: &ElfRel<Self>,
         loc: &mut [u8],
         p: u64,
         val: u64,
@@ -185,7 +185,7 @@ pub trait Arch: Layout {
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
         isec: &InputSection<Self>,
-        rels: &mut [Self::Rel],
+        rels: &mut [ElfRel<Self>],
         buf: &mut [u8],
     );
 
@@ -194,7 +194,7 @@ pub trait Arch: Layout {
 
     /// Whether a call must go through a thunk however close its target
     /// is: a processor mode switch on ARM32, or TOC setup on PowerPC.
-    fn always_needs_thunk(_ctx: &Context<Self>, _sym: &Symbol, _rel: &Self::Rel) -> bool {
+    fn always_needs_thunk(_ctx: &Context<Self>, _sym: &Symbol, _rel: &ElfRel<Self>) -> bool {
         false
     }
 
@@ -224,11 +224,11 @@ pub trait Arch: Layout {
 
     /// Writes an addend into a relocated location, for REL-type targets
     /// producing relocatable output.
-    fn write_addend(_loc: &mut [u8], _val: i64, _rel: &Self::Rel) {}
+    fn write_addend(_loc: &mut [u8], _val: i64, _rel: &ElfRel<Self>) {}
 
     /// The addend of a relocation. REL-type targets store it in the
     /// relocated location, given as `loc`.
-    fn get_addend(_loc: &[u8], rel: &Self::Rel) -> i64 {
+    fn get_addend(_loc: &[u8], rel: &ElfRel<Self>) -> i64 {
         rel.r_addend()
     }
 }

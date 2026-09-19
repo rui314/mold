@@ -830,7 +830,7 @@ impl<E: Arch> ObjectFile<E> {
     /// Returns a relocation table from the file unless a compressed table
     /// was decoded into the side table.
     #[inline(always)]
-    pub(crate) fn relocations(&self, relsec_idx: Option<u32>) -> &[E::Rel] {
+    pub(crate) fn relocations(&self, relsec_idx: Option<u32>) -> &[ElfRel<E>] {
         let Some(relsec_idx) = relsec_idx else {
             return &[];
         };
@@ -986,7 +986,7 @@ impl<E: Layout> ExactSizeIterator for CrelReader<'_, E> {}
 // Keep next() always-inline: using rayon::iter::Either here can add a
 // function call per relocation in hot loops.
 enum RelocationIter<'a, E: Layout> {
-    Ordinary(std::iter::Copied<std::slice::Iter<'a, E::Rel>>),
+    Ordinary(std::iter::Copied<std::slice::Iter<'a, ElfRel<E>>>),
     Crel(CrelReader<'a, E>),
 }
 
@@ -1231,7 +1231,7 @@ impl<E: Arch> ObjectFile<E> {
     /// Returns relocations for rewriting. Ordinary records live in the
     /// input's private writable mapping; decoded CREL records use the side
     /// table because they have no ordinary in-file representation.
-    pub fn rels_mut(&mut self, shndx: u32) -> &mut [E::Rel] {
+    pub fn rels_mut(&mut self, shndx: u32) -> &mut [ElfRel<E>] {
         let Some(relsec_idx) = self.section_at(shndx).relsec_idx() else {
             return &mut [];
         };
@@ -1263,7 +1263,7 @@ impl<E: Arch> ObjectFile<E> {
     pub(crate) unsafe fn with_relocations_mut(
         &self,
         relsec_idx: Option<u32>,
-        f: impl FnOnce(&mut [E::Rel]),
+        f: impl FnOnce(&mut [ElfRel<E>]),
     ) {
         let Some(relsec_idx) = relsec_idx else {
             f(&mut []);
@@ -1286,7 +1286,7 @@ impl<E: Arch> ObjectFile<E> {
         f(rels_from_bytes_mut::<E>(unsafe { &mut *data }));
     }
 
-    fn set_decoded_crel(&mut self, index: usize, rels: Box<[E::Rel]>) {
+    fn set_decoded_crel(&mut self, index: usize, rels: Box<[ElfRel<E>]>) {
         if self.decoded_crel.len() <= index {
             self.decoded_crel.resize_with(self.num_elf_sections, || None);
         }

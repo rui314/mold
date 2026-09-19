@@ -352,7 +352,7 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u
     offsets
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [E::Rel]) {
+pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [ElfRel<E>]) {
     let osec = &ctx.output_sections[id.index()];
     // A single output section such as .data.rel.ro can account for
     // most of an output's dynamic relocations, so we process its
