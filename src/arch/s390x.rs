@@ -178,7 +178,7 @@ impl Arch for S390x {
 
     fn apply_eh_reloc(
         ctx: &Context<Self>,
-        isec: &InputSection<S390x>,
+        isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -196,7 +196,7 @@ impl Arch for S390x {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<S390x>) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         // Scan relocations
@@ -259,7 +259,7 @@ impl Arch for S390x {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection<S390x>,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -465,7 +465,7 @@ impl Arch for S390x {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<S390x>, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {

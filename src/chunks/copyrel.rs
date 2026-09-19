@@ -18,11 +18,11 @@ pub struct CopyrelSection<E: Layout> {
 }
 
 impl<E: Layout> CopyrelSection<E> {
-    pub fn new(is_relro: bool) -> CopyrelSection<E> {
+    pub fn new(is_relro: bool) -> Self {
         let name = if is_relro { ".copyrel.rel.ro" } else { ".copyrel" };
         let mut hdr = ChunkHeader::<E>::new(name, SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = is_relro;
-        CopyrelSection { hdr, symbols: Vec::new() }
+        Self { hdr, symbols: Vec::new() }
     }
 }
 

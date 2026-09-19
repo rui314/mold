@@ -77,8 +77,8 @@ fn encode_path(basedir: &OsStr, path: &Path) -> Vec<u8> {
 }
 
 impl TarWriter {
-    pub fn open(output_path: &Path, basedir: &OsStr) -> io::Result<TarWriter> {
-        Ok(TarWriter { out: File::create(output_path)?, basedir: basedir.to_os_string() })
+    pub fn open(output_path: &Path, basedir: &OsStr) -> io::Result<Self> {
+        Ok(Self { out: File::create(output_path)?, basedir: basedir.to_os_string() })
     }
 
     pub fn append(&mut self, path: &Path, data: &[u8]) -> io::Result<()> {

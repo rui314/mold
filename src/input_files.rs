@@ -45,12 +45,12 @@ impl NameLen {
     const LONG_NAME: usize = 240;
 
     #[inline]
-    fn new(len: usize) -> NameLen {
+    fn new(len: usize) -> Self {
         if len < Self::LONG_NAME {
-            return NameLen(len as u8);
+            return Self(len as u8);
         }
         let log2 = (len - Self::LONG_NAME + 1).ilog2() as usize;
-        NameLen((Self::LONG_NAME + log2.min(u8::MAX as usize - Self::LONG_NAME)) as u8)
+        Self((Self::LONG_NAME + log2.min(u8::MAX as usize - Self::LONG_NAME)) as u8)
     }
 
     #[inline]
@@ -136,8 +136,8 @@ pub trait FileInPool {
 }
 
 impl<T: FileInPool> Default for FileList<T> {
-    fn default() -> FileList<T> {
-        FileList { pool: Vec::new(), live: Vec::new() }
+    fn default() -> Self {
+        Self { pool: Vec::new(), live: Vec::new() }
     }
 }
 
@@ -340,19 +340,19 @@ pub enum FileId {
 
 impl FileId {
     pub fn is_dso(self) -> bool {
-        matches!(self, FileId::Dso(_))
+        matches!(self, Self::Dso(_))
     }
 }
 
 impl From<ObjId> for FileId {
-    fn from(id: ObjId) -> FileId {
-        FileId::Obj(id)
+    fn from(id: ObjId) -> Self {
+        Self::Obj(id)
     }
 }
 
 impl From<DsoId> for FileId {
-    fn from(id: DsoId) -> FileId {
-        FileId::Dso(id)
+    fn from(id: DsoId) -> Self {
+        Self::Dso(id)
     }
 }
 
@@ -404,8 +404,8 @@ pub struct InputFile<E: Layout> {
 }
 
 impl<E: Layout> InputFile<E> {
-    fn empty(filename: Cow<'static, str>) -> InputFile<E> {
-        InputFile {
+    fn empty(filename: Cow<'static, str>) -> Self {
+        Self {
             mf: None,
             filename,
             priority: 0,
@@ -432,7 +432,7 @@ impl<E: Layout> InputFile<E> {
     }
 
     /// Reads the ELF and section headers.
-    fn parse(mf: &'static MappedFile, display: &dyn fmt::Display) -> InputFile<E> {
+    fn parse(mf: &'static MappedFile, display: &dyn fmt::Display) -> Self {
         let data = mf.data();
         if data.len() < std::mem::size_of::<ElfEhdr<E>>() {
             fatal!("{display}: file too small");
@@ -464,12 +464,12 @@ impl<E: Layout> InputFile<E> {
         };
         let shdrs = records_from_bytes::<ElfShdr<E>>(shdr_bytes);
 
-        let mut file = InputFile {
+        let mut file = Self {
             mf: Some(mf),
             is_little_endian: E::Endian::IS_LITTLE,
             e_flags: ehdr.e_flags.get(),
             shdrs,
-            ..InputFile::empty(mf.name.to_string_lossy())
+            ..Self::empty(mf.name.to_string_lossy())
         };
 
         // e_shstrndx is a 16-bit field. If .shstrtab's section index is
@@ -604,9 +604,9 @@ pub struct ComdatGroupRef {
 impl ComdatGroupRef {
     const IS_OWNER: u32 = 1 << 31;
 
-    fn new(sect_idx: u32, signature: SymbolId) -> ComdatGroupRef {
+    fn new(sect_idx: u32, signature: SymbolId) -> Self {
         assert!(signature.0 < Self::IS_OWNER);
-        ComdatGroupRef { sect_idx, signature_and_owner: signature.0 }
+        Self { sect_idx, signature_and_owner: signature.0 }
     }
 
     #[inline]
@@ -670,8 +670,8 @@ struct DecodedRelocations<R> {
 }
 
 impl<R> DecodedRelocations<R> {
-    fn new(records: Box<[R]>) -> DecodedRelocations<R> {
-        DecodedRelocations { records: UnsafeCell::new(records) }
+    fn new(records: Box<[R]>) -> Self {
+        Self { records: UnsafeCell::new(records) }
     }
 
     fn as_slice(&self) -> &[R] {
@@ -999,16 +999,16 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
     #[inline(always)]
     fn next(&mut self) -> Option<ElfRel<E>> {
         match self {
-            RelocationIter::Ordinary(iter) => iter.next(),
-            RelocationIter::Crel(iter) => iter.next(),
+            Self::Ordinary(iter) => iter.next(),
+            Self::Crel(iter) => iter.next(),
         }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
-            RelocationIter::Ordinary(iter) => iter.size_hint(),
-            RelocationIter::Crel(iter) => iter.size_hint(),
+            Self::Ordinary(iter) => iter.size_hint(),
+            Self::Crel(iter) => iter.size_hint(),
         }
     }
 
@@ -1018,8 +1018,8 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
         F: FnMut(B, ElfRel<E>) -> B,
     {
         match self {
-            RelocationIter::Ordinary(iter) => iter.fold(init, f),
-            RelocationIter::Crel(iter) => iter.fold(init, f),
+            Self::Ordinary(iter) => iter.fold(init, f),
+            Self::Crel(iter) => iter.fold(init, f),
         }
     }
 }
@@ -1050,18 +1050,16 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Creates the internal object file that holds linker-synthesized
     /// symbols.
-    pub fn internal() -> ObjectFile<E> {
-        let mut file = ObjectFile::with_base(
-            InputFile::<E>::empty(Cow::Borrowed("<internal>")),
-            Path::new(""),
-        );
+    pub fn internal() -> Self {
+        let mut file =
+            Self::with_base(InputFile::<E>::empty(Cow::Borrowed("<internal>")), Path::new(""));
         file.sections_parsed = true;
         file.base.set_reachable(true);
         file
     }
 
-    fn with_base(base: InputFile<E>, archive_name: &'static Path) -> ObjectFile<E> {
-        ObjectFile {
+    fn with_base(base: InputFile<E>, archive_name: &'static Path) -> Self {
+        Self {
             num_elf_sections: base.shdrs.len(),
             base,
             archive_name,
@@ -1105,10 +1103,10 @@ impl<E: Arch> ObjectFile<E> {
 
     /// Opens an object file and reads its symbol table. Sections are read
     /// later, once COMDAT group selection is done.
-    pub fn new(mf: &'static MappedFile, archive_name: &'static Path) -> ObjectFile<E> {
+    pub fn new(mf: &'static MappedFile, archive_name: &'static Path) -> Self {
         let base =
             InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), archive_name));
-        let mut file = ObjectFile::with_base(base, archive_name);
+        let mut file = Self::with_base(base, archive_name);
         file.parse_symbols();
         file
     }
@@ -1122,13 +1120,13 @@ impl<E: Arch> ObjectFile<E> {
         elf_syms: Vec<ElfSym<E>>,
         strtab: &'static [u8],
         comdat_keys: Vec<Option<&'static [u8]>>,
-    ) -> ObjectFile<E> {
+    ) -> Self {
         let mut base = InputFile::<E>::empty(mf.name.to_string_lossy());
         base.mf = Some(mf);
         base.elf_syms = Cow::Owned(elf_syms);
         base.symbol_strtab = strtab;
         base.first_global = 1;
-        let mut file = ObjectFile::with_base(base, archive_name);
+        let mut file = Self::with_base(base, archive_name);
         file.origin = ObjectOrigin::LtoInput;
         file.lto_comdat_signatures = vec![None; comdat_keys.len()];
         file.lto_comdat_discarded = vec![false; comdat_keys.len()];
@@ -1352,7 +1350,7 @@ impl<E: Arch> ObjectFile<E> {
         let start = sh_offset as usize;
         let bytes = &data[start..start + sh_size as usize];
         let is_little_endian = self.base.is_little_endian;
-        bytes.chunks_exact(4).skip(1).map(move |b| {
+        bytes.as_chunks::<4>().0.iter().skip(1).map(move |b| {
             let b = [b[0], b[1], b[2], b[3]];
             if is_little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
         })
@@ -2135,7 +2133,7 @@ impl<E: Arch> ObjectFile<E> {
 
         // We assume that FDEs for the same input sections are contiguous
         // in `fdes` vector.
-        let section_of = |file: &ObjectFile<E>, fde: &FdeRecord| -> usize {
+        let section_of = |file: &Self, fde: &FdeRecord| -> usize {
             let rel = fde.rels(file)[0];
             file.shndx_at_in(rel.r_sym() as usize)
         };
@@ -2757,7 +2755,7 @@ pub struct SymtabEntries<'a> {
 }
 
 impl<'a> SymtabEntries<'a> {
-    pub fn new(syms: &'a mut [u8], xindex: Option<&'a mut [u8]>) -> SymtabEntries<'a> {
+    pub fn new(syms: &'a mut [u8], xindex: Option<&'a mut [u8]>) -> Self {
         SymtabEntries { syms, xindex, len: 0 }
     }
 
@@ -2777,7 +2775,7 @@ impl<'a> SymtabBlock<'a> {
         globals: SymtabEntries<'a>,
         strtab: &'a mut [u8],
         strtab_base: u64,
-    ) -> SymtabBlock<'a> {
+    ) -> Self {
         SymtabBlock { locals, globals, strtab, strtab_base, strtab_len: 0 }
     }
 
@@ -3002,10 +3000,10 @@ impl<E: Arch> SharedFile<E> {
         DsoId(self.base.file_index)
     }
 
-    pub(crate) fn new(mf: &'static MappedFile, bins: &mut Bins<SymbolSlot>) -> SharedFile<E> {
+    pub(crate) fn new(mf: &'static MappedFile, bins: &mut Bins<SymbolSlot>) -> Self {
         let base =
             InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), Path::new("")));
-        let mut file = SharedFile {
+        let mut file = Self {
             base,
             soname: b"",
             version_strings: Vec::new(),
@@ -3428,7 +3426,7 @@ pub(crate) struct SymbolEditor<'a> {
 unsafe impl Sync for SymbolEditor<'_> {}
 
 impl<'a> SymbolEditor<'a> {
-    pub(crate) fn new(symbols: &'a mut [Symbol]) -> SymbolEditor<'a> {
+    pub(crate) fn new(symbols: &'a mut [Symbol]) -> Self {
         SymbolEditor { symbols: symbols.as_mut_ptr(), len: symbols.len(), _symbols: PhantomData }
     }
 
@@ -3466,7 +3464,7 @@ impl<'a, E: Arch> SymbolResolver<'a, E> {
         objs: &'a FileList<ObjectFile<E>>,
         dsos: &'a FileList<SharedFile<E>>,
         default_version: u16,
-    ) -> SymbolResolver<'a, E> {
+    ) -> Self {
         SymbolResolver { editor: SymbolEditor::new(symbols), objs, dsos, default_version }
     }
 

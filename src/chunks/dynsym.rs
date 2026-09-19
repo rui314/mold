@@ -29,12 +29,12 @@ pub struct DynstrEntry {
 }
 
 impl<E: Arch> DynsymSection<E> {
-    pub fn new() -> DynsymSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
         let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
         hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        DynsymSection { hdr, symbols: Vec::new(), dynstr_entries: Vec::new() }
+        Self { hdr, symbols: Vec::new(), dynstr_entries: Vec::new() }
     }
 
     #[inline]

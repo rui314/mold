@@ -19,10 +19,10 @@ pub struct VerneedSection<E: Layout> {
 }
 
 impl<E: Layout> VerneedSection<E> {
-    pub fn new() -> VerneedSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version_r", SHT_GNU_VERNEED, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
-        VerneedSection { hdr, contents: Vec::new() }
+        Self { hdr, contents: Vec::new() }
     }
 }
 

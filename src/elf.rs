@@ -445,17 +445,17 @@ impl<E: Endian> ElfWord for U32<E> {
 
     #[inline(always)]
     fn new(value: u64) -> Self {
-        U32::new(value as u32)
+        Self::new(value as u32)
     }
 
     #[inline(always)]
     fn get(&self) -> u64 {
-        u64::from(U32::get(self))
+        u64::from(Self::get(self))
     }
 
     #[inline(always)]
     fn set(&mut self, value: u64) {
-        U32::set(self, value as u32);
+        Self::set(self, value as u32);
     }
 }
 
@@ -467,17 +467,17 @@ impl<E: Endian> ElfWord for U64<E> {
 
     #[inline(always)]
     fn new(value: u64) -> Self {
-        U64::new(value)
+        Self::new(value)
     }
 
     #[inline(always)]
     fn get(&self) -> u64 {
-        U64::get(self)
+        Self::get(self)
     }
 
     #[inline(always)]
     fn set(&mut self, value: u64) {
-        U64::set(self, value);
+        Self::set(self, value);
     }
 }
 
@@ -620,7 +620,7 @@ impl UnsignedField for u8 {
 
     #[inline(always)]
     fn set_u64(&mut self, value: u64) {
-        *self = value as u8;
+        *self = value as Self;
     }
 }
 

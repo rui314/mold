@@ -35,8 +35,8 @@ impl SectionRef {
     }
 
     #[inline]
-    pub(crate) fn decode(value: u64) -> SectionRef {
-        SectionRef { file: ObjId((value >> 32) as u32), shndx: value as u32 }
+    pub(crate) fn decode(value: u64) -> Self {
+        Self { file: ObjId((value >> 32) as u32), shndx: value as u32 }
     }
 }
 
@@ -52,20 +52,20 @@ const _: () = assert!(std::mem::size_of::<InputSectionId>() == 8);
 
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
-    pub(crate) const NONE: InputSectionId = InputSectionId { file: ObjId(0), index: u32::MAX };
+    pub(crate) const NONE: Self = Self { file: ObjId(0), index: u32::MAX };
 
     #[inline]
-    pub(crate) fn new(file: ObjId, index: u32) -> InputSectionId {
+    pub(crate) fn new(file: ObjId, index: u32) -> Self {
         // Origin reserves the low two bits of its u64 representation for a
         // tag, leaving 62 bits for this ID.
         debug_assert!(file.0 < 1 << 30);
         debug_assert_ne!(index, u32::MAX);
-        InputSectionId { file, index }
+        Self { file, index }
     }
 
     #[inline]
-    pub(crate) const fn from_raw(value: u64) -> InputSectionId {
-        InputSectionId { file: ObjId((value >> 32) as u32), index: (value as u32).wrapping_sub(1) }
+    pub(crate) const fn from_raw(value: u64) -> Self {
+        Self { file: ObjId((value >> 32) as u32), index: (value as u32).wrapping_sub(1) }
     }
 
     #[inline]
@@ -100,8 +100,8 @@ impl FragmentRef {
     }
 
     #[inline]
-    pub(crate) fn from_raw(value: u64) -> FragmentRef {
-        FragmentRef {
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
             section: MergedSectionId((value >> 32) as u32),
             entry: EntryId::from_raw(value as u32),
         }
@@ -171,18 +171,18 @@ impl InputSectionExtra for () {}
 impl InputSectionExtra for u32 {
     #[inline]
     fn empty() -> Self {
-        u32::MAX
+        Self::MAX
     }
 
     #[inline]
     fn exidx(&self) -> Option<u32> {
-        (*self != u32::MAX).then_some(*self)
+        (*self != Self::MAX).then_some(*self)
     }
 
     #[inline]
     fn set_exidx(&mut self, exidx: u32) {
         debug_assert_ne!(exidx, 0);
-        debug_assert_ne!(exidx, u32::MAX);
+        debug_assert_ne!(exidx, Self::MAX);
         *self = exidx;
     }
 }
@@ -268,7 +268,7 @@ impl<E: Arch> InputSection<E> {
         shndx: u32,
         shdr: &ElfShdr<E>,
         name: &'static BStr,
-    ) -> InputSection<E> {
+    ) -> Self {
         let contents: &'static [u8] =
             if shdr.sh_type.get() == SHT_NOBITS || (shndx as usize) >= file.num_elf_sections {
                 &[]
@@ -283,7 +283,7 @@ impl<E: Arch> InputSection<E> {
             (shdr.sh_size.get(), to_p2align(shdr.sh_addralign.get()))
         };
 
-        let mut isec = InputSection {
+        let mut isec = Self {
             file: file_id,
             shndx,
             name_offset: if (shndx as usize) < file.num_elf_sections {
@@ -1236,8 +1236,8 @@ impl RelocationSpan {
     #[inline]
     fn rels<E: Arch>(self, file: &ObjectFile<E>) -> &[E::Rel] {
         match self {
-            RelocationSpan::Input(data) => rels_from_bytes::<E>(data),
-            RelocationSpan::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
+            Self::Input(data) => rels_from_bytes::<E>(data),
+            Self::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
         }
     }
 }
@@ -1316,8 +1316,8 @@ pub struct FdeRecord {
 
 impl FdeRecord {
     #[inline]
-    pub fn new(input_offset: u32, rel_idx: u32) -> FdeRecord {
-        FdeRecord {
+    pub fn new(input_offset: u32, rel_idx: u32) -> Self {
+        Self {
             input_offset,
             output_offset: 0,
             rel_idx,
@@ -1404,8 +1404,8 @@ pub struct SectionFragment {
 
 impl SectionFragment {
     #[inline]
-    pub fn new(is_alive: bool) -> SectionFragment {
-        SectionFragment {
+    pub fn new(is_alive: bool) -> Self {
+        Self {
             p2align: AtomicU8::new(0),
             offset: AtomicU64::new(0),
             is_alive: AtomicBool::new(is_alive),
@@ -1470,13 +1470,9 @@ pub(crate) struct FragmentLookup<'a> {
 impl MergeInfo {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    fn new<E: Arch>(
-        parent: MergedSectionId,
-        input_index: u32,
-        section: &InputSection<E>,
-    ) -> MergeInfo {
+    fn new<E: Arch>(parent: MergedSectionId, input_index: u32, section: &InputSection<E>) -> Self {
         section.kill();
-        MergeInfo {
+        Self {
             parent,
             p2align: section.p2align(),
             shndx: section.shndx,
@@ -1642,16 +1638,16 @@ const SECTION_INDEX_MASK: u32 = !HAS_MERGE_INFO;
 
 impl<E: Arch> Default for SectionList<E> {
     fn default() -> Self {
-        SectionList { indices: Vec::new(), inputs: Vec::new(), merge_info: Vec::new() }
+        Self { indices: Vec::new(), inputs: Vec::new(), merge_info: Vec::new() }
     }
 }
 
 impl<E: Arch> SectionList<E> {
     /// A list for `nsections` section indices, none with a section yet.
-    pub fn new(nsections: usize, additional: usize) -> SectionList<E> {
+    pub fn new(nsections: usize, additional: usize) -> Self {
         let mut indices = vec![0; nsections];
         indices.reserve(additional);
-        SectionList {
+        Self {
             indices,
             // Most ELF headers describe relocations or metadata rather than
             // InputSections. Let this vector grow with the sections actually

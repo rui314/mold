@@ -107,8 +107,8 @@ impl Digest {
         hasher.update_u64(u64::from_le(self.lo));
     }
 
-    fn from_ne_bytes(bytes: [u8; 16]) -> Digest {
-        Digest {
+    fn from_ne_bytes(bytes: [u8; 16]) -> Self {
+        Self {
             hi: u64::from_ne_bytes(bytes[..8].try_into().unwrap()),
             lo: u64::from_ne_bytes(bytes[8..].try_into().unwrap()),
         }
@@ -165,13 +165,9 @@ struct DigestSlot {
 }
 
 impl DigestMap {
-    fn new(n: usize) -> DigestMap {
+    fn new(n: usize) -> Self {
         let len = n.saturating_mul(2).next_power_of_two();
-        DigestMap {
-            round: 1,
-            mask: len - 1,
-            slots: (0..len).map(|_| DigestSlot::default()).collect(),
-        }
+        Self { round: 1, mask: len - 1, slots: (0..len).map(|_| DigestSlot::default()).collect() }
     }
 
     fn next_round(&mut self) {

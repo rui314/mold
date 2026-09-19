@@ -18,10 +18,10 @@ pub struct GnuDebuglinkSection<E: Layout> {
 }
 
 impl<E: Layout> GnuDebuglinkSection<E> {
-    pub fn new() -> GnuDebuglinkSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu_debuglink", SHT_PROGBITS, 0);
         hdr.shdr.sh_addralign.set(4);
-        GnuDebuglinkSection { hdr, crc32: 0 }
+        Self { hdr, crc32: 0 }
     }
 }
 

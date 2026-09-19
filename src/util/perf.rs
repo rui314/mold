@@ -18,8 +18,8 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub const fn new(name: &'static str) -> Counter {
-        Counter { name, value: AtomicI64::new(0), registered: Once::new() }
+    pub const fn new(name: &'static str) -> Self {
+        Self { name, value: AtomicI64::new(0), registered: Once::new() }
     }
 
     pub fn enable() {
@@ -165,12 +165,12 @@ impl Default for Timers {
 
 impl Timers {
     pub fn new() -> Self {
-        Timers { records: Some(Arc::new(Mutex::new(Vec::new()))) }
+        Self { records: Some(Arc::new(Mutex::new(Vec::new()))) }
     }
 
     /// Skips clock reads, system calls and shared recording when --perf is off.
     pub fn disabled() -> Self {
-        Timers { records: None }
+        Self { records: None }
     }
 
     fn inactive(&self) -> Timer {
@@ -257,7 +257,7 @@ impl Timer {
     /// Starts a timer nested in this one. Timers started from parallel
     /// tasks name their parent this way, since which timer started last
     /// says nothing about nesting then.
-    pub fn child(&self, name: impl std::fmt::Display) -> Timer {
+    pub fn child(&self, name: impl std::fmt::Display) -> Self {
         self.timers.start_child(name, Some(self.index))
     }
 

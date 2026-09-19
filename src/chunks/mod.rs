@@ -66,9 +66,9 @@ pub struct OutputSectionId(NonZeroU32);
 
 impl OutputSectionId {
     #[inline]
-    pub fn new(index: u32) -> OutputSectionId {
+    pub fn new(index: u32) -> Self {
         let encoded = index.checked_add(1).expect("too many output sections");
-        OutputSectionId(NonZeroU32::new(encoded).unwrap())
+        Self(NonZeroU32::new(encoded).unwrap())
     }
 
     #[inline]
@@ -133,12 +133,12 @@ pub enum ChunkId {
 impl ChunkId {
     /// Whether the chunk is one of the ELF headers rather than a section.
     pub fn is_header(self) -> bool {
-        matches!(self, ChunkId::Ehdr | ChunkId::Phdr | ChunkId::Shdr)
+        matches!(self, Self::Ehdr | Self::Phdr | Self::Shdr)
     }
 
     pub fn as_output_section(self) -> Option<OutputSectionId> {
         match self {
-            ChunkId::Output(id) => Some(id),
+            Self::Output(id) => Some(id),
             _ => None,
         }
     }
@@ -173,8 +173,8 @@ pub struct ChunkHeader<E: Layout> {
 }
 
 impl<E: Layout> ChunkHeader<E> {
-    pub fn new(name: &'static str, sh_type: u32, sh_flags: u64) -> ChunkHeader<E> {
-        ChunkHeader {
+    pub fn new(name: &'static str, sh_type: u32, sh_flags: u64) -> Self {
+        Self {
             name: BStr::new(name.as_bytes()),
             shdr: {
                 let mut shdr = ElfShdr::<E>::default();
@@ -196,8 +196,8 @@ impl<E: Layout> ChunkHeader<E> {
         }
     }
 
-    pub fn with_name(name: &'static BStr, sh_type: u32, sh_flags: u64) -> ChunkHeader<E> {
-        ChunkHeader { name, ..ChunkHeader::<E>::new("", sh_type, sh_flags) }
+    pub fn with_name(name: &'static BStr, sh_type: u32, sh_flags: u64) -> Self {
+        Self { name, ..Self::new("", sh_type, sh_flags) }
     }
 
     pub fn is_alloc(&self) -> bool {
@@ -236,10 +236,10 @@ pub struct OutputPhdr<E: Layout> {
 }
 
 impl<E: Arch> OutputPhdr<E> {
-    pub fn new(sh_flags: u64) -> OutputPhdr<E> {
+    pub fn new(sh_flags: u64) -> Self {
         let mut hdr = ChunkHeader::<E>::new("PHDR", 0, sh_flags);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-        OutputPhdr { hdr, phdrs: Vec::new() }
+        Self { hdr, phdrs: Vec::new() }
     }
 }
 

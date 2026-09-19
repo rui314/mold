@@ -137,12 +137,12 @@ struct TagValue {
 }
 
 impl TagValue {
-    fn int(tag: c_int, val: c_int) -> TagValue {
-        TagValue { tag, data: TagData { val } }
+    fn int(tag: c_int, val: c_int) -> Self {
+        Self { tag, data: TagData { val } }
     }
 
-    fn ptr(tag: c_int, ptr: *const c_void) -> TagValue {
-        TagValue { tag, data: TagData { ptr } }
+    fn ptr(tag: c_int, ptr: *const c_void) -> Self {
+        Self { tag, data: TagData { ptr } }
     }
 }
 
@@ -227,9 +227,9 @@ struct ClaimedSymbol {
 }
 
 impl ClaimedSymbol {
-    unsafe fn from_plugin(sym: &PluginSymbol) -> ClaimedSymbol {
+    unsafe fn from_plugin(sym: &PluginSymbol) -> Self {
         let bytes = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_bytes().to_vec();
-        ClaimedSymbol {
+        Self {
             name: bytes(sym.name),
             comdat_key: (!sym.comdat_key.is_null()).then(|| bytes(sym.comdat_key)),
             def: sym.kinds.def,

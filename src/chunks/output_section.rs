@@ -72,7 +72,7 @@ unsafe impl Sync for OutputBuffer<'_> {}
 
 impl<'a> OutputBuffer<'a> {
     #[inline]
-    pub(crate) fn new(buf: &'a mut [u8]) -> OutputBuffer<'a> {
+    pub(crate) fn new(buf: &'a mut [u8]) -> Self {
         OutputBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), marker: PhantomData }
     }
 
@@ -117,8 +117,8 @@ impl<'a> OutputBuffer<'a> {
 pub const DYNREL_SHARD_SIZE: usize = 65536;
 
 impl<E: Layout> OutputSection<E> {
-    pub fn new(name: &'static BStr, sh_type: u32) -> OutputSection<E> {
-        OutputSection {
+    pub fn new(name: &'static BStr, sh_type: u32) -> Self {
+        Self {
             hdr: ChunkHeader::<E>::with_name(name, sh_type, 0),
             members: Vec::new(),
             thunks: Vec::new(),

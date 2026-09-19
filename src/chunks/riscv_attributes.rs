@@ -14,8 +14,8 @@ pub struct RiscvAttributesSection<E: Layout> {
 }
 
 impl<E: Layout> RiscvAttributesSection<E> {
-    pub fn new() -> RiscvAttributesSection<E> {
-        RiscvAttributesSection {
+    pub fn new() -> Self {
+        Self {
             hdr: ChunkHeader::<E>::new(".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0),
             contents: Vec::new(),
         }

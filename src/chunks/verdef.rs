@@ -21,10 +21,10 @@ pub struct VerdefSection<E: Layout> {
 }
 
 impl<E: Layout> VerdefSection<E> {
-    pub fn new() -> VerdefSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version_d", SHT_GNU_VERDEF, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
-        VerdefSection { hdr, contents: Vec::new() }
+        Self { hdr, contents: Vec::new() }
     }
 }
 

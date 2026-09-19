@@ -24,10 +24,10 @@ pub struct Ppc64OpdSection<E: Layout> {
 }
 
 impl<E: Layout> Ppc64OpdSection<E> {
-    pub fn new() -> Ppc64OpdSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".opd", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.shdr.sh_addralign.set(8);
-        Ppc64OpdSection { hdr, symbols: Vec::new() }
+        Self { hdr, symbols: Vec::new() }
     }
 }
 

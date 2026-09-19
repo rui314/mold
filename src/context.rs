@@ -269,7 +269,7 @@ pub struct Context<E: Arch> {
 }
 
 impl<E: Arch> Context<E> {
-    pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Context<E> {
+    pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Self {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
             entry: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.entry))),
@@ -279,7 +279,7 @@ impl<E: Arch> Context<E> {
         };
         let timers = if args.perf { Timers::new() } else { Timers::disabled() };
 
-        Context {
+        Self {
             reldyn: RelDynSection::<E>::new(&args),
             got: GotSection::<E>::new(),
             gotplt: chunks::gotplt::new_header::<E>(&args),

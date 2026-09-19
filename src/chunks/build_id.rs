@@ -16,11 +16,11 @@ pub struct BuildIdSection<E: Layout> {
 }
 
 impl<E: Layout> BuildIdSection<E> {
-    pub fn new() -> BuildIdSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".note.gnu.build-id", SHT_NOTE, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
         hdr.shdr.sh_size.set(1);
-        BuildIdSection { hdr, contents: Vec::new() }
+        Self { hdr, contents: Vec::new() }
     }
 }
 

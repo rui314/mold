@@ -166,7 +166,7 @@ impl Arch for I386 {
 
     fn apply_eh_reloc(
         _ctx: &Context<Self>,
-        _isec: &InputSection<I386>,
+        _isec: &InputSection<Self>,
         rel: &Self::Rel,
         loc: &mut [u8],
         p: u64,
@@ -180,7 +180,7 @@ impl Arch for I386 {
         }
     }
 
-    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<I386>) {
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels(file);
@@ -263,7 +263,7 @@ impl Arch for I386 {
 
     fn apply_reloc_alloc(
         ctx: &Context<Self>,
-        isec: &InputSection<I386>,
+        isec: &InputSection<Self>,
         rels: &mut [Self::Rel],
         buf: &mut [u8],
     ) {
@@ -457,7 +457,7 @@ impl Arch for I386 {
         }
     }
 
-    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<I386>, buf: &mut [u8]) {
+    fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
         for (i, rel) in isec.relocations(ctx).enumerate() {

@@ -24,10 +24,10 @@ pub struct SFrameSection<E: Layout> {
 }
 
 impl<E: Layout> SFrameSection<E> {
-    pub fn new() -> SFrameSection<E> {
+    pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(8);
-        SFrameSection { hdr, header: SFrameHeader::<E>::default(), fdes: Vec::new() }
+        Self { hdr, header: SFrameHeader::<E>::default(), fdes: Vec::new() }
     }
 }
 
