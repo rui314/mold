@@ -999,16 +999,16 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
     #[inline(always)]
     fn next(&mut self) -> Option<ElfRel<E>> {
         match self {
-            RelocationIter::Ordinary(iter) => iter.next(),
-            RelocationIter::Crel(iter) => iter.next(),
+            Self::Ordinary(iter) => iter.next(),
+            Self::Crel(iter) => iter.next(),
         }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
-            RelocationIter::Ordinary(iter) => iter.size_hint(),
-            RelocationIter::Crel(iter) => iter.size_hint(),
+            Self::Ordinary(iter) => iter.size_hint(),
+            Self::Crel(iter) => iter.size_hint(),
         }
     }
 
@@ -1018,8 +1018,8 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
         F: FnMut(B, ElfRel<E>) -> B,
     {
         match self {
-            RelocationIter::Ordinary(iter) => iter.fold(init, f),
-            RelocationIter::Crel(iter) => iter.fold(init, f),
+            Self::Ordinary(iter) => iter.fold(init, f),
+            Self::Crel(iter) => iter.fold(init, f),
         }
     }
 }
