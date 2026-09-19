@@ -880,9 +880,9 @@ impl Symbol {
     /// [`Self::esym`]).
     pub fn set_esym<R: SymbolRecord>(&mut self, esym: &R) {
         self.type_and_bind = (esym.st_bind() << 4 | esym.st_type()) as u8;
-        let state = if esym.st_shndx().get() as u32 == SHN_UNDEF {
+        let state = if esym.st_shndx() == SHN_UNDEF {
             SYMBOL_UNDEFINED
-        } else if esym.st_shndx().get() as u32 == SHN_COMMON {
+        } else if esym.st_shndx() == SHN_COMMON {
             SYMBOL_COMMON
         } else {
             SYMBOL_DEFINED

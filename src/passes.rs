@@ -1307,7 +1307,7 @@ pub fn create_internal_file<E: Arch>(ctx: &mut Context<E>) {
         // if the field is accidentally used before it gets a valid one.
         symbols[id].value = 0xdeadbeef;
         let mut esym = ElfSym::<E>::default();
-        esym.st_shndx_mut().set(SHN_ABS as u16);
+        esym.set_st_shndx(SHN_ABS);
         esym.set_type(STT_NOTYPE);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_DEFAULT);
@@ -1359,7 +1359,7 @@ fn resolve_internal_symbols<E: Arch>(ctx: &mut Context<E>) {
             let sym = &mut ctx.symbols[sym_id];
             sym.set_file(FileId::Obj(id));
             sym.clear_origin();
-            sym.value = esym.st_value().get();
+            sym.value = esym.st_value();
             sym.set_sym_idx(i as u32);
             sym.set_esym(esym);
             sym.ver_idx = ctx.default_version;
@@ -1374,7 +1374,7 @@ pub fn add_synthetic_symbols<E: Arch>(ctx: &mut Context<E>) {
 
     fn add<E: Arch>(ctx: &mut Context<E>, name: &[u8], ty: u32) -> SymbolId {
         let mut esym = ElfSym::<E>::default();
-        esym.st_shndx_mut().set(SHN_ABS as u16);
+        esym.set_st_shndx(SHN_ABS);
         esym.set_type(ty);
         esym.set_bind(STB_GLOBAL);
         esym.set_visibility(STV_HIDDEN);
@@ -3763,11 +3763,8 @@ fn num_irelative_relocs<E: Arch>(ctx: &Context<E>) -> u64 {
 fn to_paddr<E: Arch>(ctx: &Context<E>, vaddr: u64) -> u64 {
     if let Some(phdr) = &ctx.phdr {
         for p in &phdr.phdrs {
-            if p.p_type().get() == PT_LOAD
-                && p.p_vaddr().get() <= vaddr
-                && vaddr < p.p_vaddr().get() + p.p_memsz().get()
-            {
-                return p.p_paddr().get() + (vaddr - p.p_vaddr().get());
+            if p.p_type() == PT_LOAD && p.p_vaddr() <= vaddr && vaddr < p.p_vaddr() + p.p_memsz() {
+                return p.p_paddr() + (vaddr - p.p_vaddr());
             }
         }
     }

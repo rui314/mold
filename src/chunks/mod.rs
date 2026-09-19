@@ -373,35 +373,35 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
 
     let define = |vec: &mut Vec<ElfPhdr<E>>, p_type: u32, flags: u32, shdr: &ElfShdr<E>| {
         let mut phdr = ElfPhdr::<E>::default();
-        phdr.p_type_mut().set(p_type);
-        phdr.p_flags_mut().set(flags);
-        phdr.p_align_mut().set(shdr.sh_addralign.get());
+        phdr.set_p_type(p_type);
+        phdr.set_p_flags(flags);
+        phdr.set_p_align(shdr.sh_addralign.get());
         if shdr.sh_type.get() == SHT_NOBITS {
             // p_offset indicates the in-file start offset and is not
             // significant for segments with zero on-file size. We still want to
             // keep it congruent with the virtual address modulo page size
             // because some loaders (at least FreeBSD's) are picky about it.
-            phdr.p_offset_mut().set(shdr.sh_addr.get() % ctx.args.page_size);
+            phdr.set_p_offset(shdr.sh_addr.get() % ctx.args.page_size);
         } else {
-            phdr.p_offset_mut().set(shdr.sh_offset.get());
-            phdr.p_filesz_mut().set(shdr.sh_size.get());
+            phdr.set_p_offset(shdr.sh_offset.get());
+            phdr.set_p_filesz(shdr.sh_size.get());
         }
-        phdr.p_vaddr_mut().set(shdr.sh_addr.get());
-        phdr.p_paddr_mut().set(shdr.sh_addr.get());
+        phdr.set_p_vaddr(shdr.sh_addr.get());
+        phdr.set_p_paddr(shdr.sh_addr.get());
         if shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
-            phdr.p_memsz_mut().set(shdr.sh_size.get());
+            phdr.set_p_memsz(shdr.sh_size.get());
         }
         vec.push(phdr);
     };
 
     let append = |vec: &mut Vec<ElfPhdr<E>>, shdr: &ElfShdr<E>| {
         let phdr = vec.last_mut().unwrap();
-        let align = phdr.p_align().get().max(shdr.sh_addralign.get());
-        phdr.p_align_mut().set(align);
-        let memsz = shdr.sh_addr.get() + shdr.sh_size.get() - phdr.p_vaddr().get();
-        phdr.p_memsz_mut().set(memsz);
+        let align = phdr.p_align().max(shdr.sh_addralign.get());
+        phdr.set_p_align(align);
+        let memsz = shdr.sh_addr.get() + shdr.sh_size.get() - phdr.p_vaddr();
+        phdr.set_p_memsz(memsz);
         if shdr.sh_type.get() != SHT_NOBITS {
-            phdr.p_filesz_mut().set(memsz);
+            phdr.set_p_filesz(memsz);
         }
     };
 
@@ -463,8 +463,8 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         define(&mut vec, PT_LOAD, flags, first_shdr);
         if !ctx.args.nmagic && !ctx.args.omagic {
             let last = vec.last_mut().unwrap();
-            let align = last.p_align().get().max(ctx.args.page_size);
-            last.p_align_mut().set(align);
+            let align = last.p_align().max(ctx.args.page_size);
+            last.set_p_align(align);
         }
 
         // Add contiguous ALLOC sections as long as they have the same
@@ -544,10 +544,10 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // Add PT_GNU_STACK, which is a marker segment that doesn't really
     // contain any segments. It controls executable bit of stack area.
     let mut stack = ElfPhdr::<E>::default();
-    stack.p_type_mut().set(PT_GNU_STACK);
-    stack.p_flags_mut().set(if ctx.args.z_execstack { PF_R | PF_W | PF_X } else { PF_R | PF_W });
-    stack.p_memsz_mut().set(ctx.args.z_stack_size);
-    stack.p_align_mut().set(1);
+    stack.set_p_type(PT_GNU_STACK);
+    stack.set_p_flags(if ctx.args.z_execstack { PF_R | PF_W | PF_X } else { PF_R | PF_W });
+    stack.set_p_memsz(ctx.args.z_stack_size);
+    stack.set_p_align(1);
     vec.push(stack);
 
     // Create a PT_GNU_RELRO.
@@ -563,7 +563,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
                     append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
                     i += 1;
                 }
-                vec.last_mut().unwrap().p_align_mut().set(1);
+                vec.last_mut().unwrap().set_p_align(1);
             }
         }
     }
@@ -597,25 +597,22 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // two segments is two page size or larger, we give up and pack segments
     // tightly so that we don't waste too much ROM area.
     if let Some(base) = ctx.args.physical_image_base
-        && let Some(first) = vec.iter().position(|p| p.p_type().get() == PT_LOAD)
+        && let Some(first) = vec.iter().position(|p| p.p_type() == PT_LOAD)
     {
         let mut addr = base;
-        let mut in_sync = vec[first].p_vaddr().get() == addr;
-        vec[first].p_paddr_mut().set(addr);
-        addr += vec[first].p_memsz().get();
+        let mut in_sync = vec[first].p_vaddr() == addr;
+        vec[first].set_p_paddr(addr);
+        addr += vec[first].p_memsz();
 
-        for p in vec[first + 1..].iter_mut().take_while(|p| p.p_type().get() == PT_LOAD) {
-            if in_sync
-                && addr <= p.p_vaddr().get()
-                && p.p_vaddr().get() < addr + ctx.args.page_size * 2
-            {
-                let vaddr = p.p_vaddr().get();
-                p.p_paddr_mut().set(vaddr);
-                addr = vaddr + p.p_memsz().get();
+        for p in vec[first + 1..].iter_mut().take_while(|p| p.p_type() == PT_LOAD) {
+            if in_sync && addr <= p.p_vaddr() && p.p_vaddr() < addr + ctx.args.page_size * 2 {
+                let vaddr = p.p_vaddr();
+                p.set_p_paddr(vaddr);
+                addr = vaddr + p.p_memsz();
             } else {
                 in_sync = false;
-                p.p_paddr_mut().set(addr);
-                addr += p.p_memsz().get();
+                p.set_p_paddr(addr);
+                addr += p.p_memsz();
             }
         }
     }
@@ -630,8 +627,8 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
         return;
     }
     let phdrs = create_phdr(ctx);
-    if let Some(phdr) = phdrs.iter().find(|p| p.p_type().get() == PT_TLS) {
-        ctx.tls_begin = phdr.p_vaddr().get();
+    if let Some(phdr) = phdrs.iter().find(|p| p.p_type() == PT_TLS) {
+        ctx.tls_begin = phdr.p_vaddr();
         ctx.tp_addr = tls::tp_addr::<E>(phdr);
         ctx.dtp_addr = tls::dtp_addr::<E>(phdr);
     }

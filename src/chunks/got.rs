@@ -402,8 +402,8 @@ pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
     }
     let object = |value: u64| {
         let mut sym = ElfSym::<E>::default();
-        sym.st_shndx_mut().set(got.hdr.shndx as u16);
-        sym.st_value_mut().set(value);
+        sym.set_st_shndx(got.hdr.shndx);
+        sym.set_st_value(value);
         sym.set_type(STT_OBJECT);
         sym
     };

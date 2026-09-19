@@ -79,14 +79,14 @@ pub fn copy_buf<E: Arch>(
             continue;
         }
         let mut esym = ElfSym::<E>::default();
-        esym.st_value_mut().set(hdr.shdr.sh_addr.get());
+        esym.set_st_value(hdr.shdr.sh_addr.get());
         esym.set_type(STT_SECTION);
         match xindex.as_deref_mut() {
             Some(xindex) => {
                 E::Endian::write_u32(&mut xindex[hdr.shndx as usize * 4..], hdr.shndx);
-                esym.st_shndx_mut().set(SHN_XINDEX as u16);
+                esym.set_st_shndx(SHN_XINDEX);
             }
-            None => esym.st_shndx_mut().set(hdr.shndx as u16),
+            None => esym.set_st_shndx(hdr.shndx),
         }
         esym.write(&mut symtab[hdr.shndx as usize * size..]);
     }
@@ -200,16 +200,16 @@ fn carve<'a>(rest: &mut &'a mut [u8], pos: &mut usize, start: usize, len: usize)
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
     if (E::IS_RISCV || E::IS_LOONGARCH)
-        && esym.st_size().get() != 0
+        && esym.st_size() != 0
         && let Some(isec) = sym.input_section_ref(ctx)
         && isec.sh_flags & SHF_EXECINSTR as u64 != 0
     {
-        let end = esym.st_value().get() + esym.st_size().get();
-        return (esym.st_size().get() as i64 + esym.st_value().get() as i64
+        let end = esym.st_value() + esym.st_size();
+        return (esym.st_size() as i64 + esym.st_value() as i64
             - sym.value as i64
             - r_delta(isec, end)) as u64;
     }
-    esym.st_size().get()
+    esym.st_size()
 }
 
 /// Builds the output symbol table entry for a symbol. The returned index
@@ -217,8 +217,8 @@ fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
 /// to `.symtab_shndx`.
 pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (ElfSym<E>, u32) {
     let mut esym = ElfSym::<E>::default();
-    esym.st_name_mut().set(st_name);
-    esym.st_size_mut().set(symbol_size(ctx, sym));
+    esym.set_st_name(st_name);
+    esym.set_st_size(symbol_size(ctx, sym));
     esym.set_type(sym.ty());
 
     let file = sym.file().expect("symbol without a file in symbol table");
@@ -263,24 +263,24 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         } else {
             ctx.copyrel.hdr.shndx
         });
-        esym.st_value_mut().set(sym.addr(ctx));
+        esym.set_st_value(sym.addr(ctx));
     } else if file.is_dso() || sym.is_undef() {
         // Undefined symbol in a DSO
-        esym.st_shndx_mut().set(SHN_UNDEF as u16);
-        esym.st_size_mut().set(0);
+        esym.set_st_shndx(SHN_UNDEF);
+        esym.set_st_size(0);
         if sym.is_canonical() {
-            esym.st_value_mut().set(sym.plt_addr(ctx));
+            esym.set_st_value(sym.plt_addr(ctx));
         }
     } else {
         match origin {
             OriginValue::OutputChunk(chunk) => {
                 // Linker-synthesized symbol
                 shndx = Some(ctx.symbol_chunk_header(chunk).shndx);
-                esym.st_value_mut().set(sym.addr(ctx));
+                esym.set_st_value(sym.addr(ctx));
             }
             OriginValue::Fragment(frag) => {
                 shndx = Some(ctx.merged_sections[frag.section.index()].hdr.shndx);
-                esym.st_value_mut().set(sym.addr(ctx));
+                esym.set_st_value(sym.addr(ctx));
             }
             OriginValue::None | OriginValue::Symbol(_) => {
                 if sym.is_common() {
@@ -288,12 +288,12 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     // relocatable output, in which case they are passed through as-is.
                     // Their st_value is their alignment.
                     debug_assert!(ctx.args.relocatable);
-                    esym.st_shndx_mut().set(SHN_COMMON as u16);
-                    esym.st_value_mut().set(sym.esym(ctx).st_value().get());
+                    esym.set_st_shndx(SHN_COMMON);
+                    esym.set_st_value(sym.esym(ctx).st_value());
                 } else {
                     // Absolute symbol
-                    esym.st_shndx_mut().set(SHN_ABS as u16);
-                    esym.st_value_mut().set(sym.addr(ctx));
+                    esym.set_st_shndx(SHN_ABS);
+                    esym.set_st_value(sym.addr(ctx));
                 }
             }
             OriginValue::InputSection(section) => {
@@ -301,24 +301,23 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                 if sym.ty() == STT_TLS {
                     // TLS symbol
                     shndx = Some(st_shndx_of(sym, isec));
-                    esym.st_value_mut().set(sym.addr(ctx) - ctx.tls_begin);
+                    esym.set_st_value(sym.addr(ctx) - ctx.tls_begin);
                 } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
                     // IFUNC symbol in PDE that uses two GOT slots
                     shndx = Some(st_shndx_of(sym, isec));
                     esym.set_type(STT_FUNC);
                     esym.set_visibility(sym.visibility());
-                    esym.st_value_mut().set(sym.plt_addr(ctx));
+                    esym.set_st_value(sym.plt_addr(ctx));
                 } else if let Some(m) = ctx.objs[isec.file.index()].merge_info(isec.shndx as usize)
                 {
                     // Symbol in a mergeable section that was split into fragments
                     // but whose symbols were not attached to them, which is the
                     // case for non-SHF_ALLOC sections such as .debug_str
-                    let (frag, addend) =
-                        m.fragment(sym.esym(ctx).st_value().get()).expect("fragment");
+                    let (frag, addend) = m.fragment(sym.esym(ctx).st_value()).expect("fragment");
                     let msec = &ctx.merged_sections[m.parent.index()];
                     shndx = Some(msec.hdr.shndx);
                     esym.set_visibility(sym.visibility());
-                    esym.st_value_mut().set(
+                    esym.set_st_value(
                         (msec.hdr.shdr.sh_addr.get() + msec.fragments.get(frag).offset())
                             .wrapping_add(addend as u64),
                     );
@@ -326,7 +325,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
                     // Symbol in a regular section
                     shndx = Some(st_shndx_of(sym, isec));
                     esym.set_visibility(sym.visibility());
-                    esym.st_value_mut().set(sym.addr_with(ctx, AddrFlags::NO_PLT));
+                    esym.set_st_value(sym.addr_with(ctx, AddrFlags::NO_PLT));
                 }
             }
         }
@@ -340,9 +339,9 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     let mut xindex = 0;
     if let Some(shndx) = shndx {
         if shndx < SHN_LORESERVE {
-            esym.st_shndx_mut().set(shndx as u16);
+            esym.set_st_shndx(shndx);
         } else {
-            esym.st_shndx_mut().set(SHN_XINDEX as u16);
+            esym.set_st_shndx(SHN_XINDEX);
             xindex = shndx;
         }
     }

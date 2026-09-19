@@ -373,10 +373,9 @@ impl Arch for I386 {
                 R_386_TLS_LDO_32 => {
                     write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32)
                 }
-                R_386_SIZE32 => write_u32(
-                    &mut buf[off..],
-                    (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,
-                ),
+                R_386_SIZE32 => {
+                    write_u32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
+                }
                 R_386_TLS_GOTDESC => {
                     // i386 TLSDESC uses the following code sequence to materialize
                     // a TP-relative address in %eax.
@@ -504,10 +503,9 @@ impl Arch for I386 {
                         s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32,
                     ),
                 },
-                R_386_SIZE32 => write_u32(
-                    &mut buf[off..],
-                    (sym.esym(ctx).st_size().get() as u64).wrapping_add(a) as u32,
-                ),
+                R_386_SIZE32 => {
+                    write_u32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
+                }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
                     isec.display(file),

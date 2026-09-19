@@ -38,9 +38,9 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
 
     // Compute header field values
     let mut chdr = ElfChdr::<E>::default();
-    chdr.ch_type_mut().set(kind);
-    chdr.ch_size_mut().set(hdr.shdr.sh_size.get());
-    chdr.ch_addralign_mut().set(hdr.shdr.sh_addralign.get());
+    chdr.set_ch_type(kind);
+    chdr.set_ch_size(hdr.shdr.sh_size.get());
+    chdr.set_ch_addralign(hdr.shdr.sh_addralign.get());
     let flags = hdr.shdr.sh_flags.get() | SHF_COMPRESSED as u64;
     let size = (std::mem::size_of::<ElfChdr<E>>() + compressor.compressed_size()) as u64;
     let mut new_hdr = ChunkHeader::<E>::with_name(hdr.name, hdr.shdr.sh_type.get(), flags);

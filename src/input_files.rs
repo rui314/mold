@@ -562,7 +562,7 @@ impl<E: Layout> InputFile<E> {
     /// Returns a symbol name using the precomputed length when available.
     #[inline(always)]
     pub fn symbol_name_in(&self, i: usize) -> &'static [u8] {
-        let offset = self.elf_syms[i].st_name().get() as usize;
+        let offset = self.elf_syms[i].st_name() as usize;
         if let Some(len) = self.symbol_name_lengths.get(i) {
             len.get(self.symbol_strtab, offset)
         } else {
@@ -1135,23 +1135,23 @@ impl<E: Arch> ObjectFile<E> {
     /// the 16-bit `st_shndx` field are stored in `.symtab_shndx`.
     #[inline]
     pub fn shndx_at(&self, idx: usize) -> usize {
-        let st_shndx = self.base.elf_syms[idx].st_shndx().get();
+        let st_shndx = self.base.elf_syms[idx].st_shndx();
         self.shndx_from(idx, st_shndx)
     }
 
     /// Like [`Self::shndx_at`] for code specialized for the target.
     #[inline]
     pub fn shndx_at_in(&self, idx: usize) -> usize {
-        let st_shndx = self.base.elf_syms[idx].st_shndx().get();
+        let st_shndx = self.base.elf_syms[idx].st_shndx();
         self.shndx_from(idx, st_shndx)
     }
 
     /// Resolves an already-read symbol's section index.
     #[inline]
-    pub(crate) fn shndx_from(&self, idx: usize, st_shndx: u16) -> usize {
-        if st_shndx as u32 == SHN_XINDEX {
+    pub(crate) fn shndx_from(&self, idx: usize, st_shndx: u32) -> usize {
+        if st_shndx == SHN_XINDEX {
             self.symtab_shndx.get(idx).map_or(0, |bytes| E::Endian::read_u32(bytes)) as usize
-        } else if st_shndx as u32 >= SHN_LORESERVE {
+        } else if st_shndx >= SHN_LORESERVE {
             0
         } else {
             st_shndx as usize
@@ -1311,11 +1311,11 @@ impl<E: Arch> ObjectFile<E> {
         if self.comdat_discarded.is_empty() {
             return false;
         }
-        let st_shndx = self.base.elf_syms[idx].st_shndx().get() as u32;
+        let st_shndx = self.base.elf_syms[idx].st_shndx();
         if st_shndx == SHN_ABS || st_shndx == SHN_COMMON {
             return false;
         }
-        self.comdat_discarded[self.shndx_from(idx, st_shndx as u16)]
+        self.comdat_discarded[self.shndx_from(idx, st_shndx)]
     }
 
     #[inline]
@@ -1323,7 +1323,7 @@ impl<E: Arch> ObjectFile<E> {
         if self.comdat_discarded.is_empty() || esym.is_abs() || esym.is_common() {
             return false;
         }
-        self.comdat_discarded[self.shndx_from(idx, esym.st_shndx().get())]
+        self.comdat_discarded[self.shndx_from(idx, esym.st_shndx())]
     }
 
     /// Iterates over the live regular sections.
@@ -1400,7 +1400,7 @@ impl<E: Arch> ObjectFile<E> {
         self.base.symbol_name_lengths.clear();
         self.base.symbol_name_lengths.reserve(n);
         for esym in self.base.elf_syms.iter().take(self.base.first_global) {
-            let name = cstr_at(self.base.symbol_strtab, esym.st_name().get() as usize);
+            let name = cstr_at(self.base.symbol_strtab, esym.st_name() as usize);
             self.base.symbol_name_lengths.push(NameLen::new(name.len()));
         }
 
@@ -1412,8 +1412,7 @@ impl<E: Arch> ObjectFile<E> {
             }
 
             // Find the name length and version separator in one scan.
-            let strtab =
-                self.base.symbol_strtab.get(esym.st_name().get() as usize..).unwrap_or_default();
+            let strtab = self.base.symbol_strtab.get(esym.st_name() as usize..).unwrap_or_default();
             let pos = memchr::memchr2(0, b'@', strtab).unwrap_or(strtab.len());
             let len =
                 pos + if strtab.get(pos) == Some(&b'@') { cstr_at(strtab, pos).len() } else { 0 };
@@ -1482,9 +1481,8 @@ impl<E: Arch> ObjectFile<E> {
 
             let esym = &self.base.elf_syms[shdr.sh_info.get() as usize];
             let name = if esym.st_type() == STT_SECTION {
-                self.base.section_name(
-                    self.shndx_from(shdr.sh_info.get() as usize, esym.st_shndx().get()),
-                )
+                self.base
+                    .section_name(self.shndx_from(shdr.sh_info.get() as usize, esym.st_shndx()))
             } else {
                 self.base.symbol_name_in(shdr.sh_info.get() as usize)
             };
@@ -1982,7 +1980,7 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
 
-            let shndx = (!esym.is_abs()).then(|| self.shndx_from(i, esym.st_shndx().get()));
+            let shndx = (!esym.is_abs()).then(|| self.shndx_from(i, esym.st_shndx()));
 
             let name: &'static [u8] = if esym.st_type() == STT_SECTION {
                 let shndx = shndx.unwrap();
@@ -1996,7 +1994,7 @@ impl<E: Arch> ObjectFile<E> {
 
             let mut sym = Symbol::new(BStr::new(name));
             sym.set_file(file_id);
-            sym.value = esym.st_value().get();
+            sym.value = esym.st_value();
             sym.set_sym_idx(i as u32);
             sym.set_esym(esym);
             sym.set_rust(self.is_rust_obj);
@@ -2339,15 +2337,15 @@ impl<E: Arch> ObjectFile<E> {
                 continue;
             }
             let sym_id = self.base.symbols[i];
-            let shndx = self.shndx_from(i, esym.st_shndx().get());
+            let shndx = self.shndx_from(i, esym.st_shndx());
             let Some(m) = self.merge_info(shndx) else {
                 continue;
             };
             if !merged[m.parent.index()].resolved {
                 continue;
             }
-            let Some((frag, offset)) = m.fragment(esym.st_value().get()) else {
-                fatal!("{self}: bad symbol value: {}", esym.st_value().get());
+            let Some((frag, offset)) = m.fragment(esym.st_value()) else {
+                fatal!("{self}: bad symbol value: {}", esym.st_value());
             };
             let frag = FragmentRef { section: m.parent, entry: frag };
             symbols.with_symbol(sym_id, |sym| {
@@ -2435,7 +2433,7 @@ impl<E: Arch> ObjectFile<E> {
                 }
                 let found = {
                     let esym = &self.base.elf_syms[r_sym];
-                    let sym_shndx = self.shndx_from(r_sym, esym.st_shndx().get());
+                    let sym_shndx = self.shndx_from(r_sym, esym.st_shndx());
                     self.merge_info(sym_shndx).map(|m| {
                         debug_assert!(merged[m.parent.index()].resolved);
                         let addend = if E::IS_RELA && E::FAMILY != Family::Sh4 {
@@ -2444,7 +2442,7 @@ impl<E: Arch> ObjectFile<E> {
                             E::get_addend(&contents[record.r_offset() as usize..], &record)
                         };
                         let Some((frag, in_frag_offset)) =
-                            m.fragment(esym.st_value().get().wrapping_add(addend as u64))
+                            m.fragment(esym.st_value().wrapping_add(addend as u64))
                         else {
                             fatal!("{self}: bad relocation at {}", record.r_sym());
                         };
@@ -2548,8 +2546,8 @@ impl<E: Arch> ObjectFile<E> {
 
             let mut shdr = ElfShdr::<E>::default();
             shdr.sh_type.set(SHT_NOBITS);
-            shdr.sh_size.set(esym.st_size().get());
-            shdr.sh_addralign.set(esym.st_value().get());
+            shdr.sh_size.set(esym.st_size());
+            shdr.sh_addralign.set(esym.st_value());
             shdr.sh_flags.set(if sym.ty() == STT_TLS {
                 (SHF_ALLOC | SHF_WRITE | SHF_TLS) as u64
             } else {
@@ -2813,7 +2811,7 @@ impl<'a> SymtabBlock<'a> {
     pub fn push_synthetic<E: Arch>(&mut self, name: &[u8], suffix: &[u8], esym: ElfSym<E>) {
         let st_name = self.add_string(&[name, suffix]);
         let mut esym = esym;
-        esym.st_name_mut().set(st_name);
+        esym.set_st_name(st_name);
         self.locals.push::<E>(esym, 0);
     }
 
@@ -2821,7 +2819,7 @@ impl<'a> SymtabBlock<'a> {
     /// an ARM32 mapping symbol.
     pub fn push_mapping_symbol<E: Arch>(&mut self, st_name: u32, esym: ElfSym<E>) {
         let mut esym = esym;
-        esym.st_name_mut().set(st_name);
+        esym.set_st_name(st_name);
         self.locals.push::<E>(esym, 0);
     }
 }
@@ -3091,10 +3089,7 @@ impl<E: Arch> SharedFile<E> {
                 if !esym.is_undef() {
                     fatal!(
                         "{self}: invalid version index 0 for defined symbol {}",
-                        util::display(cstr_at(
-                            self.base.symbol_strtab,
-                            esym.st_name().get() as usize
-                        ))
+                        util::display(cstr_at(self.base.symbol_strtab, esym.st_name() as usize))
                     );
                 }
                 ver = VER_NDX_GLOBAL as u16;
@@ -3120,7 +3115,7 @@ impl<E: Arch> SharedFile<E> {
             // for undefined entries.
             self.versyms.push(if esym.is_undef() { VER_NDX_GLOBAL as u16 } else { ver });
 
-            let name = cstr_at(self.base.symbol_strtab, esym.st_name().get() as usize);
+            let name = cstr_at(self.base.symbol_strtab, esym.st_name() as usize);
             let has_version = ver as u32 != VER_NDX_GLOBAL
                 && (ver as usize) < self.version_strings.len()
                 && !self.version_strings[ver as usize].is_empty();
@@ -3275,12 +3270,12 @@ impl<E: Arch> SharedFile<E> {
                 .copied()
                 .filter(|&s| ctx.symbols[s].file() == Some(FileId::Dso(id)))
                 .collect();
-            syms.sort_by_key(|&s| (ctx.symbols[s].esym(ctx).st_value().get(), s));
+            syms.sort_by_key(|&s| (ctx.symbols[s].esym(ctx).st_value(), s));
             syms
         });
-        let value = sym.esym(ctx).st_value().get();
-        let begin = sorted.partition_point(|&s| ctx.symbols[s].esym(ctx).st_value().get() < value);
-        let end = sorted.partition_point(|&s| ctx.symbols[s].esym(ctx).st_value().get() <= value);
+        let value = sym.esym(ctx).st_value();
+        let begin = sorted.partition_point(|&s| ctx.symbols[s].esym(ctx).st_value() < value);
+        let end = sorted.partition_point(|&s| ctx.symbols[s].esym(ctx).st_value() <= value);
         &sorted[begin..end]
     }
 
@@ -3292,7 +3287,7 @@ impl<E: Arch> SharedFile<E> {
     // function, we conservatively infer it from a symbol address and a
     // section alignment requirement.
     pub fn alignment(&self, sym: &Symbol) -> u64 {
-        let shndx = self.base.elf_syms[sym.sym_idx() as usize].st_shndx().get() as usize;
+        let shndx = self.base.elf_syms[sym.sym_idx() as usize].st_shndx() as usize;
         let shdr = &self.base.shdrs[shndx];
         let mut align = shdr.sh_addralign.get().max(1);
         if sym.value != 0 {
@@ -3305,16 +3300,16 @@ impl<E: Arch> SharedFile<E> {
     pub fn is_readonly(&self, sym: &Symbol) -> bool {
         let data = self.base.data();
         let ehdr = record_from_bytes::<ElfEhdr<E>>(data);
-        let val = self.base.elf_syms[sym.sym_idx() as usize].st_value().get();
+        let val = self.base.elf_syms[sym.sym_idx() as usize].st_value();
         let phoff = ehdr.e_phoff.get() as usize;
         let size = std::mem::size_of::<ElfPhdr<E>>();
         let phnum = ehdr.e_phnum.get() as usize;
         let phdrs = records_from_bytes::<ElfPhdr<E>>(&data[phoff..phoff + phnum * size]);
         phdrs.iter().any(|phdr| {
-            (phdr.p_type().get() == PT_LOAD || phdr.p_type().get() == PT_GNU_RELRO)
-                && phdr.p_flags().get() & PF_W == 0
-                && phdr.p_vaddr().get() <= val
-                && val < phdr.p_vaddr().get() + phdr.p_memsz().get()
+            (phdr.p_type() == PT_LOAD || phdr.p_type() == PT_GNU_RELRO)
+                && phdr.p_flags() & PF_W == 0
+                && phdr.p_vaddr() <= val
+                && val < phdr.p_vaddr() + phdr.p_memsz()
         })
     }
 
@@ -3529,7 +3524,7 @@ impl<E: Arch> ObjectFile<E> {
         // definitions as live. The final round uses the actual section state.
         let mut origin = None;
         if !esym.is_abs() && !esym.is_common() && self.sections_parsed {
-            let shndx = self.shndx_from(i, esym.st_shndx().get());
+            let shndx = self.shndx_from(i, esym.st_shndx());
             let Some((section, isec)) = self.section_with_id(shndx) else {
                 return;
             };
@@ -3547,7 +3542,7 @@ impl<E: Arch> ObjectFile<E> {
                     Some(section) => sym.set_input_section(section),
                     None => sym.clear_origin(),
                 }
-                sym.value = esym.st_value().get();
+                sym.value = esym.st_value();
                 sym.set_sym_idx(i as u32);
                 sym.set_esym(esym);
                 sym.ver_idx = resolver.default_version;
@@ -3575,7 +3570,7 @@ impl<E: Arch> SharedFile<E> {
                 if rank < resolver.current_rank(sym) {
                     sym.set_file(FileId::Dso(id));
                     sym.clear_origin();
-                    sym.value = esym.st_value().get();
+                    sym.value = esym.st_value();
                     sym.set_sym_idx(i as u32);
                     sym.set_esym(esym);
                     sym.ver_idx = self.versyms[i];

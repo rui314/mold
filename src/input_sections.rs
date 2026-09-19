@@ -278,7 +278,7 @@ impl<E: Arch> InputSection<E> {
 
         let (sh_size, p2align) = if shdr.sh_flags.get() & SHF_COMPRESSED as u64 != 0 {
             let chdr = record_from_bytes::<ElfChdr<E>>(contents);
-            (chdr.ch_size().get(), to_p2align(chdr.ch_addralign().get()))
+            (chdr.ch_size(), to_p2align(chdr.ch_addralign()))
         } else {
             (shdr.sh_size.get(), to_p2align(shdr.sh_addralign.get()))
         };
@@ -557,7 +557,7 @@ impl<E: Arch> InputSection<E> {
         let chdr = record_from_bytes::<ElfChdr<E>>(contents);
         let data = &contents[hdr_size..];
 
-        let result = match chdr.ch_type().get() {
+        let result = match chdr.ch_type() {
             ELFCOMPRESS_ZLIB => zlib_decompress(data, buf),
             ELFCOMPRESS_ZSTD => zstd_decompress(data, buf),
             ty => fatal!("{file}:({name}): unsupported compression type: 0x{ty:x}"),
@@ -638,10 +638,10 @@ impl<E: Arch> InputSection<E> {
                 continue;
             }
             let esym = &sym.esym(ctx);
-            if esym.st_shndx().get() as u32 == self.shndx
+            if esym.st_shndx() == self.shndx
                 && esym.st_type() == STT_FUNC
-                && esym.st_value().get() <= offset
-                && offset < esym.st_value().get() + esym.st_size().get()
+                && esym.st_value() <= offset
+                && offset < esym.st_value() + esym.st_size()
             {
                 return Some(sym);
             }
@@ -774,10 +774,10 @@ impl<E: Arch> InputSection<E> {
             cache.section = None;
             cache.next = 0;
             if let Some(esym) = file.base.elf_syms.get(rel.r_sym() as usize) {
-                let shndx = esym.st_shndx().get();
-                if !matches!(shndx as u32, SHN_UNDEF | SHN_ABS | SHN_COMMON) {
+                let shndx = esym.st_shndx();
+                if !matches!(shndx, SHN_UNDEF | SHN_ABS | SHN_COMMON) {
                     cache.section = file.merge_info(file.shndx_from(rel.r_sym() as usize, shndx));
-                    cache.value = esym.st_value().get();
+                    cache.value = esym.st_value();
                     cache.is_section = esym.st_type() == STT_SECTION;
                 }
             }
@@ -905,8 +905,7 @@ impl<E: Arch> InputSection<E> {
         // Referring to that symbol is always valid.
         let esym = &file.base.elf_syms[sym_idx];
         let st_bind = esym.st_bind();
-        let is_undef =
-            esym.st_shndx().get() as u32 == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx() != 0;
+        let is_undef = esym.st_shndx() == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx() != 0;
 
         if is_undef && sym.is_undef() {
             match ctx.args.unresolved_symbols {

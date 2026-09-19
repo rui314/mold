@@ -202,24 +202,28 @@ const _: () = assert!(std::mem::align_of::<Elf32Phdr<LittleEndian>>() == 1);
 const _: () = assert!(std::mem::align_of::<Elf64Phdr<LittleEndian>>() == 1);
 
 /// The common interface of the two physical program-header layouts.
+/// Accessors take and return host integers; the record itself stays in
+/// its file representation.
 pub trait PhdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
 
-    fn p_type(&self) -> &U32<Self::Endian>;
-    fn p_type_mut(&mut self) -> &mut U32<Self::Endian>;
-    fn p_flags(&self) -> &U32<Self::Endian>;
-    fn p_flags_mut(&mut self) -> &mut U32<Self::Endian>;
-    fn p_offset_mut(&mut self) -> &mut Self::Word;
-    fn p_vaddr(&self) -> &Self::Word;
-    fn p_vaddr_mut(&mut self) -> &mut Self::Word;
-    fn p_paddr(&self) -> &Self::Word;
-    fn p_paddr_mut(&mut self) -> &mut Self::Word;
-    fn p_filesz_mut(&mut self) -> &mut Self::Word;
-    fn p_memsz(&self) -> &Self::Word;
-    fn p_memsz_mut(&mut self) -> &mut Self::Word;
-    fn p_align(&self) -> &Self::Word;
-    fn p_align_mut(&mut self) -> &mut Self::Word;
+    fn p_type(&self) -> u32;
+    fn set_p_type(&mut self, value: u32);
+    fn p_flags(&self) -> u32;
+    fn set_p_flags(&mut self, value: u32);
+    fn p_offset(&self) -> u64;
+    fn set_p_offset(&mut self, value: u64);
+    fn p_vaddr(&self) -> u64;
+    fn set_p_vaddr(&mut self, value: u64);
+    fn p_paddr(&self) -> u64;
+    fn set_p_paddr(&mut self, value: u64);
+    fn p_filesz(&self) -> u64;
+    fn set_p_filesz(&mut self, value: u64);
+    fn p_memsz(&self) -> u64;
+    fn set_p_memsz(&mut self, value: u64);
+    fn p_align(&self) -> u64;
+    fn set_p_align(&mut self, value: u64);
 }
 
 macro_rules! impl_phdr_record {
@@ -229,20 +233,22 @@ macro_rules! impl_phdr_record {
             type Endian = E;
             type Word = $word<E>;
 
-            fn p_type(&self) -> &U32<E> { &self.p_type }
-            fn p_type_mut(&mut self) -> &mut U32<E> { &mut self.p_type }
-            fn p_flags(&self) -> &U32<E> { &self.p_flags }
-            fn p_flags_mut(&mut self) -> &mut U32<E> { &mut self.p_flags }
-            fn p_offset_mut(&mut self) -> &mut $word<E> { &mut self.p_offset }
-            fn p_vaddr(&self) -> &$word<E> { &self.p_vaddr }
-            fn p_vaddr_mut(&mut self) -> &mut $word<E> { &mut self.p_vaddr }
-            fn p_paddr(&self) -> &$word<E> { &self.p_paddr }
-            fn p_paddr_mut(&mut self) -> &mut $word<E> { &mut self.p_paddr }
-            fn p_filesz_mut(&mut self) -> &mut $word<E> { &mut self.p_filesz }
-            fn p_memsz(&self) -> &$word<E> { &self.p_memsz }
-            fn p_memsz_mut(&mut self) -> &mut $word<E> { &mut self.p_memsz }
-            fn p_align(&self) -> &$word<E> { &self.p_align }
-            fn p_align_mut(&mut self) -> &mut $word<E> { &mut self.p_align }
+            fn p_type(&self) -> u32 { self.p_type.get() }
+            fn set_p_type(&mut self, value: u32) { self.p_type.set(value) }
+            fn p_flags(&self) -> u32 { self.p_flags.get() }
+            fn set_p_flags(&mut self, value: u32) { self.p_flags.set(value) }
+            fn p_offset(&self) -> u64 { ElfWord::get(&self.p_offset) }
+            fn set_p_offset(&mut self, value: u64) { ElfWord::set(&mut self.p_offset, value) }
+            fn p_vaddr(&self) -> u64 { ElfWord::get(&self.p_vaddr) }
+            fn set_p_vaddr(&mut self, value: u64) { ElfWord::set(&mut self.p_vaddr, value) }
+            fn p_paddr(&self) -> u64 { ElfWord::get(&self.p_paddr) }
+            fn set_p_paddr(&mut self, value: u64) { ElfWord::set(&mut self.p_paddr, value) }
+            fn p_filesz(&self) -> u64 { ElfWord::get(&self.p_filesz) }
+            fn set_p_filesz(&mut self, value: u64) { ElfWord::set(&mut self.p_filesz, value) }
+            fn p_memsz(&self) -> u64 { ElfWord::get(&self.p_memsz) }
+            fn set_p_memsz(&mut self, value: u64) { ElfWord::set(&mut self.p_memsz, value) }
+            fn p_align(&self) -> u64 { ElfWord::get(&self.p_align) }
+            fn set_p_align(&mut self, value: u64) { ElfWord::set(&mut self.p_align, value) }
         }
     };
 }
@@ -257,8 +263,8 @@ pub type ElfPhdr<E> = <E as Layout>::Phdr;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Elf64Sym<E: Endian> {
     pub st_name: U32<E>,
-    type_and_bind: u8,
-    other: u8,
+    st_info: u8,
+    st_other: u8,
     pub st_shndx: U16<E>,
     pub st_value: U64<E>,
     pub st_size: U64<E>,
@@ -270,8 +276,8 @@ pub struct Elf32Sym<E: Endian> {
     pub st_name: U32<E>,
     pub st_value: U32<E>,
     pub st_size: U32<E>,
-    type_and_bind: u8,
-    other: u8,
+    st_info: u8,
+    st_other: u8,
     pub st_shndx: U16<E>,
 }
 
@@ -286,67 +292,54 @@ const _: () = assert!(std::mem::size_of::<Elf64Sym<LittleEndian>>() == 24);
 const _: () = assert!(std::mem::align_of::<Elf32Sym<LittleEndian>>() == 1);
 const _: () = assert!(std::mem::align_of::<Elf64Sym<LittleEndian>>() == 1);
 
-/// The common interface of the two physical symbol layouts.
+/// The common interface of the two physical symbol layouts. Accessors
+/// take and return host integers; the record itself stays in its file
+/// representation.
 pub trait SymbolRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
 
-    fn st_name(&self) -> &U32<Self::Endian>;
-    fn st_name_mut(&mut self) -> &mut U32<Self::Endian>;
-    fn st_value(&self) -> &Self::Word;
-    fn st_value_mut(&mut self) -> &mut Self::Word;
-    fn st_size(&self) -> &Self::Word;
-    fn st_size_mut(&mut self) -> &mut Self::Word;
-    fn st_shndx(&self) -> &U16<Self::Endian>;
-    fn st_shndx_mut(&mut self) -> &mut U16<Self::Endian>;
-    fn type_and_bind(&self) -> u8;
-    fn type_and_bind_mut(&mut self) -> &mut u8;
-    fn other(&self) -> u8;
-    fn other_mut(&mut self) -> &mut u8;
+    fn st_name(&self) -> u32;
+    fn set_st_name(&mut self, value: u32);
+    fn st_value(&self) -> u64;
+    fn set_st_value(&mut self, value: u64);
+    fn st_size(&self) -> u64;
+    fn set_st_size(&mut self, value: u64);
+    /// The 16-bit section index, widened so that it compares directly
+    /// with the SHN_* constants.
+    fn st_shndx(&self) -> u32;
+    fn set_st_shndx(&mut self, value: u32);
 
-    #[inline]
-    fn st_type(&self) -> u32 {
-        u32::from(self.type_and_bind() & 0xf)
-    }
+    // st_info packs the symbol type and binding into one byte.
+    fn st_type(&self) -> u32;
+    fn set_type(&mut self, ty: u32);
+    fn st_bind(&self) -> u32;
+    fn set_bind(&mut self, bind: u32);
 
-    #[inline]
-    fn st_bind(&self) -> u32 {
-        u32::from(self.type_and_bind() >> 4)
-    }
-
-    #[inline]
-    fn st_visibility(&self) -> u32 {
-        u32::from(self.other() & 3)
-    }
-
-    #[inline]
-    fn set_type(&mut self, ty: u32) {
-        *self.type_and_bind_mut() = (self.type_and_bind() & 0xf0) | (ty as u8 & 0xf);
-    }
-
-    #[inline]
-    fn set_bind(&mut self, bind: u32) {
-        *self.type_and_bind_mut() = (self.type_and_bind() & 0x0f) | ((bind as u8) << 4);
-    }
-
-    #[inline]
-    fn set_visibility(&mut self, visibility: u32) {
-        *self.other_mut() = (self.other() & !3) | (visibility as u8 & 3);
-    }
+    // st_other holds the visibility in its low two bits; targets use
+    // the remaining bits for their own flags.
+    fn st_visibility(&self) -> u32;
+    fn set_visibility(&mut self, visibility: u32);
+    fn arm64_variant_pcs(&self) -> bool;
+    fn set_arm64_variant_pcs(&mut self, value: bool);
+    fn riscv_variant_cc(&self) -> bool;
+    fn set_riscv_variant_cc(&mut self, value: bool);
+    fn ppc64_local_entry(&self) -> u8;
+    fn set_ppc64_local_entry(&mut self, value: u8);
 
     #[inline]
     fn is_undef(&self) -> bool {
-        self.st_shndx().get() as u32 == SHN_UNDEF
+        self.st_shndx() == SHN_UNDEF
     }
 
     #[inline]
     fn is_abs(&self) -> bool {
-        self.st_shndx().get() as u32 == SHN_ABS
+        self.st_shndx() == SHN_ABS
     }
 
     #[inline]
     fn is_common(&self) -> bool {
-        self.st_shndx().get() as u32 == SHN_COMMON
+        self.st_shndx() == SHN_COMMON
     }
 
     #[inline]
@@ -357,36 +350,6 @@ pub trait SymbolRecord: FileRecord + fmt::Debug {
     #[inline]
     fn is_undef_weak(&self) -> bool {
         self.is_undef() && self.is_weak()
-    }
-
-    #[inline]
-    fn arm64_variant_pcs(&self) -> bool {
-        self.other() & 0x80 != 0
-    }
-
-    #[inline]
-    fn set_arm64_variant_pcs(&mut self, value: bool) {
-        *self.other_mut() = (self.other() & !0x80) | if value { 0x80 } else { 0 };
-    }
-
-    #[inline]
-    fn riscv_variant_cc(&self) -> bool {
-        self.other() & 0x80 != 0
-    }
-
-    #[inline]
-    fn set_riscv_variant_cc(&mut self, value: bool) {
-        *self.other_mut() = (self.other() & !0x80) | if value { 0x80 } else { 0 };
-    }
-
-    #[inline]
-    fn ppc64_local_entry(&self) -> u8 {
-        self.other() >> 5
-    }
-
-    #[inline]
-    fn set_ppc64_local_entry(&mut self, value: u8) {
-        *self.other_mut() = (self.other() & 0x1f) | ((value & 7) << 5);
     }
 
     #[inline]
@@ -407,18 +370,45 @@ macro_rules! impl_symbol_record {
             type Endian = E;
             type Word = $word<E>;
 
-            fn st_name(&self) -> &U32<E> { &self.st_name }
-            fn st_name_mut(&mut self) -> &mut U32<E> { &mut self.st_name }
-            fn st_value(&self) -> &$word<E> { &self.st_value }
-            fn st_value_mut(&mut self) -> &mut $word<E> { &mut self.st_value }
-            fn st_size(&self) -> &$word<E> { &self.st_size }
-            fn st_size_mut(&mut self) -> &mut $word<E> { &mut self.st_size }
-            fn st_shndx(&self) -> &U16<E> { &self.st_shndx }
-            fn st_shndx_mut(&mut self) -> &mut U16<E> { &mut self.st_shndx }
-            fn type_and_bind(&self) -> u8 { self.type_and_bind }
-            fn type_and_bind_mut(&mut self) -> &mut u8 { &mut self.type_and_bind }
-            fn other(&self) -> u8 { self.other }
-            fn other_mut(&mut self) -> &mut u8 { &mut self.other }
+            fn st_name(&self) -> u32 { self.st_name.get() }
+            fn set_st_name(&mut self, value: u32) { self.st_name.set(value) }
+            fn st_value(&self) -> u64 { ElfWord::get(&self.st_value) }
+            fn set_st_value(&mut self, value: u64) { ElfWord::set(&mut self.st_value, value) }
+            fn st_size(&self) -> u64 { ElfWord::get(&self.st_size) }
+            fn set_st_size(&mut self, value: u64) { ElfWord::set(&mut self.st_size, value) }
+            fn st_shndx(&self) -> u32 { u32::from(self.st_shndx.get()) }
+            fn set_st_shndx(&mut self, value: u32) { self.st_shndx.set(value as u16) }
+
+            fn st_type(&self) -> u32 { u32::from(self.st_info & 0xf) }
+            fn st_bind(&self) -> u32 { u32::from(self.st_info >> 4) }
+            fn st_visibility(&self) -> u32 { u32::from(self.st_other & 3) }
+            fn arm64_variant_pcs(&self) -> bool { self.st_other & 0x80 != 0 }
+            fn riscv_variant_cc(&self) -> bool { self.st_other & 0x80 != 0 }
+            fn ppc64_local_entry(&self) -> u8 { self.st_other >> 5 }
+
+            fn set_type(&mut self, ty: u32) {
+                self.st_info = (self.st_info & 0xf0) | (ty as u8 & 0xf);
+            }
+
+            fn set_bind(&mut self, bind: u32) {
+                self.st_info = (self.st_info & 0x0f) | ((bind as u8) << 4);
+            }
+
+            fn set_visibility(&mut self, v: u32) {
+                self.st_other = (self.st_other & !3) | (v as u8 & 3);
+            }
+
+            fn set_arm64_variant_pcs(&mut self, v: bool) {
+                self.st_other = (self.st_other & !0x80) | (u8::from(v) << 7);
+            }
+
+            fn set_riscv_variant_cc(&mut self, v: bool) {
+                self.st_other = (self.st_other & !0x80) | (u8::from(v) << 7);
+            }
+
+            fn set_ppc64_local_entry(&mut self, v: u8) {
+                self.st_other = (self.st_other & 0x1f) | ((v & 7) << 5);
+            }
         }
     };
 }
@@ -881,16 +871,18 @@ const _: () = assert!(std::mem::align_of::<Elf32Chdr<LittleEndian>>() == 1);
 const _: () = assert!(std::mem::align_of::<Elf64Chdr<LittleEndian>>() == 1);
 
 /// The common interface of the two physical compression-header layouts.
+/// Accessors take and return host integers; the record itself stays in
+/// its file representation.
 pub trait ChdrRecord: FileRecord + fmt::Debug {
     type Endian: Endian;
     type Word: ElfWord<Endian = Self::Endian>;
 
-    fn ch_type(&self) -> &U32<Self::Endian>;
-    fn ch_type_mut(&mut self) -> &mut U32<Self::Endian>;
-    fn ch_size(&self) -> &Self::Word;
-    fn ch_size_mut(&mut self) -> &mut Self::Word;
-    fn ch_addralign(&self) -> &Self::Word;
-    fn ch_addralign_mut(&mut self) -> &mut Self::Word;
+    fn ch_type(&self) -> u32;
+    fn set_ch_type(&mut self, value: u32);
+    fn ch_size(&self) -> u64;
+    fn set_ch_size(&mut self, value: u64);
+    fn ch_addralign(&self) -> u64;
+    fn set_ch_addralign(&mut self, value: u64);
 }
 
 macro_rules! impl_chdr_record {
@@ -900,12 +892,14 @@ macro_rules! impl_chdr_record {
             type Endian = E;
             type Word = $word<E>;
 
-            fn ch_type(&self) -> &U32<E> { &self.ch_type }
-            fn ch_type_mut(&mut self) -> &mut U32<E> { &mut self.ch_type }
-            fn ch_size(&self) -> &$word<E> { &self.ch_size }
-            fn ch_size_mut(&mut self) -> &mut $word<E> { &mut self.ch_size }
-            fn ch_addralign(&self) -> &$word<E> { &self.ch_addralign }
-            fn ch_addralign_mut(&mut self) -> &mut $word<E> { &mut self.ch_addralign }
+            fn ch_type(&self) -> u32 { self.ch_type.get() }
+            fn set_ch_type(&mut self, value: u32) { self.ch_type.set(value) }
+            fn ch_size(&self) -> u64 { ElfWord::get(&self.ch_size) }
+            fn set_ch_size(&mut self, value: u64) { ElfWord::set(&mut self.ch_size, value) }
+            fn ch_addralign(&self) -> u64 { ElfWord::get(&self.ch_addralign) }
+            fn set_ch_addralign(&mut self, value: u64) {
+                ElfWord::set(&mut self.ch_addralign, value)
+            }
         }
     };
 }

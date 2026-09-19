@@ -636,9 +636,7 @@ impl Arch for Sparc64 {
                 R_SPARC_TLS_LE_LOX10 => {
                     or32(loc, bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000)
                 }
-                R_SPARC_SIZE32 => {
-                    write_ub32(loc, sym.esym(ctx).st_size().get().wrapping_add(a) as u32)
-                }
+                R_SPARC_SIZE32 => write_ub32(loc, sym.esym(ctx).st_size().wrapping_add(a) as u32),
                 R_SPARC_64 | R_SPARC_UA64 | R_SPARC_TLS_LDO_ADD | R_SPARC_TLS_IE_LD
                 | R_SPARC_TLS_IE_LDX | R_SPARC_TLS_IE_ADD => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),

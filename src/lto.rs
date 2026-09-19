@@ -243,11 +243,11 @@ impl ClaimedSymbol {
     /// IR object has no sections.
     fn to_elf_sym<E: Layout>(&self) -> ElfSym<E> {
         let mut esym = ElfSym::<E>::default();
-        esym.st_size_mut().set(self.size);
-        esym.st_shndx_mut().set(match self.def {
-            LDPK_DEF | LDPK_WEAKDEF => SHN_ABS as u16,
-            LDPK_COMMON => SHN_COMMON as u16,
-            _ => SHN_UNDEF as u16,
+        esym.set_st_size(self.size);
+        esym.set_st_shndx(match self.def {
+            LDPK_DEF | LDPK_WEAKDEF => SHN_ABS,
+            LDPK_COMMON => SHN_COMMON,
+            _ => SHN_UNDEF,
         });
         if matches!(self.def, LDPK_WEAKDEF | LDPK_WEAKUNDEF) {
             esym.set_bind(STB_WEAK);
@@ -769,7 +769,7 @@ pub fn read_lto_object<E: Arch>(
     let mut comdat_keys = vec![None];
     for sym in symbols {
         let mut esym = sym.to_elf_sym::<E>();
-        esym.st_name_mut().set(strtab.len() as u32);
+        esym.set_st_name(strtab.len() as u32);
         strtab.extend_from_slice(&sym.name);
         strtab.push(0);
         elf_syms.push(esym);

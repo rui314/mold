@@ -507,9 +507,9 @@ impl Arch for X86_64 {
                         buf[off + 1] = 0x90;
                     }
                 }
-                R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().get().wrapping_add(a)),
+                R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().wrapping_add(a)),
                 R_X86_64_SIZE64 => {
-                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().get().wrapping_add(a))
+                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
                 }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
@@ -584,9 +584,9 @@ impl Arch for X86_64 {
                     // _GLOBAL_OFFSET_TABLE_.
                     write_u64(&mut buf[off..], ctx.gotplt.shdr.sh_addr.get().wrapping_add(a))
                 }
-                R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().get().wrapping_add(a)),
+                R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().wrapping_add(a)),
                 R_X86_64_SIZE64 => {
-                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().get().wrapping_add(a))
+                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
                 }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",

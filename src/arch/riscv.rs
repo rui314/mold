@@ -228,7 +228,7 @@ fn find_paired_reloc<E: Arch>(
     sym: &Symbol,
     i: usize,
 ) -> usize {
-    let value = sym.esym(ctx).st_value().get();
+    let value = sym.esym(ctx).st_value();
     if value <= rels[i].r_offset() {
         for j in (0..i).rev() {
             if is_hi20(rels[j].r_type()) && value == rels[j].r_offset() {

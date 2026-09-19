@@ -678,10 +678,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                         relocations.push(PubnamesRelocation {
                             offset: rel.r_offset(),
                             target_shndx: target.shndx,
-                            unit_offset: esym
-                                .st_value()
-                                .get()
-                                .wrapping_add(isec.rel_addend(&rel) as u64),
+                            unit_offset: esym.st_value().wrapping_add(isec.rel_addend(&rel) as u64),
                         });
                     }
                 }

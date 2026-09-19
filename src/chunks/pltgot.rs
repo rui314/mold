@@ -70,8 +70,8 @@ pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
     }
     let func = |addr: u64| {
         let mut sym = ElfSym::<E>::default();
-        sym.st_shndx_mut().set(pltgot.hdr.shndx as u16);
-        sym.st_value_mut().set(addr);
+        sym.set_st_shndx(pltgot.hdr.shndx);
+        sym.set_st_value(addr);
         sym.set_type(STT_FUNC);
         sym
     };

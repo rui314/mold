@@ -53,7 +53,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     }
 
     let alignment = dso.alignment(sym);
-    let size = sym.esym(ctx).st_size().get();
+    let size = sym.esym(ctx).st_size();
     // We need to create dynamic symbols not only for this particular symbol
     // but also for its aliases (i.e. other symbols at the same address)
     // becasue otherwise the aliases are broken apart at runtime.
