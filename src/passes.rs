@@ -2297,8 +2297,7 @@ pub fn compute_section_sizes<E: Arch>(ctx: &mut Context<E>) {
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
         match id {
-            ChunkId::Output(_) => {}
-            ChunkId::Merged(_) => {}
+            ChunkId::Output(_) | ChunkId::Merged(_) => {}
             _ => chunks::compute_section_size(ctx, id),
         }
     }
