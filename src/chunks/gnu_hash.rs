@@ -25,7 +25,7 @@ pub fn djb_hash(name: &[u8]) -> u32 {
 // on-disk hash table but also contains a bloom filter to quickly identify
 // whether or not a given symbol name exists in .dynsym.
 #[derive(Debug)]
-pub struct GnuHashSection<E: Layout> {
+pub struct GnuHashSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub num_buckets: u32,
     pub num_bloom: u32,

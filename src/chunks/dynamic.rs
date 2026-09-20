@@ -275,7 +275,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     debug_assert_eq!(ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize, buf.len());
     let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());
     for_each_entry(ctx, |d_tag, d_val| {
-        let entry = ElfDyn::<E> { d_tag: E::Word::new(d_tag as u64), d_val: E::Word::new(d_val) };
+        let entry =
+            ElfDyn::<E> { d_tag: Word::<E>::new(d_tag as u64), d_val: Word::<E>::new(d_val) };
         entry.write(slots.next().unwrap());
     });
     debug_assert!(slots.next().is_none());

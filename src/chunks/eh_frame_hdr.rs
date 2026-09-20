@@ -11,12 +11,12 @@ use crate::target::Target;
 // function by binary search. Without .eh_frame_hdr, the runtime would
 // have had to do linear search in .eh_frame.
 #[derive(Debug)]
-pub struct EhFrameHdrSection<E: Layout> {
+pub struct EhFrameHdrSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub num_fdes: u64,
 }
 
-impl<E: Layout> EhFrameHdrSection<E> {
+impl<E: Target> EhFrameHdrSection<E> {
     pub const HEADER_SIZE: u64 = 12;
 
     pub fn new() -> Self {
@@ -27,7 +27,7 @@ impl<E: Layout> EhFrameHdrSection<E> {
     }
 }
 
-impl<E: Layout> Default for EhFrameHdrSection<E> {
+impl<E: Target> Default for EhFrameHdrSection<E> {
     fn default() -> Self {
         Self::new()
     }

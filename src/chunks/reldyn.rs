@@ -11,7 +11,7 @@ use crate::util::encode_sleb;
 
 // .rel.dyn contains relocation infromation for other sections.
 #[derive(Debug)]
-pub struct RelDynSection<E: Layout> {
+pub struct RelDynSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub android_encoded: Vec<u8>,
     pub keep_android_size: bool,

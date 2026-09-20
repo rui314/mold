@@ -29,16 +29,14 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct M68k;
 
-impl Layout for M68k {
+impl Target for M68k {
     const IS_LITTLE: bool = false;
     type Word = U32<Self>;
     type Sym = Elf32Sym<Self>;
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
-}
 
-impl Target for M68k {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "m68k";

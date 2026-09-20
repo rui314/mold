@@ -17,12 +17,12 @@ use crate::target::Target;
 pub const ENTRY_SIZE: u64 = 24;
 
 #[derive(Debug)]
-pub struct Ppc64OpdSection<E: Layout> {
+pub struct Ppc64OpdSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl<E: Layout> Ppc64OpdSection<E> {
+impl<E: Target> Ppc64OpdSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".opd", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.shdr.sh_addralign.set(8);
@@ -30,7 +30,7 @@ impl<E: Layout> Ppc64OpdSection<E> {
     }
 }
 
-impl<E: Layout> Default for Ppc64OpdSection<E> {
+impl<E: Target> Default for Ppc64OpdSection<E> {
     fn default() -> Self {
         Self::new()
     }

@@ -49,15 +49,6 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct S390x;
 
-impl Layout for S390x {
-    const IS_LITTLE: bool = false;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
 /// Sets the 12-bit displacement field of a halfword.
 fn or12(loc: &mut [u8], val: u64) {
     write_ub16(loc, read_ub16(loc) | bits(val, 11, 0) as u16);
@@ -89,6 +80,13 @@ fn relaxes_gotent(
 }
 
 impl Target for S390x {
+    const IS_LITTLE: bool = false;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = "s390x";

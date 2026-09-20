@@ -38,15 +38,6 @@ pub struct Arm64Target<const LE: bool>;
 pub type Arm64 = Arm64Target<true>;
 pub type Arm64Be = Arm64Target<false>;
 
-impl<const LE: bool> Layout for Arm64Target<LE> {
-    const IS_LITTLE: bool = LE;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
 /// Instructions are always little-endian.
 fn insn(loc: &[u8]) -> u32 {
     u32::from_le_bytes([loc[0], loc[1], loc[2], loc[3]])
@@ -143,6 +134,13 @@ impl<const LE: bool> Arm64Target<LE> {
 }
 
 impl<const LE: bool> Target for Arm64Target<LE> {
+    const IS_LITTLE: bool = LE;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = if Self::IS_LITTLE { "arm64" } else { "arm64be" };

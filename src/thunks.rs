@@ -56,7 +56,7 @@ impl Thunk {
         self.offsets.last().copied().unwrap_or(0)
     }
 
-    pub fn addr<E: Layout>(&self, osec: &OutputSection<E>) -> u64 {
+    pub fn addr<E: Target>(&self, osec: &OutputSection<E>) -> u64 {
         osec.hdr.shdr.sh_addr.get() + self.offset
     }
 

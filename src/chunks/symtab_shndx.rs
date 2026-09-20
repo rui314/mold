@@ -2,6 +2,7 @@
 
 use crate::chunks::ChunkHeader;
 use crate::elf::*;
+use crate::target::Target;
 
 // .symtab_shndx is a parallel table for .symtab to contain section
 // indices for symbols.
@@ -12,7 +13,7 @@ use crate::elf::*;
 // of sections.
 //
 // Use of this section is exceptional. Most ELF files don't contain one.
-pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".symtab_shndx", SHT_SYMTAB_SHNDX, 0);
     hdr.shdr.sh_entsize.set(4);
     hdr.shdr.sh_addralign.set(4);

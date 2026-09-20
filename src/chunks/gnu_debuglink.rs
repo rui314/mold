@@ -11,12 +11,12 @@ use crate::util::write_cstr;
 // separate debug info file. gdb can read the section to read debug info
 // from an external file.
 #[derive(Debug)]
-pub struct GnuDebuglinkSection<E: Layout> {
+pub struct GnuDebuglinkSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub crc32: u32,
 }
 
-impl<E: Layout> GnuDebuglinkSection<E> {
+impl<E: Target> GnuDebuglinkSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu_debuglink", SHT_PROGBITS, 0);
         hdr.shdr.sh_addralign.set(4);
@@ -24,7 +24,7 @@ impl<E: Layout> GnuDebuglinkSection<E> {
     }
 }
 
-impl<E: Layout> Default for GnuDebuglinkSection<E> {
+impl<E: Target> Default for GnuDebuglinkSection<E> {
     fn default() -> Self {
         Self::new()
     }

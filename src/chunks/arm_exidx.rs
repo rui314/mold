@@ -24,7 +24,7 @@ const CANTUNWIND: u32 = 1;
 const ENTRY_SIZE: usize = 8;
 
 #[derive(Debug)]
-pub struct ArmExidxSection<E: Layout> {
+pub struct ArmExidxSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     /// The output section holding the input `.ARM.exidx` sections.
     pub output_section: OutputSectionId,

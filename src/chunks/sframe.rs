@@ -15,14 +15,14 @@ use crate::target::{Family, Target};
 // their FREs, sort the index by PC and rewrite the header. mold reads and
 // writes SFrame Version 3.
 #[derive(Debug)]
-pub struct SFrameSection<E: Layout> {
+pub struct SFrameSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub header: SFrameHeader<E>,
     /// The live FDEs as (file, index into the file's `sframe_fdes`).
     pub fdes: Vec<(ObjId, u32)>,
 }
 
-impl<E: Layout> SFrameSection<E> {
+impl<E: Target> SFrameSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".sframe", SHT_GNU_SFRAME, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(8);
@@ -30,7 +30,7 @@ impl<E: Layout> SFrameSection<E> {
     }
 }
 
-impl<E: Layout> Default for SFrameSection<E> {
+impl<E: Target> Default for SFrameSection<E> {
     fn default() -> Self {
         Self::new()
     }

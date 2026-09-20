@@ -1,10 +1,11 @@
 //! Target descriptions.
 //!
 //! Every target is a zero-sized marker type implementing [`Target`]. The
-//! trait carries the constants that vary between targets, such as the
-//! relocation types used for dynamic linking, and the code generation
-//! hooks that are inherently target-specific: relocation scanning and
-//! application, and the PLT stubs.
+//! trait names the target's file format (byte order, ELF class and
+//! relocation record form), carries the constants that vary between
+//! targets, such as the relocation types used for dynamic linking, and
+//! provides the code generation hooks that are inherently target-specific:
+//! relocation scanning and application, and the PLT stubs.
 
 pub mod arm32;
 pub mod arm64;
@@ -34,11 +35,14 @@ pub use sh4::{Sh4, Sh4Be};
 pub use sparc64::Sparc64;
 pub use x86_64::X86_64;
 
+use std::fmt;
+
 use crate::context::Context;
-use crate::elf::{ElfRel, Layout, RelRecord};
+use crate::elf::*;
 use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
+use crate::util::endian::*;
 
 /// Coarse target families, for the few places where generic code needs
 /// target-specific behavior that doesn't warrant a trait hook.
@@ -67,8 +71,47 @@ pub struct ThunkLayout {
     pub entry_size: u64,
 }
 
+/// The ELF32 or ELF64 forms of the word and of the records that differ
+/// between the two classes, keyed by a const parameter. A target that is
+/// generic over its word size cannot choose these types by the parameter's
+/// value directly, so it takes them from `Class<IS_64>`.
+pub struct Class<const IS_64: bool>;
+
+pub trait ElfClass {
+    type Word<E: Target>: ElfWord;
+    type Sym<E: Target>: SymbolRecord;
+    type Phdr<E: Target>: PhdrRecord;
+    type Chdr<E: Target>: ChdrRecord;
+}
+
+impl ElfClass for Class<false> {
+    type Word<E: Target> = U32<E>;
+    type Sym<E: Target> = Elf32Sym<E>;
+    type Phdr<E: Target> = Elf32Phdr<E>;
+    type Chdr<E: Target> = Elf32Chdr<E>;
+}
+
+impl ElfClass for Class<true> {
+    type Word<E: Target> = U64<E>;
+    type Sym<E: Target> = Elf64Sym<E>;
+    type Phdr<E: Target> = Elf64Phdr<E>;
+    type Chdr<E: Target> = Elf64Chdr<E>;
+}
+
 // Target descriptions
-pub trait Target: Layout {
+pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
+    // The file format: byte order, word size, the record forms that differ
+    // between ELF32 and ELF64, and the relocation record form.
+    const IS_LITTLE: bool;
+    type Word: ElfWord;
+    type Sym: SymbolRecord;
+    type Phdr: PhdrRecord;
+    type Chdr: ChdrRecord;
+    type Rel: RelRecord;
+    const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
+    const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
+    const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
+
     /// Target-specific members embedded directly in each input section.
     type InputSectionExtra: InputSectionExtra;
 
@@ -100,7 +143,6 @@ pub trait Target: Layout {
     /// Relocation types that denote a function call.
     const R_FUNCALL: &'static [u32];
 
-    const IS_LITTLE_ENDIAN: bool = Self::IS_LITTLE;
     const SUPPORTS_IFUNC: bool = Self::R_IRELATIVE.is_some();
     const SUPPORTS_TLSDESC: bool = Self::R_TLSDESC.is_some();
     const SUPPORTS_SFRAME: bool = Self::SFRAME_ABI.is_some();
@@ -229,6 +271,48 @@ pub trait Target: Layout {
     /// relocated location, given as `loc`.
     fn get_addend(_loc: &[u8], rel: &ElfRel<Self>) -> i64 {
         rel.r_addend()
+    }
+
+    // Integers in the target's byte order, for section contents and other
+    // data that is not a record.
+    fn read_u16(bytes: &[u8]) -> u16 {
+        if Self::IS_LITTLE { read_ul16(bytes) } else { read_ub16(bytes) }
+    }
+
+    fn read_u32(bytes: &[u8]) -> u32 {
+        if Self::IS_LITTLE { read_ul32(bytes) } else { read_ub32(bytes) }
+    }
+
+    fn read_u64(bytes: &[u8]) -> u64 {
+        if Self::IS_LITTLE { read_ul64(bytes) } else { read_ub64(bytes) }
+    }
+
+    fn read_i32(bytes: &[u8]) -> i32 {
+        if Self::IS_LITTLE { read_il32(bytes) } else { read_ib32(bytes) }
+    }
+
+    fn read_i64(bytes: &[u8]) -> i64 {
+        if Self::IS_LITTLE { read_il64(bytes) } else { read_ib64(bytes) }
+    }
+
+    fn write_u16(bytes: &mut [u8], value: u16) {
+        if Self::IS_LITTLE { write_ul16(bytes, value) } else { write_ub16(bytes, value) }
+    }
+
+    fn write_u32(bytes: &mut [u8], value: u32) {
+        if Self::IS_LITTLE { write_ul32(bytes, value) } else { write_ub32(bytes, value) }
+    }
+
+    fn write_u64(bytes: &mut [u8], value: u64) {
+        if Self::IS_LITTLE { write_ul64(bytes, value) } else { write_ub64(bytes, value) }
+    }
+
+    fn write_i32(bytes: &mut [u8], value: i32) {
+        if Self::IS_LITTLE { write_il32(bytes, value) } else { write_ib32(bytes, value) }
+    }
+
+    fn write_i64(bytes: &mut [u8], value: i64) {
+        if Self::IS_LITTLE { write_il64(bytes, value) } else { write_ib64(bytes, value) }
     }
 }
 

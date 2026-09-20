@@ -100,15 +100,6 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ppc64V2;
 
-impl Layout for Ppc64V2 {
-    const IS_LITTLE: bool = true;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
 fn lo(x: u64) -> u64 {
     x & 0xffff
 }
@@ -360,6 +351,13 @@ pub fn save_restore_contents() -> Vec<u8> {
 }
 
 impl Target for Ppc64V2 {
+    const IS_LITTLE: bool = true;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc64v2";

@@ -146,7 +146,7 @@ impl ChunkId {
 
 // Chunk represents a contiguous region in an output file.
 #[derive(Debug)]
-pub struct ChunkHeader<E: Layout> {
+pub struct ChunkHeader<E: Target> {
     pub name: &'static BStr,
     pub shdr: ElfShdr<E>,
 
@@ -172,7 +172,7 @@ pub struct ChunkHeader<E: Layout> {
     pub sect_order: i64,
 }
 
-impl<E: Layout> ChunkHeader<E> {
+impl<E: Target> ChunkHeader<E> {
     pub fn new(name: &'static str, sh_type: u32, sh_flags: u64) -> Self {
         Self {
             name: BStr::new(name.as_bytes()),
@@ -230,7 +230,7 @@ pub fn new_shdr<E: Target>() -> ChunkHeader<E> {
 // page protection bits. On program startup, the kernel mmap's the file
 // contents to memory based on the program header.
 #[derive(Debug)]
-pub struct OutputPhdr<E: Layout> {
+pub struct OutputPhdr<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub phdrs: Vec<ElfPhdr<E>>,
 }
@@ -244,7 +244,7 @@ impl<E: Target> OutputPhdr<E> {
 }
 
 // .gdb_index contains several tables to speed up gdb start-up.
-pub fn new_gdb_index<E: Layout>() -> ChunkHeader<E> {
+pub fn new_gdb_index<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".gdb_index", SHT_PROGBITS, 0);
     hdr.shdr.sh_addralign.set(4);
     hdr
@@ -268,8 +268,7 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut ehdr = ElfEhdr::<E>::default();
     ehdr.e_ident[..4].copy_from_slice(b"\x7fELF");
     ehdr.e_ident[EI_CLASS as usize] = if E::IS_64 { ELFCLASS64 } else { ELFCLASS32 } as u8;
-    ehdr.e_ident[EI_DATA as usize] =
-        if E::IS_LITTLE_ENDIAN { ELFDATA2LSB } else { ELFDATA2MSB } as u8;
+    ehdr.e_ident[EI_DATA as usize] = if E::IS_LITTLE { ELFDATA2LSB } else { ELFDATA2MSB } as u8;
     ehdr.e_ident[EI_VERSION as usize] = EV_CURRENT as u8;
     ehdr.e_machine.set(E::E_MACHINE as u16);
     ehdr.e_version.set(EV_CURRENT);

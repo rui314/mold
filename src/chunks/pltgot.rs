@@ -12,12 +12,12 @@ use crate::target::{Family, Target};
 // lazily for .plt is just waste of time. Therefore, in such case, we use
 // .plt.got for that symbol instead.
 #[derive(Debug)]
-pub struct PltGotSection<E: Layout> {
+pub struct PltGotSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl<E: Layout> PltGotSection<E> {
+impl<E: Target> PltGotSection<E> {
     pub fn new() -> Self {
         let mut hdr =
             ChunkHeader::<E>::new(".plt.got", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
@@ -26,7 +26,7 @@ impl<E: Layout> PltGotSection<E> {
     }
 }
 
-impl<E: Layout> Default for PltGotSection<E> {
+impl<E: Target> Default for PltGotSection<E> {
     fn default() -> Self {
         Self::new()
     }

@@ -34,7 +34,7 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target};
+use crate::target::{Class, ElfClass, Family, Target};
 use crate::util::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
 use crate::{error, fatal};
@@ -44,24 +44,6 @@ pub struct LoongArchTarget<const IS_64: bool>;
 
 pub type LoongArch64 = LoongArchTarget<true>;
 pub type LoongArch32 = LoongArchTarget<false>;
-
-impl Layout for LoongArchTarget<true> {
-    const IS_LITTLE: bool = true;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
-impl Layout for LoongArchTarget<false> {
-    const IS_LITTLE: bool = true;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
 
 fn page(val: u64) -> u64 {
     val & !0xfff
@@ -272,8 +254,15 @@ impl<const IS_64: bool> LoongArchTarget<IS_64> {
 
 impl<const IS_64: bool> Target for LoongArchTarget<IS_64>
 where
-    Self: Layout,
+    Class<IS_64>: ElfClass,
 {
+    const IS_LITTLE: bool = true;
+    type Word = <Class<IS_64> as ElfClass>::Word<Self>;
+    type Sym = <Class<IS_64> as ElfClass>::Sym<Self>;
+    type Phdr = <Class<IS_64> as ElfClass>::Phdr<Self>;
+    type Chdr = <Class<IS_64> as ElfClass>::Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = Box<[RelocDelta]>;
 
     const NAME: &'static str = if IS_64 { "loongarch64" } else { "loongarch32" };

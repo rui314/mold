@@ -12,12 +12,12 @@ use crate::target::Target;
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.
 #[derive(Debug)]
-pub struct VerneedSection<E: Layout> {
+pub struct VerneedSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl<E: Layout> VerneedSection<E> {
+impl<E: Target> VerneedSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version_r", SHT_GNU_VERNEED, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
@@ -25,7 +25,7 @@ impl<E: Layout> VerneedSection<E> {
     }
 }
 
-impl<E: Layout> Default for VerneedSection<E> {
+impl<E: Target> Default for VerneedSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -45,7 +45,7 @@ impl<E: Layout> Default for VerneedSection<E> {
 // executables built with the option failed with a more friendly "version
 // `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
 // about this dummy version name and simply ignores it.
-fn is_glibc2<E: Layout>(dso: &crate::input_files::SharedFile<E>) -> bool {
+fn is_glibc2<E: Target>(dso: &crate::input_files::SharedFile<E>) -> bool {
     dso.soname.starts_with(b"libc.so.")
         && dso.version_strings.iter().any(|v| v.starts_with(b"GLIBC_2."))
 }

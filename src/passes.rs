@@ -1128,7 +1128,7 @@ type OutputSectionShared<E> = (HashMap<OutputSectionKey, OutputSectionId>, Vec<O
 // Some sections, such as .init, .fini, .got, .dynamic, contain
 // dynamic relocations but doesn't have to be writable at runtime,
 // so they are put into a RELRO segment.
-fn is_relro<E: Layout>(osec: &OutputSection<E>) -> bool {
+fn is_relro<E: Target>(osec: &OutputSection<E>) -> bool {
     let name = osec.hdr.name;
     let ty = osec.hdr.shdr.sh_type.get();
     let flags = osec.hdr.shdr.sh_flags.get();

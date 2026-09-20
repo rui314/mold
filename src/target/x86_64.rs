@@ -38,16 +38,14 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct X86_64;
 
-impl Layout for X86_64 {
+impl Target for X86_64 {
     const IS_LITTLE: bool = true;
     type Word = U64<Self>;
     type Sym = Elf64Sym<Self>;
     type Phdr = Elf64Phdr<Self>;
     type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
-}
 
-impl Target for X86_64 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "x86_64";

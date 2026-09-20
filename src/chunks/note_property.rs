@@ -10,7 +10,7 @@ use crate::target::Target;
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.
 #[derive(Debug)]
-pub struct NotePropertySection<E: Layout> {
+pub struct NotePropertySection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub contents: Vec<(u32, u32)>,
 }

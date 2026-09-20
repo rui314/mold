@@ -241,7 +241,7 @@ impl ClaimedSymbol {
 
     /// An IR symbol as an ELF symbol; definitions are absolute, since an
     /// IR object has no sections.
-    fn to_elf_sym<E: Layout>(&self) -> ElfSym<E> {
+    fn to_elf_sym<E: Target>(&self) -> ElfSym<E> {
         let mut esym = ElfSym::<E>::default();
         esym.set_st_size(self.size);
         esym.set_st_shndx(match self.def {

@@ -67,26 +67,6 @@ pub struct Arm32Target<const LE: bool>;
 pub type Arm32 = Arm32Target<true>;
 pub type Arm32Be = Arm32Target<false>;
 
-// One impl per byte order rather than one generic impl keeps Self::Word
-// abstract in the generic Target impl, so word accessors return u64 there.
-impl Layout for Arm32Target<true> {
-    const IS_LITTLE: bool = true;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRelNoAddend<Self>;
-}
-
-impl Layout for Arm32Target<false> {
-    const IS_LITTLE: bool = false;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRelNoAddend<Self>;
-}
-
 fn b(val: u64, hi: u32, lo: u32) -> u32 {
     bits(val, hi, lo) as u32
 }
@@ -96,17 +76,17 @@ fn bt(val: u64, n: u32) -> u32 {
 }
 
 /// The second halfword of a 32-bit Thumb instruction.
-fn thm2<E: Layout>(loc: &[u8]) -> u16 {
+fn thm2<E: Target>(loc: &[u8]) -> u16 {
     E::read_u16(&loc[2..])
 }
 
-fn write_arm_mov<E: Layout>(loc: &mut [u8], val: u32) {
+fn write_arm_mov<E: Target>(loc: &mut [u8], val: u32) {
     let imm12 = b(val as u64, 11, 0);
     let imm4 = b(val as u64, 15, 12);
     E::write_u32(loc, (E::read_u32(loc) & 0xfff0_f000) | (imm4 << 16) | imm12);
 }
 
-fn write_thm_b21<E: Layout>(loc: &mut [u8], val: u32) {
+fn write_thm_b21<E: Target>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let (s, j2, j1) = (bt(v, 20), bt(v, 19), bt(v, 18));
     let imm6 = b(v, 17, 12);
@@ -120,7 +100,7 @@ fn write_thm_b21<E: Layout>(loc: &mut [u8], val: u32) {
     E::write_u16(&mut loc[2..], second);
 }
 
-fn write_thm_b25<E: Layout>(loc: &mut [u8], val: u32) {
+fn write_thm_b25<E: Target>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let (s, i1, i2) = (bt(v, 24), bt(v, 23), bt(v, 22));
     let j1 = (i1 ^ 1) ^ s;
@@ -136,7 +116,7 @@ fn write_thm_b25<E: Layout>(loc: &mut [u8], val: u32) {
     E::write_u16(&mut loc[2..], second);
 }
 
-fn write_thm_mov<E: Layout>(loc: &mut [u8], val: u32) {
+fn write_thm_mov<E: Target>(loc: &mut [u8], val: u32) {
     let v = val as u64;
     let imm4 = b(v, 15, 12);
     let i = bt(v, 11);
@@ -152,7 +132,7 @@ fn write_thm_mov<E: Layout>(loc: &mut [u8], val: u32) {
 
 /// Sets the second halfword's bit that turns a Thumb BLX into a BL, or
 /// clears it for the reverse.
-fn set_thm_bl<E: Layout>(loc: &mut [u8], is_bl: bool) {
+fn set_thm_bl<E: Target>(loc: &mut [u8], is_bl: bool) {
     let second = if is_bl { thm2::<E>(loc) | 0x1000 } else { thm2::<E>(loc) & !0x1000 };
     E::write_u16(&mut loc[2..], second);
 }
@@ -230,10 +210,7 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
 //
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
-pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut [u8])
-where
-    Arm32Target<LE>: Layout,
-{
+pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut [u8]) {
     let output = OutputBuffer::new(buf);
     ctx.objs.par_iter().for_each(|file| {
         // Collect mapping symbols
@@ -266,7 +243,7 @@ where
                 _ => isec.sh_size,
             };
             let osec = ctx.output_section(isec.output_section.expect("output section"));
-            let base = osec.hdr.shdr.sh_offset.get() + isec.offset();
+            let base = u64::from(osec.hdr.shdr.sh_offset.get()) + isec.offset();
             // SAFETY: live input sections occupy disjoint output ranges, and
             // this file's mapping-symbol ranges are processed sequentially.
             unsafe {
@@ -280,10 +257,14 @@ where
     });
 }
 
-impl<const LE: bool> Target for Arm32Target<LE>
-where
-    Self: Layout,
-{
+impl<const LE: bool> Target for Arm32Target<LE> {
+    const IS_LITTLE: bool = LE;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
+    type Rel = ElfRelNoAddend<Self>;
+
     type InputSectionExtra = u32;
 
     const NAME: &'static str = if Self::IS_LITTLE { "arm32" } else { "arm32be" };
@@ -329,8 +310,8 @@ where
             0x0000_0000, //    (padding)
         ];
         write_code(buf, &INSN);
-        let gotplt_addr = ctx.gotplt.shdr.sh_addr.get();
-        let plt_addr = ctx.plt.hdr.shdr.sh_addr.get();
+        let gotplt_addr = u64::from(ctx.gotplt.shdr.sh_addr.get());
+        let plt_addr = u64::from(ctx.plt.hdr.shdr.sh_addr.get());
         let gotplt = gotplt_addr.wrapping_sub(plt_addr).wrapping_sub(16);
         Self::write_u32(&mut buf[16..], gotplt as u32);
     }
@@ -445,7 +426,7 @@ where
             let a = isec.rel_addend(rel) as u64;
             let p = isec.addr(ctx) + rel.r_offset();
             let t = is_thumb_func(ctx, sym) as u64;
-            let got = ctx.got.hdr.shdr.sh_addr.get();
+            let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

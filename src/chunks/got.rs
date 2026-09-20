@@ -11,7 +11,7 @@ use crate::target::{Family, Target};
 // as the pointer size. It is used to store runtime addresses of global
 // variables and TP-relative offsets of thread-local variables.
 #[derive(Debug)]
-pub struct GotSection<E: Layout> {
+pub struct GotSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub got_syms: Vec<SymbolId>,
     pub tlsgd_syms: Vec<SymbolId>,

@@ -15,7 +15,7 @@ use crate::target::Target;
 // .dynsym contains symbols for dynamic linking. This is similar to
 // .symtab, but .dynsym contains data that the runtime uses.
 #[derive(Debug)]
-pub struct DynsymSection<E: Layout> {
+pub struct DynsymSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     /// Index 0 is the null symbol.
     pub symbols: Vec<Option<SymbolId>>,

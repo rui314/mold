@@ -73,15 +73,6 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sparc64;
 
-impl Layout for Sparc64 {
-    const IS_LITTLE: bool = false;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = Sparc64Rela;
-}
-
 fn or32(loc: &mut [u8], v: u64) {
     let cur = read_ub32(loc);
     write_ub32(loc, cur | v as u32);
@@ -110,6 +101,13 @@ pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
 }
 
 impl Target for Sparc64 {
+    const IS_LITTLE: bool = false;
+    type Word = U64<Self>;
+    type Sym = Elf64Sym<Self>;
+    type Phdr = Elf64Phdr<Self>;
+    type Chdr = Elf64Chdr<Self>;
+    type Rel = Sparc64Rela;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = "sparc64";

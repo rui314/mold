@@ -1,8 +1,8 @@
 //! Fixed-byte-order integer I/O on byte slices.
 //!
 //! These functions read and write integers of a known byte order, for code
-//! that patches section contents of a known target. Layout-generic code
-//! uses the methods on [`crate::elf::Layout`], which pick the byte order
+//! that patches section contents of a known target. Target-generic code
+//! uses the methods on [`crate::target::Target`], which pick the byte order
 //! from the target.
 
 use std::mem::size_of;

@@ -76,26 +76,6 @@ pub struct Sh4Target<const LE: bool>;
 pub type Sh4 = Sh4Target<true>;
 pub type Sh4Be = Sh4Target<false>;
 
-// One impl per byte order rather than one generic impl keeps Self::Word
-// abstract in the generic Target impl, so word accessors return u64 there.
-impl Layout for Sh4Target<true> {
-    const IS_LITTLE: bool = true;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
-impl Layout for Sh4Target<false> {
-    const IS_LITTLE: bool = false;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
 /// Whether a relocation stores its addend in the relocated word.
 ///
 /// Although SH-4 uses RELA records, these relocation types keep their addends
@@ -121,10 +101,7 @@ fn addend_in_place(r_type: u32) -> bool {
     )
 }
 
-impl<const LE: bool> Sh4Target<LE>
-where
-    Self: Layout,
-{
+impl<const LE: bool> Sh4Target<LE> {
     fn write_insns(buf: &mut [u8], insns: &[u16]) {
         for (i, &insn) in insns.iter().enumerate() {
             Self::write_u16(&mut buf[i * 2..], insn);
@@ -132,10 +109,14 @@ where
     }
 }
 
-impl<const LE: bool> Target for Sh4Target<LE>
-where
-    Self: Layout,
-{
+impl<const LE: bool> Target for Sh4Target<LE> {
+    const IS_LITTLE: bool = LE;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = if Self::IS_LITTLE { "sh4" } else { "sh4be" };
@@ -173,7 +154,7 @@ where
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
-        let gotplt = ctx.gotplt.shdr.sh_addr.get();
+        let gotplt = u64::from(ctx.gotplt.shdr.sh_addr.get());
         if ctx.args.pic {
             const INSN: [u16; 6] = [
                 0xd202, //    mov.l   1f, r2
@@ -184,7 +165,7 @@ where
                 0xe000, //    mov     #0, r0
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            let got = ctx.got.hdr.shdr.sh_addr.get();
+            let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
             Self::write_u32(&mut buf[12..], gotplt.wrapping_sub(got) as u32);
         } else {
             const INSN: [u16; 6] = [
@@ -214,7 +195,7 @@ where
             Self::write_insns(buf, &INSN);
             Self::write_u32(
                 &mut buf[12..],
-                gotplt.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32,
+                gotplt.wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
             );
         } else {
             const INSN: [u16; 6] = [
@@ -244,7 +225,10 @@ where
                 0x0009, //    nop
             ]; // 1: .long GOT_ENTRY
             Self::write_insns(buf, &INSN);
-            Self::write_u32(&mut buf[8..], got.wrapping_sub(ctx.got.hdr.shdr.sh_addr.get()) as u32);
+            Self::write_u32(
+                &mut buf[8..],
+                got.wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
+            );
         } else {
             const INSN: [u16; 4] = [
                 0xd001, //    mov.l   1f, r0
@@ -314,7 +298,7 @@ where
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        let got = ctx.got.hdr.shdr.sh_addr.get();
+        let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
         for rel in rels {
             if rel.r_type() == R_NONE {

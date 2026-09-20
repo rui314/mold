@@ -7,7 +7,7 @@ use crate::target::Target;
 
 /// `.save_restore_regs`, the register save and restore routines that GCC
 /// expects the linker to provide on PowerPC64 ELFv2.
-pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(
         ".save_restore_regs",
         SHT_PROGBITS,

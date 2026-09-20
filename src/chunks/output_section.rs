@@ -46,7 +46,7 @@ pub struct AbsRel {
 // OutputSection represents the usual output section that contains input
 // sections read from object files.
 #[derive(Debug)]
-pub struct OutputSection<E: Layout> {
+pub struct OutputSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub members: Vec<InputSectionId>,
     pub thunks: Vec<Thunk>,
@@ -115,7 +115,7 @@ impl<'a> OutputBuffer<'a> {
 /// Shard size for parallel processing of absolute relocations.
 pub const DYNREL_SHARD_SIZE: usize = 65536;
 
-impl<E: Layout> OutputSection<E> {
+impl<E: Target> OutputSection<E> {
     pub fn new(name: &'static BStr, sh_type: u32) -> Self {
         Self {
             hdr: ChunkHeader::<E>::with_name(name, sh_type, 0),

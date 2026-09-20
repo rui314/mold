@@ -9,7 +9,7 @@ use crate::target::{Family, Target};
 // .strtab is not needed at runtime; one can remove the section from an
 // ELF file without breaking it. Strings that runtime accesses are stored
 // in .dynstr.
-pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     ChunkHeader::<E>::new(".strtab", SHT_STRTAB, 0)
 }
 

@@ -57,15 +57,6 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ppc32;
 
-impl Layout for Ppc32 {
-    const IS_LITTLE: bool = false;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
 fn lo(x: u64) -> u64 {
     x & 0xffff
 }
@@ -119,6 +110,13 @@ fn write_plt_like(buf: &mut [u8], got: u64, entry_addr: u64) {
 }
 
 impl Target for Ppc32 {
+    const IS_LITTLE: bool = false;
+    type Word = U32<Self>;
+    type Sym = Elf32Sym<Self>;
+    type Phdr = Elf32Phdr<Self>;
+    type Chdr = Elf32Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc32";

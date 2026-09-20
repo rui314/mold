@@ -12,12 +12,12 @@ use crate::util::write_cstr;
 
 // .dynstr contains strings that the runtime uses.
 #[derive(Debug)]
-pub struct DynstrSection<E: Layout> {
+pub struct DynstrSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     strings: HashMap<Vec<u8>, u64>,
 }
 
-impl<E: Layout> DynstrSection<E> {
+impl<E: Target> DynstrSection<E> {
     pub fn new() -> Self {
         Self {
             hdr: ChunkHeader::<E>::new(".dynstr", SHT_STRTAB, SHF_ALLOC as u64),
@@ -44,7 +44,7 @@ impl<E: Layout> DynstrSection<E> {
     }
 }
 
-impl<E: Layout> Default for DynstrSection<E> {
+impl<E: Target> Default for DynstrSection<E> {
     fn default() -> Self {
         Self::new()
     }

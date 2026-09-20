@@ -8,12 +8,12 @@ use crate::target::Target;
 /// `.riscv.attributes` describes the ISA the output requires, merged
 /// from the input files' attributes.
 #[derive(Debug)]
-pub struct RiscvAttributesSection<E: Layout> {
+pub struct RiscvAttributesSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl<E: Layout> RiscvAttributesSection<E> {
+impl<E: Target> RiscvAttributesSection<E> {
     pub fn new() -> Self {
         Self {
             hdr: ChunkHeader::<E>::new(".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0),
@@ -22,7 +22,7 @@ impl<E: Layout> RiscvAttributesSection<E> {
     }
 }
 
-impl<E: Layout> Default for RiscvAttributesSection<E> {
+impl<E: Target> Default for RiscvAttributesSection<E> {
     fn default() -> Self {
         Self::new()
     }

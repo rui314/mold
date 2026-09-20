@@ -3,7 +3,7 @@
 use crate::archive_file;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
-use crate::target;
+use crate::target::{self, Target};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileType {
@@ -24,7 +24,7 @@ fn is_text_file(data: &[u8]) -> bool {
 }
 
 /// Whether an ELF relocatable object is really a GCC LTO object.
-fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
+fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
     let Some(ehdr) =
         data.get(..std::mem::size_of::<ElfEhdr<E>>()).map(record_from_bytes::<ElfEhdr<E>>)
     else {

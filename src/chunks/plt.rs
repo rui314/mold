@@ -13,7 +13,7 @@ use crate::target::{Family, Target};
 // functions. They are in fact immediately branches to real function entry
 // points. .plt is used as a stub for runtime lazy symbol resolution.
 #[derive(Debug)]
-pub struct PltSection<E: Layout> {
+pub struct PltSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }

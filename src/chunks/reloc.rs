@@ -12,7 +12,7 @@ use crate::target::Target;
 // RelocSection represents a relocation table for an output file.
 // These tables are emitted for `-r` and for final links with `--emit-relocs`.
 #[derive(Debug)]
-pub struct RelocSection<E: Layout> {
+pub struct RelocSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub output_section: OutputSectionId,
     /// The index of the first relocation of each member.

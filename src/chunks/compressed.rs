@@ -11,7 +11,7 @@ use crate::util::compress::Compressor;
 // overall size of an ELF file. CompressedSection represents a compressed
 // section.
 #[derive(Debug)]
-pub struct CompressedSection<E: Layout> {
+pub struct CompressedSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub chdr: ElfChdr<E>,
     pub compressor: Compressor,

@@ -30,7 +30,7 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target};
+use crate::target::{Class, ElfClass, Family, Target};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};
 
@@ -42,24 +42,6 @@ pub type Riscv64 = RiscvTarget<true, true>;
 pub type Riscv64Be = RiscvTarget<false, true>;
 pub type Riscv32 = RiscvTarget<true, false>;
 pub type Riscv32Be = RiscvTarget<false, false>;
-
-impl<const LE: bool> Layout for RiscvTarget<LE, true> {
-    const IS_LITTLE: bool = LE;
-    type Word = U64<Self>;
-    type Sym = Elf64Sym<Self>;
-    type Phdr = Elf64Phdr<Self>;
-    type Chdr = Elf64Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
-
-impl<const LE: bool> Layout for RiscvTarget<LE, false> {
-    const IS_LITTLE: bool = LE;
-    type Word = U32<Self>;
-    type Sym = Elf32Sym<Self>;
-    type Phdr = Elf32Phdr<Self>;
-    type Chdr = Elf32Chdr<Self>;
-    type Rel = ElfRela<Self>;
-}
 
 // Instructions are always little-endian.
 
@@ -253,8 +235,15 @@ fn is_got_load_pair<E: Target>(
 
 impl<const LE: bool, const IS_64: bool> Target for RiscvTarget<LE, IS_64>
 where
-    Self: Layout,
+    Class<IS_64>: ElfClass,
 {
+    const IS_LITTLE: bool = LE;
+    type Word = <Class<IS_64> as ElfClass>::Word<Self>;
+    type Sym = <Class<IS_64> as ElfClass>::Sym<Self>;
+    type Phdr = <Class<IS_64> as ElfClass>::Phdr<Self>;
+    type Chdr = <Class<IS_64> as ElfClass>::Chdr<Self>;
+    type Rel = ElfRela<Self>;
+
     type InputSectionExtra = Box<[RelocDelta]>;
 
     const NAME: &'static str = match (IS_64, Self::IS_LITTLE) {

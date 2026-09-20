@@ -65,7 +65,7 @@ struct ShardLayout {
 // MergedSection represents an output section containing a constant pool such
 // as string literals or floating-point constants.
 #[derive(Debug)]
-pub struct MergedSection<E: Layout> {
+pub struct MergedSection<E: Target> {
     pub hdr: ChunkHeader<E>,
 
     /// The input sections merged into this one.
@@ -118,7 +118,7 @@ struct BackgroundMember {
 
 /// Owns non-allocated merging state while foreground passes use the context.
 /// Input bytes are immutable and remain mapped for the entire link.
-pub struct BackgroundMerge<E: Layout> {
+pub struct BackgroundMerge<E: Target> {
     sections: Vec<MergedSection<E>>,
     members: Vec<Vec<BackgroundMember>>,
 }
@@ -241,7 +241,7 @@ fn merged_output_name(
     Cow::Borrowed(name)
 }
 
-impl<E: Layout> MergedSection<E> {
+impl<E: Target> MergedSection<E> {
     fn new(name: &'static BStr, flags: u64, sh_type: u32, entsize: u64) -> Self {
         let mut hdr = ChunkHeader::<E>::with_name(name, sh_type, flags);
         hdr.shdr.sh_entsize.set(entsize);
@@ -515,7 +515,7 @@ pub fn resolve_sections<E: Target>(
 }
 
 // Add strings to .comment
-fn add_comment_strings<E: Layout>(
+fn add_comment_strings<E: Target>(
     msec: &MergedSection<E>,
     gc_sections: bool,
     cmdline_args: &[Cow<'static, OsStr>],
@@ -553,7 +553,7 @@ pub fn compute_section_size<E: Target>(ctx: &mut Context<E>, id: MergedSectionId
 
 /// Lays out one resolved merged section. Different merged sections have no
 /// shared mutable state, so callers can run this for all of them in parallel.
-pub fn layout<E: Layout>(msec: &mut MergedSection<E>) {
+pub fn layout<E: Target>(msec: &mut MergedSection<E>) {
     debug_assert!(msec.resolved);
     let frags = &msec.fragments;
 
@@ -654,6 +654,6 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]
     });
 }
 
-pub fn print_stats<E: Layout>(msec: &MergedSection<E>) {
+pub fn print_stats<E: Target>(msec: &MergedSection<E>) {
     out!("{} estimation={} actual={}", msec.hdr.name, msec.estimation, msec.fragments.len());
 }

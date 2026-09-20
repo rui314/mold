@@ -10,7 +10,7 @@ use crate::util::write_cstr;
 // executables have the section. If exists, the kernel runs the program at
 // the specified path with the executable pathname as an argument,
 // allowing the dynamic linker to run the program.
-pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     ChunkHeader::<E>::new(".interp", SHT_PROGBITS, SHF_ALLOC as u64)
 }
 

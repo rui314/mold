@@ -9,13 +9,13 @@ use crate::target::Target;
 // ComdatGroupSection represents a comdat group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
 #[derive(Debug)]
-pub struct ComdatGroupSection<E: Layout> {
+pub struct ComdatGroupSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub sym: SymbolId,
     pub members: Vec<ChunkId>,
 }
 
-impl<E: Layout> ComdatGroupSection<E> {
+impl<E: Target> ComdatGroupSection<E> {
     pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> Self {
         let mut hdr = ChunkHeader::<E>::new(".group", SHT_GROUP, 0);
         hdr.shdr.sh_entsize.set(4);

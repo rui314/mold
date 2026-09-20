@@ -262,7 +262,7 @@ impl<'a, E: Target> Reader<'a, E> {
             1 => bytes[0] as u64,
             2 => E::read_u16(bytes) as u64,
             3 => {
-                if E::IS_LITTLE_ENDIAN {
+                if E::IS_LITTLE {
                     bytes[0] as u64 | (bytes[1] as u64) << 8 | (bytes[2] as u64) << 16
                 } else {
                     (bytes[0] as u64) << 16 | (bytes[1] as u64) << 8 | bytes[2] as u64

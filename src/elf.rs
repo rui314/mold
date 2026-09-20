@@ -6,16 +6,15 @@
 //! ordinary integer references into such data would be invalid.
 //!
 //! Integer fields are the byte-backed [`U32`], [`U64`] and related types,
-//! which take the target [`Layout`] and read and write in its byte order
+//! which take the [`Target`] and read and write in its byte order
 //! at any alignment.
 //!
 //! Records whose ELF32 and ELF64 forms have the same field order are generic
 //! over the target word type. Symbols, program headers and compression
 //! headers have genuinely different layouts, so they exist in two forms
-//! behind a common trait, and [`Layout`] names the form a target uses. Thus
+//! behind a common trait, and the [`Target`] names the form it uses. Thus
 //! the big tables — section headers, symbols and relocations — stay in the
-//! input files rather than being copied. [`Target`](crate::target::Target) selects
-//! the layout at compile time.
+//! input files rather than being copied.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -23,77 +22,29 @@ use std::marker::PhantomData;
 pub use crate::elf_consts::*;
 
 use crate::target::{I386, Sparc64, Target, X86_64};
-use crate::util::endian::*;
 
 // ELF types
-/// The on-disk layout of an ELF file: word size, byte order and
-/// relocation record format. Targets implement this through [`Target`].
-pub trait Layout: Copy + Default + fmt::Debug + Send + Sync + 'static {
-    const IS_LITTLE: bool;
-    type Word: ElfWord;
-    type Sym: SymbolRecord;
-    type Phdr: PhdrRecord;
-    type Chdr: ChdrRecord;
-    type Rel: RelRecord;
-    const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
-    const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
-    const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
-
-    // Integers in the target's byte order, for section contents and other
-    // data that is not a record.
-    fn read_u16(bytes: &[u8]) -> u16 {
-        if Self::IS_LITTLE { read_ul16(bytes) } else { read_ub16(bytes) }
-    }
-
-    fn read_u32(bytes: &[u8]) -> u32 {
-        if Self::IS_LITTLE { read_ul32(bytes) } else { read_ub32(bytes) }
-    }
-
-    fn read_u64(bytes: &[u8]) -> u64 {
-        if Self::IS_LITTLE { read_ul64(bytes) } else { read_ub64(bytes) }
-    }
-
-    fn read_i32(bytes: &[u8]) -> i32 {
-        if Self::IS_LITTLE { read_il32(bytes) } else { read_ib32(bytes) }
-    }
-
-    fn read_i64(bytes: &[u8]) -> i64 {
-        if Self::IS_LITTLE { read_il64(bytes) } else { read_ib64(bytes) }
-    }
-
-    fn write_u16(bytes: &mut [u8], value: u16) {
-        if Self::IS_LITTLE { write_ul16(bytes, value) } else { write_ub16(bytes, value) }
-    }
-
-    fn write_u32(bytes: &mut [u8], value: u32) {
-        if Self::IS_LITTLE { write_ul32(bytes, value) } else { write_ub32(bytes, value) }
-    }
-
-    fn write_u64(bytes: &mut [u8], value: u64) {
-        if Self::IS_LITTLE { write_ul64(bytes, value) } else { write_ub64(bytes, value) }
-    }
-
-    fn write_i32(bytes: &mut [u8], value: i32) {
-        if Self::IS_LITTLE { write_il32(bytes, value) } else { write_ib32(bytes, value) }
-    }
-
-    fn write_i64(bytes: &mut [u8], value: i64) {
-        if Self::IS_LITTLE { write_il64(bytes, value) } else { write_ib64(bytes, value) }
-    }
-}
-
 /// An integer stored in the target's byte order. The type carries the
-/// layout so that a record field needs no accessor of its own.
+/// target so that a record field needs no accessor of its own.
 macro_rules! endian_integer {
     ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
         #[repr(transparent)]
-        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-        pub struct $name<E: Layout> {
+        #[derive(Clone, Copy, Debug, Default)]
+        pub struct $name<E: Target> {
             bytes: [u8; $size],
-            layout: PhantomData<E>,
+            target: PhantomData<E>,
         }
 
-        impl<E: Layout> $name<E> {
+        // Not derived, so that the comparison does not require `E: Eq`.
+        impl<E: Target> PartialEq for $name<E> {
+            fn eq(&self, other: &Self) -> bool {
+                self.bytes == other.bytes
+            }
+        }
+
+        impl<E: Target> Eq for $name<E> {}
+
+        impl<E: Target> $name<E> {
             #[inline(always)]
             pub fn new(value: $int) -> Self {
                 let mut result = Self::default();
@@ -122,12 +73,12 @@ endian_integer!(I64, i64, 8, read_i64, write_i64);
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct U24<E: Layout> {
+pub struct U24<E: Target> {
     bytes: [u8; 3],
-    layout: PhantomData<E>,
+    target: PhantomData<E>,
 }
 
-impl<E: Layout> U24<E> {
+impl<E: Target> U24<E> {
     #[inline(always)]
     pub fn get(&self) -> u32 {
         if E::IS_LITTLE {
@@ -222,14 +173,14 @@ pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R]
 /// The ELF file header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfEhdr<E: Layout> {
+pub struct ElfEhdr<E: Target> {
     pub e_ident: [u8; 16],
     pub e_type: U16<E>,
     pub e_machine: U16<E>,
     pub e_version: U32<E>,
-    pub e_entry: E::Word,
-    pub e_phoff: E::Word,
-    pub e_shoff: E::Word,
+    pub e_entry: Word<E>,
+    pub e_phoff: Word<E>,
+    pub e_shoff: Word<E>,
     pub e_flags: U32<E>,
     pub e_ehsize: U16<E>,
     pub e_phentsize: U16<E>,
@@ -241,7 +192,7 @@ pub struct ElfEhdr<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
 // not insert padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfEhdr<E> {}
+unsafe impl<E: Target> FileRecord for ElfEhdr<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfEhdr<I386>>() == 52);
 const _: () = assert!(std::mem::size_of::<ElfEhdr<X86_64>>() == 64);
@@ -251,22 +202,22 @@ const _: () = assert!(std::mem::align_of::<ElfEhdr<X86_64>>() == 1);
 /// A section header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfShdr<E: Layout> {
+pub struct ElfShdr<E: Target> {
     pub sh_name: U32<E>,
     pub sh_type: U32<E>,
-    pub sh_flags: E::Word,
-    pub sh_addr: E::Word,
-    pub sh_offset: E::Word,
-    pub sh_size: E::Word,
+    pub sh_flags: Word<E>,
+    pub sh_addr: Word<E>,
+    pub sh_offset: Word<E>,
+    pub sh_size: Word<E>,
     pub sh_link: U32<E>,
     pub sh_info: U32<E>,
-    pub sh_addralign: E::Word,
-    pub sh_entsize: E::Word,
+    pub sh_addralign: Word<E>,
+    pub sh_entsize: Word<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfShdr<E> {}
+unsafe impl<E: Target> FileRecord for ElfShdr<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfShdr<I386>>() == 40);
 const _: () = assert!(std::mem::size_of::<ElfShdr<X86_64>>() == 64);
@@ -276,7 +227,7 @@ const _: () = assert!(std::mem::align_of::<ElfShdr<X86_64>>() == 1);
 /// A program header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Phdr<E: Layout> {
+pub struct Elf64Phdr<E: Target> {
     pub p_type: U32<E>,
     pub p_flags: U32<E>,
     pub p_offset: U64<E>,
@@ -289,7 +240,7 @@ pub struct Elf64Phdr<E: Layout> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Phdr<E: Layout> {
+pub struct Elf32Phdr<E: Target> {
     pub p_type: U32<E>,
     pub p_offset: U32<E>,
     pub p_vaddr: U32<E>,
@@ -302,9 +253,9 @@ pub struct Elf32Phdr<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for Elf64Phdr<E> {}
+unsafe impl<E: Target> FileRecord for Elf64Phdr<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Layout> FileRecord for Elf32Phdr<E> {}
+unsafe impl<E: Target> FileRecord for Elf32Phdr<E> {}
 
 const _: () = assert!(std::mem::size_of::<Elf32Phdr<I386>>() == 32);
 const _: () = assert!(std::mem::size_of::<Elf64Phdr<X86_64>>() == 56);
@@ -336,7 +287,7 @@ pub trait PhdrRecord: FileRecord + fmt::Debug {
 macro_rules! impl_phdr_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Layout> PhdrRecord for $record<E> {
+        impl<E: Target> PhdrRecord for $record<E> {
 
             fn p_type(&self) -> u32 { self.p_type.get() }
             fn set_p_type(&mut self, value: u32) { self.p_type.set(value) }
@@ -361,12 +312,12 @@ macro_rules! impl_phdr_record {
 impl_phdr_record!(Elf64Phdr);
 impl_phdr_record!(Elf32Phdr);
 
-pub type ElfPhdr<E> = <E as Layout>::Phdr;
+pub type ElfPhdr<E> = <E as Target>::Phdr;
 
 /// A symbol table entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Sym<E: Layout> {
+pub struct Elf64Sym<E: Target> {
     pub st_name: U32<E>,
     st_info: u8,
     st_other: u8,
@@ -377,7 +328,7 @@ pub struct Elf64Sym<E: Layout> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Sym<E: Layout> {
+pub struct Elf32Sym<E: Target> {
     pub st_name: U32<E>,
     pub st_value: U32<E>,
     pub st_size: U32<E>,
@@ -388,9 +339,9 @@ pub struct Elf32Sym<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
 // not insert padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for Elf64Sym<E> {}
+unsafe impl<E: Target> FileRecord for Elf64Sym<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Layout> FileRecord for Elf32Sym<E> {}
+unsafe impl<E: Target> FileRecord for Elf32Sym<E> {}
 
 const _: () = assert!(std::mem::size_of::<Elf32Sym<I386>>() == 16);
 const _: () = assert!(std::mem::size_of::<Elf64Sym<X86_64>>() == 24);
@@ -468,7 +419,7 @@ pub trait SymbolRecord: FileRecord + fmt::Debug {
 macro_rules! impl_symbol_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Layout> SymbolRecord for $record<E> {
+        impl<E: Target> SymbolRecord for $record<E> {
 
             fn st_name(&self) -> u32 { self.st_name.get() }
             fn set_st_name(&mut self, value: u32) { self.st_name.set(value) }
@@ -516,10 +467,13 @@ macro_rules! impl_symbol_record {
 impl_symbol_record!(Elf64Sym);
 impl_symbol_record!(Elf32Sym);
 
-pub type ElfSym<E> = <E as Layout>::Sym;
+pub type ElfSym<E> = <E as Target>::Sym;
+
+/// The pointer-sized integer field of a target.
+pub type Word<E> = <E as Target>::Word;
 
 /// A word-sized unsigned integer in an ELF file.
-pub trait ElfWord: FileRecord + fmt::Debug {
+pub trait ElfWord: FileRecord + fmt::Debug + PartialEq + Eq {
     fn new(value: u64) -> Self;
     fn get(&self) -> u64;
     fn set(&mut self, value: u64);
@@ -528,9 +482,9 @@ pub trait ElfWord: FileRecord + fmt::Debug {
 }
 
 // SAFETY: U32 is a transparent wrapper around a byte array.
-unsafe impl<E: Layout> FileRecord for U32<E> {}
+unsafe impl<E: Target> FileRecord for U32<E> {}
 
-impl<E: Layout> ElfWord for U32<E> {
+impl<E: Target> ElfWord for U32<E> {
     #[inline(always)]
     fn new(value: u64) -> Self {
         Self::new(value as u32)
@@ -553,9 +507,9 @@ impl<E: Layout> ElfWord for U32<E> {
 }
 
 // SAFETY: U64 is a transparent wrapper around a byte array.
-unsafe impl<E: Layout> FileRecord for U64<E> {}
+unsafe impl<E: Target> FileRecord for U64<E> {}
 
-impl<E: Layout> ElfWord for U64<E> {
+impl<E: Target> ElfWord for U64<E> {
     #[inline(always)]
     fn new(value: u64) -> Self {
         Self::new(value)
@@ -624,25 +578,25 @@ pub trait RelRecord: FileRecord + fmt::Debug {
 /// A RELA relocation record.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ElfRela<E: Layout> {
-    r_offset: E::Word,
-    r_info: E::Word,
-    r_addend: E::Word,
+pub struct ElfRela<E: Target> {
+    r_offset: Word<E>,
+    r_info: Word<E>,
+    r_addend: Word<E>,
 }
 
 /// A REL relocation record.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ElfRelNoAddend<E: Layout> {
-    r_offset: E::Word,
-    r_info: E::Word,
+pub struct ElfRelNoAddend<E: Target> {
+    r_offset: Word<E>,
+    r_info: Word<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfRela<E> {}
+unsafe impl<E: Target> FileRecord for ElfRela<E> {}
 // SAFETY: see ElfRela.
-unsafe impl<E: Layout> FileRecord for ElfRelNoAddend<E> {}
+unsafe impl<E: Target> FileRecord for ElfRelNoAddend<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfRela<I386>>() == 12);
 const _: () = assert!(std::mem::size_of::<ElfRela<X86_64>>() == 24);
@@ -656,7 +610,7 @@ const _: () = assert!(std::mem::align_of::<ElfRelNoAddend<X86_64>>() == 1);
 // ELF32 keeps the relocation type in the low 8 bits of r_info and the symbol
 // index above them; ELF64 gives each 32 bits.
 #[inline(always)]
-fn r_info<E: Layout>(r_sym: u32, r_type: u32) -> u64 {
+fn r_info<E: Target>(r_sym: u32, r_type: u32) -> u64 {
     if E::IS_64 {
         u64::from(r_sym) << 32 | u64::from(r_type)
     } else {
@@ -665,24 +619,24 @@ fn r_info<E: Layout>(r_sym: u32, r_type: u32) -> u64 {
 }
 
 #[inline(always)]
-fn r_info_sym<E: Layout>(r_info: u64) -> u32 {
+fn r_info_sym<E: Target>(r_info: u64) -> u32 {
     if E::IS_64 { (r_info >> 32) as u32 } else { (r_info >> 8) as u32 }
 }
 
 #[inline(always)]
-fn r_info_type<E: Layout>(r_info: u64) -> u32 {
+fn r_info_type<E: Target>(r_info: u64) -> u32 {
     if E::IS_64 { r_info as u32 } else { (r_info & 0xff) as u32 }
 }
 
 #[rustfmt::skip]
-impl<E: Layout> RelRecord for ElfRela<E> {
+impl<E: Target> RelRecord for ElfRela<E> {
     const IS_RELA: bool = true;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, r_addend: i64) -> Self {
         Self {
-            r_offset: E::Word::new(r_offset),
-            r_info: E::Word::new(r_info::<E>(r_sym, r_type)),
-            r_addend: E::Word::new(r_addend as u64),
+            r_offset: Word::<E>::new(r_offset),
+            r_info: Word::<E>::new(r_info::<E>(r_sym, r_type)),
+            r_addend: Word::<E>::new(r_addend as u64),
         }
     }
 
@@ -697,13 +651,13 @@ impl<E: Layout> RelRecord for ElfRela<E> {
 }
 
 #[rustfmt::skip]
-impl<E: Layout> RelRecord for ElfRelNoAddend<E> {
+impl<E: Target> RelRecord for ElfRelNoAddend<E> {
     const IS_RELA: bool = false;
 
     fn new(r_offset: u64, r_type: u32, r_sym: u32, _r_addend: i64) -> Self {
         Self {
-            r_offset: E::Word::new(r_offset),
-            r_info: E::Word::new(r_info::<E>(r_sym, r_type)),
+            r_offset: Word::<E>::new(r_offset),
+            r_info: Word::<E>::new(r_info::<E>(r_sym, r_type)),
         }
     }
 
@@ -764,31 +718,31 @@ impl RelRecord for Sparc64Rela {
     fn set_r_addend(&mut self, value: i64) { self.r_addend.set(value) }
 }
 
-pub type ElfRel<E> = <E as Layout>::Rel;
+pub type ElfRel<E> = <E as Target>::Rel;
 
 /// Relocation records as they are laid out in a file, read as they are
 /// used rather than copied out. Input files hold tens of millions of
 /// relocations, which most passes go through once.
-pub(crate) fn rels_from_bytes<E: Layout>(data: &[u8]) -> &[ElfRel<E>] {
+pub(crate) fn rels_from_bytes<E: Target>(data: &[u8]) -> &[ElfRel<E>] {
     records_from_bytes(data)
 }
 
 /// Mutably views relocation records in their target-dependent file representation.
-pub(crate) fn rels_from_bytes_mut<E: Layout>(data: &mut [u8]) -> &mut [ElfRel<E>] {
+pub(crate) fn rels_from_bytes_mut<E: Target>(data: &mut [u8]) -> &mut [ElfRel<E>] {
     records_from_bytes_mut(data)
 }
 
 /// An entry of the `.dynamic` section.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct ElfDyn<E: Layout> {
-    pub d_tag: E::Word,
-    pub d_val: E::Word,
+pub struct ElfDyn<E: Target> {
+    pub d_tag: Word<E>,
+    pub d_val: Word<E>,
 }
 
 // SAFETY: both fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfDyn<E> {}
+unsafe impl<E: Target> FileRecord for ElfDyn<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfDyn<I386>>() == 8);
 const _: () = assert!(std::mem::size_of::<ElfDyn<X86_64>>() == 16);
@@ -798,7 +752,7 @@ const _: () = assert!(std::mem::align_of::<ElfDyn<X86_64>>() == 1);
 /// The header of a compressed section.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf64Chdr<E: Layout> {
+pub struct Elf64Chdr<E: Target> {
     pub ch_type: U32<E>,
     pub ch_reserved: U32<E>,
     pub ch_size: U64<E>,
@@ -807,7 +761,7 @@ pub struct Elf64Chdr<E: Layout> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Elf32Chdr<E: Layout> {
+pub struct Elf32Chdr<E: Target> {
     pub ch_type: U32<E>,
     pub ch_size: U32<E>,
     pub ch_addralign: U32<E>,
@@ -815,9 +769,9 @@ pub struct Elf32Chdr<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for Elf64Chdr<E> {}
+unsafe impl<E: Target> FileRecord for Elf64Chdr<E> {}
 // SAFETY: see the Elf64 implementation.
-unsafe impl<E: Layout> FileRecord for Elf32Chdr<E> {}
+unsafe impl<E: Target> FileRecord for Elf32Chdr<E> {}
 
 const _: () = assert!(std::mem::size_of::<Elf32Chdr<I386>>() == 12);
 const _: () = assert!(std::mem::size_of::<Elf64Chdr<X86_64>>() == 24);
@@ -839,7 +793,7 @@ pub trait ChdrRecord: FileRecord + fmt::Debug {
 macro_rules! impl_chdr_record {
     ($record:ident) => {
 #[rustfmt::skip]
-        impl<E: Layout> ChdrRecord for $record<E> {
+        impl<E: Target> ChdrRecord for $record<E> {
 
             fn ch_type(&self) -> u32 { self.ch_type.get() }
             fn set_ch_type(&mut self, value: u32) { self.ch_type.set(value) }
@@ -856,12 +810,12 @@ macro_rules! impl_chdr_record {
 impl_chdr_record!(Elf64Chdr);
 impl_chdr_record!(Elf32Chdr);
 
-pub type ElfChdr<E> = <E as Layout>::Chdr;
+pub type ElfChdr<E> = <E as Target>::Chdr;
 
 /// A note header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfNhdr<E: Layout> {
+pub struct ElfNhdr<E: Target> {
     pub n_namesz: U32<E>,
     pub n_descsz: U32<E>,
     pub n_type: U32<E>,
@@ -869,7 +823,7 @@ pub struct ElfNhdr<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfNhdr<E> {}
+unsafe impl<E: Target> FileRecord for ElfNhdr<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfNhdr<I386>>() == 12);
 const _: () = assert!(std::mem::align_of::<ElfNhdr<I386>>() == 1);
@@ -877,7 +831,7 @@ const _: () = assert!(std::mem::align_of::<ElfNhdr<I386>>() == 1);
 /// A `.gnu.version_r` file entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerneed<E: Layout> {
+pub struct ElfVerneed<E: Target> {
     pub vn_version: U16<E>,
     pub vn_cnt: U16<E>,
     pub vn_file: U32<E>,
@@ -887,14 +841,14 @@ pub struct ElfVerneed<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfVerneed<E> {}
+unsafe impl<E: Target> FileRecord for ElfVerneed<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfVerneed<I386>>() == 16);
 
 /// A `.gnu.version_r` version entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVernaux<E: Layout> {
+pub struct ElfVernaux<E: Target> {
     pub vna_hash: U32<E>,
     pub vna_flags: U16<E>,
     pub vna_other: U16<E>,
@@ -904,14 +858,14 @@ pub struct ElfVernaux<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfVernaux<E> {}
+unsafe impl<E: Target> FileRecord for ElfVernaux<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfVernaux<I386>>() == 16);
 
 /// A `.gnu.version_d` definition entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerdef<E: Layout> {
+pub struct ElfVerdef<E: Target> {
     pub vd_version: U16<E>,
     pub vd_flags: U16<E>,
     pub vd_ndx: U16<E>,
@@ -923,21 +877,21 @@ pub struct ElfVerdef<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfVerdef<E> {}
+unsafe impl<E: Target> FileRecord for ElfVerdef<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfVerdef<I386>>() == 20);
 
 /// A `.gnu.version_d` name entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ElfVerdaux<E: Layout> {
+pub struct ElfVerdaux<E: Target> {
     pub vda_name: U32<E>,
     pub vda_next: U32<E>,
 }
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for ElfVerdaux<E> {}
+unsafe impl<E: Target> FileRecord for ElfVerdaux<E> {}
 
 const _: () = assert!(std::mem::size_of::<ElfVerdaux<I386>>() == 8);
 
@@ -949,7 +903,7 @@ const _: () = assert!(std::mem::size_of::<ElfVerdaux<I386>>() == 8);
 /// https://sourceware.org/binutils/docs/sframe-spec.html
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SFrameHeader<E: Layout> {
+pub struct SFrameHeader<E: Target> {
     pub magic: U16<E>,
     pub version: u8,
     pub flags: u8,
@@ -966,7 +920,7 @@ pub struct SFrameHeader<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
 // not insert padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for SFrameHeader<E> {}
+unsafe impl<E: Target> FileRecord for SFrameHeader<E> {}
 
 const _: () = assert!(std::mem::size_of::<SFrameHeader<I386>>() == 28);
 const _: () = assert!(std::mem::align_of::<SFrameHeader<I386>>() == 1);
@@ -976,7 +930,7 @@ const _: () = assert!(std::mem::align_of::<SFrameHeader<I386>>() == 1);
 /// SFRAME_F_FDE_FUNC_START_PCREL is set, which is how mold always emits it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SFrameFdeIdx<E: Layout> {
+pub struct SFrameFdeIdx<E: Target> {
     pub func_start_offset: I64<E>,
     pub func_size: U32<E>,
     pub func_start_fre_off: U32<E>,
@@ -984,7 +938,7 @@ pub struct SFrameFdeIdx<E: Layout> {
 
 // SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
 // padding between fields with alignment one.
-unsafe impl<E: Layout> FileRecord for SFrameFdeIdx<E> {}
+unsafe impl<E: Target> FileRecord for SFrameFdeIdx<E> {}
 
 const _: () = assert!(std::mem::size_of::<SFrameFdeIdx<I386>>() == 16);
 const _: () = assert!(std::mem::align_of::<SFrameFdeIdx<I386>>() == 1);

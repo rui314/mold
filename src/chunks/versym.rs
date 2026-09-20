@@ -14,12 +14,12 @@ use crate::target::Target;
 // must be resolved to a symbol with the exact same version string at
 // runtime.
 #[derive(Debug)]
-pub struct VersymSection<E: Layout> {
+pub struct VersymSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub contents: Vec<u16>,
 }
 
-impl<E: Layout> VersymSection<E> {
+impl<E: Target> VersymSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version", SHT_GNU_VERSYM, SHF_ALLOC as u64);
         hdr.shdr.sh_entsize.set(2);
@@ -28,7 +28,7 @@ impl<E: Layout> VersymSection<E> {
     }
 }
 
-impl<E: Layout> Default for VersymSection<E> {
+impl<E: Target> Default for VersymSection<E> {
     fn default() -> Self {
         Self::new()
     }

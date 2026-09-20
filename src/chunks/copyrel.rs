@@ -12,12 +12,12 @@ use crate::util::align_to;
 // .copyrel and .copyrel.rel.ro represent memory regions to which the
 // runtime copies symbols from other ELF files for copy relocations.
 #[derive(Debug)]
-pub struct CopyrelSection<E: Layout> {
+pub struct CopyrelSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub symbols: Vec<SymbolId>,
 }
 
-impl<E: Layout> CopyrelSection<E> {
+impl<E: Target> CopyrelSection<E> {
     pub fn new(is_relro: bool) -> Self {
         let name = if is_relro { ".copyrel.rel.ro" } else { ".copyrel" };
         let mut hdr = ChunkHeader::<E>::new(name, SHT_NOBITS, (SHF_ALLOC | SHF_WRITE) as u64);

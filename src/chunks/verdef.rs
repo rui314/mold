@@ -14,12 +14,12 @@ use crate::target::Target;
 // versions of defined symbols. This section appears only in .so files,
 // and it specifies the symbol version for each defined dynamic symbol.
 #[derive(Debug)]
-pub struct VerdefSection<E: Layout> {
+pub struct VerdefSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub contents: Vec<u8>,
 }
 
-impl<E: Layout> VerdefSection<E> {
+impl<E: Target> VerdefSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".gnu.version_d", SHT_GNU_VERDEF, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(4);
@@ -27,7 +27,7 @@ impl<E: Layout> VerdefSection<E> {
     }
 }
 
-impl<E: Layout> Default for VerdefSection<E> {
+impl<E: Target> Default for VerdefSection<E> {
     fn default() -> Self {
         Self::new()
     }

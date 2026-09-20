@@ -11,7 +11,7 @@ use crate::util::write_cstr;
 // string. Package managers, such as dpkg or rpm, uses the section to
 // embed package metadata into each ELF file so that it is easy to find
 // the origin of an ELF file without any additional information.
-pub fn new_header<E: Layout>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".note.package", SHT_NOTE, SHF_ALLOC as u64);
     hdr.shdr.sh_addralign.set(4);
     hdr

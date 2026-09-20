@@ -48,16 +48,14 @@ use crate::{error, fatal};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct I386;
 
-impl Layout for I386 {
+impl Target for I386 {
     const IS_LITTLE: bool = true;
     type Word = U32<Self>;
     type Sym = Elf32Sym<Self>;
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
-}
 
-impl Target for I386 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "i386";

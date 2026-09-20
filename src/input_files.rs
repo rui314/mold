@@ -357,7 +357,7 @@ impl From<DsoId> for FileId {
 
 // InputFile contains the fields shared by ObjectFile and SharedFile.
 #[derive(Debug)]
-pub struct InputFile<E: Layout> {
+pub struct InputFile<E: Target> {
     pub mf: Option<&'static MappedFile>,
     pub filename: Cow<'static, str>,
 
@@ -402,7 +402,7 @@ pub struct InputFile<E: Layout> {
     pub output_sym_indices: Vec<i32>,
 }
 
-impl<E: Layout> InputFile<E> {
+impl<E: Target> InputFile<E> {
     fn empty(filename: Cow<'static, str>) -> Self {
         Self {
             mf: None,
@@ -861,7 +861,7 @@ pub fn display_file<'a>(filename: &'a str, archive_name: &'a Path) -> impl fmt::
     })
 }
 
-fn is_debug_section<E: Layout>(shdr: &ElfShdr<E>, name: &[u8]) -> bool {
+fn is_debug_section<E: Target>(shdr: &ElfShdr<E>, name: &[u8]) -> bool {
     shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 && name.starts_with(b".debug_")
 }
 
@@ -890,7 +890,7 @@ fn is_known_section_type<E: Target>(shdr: &ElfShdr<E>) -> bool {
 
 // Decode CREL entries one at a time so callers can either stream them or
 // materialize them in an array.
-struct CrelReader<'a, E: Layout> {
+struct CrelReader<'a, E: Target> {
     data: &'a [u8],
     remaining: usize,
     scale: u32,
@@ -941,7 +941,7 @@ fn crel_count(data: &[u8]) -> Option<usize> {
     None
 }
 
-impl<E: Layout> Iterator for CrelReader<'_, E> {
+impl<E: Target> Iterator for CrelReader<'_, E> {
     type Item = ElfRel<E>;
 
     #[inline(always)]
@@ -980,16 +980,16 @@ impl<E: Layout> Iterator for CrelReader<'_, E> {
     }
 }
 
-impl<E: Layout> ExactSizeIterator for CrelReader<'_, E> {}
+impl<E: Target> ExactSizeIterator for CrelReader<'_, E> {}
 
 // Keep next() always-inline: using rayon::iter::Either here can add a
 // function call per relocation in hot loops.
-enum RelocationIter<'a, E: Layout> {
+enum RelocationIter<'a, E: Target> {
     Ordinary(std::iter::Copied<std::slice::Iter<'a, ElfRel<E>>>),
     Crel(CrelReader<'a, E>),
 }
 
-impl<E: Layout> Iterator for RelocationIter<'_, E> {
+impl<E: Target> Iterator for RelocationIter<'_, E> {
     type Item = ElfRel<E>;
 
     #[inline(always)]
@@ -1020,7 +1020,7 @@ impl<E: Layout> Iterator for RelocationIter<'_, E> {
     }
 }
 
-impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
+impl<E: Target> ExactSizeIterator for RelocationIter<'_, E> {}
 
 // SHT_CREL is an experimental alternative relocation table format
 // designed to reduce the size of the table. Only LLVM supports it
@@ -2962,7 +2962,7 @@ fn sframe_fre_block_size<E: Target>(data: &[u8], offset: usize) -> usize {
 
 // SharedFile represents an input .so file.
 #[derive(Debug)]
-pub struct SharedFile<E: Layout> {
+pub struct SharedFile<E: Target> {
     pub base: InputFile<E>,
     pub soname: &'static [u8],
     pub version_strings: Vec<&'static [u8]>,
@@ -2977,13 +2977,13 @@ pub struct SharedFile<E: Layout> {
     sorted_syms: OnceLock<Vec<SymbolId>>,
 }
 
-impl<E: Layout> fmt::Display for SharedFile<E> {
+impl<E: Target> fmt::Display for SharedFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", path_clean(&self.base.filename))
     }
 }
 
-impl<E: Layout> FileInPool for SharedFile<E> {
+impl<E: Target> FileInPool for SharedFile<E> {
     fn set_file_index(&mut self, index: u32) {
         self.base.file_index = index;
     }

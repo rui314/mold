@@ -1264,12 +1264,12 @@ pub struct CieRecord {
 
 impl CieRecord {
     #[inline]
-    pub fn size<E: Layout>(&self) -> usize {
+    pub fn size<E: Target>(&self) -> usize {
         record_size::<E>(self.contents, self.input_offset)
     }
 
     #[inline]
-    pub fn contents<E: Layout>(&self) -> &'static [u8] {
+    pub fn contents<E: Target>(&self) -> &'static [u8] {
         let start = self.input_offset as usize;
         &self.contents[start..start + self.size::<E>()]
     }
@@ -1287,14 +1287,14 @@ impl CieRecord {
 /// The size of the `.eh_frame` record at `offset`: its length field
 /// plus the field itself.
 #[inline]
-fn record_size<E: Layout>(contents: &[u8], offset: u32) -> usize {
+fn record_size<E: Target>(contents: &[u8], offset: u32) -> usize {
     E::read_u32(&contents[offset as usize..]) as usize + 4
 }
 
 /// The relocations of a `.eh_frame` record: those from index `begin`
 /// that apply before `end`.
 #[inline]
-fn rels_in<E: Layout>(rels: &[ElfRel<E>], begin: u32, end: usize) -> &[ElfRel<E>] {
+fn rels_in<E: Target>(rels: &[ElfRel<E>], begin: u32, end: usize) -> &[ElfRel<E>] {
     let begin = begin as usize;
     let rest = &rels[begin..];
     let count = rest.iter().take_while(|r| (r.r_offset() as usize) < end).count();
@@ -1347,7 +1347,7 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub(crate) fn size_with<E: Layout>(&self, cies: &[CieRecord]) -> usize {
+    pub(crate) fn size_with<E: Target>(&self, cies: &[CieRecord]) -> usize {
         record_size::<E>(cies[self.cie_idx as usize].contents, self.input_offset)
     }
 
