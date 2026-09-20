@@ -2060,6 +2060,17 @@ impl<E: Target> ObjectFile<E> {
                 }
                 let begin_offset = pos;
                 let end_offset = pos + size + 4;
+                // A record must contain both the length and CIE id fields and
+                // must not extend past the end of the section. Report such a
+                // record the way lld does and drop it instead of panicking on
+                // a truncated slice.
+                if pos + 8 > contents.len() || end_offset > contents.len() {
+                    warn!(
+                        "{}: corrupted .eh_frame: record ends past the end of the section",
+                        isec.display(self)
+                    );
+                    break;
+                }
                 let id = E::read_u32(&contents[pos + 4..]);
                 pos = end_offset;
 
@@ -2869,6 +2880,12 @@ fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, d
         }
     };
 
+    // A CIE needs at least the version byte and the terminating NUL of the
+    // augmentation string. Report a truncated record instead of panicking.
+    if data.len() < 10 {
+        warn!("{}: corrupted .eh_frame: CIE is too small", isec.display(file));
+        return DW_EH_PE_absptr as u8;
+    }
     // Skip the length, CIE ID and version fields.
     let version = data[8];
     if version != 1 && version != 3 {
@@ -2879,6 +2896,28 @@ fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, d
     let aug_len = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
     let aug = &rest[..aug_len];
     rest = &rest[(aug_len + 1).min(rest.len())..];
+
+    // Returns None if the value is truncated; malformed .eh_frame sections
+    // must not panic the linker.
+    let read_uleb_opt = |rest: &mut &[u8]| -> Option<u64> {
+        let mut value = 0;
+        let mut shift = 0;
+        loop {
+            let (&byte, tail) = rest.split_first()?;
+            *rest = tail;
+            if shift < 64 {
+                value |= ((byte & 0x7f) as u64) << shift;
+            }
+            shift += 7;
+            if byte & 0x80 == 0 {
+                return Some(value);
+            }
+        }
+    };
+    let malformed = || -> u8 {
+        warn!("{}: corrupted .eh_frame: CIE ends past the end of the section", isec.display(file));
+        DW_EH_PE_absptr as u8
+    };
 
     let enc = 'enc: {
         // An empty augmentation string means FDE pointers are raw absolute
@@ -2897,28 +2936,50 @@ fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, d
 
         // ULEB128 and SLEB128 values have the same framing, so read_uleb
         // skips both.
-        read_uleb(&mut rest); // code alignment factor
-        read_uleb(&mut rest); // data alignment factor
-        if version == 1 {
-            rest = &rest[1..]; // return address register
-        } else {
-            read_uleb(&mut rest);
+        if read_uleb_opt(&mut rest).is_none() {
+            break 'enc malformed();
         }
-        read_uleb(&mut rest); // augmentation data length
+        if read_uleb_opt(&mut rest).is_none() {
+            break 'enc malformed();
+        }
+        if version == 1 {
+            if rest.is_empty() {
+                break 'enc malformed();
+            }
+            rest = &rest[1..]; // return address register
+        } else if read_uleb_opt(&mut rest).is_none() {
+            break 'enc malformed();
+        }
+        if read_uleb_opt(&mut rest).is_none() {
+            break 'enc malformed();
+        }
 
         // Walk the augmentation data, looking for 'R', whose data byte
         // specifies how FDE pointers are encoded.
         for &c in &aug[1..] {
             match c {
-                b'R' => break 'enc rest[0],
+                b'R' => match rest.first() {
+                    Some(&enc) => break 'enc enc,
+                    None => break 'enc malformed(),
+                },
                 b'L' => {
                     // A byte specifying the LSDA pointer encoding
+                    if rest.is_empty() {
+                        break 'enc malformed();
+                    }
                     rest = &rest[1..];
                 }
                 b'P' => {
                     // A byte specifying the personality function pointer encoding,
                     // followed by the pointer itself
-                    rest = &rest[ptr_size(rest[0]) as usize + 1..];
+                    let Some(&penc) = rest.first() else {
+                        break 'enc malformed();
+                    };
+                    let n = ptr_size(penc) as usize + 1;
+                    if rest.len() < n {
+                        break 'enc malformed();
+                    }
+                    rest = &rest[n..];
                 }
                 b'S' | b'B' | b'G' => {
                     // 'S' (signal frame), 'B' (AArch64 pointer authentication) and
