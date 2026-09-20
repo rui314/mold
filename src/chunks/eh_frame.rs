@@ -7,7 +7,6 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::context::Context;
@@ -16,12 +15,13 @@ use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
+use crate::target::Target;
 use crate::util::is_int;
 use crate::{error, fatal};
 
 /// Visits CIEs in input order, reusing the value assigned to an equivalent
 /// leader. The visitor only updates layout/ICF metadata, not CIE contents.
-pub fn deduplicate_cies<E: Arch>(
+pub fn deduplicate_cies<E: Target>(
     ctx: &mut Context<E>,
     mut assign: impl FnMut(&mut CieRecord, Option<u32>) -> u32,
 ) {
@@ -49,14 +49,14 @@ pub fn deduplicate_cies<E: Arch>(
 // for each function. Each input object file contains one .eh_frame section.
 // We parse input .eh_frame sections, merge their contents and emit the
 // merged information to .eh_frame.
-pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".eh_frame", SHT_PROGBITS, SHF_ALLOC as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr
 }
 
 /// Whether two CIEs are identical, including their relocations.
-pub fn cie_equals<E: Arch>(
+pub fn cie_equals<E: Target>(
     a_file: &ObjectFile<E>,
     a: &CieRecord,
     b_file: &ObjectFile<E>,
@@ -77,7 +77,7 @@ pub fn cie_equals<E: Arch>(
         })
 }
 
-pub fn construct<E: Arch>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("eh_frame");
 
     // Remove dead FDEs and assign them offsets within their corresponding
@@ -116,7 +116,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
 }
 
 // Write to .eh_frame and .eh_frame_hdr.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut [u8]>) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut [u8]>) {
     let sh_addr = ctx.eh_frame.shdr.sh_addr.get();
     let sh_size = ctx.eh_frame.shdr.sh_size.get();
 
@@ -159,7 +159,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
     };
 
     // Gather per-file work items with their slices.
-    struct Item<'a, E: Arch> {
+    struct Item<'a, E: Target> {
         file: &'a ObjectFile<E>,
         cies: Vec<(usize, &'a mut [u8])>,
         fdes: Option<&'a mut [u8]>,
@@ -282,7 +282,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
 }
 
 /// Reports an `.eh_frame` relocation whose value doesn't fit.
-pub fn check_range<E: Arch>(
+pub fn check_range<E: Target>(
     ctx: &Context<E>,
     isec: &crate::input_sections::InputSection<E>,
     rel: &ElfRel<E>,
@@ -302,6 +302,6 @@ pub fn check_range<E: Arch>(
 }
 
 /// Fatal error for `.eh_frame` contents that can't be handled.
-pub fn unsupported<E: Arch>(rel: &ElfRel<E>) -> ! {
+pub fn unsupported<E: Target>(rel: &ElfRel<E>) -> ! {
     fatal!("unsupported relocation in .eh_frame: {}", rel.type_name::<E>())
 }

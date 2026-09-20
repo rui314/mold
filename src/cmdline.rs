@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use bstr::{ByteSlice, ByteVec};
 
-use crate::arch;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
+use crate::target::{Family, emulation_to_target};
 use crate::util::glob::{Glob, GlobBuilder};
 use crate::util::perf::Counter;
 use crate::util::{self, align_down};
@@ -691,7 +691,7 @@ impl Default for Args {
 pub struct TargetTraits {
     pub name: &'static str,
     pub is_rela: bool,
-    pub family: arch::Family,
+    pub family: Family,
     pub page_size: u64,
 }
 
@@ -1216,7 +1216,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     //
     // - Static PIE binaries crash on startup in some RISC-V environment if
     // we write addends to relocated places.
-    a.apply_dynamic_relocs = !matches!(target.family, arch::Family::Sparc64 | arch::Family::RiscV);
+    a.apply_dynamic_relocs = !matches!(target.family, Family::Sparc64 | Family::RiscV);
 
     let mut cursor = ArgCursor { args: raw_cmdline, index: 1 };
     let mut arg = "";
@@ -1299,7 +1299,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_arg!("mllvm", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("m") {
-            match arch::emulation_to_target(arg) {
+            match emulation_to_target(arg) {
                 Some(name) => a.emulation = name,
                 None => fatal!("unknown -m argument: {arg}"),
             }
@@ -1693,7 +1693,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_z_flag("x86-64-v4") {
             a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
         } else if cursor.read_z_flag("rewrite-endbr") {
-            if !matches!(target.family, arch::Family::X86_64 | arch::Family::Arm64) {
+            if !matches!(target.family, Family::X86_64 | Family::Arm64) {
                 fatal!("-z rewrite-endbr is supported only on x86-64 and arm64");
             }
             a.z_rewrite_endbr = true;
@@ -2026,10 +2026,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // Even though SH4 is RELA, addends in its relocation records are always
     // zero, and actual addends are written to relocated places. So we need
     // to handle it as an exception.
-    if (!target.is_rela || target.family == arch::Family::Sh4) && !a.apply_dynamic_relocs {
+    if (!target.is_rela || target.family == Family::Sh4) && !a.apply_dynamic_relocs {
         fatal!("--no-apply-dynamic-relocs may not be used on {}", target.name);
     }
-    if target.family == arch::Family::Sparc64 && a.apply_dynamic_relocs {
+    if target.family == Family::Sparc64 && a.apply_dynamic_relocs {
         fatal!("--apply-dynamic-relocs may not be used on SPARC64");
     }
 

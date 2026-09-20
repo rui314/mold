@@ -1,9 +1,9 @@
 //! `.riscv.attributes`, merged RISC-V target attributes.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 /// `.riscv.attributes` describes the ISA the output requires, merged
 /// from the input files' attributes.
@@ -28,17 +28,17 @@ impl<E: Layout> Default for RiscvAttributesSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if !ctx.riscv_attributes.as_ref().unwrap().contents.is_empty() {
         return;
     }
-    let contents = crate::arch::riscv::attributes_contents(ctx);
+    let contents = crate::target::riscv::attributes_contents(ctx);
     let sec = ctx.riscv_attributes.as_mut().unwrap();
     sec.hdr.shdr.sh_size.set(contents.len() as u64);
     sec.contents = contents;
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.riscv_attributes.as_ref().unwrap();
     buf[..sec.contents.len()].copy_from_slice(&sec.contents);
 }

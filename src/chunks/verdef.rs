@@ -2,13 +2,13 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::hash::elf_hash;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::target::Target;
 
 // .gnu.version contains a parallel table for .dynsym to specify symbol
 // versions of defined symbols. This section appears only in .so files,
@@ -33,7 +33,7 @@ impl<E: Layout> Default for VerdefSection<E> {
     }
 }
 
-pub fn construct<E: Arch>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("fill_verdef");
     if ctx.args.version_definitions.is_empty() {
         return;
@@ -132,14 +132,14 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     verdef.contents = contents;
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let shndx = ctx.dynstr.hdr.shndx;
     let verdef = ctx.verdef.as_mut().unwrap();
     verdef.hdr.shdr.sh_size.set(verdef.contents.len() as u64);
     verdef.hdr.shdr.sh_link.set(shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let verdef = ctx.verdef.as_ref().unwrap();
     buf[..verdef.contents.len()].copy_from_slice(&verdef.contents);
 }

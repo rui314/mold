@@ -61,13 +61,13 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -77,7 +77,7 @@ pub type Sh4 = Sh4Target<true>;
 pub type Sh4Be = Sh4Target<false>;
 
 // One impl per byte order rather than one generic impl keeps Self::Word
-// abstract in the generic Arch impl, so word accessors return u64 there.
+// abstract in the generic Target impl, so word accessors return u64 there.
 impl Layout for Sh4Target<true> {
     const IS_LITTLE: bool = true;
     type Word = U32<Self>;
@@ -132,7 +132,7 @@ where
     }
 }
 
-impl<const LE: bool> Arch for Sh4Target<LE>
+impl<const LE: bool> Target for Sh4Target<LE>
 where
     Self: Layout,
 {

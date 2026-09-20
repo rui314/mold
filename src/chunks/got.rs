@@ -1,11 +1,11 @@
 //! `.got`, addresses and thread-local offsets used at runtime.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::{AddrFlags, SymbolId};
+use crate::target::{Family, Target};
 
 // .got is a linker-synthesized constant pool whose entry size is the same
 // as the pointer size. It is used to store runtime addresses of global
@@ -20,7 +20,7 @@ pub struct GotSection<E: Layout> {
     pub tlsld_idx: Option<u32>,
 }
 
-impl<E: Arch> GotSection<E> {
+impl<E: Target> GotSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".got", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = true;
@@ -49,17 +49,17 @@ impl<E: Arch> GotSection<E> {
     }
 }
 
-impl<E: Arch> Default for GotSection<E> {
+impl<E: Target> Default for GotSection<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-fn word<E: Arch>() -> u64 {
+fn word<E: Target>() -> u64 {
     E::WORD_SIZE as u64
 }
 
-pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
@@ -72,7 +72,7 @@ pub fn add_got_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.got.got_syms.push(sym);
 }
 
-pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_gottp_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     assert_ne!(idx, u32::MAX);
@@ -81,7 +81,7 @@ pub fn add_gottp_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.got.gottp_syms.push(sym);
 }
 
-pub fn add_tlsgd_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_tlsgd_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     assert_ne!(idx, u32::MAX);
@@ -90,7 +90,7 @@ pub fn add_tlsgd_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.got.tlsgd_syms.push(sym);
 }
 
-pub fn add_tlsdesc_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_tlsdesc_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     // TLSDESC's GOT slot values may vary depending on libc, so we
     // always emit a dynamic relocation for each TLSDESC entry.
     //
@@ -107,7 +107,7 @@ pub fn add_tlsdesc_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.got.tlsdesc_syms.push(sym);
 }
 
-pub fn add_tlsld<E: Arch>(ctx: &mut Context<E>) {
+pub fn add_tlsld<E: Target>(ctx: &mut Context<E>) {
     debug_assert!(ctx.got.tlsld_idx.is_none());
     let size = ctx.got.hdr.shdr.sh_size.get();
     ctx.got.tlsld_idx = Some((size / word::<E>()) as u32);
@@ -136,7 +136,7 @@ struct GotEntry {
 // Thread-local variables (TLVs) also use GOT entries. We need them because
 // TLVs are accessed in a different way than the ordinary global variables.
 // Their addresses are not unique; each thread has its own copy of TLVs.
-fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
+fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
     let mut add = |idx: u32, val: u64, r_type: u32, sym: Option<SymbolId>| {
         emit(GotEntry { idx, val, r_type, sym });
     };
@@ -243,7 +243,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
 // symbol address lookup, which is too expensive for a function that runs
 // on every layout iteration. The cases below must mirror the r_type
 // choices in for_each_entry.
-pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
+pub fn num_dynrels<E: Target>(ctx: &Context<E>) -> u64 {
     let got = &ctx.got;
     let mut n = 0;
     for &id in &got.got_syms {
@@ -280,7 +280,7 @@ pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
     n
 }
 
-pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
+pub fn relr_offsets<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     if !ctx.args.pic {
         return Vec::new();
     }
@@ -294,7 +294,7 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
     let mut i = 0;
     for_each_entry(ctx, |ent| {
         if ent.r_type == R_NONE {
@@ -316,7 +316,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
 }
 
 // Fill .got.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.fill(0);
     let w = word::<E>() as usize;
     let write = |buf: &mut [u8], idx: usize, val: u64| {
@@ -367,7 +367,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     });
 }
 
-pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
+pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>) {
     let symbols = &ctx.symbols;
     let got = &mut ctx.got;
     got.hdr.strtab_size = 0;
@@ -394,7 +394,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
     got.hdr.num_local_symtab = count;
 }
 
-pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
     let got = &ctx.got;
     if got.hdr.num_local_symtab == 0 {
         return;

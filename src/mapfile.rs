@@ -6,7 +6,6 @@ use std::fmt::Write;
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkId;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
@@ -14,9 +13,10 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::symbol::SymbolId;
+use crate::target::Target;
 
 // Construct a section-to-symbol map.
-fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<SymbolId>> {
+fn section_symbols<E: Target>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<SymbolId>> {
     let mut map: HashMap<InputSectionId, Vec<SymbolId>> = HashMap::new();
     for file in &ctx.objs {
         let file_id = FileId::Obj(file.id());
@@ -36,7 +36,7 @@ fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<Sym
     map
 }
 
-pub fn print_map<E: Arch>(ctx: &Context<E>, output: &ReportOutput) {
+pub fn print_map<E: Target>(ctx: &Context<E>, output: &ReportOutput) {
     // Print a mapfile.
     let _t = ctx.timer("print_map");
     let map = section_symbols(ctx);

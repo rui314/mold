@@ -4,13 +4,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::chunks::symtab::to_output_esym;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::symbol::{SymbolId, SymbolTable};
+use crate::target::Target;
 
 // .dynsym contains symbols for dynamic linking. This is similar to
 // .symtab, but .dynsym contains data that the runtime uses.
@@ -28,7 +28,7 @@ pub struct DynstrEntry {
     pub offset: u64,
 }
 
-impl<E: Arch> DynsymSection<E> {
+impl<E: Target> DynsymSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
         let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
@@ -50,19 +50,19 @@ impl<E: Arch> DynsymSection<E> {
     }
 }
 
-impl<E: Arch> Default for DynsymSection<E> {
+impl<E: Target> Default for DynsymSection<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = std::mem::size_of::<ElfSym<E>>() as u64 * ctx.dynsym.symbols.len() as u64;
     ctx.dynsym.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
     ctx.dynsym.hdr.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let size = std::mem::size_of::<ElfSym<E>>();
     buf[..size].fill(0);
     let overflow = AtomicBool::new(false);

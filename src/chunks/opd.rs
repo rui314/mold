@@ -4,15 +4,15 @@
 //! descriptor: the entry point, the TOC pointer the function expects in
 //! `r2`, and an environment pointer nobody uses. The compiler emits a
 //! descriptor for every function into an input `.opd`; the linker
-//! dissolves those (see [`crate::arch::ppc64v1`]) and synthesizes
+//! dissolves those (see [`crate::target::ppc64v1`]) and synthesizes
 //! descriptors here only for functions whose addresses are taken, in the
 //! same way it synthesizes GOT and PLT entries.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::{AddrFlags, SymbolId};
+use crate::target::Target;
 
 pub const ENTRY_SIZE: u64 = 24;
 
@@ -40,15 +40,15 @@ impl<E: Layout> Default for Ppc64OpdSection<E> {
 /// entry or of the descriptor itself.
 const ENTRY_POINT: AddrFlags = AddrFlags { no_plt: true, no_opd: true };
 
-fn section<E: Arch>(ctx: &Context<E>) -> &Ppc64OpdSection<E> {
+fn section<E: Target>(ctx: &Context<E>) -> &Ppc64OpdSection<E> {
     ctx.ppc64_opd.as_ref().expect("PPC64 ELFv1 has an .opd section")
 }
 
-fn toc<E: Arch>(ctx: &Context<E>) -> u64 {
+fn toc<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.symbols[ctx.syms.toc.expect("PPC64 has a .TOC. symbol")].addr(ctx)
 }
 
-pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let opd = ctx.ppc64_opd.as_mut().expect("PPC64 ELFv1 has an .opd section");
     let idx = opd.symbols.len() as u32;
     assert_ne!(idx, u32::MAX);
@@ -60,11 +60,11 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
 
 /// Position-independent output relocates both the entry point and the
 /// TOC pointer at load time.
-pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
+pub fn num_dynrels<E: Target>(ctx: &Context<E>) -> u64 {
     if ctx.args.pic { section(ctx).symbols.len() as u64 * 2 } else { 0 }
 }
 
-pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
+pub fn relr_offsets<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     if !ctx.args.pic {
         return Vec::new();
     }
@@ -73,7 +73,7 @@ pub fn relr_offsets<E: Arch>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
     if !ctx.args.pic {
         debug_assert!(out.is_empty());
         return;
@@ -95,7 +95,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
     debug_assert_eq!(j, out.len());
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let toc = toc(ctx);
     for (i, &id) in section(ctx).symbols.iter().enumerate() {
         let entry = &mut buf[i * ENTRY_SIZE as usize..];

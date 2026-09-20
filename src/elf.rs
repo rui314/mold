@@ -14,7 +14,7 @@
 //! headers have genuinely different layouts, so they exist in two forms
 //! behind a common trait, and [`Layout`] names the form a target uses. Thus
 //! the big tables — section headers, symbols and relocations — stay in the
-//! input files rather than being copied. [`Arch`](crate::arch::Arch) selects
+//! input files rather than being copied. [`Target`](crate::target::Target) selects
 //! the layout at compile time.
 
 use std::fmt;
@@ -22,12 +22,12 @@ use std::marker::PhantomData;
 
 pub use crate::elf_consts::*;
 
-use crate::arch::{Arch, I386, Sparc64, X86_64};
+use crate::target::{I386, Sparc64, Target, X86_64};
 use crate::util::endian::*;
 
 // ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
-/// relocation record format. Targets implement this through [`Arch`].
+/// relocation record format. Targets implement this through [`Target`].
 pub trait Layout: Copy + Default + fmt::Debug + Send + Sync + 'static {
     const IS_LITTLE: bool;
     type Word: ElfWord;
@@ -596,12 +596,12 @@ pub trait RelRecord: FileRecord + fmt::Debug {
     /// Returns true if a given relocation is of type used for direct
     /// function call.
     #[inline(always)]
-    fn is_func_call<E: Arch>(&self) -> bool {
+    fn is_func_call<E: Target>(&self) -> bool {
         E::R_FUNCALL.contains(&self.r_type())
     }
 
     /// Formats the relocation type name for the given target.
-    fn type_name<E: Arch>(&self) -> std::borrow::Cow<'static, str> {
+    fn type_name<E: Target>(&self) -> std::borrow::Cow<'static, str> {
         E::rel_to_string(self.r_type())
     }
 }

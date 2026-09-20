@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::write_cstr;
 
 // .dynstr contains strings that the runtime uses.
@@ -50,7 +50,7 @@ impl<E: Layout> Default for DynstrSection<E> {
     }
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (s, &off) in &ctx.dynstr.strings {
         write_cstr(&mut buf[off as usize..], s);
     }

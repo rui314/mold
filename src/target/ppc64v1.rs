@@ -50,7 +50,6 @@ use std::sync::atomic::Ordering;
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
@@ -60,6 +59,7 @@ use crate::input_sections::{InputSection, SectionRef, check_tlsle};
 use crate::symbol::{
     AddrFlags, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD, Symbol,
 };
+use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
 use crate::util::{bits, is_int};
@@ -279,7 +279,7 @@ pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
     }
 }
 
-impl Arch for Ppc64V1 {
+impl Target for Ppc64V1 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc64v1";

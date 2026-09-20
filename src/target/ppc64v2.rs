@@ -85,13 +85,13 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::{read_ul16, read_ul32, write_ul16, write_ul32, write_ul64};
 use crate::util::{bits, is_int};
@@ -359,7 +359,7 @@ pub fn save_restore_contents() -> Vec<u8> {
     SAVE_RESTORE_INSNS.iter().flat_map(|&(_, insn)| insn.to_le_bytes()).collect()
 }
 
-impl Arch for Ppc64V2 {
+impl Target for Ppc64V2 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc64v2";

@@ -1,9 +1,9 @@
 //! `.gnu.hash`, the GNU hash table for dynamic symbol lookup.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 /// The hash function for `.gnu.hash`.
 #[inline]
@@ -32,7 +32,7 @@ pub struct GnuHashSection<E: Layout> {
     pub num_exported: u32,
 }
 
-impl<E: Arch> GnuHashSection<E> {
+impl<E: Target> GnuHashSection<E> {
     pub const LOAD_FACTOR: u32 = 8;
     pub const HEADER_SIZE: u64 = 16;
     pub const BLOOM_SHIFT: u32 = 26;
@@ -44,13 +44,13 @@ impl<E: Arch> GnuHashSection<E> {
     }
 }
 
-impl<E: Arch> Default for GnuHashSection<E> {
+impl<E: Target> Default for GnuHashSection<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if ctx.dynsym.symbols.is_empty() {
         return;
     }
@@ -67,7 +67,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     gh.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.fill(0);
     let gh = ctx.gnu_hash.as_ref().unwrap();
     let word = E::WORD_SIZE;

@@ -6,14 +6,14 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, SymbolId, is_c_identifier};
+use crate::target::{Family, Target};
 
-fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
+fn should_keep<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
     let ty = isec.sh_type(file);
     let flags = isec.sh_flags as u32;
     let name: &[u8] = isec.name(file);
@@ -35,7 +35,7 @@ fn should_keep<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
 /// of a given name when we encounter such a reference during marking.
 type StartStopMap<'a, E> = HashMap<&'static [u8], Vec<&'a InputSection<E>>>;
 
-fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a, E> {
+fn build_start_stop_map<'a, E: Target>(ctx: &'a Context<E>) -> StartStopMap<'a, E> {
     let sections: Vec<(&'static [u8], &'a InputSection<E>)> = ctx
         .objs
         .par_iter()
@@ -58,11 +58,11 @@ fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a, E>
 }
 
 #[inline]
-fn mark_section<E: Arch>(isec: &InputSection<E>) -> bool {
+fn mark_section<E: Target>(isec: &InputSection<E>) -> bool {
     isec.is_alive() && isec.visit()
 }
 
-fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection<E>> {
+fn collect_root_set<'a, E: Target>(ctx: &'a Context<E>) -> Vec<&'a InputSection<E>> {
     let _t = ctx.timer("collect_root_set");
 
     let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection<E>>| {
@@ -130,7 +130,7 @@ fn start_stop_name(name: &[u8]) -> Option<&[u8]> {
     name.strip_prefix(b"__start_").or_else(|| name.strip_prefix(b"__stop_"))
 }
 
-fn visit_section<'scope, E: Arch>(
+fn visit_section<'scope, E: Target>(
     ctx: &'scope Context<E>,
     isec: &'scope InputSection<E>,
     depth: usize,
@@ -220,7 +220,7 @@ const GC_BATCH: usize = 16;
 
 /// Visits marked sections and publishes newly found work in batches. Batching
 /// preserves dynamic load balancing while amortizing Rayon task allocation.
-fn visit_batch<'scope, E: Arch>(
+fn visit_batch<'scope, E: Target>(
     ctx: &'scope Context<E>,
     batch: &[&'scope InputSection<E>],
     map: &'scope StartStopMap<'scope, E>,
@@ -242,7 +242,7 @@ fn visit_batch<'scope, E: Arch>(
 }
 
 // Mark all reachable sections
-fn mark<'a, E: Arch>(
+fn mark<'a, E: Target>(
     ctx: &'a Context<E>,
     roots: Vec<&'a InputSection<E>>,
     map: &'a StartStopMap<'a, E>,
@@ -255,7 +255,7 @@ fn mark<'a, E: Arch>(
 }
 
 // Remove unreachable sections
-fn sweep<E: Arch>(ctx: &Context<E>) {
+fn sweep<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("sweep");
     let report = ctx.args.print_gc_sections.is_some();
     let removed: Vec<SectionRef> = ctx
@@ -286,7 +286,7 @@ fn sweep<E: Arch>(ctx: &Context<E>) {
     });
 }
 
-pub fn gc_sections<E: Arch>(ctx: &mut Context<E>) {
+pub fn gc_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gc");
 
     for file in &ctx.dsos {

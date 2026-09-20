@@ -8,12 +8,12 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::arch::Arch;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
 use crate::mapped_file::{MappedFile, apply_chroot, must_open_file, open_file};
 use crate::reader;
+use crate::target::Target;
 use crate::util;
 use crate::{fatal, warn};
 
@@ -35,7 +35,7 @@ pub struct DynamicPattern {
     pub is_cpp: bool,
 }
 
-pub struct Script<'a, E: Arch> {
+pub struct Script<'a, E: Target> {
     ctx: &'a mut Context<E>,
     rctx: &'a mut ReaderContext,
     mf: &'static MappedFile,
@@ -120,7 +120,7 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
     tokens
 }
 
-fn is_in_sysroot<E: Arch>(ctx: &Context<E>, path: &Path) -> bool {
+fn is_in_sysroot<E: Target>(ctx: &Context<E>, path: &Path) -> bool {
     let sysroot = apply_chroot(&ctx.args.chroot, &ctx.args.sysroot);
     let (Ok(path), Ok(sysroot)) = (path.canonicalize(), sysroot.canonicalize()) else {
         return false;
@@ -129,7 +129,7 @@ fn is_in_sysroot<E: Arch>(ctx: &Context<E>, path: &Path) -> bool {
 }
 
 /// Opens a file named by a script, retaining the pathname's original bytes.
-fn resolve_path<E: Arch>(
+fn resolve_path<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -189,7 +189,7 @@ fn resolve_path<E: Arch>(
 
 /// The target a script produces output for: the one `OUTPUT_FORMAT`
 /// names, or else that of the first file it names.
-pub fn output_target<E: Arch>(
+pub fn output_target<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -216,7 +216,7 @@ pub fn output_target<E: Arch>(
     None
 }
 
-impl<'a, E: Arch> Script<'a, E> {
+impl<'a, E: Target> Script<'a, E> {
     pub fn new(
         ctx: &'a mut Context<E>,
         rctx: &'a mut ReaderContext,
@@ -506,7 +506,7 @@ fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'stati
     None
 }
 
-pub fn parse_dynamic_list<E: Arch>(ctx: &mut Context<E>, path: &Path) -> Vec<DynamicPattern> {
+pub fn parse_dynamic_list<E: Target>(ctx: &mut Context<E>, path: &Path) -> Vec<DynamicPattern> {
     let mf = must_open_file(&ctx.args.chroot, path);
     let mut rctx = ReaderContext::default();
     Script::new(ctx, &mut rctx, mf).parse_dynamic_list()

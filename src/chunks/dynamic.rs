@@ -1,16 +1,16 @@
 //! `.dynamic`, information consumed by the dynamic linker.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
+use crate::target::{Family, Target};
 
 // .dynamic contains various information for dynamically-linked ELF files.
 // At runtime, the dynamic linker reads the information to work
 // appropriately.
-pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr.shdr.sh_entsize.set(ElfDyn::<E>::size() as u64);
@@ -38,11 +38,11 @@ pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
 // is set in the dynamic section.
 //
 // This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
-fn contains_variant_pcs<E: Arch>(ctx: &Context<E>) -> bool {
+fn contains_variant_pcs<E: Target>(ctx: &Context<E>) -> bool {
     ctx.plt.symbols.iter().any(|&id| ctx.symbols[id].esym(ctx).arm64_variant_pcs())
 }
 
-fn sym_addr_if_defined<E: Arch>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
+fn sym_addr_if_defined<E: Target>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
     let sym = &ctx.symbols[id];
     match sym.file() {
         Some(FileId::Obj(_)) => Some(sym.addr(ctx)),
@@ -50,7 +50,7 @@ fn sym_addr_if_defined<E: Arch>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
     }
 }
 
-fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
+fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     let dynstr = &ctx.dynstr;
     let plt = &ctx.plt;
     let (rel, relsz, relent) =
@@ -259,7 +259,7 @@ fn for_each_entry<E: Arch>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.is_static && !ctx.args.pie {
         return;
     }
@@ -271,7 +271,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     dynamic.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     debug_assert_eq!(ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize, buf.len());
     let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());
     for_each_entry(ctx, |d_tag, d_val| {

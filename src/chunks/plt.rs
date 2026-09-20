@@ -2,12 +2,12 @@
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::SymbolId;
+use crate::target::{Family, Target};
 
 // .plt contains linker-synthesized stub code that acts as if they are
 // functions. They are in fact immediately branches to real function entry
@@ -18,7 +18,7 @@ pub struct PltSection<E: Layout> {
     pub symbols: Vec<SymbolId>,
 }
 
-impl<E: Arch> PltSection<E> {
+impl<E: Target> PltSection<E> {
     pub fn new() -> Self {
         let mut hdr =
             ChunkHeader::<E>::new(".plt", SHT_PROGBITS, (SHF_ALLOC | SHF_EXECINSTR) as u64);
@@ -33,7 +33,7 @@ impl<E: Arch> PltSection<E> {
     }
 }
 
-impl<E: Arch> Default for PltSection<E> {
+impl<E: Target> Default for PltSection<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -45,7 +45,7 @@ impl<E: Arch> Default for PltSection<E> {
 pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
 
 /// The offset of a PLT entry within `.plt`.
-pub fn entry_offset<E: Arch>(idx: u32) -> u64 {
+pub fn entry_offset<E: Target>(idx: u32) -> u64 {
     let idx = idx as u64;
     match E::FAMILY {
         Family::Ppc64V1 => {
@@ -76,7 +76,7 @@ pub fn entry_offset<E: Arch>(idx: u32) -> u64 {
 }
 
 #[inline]
-pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     let idx = ctx.plt.symbols.len() as u32;
     assert_ne!(idx, u32::MAX);
@@ -85,7 +85,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.dynsym.add_symbol(&mut ctx.symbols, sym);
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let n = ctx.plt.symbols.len() as u64;
     ctx.plt.hdr.shdr.sh_size.set(if n == 0 {
         0
@@ -96,7 +96,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     });
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_plt_header(ctx, buf);
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
         let off = entry_offset::<E>(i as u32) as usize;
@@ -104,7 +104,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 }
 
-pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
+pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>) {
     let plt = &mut ctx.plt;
     let n = plt.symbols.len() as u32;
     let strtab_size: u64 = plt
@@ -116,7 +116,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
     plt.hdr.strtab_size = strtab_size;
 }
 
-pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
     let plt = &ctx.plt;
     if plt.hdr.num_local_symtab == 0 {
         return;

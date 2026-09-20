@@ -46,7 +46,6 @@
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::chunks::output_section::OutputBuffer;
 use crate::context::Context;
@@ -56,6 +55,7 @@ use crate::input_sections::{
     InputSection, InputSectionId, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc,
 };
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::write_ul32;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};
@@ -68,7 +68,7 @@ pub type Arm32 = Arm32Target<true>;
 pub type Arm32Be = Arm32Target<false>;
 
 // One impl per byte order rather than one generic impl keeps Self::Word
-// abstract in the generic Arch impl, so word accessors return u64 there.
+// abstract in the generic Target impl, so word accessors return u64 there.
 impl Layout for Arm32Target<true> {
     const IS_LITTLE: bool = true;
     type Word = U32<Self>;
@@ -161,11 +161,11 @@ fn set_thm_bl<E: Layout>(loc: &mut [u8], is_bl: bool) {
 // Thumb or ARM code. A branch to a symbol of another type, such as a
 // plain label in hand-written assembly, does not switch the instruction
 // set. A branch to a PLT entry always lands on ARM code.
-fn is_thumb_func<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
+fn is_thumb_func<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
     matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC) && sym.addr(ctx) & 1 != 0
 }
 
-fn is_arm_func<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
+fn is_arm_func<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
     sym.has_plt(&ctx.symbols)
         || (matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC) && sym.addr(ctx) & 1 == 0)
 }
@@ -280,7 +280,7 @@ where
     });
 }
 
-impl<const LE: bool> Arch for Arm32Target<LE>
+impl<const LE: bool> Target for Arm32Target<LE>
 where
     Self: Layout,
 {

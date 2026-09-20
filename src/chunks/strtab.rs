@@ -1,9 +1,9 @@
 //! `.strtab`, names of non-dynamic symbols.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::{Family, Target};
 
 // .strtab is referenced by .symtab and contains symbol names. Note that
 // .strtab is not needed at runtime; one can remove the section from an
@@ -18,7 +18,7 @@ pub const ARM: u32 = 1;
 pub const THUMB: u32 = 4;
 pub const DATA: u32 = 7;
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let mut offset = 1u64;
 
     // ARM32 uses $a, $t and $d mapping symbols to mark the beginning of
@@ -47,7 +47,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     ctx.strtab.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[0] = 0;
     if E::FAMILY == Family::Arm32 && !ctx.args.strip_all {
         buf[1..10].copy_from_slice(b"$a\0$t\0$d\0");

@@ -51,10 +51,10 @@ use std::num::NonZeroU32;
 
 use bstr::BStr;
 
-use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock};
+use crate::target::Target;
 use crate::tls;
 use crate::{error, warn};
 
@@ -206,7 +206,7 @@ impl<E: Layout> ChunkHeader<E> {
 }
 
 // ELF header which is at the beginning of each ELF file.
-pub fn new_ehdr<E: Arch>(sh_flags: u64) -> ChunkHeader<E> {
+pub fn new_ehdr<E: Target>(sh_flags: u64) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new("EHDR", 0, sh_flags);
     hdr.shdr.sh_size.set(ElfEhdr::<E>::size() as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -218,7 +218,7 @@ pub fn new_ehdr<E: Arch>(sh_flags: u64) -> ChunkHeader<E> {
 // Executables work without it because the runtime only reads the program
 // header. Section header is significant only in object files and not
 // needed at runtime
-pub fn new_shdr<E: Arch>() -> ChunkHeader<E> {
+pub fn new_shdr<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new("SHDR", 0, 0);
     hdr.shdr.sh_size.set(1);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -235,7 +235,7 @@ pub struct OutputPhdr<E: Layout> {
     pub phdrs: Vec<ElfPhdr<E>>,
 }
 
-impl<E: Arch> OutputPhdr<E> {
+impl<E: Target> OutputPhdr<E> {
     pub fn new(sh_flags: u64) -> Self {
         let mut hdr = ChunkHeader::<E>::new("PHDR", 0, sh_flags);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -250,7 +250,7 @@ pub fn new_gdb_index<E: Layout>() -> ChunkHeader<E> {
     hdr
 }
 
-fn entry_addr<E: Arch>(ctx: &Context<E>) -> u64 {
+fn entry_addr<E: Target>(ctx: &Context<E>) -> u64 {
     if ctx.args.relocatable {
         return 0;
     }
@@ -264,7 +264,7 @@ fn entry_addr<E: Arch>(ctx: &Context<E>) -> u64 {
     0
 }
 
-fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut ehdr = ElfEhdr::<E>::default();
     ehdr.e_ident[..4].copy_from_slice(b"\x7fELF");
     ehdr.e_ident[EI_CLASS as usize] = if E::IS_64 { ELFCLASS64 } else { ELFCLASS32 } as u8;
@@ -317,7 +317,7 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     ehdr.write(buf);
 }
 
-fn write_shdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+fn write_shdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let size = ElfShdr::<E>::size();
     buf.fill(0);
 
@@ -342,7 +342,7 @@ fn write_shdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 /// The segment flags a chunk requires.
-pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
+pub fn to_phdr_flags<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
     // All sections are put into a single RWX segment if --omagic
     if ctx.args.omagic {
         return PF_R | PF_W | PF_X;
@@ -368,7 +368,7 @@ pub fn to_phdr_flags<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u32 {
     PF_R | if write { PF_W } else { 0 } | if exec { PF_X } else { 0 }
 }
 
-fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
+fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     let mut vec: Vec<ElfPhdr<E>> = Vec::new();
 
     let define = |vec: &mut Vec<ElfPhdr<E>>, p_type: u32, flags: u32, shdr: &ElfShdr<E>| {
@@ -622,7 +622,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
 }
 
 /// Recomputes the program header and the TLS layout constants.
-pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_phdr<E: Target>(ctx: &mut Context<E>) {
     if ctx.phdr.is_none() {
         return;
     }
@@ -641,7 +641,7 @@ pub fn update_phdr<E: Arch>(ctx: &mut Context<E>) {
 /// Updates a chunk's section header for the current layout. Called at
 /// least twice: once to size the section, and again after section
 /// indices are known.
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
         ChunkId::Phdr => update_phdr(ctx),
         ChunkId::Interp => interp::update_shdr(ctx),
@@ -676,7 +676,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
 
 /// Computes a chunk's size from its contents. For output sections this
 /// also assigns offsets to the members.
-pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
+pub fn compute_section_size<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
         ChunkId::Output(id) => output_section::compute_section_size(ctx, id),
         ChunkId::Merged(id) => merged::compute_section_size(ctx, id),
@@ -686,7 +686,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
 }
 
 /// The number of dynamic relocations a chunk emits.
-pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u64 {
+pub fn num_dynrels<E: Target>(ctx: &Context<E>, id: ChunkId) -> u64 {
     match id {
         ChunkId::Output(id) => output_section::num_dynrels(ctx, id),
         ChunkId::Got => got::num_dynrels(ctx),
@@ -699,7 +699,7 @@ pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId) -> u64 {
 
 /// The offsets (relative to the chunk) of base relocations that can be
 /// encoded in RELR form, marking them as such.
-pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
+pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
     match id {
         ChunkId::Output(id) => output_section::relr_offsets(ctx, id),
         ChunkId::Got => got::relr_offsets(ctx),
@@ -709,7 +709,7 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
 }
 
 /// Writes a chunk's dynamic relocations to its assigned output slots.
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: ChunkId, out: &mut [ElfRel<E>]) {
     match id {
         ChunkId::Output(id) => output_section::write_dynrels(ctx, id, out),
         ChunkId::Got => got::write_dynrels(ctx, out),
@@ -721,7 +721,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: ChunkId, out: &mut [ElfRel<E
 }
 
 /// Sizes the local symbols a chunk synthesizes.
-pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
+pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
         ChunkId::Output(id) => output_section::compute_symtab_size(ctx, id),
         ChunkId::Got => got::compute_symtab_size(ctx),
@@ -732,7 +732,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: ChunkId) {
 }
 
 /// Produces the local symbols a chunk synthesizes.
-pub fn populate_symtab<E: Arch>(ctx: &Context<E>, id: ChunkId, block: &mut SymtabBlock<'_>) {
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, id: ChunkId, block: &mut SymtabBlock<'_>) {
     match id {
         ChunkId::Output(id) => output_section::populate_symtab(ctx, id, block),
         ChunkId::Got => got::populate_symtab(ctx, block),
@@ -747,7 +747,7 @@ pub fn populate_symtab<E: Arch>(ctx: &Context<E>, id: ChunkId, block: &mut Symta
 /// Chunks whose contents spill into other chunks (`.eh_frame` writes the
 /// `.eh_frame_hdr` table, `.symtab` writes `.strtab`) are handled by the
 /// output file writer, which hands them the extra buffers.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
     match id {
         ChunkId::Ehdr => write_ehdr(ctx, buf),
         ChunkId::Shdr => write_shdr(ctx, buf),
@@ -797,7 +797,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
 }
 
 /// Writes a chunk's contents to a scratch buffer, for compression.
-pub fn write_to<E: Arch>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
+pub fn write_to<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
     match id {
         ChunkId::Output(id) => output_section::write_to(ctx, id, buf),
         ChunkId::Merged(id) => merged::write_to(ctx, id, buf),

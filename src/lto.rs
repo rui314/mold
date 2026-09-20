@@ -35,13 +35,13 @@ use std::sync::{Mutex, OnceLock};
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, ObjectFile, ObjectOrigin};
 use crate::mapped_file::{MappedFile, must_open_file};
 use crate::symbol::SymbolId;
+use crate::target::Target;
 use crate::util::leak_bytes;
 use crate::{fatal, out, warn};
 
@@ -329,7 +329,7 @@ unsafe extern "C" fn add_symbols(
 }
 
 /// Receives an object file the plugin compiled.
-unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
+unsafe extern "C" fn add_input_file<E: Target>(path: *const c_char) -> c_int {
     let ctx = unsafe { &mut *CONTEXT.load(Ordering::Acquire).cast::<Context<E>>() };
     let path = crate::util::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
     let mf = must_open_file(std::path::Path::new(""), path);
@@ -445,7 +445,7 @@ unsafe extern "C" fn get_symbols_v1(
     unreachable!("the v1 get_symbols API is never offered to the plugin")
 }
 
-unsafe extern "C" fn get_symbols_v2<E: Arch>(
+unsafe extern "C" fn get_symbols_v2<E: Target>(
     handle: *const c_void,
     nsyms: c_int,
     psyms: *mut PluginSymbol,
@@ -453,7 +453,7 @@ unsafe extern "C" fn get_symbols_v2<E: Arch>(
     unsafe { get_symbols::<E>(handle, nsyms, psyms, true) }
 }
 
-unsafe extern "C" fn get_symbols_v3<E: Arch>(
+unsafe extern "C" fn get_symbols_v3<E: Target>(
     handle: *const c_void,
     nsyms: c_int,
     psyms: *mut PluginSymbol,
@@ -469,7 +469,7 @@ unsafe extern "C" fn get_symbols_v3<E: Arch>(
 /// that definition within the IR objects and remove the symbol from the
 /// LTO result. On the other hand, if a definition is referenced by a
 /// non-IR object, it has to keep the symbol in the LTO result.
-unsafe fn get_symbols<E: Arch>(
+unsafe fn get_symbols<E: Target>(
     handle: *const c_void,
     nsyms: c_int,
     psyms: *mut PluginSymbol,
@@ -599,7 +599,7 @@ fn dlerror_string() -> String {
 }
 
 /// dlopen the linker plugin file
-fn load_plugin<E: Arch>(ctx: &Context<E>) {
+fn load_plugin<E: Target>(ctx: &Context<E>) {
     // The file reader claims IR files serially in the command line order.
     if LOADED.swap(true, Ordering::Relaxed) {
         return;
@@ -692,13 +692,13 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
 
 /// Returns true if a given linker plugin looks like LLVM's one.
 /// Returns false if it's GCC.
-fn is_llvm<E: Arch>(ctx: &Context<E>) -> bool {
+fn is_llvm<E: Target>(ctx: &Context<E>) -> bool {
     memchr::memmem::find(ctx.args.plugin.as_os_str().as_encoded_bytes(), b"LLVMgold.").is_some()
 }
 
 /// Returns true if a given linker plugin supports the get_symbols_v3 API.
 /// Any version of LLVM and GCC 12 or newer support it.
-fn supports_v3_api<E: Arch>(ctx: &Context<E>) -> bool {
+fn supports_v3_api<E: Target>(ctx: &Context<E>) -> bool {
     HOOKS.lock().unwrap().gcc_api_v1 || is_llvm(ctx)
 }
 
@@ -724,7 +724,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
 
 /// Reads the symbols of an IR object through the plugin. Returns `None`
 /// for an archive member the plugin declines.
-pub fn read_lto_object<E: Arch>(
+pub fn read_lto_object<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
     archive_name: &'static std::path::Path,
@@ -797,7 +797,7 @@ pub fn read_lto_object<E: Arch>(
 /// from archives next time.
 ///
 /// This is an ugly hack and should be removed once GCC adopts the v3 API.
-fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
+fn restart_process<E: Target>(ctx: &Context<E>) -> ! {
     let mut args: Vec<Cow<'_, OsStr>> =
         ctx.cmdline_args.iter().map(|arg| Cow::Borrowed(arg.as_ref())).collect();
     for file in &ctx.objs {
@@ -832,7 +832,7 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
 // Entry point
 /// Has the plugin compile the IR objects. The resulting objects are added
 /// to the context.
-pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
+pub fn run_plugin<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("run_lto_plugin");
     load_plugin(ctx);
 

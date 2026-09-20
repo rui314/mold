@@ -1,9 +1,9 @@
 //! `.note.gnu.build-id`, the output file's build identifier.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
 // contents of the section is usually a cryptogrpahic hash of the output
@@ -29,12 +29,12 @@ impl<E: Layout> Default for BuildIdSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = ctx.args.build_id.size() as u64 + 16; // +16 for the header
     ctx.buildid.as_mut().unwrap().hdr.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.buildid.as_ref().unwrap();
     buf.fill(0);
     E::write_u32(buf, 4); // Name size

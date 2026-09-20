@@ -1,6 +1,5 @@
 //! `.gnu.version_r`, required symbol versions.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::hash::elf_hash;
@@ -8,6 +7,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{DsoId, FileId};
 use crate::symbol::SymbolId;
+use crate::target::Target;
 
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.
@@ -50,7 +50,7 @@ fn is_glibc2<E: Layout>(dso: &crate::input_files::SharedFile<E>) -> bool {
         && dso.version_strings.iter().any(|v| v.starts_with(b"GLIBC_2."))
 }
 
-pub fn construct<E: Arch>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("fill_verneed");
 
     // Create a list of versioned symbols and sort by file and version.
@@ -120,7 +120,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
 
 /// Builds `.gnu.version_r` incrementally: a verneed entry per shared
 /// library, each followed by its vernaux entries.
-struct VerneedBuilder<E: Arch> {
+struct VerneedBuilder<E: Target> {
     contents: Vec<u8>,
     veridx: u16,
     num_groups: u32,
@@ -130,7 +130,7 @@ struct VerneedBuilder<E: Arch> {
     _arch: std::marker::PhantomData<E>,
 }
 
-impl<E: Arch> VerneedBuilder<E> {
+impl<E: Target> VerneedBuilder<E> {
     fn start_group(&mut self, vn_file: u32) {
         self.num_groups += 1;
         if let Some(gp) = self.group_pos {
@@ -177,12 +177,12 @@ impl<E: Arch> VerneedBuilder<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = ctx.verneed.contents.len() as u64;
     ctx.verneed.hdr.shdr.sh_size.set(size);
     ctx.verneed.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..ctx.verneed.contents.len()].copy_from_slice(&ctx.verneed.contents);
 }

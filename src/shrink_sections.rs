@@ -57,16 +57,16 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::{InputSection, RelocDelta, r_delta};
 use crate::symbol::Symbol;
+use crate::target::Target;
 
 /// Returns the distance between a relocated place and a symbol.
-pub fn compute_distance<E: Arch>(
+pub fn compute_distance<E: Target>(
     ctx: &Context<E>,
     sym: &Symbol,
     isec: &InputSection<E>,
@@ -95,7 +95,7 @@ pub fn compute_distance<E: Arch>(
 /// on RISC-V as an experiment and found that the mold-built .text is
 /// only ~0.04% larger than that of GNU ld), so we don't bother to handle
 /// them. We scan relocations only once here.
-pub fn shrink_sections<E: Arch>(ctx: &mut Context<E>) {
+pub fn shrink_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("shrink_sections");
 
     let shrunk: Vec<Vec<(u32, Vec<RelocDelta>)>> = {

@@ -2,15 +2,15 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
+use crate::target::Target;
 
 // EhFrameRelocSection contains relocation records for .eh_frame. It is used
 // only for relocatable outputs (an .o file rather than an executable or .so).
-pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let (name, ty) =
         if E::IS_RELA { (".rela.eh_frame", SHT_RELA) } else { (".rel.eh_frame", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_INFO_LINK as u64);
@@ -20,7 +20,7 @@ pub fn new_header<E: Arch>() -> ChunkHeader<E> {
     hdr
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let count: usize = ctx
         .objs
         .par_iter()
@@ -40,7 +40,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 
 /// Writes the relocations; with REL and `-r`, addends are written into
 /// `.eh_frame` itself, which is passed as `eh_frame_buf`.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
     let out = rels_from_bytes_mut::<E>(buf);
     let mut eh_frame_buf = eh_frame_buf;
     let mut n = 0;

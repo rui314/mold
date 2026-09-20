@@ -16,7 +16,6 @@ use std::sync::{OnceLock, RwLock};
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::merged::{MergedSection, MergedSectionCache};
 use crate::cmdline::Args;
 use crate::context::Context;
@@ -30,6 +29,7 @@ use crate::symbol::{
     Bins, NEEDS_PLT, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, hash_key,
 };
+use crate::target::{Family, Target};
 use crate::util::perf::Counter;
 use crate::util::{self, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb};
 use crate::{error, fatal, out, warn};
@@ -93,7 +93,7 @@ pub struct FragmentSymbol {
 
 impl FragmentSymbol {
     #[inline]
-    pub(crate) fn into_symbol<E: Arch>(self, file: &ObjectFile<E>) -> Symbol {
+    pub(crate) fn into_symbol<E: Target>(self, file: &ObjectFile<E>) -> Symbol {
         let mut sym = Symbol::new(BStr::new(b"<fragment>"));
         sym.set_file(FileId::Obj(file.id()));
         sym.set_fragment_dummy(true);
@@ -719,7 +719,7 @@ pub enum ObjectOrigin {
 
 // ObjectFile represents an input .o file.
 #[derive(Debug)]
-pub struct ObjectFile<E: Arch> {
+pub struct ObjectFile<E: Target> {
     pub base: InputFile<E>,
     pub archive_name: &'static Path,
 
@@ -788,7 +788,7 @@ pub struct ObjectFile<E: Arch> {
     num_common_symbols: u32,
 }
 
-impl<E: Arch> fmt::Display for ObjectFile<E> {
+impl<E: Target> fmt::Display for ObjectFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(&self.base.filename))
@@ -803,13 +803,13 @@ impl<E: Arch> fmt::Display for ObjectFile<E> {
     }
 }
 
-impl<E: Arch> FileInPool for ObjectFile<E> {
+impl<E: Target> FileInPool for ObjectFile<E> {
     fn set_file_index(&mut self, index: u32) {
         self.base.file_index = index;
     }
 }
 
-impl<E: Arch> ObjectFile<E> {
+impl<E: Target> ObjectFile<E> {
     #[inline]
     pub fn is_lto_input(&self) -> bool {
         self.origin == ObjectOrigin::LtoInput
@@ -865,7 +865,7 @@ fn is_debug_section<E: Layout>(shdr: &ElfShdr<E>, name: &[u8]) -> bool {
     shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 && name.starts_with(b".debug_")
 }
 
-fn is_known_section_type<E: Arch>(shdr: &ElfShdr<E>) -> bool {
+fn is_known_section_type<E: Target>(shdr: &ElfShdr<E>) -> bool {
     let ty = shdr.sh_type.get();
     let flags = shdr.sh_flags.get() as u32;
     if matches!(
@@ -902,7 +902,7 @@ struct CrelReader<'a, E: Layout> {
     target: PhantomData<E>,
 }
 
-impl<'a, E: Arch> CrelReader<'a, E> {
+impl<'a, E: Target> CrelReader<'a, E> {
     fn new(file: &dyn fmt::Display, mut data: &'a [u8]) -> Self {
         let hdr = read_uleb(&mut data);
         let is_rela = hdr & 0b100 != 0;
@@ -1027,7 +1027,7 @@ impl<E: Layout> ExactSizeIterator for RelocationIter<'_, E> {}
 // at the moment.
 //
 // This function converts a CREL relocation table to a regular one.
-fn decode_crel<E: Arch>(file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel<E>]> {
+fn decode_crel<E: Target>(file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel<E>]> {
     let reader = CrelReader::<E>::new(file, data);
     // Own a fixed-size array without value-initializing trivial elements
     // that the caller is about to overwrite.
@@ -1039,7 +1039,7 @@ fn decode_crel<E: Arch>(file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel<E>]
     unsafe { rels.assume_init() }
 }
 
-impl<E: Arch> ObjectFile<E> {
+impl<E: Target> ObjectFile<E> {
     pub fn id(&self) -> ObjId {
         ObjId(self.base.file_index)
     }
@@ -2718,7 +2718,7 @@ pub struct SymtabPlan {
     pub strtab_size: u64,
 }
 
-impl<E: Arch> InputFile<E> {
+impl<E: Target> InputFile<E> {
     pub fn apply_symtab_plan(&mut self, plan: SymtabPlan) {
         self.output_sym_indices = plan.output_sym_indices;
         self.num_local_symtab = plan.num_local_symtab;
@@ -2753,7 +2753,7 @@ impl<'a> SymtabEntries<'a> {
         SymtabEntries { syms, xindex, len: 0 }
     }
 
-    fn push<E: Arch>(&mut self, esym: ElfSym<E>, xindex: u32) {
+    fn push<E: Target>(&mut self, esym: ElfSym<E>, xindex: u32) {
         let size = std::mem::size_of::<ElfSym<E>>();
         esym.write(&mut self.syms[self.len * size..(self.len + 1) * size]);
         if let Some(entries) = &mut self.xindex {
@@ -2774,7 +2774,7 @@ impl<'a> SymtabBlock<'a> {
     }
 
     /// Zeroes reserved space that was not used by emitted symbols.
-    pub fn zero_unused<E: Arch>(&mut self) {
+    pub fn zero_unused<E: Target>(&mut self) {
         let size = std::mem::size_of::<ElfSym<E>>();
         self.locals.syms[self.locals.len * size..].fill(0);
         self.globals.syms[self.globals.len * size..].fill(0);
@@ -2793,13 +2793,13 @@ impl<'a> SymtabBlock<'a> {
         offset as u32
     }
 
-    pub fn push_local<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
+    pub fn push_local<E: Target>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
         let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.locals.push::<E>(esym, xindex);
     }
 
-    pub fn push_global<E: Arch>(&mut self, ctx: &Context<E>, sym: &Symbol) {
+    pub fn push_global<E: Target>(&mut self, ctx: &Context<E>, sym: &Symbol) {
         let st_name = self.add_string(&[sym.name().as_ref()]);
         let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.globals.push::<E>(esym, xindex);
@@ -2807,7 +2807,7 @@ impl<'a> SymtabBlock<'a> {
 
     /// Adds a synthesized local symbol with a name built from `name` and
     /// `suffix`.
-    pub fn push_synthetic<E: Arch>(&mut self, name: &[u8], suffix: &[u8], esym: ElfSym<E>) {
+    pub fn push_synthetic<E: Target>(&mut self, name: &[u8], suffix: &[u8], esym: ElfSym<E>) {
         let st_name = self.add_string(&[name, suffix]);
         let mut esym = esym;
         esym.set_st_name(st_name);
@@ -2816,14 +2816,14 @@ impl<'a> SymtabBlock<'a> {
 
     /// Adds a local symbol whose name is a fixed `.strtab` entry, such as
     /// an ARM32 mapping symbol.
-    pub fn push_mapping_symbol<E: Arch>(&mut self, st_name: u32, esym: ElfSym<E>) {
+    pub fn push_mapping_symbol<E: Target>(&mut self, st_name: u32, esym: ElfSym<E>) {
         let mut esym = esym;
         esym.set_st_name(st_name);
         self.locals.push::<E>(esym, 0);
     }
 }
 
-fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
+fn should_write_to_local_symtab<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
     if sym.ty() == STT_SECTION {
         return false;
     }
@@ -2857,7 +2857,7 @@ fn should_write_to_local_symtab<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool
 // Initialize cie's fde_ptr_size member by parsing the augmentation
 // string. We need this member to remove FDE records referring to an
 // empty segment from the output .eh_frame_hdr.
-fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, data: &[u8]) -> u8 {
+fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, data: &[u8]) -> u8 {
     // Returns the size in bytes of a value in the DWARF exception header
     // encoding `enc`.
     let ptr_size = |enc: u8| -> u8 {
@@ -2947,7 +2947,7 @@ fn parse_fde_encoding<E: Arch>(file: &ObjectFile<E>, isec: &InputSection<E>, dat
 // entries, each of which is a start address (whose width is given by
 // the attribute header), a one-byte info field and a number of
 // variable-width data words encoded in that info field.
-fn sframe_fre_block_size<E: Arch>(data: &[u8], offset: usize) -> usize {
+fn sframe_fre_block_size<E: Target>(data: &[u8], offset: usize) -> usize {
     let num_fres = E::read_u16(&data[offset..]) as usize;
     let addr_size = 1usize << bits(data[offset + 2] as u64, 3, 0);
     let mut p = offset + 5;
@@ -2989,7 +2989,7 @@ impl<E: Layout> FileInPool for SharedFile<E> {
     }
 }
 
-impl<E: Arch> SharedFile<E> {
+impl<E: Target> SharedFile<E> {
     pub fn id(&self) -> DsoId {
         DsoId(self.base.file_index)
     }
@@ -3439,7 +3439,7 @@ impl<'a> SymbolEditor<'a> {
 }
 
 /// The files and defaults needed while editing symbols during resolution.
-pub struct SymbolResolver<'a, E: Arch> {
+pub struct SymbolResolver<'a, E: Target> {
     editor: SymbolEditor<'a>,
     objs: &'a FileList<ObjectFile<E>>,
     dsos: &'a FileList<SharedFile<E>>,
@@ -3447,9 +3447,9 @@ pub struct SymbolResolver<'a, E: Arch> {
 }
 
 // SymbolResolver's mutable symbol-table access is serialized by its editor.
-unsafe impl<E: Arch> Sync for SymbolResolver<'_, E> {}
+unsafe impl<E: Target> Sync for SymbolResolver<'_, E> {}
 
-impl<'a, E: Arch> SymbolResolver<'a, E> {
+impl<'a, E: Target> SymbolResolver<'a, E> {
     pub fn new(
         symbols: &'a mut [Symbol],
         objs: &'a FileList<ObjectFile<E>>,
@@ -3482,7 +3482,7 @@ impl<'a, E: Arch> SymbolResolver<'a, E> {
     }
 }
 
-impl<E: Arch> ObjectFile<E> {
+impl<E: Target> ObjectFile<E> {
     pub fn resolve_symbols(&self, resolver: &SymbolResolver<'_, E>, id: ObjId) {
         let in_archive = !self.base.is_reachable();
         for i in self.base.first_global..self.base.elf_syms.len() {
@@ -3553,7 +3553,7 @@ impl<E: Arch> ObjectFile<E> {
     }
 }
 
-impl<E: Arch> SharedFile<E> {
+impl<E: Target> SharedFile<E> {
     /// Resolves this shared library's definitions in place, including the
     /// forwarding aliases for default symbol versions.
     pub fn resolve_symbols(&self, resolver: &SymbolResolver<'_, E>, id: DsoId) {
@@ -3613,7 +3613,7 @@ pub fn print_trace_symbol<R: SymbolRecord>(file: &dyn fmt::Display, esym: &R, sy
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::X86_64;
+    use crate::target::X86_64;
 
     #[test]
     fn parallel_file_iteration_preserves_live_order_and_stable_storage() {

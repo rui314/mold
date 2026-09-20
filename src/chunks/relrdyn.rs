@@ -1,9 +1,9 @@
 //! `.relr.dyn`, packed base relocations.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .relr.dyn is a relatively new section to contain base relocation
 // information.
@@ -38,7 +38,7 @@ use crate::elf::*;
 // relocation table is waste of space.
 //
 // .relr.dyn is designed to store base relocations in a space-efficient way.
-pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let ty = if args.use_android_relr_tags { SHT_ANDROID_RELR } else { SHT_RELR };
     let mut hdr = ChunkHeader::<E>::new(".relr.dyn", ty, SHF_ALLOC as u64);
     hdr.shdr.sh_entsize.set(E::WORD_SIZE as u64);
@@ -46,7 +46,7 @@ pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     hdr
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let w = E::WORD_SIZE;
     let mut i = 0;
     for &id in &ctx.chunks {
@@ -80,7 +80,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 // bit. An address must be even and thus its LSB is 0 (odd address is not
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
-pub fn encode_relr<E: Arch>(offsets: &[u64]) -> Vec<u64> {
+pub fn encode_relr<E: Target>(offsets: &[u64]) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;
     let num_bits = if E::IS_64 { 63 } else { 31 };
     let max_delta = word * num_bits;

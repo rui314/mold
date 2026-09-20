@@ -1,10 +1,10 @@
 //! COMDAT groups in relocatable outputs.
 
-use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::SymbolId;
+use crate::target::Target;
 
 // ComdatGroupSection represents a comdat group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
@@ -25,7 +25,7 @@ impl<E: Layout> ComdatGroupSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>, i: u32) {
     debug_assert!(ctx.args.relocatable);
     let sec = &ctx.comdat_group_sections[i as usize];
     let sym = &ctx.symbols[sec.sym];
@@ -41,7 +41,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
     sec.hdr.shdr.sh_info.set(sh_info);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.comdat_group_sections[i as usize];
     E::write_u32(buf, GRP_COMDAT);
     for (j, &member) in sec.members.iter().enumerate() {

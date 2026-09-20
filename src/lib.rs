@@ -1,6 +1,5 @@
 //! A high-performance ELF linker.
 
-pub mod arch;
 pub(crate) mod archive_file;
 pub(crate) mod chunks;
 pub(crate) mod cmdline;
@@ -31,6 +30,7 @@ pub(crate) mod relocatable;
 pub(crate) mod shrink_sections;
 pub(crate) mod subprocess;
 pub(crate) mod symbol;
+pub mod target;
 pub(crate) mod thunks;
 pub(crate) mod tls;
 pub mod util;

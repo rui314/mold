@@ -20,13 +20,13 @@
 //! Instructions are little-endian even on big-endian targets, where only
 //! data is byte-swapped.
 
-use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
@@ -142,7 +142,7 @@ impl<const LE: bool> Arm64Target<LE> {
     }
 }
 
-impl<const LE: bool> Arch for Arm64Target<LE> {
+impl<const LE: bool> Target for Arm64Target<LE> {
     type InputSectionExtra = ();
 
     const NAME: &'static str = if Self::IS_LITTLE { "arm64" } else { "arm64be" };

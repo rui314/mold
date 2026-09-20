@@ -1,11 +1,11 @@
 //! `.plt.got`, PLT stubs for symbols already resolved through the GOT.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::SymbolId;
+use crate::target::{Family, Target};
 
 // .plt.got is similar to .plt but doesn't support lazy symbol resolution.
 // If we have the same symbol already in .got, resolving the same symbol
@@ -33,7 +33,7 @@ impl<E: Layout> Default for PltGotSection<E> {
 }
 
 #[inline]
-pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+pub fn add_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
     debug_assert!(ctx.symbols[sym].has_got(&ctx.symbols));
     let idx = ctx.pltgot.symbols.len() as u32;
@@ -44,14 +44,14 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
     ctx.pltgot.hdr.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &id) in ctx.pltgot.symbols.iter().enumerate() {
         let off = i * E::PLTGOT_SIZE as usize;
         E::write_pltgot_entry(ctx, &mut buf[off..], &ctx.symbols[id]);
     }
 }
 
-pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
+pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>) {
     let pltgot = &mut ctx.pltgot;
     let n = pltgot.symbols.len() as u32;
     let strtab_size: u64 = pltgot
@@ -63,7 +63,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>) {
     pltgot.hdr.strtab_size = strtab_size;
 }
 
-pub fn populate_symtab<E: Arch>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>) {
     let pltgot = &ctx.pltgot;
     if pltgot.hdr.num_local_symtab == 0 {
         return;

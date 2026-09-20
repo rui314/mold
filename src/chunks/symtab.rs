@@ -2,18 +2,18 @@
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::{self, ChunkHeader, ChunkId, strtab};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::{InputSection, r_delta};
 use crate::symbol::{AddrFlags, OriginValue, Symbol};
+use crate::target::{Family, Target};
 
 // .symtab contains non-dynamic symbols. The section is not needed at
 // runtime and can be stripped from an ELF file without affecting the
 // behavior of the program. Symbols in .symtab are mainly for debugging.
-pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".symtab", SHT_SYMTAB, 0);
     let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
     hdr.shdr.sh_entsize.set(entsize);
@@ -21,7 +21,7 @@ pub fn new_header<E: Arch>() -> ChunkHeader<E> {
     hdr
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let mut nsyms = 1u32;
 
     // Section symbols
@@ -59,7 +59,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 }
 
 /// Writes `.symtab`, `.strtab` and `.symtab_shndx`.
-pub fn copy_buf<E: Arch>(
+pub fn copy_buf<E: Target>(
     ctx: &Context<E>,
     symtab: &mut [u8],
     strtab: &mut [u8],
@@ -196,7 +196,7 @@ fn carve<'a>(rest: &mut &'a mut [u8], pos: &mut usize, start: usize, len: usize)
 // RISC-V and LoongArch have code-shrinking linker relaxation. If we
 // have removed instructions from a function, we need to update its
 // size as well.
-fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
+fn symbol_size<E: Target>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
     if (E::IS_RISCV || E::IS_LOONGARCH)
         && esym.st_size() != 0
@@ -214,7 +214,7 @@ fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
 /// Builds the output symbol table entry for a symbol. The returned index
 /// is nonzero if the section index doesn't fit in `st_shndx` and must go
 /// to `.symtab_shndx`.
-pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (ElfSym<E>, u32) {
+pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> (ElfSym<E>, u32) {
     let mut esym = ElfSym::<E>::default();
     esym.set_st_name(st_name);
     esym.set_st_size(symbol_size(ctx, sym));

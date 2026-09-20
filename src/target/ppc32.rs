@@ -42,13 +42,13 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::arch::{Arch, Family, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::{read_ub32, write_ub16, write_ub32};
 use crate::util::{bits, is_int};
@@ -118,7 +118,7 @@ fn write_plt_like(buf: &mut [u8], got: u64, entry_addr: u64) {
     or32(&mut buf[20..], lo(offset));
 }
 
-impl Arch for Ppc32 {
+impl Target for Ppc32 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "ppc32";

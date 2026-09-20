@@ -24,7 +24,6 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
-use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
@@ -35,6 +34,7 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target};
 use crate::util::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
 use crate::{error, fatal};
@@ -210,7 +210,7 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
 //
 // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
 // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
-fn is_relaxable_got_load<E: Arch>(
+fn is_relaxable_got_load<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     rels: &[ElfRel<E>],
@@ -270,7 +270,7 @@ impl<const IS_64: bool> LoongArchTarget<IS_64> {
     }
 }
 
-impl<const IS_64: bool> Arch for LoongArchTarget<IS_64>
+impl<const IS_64: bool> Target for LoongArchTarget<IS_64>
 where
     Self: Layout,
 {

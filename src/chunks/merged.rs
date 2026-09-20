@@ -14,7 +14,6 @@ use std::sync::atomic::Ordering;
 use bstr::BStr;
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::cmdline::Args;
 use crate::context::Context;
@@ -23,6 +22,7 @@ use crate::input_files::display_file;
 use crate::input_sections::{MergeInfo, SectionFragment, SectionRef};
 use crate::out;
 use crate::output_file::split_at_offsets;
+use crate::target::Target;
 use crate::util::align_to;
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, NUM_SHARDS};
 use crate::util::hyperloglog::HyperLogLog;
@@ -123,7 +123,7 @@ pub struct BackgroundMerge<E: Layout> {
     members: Vec<Vec<BackgroundMember>>,
 }
 
-impl<E: Arch> BackgroundMerge<E> {
+impl<E: Target> BackgroundMerge<E> {
     pub fn prepare(ctx: &Context<E>) -> Self {
         let sections: Vec<_> = ctx
             .merged_sections
@@ -354,7 +354,7 @@ impl<E: Layout> MergedSection<E> {
 }
 
 /// Splits the members into fragments and deduplicates them.
-pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
+pub fn resolve<E: Target>(ctx: &mut Context<E>, id: MergedSectionId) {
     let timers = ctx.timers.clone();
     let Context { objs, merged_sections, args, .. } = ctx;
     let msec = &merged_sections[id.index()];
@@ -441,7 +441,7 @@ pub fn resolve<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
 /// Resolves selected merged sections concurrently, as C++ mold does.
 /// Direct member borrows let different parent sections mutate disjoint
 /// `MergeInfo`s even when they belong to the same object file.
-pub fn resolve_sections<E: Arch>(
+pub fn resolve_sections<E: Target>(
     sections: &mut [MergedSection<E>],
     members: &mut [Vec<ResolveMember<'_>>],
     options: ResolveOptions<'_>,
@@ -542,7 +542,7 @@ fn add_comment_strings<E: Layout>(
 }
 
 /// Lays out the live fragments and computes the section size.
-pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: MergedSectionId) {
+pub fn compute_section_size<E: Target>(ctx: &mut Context<E>, id: MergedSectionId) {
     if !ctx.merged_sections[id.index()].resolved {
         resolve(ctx, id);
     }
@@ -611,11 +611,11 @@ pub fn layout<E: Layout>(msec: &mut MergedSection<E>) {
     msec.shard_offsets = shard_offsets;
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
     write_to(ctx, id, buf);
 }
 
-pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
+pub fn write_to<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
     let msec = &ctx.merged_sections[id.index()];
     let frags = &msec.fragments;
 

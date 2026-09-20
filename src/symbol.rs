@@ -19,12 +19,12 @@ use bstr::BStr;
 use hashbrown::{Equivalent, HashMap};
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
+use crate::target::Target;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -809,7 +809,7 @@ impl Symbol {
 
     /// Resolves the symbol's input-section reference in `ctx`.
     #[inline]
-    pub fn input_section_ref<'a, E: Arch>(
+    pub fn input_section_ref<'a, E: Target>(
         &self,
         ctx: &'a Context<E>,
     ) -> Option<&'a InputSection<E>> {
@@ -869,7 +869,7 @@ impl Symbol {
     /// The symbol's entry in the owner file's symbol table; a blank one
     /// for a symbol no file defines.
     #[inline]
-    pub fn esym<E: Arch>(&self, ctx: &Context<E>) -> ElfSym<E> {
+    pub fn esym<E: Target>(&self, ctx: &Context<E>) -> ElfSym<E> {
         match self.file() {
             Some(file) => ctx.file(file).elf_syms[self.sym_idx() as usize],
             None => ElfSym::<E>::default(),
@@ -962,7 +962,7 @@ impl Symbol {
     // localized by a version script are demoted. Linker-synthesized symbols
     // are the exception; they are local unless we export them.
     #[inline]
-    pub fn is_local<E: Arch>(&self, ctx: &Context<E>) -> bool {
+    pub fn is_local<E: Target>(&self, ctx: &Context<E>) -> bool {
         if self.st_bind() == STB_LOCAL {
             return true;
         }
@@ -976,26 +976,26 @@ impl Symbol {
         vis == STV_HIDDEN || vis == STV_INTERNAL || self.ver_idx as u32 == VER_NDX_LOCAL
     }
 
-    pub fn is_pde_ifunc<E: Arch>(&self, ctx: &Context<E>) -> bool {
+    pub fn is_pde_ifunc<E: Target>(&self, ctx: &Context<E>) -> bool {
         // Returns true if this is an ifunc tha uses two GOT slots
         self.is_ifunc() && !ctx.args.pic && !E::IS_PPC64
     }
 
     // Returns true if the symbol's PC-relative address is known at link-time.
-    pub fn is_pcrel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+    pub fn is_pcrel_linktime_const<E: Target>(&self, ctx: &Context<E>) -> bool {
         !self.is_imported() && !self.is_ifunc() && (self.is_relative() || !ctx.args.pic)
     }
 
     // Returns true if the symbol's Thread Pointer-relative address is
     // known at link-time.
-    pub fn is_tprel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+    pub fn is_tprel_linktime_const<E: Target>(&self, ctx: &Context<E>) -> bool {
         debug_assert_eq!(self.ty(), STT_TLS);
         !ctx.args.shared && !self.is_imported()
     }
 
     // Returns true if the symbol's Thread Pointer-relative address is
     // known at load-time.
-    pub fn is_tprel_runtime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+    pub fn is_tprel_runtime_const<E: Target>(&self, ctx: &Context<E>) -> bool {
         // Returns true unless we are creating a dlopen'able DSO.
         debug_assert_eq!(self.ty(), STT_TLS);
         !(ctx.args.shared && ctx.args.z_dlopen)
@@ -1004,12 +1004,12 @@ impl Symbol {
     /// The symbol's address, taking PLT, copy relocations and section
     /// fragments into account.
     #[inline]
-    pub fn addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         self.addr_with(ctx, AddrFlags::default())
     }
 
     #[inline(always)]
-    pub fn addr_with<E: Arch>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
+    pub fn addr_with<E: Target>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
         let origin = self.origin();
 
         if let OriginValue::Fragment(frag_ref) = origin {
@@ -1031,7 +1031,9 @@ impl Symbol {
             return chunk.hdr.shdr.sh_addr.get() + self.value;
         }
 
-        if E::FAMILY == crate::arch::Family::Ppc64V1 && !flags.no_opd && self.has_opd(&ctx.symbols)
+        if E::FAMILY == crate::target::Family::Ppc64V1
+            && !flags.no_opd
+            && self.has_opd(&ctx.symbols)
         {
             return self.opd_addr(ctx);
         }
@@ -1063,7 +1065,7 @@ impl Symbol {
     // Keep rare discarded-section diagnostics out of the address hot path.
     #[cold]
     #[inline(never)]
-    fn dead_section_addr<E: Arch>(&self, ctx: &Context<E>, isec: &InputSection<E>) -> u64 {
+    fn dead_section_addr<E: Target>(&self, ctx: &Context<E>, isec: &InputSection<E>) -> u64 {
         if isec.name(&ctx.objs[isec.file.index()]) == b".eh_frame" {
             // .eh_frame contents are parsed and reconstructed by the linker,
             // so pointing to a specific location in a source .eh_frame
@@ -1106,34 +1108,34 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn got_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn got_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.got.hdr.shdr.sh_addr.get()
             + self.got_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
-    pub fn gotplt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn gotplt_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.gotplt.shdr.sh_addr.get()
             + crate::chunks::gotplt::header_size::<E>()
             + self.plt_idx(&ctx.symbols).unwrap() as u64 * crate::chunks::gotplt::entry_size::<E>()
     }
 
-    pub fn gottp_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn gottp_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.got.hdr.shdr.sh_addr.get()
             + self.gottp_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
-    pub fn tlsgd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn tlsgd_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.got.hdr.shdr.sh_addr.get()
             + self.tlsgd_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
-    pub fn tlsdesc_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn tlsdesc_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.got.hdr.shdr.sh_addr.get()
             + self.tlsdesc_idx(&ctx.symbols).unwrap() as u64 * E::WORD_SIZE as u64
     }
 
     #[inline]
-    pub fn plt_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn plt_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         if let Some(idx) = self.plt_idx(&ctx.symbols) {
             return ctx.plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(idx);
         }
@@ -1141,11 +1143,11 @@ impl Symbol {
             + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE
     }
 
-    pub fn opd_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn opd_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         ctx.opd_addr(self.opd_idx(&ctx.symbols).unwrap())
     }
 
-    pub fn got_pltgot_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+    pub fn got_pltgot_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         // An ifunc symbol occupies two consecutive GOT slots in a
         // position-dependent executable (PDE). The first slot contains the
         // symbol's PLT address, and the second slot holds the resolved
@@ -1166,7 +1168,7 @@ impl Symbol {
     }
 
     /// Finds a thunk within branch range of `p`.
-    pub fn thunk_addr<E: Arch>(&self, ctx: &Context<E>, p: u64) -> u64 {
+    pub fn thunk_addr<E: Target>(&self, ctx: &Context<E>, p: u64) -> u64 {
         let distance = E::branch_distance() as u64;
         let addrs: &[u64] = self.aux(&ctx.symbols).map_or(&[], |a| &a.thunk_addrs);
         let lo = p.saturating_sub(distance);
@@ -1181,7 +1183,7 @@ impl Symbol {
     }
 
     /// The symbol's index in the output symbol table.
-    pub fn output_sym_idx<E: Arch>(&self, ctx: &Context<E>) -> u32 {
+    pub fn output_sym_idx<E: Target>(&self, ctx: &Context<E>) -> u32 {
         let file = ctx.file(self.file().unwrap());
         let i = file.output_sym_indices[self.sym_idx() as usize];
         debug_assert!(i >= 0);
@@ -1193,7 +1195,7 @@ impl Symbol {
     }
 
     /// The version string of a symbol defined in a DSO.
-    pub fn version<E: Arch>(&self, ctx: &Context<E>) -> &'static [u8] {
+    pub fn version<E: Target>(&self, ctx: &Context<E>) -> &'static [u8] {
         if let Some(FileId::Dso(id)) = self.file() {
             let dso = &ctx.dsos[id.index()];
             if let Some(&ver) = dso.version_strings.get(self.ver_idx as usize) {

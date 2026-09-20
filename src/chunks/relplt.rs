@@ -1,12 +1,12 @@
 //! `.rel.plt` and `.rela.plt`, relocations for PLT entries.
 
-use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, plt};
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .rel.plt contains relocation information for .plt.
-pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let (name, ty) = if E::IS_RELA { (".rela.plt", SHT_RELA) } else { (".rel.plt", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
     let entsize = std::mem::size_of::<ElfRel<E>>() as u64;
@@ -15,7 +15,7 @@ pub fn new_header<E: Arch>() -> ChunkHeader<E> {
     hdr
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = ctx.plt.symbols.len() as u64 * std::mem::size_of::<ElfRel<E>>() as u64;
     ctx.relplt.shdr.sh_size.set(size);
     ctx.relplt.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
@@ -24,7 +24,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let out = rels_from_bytes_mut::<E>(buf);
     debug_assert_eq!(out.len(), ctx.plt.symbols.len());
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
@@ -48,10 +48,10 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
                 // A large PLT entry resolves through a data pointer rather than
                 // self-modifying code, so its relocation targets that pointer and
                 // carries -(call address) as the addend, making the loader store
-                // (target - call) there (see arch/sparc64.rs).
+                // (target - call) there (see target/sparc64.rs).
                 let call = sym.plt_addr(ctx) + 4;
                 let ptr = ctx.plt.hdr.shdr.sh_addr.get()
-                    + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
+                    + crate::target::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
                 ElfRel::<E>::new(
                     ptr,
                     E::R_JUMP_SLOT,

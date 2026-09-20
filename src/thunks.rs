@@ -31,13 +31,13 @@
 
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::output_section::OutputSection;
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::InputSection;
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
+use crate::target::{Family, Target};
 use crate::util::align_to;
 
 /// A block of branch stubs placed between input sections.
@@ -61,7 +61,7 @@ impl Thunk {
     }
 
     /// The entry offsets of a thunk with fixed-size entries.
-    pub fn fixed_offsets<E: Arch>(&self) -> Vec<u64> {
+    pub fn fixed_offsets<E: Target>(&self) -> Vec<u64> {
         let layout = E::THUNK.expect("target without thunks");
         (0..=self.symbols.len())
             .map(|i| layout.header_size + i as u64 * layout.entry_size)
@@ -74,7 +74,7 @@ const UNPLACED: u64 = u64::MAX;
 
 /// We create thunks for each 32/8/16 MiB code block for
 /// ARM64/ARM32/PPC, respectively.
-fn batch_size<E: Arch>() -> u64 {
+fn batch_size<E: Target>() -> u64 {
     let mib = match E::FAMILY {
         Family::Arm64 => 32,
         Family::Arm32 => 8,
@@ -85,7 +85,7 @@ fn batch_size<E: Arch>() -> u64 {
 
 /// We assume that a single thunk group is smaller than 16/4/8 MiB
 /// for ARM64/ARM32/PPC, respectively.
-fn max_thunk_size<E: Arch>() -> u64 {
+fn max_thunk_size<E: Target>() -> u64 {
     batch_size::<E>() / 2
 }
 
@@ -95,7 +95,7 @@ const THUNK_ALIGN: u64 = 8;
 
 /// Whether a call needs a thunk. On the first pass, before addresses are
 /// known, every call out of the section is assumed to need one.
-fn requires_thunk<E: Arch>(
+fn requires_thunk<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     rel: &ElfRel<E>,
@@ -142,7 +142,7 @@ fn requires_thunk<E: Arch>(
 }
 
 /// The executable output sections, in output order.
-fn executable_sections<E: Arch>(ctx: &Context<E>) -> Vec<OutputSectionId> {
+fn executable_sections<E: Target>(ctx: &Context<E>) -> Vec<OutputSectionId> {
     ctx.chunks
         .iter()
         .filter_map(|&id| match id {
@@ -177,7 +177,7 @@ fn executable_sections<E: Arch>(ctx: &Context<E>) -> Vec<OutputSectionId> {
 ///     <-------->       Smaller than BRANCH_DISTANCE
 ///          <-------->  Smaller than BRANCH_DISTANCE
 ///     <------------->  Reachable from the current batch
-pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
+pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
     if members.is_empty() {
         return;
@@ -319,7 +319,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
 /// assigning addresses to sections, references to thunks could become
 /// out of range due to the new extra gaps for thunks. Thus, the
 /// creation of thunks is a two-pass process.
-pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
+pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("remove_redundant_thunks");
     // Gather output executable sections
     let sections = executable_sections(ctx);
@@ -392,7 +392,7 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
 /// thunks for each symbol, so that it is easy to find one.
 ///
 /// Note that thunk_addrs must be sorted for binary search.
-pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
+pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_thunk_addresses");
     let mut sections = executable_sections(ctx);
     sections.sort_by_key(|id| ctx.output_sections[id.index()].hdr.shdr.sh_addr.get());
@@ -411,7 +411,12 @@ pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
 }
 
 /// Writes a thunk's stubs into the output section buffer.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, osec: &OutputSection<E>, thunk: &Thunk, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(
+    ctx: &Context<E>,
+    osec: &OutputSection<E>,
+    thunk: &Thunk,
+    buf: &mut [u8],
+) {
     debug_assert_eq!(buf.len(), thunk.size() as usize);
     E::write_thunk(ctx, thunk, thunk.addr(osec), buf);
 }

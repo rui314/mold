@@ -83,13 +83,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, Symbol, is_c_identifier};
+use crate::target::Target;
 use crate::util::perf::Counter;
 use crate::util::siphash::SipHash13_128;
 
@@ -182,7 +182,7 @@ impl DigestMap {
     }
 
     // Returns true if the digest was not in the table.
-    fn insert<E: Arch>(&self, ctx: &Context<E>, digest: Digest, isec: SectionRef) -> bool {
+    fn insert<E: Target>(&self, ctx: &Context<E>, digest: Digest, isec: SectionRef) -> bool {
         const BUSY_BIT: u64 = 1 << 48;
         let tag = digest.hi >> 16;
         let value = (self.round << 49) | tag;
@@ -274,7 +274,7 @@ impl DigestMap {
     }
 }
 
-fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
+fn uniquify_cies<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
     let mut next = 0;
     crate::chunks::eh_frame::deduplicate_cies(ctx, |cie, leader| {
@@ -287,7 +287,7 @@ fn uniquify_cies<E: Arch>(ctx: &mut Context<E>) {
     });
 }
 
-fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
+fn is_eligible<E: Target>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
     let file = &ctx.objs[isec.file.index()];
     let name: &[u8] = isec.name(file);
     if isec.sh_size == 0
@@ -313,7 +313,7 @@ fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
     (ctx.args.ignore_data_address_equality || !isec.is_address_taken()) && (is_readonly || is_relro)
 }
 
-fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> Digest {
+fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> Digest {
     let file = &ctx.objs[r.file.index()];
     let isec = file.section_at(r.shndx);
     let mut h = SipHash13_128::new(key);
@@ -383,7 +383,7 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
     finish_digest(h)
 }
 
-fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
+fn gather_sections<E: Target>(ctx: &Context<E>) -> Vec<SectionRef> {
     let _t = ctx.timer("gather_sections");
 
     static ELIGIBLE: Counter = Counter::new("icf_eligibles");
@@ -450,7 +450,7 @@ fn gather_sections<E: Arch>(ctx: &Context<E>) -> Vec<SectionRef> {
     sections
 }
 
-fn for_each_edge<E: Arch>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32)) {
+fn for_each_edge<E: Target>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u32)) {
     let file: &ObjectFile<E> = &ctx.objs[r.file.index()];
     let isec = file.section_at(r.shndx);
     let mut add = |sym_idx: u32| {
@@ -484,7 +484,7 @@ struct Edges {
 // particular, an FDE's reference to an LSDA is an edge; without it, two
 // identical functions whose exception tables catch different types would
 // be folded into one.
-fn gather_edges<E: Arch>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
+fn gather_edges<E: Target>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
     let _t = ctx.timer("gather_edges");
 
     // Count the number of outgoing edges for each vertex and turn the
@@ -547,7 +547,7 @@ fn propagate(key: &[u8; 16], cur: &mut Vec<Digest>, next: &mut Vec<Digest>, edge
     std::mem::swap(cur, next);
 }
 
-fn count_num_classes<E: Arch>(
+fn count_num_classes<E: Target>(
     ctx: &Context<E>,
     digests: &[Digest],
     sections: &[SectionRef],
@@ -564,7 +564,7 @@ fn count_num_classes<E: Arch>(
     count
 }
 
-fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output: &ReportOutput) {
+fn print_icf_sections<E: Target>(ctx: &Context<E>, sections: &[SectionRef], output: &ReportOutput) {
     let mut leaders: Vec<(SectionRef, Vec<SectionRef>)> = Vec::new();
     let mut map: std::collections::HashMap<SectionRef, usize> = std::collections::HashMap::new();
     for &r in sections {
@@ -592,7 +592,7 @@ fn print_icf_sections<E: Arch>(ctx: &Context<E>, sections: &[SectionRef], output
     });
 }
 
-pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
+pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("icf");
     if ctx.objs.is_empty() {
         return;

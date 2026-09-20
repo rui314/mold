@@ -58,7 +58,6 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::chunks::plt::SPARC_NUM_SMALL_PLT;
 use crate::context::Context;
@@ -66,6 +65,7 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target};
 use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
 use crate::util::{bit, bits};
 use crate::{error, fatal};
@@ -109,7 +109,7 @@ pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
     0x100000 + block * 5120 + num_stubs * 24 + (i % 160) * 8
 }
 
-impl Arch for Sparc64 {
+impl Target for Sparc64 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "sparc64";

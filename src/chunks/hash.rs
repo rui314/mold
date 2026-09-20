@@ -1,9 +1,9 @@
 //! `.hash`, the ELF hash table for dynamic symbol lookup.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::{Family, Target};
 
 // The hash function for .hash.
 pub fn elf_hash(name: &[u8]) -> u32 {
@@ -28,7 +28,7 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 // for ELF. In ELF, each dynamic symbol is not searched from a specific
 // library but from all the ELF files loaded to memory. Therefore,
 // minimizing the cost of each dynamic symbol lookup is important.
-pub fn new_header<E: Arch>() -> ChunkHeader<E> {
+pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);
     // Even though u32 should suffice as an etnry size for all targets,
     // s390x uses u64. It looks like a spec bug, but we need to follow
@@ -39,11 +39,11 @@ pub fn new_header<E: Arch>() -> ChunkHeader<E> {
     hdr
 }
 
-pub fn entry_size<E: Arch>() -> usize {
+pub fn entry_size<E: Target>() -> usize {
     if E::FAMILY == Family::S390x { 8 } else { 4 }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if ctx.dynsym.symbols.is_empty() {
         return;
     }
@@ -54,7 +54,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     hash.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.fill(0);
     let entry = entry_size::<E>();
     let write = |buf: &mut [u8], i: usize, v: u32| {

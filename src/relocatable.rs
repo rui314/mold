@@ -30,7 +30,6 @@
 //!
 //!  - Relocations are copied, but we need to fix symbol indices.
 
-use crate::arch::Arch;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::riscv_attributes::RiscvAttributesSection;
@@ -40,10 +39,11 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::output_file::OutputFile;
 use crate::passes;
+use crate::target::Target;
 use crate::util::align_to;
 
 // Create linker-synthesized sections
-fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
+fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.ehdr = Some(chunks::new_ehdr::<E>(0));
     ctx.shdr = Some(chunks::new_shdr::<E>());
     ctx.eh_frame_reloc = Some(chunks::eh_frame_reloc::new_header::<E>());
@@ -73,7 +73,7 @@ fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
 /// Create SHT_GROUP (i.e. comdat group) sections. We uniquify comdat
 /// sections by signature. We want to propagate input comdat groups as
 /// output comdat groups if they are still alive after uniquification.
-fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
+fn create_comdat_group_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_comdat_group_sections");
     let mut sections = Vec::new();
     for file in &ctx.objs {
@@ -120,7 +120,7 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
 /// Unresolved undefined symbols in the -r mode are simply propagated to an
 /// output file as undefined symbols. This function guarantees that
 /// unresolved undefined symbols belongs to some input file.
-fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
+fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("r_claim_unresolved_symbols");
     for file in &ctx.objs {
         let priority = file.base.priority;
@@ -148,7 +148,7 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
 
 /// Set output section in-file offsets. Output section memory addresses
 /// are left as zero.
-fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
+fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
     let mut offset = 0;
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
@@ -160,7 +160,7 @@ fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
     offset
 }
 
-pub fn combine_objects<E: Arch>(ctx: &mut Context<E>) {
+pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     passes::create_output_sections(ctx);
     create_synthetic_sections(ctx);
     claim_unresolved_symbols(ctx);

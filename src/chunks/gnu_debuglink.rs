@@ -1,9 +1,9 @@
 //! `.gnu_debuglink`, the pathname and checksum of separate debug information.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::align_to;
 use crate::util::write_cstr;
 
@@ -30,14 +30,14 @@ impl<E: Layout> Default for GnuDebuglinkSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let filename = ctx.args.separate_debug_file.file_name().unwrap_or_default().as_encoded_bytes();
     let size = align_to(filename.len() as u64 + 1, 4) + 4;
     let sec = ctx.gnu_debuglink.as_mut().unwrap();
     sec.hdr.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.gnu_debuglink.as_ref().unwrap();
     buf.fill(0);
     let filename = ctx.args.separate_debug_file.file_name().unwrap_or_default();

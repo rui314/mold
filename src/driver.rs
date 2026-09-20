@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use crate::arch::{self, Arch};
 use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
 use crate::output_file::{OutputFile, split_ranges};
+use crate::target::{Family, Target};
 use crate::util::parallel::Background;
 use crate::{error, fatal, passes};
 
@@ -62,7 +62,7 @@ pub fn main(
     }
 }
 
-fn target_traits<E: Arch>() -> TargetTraits {
+fn target_traits<E: Target>() -> TargetTraits {
     TargetTraits { name: E::NAME, is_rela: E::IS_RELA, family: E::FAMILY, page_size: E::PAGE_SIZE }
 }
 
@@ -74,7 +74,7 @@ fn thread_count(args: &Args) -> usize {
 
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
-pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
+pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
     let parsed = cmdline::parse_args(&target_traits::<E>(), &cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     let mut ctx = Context::<E>::new(args, cmdline);
@@ -301,7 +301,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     passes::create_output_sections(&mut ctx);
 
     // Convert an .ARM.exidx to a synthetic section.
-    if E::FAMILY == arch::Family::Arm32 {
+    if E::FAMILY == Family::Arm32 {
         chunks::arm_exidx::create(&mut ctx);
     }
 
@@ -622,7 +622,7 @@ pub fn link<E: Arch>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'stati
     Ok(0)
 }
 
-fn file_range<E: Arch>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
+fn file_range<E: Target>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
     let hdr = ctx.chunk_header(id);
     let size = if hdr.shdr.sh_type.get() == SHT_NOBITS { 0 } else { hdr.shdr.sh_size.get() };
     let offset = hdr.shdr.sh_offset.get();
@@ -642,7 +642,7 @@ struct Task {
 // writes `.strtab`, and relocation sections may patch addends into their
 // target sections). The buffer is split into the disjoint ranges each
 // task needs so that all tasks can run in parallel safely.
-pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let t = ctx.timer("copy_chunks");
 
     let mut first: Vec<Task> = Vec::new();
@@ -651,7 +651,7 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         let ty = ctx.chunk_header(id).shdr.sh_type.get();
         matches!(id, ChunkId::Reloc(_) | ChunkId::EhFrameReloc | ChunkId::SFrameReloc)
             || ty == SHT_REL
-            || (E::FAMILY == arch::Family::Sh4 && ty == SHT_RELA)
+            || (E::FAMILY == Family::Sh4 && ty == SHT_RELA)
     };
 
     for &id in &ctx.chunks {
@@ -714,7 +714,7 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[pos..].fill(0);
 }
 
-fn run_tasks<E: Arch>(
+fn run_tasks<E: Target>(
     ctx: &Context<E>,
     buf: &mut [u8],
     tasks: &[Task],

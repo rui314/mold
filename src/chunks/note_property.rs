@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.
@@ -15,7 +15,7 @@ pub struct NotePropertySection<E: Layout> {
     pub contents: Vec<(u32, u32)>,
 }
 
-impl<E: Arch> NotePropertySection<E> {
+impl<E: Target> NotePropertySection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".note.gnu.property", SHT_NOTE, SHF_ALLOC as u64);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -23,18 +23,18 @@ impl<E: Arch> NotePropertySection<E> {
     }
 }
 
-impl<E: Arch> Default for NotePropertySection<E> {
+impl<E: Target> Default for NotePropertySection<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-fn entry_size<E: Arch>() -> usize {
+fn entry_size<E: Target>() -> usize {
     if E::IS_64 { 16 } else { 12 }
 }
 
 // Merges input files' .note.gnu.property values.
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     // Obtain the list of keys
     let files: Vec<&crate::input_files::ObjectFile<E>> =
         ctx.objs.iter().filter(|file| !ctx.is_internal(file.id())).collect();
@@ -83,7 +83,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     sec.contents = contents;
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.note_property.as_ref().unwrap();
     buf.fill(0);
     E::write_u32(buf, 4); // Name size

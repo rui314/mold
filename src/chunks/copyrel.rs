@@ -1,12 +1,12 @@
 //! `.copyrel` and `.copyrel.rel.ro`, storage for copy relocations.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
+use crate::target::Target;
 use crate::util::align_to;
 
 // .copyrel and .copyrel.rel.ro represent memory regions to which the
@@ -26,7 +26,7 @@ impl<E: Layout> CopyrelSection<E> {
     }
 }
 
-pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
+pub fn add_symbol<E: Target>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     debug_assert!(!ctx.args.shared);
     let sym = &ctx.symbols[id];
     if sym.has_copyrel() {
@@ -81,7 +81,7 @@ pub fn add_symbol<E: Arch>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     }
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, sec: &CopyrelSection<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, sec: &CopyrelSection<E>, out: &mut [ElfRel<E>]) {
     for (i, &id) in sec.symbols.iter().enumerate() {
         let sym = &ctx.symbols[id];
         out[i] = ElfRel::<E>::new(

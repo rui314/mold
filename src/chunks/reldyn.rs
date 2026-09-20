@@ -2,11 +2,11 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::relrdyn::encode_relr;
 use crate::chunks::{self, ChunkHeader};
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::encode_sleb;
 
 // .rel.dyn contains relocation infromation for other sections.
@@ -17,7 +17,7 @@ pub struct RelDynSection<E: Layout> {
     pub keep_android_size: bool,
 }
 
-impl<E: Arch> RelDynSection<E> {
+impl<E: Target> RelDynSection<E> {
     pub fn new(args: &crate::cmdline::Args) -> Self {
         let (name, ty, android_ty) = if E::IS_RELA {
             (".rela.dyn", SHT_RELA, SHT_ANDROID_RELA)
@@ -38,7 +38,7 @@ impl<E: Arch> RelDynSection<E> {
 }
 
 /// Gathers the dynamic relocations of all chunks.
-pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
+pub fn collect_relocs<E: Target>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
     let count: usize = ctx
         .chunks
         .iter()
@@ -63,7 +63,7 @@ pub fn collect_relocs<E: Arch>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
 
 /// Encodes base relocations of each chunk in RELR form, using offsets
 /// relative to the chunk.
-pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
+pub fn construct_relr<E: Target>(ctx: &mut Context<E>) {
     debug_assert!(ctx.args.pack_dyn_relocs_relr);
     let word = E::WORD_SIZE as u64;
 
@@ -103,7 +103,7 @@ pub fn construct_relr<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.pack_dyn_relocs_relr {
         for i in 0..ctx.chunks.len() {
             let id = ctx.chunks[i];
@@ -145,7 +145,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     ctx.reldyn.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     if ctx.args.pack_dyn_relocs_android {
         buf[..ctx.reldyn.android_encoded.len()].copy_from_slice(&ctx.reldyn.android_encoded);
     } else {
@@ -178,7 +178,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 //   against the same symbol, are sorted by the address in the output
 //   file. This tends to optimize paging and caching when there are two
 //   references from the same page.
-pub fn sort<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn sort<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // .rela.dyn contains APS2-encoded bytes, not ElfRel entries.
     if ctx.args.pack_dyn_relocs_android {
         return;
@@ -207,7 +207,7 @@ pub fn sort<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
 // factored out so each per-relocation entry is just the differing fields.
 //
 // See bionic's linker/linker_relocs.cpp for the decoder.
-pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
+pub fn encode_android<E: Target>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
     const GROUPED_BY_INFO: i64 = 1;
     const GROUPED_BY_OFFSET_DELTA: i64 = 2;
     const GROUP_HAS_ADDEND: i64 = 8;

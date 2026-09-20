@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use bstr::BStr;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::OutputSectionId;
 use crate::chunks::merged::{MergedSection, MergedSectionId};
 use crate::cmdline::UnresolvedKind;
@@ -13,6 +12,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::symbol::{NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, Symbol, SymbolId};
+use crate::target::{Family, Target};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
 use crate::util::hyperloglog::HyperLogLog;
@@ -201,7 +201,7 @@ impl InputSectionExtra for Box<[RelocDelta]> {
 
 // InputSection represents a section in an input object file.
 #[derive(Debug)]
-pub struct InputSection<E: Arch> {
+pub struct InputSection<E: Target> {
     pub file: ObjId,
     pub shndx: u32,
 
@@ -260,7 +260,7 @@ pub struct NonAllocReloc<'a> {
     pub frag: Option<FragmentRef>,
 }
 
-impl<E: Arch> InputSection<E> {
+impl<E: Target> InputSection<E> {
     pub fn new(
         file: &ObjectFile<E>,
         file_id: ObjId,
@@ -1010,7 +1010,7 @@ impl<E: Arch> InputSection<E> {
     }
 }
 
-impl<E: Arch> InputSection<E> {
+impl<E: Target> InputSection<E> {
     /// The number of bytes relaxation removed at the location of
     /// relocation `rel`, and the number removed before it.
     #[inline]
@@ -1033,7 +1033,7 @@ pub fn removed_bytes(deltas: &[RelocDelta], i: usize) -> i64 {
 }
 
 /// The total number of bytes removed before `offset`.
-pub fn r_delta<E: Arch>(isec: &InputSection<E>, offset: u64) -> i64 {
+pub fn r_delta<E: Target>(isec: &InputSection<E>, offset: u64) -> i64 {
     let deltas = isec.r_deltas();
     let i = deltas.partition_point(|d| d.offset < offset);
     if i == 0 { 0 } else { deltas[i - 1].delta }
@@ -1042,7 +1042,7 @@ pub fn r_delta<E: Arch>(isec: &InputSection<E>, offset: u64) -> i64 {
 /// Find the prevailing group having the same signature as the discarded group
 /// that contains esym. This is called only on an error path, so a linear scan is
 /// sufficient.
-fn find_comdat_owner<E: Arch>(
+fn find_comdat_owner<E: Target>(
     ctx: &Context<E>,
     file: &ObjectFile<E>,
     sym_idx: usize,
@@ -1075,7 +1075,7 @@ enum Action {
     Plt,
 }
 
-fn do_action<E: Arch>(
+fn do_action<E: Target>(
     ctx: &Context<E>,
     action: Action,
     isec: &InputSection<E>,
@@ -1099,7 +1099,7 @@ fn do_action<E: Arch>(
     }
 }
 
-fn output_type<E: Arch>(ctx: &Context<E>) -> usize {
+fn output_type<E: Target>(ctx: &Context<E>) -> usize {
     if ctx.args.shared {
         0
     } else if ctx.args.pie {
@@ -1124,7 +1124,7 @@ fn sym_type(sym: &Symbol) -> usize {
 /// This is for PC-relative relocations (e.g. R_X86_64_PC32).
 /// We cannot promote them to dynamic relocations because the dynamic
 /// linker generally does not support PC-relative relocations.
-pub fn scan_pcrel<E: Arch>(
+pub fn scan_pcrel<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     sym: &Symbol,
@@ -1145,7 +1145,7 @@ pub fn scan_pcrel<E: Arch>(
 /// generally does not support dynamic relocations smaller than the
 /// pointer size, we need to report an error if a relocation cannot be
 /// resolved at link-time.
-pub fn scan_absrel<E: Arch>(
+pub fn scan_absrel<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     sym: &Symbol,
@@ -1161,7 +1161,7 @@ pub fn scan_absrel<E: Arch>(
     do_action(ctx, TABLE[output_type(ctx)][sym_type(sym)], isec, sym, rel);
 }
 
-pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
+pub fn scan_tlsdesc<E: Target>(ctx: &Context<E>, sym: &Symbol) {
     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
         // Relax TLSDESC to Local Exec. In this case, we directly materialize
         // a TP-relative offset, so no dynamic relocation is needed.
@@ -1182,7 +1182,7 @@ pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
     }
 }
 
-pub fn check_tlsle<E: Arch>(
+pub fn check_tlsle<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     sym: &Symbol,
@@ -1233,7 +1233,7 @@ pub enum RelocationSpan {
 
 impl RelocationSpan {
     #[inline]
-    fn rels<E: Arch>(self, file: &ObjectFile<E>) -> &[ElfRel<E>] {
+    fn rels<E: Target>(self, file: &ObjectFile<E>) -> &[ElfRel<E>] {
         match self {
             Self::Input(data) => rels_from_bytes::<E>(data),
             Self::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
@@ -1275,7 +1275,7 @@ impl CieRecord {
     }
 
     #[inline]
-    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
+    pub fn rels<'a, E: Target>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         rels_in::<E>(
             self.relocations.rels(file),
             self.rel_idx,
@@ -1337,12 +1337,12 @@ impl FdeRecord {
     }
 
     #[inline]
-    fn cie<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a CieRecord {
+    fn cie<'a, E: Target>(&self, file: &'a ObjectFile<E>) -> &'a CieRecord {
         &file.cies[self.cie_idx as usize]
     }
 
     #[inline]
-    pub fn size<E: Arch>(&self, file: &ObjectFile<E>) -> usize {
+    pub fn size<E: Target>(&self, file: &ObjectFile<E>) -> usize {
         self.size_with::<E>(&file.cies)
     }
 
@@ -1352,13 +1352,13 @@ impl FdeRecord {
     }
 
     #[inline]
-    pub fn contents<E: Arch>(&self, file: &ObjectFile<E>) -> &'static [u8] {
+    pub fn contents<E: Target>(&self, file: &ObjectFile<E>) -> &'static [u8] {
         let start = self.input_offset as usize;
         &self.cie(file).contents[start..start + self.size::<E>(file)]
     }
 
     #[inline]
-    pub fn rels<'a, E: Arch>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
+    pub fn rels<'a, E: Target>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
         rels_in::<E>(cie.relocations.rels(file), self.rel_idx, end)
@@ -1469,7 +1469,11 @@ pub struct FragmentLookup<'a> {
 impl MergeInfo {
     /// Refers to an input section in its stable dense slot. The section
     /// itself is dead from now on; its contents live on as fragments.
-    fn new<E: Arch>(parent: MergedSectionId, input_index: u32, section: &InputSection<E>) -> Self {
+    fn new<E: Target>(
+        parent: MergedSectionId,
+        input_index: u32,
+        section: &InputSection<E>,
+    ) -> Self {
         section.kill();
         Self {
             parent,
@@ -1499,7 +1503,7 @@ impl MergeInfo {
     /// call "section fragments". Section fragment is a unit of merging.
     ///
     /// We do not support mergeable sections that have relocations.
-    pub fn split_contents<E: Arch>(
+    pub fn split_contents<E: Target>(
         &mut self,
         file: &dyn fmt::Display,
         data: &'static [u8],
@@ -1549,7 +1553,7 @@ impl MergeInfo {
     }
 
     /// Inserts the pieces into the parent section's fragment map.
-    pub fn resolve_contents<E: Arch>(
+    pub fn resolve_contents<E: Target>(
         &mut self,
         data: &'static [u8],
         parent: &crate::chunks::merged::MergedSection<E>,
@@ -1626,7 +1630,7 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
 // distinguishes sections with merge metadata, storing an index into
 // `merge_info`.
 #[derive(Debug)]
-pub struct SectionList<E: Arch> {
+pub struct SectionList<E: Target> {
     indices: Vec<u32>,
     inputs: Vec<InputSection<E>>,
     merge_info: Vec<MergeInfo>,
@@ -1635,13 +1639,13 @@ pub struct SectionList<E: Arch> {
 const HAS_MERGE_INFO: u32 = 1 << 31;
 const SECTION_INDEX_MASK: u32 = !HAS_MERGE_INFO;
 
-impl<E: Arch> Default for SectionList<E> {
+impl<E: Target> Default for SectionList<E> {
     fn default() -> Self {
         Self { indices: Vec::new(), inputs: Vec::new(), merge_info: Vec::new() }
     }
 }
 
-impl<E: Arch> SectionList<E> {
+impl<E: Target> SectionList<E> {
     /// A list for `nsections` section indices, none with a section yet.
     pub fn new(nsections: usize, additional: usize) -> Self {
         let mut indices = vec![0; nsections];

@@ -25,13 +25,13 @@
 //!
 //! https://gitlab.com/x86-psABIs/x86-64-ABI
 
-use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target};
 use crate::util::is_int;
 use crate::{error, fatal};
 
@@ -47,7 +47,7 @@ impl Layout for X86_64 {
     type Rel = ElfRela<Self>;
 }
 
-impl Arch for X86_64 {
+impl Target for X86_64 {
     type InputSectionExtra = ();
 
     const NAME: &'static str = "x86_64";

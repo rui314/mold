@@ -1,13 +1,13 @@
 //! `.got.plt`, function pointers used by the PLT.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::{Family, Target};
 
 // .got.plt is similar to .got in the sense that it is a table containing
 // pointers. The contents in .got.plt are function pointers used by .plt.
-pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
+pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let sh_type = if E::IS_PPC64 { SHT_NOBITS } else { SHT_PROGBITS };
     let mut hdr = ChunkHeader::<E>::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
     hdr.is_relro = args.z_now;
@@ -16,22 +16,22 @@ pub fn new_header<E: Arch>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     hdr
 }
 
-pub fn header_size<E: Arch>() -> u64 {
+pub fn header_size<E: Target>() -> u64 {
     let words = if E::FAMILY == Family::Ppc64V2 { 2 } else { 3 };
     words * E::WORD_SIZE as u64
 }
 
-pub fn entry_size<E: Arch>() -> u64 {
+pub fn entry_size<E: Target>() -> u64 {
     let words = if E::FAMILY == Family::Ppc64V1 { 3 } else { 1 };
     words * E::WORD_SIZE as u64
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = header_size::<E>() + ctx.plt.symbols.len() as u64 * entry_size::<E>();
     ctx.gotplt.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // On PPC64, it's dynamic loader responsibility to fill the .got.plt
     // section. Dynamic loader finds the address of the first PLT entry by
     // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.

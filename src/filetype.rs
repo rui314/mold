@@ -1,9 +1,9 @@
 //! Input file classification.
 
-use crate::arch;
 use crate::archive_file;
 use crate::elf::*;
 use crate::mapped_file::MappedFile;
+use crate::target;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileType {
@@ -154,10 +154,10 @@ pub fn get_file_type(plugin: &std::path::Path, mf: &MappedFile) -> FileType {
 
         if e_type == ET_REL {
             let is_lto = match (is_le, is_32) {
-                (true, true) => is_gcc_lto_obj::<arch::I386>(data, has_gcc_plugin),
-                (true, false) => is_gcc_lto_obj::<arch::X86_64>(data, has_gcc_plugin),
-                (false, true) => is_gcc_lto_obj::<arch::M68k>(data, has_gcc_plugin),
-                (false, false) => is_gcc_lto_obj::<arch::Sparc64>(data, has_gcc_plugin),
+                (true, true) => is_gcc_lto_obj::<target::I386>(data, has_gcc_plugin),
+                (true, false) => is_gcc_lto_obj::<target::X86_64>(data, has_gcc_plugin),
+                (false, true) => is_gcc_lto_obj::<target::M68k>(data, has_gcc_plugin),
+                (false, false) => is_gcc_lto_obj::<target::Sparc64>(data, has_gcc_plugin),
             };
             return if is_lto { FileType::GccLtoObj } else { FileType::ElfObj };
         }

@@ -2,12 +2,12 @@
 
 use bstr::BStr;
 
-use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{FragmentLookup, InputSection, r_delta};
 use crate::symbol::{OriginValue, Symbol};
+use crate::target::Target;
 
 // RelocSection represents a relocation table for an output file.
 // These tables are emitted for `-r` and for final links with `--emit-relocs`.
@@ -19,7 +19,7 @@ pub struct RelocSection<E: Layout> {
     offsets: Vec<u64>,
 }
 
-pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
+pub fn new<E: Target>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<E> {
     let osec = &ctx.output_sections[osec_id.index()];
     let (prefix, ty) =
         if E::IS_RELA { (b".rela".as_slice(), SHT_RELA) } else { (b".rel".as_slice(), SHT_REL) };
@@ -42,7 +42,7 @@ pub fn new<E: Arch>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSection<
     RelocSection { hdr, output_section: osec_id, offsets }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>, i: u32) {
     let symtab_shndx = ctx.symtab.shndx;
     let osec = ctx.reloc_sections[i as usize].output_section;
     let osec_shndx = ctx.output_sections[osec.index()].hdr.shndx;
@@ -55,7 +55,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>, i: u32) {
 /// are replaced by output section symbols, with their offsets in the addend.
 /// A section without an output section has no surviving symbol reference.
 #[inline]
-pub fn output_symidx_addend<E: Arch>(
+pub fn output_symidx_addend<E: Target>(
     ctx: &Context<E>,
     sym: &Symbol,
     addend: impl FnOnce() -> i64,
@@ -74,7 +74,7 @@ pub fn output_symidx_addend<E: Arch>(
 // Translates an input relocation's symbol reference into the {r_sym, addend}
 // pair that is valid in the output file. The returned r_sym is either an output
 // section index (for section-relative relocs) or an output symbol table index.
-fn symidx_addend<'a, E: Arch>(
+fn symidx_addend<'a, E: Target>(
     ctx: &'a Context<E>,
     isec: &InputSection<E>,
     rel: &ElfRel<E>,
@@ -109,7 +109,7 @@ fn symidx_addend<'a, E: Arch>(
 
 /// Writes the relocations. With `-r` on a REL target, the addends are
 /// written into the output section's bytes, passed as `osec_buf`.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Option<&mut [u8]>) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Option<&mut [u8]>) {
     let sec = &ctx.reloc_sections[i as usize];
     let osec = &ctx.output_sections[sec.output_section.index()];
     let out = rels_from_bytes_mut::<E>(buf);
@@ -133,7 +133,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Opt
             // than in r_addend, and the relocation records we emit here are
             // meant to be consumed as if they were in an object file, so we
             // follow that convention.
-            let out_addend = if E::FAMILY == crate::arch::Family::Sh4 { 0 } else { addend };
+            let out_addend = if E::FAMILY == crate::target::Family::Sh4 { 0 } else { addend };
             out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
 
             if ctx.args.relocatable
@@ -149,8 +149,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Opt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::I386;
     use crate::cmdline::Args;
+    use crate::target::I386;
 
     #[test]
     fn discarded_section_does_not_read_implicit_addend() {

@@ -1,6 +1,6 @@
-//! Target architecture descriptions.
+//! Target descriptions.
 //!
-//! Every target is a zero-sized marker type implementing [`Arch`]. The
+//! Every target is a zero-sized marker type implementing [`Target`]. The
 //! trait carries the constants that vary between targets, such as the
 //! relocation types used for dynamic linking, and the code generation
 //! hooks that are inherently target-specific: relocation scanning and
@@ -67,8 +67,8 @@ pub struct ThunkLayout {
     pub entry_size: u64,
 }
 
-// Machine descriptions
-pub trait Arch: Layout {
+// Target descriptions
+pub trait Target: Layout {
     /// Target-specific members embedded directly in each input section.
     type InputSectionExtra: InputSectionExtra;
 

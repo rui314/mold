@@ -20,7 +20,6 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
-use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
@@ -31,6 +30,7 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::target::{Family, Target};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};
 
@@ -200,7 +200,7 @@ fn is_hi20(r_type: u32) -> bool {
 // This function returns a paired HI20 relocation for a given LO12.
 // Since the instructions are typically adjacent, we do a linear
 // search.
-fn find_paired_reloc<E: Arch>(
+fn find_paired_reloc<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     rels: &[ElfRel<E>],
@@ -232,7 +232,7 @@ fn find_paired_reloc<E: Arch>(
 // .L0
 //   auipc t0, 0      # R_RISCV_GOT_HI20(foo),     R_RISCV_RELAX
 //   ld    t0, 0(t0)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
-fn is_got_load_pair<E: Arch>(
+fn is_got_load_pair<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,
     rels: &[ElfRel<E>],
@@ -251,7 +251,7 @@ fn is_got_load_pair<E: Arch>(
             == rd(&contents[rels[i + 2].r_offset() as usize..])
 }
 
-impl<const LE: bool, const IS_64: bool> Arch for RiscvTarget<LE, IS_64>
+impl<const LE: bool, const IS_64: bool> Target for RiscvTarget<LE, IS_64>
 where
     Self: Layout,
 {
@@ -1233,7 +1233,7 @@ fn arch_string(extensions: &[Extension<'_>]) -> String {
 }
 
 // Build the output .riscv.attributes contents.
-pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
+pub fn attributes_contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let mut stack: Option<u64> = None;
     let mut arch: Vec<Extension<'_>> = Vec::new();
     let mut unaligned = false;

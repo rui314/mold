@@ -65,13 +65,13 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::input_files::display_file;
 use crate::output_file::{OutputFile, split_at_offsets};
+use crate::target::Target;
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -237,13 +237,13 @@ struct UnitHeader {
 }
 
 /// A cursor over DWARF data.
-struct Reader<'a, E: Arch> {
+struct Reader<'a, E: Target> {
     data: &'a [u8],
     pos: usize,
     marker: std::marker::PhantomData<E>,
 }
 
-impl<'a, E: Arch> Reader<'a, E> {
+impl<'a, E: Target> Reader<'a, E> {
     fn new(data: &'a [u8], pos: usize) -> Self {
         Reader { data, pos, marker: std::marker::PhantomData }
     }
@@ -312,7 +312,7 @@ impl<'a, E: Arch> Reader<'a, E> {
     }
 }
 
-fn parse_unit_header<E: Arch>(data: &[u8], pos: usize) -> UnitHeader {
+fn parse_unit_header<E: Target>(data: &[u8], pos: usize) -> UnitHeader {
     // The first word is either a DWARF32 unit length or DWARF64's reserved
     // marker. unit_length excludes its own encoding: four bytes in DWARF32, or
     // the four-byte marker plus eight-byte length in DWARF64.
@@ -376,7 +376,7 @@ struct RangeSections<'a> {
 
 /// The first DIE refers to an abbreviation by its ULEB128 code. Walk the
 /// unit's abbreviation table to find the attribute forms for that DIE.
-fn find_cu_abbrev<'a, E: Arch>(
+fn find_cu_abbrev<'a, E: Target>(
     die: &mut Reader<'a, E>,
     abbrev_section: &'a [u8],
     hdr: &UnitHeader,
@@ -421,7 +421,7 @@ fn find_cu_abbrev<'a, E: Arch>(
 /// .debug_info contains variable-length fields. `offset_size` is four or eight
 /// bytes according to the DWARF32/DWARF64 format; Word<E> is instead the
 /// target's address width. This function advances over one scalar value.
-fn read_scalar<E: Arch>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
+fn read_scalar<E: Target>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
     match form as u32 {
         DW_FORM_flag_present => 0,
         DW_FORM_data1 | DW_FORM_flag | DW_FORM_strx1 | DW_FORM_addrx1 | DW_FORM_ref1 => {
@@ -444,7 +444,7 @@ fn read_scalar<E: Arch>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
 }
 
 /// Read a range list from .debug_ranges starting at the given offset.
-fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64)> {
+fn read_debug_ranges<E: Target>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64)> {
     let mut vec = Vec::new();
     loop {
         let start = r.uint(E::WORD_SIZE);
@@ -461,7 +461,7 @@ fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64
 }
 
 /// Read a range list from .debug_rnglists starting at the given offset.
-fn read_rnglist<E: Arch>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Vec<(u64, u64)> {
+fn read_rnglist<E: Target>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Vec<(u64, u64)> {
     let addr_at = |i: u64| -> u64 {
         let mut a = Reader::<E>::new(addrx, i as usize * E::WORD_SIZE);
         a.uint(E::WORD_SIZE)
@@ -511,7 +511,7 @@ fn read_rnglist<E: Arch>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Vec<
 /// ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
 /// Otherwise, a range is read directly from .debug_info (or possibly
 /// from .debug_addr for DWARF5).
-fn read_address_ranges<E: Arch>(secs: &RangeSections, cu: &Compunit) -> Vec<(u64, u64)> {
+fn read_address_ranges<E: Target>(secs: &RangeSections, cu: &Compunit) -> Vec<(u64, u64)> {
     // Read .debug_info to find the record at a given offset.
     let hdr = parse_unit_header::<E>(secs.info, cu.offset as usize);
     let mut die = Reader::<E>::new(secs.info, (cu.offset + hdr.header_size) as usize);
@@ -630,7 +630,7 @@ pub struct GdbInputFile {
 /// Prepares immutable views of the debug sections before foreground and
 /// `.gdb_index` work diverge. Relocations are reduced to the unit associations
 /// the reader needs, so the background task never aliases an ObjectFile.
-pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
+pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
     ctx.objs
         .par_iter_mut()
         .filter_map(|file| {
@@ -694,7 +694,7 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 }
 
 /// Reads the units of every live `.debug_info` section of a file.
-fn read_debug_units<E: Arch>(file: &GdbInputFile, file_idx: u32) -> FileUnits {
+fn read_debug_units<E: Target>(file: &GdbInputFile, file_idx: u32) -> FileUnits {
     let mut units = FileUnits::default();
     for input in &file.debug_info {
         // Read every unit in one input .debug_info contribution. Keeping this separate
@@ -759,7 +759,7 @@ fn pubnames_unit<'a>(
 /// DWARF32 or DWARF64 header identifying one debug unit, followed by
 /// (DIE offset, 1-byte kind, NUL-terminated name) tuples. The GNU kind byte lets
 /// GDB distinguish functions, variables and types without reading their DIEs.
-fn read_pubnames<E: Arch>(file: &GdbInputFile, units: &mut FileUnits) {
+fn read_pubnames<E: Target>(file: &GdbInputFile, units: &mut FileUnits) {
     for input in &file.pubnames {
         let contents = input.contents;
         let mut pos = 0;
@@ -918,7 +918,7 @@ fn estimate_names<T: Sync>(units: &[T], names: impl Fn(&T) -> &[NameRecord] + Sy
 /// Read compilation units and their public names, deduplicate and intern the
 /// names, and determine the constant-pool layout. This stage needs only input
 /// sections, so it can run before output-section offsets are assigned.
-pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexData {
+pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexData {
     let _timer = timer;
     let per_file: Vec<FileUnits> = files
         .into_par_iter()
@@ -1031,7 +1031,7 @@ pub fn read_inputs<E: Arch>(timer: Timer, files: Vec<GdbInputFile>) -> GdbIndexD
 /// interleaved in .debug_info. Address-area records refer only to the CU list.
 ///
 /// The Rust port performs the sorting in `build_tables` after this rebasing.
-pub fn prepare_tables<E: Arch>(ctx: &Context<E>, data: &mut GdbIndexData) {
+pub fn prepare_tables<E: Target>(ctx: &Context<E>, data: &mut GdbIndexData) {
     let output_offset = |file: u32, shndx: u32| ctx.objs[file as usize].section_at(shndx).offset();
     for cu in &mut data.cus {
         cu.offset += output_offset(cu.file, cu.shndx);
@@ -1202,7 +1202,7 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
 
 /// Builds the tables synchronously for the separate-debug-file path, where
 /// the output's section ordering differs from the main file.
-pub fn build_tables_now<E: Arch>(ctx: &mut Context<E>) {
+pub fn build_tables_now<E: Target>(ctx: &mut Context<E>) {
     let timer = ctx.timer("build_gdb_index_tables");
     let Some(mut data) = ctx.gdb_index_data.take() else {
         return;
@@ -1221,7 +1221,7 @@ pub fn needs_section_contents(name: &[u8]) -> bool {
 
 /// The contents of a debug section in the output, or its uncompressed
 /// contents if it was compressed.
-fn section_contents<'a, E: Arch>(ctx: &'a Context<E>, buf: &'a [u8], name: &[u8]) -> &'a [u8] {
+fn section_contents<'a, E: Target>(ctx: &'a Context<E>, buf: &'a [u8], name: &[u8]) -> &'a [u8] {
     for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
         if hdr.name != name {
@@ -1246,7 +1246,7 @@ fn parallel_copy(dst: &mut [u8], src: &[u8]) {
 }
 
 /// Read relocated address ranges and serialize the index prepared above.
-pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
+pub fn write<E: Target>(ctx: &mut Context<E>, output: &mut OutputFile) {
     let _t = ctx.timer("write_gdb_index");
     let Some(mut data) = ctx.gdb_index_data.take() else {
         return;

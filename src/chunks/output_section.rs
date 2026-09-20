@@ -6,13 +6,13 @@ use std::sync::atomic::Ordering;
 use bstr::BStr;
 use rayon::prelude::*;
 
-use crate::arch::{Arch, Family};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::input_sections::{InputSectionId, r_delta};
 use crate::symbol::{AddrFlags, NEEDS_CANONICAL, SymbolId};
+use crate::target::{Family, Target};
 use crate::thunks::Thunk;
 use crate::util::align_to;
 use crate::{error, warn};
@@ -98,7 +98,7 @@ impl<'a> OutputBuffer<'a> {
     ///
     /// # Safety
     /// No other live access may overlap the word at `offset`.
-    unsafe fn write_word<E: Arch>(&self, offset: u64, value: u64) {
+    unsafe fn write_word<E: Target>(&self, offset: u64, value: u64) {
         // SAFETY: The caller guarantees that the word is within the output
         // section and exclusively owned by this relocation.
         debug_assert!(offset as usize + E::WORD_SIZE <= self.len);
@@ -130,7 +130,7 @@ impl<E: Layout> OutputSection<E> {
 }
 
 // Assign offsets to OutputSection members
-pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
+pub fn compute_section_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let size = layout(ctx, id);
     ctx.output_sections[id.index()].hdr.shdr.sh_size.set(size);
 }
@@ -140,7 +140,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) 
 /// An output section such as `.text` has a million members, so the
 /// members are split into groups: the sizes of the groups are computed
 /// in parallel, then the offsets within each group.
-pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
+pub fn layout<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     const GROUP_SIZE: usize = 10000;
 
     let osec = &ctx.output_sections[id.index()];
@@ -199,7 +199,7 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
 
 /// Copies the members into `buf`, fills the padding between them, and
 /// applies relocations.
-pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
+pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = &ctx.output_sections[id.index()];
     let members = &osec.members;
 
@@ -261,7 +261,7 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
 }
 
 /// Writes the section and applies word-size absolute relocations.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = &ctx.output_sections[id.index()];
     if osec.hdr.shdr.sh_type.get() == SHT_NOBITS {
         return;
@@ -310,13 +310,13 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
     });
 }
 
-pub fn num_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
+pub fn num_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     ctx.output_sections[id.index()].dynrel_offsets.last().copied().unwrap_or(0)
 }
 
 /// Marks the base relocations that RELR can encode and returns their
 /// offsets within the section.
-pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u64> {
+pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;
     let Context { objs, output_sections, .. } = ctx;
     let osec = &mut output_sections[id.index()];
@@ -351,7 +351,7 @@ pub fn relr_offsets<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec<u
     offsets
 }
 
-pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut [ElfRel<E>]) {
     let osec = &ctx.output_sections[id.index()];
     // A single output section such as .data.rel.ro can account for
     // most of an output's dynamic relocations, so we process its
@@ -409,7 +409,7 @@ pub fn write_dynrels<E: Arch>(ctx: &Context<E>, id: OutputSectionId, out: &mut [
     );
 }
 
-fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRelKind {
+fn abs_rel_kind<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRelKind {
     if sym.is_ifunc() {
         return if sym.is_pde_ifunc(ctx) { AbsRelKind::None } else { AbsRelKind::IFunc };
     }
@@ -423,7 +423,7 @@ fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRe
     AbsRelKind::DynRel
 }
 
-fn is_absrel<E: Arch>(r: &ElfRel<E>) -> bool {
+fn is_absrel<E: Target>(r: &ElfRel<E>) -> bool {
     match E::FAMILY {
         // On ARM32, R_ARM_TARGET1 is typically used for entries in .init_array
         // and is interpreted as either ABS32 or REL32 depending on the target.
@@ -438,7 +438,7 @@ fn is_absrel<E: Arch>(r: &ElfRel<E>) -> bool {
 // Scan word-size absolute relocations (e.g. R_X86_64_64). This is
 // separated from scan_relocations() because only such relocations can
 // be promoted to dynamic relocations.
-pub fn scan_abs_relocations<E: Arch>(
+pub fn scan_abs_relocations<E: Target>(
     ctx: &Context<E>,
     id: OutputSectionId,
 ) -> (Vec<AbsRel>, Vec<u64>) {
@@ -519,7 +519,7 @@ pub fn scan_abs_relocations<E: Arch>(
 }
 
 // Compute spaces needed for thunk symbols
-pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
+pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     if !E::NEEDS_THUNK {
         return;
     }
@@ -542,7 +542,7 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
 // If we create range extension thunks, we also synthesize symbols to mark
 // the locations of thunks. Creating such symbols is optional, but it helps
 // disassembling and/or debugging our output.
-pub fn populate_symtab<E: Arch>(
+pub fn populate_symtab<E: Target>(
     ctx: &Context<E>,
     id: OutputSectionId,
     block: &mut SymtabBlock<'_>,

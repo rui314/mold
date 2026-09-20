@@ -8,5 +8,5 @@ use std::sync::Arc;
 /// Links for this target, or reports the target the inputs are actually
 /// for.
 pub fn link(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
-    mold::driver::link::<mold::arch::Riscv64>(cmdline)
+    mold::driver::link::<mold::target::Riscv64>(cmdline)
 }

@@ -2,11 +2,11 @@
 //! reconstructed: live FDEs are gathered, their FREs concatenated, and the
 //! FDE index sorted by address.
 
-use crate::arch::{Arch, Family};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjId;
+use crate::target::{Family, Target};
 
 // .sframe is a compact stack-unwinding format. Like .eh_frame, the linker
 // has to parse and reconstruct it: the output section is a single sorted
@@ -40,7 +40,7 @@ impl<E: Layout> Default for SFrameSection<E> {
 // and reconstructed by the linker, so here we pick the FDEs for live
 // functions and arrange the FRE subsection. The header and the PC-sorted
 // FDE index are written later by copy_buf, once addresses are known.
-pub fn construct<E: Arch>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let Some(abi) = E::SFRAME_ABI else {
         return;
     };
@@ -93,7 +93,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     sframe.fdes = fdes;
 }
 
-pub fn sort<E: Arch>(ctx: &mut Context<E>) {
+pub fn sort<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable {
         return;
     }
@@ -116,7 +116,7 @@ pub fn sort<E: Arch>(ctx: &mut Context<E>) {
 // is sorted by function address and func_start is resolved in place. For a
 // relocatable output, addresses aren't known yet, so the index is left
 // unsorted and func_start is emitted as a relocation by SFrameRelocSection.
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sframe = &ctx.sframe;
     let hdr_size = SFrameHeader::<E>::size();
     let idx_size = SFrameFdeIdx::<E>::size();

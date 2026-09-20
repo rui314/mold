@@ -1,9 +1,9 @@
 //! `.note.package`, package metadata.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::align_to;
 use crate::util::write_cstr;
 
@@ -17,7 +17,7 @@ pub fn new_header<E: Layout>() -> ChunkHeader<E> {
     hdr
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.package_metadata.is_empty() {
         // +17 is for the header and the NUL terminator
         let size = align_to(ctx.args.package_metadata.len() as u64 + 17, 4);
@@ -25,7 +25,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let content_size = ctx.note_package.shdr.sh_size.get() as u32 - 16;
     buf.fill(0);
     E::write_u32(buf, 4); // Name size

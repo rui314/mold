@@ -1,9 +1,9 @@
 //! `.gnu.version`, symbol version indices.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .gnu.version section contains version indices as a parallel array for
 // .dynsym. If a dynamic symbol is a defined one, its version information
@@ -34,13 +34,13 @@ impl<E: Layout> Default for VersymSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let size = ctx.versym.contents.len() as u64 * 2;
     ctx.versym.hdr.shdr.sh_size.set(size);
     ctx.versym.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &v) in ctx.versym.contents.iter().enumerate() {
         E::write_u16(&mut buf[i * 2..], v);
     }

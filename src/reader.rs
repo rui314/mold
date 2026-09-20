@@ -12,7 +12,6 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::archive_file;
 use crate::cmdline::{ReaderContext, ReaderJob};
 use crate::context::Context;
@@ -20,17 +19,18 @@ use crate::filetype::{self, FileType};
 use crate::input_files::{ObjectFile, SharedFile};
 use crate::linker_script::Script;
 use crate::mapped_file::{MappedFile, must_open_file, open_file};
+use crate::target::Target;
 use crate::util::perf::Counter;
 use crate::util::worker_local::WorkerLocal;
 use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
-pub enum Loaded<E: Arch> {
+pub enum Loaded<E: Target> {
     Obj(Vec<u32>, Box<ObjectFile<E>>),
     Dso(Vec<u32>, Box<SharedFile<E>>),
 }
 
-impl<E: Arch> Loaded<E> {
+impl<E: Target> Loaded<E> {
     fn position(&self) -> &[u32] {
         match self {
             Self::Obj(pos, _) | Self::Dso(pos, _) => pos,
@@ -38,12 +38,12 @@ impl<E: Arch> Loaded<E> {
     }
 }
 
-fn get_file_type<E: Arch>(ctx: &Context<E>, mf: &MappedFile) -> FileType {
+fn get_file_type<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> FileType {
     filetype::get_file_type(&ctx.args.plugin, mf)
 }
 
 /// Returns the target a file was compiled for.
-pub fn get_machine_type<E: Arch>(
+pub fn get_machine_type<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -54,7 +54,7 @@ pub fn get_machine_type<E: Arch>(
     }
 }
 
-fn check_machine_type<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) {
+fn check_machine_type<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) {
     let target = filetype::get_machine_type(&ctx.args.plugin, &ctx.args.chroot, mf);
     match target {
         None => fatal!("{}: unknown machine type", mf.name.display()),
@@ -69,7 +69,7 @@ fn check_machine_type<E: Arch>(ctx: &Context<E>, mf: &'static MappedFile) {
     }
 }
 
-fn new_object_file<E: Arch>(
+fn new_object_file<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -87,7 +87,7 @@ fn new_object_file<E: Arch>(
     file
 }
 
-fn new_shared_file<E: Arch>(
+fn new_shared_file<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -106,7 +106,7 @@ fn new_shared_file<E: Arch>(
 // and read_input_files() hands them to the LTO plugin once all input
 // files have been found. We do this because LTO object file reading
 // is order-dependent.
-fn defer_lto_object<E: Arch>(
+fn defer_lto_object<E: Target>(
     ctx: &Context<E>,
     rctx: ReaderContext,
     mf: &'static MappedFile,
@@ -118,7 +118,7 @@ fn defer_lto_object<E: Arch>(
 /// Reads an IR object through the LTO plugin. An object listed by
 /// `--:ignore-ir-file` is an archive member a previous pass found
 /// unneeded.
-fn new_lto_object<E: Arch>(
+fn new_lto_object<E: Target>(
     ctx: &mut Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
@@ -139,7 +139,7 @@ fn new_lto_object<E: Arch>(
 }
 
 // Reads a file inside an archive.
-fn read_archive_member<E: Arch>(
+fn read_archive_member<E: Target>(
     ctx: &Context<E>,
     rctx: ReaderContext,
     mf: &'static MappedFile,
@@ -173,7 +173,11 @@ fn read_archive_member<E: Arch>(
 //
 // read_input_files() reads top-level files with this function too but
 // overrides the container cases to read archive members in parallel.
-pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'static MappedFile) {
+pub fn read_file<E: Target>(
+    ctx: &mut Context<E>,
+    rctx: &mut ReaderContext,
+    mf: &'static MappedFile,
+) {
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
             let file = new_object_file(ctx, rctx, mf, Path::new(""));
@@ -200,7 +204,7 @@ pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'
 }
 
 /// Deduces the target from the first recognizable input file.
-pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) -> &'static str {
+pub fn detect_machine_type<E: Target>(ctx: &mut Context<E>, jobs: &[ReaderJob]) -> &'static str {
     for job in jobs {
         if job.is_lib {
             continue;
@@ -226,7 +230,7 @@ pub fn detect_machine_type<E: Arch>(ctx: &mut Context<E>, jobs: &[ReaderJob]) ->
     fatal!("-m option is missing");
 }
 
-fn open_library<E: Arch>(
+fn open_library<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     path: &std::path::Path,
@@ -246,7 +250,7 @@ fn open_library<E: Arch>(
 }
 
 /// Finds a library given to `-l`.
-pub fn find_library<E: Arch>(
+pub fn find_library<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     name: &std::ffi::OsStr,
@@ -294,7 +298,7 @@ pub fn find_library<E: Arch>(
 // argument in its ReaderJob. We open and read files in parallel and
 // then sort the files we've found back into the command line order to
 // assign priorities.
-pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
+pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     let _t = ctx.timer("read_input_files");
 
     // Open and read files in parallel. Archive files are expanded into

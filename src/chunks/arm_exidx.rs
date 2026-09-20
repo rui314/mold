@@ -14,10 +14,10 @@
 
 use rayon::prelude::*;
 
-use crate::arch::Arch;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, output_section};
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::sign_extend;
 
 const CANTUNWIND: u32 = 1;
@@ -31,7 +31,7 @@ pub struct ArmExidxSection<E: Layout> {
 }
 
 /// Replaces the `.ARM.exidx` output section by the synthetic one.
-pub fn create<E: Arch>(ctx: &mut Context<E>) {
+pub fn create<E: Target>(ctx: &mut Context<E>) {
     let Some(i) = ctx.chunks.iter().position(|&id| match id {
         ChunkId::Output(osec) => {
             ctx.output_sections[osec.index()].hdr.shdr.sh_type.get() == SHT_ARM_EXIDX
@@ -54,7 +54,7 @@ pub fn create<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
+pub fn compute_section_size<E: Target>(ctx: &mut Context<E>) {
     let osec = ctx.arm_exidx.as_ref().unwrap().output_section;
     output_section::compute_section_size(ctx, osec);
     let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size.get();
@@ -66,7 +66,7 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
 
 // .ARM.exidx's sh_link should be set to the .text section index.
 // Runtime doesn't care about it, but the binutils's strip command does.
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if let Some(text) = ctx.find_chunk_by_name(b".text") {
         let shndx = ctx.chunk_header(text).shndx;
         ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_link.set(shndx);
@@ -75,7 +75,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
 
 /// Once addresses are known, merges the records of adjacent functions
 /// with the same unwind information, which shrinks the section.
-pub fn remove_duplicate_entries<E: Arch>(ctx: &mut Context<E>) {
+pub fn remove_duplicate_entries<E: Target>(ctx: &mut Context<E>) {
     // The input sections are laid out at the synthetic section's address,
     // which their PC-relative records depend on.
     let sec = ctx.arm_exidx.as_ref().unwrap();
@@ -85,14 +85,14 @@ pub fn remove_duplicate_entries<E: Arch>(ctx: &mut Context<E>) {
     ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_size.set(size);
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let contents = contents(ctx);
     debug_assert_eq!(contents.len(), buf.len());
     buf.copy_from_slice(&contents);
 }
 
 // Returns the end of the text segment
-fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
+fn text_end<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.chunks
         .iter()
         .map(|&id| ctx.chunk_header(id).shdr)
@@ -111,7 +111,7 @@ fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
 // likely that it's due to some historical reason.
 //
 // This function returns contents of .ARM.exidx.
-fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
+fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let sec = ctx.arm_exidx.as_ref().unwrap();
     let osec = &ctx.output_sections[sec.output_section.index()];
     let base = sec.hdr.shdr.sh_addr.get();

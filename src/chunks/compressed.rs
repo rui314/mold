@@ -1,10 +1,10 @@
 //! Compressed output sections.
 
-use crate::arch::Arch;
 use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::cmdline::DebugCompression;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 use crate::util::compress::Compressor;
 
 // Debug sections can be compressed with zlib or zstd to reduce the
@@ -19,7 +19,7 @@ pub struct CompressedSection<E: Layout> {
     pub uncompressed_data: Option<Vec<u8>>,
 }
 
-pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
+pub fn new<E: Target>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
     let hdr = ctx.chunk_header(original);
 
     // C++ mold uses uninitialized storage here to avoid zero-filling a
@@ -59,7 +59,7 @@ pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E>
     }
 }
 
-pub fn copy_buf<E: Arch>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.compressed_sections[i as usize];
     sec.chdr.write(buf);
     sec.compressor.write_to(&mut buf[std::mem::size_of::<ElfChdr<E>>()..]);

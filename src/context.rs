@@ -9,7 +9,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use crate::arch::Arch;
 use crate::chunks::build_id::BuildIdSection;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::compressed::CompressedSection;
@@ -42,6 +41,7 @@ use crate::input_sections::{
 use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
+use crate::target::Target;
 use crate::util::perf::Timers;
 use crate::util::worker_local::WorkerLocal;
 
@@ -142,7 +142,7 @@ pub struct SyntheticSymbols {
 
 // Context contains the state for one linker invocation: command-line options,
 // input and output files, symbols, sections and target-specific data.
-pub struct Context<E: Arch> {
+pub struct Context<E: Target> {
     // Command-line arguments
     pub args: Args,
 
@@ -268,7 +268,7 @@ pub struct Context<E: Arch> {
     pub syms: SyntheticSymbols,
 }
 
-impl<E: Arch> Context<E> {
+impl<E: Target> Context<E> {
     pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Self {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
@@ -478,7 +478,7 @@ impl<E: Arch> Context<E> {
     }
 }
 
-impl<E: Arch> fmt::Debug for Context<E> {
+impl<E: Target> fmt::Debug for Context<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Context<{}>", E::NAME)
     }

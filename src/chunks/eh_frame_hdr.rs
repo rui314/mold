@@ -1,9 +1,9 @@
 //! `.eh_frame_hdr`, the lookup table for exception-handling records.
 
-use crate::arch::Arch;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
+use crate::target::Target;
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
 // are sorted by their dcorresponding function addresses, so tha the
@@ -33,7 +33,7 @@ impl<E: Layout> Default for EhFrameHdrSection<E> {
     }
 }
 
-pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let num_fdes: u64 = ctx.objs.iter().map(|f| f.fdes.len() as u64).sum();
     let size = EhFrameHdrSection::<E>::HEADER_SIZE + num_fdes * 8;
     let sec = ctx.eh_frame_hdr.as_mut().unwrap();
@@ -41,7 +41,7 @@ pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     sec.hdr.shdr.sh_size.set(size);
 }
 
-pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn write_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.eh_frame_hdr.as_ref().unwrap();
 
     // Write a header. The actual table is written by EhFrameSection::copy_buf.
