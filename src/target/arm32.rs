@@ -209,8 +209,9 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
 pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut [u8]) {
-    // Collect each file's mapping symbols, sorted by section and offset.
-    let marks: Vec<Vec<_>> = ctx
+    // Collect each file's mapping symbols, sorted by section and offset,
+    // into a table indexed by the file's stable pool index.
+    let per_file: Vec<(usize, Vec<_>)> = ctx
         .objs
         .par_iter()
         .map(|file| {
@@ -226,9 +227,13 @@ pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut
                 })
                 .collect();
             marks.sort_unstable_by_key(|&(shndx, offset, _)| (shndx, offset));
-            marks
+            (file.id().index(), marks)
         })
         .collect();
+    let mut marks = vec![Vec::new(); ctx.objs.pool_len()];
+    for (i, m) in per_file {
+        marks[i] = m;
+    }
 
     // Swap bytes one input section at a time. Each mapping symbol's range
     // is indexed within the section's own bytes, so a symbol value outside
