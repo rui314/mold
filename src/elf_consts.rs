@@ -396,6 +396,16 @@ pub const DW_RLE_base_address: u32 = 0x05;
 pub const DW_RLE_start_end: u32 = 0x06;
 pub const DW_RLE_start_length: u32 = 0x07;
 
+pub const SFRAME_MAGIC: u16 = 0xdee2;
+pub const SFRAME_F_FDE_SORTED: u8 = 0x1;
+pub const SFRAME_F_FRAME_POINTER: u8 = 0x2;
+pub const SFRAME_F_FDE_FUNC_START_PCREL: u8 = 0x4;
+
+pub const SFRAME_ABI_AARCH64_ENDIAN_BIG: u8 = 1;
+pub const SFRAME_ABI_AARCH64_ENDIAN_LITTLE: u8 = 2;
+pub const SFRAME_ABI_AMD64_ENDIAN_LITTLE: u8 = 3;
+pub const SFRAME_ABI_S390X_ENDIAN_BIG: u8 = 4;
+
 // Relocation types
 pub const R_NONE: u32 = 0;
 
@@ -416,19 +426,8 @@ macro_rules! define_relocations {
     };
 }
 
-pub const SFRAME_MAGIC: u16 = 0xdee2;
-pub const SFRAME_F_FDE_SORTED: u8 = 0x1;
-pub const SFRAME_F_FRAME_POINTER: u8 = 0x2;
-pub const SFRAME_F_FDE_FUNC_START_PCREL: u8 = 0x4;
-
-pub const SFRAME_ABI_AARCH64_ENDIAN_BIG: u8 = 1;
-pub const SFRAME_ABI_AARCH64_ENDIAN_LITTLE: u8 = 2;
-pub const SFRAME_ABI_AMD64_ENDIAN_LITTLE: u8 = 3;
-pub const SFRAME_ABI_S390X_ENDIAN_BIG: u8 = 4;
-
 define_relocations! {
     x86_64_rel_to_string;
-
     R_X86_64_NONE = 0;
     R_X86_64_64 = 1;
     R_X86_64_PC32 = 2;
@@ -482,7 +481,6 @@ define_relocations! {
 
 define_relocations! {
     i386_rel_to_string;
-
     R_386_NONE = 0;
     R_386_32 = 1;
     R_386_PC32 = 2;
@@ -529,7 +527,6 @@ define_relocations! {
 
 define_relocations! {
     arm64_rel_to_string;
-
     R_AARCH64_NONE = 0;
     R_AARCH64_ABS64 = 0x101;
     R_AARCH64_ABS32 = 0x102;
@@ -639,7 +636,6 @@ define_relocations! {
 
 define_relocations! {
     arm32_rel_to_string;
-
     R_ARM_NONE = 0x0;
     R_ARM_PC24 = 0x1;
     R_ARM_ABS32 = 0x2;
@@ -779,7 +775,6 @@ define_relocations! {
 
 define_relocations! {
     riscv_rel_to_string;
-
     R_RISCV_NONE = 0;
     R_RISCV_32 = 1;
     R_RISCV_64 = 2;
@@ -841,7 +836,6 @@ define_relocations! {
 
 define_relocations! {
     ppc32_rel_to_string;
-
     R_PPC_NONE = 0;
     R_PPC_ADDR32 = 1;
     R_PPC_ADDR24 = 2;
@@ -921,7 +915,6 @@ define_relocations! {
 
 define_relocations! {
     ppc64_rel_to_string;
-
     R_PPC64_NONE = 0;
     R_PPC64_ADDR32 = 1;
     R_PPC64_ADDR24 = 2;
@@ -1039,7 +1032,6 @@ define_relocations! {
 
 define_relocations! {
     sparc64_rel_to_string;
-
     R_SPARC_NONE = 0;
     R_SPARC_8 = 1;
     R_SPARC_16 = 2;
@@ -1131,7 +1123,6 @@ define_relocations! {
 
 define_relocations! {
     s390x_rel_to_string;
-
     R_390_NONE = 0;
     R_390_8 = 1;
     R_390_12 = 2;
@@ -1202,7 +1193,6 @@ define_relocations! {
 
 define_relocations! {
     m68k_rel_to_string;
-
     R_68K_NONE = 0;
     R_68K_32 = 1;
     R_68K_16 = 2;
@@ -1248,7 +1238,6 @@ define_relocations! {
 
 define_relocations! {
     sh4_rel_to_string;
-
     R_SH_NONE = 0;
     R_SH_DIR32 = 1;
     R_SH_REL32 = 2;
@@ -1280,7 +1269,6 @@ define_relocations! {
 
 define_relocations! {
     loongarch_rel_to_string;
-
     R_LARCH_NONE = 0;
     R_LARCH_32 = 1;
     R_LARCH_64 = 2;
