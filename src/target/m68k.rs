@@ -164,6 +164,8 @@ impl Target for M68k {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
         for (i, rel) in rels.iter().enumerate() {
@@ -178,7 +180,7 @@ impl Target for M68k {
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
+            let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);

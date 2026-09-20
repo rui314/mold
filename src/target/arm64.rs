@@ -371,6 +371,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
+        let got = ctx.got.hdr.shdr.sh_addr.get();
         let mut i = 0;
 
         while i < rels.len() {
@@ -387,8 +390,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
-            let got = ctx.got.hdr.shdr.sh_addr.get();
+            let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

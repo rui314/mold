@@ -452,6 +452,9 @@ where
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
+        let got = ctx.got.hdr.shdr.sh_addr.get();
         let contents = isec.original_contents(file);
         let mut i = 0;
 
@@ -471,8 +474,7 @@ where
             let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + r_offset;
-            let got = ctx.got.hdr.shdr.sh_addr.get();
+            let p = isec_addr + r_offset;
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
@@ -597,8 +599,7 @@ where
                         write_stype
                     };
                     let a2 = rel2.r_addend() as u64;
-                    let p2 =
-                        isec.addr(ctx) + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
+                    let p2 = isec_addr + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
                     match rel2.r_type() {
                         R_RISCV_GOT_HI20 => {
                             write(loc, sym2.got_addr(ctx).wrapping_add(a2).wrapping_sub(p2))
@@ -732,8 +733,7 @@ where
                         continue;
                     }
                     let a2 = rel2.r_addend() as u64;
-                    let p2 =
-                        isec.addr(ctx) + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
+                    let p2 = isec_addr + rel2.r_offset() - r_delta(isec, rel2.r_offset()) as u64;
                     let tprel = sym2.addr(ctx).wrapping_add(a2).wrapping_sub(ctx.tp_addr);
                     match rel.r_type() {
                         R_RISCV_TLSDESC_LOAD_LO12 => {

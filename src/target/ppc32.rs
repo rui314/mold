@@ -251,6 +251,8 @@ impl Target for Ppc32 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let got2 = file.got2.map_or(0, |shndx| file.section_at(shndx).addr(ctx));
 
@@ -265,7 +267,7 @@ impl Target for Ppc32 {
 
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
+            let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

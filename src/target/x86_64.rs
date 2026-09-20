@@ -292,13 +292,18 @@ impl Target for X86_64 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
+        let got_base = ctx.gotplt.shdr.sh_addr.get();
         let mut i = 0;
 
         while i < rels.len() {
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            if rel.r_type() == R_NONE {
+            // R_NONE applies nothing, and the output section applies
+            // R_X86_64_64 itself.
+            if rel.r_type() == R_NONE || rel.r_type() == R_X86_64_64 {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -309,12 +314,10 @@ impl Target for X86_64 {
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
-            let got_base = ctx.gotplt.shdr.sh_addr.get();
-            let g = if sym.has_got(&ctx.symbols) {
-                sym.got_addr(ctx).wrapping_sub(got_base)
-            } else {
-                0
+            let p = isec_addr + rel.r_offset();
+            // A closure keeps G's lookups off the common path.
+            let g = || {
+                if sym.has_got(&ctx.symbols) { sym.got_addr(ctx).wrapping_sub(got_base) } else { 0 }
             };
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
@@ -338,8 +341,6 @@ impl Target for X86_64 {
                 }
                 R_X86_64_32 => write32(buf, s.wrapping_add(a)),
                 R_X86_64_32S => write32s(buf, s.wrapping_add(a)),
-                // Handled as an absolute relocation by the output section.
-                R_X86_64_64 => {}
                 R_X86_64_PC8 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     check(v as i64, -(1 << 7), 1 << 7);
@@ -359,8 +360,8 @@ impl Target for X86_64 {
                     write_u32(&mut buf[off..], v as u32);
                 }
                 R_X86_64_PC64 => write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p)),
-                R_X86_64_GOT32 => write32(buf, g.wrapping_add(a)),
-                R_X86_64_GOT64 => write_u64(&mut buf[off..], g.wrapping_add(a)),
+                R_X86_64_GOT32 => write32(buf, g().wrapping_add(a)),
+                R_X86_64_GOT64 => write_u64(&mut buf[off..], g().wrapping_add(a)),
                 R_X86_64_GOTOFF64 | R_X86_64_PLTOFF64 => {
                     write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got_base))
                 }
@@ -369,11 +370,11 @@ impl Target for X86_64 {
                     write_u64(&mut buf[off..], got_base.wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPCREL => {
-                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
+                    write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPCREL64 => write_u64(
                     &mut buf[off..],
-                    g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
+                    g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
                 ),
                 R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX | R_X86_64_CODE_4_GOTPCRELX => {
                     // We always want to relax GOTPCRELX relocs even if --no-relax
@@ -392,7 +393,7 @@ impl Target for X86_64 {
                             continue;
                         }
                     }
-                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
+                    write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
                 }
                 R_X86_64_TLSGD => {
                     if sym.has_tlsgd(&ctx.symbols) {
