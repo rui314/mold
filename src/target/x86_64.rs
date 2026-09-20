@@ -313,10 +313,9 @@ impl Target for X86_64 {
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec_addr + rel.r_offset();
-            let g = if sym.has_got(&ctx.symbols) {
-                sym.got_addr(ctx).wrapping_sub(got_base)
-            } else {
-                0
+            // A closure keeps G's lookups off the common path.
+            let g = || {
+                if sym.has_got(&ctx.symbols) { sym.got_addr(ctx).wrapping_sub(got_base) } else { 0 }
             };
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
@@ -361,8 +360,8 @@ impl Target for X86_64 {
                     write_u32(&mut buf[off..], v as u32);
                 }
                 R_X86_64_PC64 => write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p)),
-                R_X86_64_GOT32 => write32(buf, g.wrapping_add(a)),
-                R_X86_64_GOT64 => write_u64(&mut buf[off..], g.wrapping_add(a)),
+                R_X86_64_GOT32 => write32(buf, g().wrapping_add(a)),
+                R_X86_64_GOT64 => write_u64(&mut buf[off..], g().wrapping_add(a)),
                 R_X86_64_GOTOFF64 | R_X86_64_PLTOFF64 => {
                     write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got_base))
                 }
@@ -371,11 +370,11 @@ impl Target for X86_64 {
                     write_u64(&mut buf[off..], got_base.wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPCREL => {
-                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
+                    write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPCREL64 => write_u64(
                     &mut buf[off..],
-                    g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
+                    g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
                 ),
                 R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX | R_X86_64_CODE_4_GOTPCRELX => {
                     // We always want to relax GOTPCRELX relocs even if --no-relax
@@ -394,7 +393,7 @@ impl Target for X86_64 {
                             continue;
                         }
                     }
-                    write32s(buf, g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
+                    write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
                 }
                 R_X86_64_TLSGD => {
                     if sym.has_tlsgd(&ctx.symbols) {
