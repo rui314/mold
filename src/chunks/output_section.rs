@@ -10,7 +10,7 @@ use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
-use crate::input_sections::{InputSectionId, r_delta};
+use crate::input_sections::{InputSection, InputSectionId, r_delta};
 use crate::symbol::{AddrFlags, NEEDS_CANONICAL, SymbolId};
 use crate::target::{Family, Target};
 use crate::thunks::Thunk;
@@ -36,7 +36,9 @@ pub enum AbsRelKind {
 // Represents a word-size absolute relocation (e.g. R_X86_64_64)
 #[derive(Clone, Debug)]
 pub struct AbsRel {
-    pub isec: InputSectionId,
+    /// The index into `OutputSection::members` of the section containing
+    /// the relocation. `abs_rels` is sorted by this field.
+    pub member: u32,
     pub offset: u64,
     pub sym: SymbolId,
     pub addend: i64,
@@ -92,23 +94,6 @@ impl<'a> OutputBuffer<'a> {
             std::slice::from_raw_parts_mut(self.ptr.add(range.start), range.end - range.start)
         };
         f(slice)
-    }
-
-    /// Writes one relocated word.
-    ///
-    /// # Safety
-    /// No other live access may overlap the word at `offset`.
-    unsafe fn write_word<E: Target>(&self, offset: u64, value: u64) {
-        // SAFETY: The caller guarantees that the word is within the output
-        // section and exclusively owned by this relocation.
-        debug_assert!(offset as usize + E::WORD_SIZE <= self.len);
-        let ptr = unsafe { self.ptr.add(offset as usize) };
-        let slot = unsafe { std::slice::from_raw_parts_mut(ptr, E::WORD_SIZE) };
-        if E::IS_64 {
-            E::write_u64(slot, value);
-        } else {
-            E::write_u32(slot, value as u32);
-        }
     }
 }
 
@@ -202,6 +187,7 @@ pub fn layout<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
 pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = &ctx.output_sections[id.index()];
     let members = &osec.members;
+    let abs_rels = &osec.abs_rels;
 
     let output = OutputBuffer::new(buf);
 
@@ -218,6 +204,12 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             output.with_slice(start..next_start, |slice| {
                 let (own, padding) = slice.split_at_mut(isec.sh_size as usize);
                 isec.write_to(ctx, own);
+
+                // abs_rels is sorted by member, so this member's absolute
+                // relocations form one run of it.
+                let lo = abs_rels.partition_point(|r| (r.member as usize) < i);
+                let hi = abs_rels.partition_point(|r| (r.member as usize) <= i);
+                apply_abs_rels(ctx, osec, isec, &abs_rels[lo..hi], own);
 
                 // Clear trailing padding. We write trap instructions for an
                 // executable segment so that a disassembler wouldn't try to
@@ -260,30 +252,24 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     }
 }
 
-/// Writes the section and applies word-size absolute relocations.
-pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
-    let osec = &ctx.output_sections[id.index()];
-    if osec.hdr.shdr.sh_type.get() == SHT_NOBITS {
-        return;
-    }
-    write_to(ctx, id, buf);
-
-    // Apply absolute relocations. An output section can have a million
-    // of them, so this loop is parallel.
+/// Applies a member's word-size absolute relocations to `buf`, the
+/// member's own bytes in the output section. Indexing that slice rejects
+/// an r_offset outside of the section.
+fn apply_abs_rels<E: Target>(
+    ctx: &Context<E>,
+    osec: &OutputSection<E>,
+    isec: &InputSection<E>,
+    rels: &[AbsRel],
+    buf: &mut [u8],
+) {
     let word = E::WORD_SIZE;
-    let base_addr = osec.hdr.shdr.sh_addr.get();
-    let output = OutputBuffer::new(buf);
-
-    osec.abs_rels.par_iter().for_each(|r| {
-        let isec = ctx.input_section(r.isec);
+    for r in rels {
         let sym = &ctx.symbols[r.sym];
-        let mut loc = isec.offset() + r.offset;
-        let mut p = base_addr + loc;
+        let mut loc = r.offset;
         if E::IS_RISCV || E::IS_LOONGARCH {
-            let delta = r_delta(isec, r.offset) as u64;
-            loc -= delta;
-            p -= delta;
+            loc -= r_delta(isec, r.offset) as u64;
         }
+        let p = osec.hdr.shdr.sh_addr.get() + isec.offset() + loc;
         let s = sym.addr(ctx);
         let a = r.addend as u64;
 
@@ -303,11 +289,22 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             AbsRelKind::DynRel => ctx.args.apply_dynamic_relocs.then_some(a),
         };
         if let Some(value) = value {
-            // SAFETY: Input files do not contain overlapping relocations;
-            // each `AbsRel` therefore owns this output word.
-            unsafe { output.write_word::<E>(loc, value) };
+            let slot = &mut buf[loc as usize..];
+            if E::IS_64 {
+                E::write_u64(slot, value);
+            } else {
+                E::write_u32(slot, value as u32);
+            }
         }
-    });
+    }
+}
+
+/// Writes the section to the output file.
+pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
+    let osec = &ctx.output_sections[id.index()];
+    if osec.hdr.shdr.sh_type.get() != SHT_NOBITS {
+        write_to(ctx, id, buf);
+    }
 }
 
 pub fn num_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
@@ -320,6 +317,7 @@ pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec
     let word = E::WORD_SIZE as u64;
     let Context { objs, output_sections, .. } = ctx;
     let osec = &mut output_sections[id.index()];
+    let members = &osec.members;
     let nshards = osec.dynrel_offsets.len().saturating_sub(1);
     let mut relr_offsets = vec![0u64; nshards + 1];
 
@@ -332,7 +330,8 @@ pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec
                 if r.kind != AbsRelKind::BaseRel {
                     continue;
                 }
-                let isec = objs[r.isec.file().index()].sections.input(r.isec.index());
+                let id = members[r.member as usize];
+                let isec = objs[id.file().index()].sections.input(id.index());
                 if (1u64 << isec.p2align()).is_multiple_of(word) && r.offset % word == 0 {
                     r.kind = AbsRelKind::Relr;
                     out.push(isec.offset() + r.offset);
@@ -376,7 +375,7 @@ pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut
             let mut i = 0;
             for r in rels {
                 let sym = &ctx.symbols[r.sym];
-                let isec = ctx.input_section(r.isec);
+                let isec = ctx.input_section(osec.members[r.member as usize]);
                 let s = sym.addr(ctx);
                 let a = r.addend;
                 let mut p = osec.hdr.shdr.sh_addr.get() + isec.offset() + r.offset;
@@ -444,17 +443,17 @@ pub fn scan_abs_relocations<E: Target>(
 ) -> (Vec<AbsRel>, Vec<u64>) {
     let osec = &ctx.output_sections[id.index()];
 
-    // Collect all word-size absolute relocations. Count them per member
-    // first so that they can be written to their final positions in
-    // parallel, without a per-member vector.
+    // Collect all word-size absolute relocations in member order, so that
+    // each member's relocations form one run of the vector.
     let mut abs_rels: Vec<AbsRel> = osec
         .members
         .par_iter()
-        .flat_map_iter(|&m| {
+        .enumerate()
+        .flat_map_iter(|(i, &m)| {
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
             isec.rels(file).iter().filter(|r| is_absrel::<E>(r)).map(move |r| AbsRel {
-                isec: m,
+                member: i as u32,
                 offset: r.r_offset(),
                 sym: file.base.symbols[r.r_sym() as usize],
                 addend: isec.rel_addend(r),
@@ -490,17 +489,18 @@ pub fn scan_abs_relocations<E: Target>(
 
                 // If we have a relocation against a read-only section, we need to
                 // set the DT_TEXTREL flag for the loader.
-                let isec = ctx.input_section(r.isec);
+                let id = osec.members[r.member as usize];
+                let isec = ctx.input_section(id);
                 if r.kind != AbsRelKind::None && isec.sh_flags & SHF_WRITE as u64 == 0 {
                     if ctx.args.z_text {
                         error!("{}: relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
-                            ctx.input_section_display(r.isec),
+                            ctx.input_section_display(id),
                             r.offset,
                             sym
                         );
                     } else if ctx.args.warn_textrel {
                         warn!("{}: relocation against symbol `{}' in read-only section",
-                            ctx.input_section_display(r.isec),
+                            ctx.input_section_display(id),
                             sym
                         );
                     }
