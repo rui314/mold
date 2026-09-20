@@ -2271,7 +2271,7 @@ impl<E: Target> ObjectFile<E> {
             sections.regular_section_mut(i).expect("a regular section").uncompress(
                 self,
                 name,
-                self.base.shdrs[i].sh_size.get() as usize,
+                self.base.section_contents_from_shdr(&self.base.shdrs[i]),
             );
             sections.set_merge_info(i, parent);
         }
@@ -2647,8 +2647,8 @@ impl<E: Target> ObjectFile<E> {
                 return true;
             }
             let mut buf = [0u8; 12];
-            let input_size = self.shdr(shndx as usize).sh_size.get() as usize;
-            isec.copy_contents_to(&name, section_name, input_size, &mut buf);
+            let input = self.base.section_contents_from_shdr(self.shdr(shndx as usize));
+            isec.copy_contents_to(&name, section_name, input, &mut buf);
             // A .debug_info section contains compilation units (CUs). A 32-bit CU
             // starts with a 32-bit size field, while a 64-bit CU starts with a
             // magic number 0xffff'ffff followed by a 64-bit size field.
@@ -2673,7 +2673,7 @@ impl<E: Target> ObjectFile<E> {
             // An input .debug_info section may be compressed using zlib or zstd, so
             // we need to uncompress it before accessing `isec->contents`.
             let isec = self.sections.section_mut(shndx as usize).unwrap();
-            isec.uncompress(&name, section_name, input_size);
+            isec.uncompress(&name, section_name, input);
             let contents = isec.contents();
             let mut p = first_size;
             while contents.len() - p >= 12 {

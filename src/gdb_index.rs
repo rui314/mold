@@ -644,7 +644,7 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 else {
                     continue;
                 };
-                let input_size = file.shdr(shndx as usize).sh_size.get() as usize;
+                let input = file.base.section_contents_from_shdr(file.shdr(shndx as usize));
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
@@ -653,7 +653,7 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 if !isec.is_alive() {
                     continue;
                 }
-                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input);
                 debug_info.push(DebugInfoInput { shndx, contents: isec.contents() });
             }
 
@@ -663,11 +663,11 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                 else {
                     continue;
                 };
-                let input_size = file.shdr(shndx as usize).sh_size.get() as usize;
+                let input = file.base.section_contents_from_shdr(file.shdr(shndx as usize));
                 let Some(isec) = file.section_mut(shndx as usize) else {
                     continue;
                 };
-                isec.uncompress(&display_file(&filename, archive_name), section_name, input_size);
+                isec.uncompress(&display_file(&filename, archive_name), section_name, input);
 
                 let isec = file.section_at(shndx);
                 let mut relocations = Vec::new();

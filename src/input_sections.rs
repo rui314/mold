@@ -275,7 +275,15 @@ impl<E: Target> InputSection<E> {
                 file.base.section_contents_from_shdr(shdr)
             };
 
-        let (sh_size, p2align) = if shdr.sh_flags.get() & SHF_COMPRESSED as u64 != 0 {
+        let compressed = shdr.sh_flags.get() & SHF_COMPRESSED as u64 != 0;
+
+        // The gABI forbids compressing allocated sections. Their readers,
+        // such as the .eh_frame parser, also expect uncompressed contents.
+        if compressed && shdr.sh_flags.get() & SHF_ALLOC as u64 != 0 {
+            fatal!("{file}:({name}): allocated section is compressed");
+        }
+
+        let (sh_size, p2align) = if compressed {
             let chdr = record_from_bytes::<ElfChdr<E>>(contents);
             (chdr.ch_size(), to_p2align(chdr.ch_addralign()))
         } else {
@@ -292,7 +300,14 @@ impl<E: Target> InputSection<E> {
             },
             namelen: name.len().min(u16::MAX as usize) as u16,
             sh_flags: shdr.sh_flags.get(),
-            contents: contents.as_ptr() as usize,
+            // The pointer always has sh_size bytes behind it: a compressed
+            // section has no contents until it is uncompressed, and neither
+            // has a NOBITS section, whose sh_size is its memory size.
+            contents: if compressed || contents.is_empty() {
+                0
+            } else {
+                contents.as_ptr() as usize
+            },
             sh_size,
             p2align: AtomicU8::new(p2align),
             output_section: None,
@@ -312,7 +327,7 @@ impl<E: Target> InputSection<E> {
         // SH-4 stores addends to sections despite being RELA, which is a
         // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
-            isec.uncompress(file, name, shdr.sh_size.get() as usize);
+            isec.uncompress(file, name, contents);
         }
         isec
     }
@@ -427,9 +442,10 @@ impl<E: Target> InputSection<E> {
         }
         debug_assert!(!self.is_compressed());
         // SAFETY: contents points into an input mapping or a leaked
-        // decompression buffer, both live for the complete link. sh_size is
-        // their current logical size except during relaxation, whose callers
-        // use original_contents below.
+        // decompression buffer, both live for the complete link, and both
+        // at least sh_size bytes long: a compressed section has no contents
+        // until its sh_size bytes are uncompressed, and relaxation only
+        // shrinks sh_size.
         unsafe { std::slice::from_raw_parts(self.contents as *const u8, self.sh_size as usize) }
     }
 
@@ -515,46 +531,40 @@ impl<E: Target> InputSection<E> {
         ((file.base.priority as u64) << 32) | self.shndx as u64
     }
 
-    /// Replaces compressed contents with a decompressed copy. `file` is
-    /// the owning file's name, for diagnostics.
-    pub fn uncompress(&mut self, file: &dyn fmt::Display, name: &BStr, input_size: usize) {
+    /// Replaces compressed contents with a decompressed copy of `input`,
+    /// the section's bytes in the file. `file` is the owning file's name,
+    /// for diagnostics.
+    pub fn uncompress(&mut self, file: &dyn fmt::Display, name: &BStr, input: &[u8]) {
         if !self.is_compressed() {
             return;
         }
         let mut buf = vec![0u8; self.sh_size as usize];
-        self.copy_contents_to(file, name, input_size, &mut buf);
+        self.copy_contents_to(file, name, input, &mut buf);
         self.contents = leak_bytes(buf).as_ptr() as usize;
         util::atomic_or(&self.flags, IS_UNCOMPRESSED);
     }
 
-    /// Copies the (decompressed) contents into `buf`, which must be
-    /// `sh_size` bytes long.
+    /// Copies the contents into `buf`, which must be at most `sh_size`
+    /// bytes long, decompressing `input`, the section's bytes in the file,
+    /// if the section is still compressed.
     pub fn copy_contents_to(
         &self,
         file: &dyn fmt::Display,
         name: &BStr,
-        input_size: usize,
+        input: &[u8],
         buf: &mut [u8],
     ) {
         if !self.is_compressed() {
-            // SAFETY: an ordinary input section has at least sh_size bytes,
-            // and replacement buffers are created with that same size.
-            let contents = unsafe {
-                std::slice::from_raw_parts(self.contents as *const u8, self.sh_size as usize)
-            };
-            buf.copy_from_slice(&contents[..buf.len()]);
+            buf.copy_from_slice(&self.contents()[..buf.len()]);
             return;
         }
 
         let hdr_size = std::mem::size_of::<ElfChdr<E>>();
-        if input_size < hdr_size {
+        if input.len() < hdr_size {
             fatal!("{file}:({name}): corrupted compressed section");
         }
-        // SAFETY: input_size comes from this section's validated ELF header.
-        let contents =
-            unsafe { std::slice::from_raw_parts(self.contents as *const u8, input_size) };
-        let chdr = record_from_bytes::<ElfChdr<E>>(contents);
-        let data = &contents[hdr_size..];
+        let chdr = record_from_bytes::<ElfChdr<E>>(input);
+        let data = &input[hdr_size..];
 
         let result = match chdr.ch_type() {
             ELFCOMPRESS_ZLIB => zlib_decompress(data, buf),
@@ -966,7 +976,7 @@ impl<E: Target> InputSection<E> {
             return;
         }
         let buf = &mut buf[..self.sh_size as usize];
-        let input_size = file.shdr(self.shndx as usize).sh_size.get() as usize;
+        let input = file.base.section_contents_from_shdr(file.shdr(self.shndx as usize));
 
         // Copy data. In RISC-V and LoongArch object files, sections are not
         // atomic unit of copying because of relaxation. That is, some
@@ -974,7 +984,7 @@ impl<E: Target> InputSection<E> {
         // section and shrink the overall size of it.
         if self.r_deltas().is_empty() {
             // If a section is not relaxed, we can copy it as a one big chunk.
-            self.copy_contents_to(file, self.name(file), input_size, buf);
+            self.copy_contents_to(file, self.name(file), input, buf);
         } else {
             // A relaxed section is copied piece-wise.
             let contents = self.original_contents(file);
