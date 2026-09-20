@@ -301,7 +301,9 @@ impl Target for X86_64 {
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            if rel.r_type() == R_NONE {
+            // R_NONE applies nothing, and the output section applies
+            // R_X86_64_64 itself.
+            if rel.r_type() == R_NONE || rel.r_type() == R_X86_64_64 {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -339,8 +341,6 @@ impl Target for X86_64 {
                 }
                 R_X86_64_32 => write32(buf, s.wrapping_add(a)),
                 R_X86_64_32S => write32s(buf, s.wrapping_add(a)),
-                // Handled as an absolute relocation by the output section.
-                R_X86_64_64 => {}
                 R_X86_64_PC8 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     check(v as i64, -(1 << 7), 1 << 7);
