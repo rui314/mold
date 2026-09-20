@@ -551,6 +551,8 @@ impl Target for Ppc64V2 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
         let toc = toc(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
 
@@ -566,7 +568,7 @@ impl Target for Ppc64V2 {
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
+            let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);

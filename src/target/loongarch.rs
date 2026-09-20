@@ -460,6 +460,8 @@ where
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
         let contents = isec.original_contents(file);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         let mut i = 0;
@@ -480,7 +482,7 @@ where
             let r_offset = rel.r_offset() - delta as u64;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + r_offset;
+            let p = isec_addr + r_offset;
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 

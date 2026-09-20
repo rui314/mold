@@ -298,6 +298,8 @@ impl<const LE: bool> Target for Sh4Target<LE> {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
         for rel in rels {
@@ -311,7 +313,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
 
             let s = sym.addr(ctx);
             let a = isec.rel_addend(rel) as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
+            let p = isec_addr + rel.r_offset();
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let loc = &mut buf[rel.r_offset() as usize..];

@@ -251,30 +251,32 @@ fn apply_abs_rels<E: Target>(
     buf: &mut [u8],
 ) {
     let word = E::WORD_SIZE;
+
+    // Loop-invariant, but not reads the compiler can hoist.
+    let base = osec.hdr.shdr.sh_addr.get() + isec.offset();
+    let apply_dynamic_relocs = ctx.args.apply_dynamic_relocs;
+    let pack_dyn_relocs_relr = ctx.args.pack_dyn_relocs_relr;
+
     for r in rels {
         let sym = &ctx.symbols[r.sym];
         let mut loc = r.offset;
         if E::IS_RISCV || E::IS_LOONGARCH {
             loc -= r_delta(isec, r.offset) as u64;
         }
-        let p = osec.hdr.shdr.sh_addr.get() + isec.offset() + loc;
+        let p = base + loc;
         let s = sym.addr(ctx);
         let a = r.addend as u64;
 
         let can_relr = || {
-            ctx.args.pack_dyn_relocs_relr
-                && r.kind == AbsRelKind::BaseRel
-                && p.is_multiple_of(word as u64)
+            pack_dyn_relocs_relr && r.kind == AbsRelKind::BaseRel && p.is_multiple_of(word as u64)
         };
 
         let value = match r.kind {
             AbsRelKind::None | AbsRelKind::Relr => Some(s.wrapping_add(a)),
-            AbsRelKind::BaseRel => {
-                (can_relr() || ctx.args.apply_dynamic_relocs).then(|| s.wrapping_add(a))
-            }
-            AbsRelKind::IFunc => (E::SUPPORTS_IFUNC && ctx.args.apply_dynamic_relocs)
+            AbsRelKind::BaseRel => (can_relr() || apply_dynamic_relocs).then(|| s.wrapping_add(a)),
+            AbsRelKind::IFunc => (E::SUPPORTS_IFUNC && apply_dynamic_relocs)
                 .then(|| sym.addr_with(ctx, AddrFlags::NO_PLT).wrapping_add(a)),
-            AbsRelKind::DynRel => ctx.args.apply_dynamic_relocs.then_some(a),
+            AbsRelKind::DynRel => apply_dynamic_relocs.then_some(a),
         };
         if let Some(value) = value {
             let slot = &mut buf[loc as usize..];

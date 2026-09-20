@@ -292,6 +292,9 @@ impl Target for X86_64 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
+        // Loop-invariant, but not reads the compiler can hoist.
+        let isec_addr = isec.addr(ctx);
+        let got_base = ctx.gotplt.shdr.sh_addr.get();
         let mut i = 0;
 
         while i < rels.len() {
@@ -309,8 +312,7 @@ impl Target for X86_64 {
             let off = rel.r_offset() as usize;
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
-            let p = isec.addr(ctx) + rel.r_offset();
-            let got_base = ctx.gotplt.shdr.sh_addr.get();
+            let p = isec_addr + rel.r_offset();
             let g = if sym.has_got(&ctx.symbols) {
                 sym.got_addr(ctx).wrapping_sub(got_base)
             } else {
