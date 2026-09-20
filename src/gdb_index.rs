@@ -76,7 +76,8 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, MapEntryRef};
+use crate::util::SyncUnsafeCell;
+use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Timer;
 use crate::util::read_uleb;
@@ -189,9 +190,9 @@ struct NameEntry {
     gdb_hash: u32,
     /// The number of units the name occurs in.
     count: AtomicU32,
-    /// Offsets in the constant pool.
-    type_vector_offset: u32,
-    name_offset: u32,
+    /// Offsets in the constant pool, assigned by a parallel prefix scan.
+    type_vector_offset: AtomicU32,
+    name_offset: AtomicU32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -207,19 +208,16 @@ pub struct GdbIndexData {
     tus: Vec<Typeunit>,
     names: Option<FrozenMap<NameEntry>>,
     /// The names in output order.
-    entries: Vec<MapEntryRef<NameEntry>>,
+    entries: Vec<EntryId>,
     type_pool_size: u32,
     name_pool_size: u32,
     ht_size: u32,
-    /// The hash table followed by the constant pool, once built.
-    tables: Box<[u32]>,
-}
-
-/// Views word-aligned table storage as its serialized bytes.
-fn words_as_bytes(words: &[u32]) -> &[u8] {
-    // SAFETY: u8 has alignment one and the byte length covers the same
-    // allocation without outliving it.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), std::mem::size_of_val(words)) }
+    /// The name hash table, once built.
+    ht: Vec<u32>,
+    /// The type vectors of the constant pool, once built.
+    type_pool: Vec<u32>,
+    /// The NUL-terminated names of the constant pool, once built.
+    name_pool: Vec<u8>,
 }
 
 /// Normalized view of a DWARF unit header. DWARF32 and DWARF64 describe the
@@ -858,8 +856,8 @@ fn initialize_gdb_name(name: *const u8) -> (u32, NameEntry) {
         NameEntry {
             gdb_hash: hash,
             count: AtomicU32::new(0),
-            type_vector_offset: 0,
-            name_offset: 0,
+            type_vector_offset: AtomicU32::new(0),
+            name_offset: AtomicU32::new(0),
         },
     )
 }
@@ -973,7 +971,7 @@ pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbInde
     // Lay out the constant pool: all type vectors, then all names, in a
     // deterministic order.
     let names = map.freeze();
-    let entries = names.sorted_entry_refs_all();
+    let entries = names.sorted_entries_all();
 
     // The map may contain millions of names. Assign their type and string
     // ranges with a parallel prefix sum.
@@ -982,10 +980,9 @@ pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbInde
         .par_chunks(chunk_size)
         .map(|chunk| {
             let mut size = PoolSize::default();
-            for &entry_ref in chunk {
-                let entry = entry_ref.value(&names);
-                size.type_bytes += entry.count.load(Ordering::Relaxed) * 4 + 4;
-                size.name_bytes += entry_ref.key_len(&names) as u32 + 1;
+            for &id in chunk {
+                size.type_bytes += names.get(id).count.load(Ordering::Relaxed) * 4 + 4;
+                size.name_bytes += names.key(id).len() as u32 + 1;
             }
             size
         })
@@ -1001,14 +998,12 @@ pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbInde
         })
         .collect();
     entries.par_chunks(chunk_size).zip(chunk_offsets).for_each(|(chunk, mut size)| {
-        for &entry_ref in chunk {
-            // SAFETY: entries contains each map entry exactly once, so
-            // parallel chunks update disjoint values.
-            let entry = unsafe { &mut *entry_ref.value_mut_ptr(&names) };
-            entry.type_vector_offset = size.type_bytes;
-            entry.name_offset = pool_size.type_bytes + size.name_bytes;
+        for &id in chunk {
+            let entry = names.get(id);
+            entry.type_vector_offset.store(size.type_bytes, Ordering::Relaxed);
+            entry.name_offset.store(pool_size.type_bytes + size.name_bytes, Ordering::Relaxed);
             size.type_bytes += entry.count.load(Ordering::Relaxed) * 4 + 4;
-            size.name_bytes += entry_ref.key_len(&names) as u32 + 1;
+            size.name_bytes += names.key(id).len() as u32 + 1;
         }
     });
     let ht_size = (entries.len() as u32 * 5 / 4 + 1).next_power_of_two();
@@ -1020,7 +1015,9 @@ pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbInde
         type_pool_size: pool_size.type_bytes,
         name_pool_size: pool_size.name_bytes,
         ht_size,
-        tables: Box::default(),
+        ht: Vec::new(),
+        type_pool: Vec::new(),
+        name_pool: Vec::new(),
     }
 }
 
@@ -1084,54 +1081,40 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
     data.tus.sort_by_key(|tu| tu.offset);
 
     let names = data.names.as_ref().unwrap();
-    let symtab_size = data.ht_size as usize * 8;
-    let pool_size = (data.type_pool_size + data.name_pool_size) as usize;
-    let table_size = symtab_size + pool_size;
-    let table_words = table_size.div_ceil(4);
-    let mut tables = Box::<[u32]>::new_uninit_slice(table_words);
-    let table_addr = tables.as_mut_ptr() as usize;
 
-    // `tables` contains the name hash table followed by the constant pool. The
-    // constant pool contains all type vectors followed by all name strings.
     // Each occupied hash-table slot contains the constant-pool offsets of a
-    // name and its type vector.
-    // SAFETY: table storage has at least symtab_size bytes. Initializing them
-    // before making the u32 slice avoids forming references to uninitialized
-    // integers.
-    unsafe { std::ptr::write_bytes(table_addr as *mut u8, 0, symtab_size) };
-    let ht = unsafe { std::slice::from_raw_parts_mut(table_addr as *mut u32, symtab_size / 4) };
-
-    // This probing sequence is part of the .gdb_index format. The table size
-    // is a power of two, so an odd step visits every slot.
+    // name and its type vector. This probing sequence is part of the
+    // .gdb_index format. The table size is a power of two, so an odd step
+    // visits every slot.
+    let mut ht = vec![0u32; data.ht_size as usize * 2];
     let mask = data.ht_size - 1;
-    for &entry_ref in &data.entries {
-        let entry = entry_ref.value(names);
+    for &id in &data.entries {
+        let entry = names.get(id);
         let step = ((entry.gdb_hash.wrapping_mul(17)) & mask) | 1;
         let mut i = entry.gdb_hash & mask;
         while ht[i as usize * 2] != 0 || ht[i as usize * 2 + 1] != 0 {
             i = (i + step) & mask;
         }
-        ht[i as usize * 2] = entry.name_offset.to_le();
-        ht[i as usize * 2 + 1] = entry.type_vector_offset.to_le();
+        ht[i as usize * 2] = entry.name_offset.load(Ordering::Relaxed);
+        ht[i as usize * 2 + 1] = entry.type_vector_offset.load(Ordering::Relaxed);
     }
-
-    let pool_addr = table_addr + symtab_size;
 
     // Each occurrence of a name contributes one value to its type vector. Each
     // occurrence was assigned a distinct slot while the names were interned, so
     // the vectors can be filled in parallel. The high byte is the name's type
     // and the low 24 bits are the unit number. TU numbers follow CU numbers.
+    let mut type_pool = vec![0u32; data.type_pool_size as usize / 4];
+    let pool = SyncUnsafeCell::from_mut(&mut type_pool);
     let write_names = |records: &[NameRecord], unit: usize| {
         for record in records {
             let name = record.indexed();
             let entry = names.get(name.entry);
-            let offset = entry.type_vector_offset as usize + name.type_vector_idx as usize * 4;
-            debug_assert!(offset + 4 <= data.type_pool_size as usize);
+            let offset = entry.type_vector_offset.load(Ordering::Relaxed) as usize;
+            let index = offset / 4 + name.type_vector_idx as usize;
             let value = (name.kind as u32) << 24 | unit as u32;
-            // SAFETY: the pool starts on a u32 boundary, all offsets are
-            // multiples of four, and every occurrence reserved a distinct
-            // slot before this parallel phase.
-            unsafe { (pool_addr as *mut u32).add(offset / 4).write(value) };
+            // SAFETY: every occurrence reserved a distinct slot before this
+            // parallel phase.
+            unsafe { *pool[index].get() = value };
         }
     };
     let num_cus = data.cus.len();
@@ -1143,47 +1126,47 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
     });
 
     // Prefix each type vector with its length and sort it for deterministic
-    // output. Store the NUL-terminated name at its assigned string-pool offset.
-    limited_parallel_for_mut_init(&mut data.entries, workers, Vec::new, |scratch, _, entry_ref| {
-        let entry_ref = *entry_ref;
-        let entry = entry_ref.value(names);
-        let count = entry.count.load(Ordering::Relaxed);
-        let words = (pool_addr as *mut u32).wrapping_add(entry.type_vector_offset as usize / 4);
-        // SAFETY: every occurrence filled its distinct value slot above;
-        // writing the prefix completes this vector before a slice is made.
-        unsafe { words.write(count) };
-        let values = unsafe { std::slice::from_raw_parts_mut(words.add(1), count as usize) };
-        if values.len() < 256 {
-            values.sort_unstable();
-        } else {
-            radix_sort(values, scratch);
-        }
-        // SAFETY: the prefix and all count values are now initialized.
-        let words = unsafe { std::slice::from_raw_parts_mut(words, count as usize + 1) };
-        for word in &mut *words {
-            *word = word.to_le();
-        }
-        let key = entry_ref.key(names);
-        let name = (pool_addr as *mut u8).wrapping_add(entry.name_offset as usize);
-        // SAFETY: prefix-scan offsets assign this entry a distinct
-        // key.len()+1 byte range in the name pool.
-        unsafe {
-            name.copy_from_nonoverlapping(key.as_ptr(), key.len());
-            name.add(key.len()).write(0);
+    // output, and store each name at its string-pool offset; the pool's zero
+    // fill provides the NUL terminators. The entries are in pool order, so a
+    // chunk of entries owns one range of each pool.
+    let type_pool_size = data.type_pool_size as usize;
+    let mut name_pool = vec![0u8; data.name_pool_size as usize];
+    let chunk_size = data.entries.len().div_ceil(workers.max(1)).max(1);
+    let chunks: Vec<&[EntryId]> = data.entries.chunks(chunk_size).collect();
+    let chunk_base = |chunk: &[EntryId]| {
+        let first = names.get(chunk[0]);
+        let type_offset = first.type_vector_offset.load(Ordering::Relaxed) as usize;
+        let name_offset = first.name_offset.load(Ordering::Relaxed) as usize;
+        (type_offset / 4, name_offset - type_pool_size)
+    };
+    let type_offsets: Vec<u64> = chunks.iter().map(|chunk| chunk_base(chunk).0 as u64).collect();
+    let name_offsets: Vec<u64> = chunks.iter().map(|chunk| chunk_base(chunk).1 as u64).collect();
+    let mut regions: Vec<_> = chunks
+        .into_iter()
+        .zip(split_at_offsets(&mut type_pool, &type_offsets))
+        .zip(split_at_offsets(&mut name_pool, &name_offsets))
+        .collect();
+    limited_parallel_for_mut_init(&mut regions, workers, Vec::new, |scratch, _, region| {
+        let ((entries, words), bytes) = region;
+        let (type_base, name_base) = chunk_base(entries);
+        for &id in *entries {
+            let entry = names.get(id);
+            let count = entry.count.load(Ordering::Relaxed) as usize;
+            let start = entry.type_vector_offset.load(Ordering::Relaxed) as usize / 4 - type_base;
+            let words = &mut words[start..start + count + 1];
+            words[0] = count as u32;
+            let values = &mut words[1..];
+            if values.len() < 256 {
+                values.sort_unstable();
+            } else {
+                radix_sort(values, scratch);
+            }
+            let key = names.key(id);
+            let start =
+                entry.name_offset.load(Ordering::Relaxed) as usize - type_pool_size - name_base;
+            bytes[start..start + key.len()].copy_from_slice(key);
         }
     });
-
-    // Box<[u32]> rounds the byte allocation up to a whole word; initialize only
-    // those padding bytes, which are not part of the serialized tables.
-    let padded_size = table_words * 4;
-    for i in table_size..padded_size {
-        // SAFETY: these are the allocation's final padding bytes and no worker
-        // remains active.
-        unsafe { (table_addr as *mut u8).add(i).write(0) };
-    }
-    // SAFETY: the hash table, every type vector, every name including its NUL,
-    // and the final allocation padding have all been initialized.
-    let tables = unsafe { tables.assume_init() };
 
     // The serialized tables contain everything needed from names and the map.
     // Release their storage here so reclamation remains part of this background
@@ -1196,7 +1179,9 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
     });
     data.entries = Vec::new();
     data.names = None;
-    data.tables = tables;
+    data.ht = ht;
+    data.type_pool = type_pool;
+    data.name_pool = name_pool;
     data
 }
 
@@ -1239,10 +1224,21 @@ fn section_contents<'a, E: Target>(ctx: &'a Context<E>, buf: &'a [u8], name: &[u
 fn parallel_copy(dst: &mut [u8], src: &[u8]) {
     const BLOCK_SIZE: usize = 2 * 1024 * 1024;
 
-    debug_assert_eq!(dst.len(), src.len());
     dst.par_chunks_mut(BLOCK_SIZE)
         .zip(src.par_chunks(BLOCK_SIZE))
         .for_each(|(dst, src)| dst.copy_from_slice(src));
+}
+
+/// Writes words as little-endian bytes, in parallel.
+fn copy_words(dst: &mut [u8], src: &[u32]) {
+    const BLOCK_SIZE: usize = 512 * 1024;
+
+    let dst = dst.as_chunks_mut::<4>().0;
+    dst.par_chunks_mut(BLOCK_SIZE).zip(src.par_chunks(BLOCK_SIZE)).for_each(|(dst, src)| {
+        for (dst, &word) in dst.iter_mut().zip(src) {
+            *dst = word.to_le_bytes();
+        }
+    });
 }
 
 /// Read relocated address ranges and serialize the index prepared above.
@@ -1344,12 +1340,10 @@ pub fn write<E: Target>(ctx: &mut Context<E>, output: &mut OutputFile) {
         });
 
     let symtab_size = data.ht_size as usize * 8;
-    let tables = words_as_bytes(&data.tables);
-    parallel_copy(&mut buf[symtab_offset..symtab_offset + symtab_size], &tables[..symtab_size]);
-    parallel_copy(
-        &mut buf[const_pool_offset..size],
-        &tables[symtab_size..symtab_size + size - const_pool_offset],
-    );
+    let type_pool_size = data.type_pool_size as usize;
+    copy_words(&mut buf[symtab_offset..symtab_offset + symtab_size], &data.ht);
+    copy_words(&mut buf[const_pool_offset..const_pool_offset + type_pool_size], &data.type_pool);
+    parallel_copy(&mut buf[const_pool_offset + type_pool_size..size], &data.name_pool);
 
     // Update the section size and rewrite the section header
     if let Some(gdb_index) = &mut ctx.gdb_index {

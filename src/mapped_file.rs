@@ -12,7 +12,6 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -21,6 +20,7 @@ use rayon::prelude::*;
 
 use crate::fatal;
 use crate::util;
+use crate::util::SyncUnsafeCell;
 
 /// All files opened during this link.
 static FILE_POOL: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
@@ -73,10 +73,10 @@ const READ_THRESHOLD: u64 = 32 * 1024;
 #[derive(Debug)]
 pub struct MappedFile {
     pub name: PathBuf,
-    /// A byte range whose allocation is deliberately leaked with the input file.
-    /// Keeping a raw slice pointer lets the linker modify private relocation
-    /// records in place, as C++ mold does.
-    pub(crate) data: NonNull<[u8]>,
+    /// The contents, in an allocation that is deliberately leaked with the
+    /// input file. The bytes are cells because the linker modifies private
+    /// relocation records in place, as C++ mold does.
+    pub(crate) data: &'static [SyncUnsafeCell<u8>],
 
     /// False if the file was found by searching library paths (`-l`),
     /// which affects how a shared library's soname defaults.
@@ -92,11 +92,6 @@ pub struct MappedFile {
     pub is_dependency: AtomicBool,
 }
 
-// The bytes are normally read concurrently. Mutable access is restricted to
-// disjoint relocation ranges owned by file-parallel passes.
-unsafe impl Send for MappedFile {}
-unsafe impl Sync for MappedFile {}
-
 impl MappedFile {
     fn open_impl(path: &Path) -> io::Result<&'static Self> {
         let file = File::open(path)?;
@@ -108,8 +103,8 @@ impl MappedFile {
         // True if `data` is a memory mapping of the file rather than a copy of
         // its contents in anonymous memory. See open_file_impl().
         let mut is_mmapped = false;
-        let data = if size == 0 {
-            NonNull::slice_from_raw_parts(NonNull::dangling(), 0)
+        let data: &'static [SyncUnsafeCell<u8>] = if size == 0 {
+            &[]
         } else if size <= READ_THRESHOLD && metadata.is_file() {
             let mut buf = Vec::with_capacity(size as usize);
             (&file)
@@ -119,7 +114,7 @@ impl MappedFile {
             if buf.len() as u64 != size {
                 fatal!("{display}: file is shorter than its reported size");
             }
-            NonNull::from(Vec::leak(buf))
+            SyncUnsafeCell::from_mut(Vec::leak(buf))
         } else {
             // C++ mold maps inputs MAP_PRIVATE with write permission so it
             // can redirect ordinary relocation records in place without
@@ -133,7 +128,7 @@ impl MappedFile {
             let map = unsafe { memmap2::MmapOptions::new().len(map_len).map_copy(&file) }
                 .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
             is_mmapped = true;
-            NonNull::from(Box::leak(Box::new(map)).as_mut())
+            SyncUnsafeCell::from_mut(Box::leak(Box::new(map)).as_mut())
         };
 
         let mf = util::leak(Self {
@@ -169,12 +164,9 @@ impl MappedFile {
 
     /// Returns a view of a member of this archive.
     pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static Self {
-        assert!(start <= self.size() && size <= self.size() - start);
-        // SAFETY: the checked range lies in the same allocation.
-        let data = unsafe { self.data.cast::<u8>().add(start) };
         let mf = util::leak(Self {
             name,
-            data: NonNull::slice_from_raw_parts(data, size),
+            data: &self.data[start..start + size],
             given_fullpath: true,
             parent: Some(self),
             thin_parent: None,
@@ -203,35 +195,28 @@ impl MappedFile {
 
     #[inline]
     pub fn data(&self) -> &[u8] {
-        // SAFETY: the allocation is leaked and the range was checked when
-        // this file or archive member was created. Mutable accesses are to
-        // relocation ranges during exclusive linker phases.
-        unsafe { self.data.as_ref() }
+        // SAFETY: the only writes are to relocation ranges during exclusive
+        // linker phases, which use no shared view of those ranges.
+        unsafe { SyncUnsafeCell::as_slice(self.data) }
     }
 
-    /// Returns a mutable raw pointer to a relocation range.
+    /// Returns a relocation range for modification.
     ///
     /// # Safety
     ///
-    /// The caller must have exclusive access to `range` while dereferencing
-    /// the pointer, and no shared reference to an overlapping range may be
-    /// used during that time.
-    pub(crate) unsafe fn data_mut_ptr(&self, range: Range<usize>) -> *mut [u8] {
-        assert!(range.start <= range.end && range.end <= self.size());
-        // SAFETY: the range is in bounds. Dereferencing remains the caller's
-        // responsibility under the contract above.
-        std::ptr::slice_from_raw_parts_mut(
-            unsafe { self.data.cast::<u8>().as_ptr().add(range.start) },
-            range.end - range.start,
-        )
+    /// The caller must have exclusive access to `range` while the slice is
+    /// alive, and no shared reference to an overlapping range may be used
+    /// during that time.
+    pub(crate) unsafe fn data_mut(&self, range: Range<usize>) -> &mut [u8] {
+        // SAFETY: guaranteed by the caller.
+        unsafe { SyncUnsafeCell::as_mut_slice(&self.data[range]) }
     }
 
     /// The offset of this slice within its top-level archive file.
     pub fn offset(&self) -> usize {
         match self.parent {
             Some(parent) => {
-                let base = parent.data.cast::<u8>().as_ptr() as usize;
-                self.data.cast::<u8>().as_ptr() as usize - base + parent.offset()
+                self.data.as_ptr() as usize - parent.data.as_ptr() as usize + parent.offset()
             }
             None => 0,
         }

@@ -25,7 +25,7 @@ use rayon::prelude::*;
 use std::alloc::{Layout, alloc_zeroed, dealloc};
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
-use std::ptr::{self, NonNull};
+use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 pub const NUM_SHARDS: usize = 64;
@@ -95,22 +95,6 @@ unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
     // SAFETY: `entries` was allocated by `allocate_entries` with this layout.
     unsafe { dealloc(entries.cast(), layout) };
 }
-
-/// A stable reference to an occupied map entry.
-pub struct MapEntryRef<T>(NonNull<Entry<T>>);
-
-impl<T> Clone for MapEntryRef<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T> Copy for MapEntryRef<T> {}
-
-// SAFETY: map entries are shared between threads only through atomics and
-// values whose synchronization is provided by T.
-unsafe impl<T: Send + Sync> Send for MapEntryRef<T> {}
-unsafe impl<T: Send + Sync> Sync for MapEntryRef<T> {}
 
 /// The index of a bucket, which identifies an entry for the life of
 /// the map.
@@ -357,10 +341,6 @@ impl<T> Default for FrozenMap<T> {
 }
 
 impl<T> FrozenMap<T> {
-    fn entry_ref(&self, id: EntryId) -> MapEntryRef<T> {
-        MapEntryRef(NonNull::from(self.0.entry(id.0 as usize)))
-    }
-
     /// The published key of a bucket, if any.
     fn key_at(&self, idx: usize) -> Option<&'static [u8]> {
         let ent = self.0.entry(idx);
@@ -440,54 +420,16 @@ impl<T> FrozenMap<T> {
         vec
     }
 
-    /// Returns all map entries as stable references in deterministic order.
-    pub(crate) fn sorted_entry_refs_all(&self) -> Vec<MapEntryRef<T>>
+    /// Returns all map entries in deterministic order.
+    pub(crate) fn sorted_entries_all(&self) -> Vec<EntryId>
     where
         T: Send + Sync,
     {
-        (0..NUM_SHARDS)
-            .into_par_iter()
-            .flat_map_iter(|shard| {
-                self.sorted_entries(shard).into_iter().map(|id| self.entry_ref(id))
-            })
-            .collect()
+        (0..NUM_SHARDS).into_par_iter().flat_map_iter(|shard| self.sorted_entries(shard)).collect()
     }
 
     pub(crate) fn len(&self) -> usize {
         self.0.len()
-    }
-}
-
-impl<T> MapEntryRef<T> {
-    fn entry(self, _owner: &FrozenMap<T>) -> &Entry<T> {
-        // SAFETY: the reference was made from an occupied bucket in this map,
-        // and the owner keeps the map's mmap allocation live.
-        unsafe { self.0.as_ref() }
-    }
-
-    pub(crate) fn value(self, owner: &FrozenMap<T>) -> &T {
-        // SAFETY: sorted entry references name published entries, whose values
-        // were initialized before publication.
-        unsafe { (*self.entry(owner).value.get()).assume_init_ref() }
-    }
-
-    pub(crate) fn value_mut_ptr(self, owner: &FrozenMap<T>) -> *mut T {
-        self.entry(owner).value.get().cast()
-    }
-
-    pub(crate) fn key(self, owner: &FrozenMap<T>) -> &'static [u8] {
-        let ent = self.entry(owner);
-        let key = ent.key.load(Ordering::Acquire);
-        debug_assert!(!key.is_null() && key != CLAIMED);
-        // SAFETY: this is a published key whose length was written before the
-        // key pointer, and map keys remain live for the complete link.
-        unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) }
-    }
-
-    pub(crate) fn key_len(self, owner: &FrozenMap<T>) -> usize {
-        // SAFETY: the entry is published, so its key length is initialized and
-        // immutable.
-        unsafe { *self.entry(owner).keylen.get() as usize }
     }
 }
 

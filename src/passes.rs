@@ -4,7 +4,6 @@ use crate::util::worker_local::WorkerLocal;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::{Mutex, RwLock};
 
@@ -28,8 +27,8 @@ use crate::cmdline::{
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{
-    ComdatGroupRef, FileId, FileList, ObjId, ObjectFile, ObjectOrigin, SymbolEditor,
-    SymbolResolver, resolved_symbol_rank, symbol_resolution_rank,
+    FileId, FileList, ObjId, ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
+    resolved_symbol_rank, symbol_resolution_rank,
 };
 use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
@@ -459,42 +458,6 @@ fn resolve_skip_dso_symbols_pass<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
-/// An exceptional COMDAT signature whose Symbol slot is filled by gathering.
-/// The owning ObjectFile and its group vector stay in place through the
-/// gather, just as they do for the files' ordinary SymbolSlots.
-struct PendingComdatOwner {
-    group: NonNull<ComdatGroupRef>,
-    priority: u32,
-    is_lto_output: bool,
-}
-
-// SAFETY: every pending record names a distinct group, and it is consumed only
-// after gathering has stopped writing the group's signature slot.
-unsafe impl Send for PendingComdatOwner {}
-
-/// A packed COMDAT signature word that receives the interned SymbolId before
-/// ownership is selected.
-#[derive(Clone, Copy)]
-struct ComdatSymbolSlot(NonNull<u32>);
-
-// SAFETY: each exceptional COMDAT signature has one pending slot, and one
-// symbol-map shard writes it before the groups are examined again.
-unsafe impl Send for ComdatSymbolSlot {}
-unsafe impl Sync for ComdatSymbolSlot {}
-
-impl ComdatSymbolSlot {
-    fn new(group: &mut ComdatGroupRef) -> Self {
-        Self(NonNull::from(group.signature_word_mut()))
-    }
-
-    fn assign(self, id: SymbolId) {
-        assert!(id.0 < 1 << 31);
-        // SAFETY: guaranteed by the construction and synchronization rules
-        // documented on ComdatSymbolSlot.
-        unsafe { self.0.write(id.0) };
-    }
-}
-
 // Select COMDAT groups and construct input sections. If LTO will run,
 // the first invocation also constructs the losing copies of COMDAT
 // members because this function runs again after LTO and may then
@@ -508,7 +471,7 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     // Ordinary global signatures already refer to the files' symbols; record
     // the other signatures for interning while each file's metadata is hot.
     let t = ctx.timer("read_section_metadata");
-    let (bins, pending): (Vec<Bins<ComdatSymbolSlot>>, Vec<Vec<PendingComdatOwner>>) = {
+    let (bins, pending): (Vec<Bins<(ObjId, u32)>>, Vec<Vec<(ObjId, u32)>>) = {
         let Context { objs, symbols, .. } = ctx;
         // Reuse each worker's buffers across jobs, locking once per file.
         let work = WorkerLocal::new(|| (Bins::new(), Vec::new()));
@@ -532,20 +495,11 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
                         }
                     }
                 }
-                let signatures = &file.pending_comdat_signatures;
-                let groups = &mut file.comdat_groups;
-                for signature in signatures {
-                    let group = &mut groups[signature.group_idx as usize];
-                    bins.record(
-                        signature.key,
-                        signature.name_len as usize,
-                        ComdatSymbolSlot::new(group),
-                    );
-                    pending.push(PendingComdatOwner {
-                        group: NonNull::from(group),
-                        priority,
-                        is_lto_output,
-                    });
+                // Exceptional signatures name their group by file and index.
+                for signature in &file.pending_comdat_signatures {
+                    let group = (file.id(), signature.group_idx);
+                    bins.record(signature.key, signature.name_len as usize, group);
+                    pending.push(group);
                 }
             }
         });
@@ -558,19 +512,18 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     let t = ctx.timer("comdat_signatures");
     {
         let Context { objs, symbols, .. } = ctx;
-        symbols.gather(bins, 0, ComdatSymbolSlot::assign);
+        symbols.gather(bins, 0, |(file, group_idx): (ObjId, u32), id| {
+            objs[file.index()].comdat_groups[group_idx as usize].set_signature(id);
+        });
 
         // Signatures just interned could not participate in the metadata
         // traversal above. Record them now.
         let symbols: &crate::symbol::SymbolTable = symbols;
-        pending.into_par_iter().flatten().for_each(|pending| {
-            // SAFETY: each pending pointer came from a distinct group that
-            // stays in place, and symbol gathering has joined before this
-            // parallel traversal begins.
-            let group = unsafe { &*pending.group.as_ptr() };
-            let sym = &symbols[group.signature()];
-            if !sym.comdat_claimed_by_ir() || pending.is_lto_output {
-                sym.record_comdat_owner(pending.priority);
+        pending.into_par_iter().flatten().for_each(|(file, group_idx)| {
+            let file = &objs[file.index()];
+            let sym = &symbols[file.comdat_groups[group_idx as usize].signature()];
+            if !sym.comdat_claimed_by_ir() || file.origin == ObjectOrigin::LtoOutput {
+                sym.record_comdat_owner(file.base.priority);
             }
         });
         objs.par_iter_mut().for_each(|file| file.pending_comdat_signatures = Vec::new());
@@ -2504,9 +2457,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // Every dynamic symbol gets its auxiliary record. The loop below
     // assigns table entries in order and so runs on one thread; the
     // records are allocated beforehand in the side vector.
-    // SAFETY: every group was filtered to symbols owned by its input file,
-    // and each input file has a unique id.
-    unsafe { ctx.symbols.allocate_aux(&groups) };
+    ctx.symbols.allocate_aux(&groups);
     let mut syms = Vec::with_capacity(groups.iter().map(Vec::len).sum());
     syms.extend(groups.into_iter().flatten());
 
@@ -2662,12 +2613,9 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
                 Entry { bucket: hash % num_buckets, name, id, hash }
             })
             .collect();
-        // SAFETY: .dynsym contains each symbol once and every symbol has aux.
-        unsafe {
-            ctx.symbols.par_for_each_aux_mut(exported, |i, _, aux| {
-                aux.djb_hash = entries[i].hash;
-            });
-        }
+        ctx.symbols.par_for_each_aux(exported, |i, _, aux| {
+            aux.djb_hash.store(entries[i].hash, Ordering::Relaxed);
+        });
         entries.par_sort_unstable_by(|a, b| (a.bucket, a.name).cmp(&(b.bucket, b.name)));
         exported
             .par_iter_mut()
@@ -2682,14 +2630,11 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
     }
 
     let offset = ctx.dynstr.hdr.shdr.sh_size.get();
-    // SAFETY: .dynsym contains each symbol once and every symbol has aux.
-    unsafe {
-        ctx.symbols.par_for_each_aux_mut(&syms, |i, _, aux| {
-            let idx = (i as u32).checked_add(1).unwrap();
-            assert_ne!(idx, u32::MAX);
-            aux.dynsym_idx = idx;
-        });
-    }
+    ctx.symbols.par_for_each_aux(&syms, |i, _, aux| {
+        let idx = (i as u32).checked_add(1).unwrap();
+        assert_ne!(idx, u32::MAX);
+        aux.dynsym_idx.store(idx, Ordering::Relaxed);
+    });
     dynstr_entries[1..first_exported + 1]
         .par_iter_mut()
         .zip(&syms[..first_exported])

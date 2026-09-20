@@ -623,32 +623,28 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]
     // If that's the case, we need to zero-clear them.
     let has_gaps = msec.hdr.shdr.sh_addralign.get() > 1
         && msec.hdr.shdr.sh_addralign.get() != msec.hdr.shdr.sh_entsize.get();
-    if has_gaps {
-        split_at_offsets(buf, &msec.shard_offsets[..NUM_SHARDS * 2])
-            .into_par_iter()
-            .for_each(|region| region.fill(0));
-    }
 
-    // Copy strings
-    let output = buf.as_mut_ptr() as usize;
-    let output_len = buf.len();
-    msec.shards.par_iter().for_each(|shard| {
+    // Layout gave each shard one region for its 32-bit fragments and one
+    // for the rest, so each shard writes only its two regions.
+    let offsets = &msec.shard_offsets;
+    let mut regions = split_at_offsets(buf, &offsets[..NUM_SHARDS * 2]);
+    let (near, far) = regions.split_at_mut(NUM_SHARDS);
+    msec.shards.par_iter().enumerate().zip(near).zip(far).for_each(|(((i, shard), near), far)| {
+        if has_gaps {
+            near.fill(0);
+            far.fill(0);
+        }
         for &entry in &shard.fragments {
             let frag = frags.get(entry);
             if frag.is_alive() {
                 let key = frags.key(entry);
-                let offset = frag.offset() as usize;
-                debug_assert!(offset + key.len() <= output_len);
-                // SAFETY: layout assigns every live fragment a distinct range
-                // within `buf`; each entry occurs in exactly one shard, so the
-                // parallel copies do not overlap.
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        key.as_ptr(),
-                        (output as *mut u8).add(offset),
-                        key.len(),
-                    );
-                }
+                let (region, base) = if frag.is_32bit() {
+                    (&mut **near, offsets[i])
+                } else {
+                    (&mut **far, offsets[i + NUM_SHARDS])
+                };
+                let start = (frag.offset() - base) as usize;
+                region[start..start + key.len()].copy_from_slice(key);
             }
         }
     });

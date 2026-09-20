@@ -1,5 +1,7 @@
 //! `.gnu.hash`, the GNU hash table for dynamic symbol lookup.
 
+use std::sync::atomic::Ordering;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
@@ -88,7 +90,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let word_bits = word * 8;
     let mut indices = Vec::with_capacity(syms.len());
     for id in syms {
-        let h = ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash;
+        let h =
+            ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash.load(Ordering::Relaxed);
         indices.push(h % gh.num_buckets);
         let idx = (h as usize / word_bits) % gh.num_bloom as usize;
         let bits = (1u64 << (h as usize % word_bits))
@@ -112,7 +115,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &id) in syms.iter().enumerate() {
         // The last entry in a chain must be terminated with an entry with
         // least-significant bit 1.
-        let h = ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash;
+        let h =
+            ctx.symbols[id.unwrap()].aux(&ctx.symbols).unwrap().djb_hash.load(Ordering::Relaxed);
         let last = i + 1 == syms.len() || indices[i] != indices[i + 1];
         E::write_u32(&mut buf[table_off + i * 4..], if last { h | 1 } else { h & !1 });
     }

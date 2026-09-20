@@ -1675,18 +1675,6 @@ impl<E: Target> SectionList<E> {
         &self.inputs[index]
     }
 
-    /// Returns an input section without checking its dense index.
-    ///
-    /// # Safety
-    ///
-    /// `index` must have been assigned by this list's `insert` method.
-    #[inline]
-    pub(crate) unsafe fn input_unchecked(&self, index: usize) -> &InputSection<E> {
-        debug_assert!(index < self.inputs.len());
-        // SAFETY: guaranteed by the caller.
-        unsafe { self.inputs.get_unchecked(index) }
-    }
-
     /// The number of section indices.
     #[inline]
     pub(crate) fn len(&self) -> usize {
@@ -1728,15 +1716,13 @@ impl<E: Target> SectionList<E> {
     #[inline]
     pub fn section(&self, shndx: usize) -> Option<&InputSection<E>> {
         let index = self.input_index(shndx)?;
-        // SAFETY: table entries contain only indices assigned by `insert`.
-        Some(unsafe { self.input_unchecked(index as usize) })
+        Some(&self.inputs[index as usize])
     }
 
     #[inline]
     pub fn section_mut(&mut self, shndx: usize) -> Option<&mut InputSection<E>> {
         let index = self.input_index(shndx)?;
-        // SAFETY: table entries contain only indices assigned by `insert`.
-        Some(unsafe { self.inputs.get_unchecked_mut(index as usize) })
+        Some(&mut self.inputs[index as usize])
     }
 
     #[inline]

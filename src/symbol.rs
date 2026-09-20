@@ -6,11 +6,10 @@
 
 use std::fmt;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
-use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 // Atomic accesses use relaxed ordering unless stronger synchronization is
 // required, matching C++ mold's default atomic wrapper.
@@ -25,6 +24,7 @@ use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
 use crate::target::Target;
+use crate::util::SyncUnsafeCell;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -164,9 +164,11 @@ pub struct SymbolAux {
     pub tlsdesc_idx: u32,
     pub plt_idx: u32,
     pub pltgot_idx: u32,
-    pub dynsym_idx: u32,
     pub opd_idx: u32,
-    pub djb_hash: u32,
+    // The .dynsym index and the GNU hash of the name are assigned to all
+    // dynamic symbols in parallel through shared records.
+    pub dynsym_idx: AtomicU32,
+    pub djb_hash: AtomicU32,
     // For range extension thunks
     pub thunk_addrs: Vec<u64>,
 }
@@ -183,9 +185,9 @@ impl Default for SymbolAux {
             tlsdesc_idx: u32::MAX,
             plt_idx: u32::MAX,
             pltgot_idx: u32::MAX,
-            dynsym_idx: u32::MAX,
             opd_idx: u32::MAX,
-            djb_hash: 0,
+            dynsym_idx: AtomicU32::new(u32::MAX),
+            djb_hash: AtomicU32::new(0),
             thunk_addrs: Vec::new(),
         }
     }
@@ -275,8 +277,9 @@ pub struct Symbol {
     pub flags: AtomicU8,
 
     // Index into SymbolTable's side array of auxiliary data, allocated on
-    // demand for dynamic symbols.
-    aux_idx: u32,
+    // demand for dynamic symbols. Records are claimed in parallel, one file
+    // at a time, through shared Symbol references.
+    aux_idx: AtomicU32,
 
     /// The symbol's boolean attributes, packed; the accessors below name
     /// them.
@@ -490,7 +493,7 @@ impl Symbol {
             ver_idx: VER_NDX_UNSPECIFIED as u16,
             visibility: AtomicU8::new(STV_DEFAULT as u8),
             flags: AtomicU8::new(0),
-            aux_idx: NO_AUX,
+            aux_idx: AtomicU32::new(NO_AUX),
             bits: 0,
         }
     }
@@ -733,7 +736,8 @@ impl Symbol {
 
     #[inline]
     pub fn aux<'a>(&self, symbols: &'a SymbolTable) -> Option<&'a SymbolAux> {
-        (self.aux_idx != NO_AUX).then(|| &symbols.aux[self.aux_idx as usize])
+        let index = self.aux_idx.load(Ordering::Relaxed);
+        (index != NO_AUX).then(|| &symbols.aux[index as usize])
     }
 
     pub fn got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
@@ -769,7 +773,7 @@ impl Symbol {
     }
 
     pub fn dynsym_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        let idx = self.aux(symbols)?.dynsym_idx;
+        let idx = self.aux(symbols)?.dynsym_idx.load(Ordering::Relaxed);
         (idx != u32::MAX).then_some(idx)
     }
 
@@ -1401,11 +1405,9 @@ impl SymbolSlot {
 /// Each file allocates its local symbols while it is being parsed. This gives
 /// every worker a disjoint range in the central vector.
 pub struct ParallelSymbolAllocator<'a> {
-    slots: AtomicPtr<MaybeUninit<Symbol>>,
+    slots: &'a [SyncUnsafeCell<MaybeUninit<Symbol>>],
     first: usize,
     next: AtomicUsize,
-    maximum: usize,
-    marker: PhantomData<&'a mut [MaybeUninit<Symbol>]>,
 }
 
 impl ParallelSymbolAllocator<'_> {
@@ -1421,67 +1423,11 @@ impl ParallelSymbolAllocator<'_> {
         init: impl FnOnce(SymbolId, &mut [MaybeUninit<Symbol>]),
     ) -> SymbolId {
         let offset = self.next.fetch_add(n, Ordering::Relaxed);
-        let end = offset.checked_add(n).expect("too many symbols");
-        assert!(end <= self.maximum);
+        let slots = &self.slots[offset..offset + n];
         let base_id = SymbolId((self.first + offset) as u32);
-        let ptr = self.slots.load(Ordering::Relaxed);
-        // SAFETY: the table reserved `maximum` slots before publishing the
-        // pointer, and the atomic bump pointer gives this call an exclusive
-        // range within them.
-        let slots = unsafe { std::slice::from_raw_parts_mut(ptr.add(offset), n) };
-        init(base_id, slots);
+        // SAFETY: the atomic bump pointer gives this call an exclusive range.
+        init(base_id, unsafe { SyncUnsafeCell::as_mut_slice(slots) });
         base_id
-    }
-}
-
-/// Mutable access to stable symbol storage during a parallel pass.
-struct SymbolBlockPtr(*mut Symbol);
-
-// SAFETY: the table holds the vector exclusively and gives each task either
-// non-overlapping shard blocks or symbol ids owned by one input file.
-unsafe impl Sync for SymbolBlockPtr {}
-
-/// A pointer to the auxiliary vector during a parallel scatter to unique symbols.
-struct SymbolAuxPtr(*mut SymbolAux);
-
-// SAFETY: the two methods using this wrapper require distinct symbol ids, so
-// their parallel tasks access non-overlapping auxiliary records.
-unsafe impl Sync for SymbolAuxPtr {}
-
-impl SymbolAuxPtr {
-    /// Applies `f` to the record at `index`.
-    ///
-    /// # Safety
-    /// The caller must have exclusive access to this record.
-    unsafe fn with_mut<R>(&self, index: usize, f: impl FnOnce(&mut SymbolAux) -> R) -> R {
-        // SAFETY: the caller supplies a valid, exclusively owned index.
-        f(unsafe { &mut *self.0.add(index) })
-    }
-}
-
-impl SymbolBlockPtr {
-    /// Mutates only a symbol's auxiliary index.
-    ///
-    /// # Safety
-    ///
-    /// `id` must be valid, and no other task may access that symbol's index.
-    unsafe fn with_aux_index<R>(&self, id: SymbolId, f: impl FnOnce(&mut u32) -> R) -> R {
-        // SAFETY: the caller provides an exclusive, valid symbol id.
-        unsafe { f(&mut (*self.0.add(id.index())).aux_idx) }
-    }
-
-    /// Applies `f` to the symbols in non-overlapping vector ranges.
-    ///
-    /// # Safety
-    /// The ranges must be initialized and exclusively owned by this task.
-    unsafe fn for_each(&self, ranges: &[Range<u32>], f: &(impl Fn(&mut Symbol) + Sync)) {
-        for range in ranges {
-            let len = (range.end - range.start) as usize;
-            // SAFETY: guaranteed by the caller for every shard block.
-            let symbols =
-                unsafe { std::slice::from_raw_parts_mut(self.0.add(range.start as usize), len) };
-            symbols.iter_mut().for_each(&f);
-        }
     }
 }
 
@@ -1585,44 +1531,39 @@ impl SymbolTable {
     /// vector if this symbol has none. C++ mold likewise keeps this rarely
     /// used state outside `Symbol` and refers to it with an index.
     pub fn aux_mut(&mut self, id: SymbolId) -> &mut SymbolAux {
-        let mut index = self.symbols[id.index()].aux_idx;
-        if index == NO_AUX {
-            index = self.aux.len() as u32;
-            assert_ne!(index, NO_AUX, "too many symbol auxiliary records");
+        let aux_idx = self.symbols[id.index()].aux_idx.get_mut();
+        if *aux_idx == NO_AUX {
+            *aux_idx = self.aux.len() as u32;
+            assert_ne!(*aux_idx, NO_AUX, "too many symbol auxiliary records");
             self.aux.push(SymbolAux::default());
-            self.symbols[id.index()].aux_idx = index;
         }
-        &mut self.aux[index as usize]
+        &mut self.aux[*aux_idx as usize]
     }
 
     /// Allocates records in each file's first-use order, without a global
-    /// symbol sort. Each group contains symbols owned by that file, so new
-    /// symbols cannot occur in two groups. Repeated ids within a group share
-    /// one record, and existing auxiliary data is preserved.
-    ///
-    /// # Safety
-    ///
-    /// All ids must be valid and no symbol may occur in more than one group.
-    pub(crate) unsafe fn allocate_aux(&mut self, groups: &[Vec<SymbolId>]) {
+    /// symbol sort. Repeated ids share one record, and existing auxiliary
+    /// data is preserved.
+    pub(crate) fn allocate_aux(&mut self, groups: &[Vec<SymbolId>]) {
         let first = self.aux.len();
         let count: usize = groups.iter().map(Vec::len).sum();
         assert!(first + count < NO_AUX as usize);
-        let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
+        let symbols = &self.symbols;
         let fresh: Vec<Vec<SymbolId>> = groups
             .par_iter()
             .map(|ids| {
                 let mut fresh = Vec::new();
                 for &id in ids {
-                    // SAFETY: this group is the only task accessing these ids.
-                    unsafe {
-                        symbols.with_aux_index(id, |index| {
-                            if *index == NO_AUX {
-                                // Suppress repeats within the file. Records are
-                                // read only after final indices are assigned.
-                                *index = 0;
-                                fresh.push(id);
-                            }
-                        });
+                    // Claim the record for the group that sees the symbol
+                    // first. Records are read only after final indices are
+                    // assigned.
+                    let claimed = symbols[id.index()].aux_idx.compare_exchange(
+                        NO_AUX,
+                        0,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    );
+                    if claimed.is_ok() {
+                        fresh.push(id);
                     }
                 }
                 fresh
@@ -1642,11 +1583,7 @@ impl SymbolTable {
             .collect();
         parts.into_par_iter().for_each(|(first, ids)| {
             for (i, id) in ids.into_iter().enumerate() {
-                // SAFETY: groups own disjoint ids, and each fresh id was
-                // recorded only once within its group.
-                unsafe {
-                    symbols.with_aux_index(id, |index| *index = (first + i) as u32);
-                }
+                symbols[id.index()].aux_idx.store((first + i) as u32, Ordering::Relaxed);
             }
         });
     }
@@ -1685,9 +1622,8 @@ impl SymbolTable {
         if self.symbols.capacity() != old_capacity {
             madvise_hugepage(&self.symbols);
         }
-        let capacity = self.symbols.capacity();
-        let storage = AtomicPtr::new(self.symbols.as_mut_ptr());
-        let next = AtomicUsize::new(first);
+        let slots = SyncUnsafeCell::from_mut(self.symbols.spare_capacity_mut());
+        let next = AtomicUsize::new(0);
 
         let ranges: Vec<Vec<Range<u32>>> = self
             .shards
@@ -1696,7 +1632,6 @@ impl SymbolTable {
             .map(|(i, shard)| {
                 let count: usize = bins.iter().map(|bin| bin.0[i].len()).sum();
                 shard.reserve(count);
-                let symbols = storage.load(Ordering::Relaxed);
                 let mut blocks: Vec<(usize, usize)> = Vec::new();
                 for p in bins.iter().flat_map(|bin| &bin.0[i]) {
                     let id = match shard.entry(p.key) {
@@ -1704,22 +1639,17 @@ impl SymbolTable {
                         hashbrown::hash_map::Entry::Vacant(entry) => {
                             if blocks.last().is_none_or(|&(_, used)| used == BLOCK_SIZE) {
                                 let start = next.fetch_add(BLOCK_SIZE, Ordering::Relaxed);
-                                let end = start.checked_add(BLOCK_SIZE).expect("too many symbols");
-                                assert!(end <= capacity && end < u32::MAX as usize);
+                                assert!(first + start + BLOCK_SIZE < u32::MAX as usize);
                                 blocks.push((start, 0));
                             }
                             let (start, used) = blocks.last_mut().unwrap();
                             let index = *start + *used;
                             *used += 1;
-                            let id = SymbolId(index as u32);
-                            // SAFETY: reserve keeps `symbols` stable, and the
-                            // atomic bump pointer gives this shard exclusive
-                            // ownership of the slot.
-                            unsafe {
-                                symbols.add(index).write(Symbol::new(BStr::new(
-                                    &p.key.key[..p.name_len as usize],
-                                )));
-                            }
+                            let id = SymbolId((first + index) as u32);
+                            let name = BStr::new(&p.key.key[..p.name_len as usize]);
+                            // SAFETY: the atomic bump pointer gives this shard
+                            // exclusive ownership of the slot.
+                            unsafe { (*slots[index].get()).write(Symbol::new(name)) };
                             entry.insert(id);
                             id
                         }
@@ -1732,19 +1662,17 @@ impl SymbolTable {
                         // SAFETY: these are the unused slots in this shard's
                         // exclusive block. Initializing them makes the whole
                         // vector prefix valid while global scans skip them.
-                        unsafe {
-                            symbols.add(index).write(Symbol::new(BStr::new(b"")));
-                        }
+                        unsafe { (*slots[index].get()).write(Symbol::new(BStr::new(b""))) };
                     }
                 }
                 blocks
                     .into_iter()
-                    .map(|(start, used)| start as u32..(start + used) as u32)
+                    .map(|(start, used)| (first + start) as u32..(first + start + used) as u32)
                     .collect()
             })
             .collect();
 
-        let len = next.load(Ordering::Relaxed);
+        let len = first + next.load(Ordering::Relaxed);
         // SAFETY: every allocated block, including its unused tail, was
         // initialized by its owning shard.
         unsafe { self.symbols.set_len(len) };
@@ -1819,20 +1747,13 @@ impl SymbolTable {
         }
 
         let allocator = ParallelSymbolAllocator {
-            // SAFETY: reserve made the entire tail available, even though it
-            // is outside the vector's initialized length.
-            slots: AtomicPtr::new(unsafe {
-                self.symbols.as_mut_ptr().add(first).cast::<MaybeUninit<Symbol>>()
-            }),
+            slots: SyncUnsafeCell::from_mut(&mut self.symbols.spare_capacity_mut()[..maximum]),
             first,
             next: AtomicUsize::new(0),
-            maximum,
-            marker: PhantomData,
         };
         init(&allocator);
 
         let added = allocator.next.load(Ordering::Relaxed);
-        debug_assert!(added <= maximum);
         // SAFETY: every allocated range was initialized before `init`
         // returned, and the bump pointer leaves no gaps between ranges.
         unsafe { self.symbols.set_len(first + added) };
@@ -1853,36 +1774,26 @@ impl SymbolTable {
 
     /// Applies `f` to all named symbols in parallel, one task per map shard.
     pub fn par_for_each_global_mut(&mut self, f: impl Fn(&mut Symbol) + Send + Sync) {
-        let symbols = SymbolBlockPtr(self.symbols.as_mut_ptr());
+        let symbols = SyncUnsafeCell::from_mut(&mut self.symbols);
         self.globals.par_iter().for_each(|ranges| {
-            // SAFETY: The vector is exclusively borrowed, every global range
-            // belongs to exactly one shard, and shard blocks never overlap.
-            unsafe { symbols.for_each(ranges, &f) };
+            for range in ranges {
+                let block = &symbols[range.start as usize..range.end as usize];
+                // SAFETY: every global range belongs to exactly one shard,
+                // and shard blocks never overlap.
+                unsafe { SyncUnsafeCell::as_mut_slice(block) }.iter_mut().for_each(&f);
+            }
         });
     }
 
     /// Applies `f` in parallel to symbols and their auxiliary records.
-    ///
-    /// # Safety
-    ///
-    /// `ids` must contain no duplicates, since each invocation receives mutable
-    /// access to the corresponding auxiliary record.
-    pub(crate) unsafe fn par_for_each_aux_mut(
-        &mut self,
+    pub(crate) fn par_for_each_aux(
+        &self,
         ids: &[SymbolId],
-        f: impl Fn(usize, &Symbol, &mut SymbolAux) + Send + Sync,
+        f: impl Fn(usize, &Symbol, &SymbolAux) + Send + Sync,
     ) {
-        let symbols = &self.symbols;
-        let aux = SymbolAuxPtr(self.aux.as_mut_ptr());
-        let aux_len = self.aux.len();
         ids.par_iter().enumerate().for_each(|(i, &id)| {
-            let sym = &symbols[id.index()];
-            let index = sym.aux_idx;
-            debug_assert_ne!(index, NO_AUX);
-            debug_assert!((index as usize) < aux_len);
-            // SAFETY: the caller guarantees that ids, and hence aux_idx values,
-            // are distinct, and the exclusive table borrow keeps the vector fixed.
-            unsafe { aux.with_mut(index as usize, |record| f(i, sym, record)) };
+            let sym = &self.symbols[id.index()];
+            f(i, sym, &self.aux[sym.aux_idx.load(Ordering::Relaxed) as usize]);
         });
     }
 
@@ -1963,17 +1874,16 @@ mod tests {
         let old = table.intern(b"old");
         table.aux_mut(old).got_idx = 17;
 
-        // SAFETY: the groups contain disjoint, valid symbol ids.
-        unsafe { table.allocate_aux(&[vec![b, a, b], vec![old, c, c]]) };
-        assert_eq!(table[old].aux_idx, 0);
-        assert_eq!(table[b].aux_idx, 1);
-        assert_eq!(table[a].aux_idx, 2);
-        assert_eq!(table[c].aux_idx, 3);
+        table.allocate_aux(&[vec![b, a, b], vec![old, c, c]]);
+        let aux_idx = |id: SymbolId| table[id].aux_idx.load(Ordering::Relaxed);
+        assert_eq!(aux_idx(old), 0);
+        assert_eq!(aux_idx(b), 1);
+        assert_eq!(aux_idx(a), 2);
+        assert_eq!(aux_idx(c), 3);
         assert_eq!(table.aux.len(), 4);
         assert_eq!(table[old].got_idx(&table), Some(17));
 
-        // SAFETY: the groups contain disjoint, valid symbol ids.
-        unsafe { table.allocate_aux(&[vec![a, b], vec![old, c]]) };
+        table.allocate_aux(&[vec![a, b], vec![old, c]]);
         assert_eq!(table.aux.len(), 4);
         assert_eq!(table[old].got_idx(&table), Some(17));
     }

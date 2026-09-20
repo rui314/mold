@@ -17,6 +17,69 @@ pub(crate) mod worker_local;
 
 pub(crate) use prefetch::prefetch;
 
+/// An `UnsafeCell` that may be shared between threads, as std's unstable
+/// type of the same name. A parallel pass views a slice as cells so that
+/// each task can write the elements it owns through a shared reference,
+/// with the slice's bounds checks still applied to every access.
+#[repr(transparent)]
+pub(crate) struct SyncUnsafeCell<T>(std::cell::UnsafeCell<T>);
+
+// SAFETY: the unsafe methods below require callers to keep concurrent
+// accesses to one cell disjoint, which is what `Sync` promises.
+unsafe impl<T: Send + Sync> Sync for SyncUnsafeCell<T> {}
+
+impl<T> SyncUnsafeCell<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self(std::cell::UnsafeCell::new(value))
+    }
+
+    /// Views an exclusively borrowed slice as shared cells.
+    pub(crate) fn from_mut(slice: &mut [T]) -> &[Self] {
+        // SAFETY: a cell has the same layout as its content, and the
+        // exclusive borrow of the slice is given up for the shared view.
+        unsafe { &*(std::ptr::from_mut(slice) as *const [Self]) }
+    }
+
+    /// A raw pointer to the content.
+    pub(crate) fn get(&self) -> *mut T {
+        self.0.get()
+    }
+
+    pub(crate) fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
+    }
+
+    /// Views cells as their contents.
+    ///
+    /// # Safety
+    ///
+    /// No cell in `cells` may be written while the returned slice is alive.
+    pub(crate) unsafe fn as_slice(cells: &[Self]) -> &[T] {
+        // SAFETY: a cell has the same layout as its content; the caller
+        // guarantees that the contents do not change.
+        unsafe { &*(std::ptr::from_ref(cells) as *const [T]) }
+    }
+
+    /// Views cells as their exclusively borrowed contents.
+    ///
+    /// # Safety
+    ///
+    /// No cell in `cells` may be accessed otherwise while the returned slice
+    /// is alive.
+    pub(crate) unsafe fn as_mut_slice(cells: &[Self]) -> &mut [T] {
+        let ptr = std::cell::UnsafeCell::raw_get(cells.as_ptr().cast());
+        // SAFETY: a cell has the same layout as its content; the caller
+        // guarantees exclusive access.
+        unsafe { std::slice::from_raw_parts_mut(ptr, cells.len()) }
+    }
+}
+
+impl<T> std::fmt::Debug for SyncUnsafeCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncUnsafeCell").finish_non_exhaustive()
+    }
+}
+
 /// Sets flag bits without taking exclusive ownership of a cache line when
 /// all requested bits are already set. Callers needing the previous value
 /// must use `fetch_or` directly.

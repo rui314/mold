@@ -4,14 +4,13 @@
 #![allow(non_upper_case_globals)]
 
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use rayon::prelude::*;
@@ -31,7 +30,9 @@ use crate::symbol::{
 };
 use crate::target::{Family, Target};
 use crate::util::perf::Counter;
-use crate::util::{self, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb};
+use crate::util::{
+    self, SyncUnsafeCell, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb,
+};
 use crate::{error, fatal, out, warn};
 use bstr::BStr;
 
@@ -159,18 +160,6 @@ impl<T: FileInPool> FileList<T> {
 
     pub fn pool_len(&self) -> usize {
         self.pool.len()
-    }
-
-    /// Returns a file by its stable pool index without a bounds check.
-    ///
-    /// # Safety
-    ///
-    /// `index` must have been returned by this list's `push` method.
-    #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> &T {
-        debug_assert!(index < self.pool.len());
-        // SAFETY: guaranteed by the caller.
-        unsafe { self.pool.get_unchecked(index) }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -519,34 +508,29 @@ impl<E: Target> InputFile<E> {
         if idx >= self.shdrs.len() {
             fatal!("{display}: invalid section index: {idx}");
         }
-        let shdr = &self.shdrs[idx];
-        let (sh_offset, sh_size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        self.section_contents_range_checked(sh_offset, sh_size, display)
+        &self.data()[self.section_range_checked(&self.shdrs[idx], display)]
     }
 
     /// The contents described by a section header.
     #[inline]
     pub(crate) fn section_contents_from_shdr(&self, shdr: &ElfShdr<E>) -> &'static [u8] {
-        self.section_contents_range_checked(
-            shdr.sh_offset.get(),
-            shdr.sh_size.get(),
-            &self.filename,
-        )
+        &self.data()[self.section_range(shdr)]
     }
 
-    fn section_contents_range_checked(
-        &self,
-        sh_offset: u64,
-        sh_size: u64,
-        display: &dyn fmt::Display,
-    ) -> &'static [u8] {
-        let data = self.data();
+    /// The file range described by a section header, checked against the
+    /// file size.
+    pub(crate) fn section_range(&self, shdr: &ElfShdr<E>) -> Range<usize> {
+        self.section_range_checked(shdr, &self.filename)
+    }
+
+    fn section_range_checked(&self, shdr: &ElfShdr<E>, display: &dyn fmt::Display) -> Range<usize> {
+        let (sh_offset, sh_size) = (shdr.sh_offset.get(), shdr.sh_size.get());
         let start = sh_offset as usize;
         let end = start.saturating_add(sh_size as usize);
-        if end > data.len() {
+        if end > self.data().len() {
             fatal!("{display}: section header is out of range: {sh_offset}");
         }
-        &data[start..end]
+        start..end
     }
 
     pub fn find_section(&self, sh_type: u32) -> Option<usize> {
@@ -597,7 +581,9 @@ pub struct ComdatGroupRef {
     pub sect_idx: u32,
 
     // The high bit records ownership; symbol IDs occupy the remaining bits.
-    signature_and_owner: u32,
+    // An exceptional signature is interned after the group is created and
+    // stored by the symbol map's shard, so the word is atomic.
+    signature_and_owner: AtomicU32,
 }
 
 impl ComdatGroupRef {
@@ -605,34 +591,35 @@ impl ComdatGroupRef {
 
     fn new(sect_idx: u32, signature: SymbolId) -> Self {
         assert!(signature.0 < Self::IS_OWNER);
-        Self { sect_idx, signature_and_owner: signature.0 }
+        Self { sect_idx, signature_and_owner: AtomicU32::new(signature.0) }
     }
 
     #[inline]
     pub fn signature(&self) -> SymbolId {
-        SymbolId(self.signature_and_owner & !Self::IS_OWNER)
+        SymbolId(self.signature_and_owner.load(Ordering::Relaxed) & !Self::IS_OWNER)
     }
 
     #[inline]
     pub fn is_owner(&self) -> bool {
-        self.signature_and_owner & Self::IS_OWNER != 0
+        self.signature_and_owner.load(Ordering::Relaxed) & Self::IS_OWNER != 0
     }
 
     #[inline]
     pub fn set_owner(&mut self, is_owner: bool) {
+        let word = self.signature_and_owner.get_mut();
         if is_owner {
-            self.signature_and_owner |= Self::IS_OWNER;
+            *word |= Self::IS_OWNER;
         } else {
-            self.signature_and_owner &= !Self::IS_OWNER;
+            *word &= !Self::IS_OWNER;
         }
     }
 
-    /// Returns the word that receives an exceptional signature while COMDAT
-    /// metadata is gathered. Ownership has not been selected at that point.
+    /// Stores an exceptional signature while COMDAT metadata is gathered.
+    /// Ownership has not been selected at that point.
     #[inline]
-    pub(crate) fn signature_word_mut(&mut self) -> &mut u32 {
-        debug_assert!(!self.is_owner());
-        &mut self.signature_and_owner
+    pub(crate) fn set_signature(&self, signature: SymbolId) {
+        assert!(signature.0 < Self::IS_OWNER);
+        self.signature_and_owner.store(signature.0, Ordering::Relaxed);
     }
 }
 
@@ -665,22 +652,22 @@ pub struct RiscvAttributes {
 /// so those writes are disjoint even though the files themselves are shared
 /// by the parallel copy tasks.
 struct DecodedRelocations<R> {
-    records: UnsafeCell<Box<[R]>>,
+    records: SyncUnsafeCell<Box<[R]>>,
 }
 
 impl<R> DecodedRelocations<R> {
     fn new(records: Box<[R]>) -> Self {
-        Self { records: UnsafeCell::new(records) }
+        Self { records: SyncUnsafeCell::new(records) }
     }
 
     fn as_slice(&self) -> &[R] {
         // SAFETY: mutable access is restricted to exclusive linker phases and
         // disjoint relocation sections.
-        unsafe { (&*self.records.get()).as_ref() }
+        unsafe { &*self.records.get() }
     }
 
     fn as_mut_slice(&mut self) -> &mut [R] {
-        self.records.get_mut().as_mut()
+        self.records.get_mut()
     }
 
     /// Gives `f` mutable access through a shared file reference.
@@ -691,7 +678,7 @@ impl<R> DecodedRelocations<R> {
     /// returns.
     unsafe fn with_mut_slice(&self, f: impl FnOnce(&mut [R])) {
         // SAFETY: the caller upholds the exclusive-access requirement.
-        f(unsafe { (&mut *self.records.get()).as_mut() });
+        f(unsafe { &mut *self.records.get() });
     }
 
     fn is_empty(&self) -> bool {
@@ -704,10 +691,6 @@ impl<R: fmt::Debug> fmt::Debug for DecodedRelocations<R> {
         f.debug_tuple("DecodedRelocations").field(&self.as_slice()).finish()
     }
 }
-
-// SAFETY: mutable access is permitted only for disjoint relocation tables
-// owned by separate copy tasks, as documented by with_mut_slice().
-unsafe impl<R: Send + Sync> Sync for DecodedRelocations<R> {}
 
 /// Whether an object is native code, plugin input, or plugin output.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -842,10 +825,7 @@ impl<E: Target> ObjectFile<E> {
 
     #[inline(always)]
     fn input_relocation_data(&self, relsec_idx: u32) -> &'static [u8] {
-        // Relocation sections are range-checked when sections are parsed.
-        let shdr = &self.base.shdrs[relsec_idx as usize];
-        let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        &self.base.data()[offset as usize..(offset + size) as usize]
+        self.base.section_contents_from_shdr(&self.base.shdrs[relsec_idx as usize])
     }
 }
 
@@ -1028,15 +1008,7 @@ impl<E: Target> ExactSizeIterator for RelocationIter<'_, E> {}
 //
 // This function converts a CREL relocation table to a regular one.
 fn decode_crel<E: Target>(file: &dyn fmt::Display, data: &[u8]) -> Box<[ElfRel<E>]> {
-    let reader = CrelReader::<E>::new(file, data);
-    // Own a fixed-size array without value-initializing trivial elements
-    // that the caller is about to overwrite.
-    let mut rels = Box::<[ElfRel<E>]>::new_uninit_slice(reader.len());
-    for (i, rel) in reader.enumerate() {
-        rels[i].write(rel);
-    }
-    // SAFETY: CrelReader visits every index from zero to len once.
-    unsafe { rels.assume_init() }
+    CrelReader::<E>::new(file, data).collect()
 }
 
 impl<E: Target> ObjectFile<E> {
@@ -1177,11 +1149,7 @@ impl<E: Target> ObjectFile<E> {
     #[inline]
     fn section_with_id(&self, shndx: usize) -> Option<(InputSectionId, &InputSection<E>)> {
         let index = self.sections.input_index(shndx)?;
-        Some((
-            InputSectionId::new(self.id(), index),
-            // SAFETY: `input_index` only returns indices assigned by insertion.
-            unsafe { self.sections.input_unchecked(index as usize) },
-        ))
+        Some((InputSectionId::new(self.id(), index), self.sections.input(index as usize)))
     }
 
     #[inline]
@@ -1240,15 +1208,11 @@ impl<E: Target> ObjectFile<E> {
         }
 
         let base = &self.base;
-        let shdr = &base.shdrs[index];
-        let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
+        let range = base.section_range(&base.shdrs[index]);
         let mf = base.mf.expect("input relocations without a mapped file");
-        // SAFETY: a mutable ObjectFile owns this relocation section for the
-        // duration of the pass, and section parsing checked its range.
-        let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
-        // SAFETY: the same exclusive ownership applies while the returned
-        // relocation view is alive.
-        rels_from_bytes_mut::<E>(unsafe { &mut *data })
+        // SAFETY: a mutable ObjectFile owns this relocation section while
+        // the returned relocation view is alive.
+        rels_from_bytes_mut::<E>(unsafe { mf.data_mut(range) })
     }
 
     /// Gives `f` mutable access to a relocation table during the copy phase.
@@ -1276,13 +1240,11 @@ impl<E: Target> ObjectFile<E> {
         }
 
         let base = &self.base;
-        let shdr = &base.shdrs[index];
-        let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
+        let range = base.section_range(&base.shdrs[index]);
         let mf = base.mf.expect("input relocations without a mapped file");
-        // SAFETY: the caller exclusively owns this checked relocation range.
-        let data = unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
-        // SAFETY: the exclusive access lasts until f returns.
-        f(rels_from_bytes_mut::<E>(unsafe { &mut *data }));
+        // SAFETY: the caller exclusively owns this relocation section until
+        // f returns.
+        f(rels_from_bytes_mut::<E>(unsafe { mf.data_mut(range) }));
     }
 
     fn set_decoded_crel(&mut self, index: usize, rels: Box<[ElfRel<E>]>) {
@@ -1340,11 +1302,7 @@ impl<E: Target> ObjectFile<E> {
     /// group section as they are needed.
     #[inline]
     pub fn comdat_members(&self, group: &ComdatGroupRef) -> impl Iterator<Item = u32> + '_ {
-        let data = self.base.data();
-        let shdr = &self.base.shdrs[group.sect_idx as usize];
-        let (sh_offset, sh_size) = (shdr.sh_offset.get(), shdr.sh_size.get());
-        let start = sh_offset as usize;
-        let bytes = &data[start..start + sh_size as usize];
+        let bytes = self.base.section_contents_from_shdr(&self.base.shdrs[group.sect_idx as usize]);
         let is_little_endian = self.base.is_little_endian;
         bytes.as_chunks::<4>().0.iter().skip(1).map(move |b| {
             let b = [b[0], b[1], b[2], b[3]];
@@ -1460,9 +1418,7 @@ impl<E: Target> ObjectFile<E> {
     pub fn read_section_metadata(&mut self) {
         debug_assert!(!self.sections_parsed);
 
-        for i in 0..self.num_elf_sections {
-            // SAFETY: `i` comes from the section-header table's range.
-            let shdr = unsafe { self.base.shdrs.get_unchecked(i) };
+        for (i, shdr) in self.base.shdrs.iter().enumerate() {
             let (sh_type, sh_flags) = (shdr.sh_type.get(), shdr.sh_flags.get());
 
             if sh_flags & SHF_EXCLUDE as u64 != 0
@@ -1619,20 +1575,14 @@ impl<E: Target> ObjectFile<E> {
 
     fn initialize_sections(&mut self, args: &Args, id: ObjId) {
         // Read sections
-        let nsections = self.num_elf_sections;
+        let shdrs = self.base.shdrs;
         let expected_reloc_type = if E::IS_RELA { SHT_RELA } else { SHT_REL };
-        debug_assert!(self.comdat_discarded.is_empty() || self.comdat_discarded.len() == nsections);
-        for i in 0..nsections {
-            if !self.comdat_discarded.is_empty()
-                // SAFETY: a nonempty COMDAT bitmap has one entry per input
-                // section, and `i` is in that range.
-                && unsafe { *self.comdat_discarded.get_unchecked(i) }
-            {
+        for (i, shdr) in shdrs.iter().enumerate() {
+            // The COMDAT bitmap is empty if no group has been discarded.
+            if self.comdat_discarded.get(i).is_some_and(|&discarded| discarded) {
                 continue;
             }
 
-            // SAFETY: `i` comes from the file's section-header range.
-            let shdr = unsafe { self.base.shdrs.get_unchecked(i) };
             let (sh_type, flags) = (shdr.sh_type.get(), shdr.sh_flags.get());
             if flags & SHF_EXCLUDE as u64 != 0
                 && flags & SHF_ALLOC as u64 == 0
@@ -1818,9 +1768,7 @@ impl<E: Target> ObjectFile<E> {
         }
 
         // Attach relocation sections to their target sections.
-        for i in 0..nsections {
-            // SAFETY: `i` comes from the file's section-header range.
-            let shdr = unsafe { self.base.shdrs.get_unchecked(i) };
+        for (i, shdr) in shdrs.iter().enumerate() {
             let sh_type = shdr.sh_type.get();
             if sh_type != expected_reloc_type && sh_type != SHT_CREL {
                 continue;
@@ -2410,17 +2358,12 @@ impl<E: Target> ObjectFile<E> {
                 Some(data) => data.as_mut_slice(),
                 None => {
                     let base = &self.base;
-                    let shdr = &base.shdrs[relsec_idx];
-                    let (offset, size) = (shdr.sh_offset.get(), shdr.sh_size.get());
+                    let range = base.section_range(&base.shdrs[relsec_idx]);
                     let mf = base.mf.expect("input relocations without a mapped file");
                     // SAFETY: this file-parallel pass exclusively owns the
-                    // relocation section, whose range was checked at parse
-                    // time. No overlapping shared slice is used here.
-                    let data =
-                        unsafe { mf.data_mut_ptr(offset as usize..(offset + size) as usize) };
-                    // SAFETY: the exclusive access described above lasts
-                    // until this relocation view is dropped.
-                    rels_from_bytes_mut::<E>(unsafe { &mut *data })
+                    // relocation section while this view is alive, and uses
+                    // no overlapping shared slice.
+                    rels_from_bytes_mut::<E>(unsafe { mf.data_mut(range) })
                 }
             };
 
@@ -3407,34 +3350,26 @@ pub fn resolved_symbol_rank(sym: &Symbol, is_dso: bool, is_in_archive: bool, pri
 /// An exclusive view of the symbol table shared by file-parallel passes.
 /// Individual symbols are serialized by their byte-sized spin locks.
 pub struct SymbolEditor<'a> {
-    symbols: *mut Symbol,
-    len: usize,
-    _symbols: PhantomData<&'a mut [Symbol]>,
+    symbols: &'a [SyncUnsafeCell<Symbol>],
 }
-
-// The exclusive slice represented by `symbols` cannot be accessed except
-// through `with_symbol`, which serializes accesses to each element.
-unsafe impl Sync for SymbolEditor<'_> {}
 
 impl<'a> SymbolEditor<'a> {
     pub(crate) fn new(symbols: &'a mut [Symbol]) -> Self {
-        SymbolEditor { symbols: symbols.as_mut_ptr(), len: symbols.len(), _symbols: PhantomData }
+        SymbolEditor { symbols: SyncUnsafeCell::from_mut(symbols) }
     }
 
     #[inline]
     pub(crate) fn with_symbol<R>(&self, id: SymbolId, f: impl FnOnce(&mut Symbol) -> R) -> R {
-        debug_assert!(id.index() < self.len);
         // SAFETY: the editor owns an exclusive borrow of the whole table,
         // and Symbol::with_resolution_lock serializes accesses to this slot.
-        unsafe { Symbol::with_resolution_lock(self.symbols.add(id.index()), f) }
+        unsafe { Symbol::with_resolution_lock(self.symbols[id.index()].get(), f) }
     }
 
     #[inline]
     pub(crate) fn skip_dso(&self, id: SymbolId) -> bool {
-        debug_assert!(id.index() < self.len);
-        // SAFETY: the editor owns a live symbol array; skip_dso_at reads only
-        // the atomic state byte shared with the resolution lock.
-        unsafe { Symbol::skip_dso_at(self.symbols.add(id.index())) }
+        // SAFETY: skip_dso_at reads only the atomic state byte shared with
+        // the resolution lock.
+        unsafe { Symbol::skip_dso_at(self.symbols[id.index()].get()) }
     }
 }
 
@@ -3445,9 +3380,6 @@ pub struct SymbolResolver<'a, E: Target> {
     dsos: &'a FileList<SharedFile<E>>,
     default_version: u16,
 }
-
-// SymbolResolver's mutable symbol-table access is serialized by its editor.
-unsafe impl<E: Target> Sync for SymbolResolver<'_, E> {}
 
 impl<'a, E: Target> SymbolResolver<'a, E> {
     pub fn new(

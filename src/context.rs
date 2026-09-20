@@ -395,10 +395,7 @@ impl<E: Target> Context<E> {
 
     #[inline]
     pub fn input_section(&self, id: InputSectionId) -> &InputSection<E> {
-        // SAFETY: InputSectionIds are created only when a section is inserted
-        // into the stable file pool and that file's dense section vector.
-        let file = unsafe { self.objs.get_unchecked(id.file().index()) };
-        unsafe { file.sections.input_unchecked(id.index()) }
+        self.objs[id.file().index()].sections.input(id.index())
     }
 
     /// Formats an input section for diagnostics.

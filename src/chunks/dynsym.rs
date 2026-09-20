@@ -44,7 +44,7 @@ impl<E: Target> DynsymSection<E> {
         }
         if symbols[sym].dynsym_idx(symbols).is_none() {
             // Mark the symbol as queued before sort_dynsyms assigns its real index.
-            symbols.aux_mut(sym).dynsym_idx = u32::MAX - 1;
+            *symbols.aux_mut(sym).dynsym_idx.get_mut() = u32::MAX - 1;
             self.symbols.push(Some(sym));
         }
     }
