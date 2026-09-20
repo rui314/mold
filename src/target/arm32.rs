@@ -47,13 +47,11 @@
 use rayon::prelude::*;
 
 use crate::chunks::eh_frame;
-use crate::chunks::output_section::OutputBuffer;
+use crate::chunks::output_section::for_each_member;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
-use crate::input_sections::{
-    InputSection, InputSectionId, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc,
-};
+use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
@@ -211,50 +209,56 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
 pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut [u8]) {
-    let output = OutputBuffer::new(buf);
-    ctx.objs.par_iter().for_each(|file| {
-        // Collect mapping symbols
-        let mut marks: Vec<(InputSectionId, u64, MappingKind)> = file
-            .base
-            .local_symbols()
-            .iter()
-            .map(|&id| &ctx.symbols[id])
-            .filter_map(|sym| {
-                let kind = mapping_symbol_kind(sym.name())?;
-                let sec = sym.input_section()?;
-                let isec = ctx.input_section(sec);
-                (isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
-                    .then_some((sec, sym.value, kind))
-            })
-            .collect();
-        // Group mapping symbols by input section and sort by address
-        marks.sort_by_key(|&(sec, offset, _)| (ctx.input_section(sec).shndx, offset));
+    // Collect each file's mapping symbols, sorted by section and offset.
+    let marks: Vec<Vec<_>> = ctx
+        .objs
+        .par_iter()
+        .map(|file| {
+            let mut marks: Vec<_> = file
+                .base
+                .local_symbols()
+                .iter()
+                .map(|&id| &ctx.symbols[id])
+                .filter_map(|sym| {
+                    let kind = mapping_symbol_kind(sym.name())?;
+                    let sec = sym.input_section()?;
+                    Some((ctx.input_section(sec).shndx, sym.value, kind))
+                })
+                .collect();
+            marks.sort_unstable_by_key(|&(shndx, offset, _)| (shndx, offset));
+            marks
+        })
+        .collect();
 
-        // Swap bytes
-        for (i, &(sec, start, kind)) in marks.iter().enumerate() {
-            let width = match kind {
-                MappingKind::Arm => 4,
-                MappingKind::Thumb => 2,
-                MappingKind::Data => continue,
-            };
-            let isec = ctx.input_section(sec);
-            let end = match marks.get(i + 1) {
-                Some(&(next, offset, _)) if next == sec => offset,
-                _ => isec.sh_size,
-            };
-            let osec = ctx.output_section(isec.output_section.expect("output section"));
-            let base = u64::from(osec.hdr.shdr.sh_offset.get()) + isec.offset();
-            // SAFETY: live input sections occupy disjoint output ranges, and
-            // this file's mapping-symbol ranges are processed sequentially.
-            unsafe {
-                output.with_slice((base + start) as usize..(base + end) as usize, |buf| {
-                    for insn in buf.chunks_exact_mut(width) {
-                        insn.reverse();
-                    }
-                });
-            }
+    // Swap bytes one input section at a time. Each mapping symbol's range
+    // is indexed within the section's own bytes, so a symbol value outside
+    // of the section is rejected.
+    for osec in &ctx.output_sections {
+        let shdr = &osec.hdr.shdr;
+        if shdr.sh_flags.get() & SHF_EXECINSTR == 0 || shdr.sh_type.get() == SHT_NOBITS {
+            continue;
         }
-    });
+        let start = shdr.sh_offset.get() as usize;
+        let buf = &mut buf[start..start + shdr.sh_size.get() as usize];
+        for_each_member(ctx, osec, buf, |_, isec, slice| {
+            let buf = &mut slice[..isec.sh_size as usize];
+            let marks = &marks[isec.file.index()];
+            let lo = marks.partition_point(|m| m.0 < isec.shndx);
+            let hi = marks.partition_point(|m| m.0 <= isec.shndx);
+            let run = &marks[lo..hi];
+            for (i, &(_, start, kind)) in run.iter().enumerate() {
+                let width = match kind {
+                    MappingKind::Arm => 4,
+                    MappingKind::Thumb => 2,
+                    MappingKind::Data => continue,
+                };
+                let end = run.get(i + 1).map_or(isec.sh_size, |&(_, offset, _)| offset);
+                for insn in buf[start as usize..end as usize].chunks_exact_mut(width) {
+                    insn.reverse();
+                }
+            }
+        });
+    }
 }
 
 impl<const LE: bool> Target for Arm32Target<LE> {

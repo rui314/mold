@@ -1,6 +1,5 @@
 //! Output sections built from input sections, such as `.text` and `.data`.
 
-use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
 use bstr::BStr;
@@ -58,43 +57,6 @@ pub struct OutputSection<E: Target> {
     /// The number of dynamic relocations before each shard of `abs_rels`.
     pub dynrel_offsets: Vec<u64>,
     pub relr_offsets: Vec<u64>,
-}
-
-/// A pointer to an output buffer whose disjoint ranges are written in parallel.
-pub struct OutputBuffer<'a> {
-    ptr: *mut u8,
-    len: usize,
-    marker: PhantomData<&'a mut [u8]>,
-}
-
-// SAFETY: Parallel loops use the pointer only for ranges that the ELF layout
-// proves disjoint, just as their C++ counterparts do.
-unsafe impl Sync for OutputBuffer<'_> {}
-
-impl<'a> OutputBuffer<'a> {
-    #[inline]
-    pub(crate) fn new(buf: &'a mut [u8]) -> Self {
-        OutputBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), marker: PhantomData }
-    }
-
-    /// Runs `f` on one range owned by the current parallel-loop iteration.
-    ///
-    /// # Safety
-    /// No other live access may overlap `range`.
-    #[inline]
-    pub(crate) unsafe fn with_slice<R>(
-        &self,
-        range: std::ops::Range<usize>,
-        f: impl FnOnce(&mut [u8]) -> R,
-    ) -> R {
-        debug_assert!(range.start <= range.end && range.end <= self.len);
-        // SAFETY: the caller guarantees that this in-bounds range is the
-        // iteration's exclusive output range.
-        let slice = unsafe {
-            std::slice::from_raw_parts_mut(self.ptr.add(range.start), range.end - range.start)
-        };
-        f(slice)
-    }
 }
 
 /// Shard size for parallel processing of absolute relocations.
@@ -182,72 +144,98 @@ pub fn layout<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     off
 }
 
+/// Runs `f` in parallel on each member's bytes in `buf`, the output
+/// section's contents, along with the padding up to the next member.
+/// Splitting `buf` at member offsets, rather than indexing it by them,
+/// gives each member its own exclusive slice.
+pub(crate) fn for_each_member<E: Target>(
+    ctx: &Context<E>,
+    osec: &OutputSection<E>,
+    buf: &mut [u8],
+    f: impl Fn(usize, &InputSection<E>, &mut [u8]) + Sync,
+) {
+    let members = &osec.members;
+    let offset = |i: usize| match members.get(i) {
+        Some(&m) => ctx.input_section(m).offset() as usize,
+        None => osec.hdr.shdr.sh_size.get() as usize,
+    };
+
+    rayon::iter::split((0..members.len(), buf), |(range, buf)| {
+        if range.len() <= 1 {
+            return ((range, buf), None);
+        }
+        let mid = range.start + range.len() / 2;
+        let (left, right) = buf.split_at_mut(offset(mid) - offset(range.start));
+        ((range.start..mid, left), Some((mid..range.end, right)))
+    })
+    .for_each(|(range, mut buf)| {
+        let mut pos = offset(range.start);
+        for i in range {
+            let end = offset(i + 1);
+            let slice = buf.split_off_mut(..end - pos).unwrap();
+            pos = end;
+            f(i, ctx.input_section(members[i]), slice);
+        }
+    });
+}
+
 /// Copies the members into `buf`, fills the padding between them, and
 /// applies relocations.
 pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = &ctx.output_sections[id.index()];
-    let members = &osec.members;
     let abs_rels = &osec.abs_rels;
 
-    let output = OutputBuffer::new(buf);
-
     // Copy section contents to an output file.
-    members.par_iter().enumerate().for_each(|(i, &member)| {
-        let isec = ctx.input_section(member);
-        let start = isec.offset() as usize;
-        let next_start = members.get(i + 1).map_or(osec.hdr.shdr.sh_size.get() as usize, |&next| {
-            ctx.input_section(next).offset() as usize
-        });
-        // SAFETY: output-section member offsets are ordered and each
-        // iteration owns the bytes up to the next member.
-        unsafe {
-            output.with_slice(start..next_start, |slice| {
-                let (own, padding) = slice.split_at_mut(isec.sh_size as usize);
-                isec.write_to(ctx, own);
+    for_each_member(ctx, osec, buf, |i, isec, slice| {
+        let (own, padding) = slice.split_at_mut(isec.sh_size as usize);
+        isec.write_to(ctx, own);
 
-                // abs_rels is sorted by member, so this member's absolute
-                // relocations form one run of it.
-                let lo = abs_rels.partition_point(|r| (r.member as usize) < i);
-                let hi = abs_rels.partition_point(|r| (r.member as usize) <= i);
-                apply_abs_rels(ctx, osec, isec, &abs_rels[lo..hi], own);
+        // abs_rels is sorted by member, so this member's absolute
+        // relocations form one run of it.
+        let lo = abs_rels.partition_point(|r| (r.member as usize) < i);
+        let hi = abs_rels.partition_point(|r| (r.member as usize) <= i);
+        apply_abs_rels(ctx, osec, isec, &abs_rels[lo..hi], own);
 
-                // Clear trailing padding. We write trap instructions for an
-                // executable segment so that a disassembler wouldn't try to
-                // disassemble garbage as instructions.
-                if osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
-                    // s390x's old CRT files use NOP slides in .init and .fini.
-                    // https://sourceware.org/bugzilla/show_bug.cgi?id=31042
-                    let filler: &[u8] = if E::FAMILY == Family::S390x
-                        && (osec.hdr.name == b".init" || osec.hdr.name == b".fini")
-                    {
-                        &[0x07, 0x00] // nopr
-                    } else {
-                        E::TRAP
-                    };
-                    let mut pos = 0;
-                    while pos + filler.len() <= padding.len() {
-                        padding[pos..pos + filler.len()].copy_from_slice(filler);
-                        pos += filler.len();
-                    }
-                } else {
-                    padding.fill(0);
-                }
-            });
+        // Clear trailing padding. We write trap instructions for an
+        // executable segment so that a disassembler wouldn't try to
+        // disassemble garbage as instructions.
+        if osec.hdr.shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0 {
+            // s390x's old CRT files use NOP slides in .init and .fini.
+            // https://sourceware.org/bugzilla/show_bug.cgi?id=31042
+            let filler: &[u8] = if E::FAMILY == Family::S390x
+                && (osec.hdr.name == b".init" || osec.hdr.name == b".fini")
+            {
+                &[0x07, 0x00] // nopr
+            } else {
+                E::TRAP
+            };
+            let mut pos = 0;
+            while pos + filler.len() <= padding.len() {
+                padding[pos..pos + filler.len()].copy_from_slice(filler);
+                pos += filler.len();
+            }
+        } else {
+            padding.fill(0);
         }
     });
 
-    // Emit range extension thunks.
+    // Emit range extension thunks. They occupy the padding between members,
+    // which the loop above has already filled.
     if E::NEEDS_THUNK {
-        osec.thunks.par_iter().for_each(|thunk| {
-            let start = thunk.offset as usize;
-            let end = start + thunk.size() as usize;
-            // SAFETY: thunks have distinct ranges and the member loop has
-            // joined before this loop begins.
-            unsafe {
-                output.with_slice(start..end, |buf| {
-                    crate::thunks::copy_buf(ctx, osec, thunk, buf);
-                });
-            }
+        let mut rest = &mut *buf;
+        let mut pos = 0;
+        let bufs: Vec<&mut [u8]> = osec
+            .thunks
+            .iter()
+            .map(|thunk| {
+                let start = thunk.offset as usize;
+                rest.split_off_mut(..start - pos).unwrap();
+                pos = start + thunk.size() as usize;
+                rest.split_off_mut(..thunk.size() as usize).unwrap()
+            })
+            .collect();
+        bufs.into_par_iter().zip(&osec.thunks).for_each(|(buf, thunk)| {
+            crate::thunks::copy_buf(ctx, osec, thunk, buf);
         });
     }
 }
