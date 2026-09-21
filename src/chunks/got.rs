@@ -1,5 +1,7 @@
 //! `.got`, addresses and thread-local offsets used at runtime.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
@@ -245,19 +247,18 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
 // choices in for_each_entry.
 pub fn num_dynrels<E: Target>(ctx: &Context<E>) -> u64 {
     let got = &ctx.got;
-    let mut n = 0;
-    for &id in &got.got_syms {
-        let sym = &ctx.symbols[id];
-        if E::SUPPORTS_IFUNC && sym.is_ifunc() {
-            n += 1; // R_IRELATIVE
-            continue;
-        }
-        if sym.is_imported() {
-            n += 1; // R_GLOB_DAT
-        } else if ctx.args.pic && sym.is_relative() {
-            n += 1; // R_RELATIVE
-        }
-    }
+    let pic = ctx.args.pic;
+
+    // Every lookup misses the cache in a large link, so count in parallel.
+    let mut n = got
+        .got_syms
+        .par_iter()
+        .filter(|&&id| {
+            let sym = &ctx.symbols[id];
+            // R_IRELATIVE, R_GLOB_DAT or R_RELATIVE
+            (E::SUPPORTS_IFUNC && sym.is_ifunc()) || sym.is_imported() || (pic && sym.is_relative())
+        })
+        .count() as u64;
     for &id in &got.tlsgd_syms {
         let sym = &ctx.symbols[id];
         if sym.is_imported() {
