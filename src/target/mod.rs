@@ -222,6 +222,13 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     /// need GOT, PLT or dynamic relocation entries.
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>);
 
+    /// Whether `rel` is a word-size absolute relocation. The output section
+    /// applies those instead of `apply_reloc_alloc`, since only they can be
+    /// promoted to dynamic relocations.
+    fn is_absrel(rel: &ElfRel<Self>) -> bool {
+        rel.r_type() == Self::R_ABS
+    }
+
     /// Applies relocations to a copy of an allocated section's contents.
     fn apply_reloc_alloc(
         ctx: &Context<Self>,

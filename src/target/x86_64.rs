@@ -292,7 +292,6 @@ impl Target for X86_64 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got_base = ctx.gotplt.shdr.sh_addr.get();
         let mut i = 0;
@@ -301,9 +300,7 @@ impl Target for X86_64 {
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            // R_NONE applies nothing, and the output section applies
-            // R_X86_64_64 itself.
-            if rel.r_type() == R_NONE || rel.r_type() == R_X86_64_64 {
+            if rel.r_type() == R_NONE || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -315,10 +312,7 @@ impl Target for X86_64 {
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec_addr + rel.r_offset();
-            // A closure keeps G's lookups off the common path.
-            let g = || {
-                if sym.has_got(&ctx.symbols) { sym.got_addr(ctx).wrapping_sub(got_base) } else { 0 }
-            };
+            let g = || sym.got_addr(ctx).wrapping_sub(got_base);
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {

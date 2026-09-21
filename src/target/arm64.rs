@@ -376,7 +376,6 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         let mut i = 0;
@@ -384,7 +383,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         while i < rels.len() {
             let rel = rels[i];
             i += 1;
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -405,8 +404,6 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             let loc = &mut buf[off..];
 
             match rel.r_type() {
-                // Handled as an absolute relocation by the output section.
-                R_AARCH64_ABS64 => {}
                 R_AARCH64_LDST8_ABS_LO12_NC | R_AARCH64_ADD_ABS_LO12_NC => {
                     or_insn(loc, (bits(sa, 11, 0) << 10) as u32)
                 }

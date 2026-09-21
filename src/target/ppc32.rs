@@ -251,13 +251,12 @@ impl Target for Ppc32 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let got2 = file.got2.map_or(0, |shndx| file.section_at(shndx).addr(ctx));
 
         for rel in rels {
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -317,8 +316,8 @@ impl Target for Ppc32 {
                 R_PPC_GOT_TLSGD16 => write_ub16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got) as u16),
                 R_PPC_GOT_TLSLD16 => write_ub16(loc, ctx.got.tlsld_addr().wrapping_sub(got) as u16),
                 R_PPC_GOT_TPREL16 => write_ub16(loc, sym.gottp_addr(ctx).wrapping_sub(got) as u16),
-                R_PPC_ADDR32 | R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD
-                | R_PPC_PLTSEQ | R_PPC_PLTCALL => {}
+                R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD | R_PPC_PLTSEQ
+                | R_PPC_PLTCALL => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }

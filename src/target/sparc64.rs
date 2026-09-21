@@ -130,6 +130,11 @@ impl Target for Sparc64 {
     const R_DTPMOD: u32 = R_SPARC_TLS_DTPMOD64;
     const R_FUNCALL: &'static [u32] = &[R_SPARC_WPLT30, R_SPARC_WDISP30];
 
+    // SPARC64 defines two separate relocations for aligned and unaligned words.
+    fn is_absrel(rel: &ElfRel<Self>) -> bool {
+        rel.r_type() == R_SPARC_64 || rel.r_type() == R_SPARC_UA64
+    }
+
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         sparc64_rel_to_string(r_type & 0xff)
     }
@@ -364,7 +369,6 @@ impl Target for Sparc64 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         let tls_get_addr =
@@ -373,7 +377,7 @@ impl Target for Sparc64 {
         // We iterate over relocations in reverse order so that it is easy
         // to swap instructions for R_SPARC_TLS_GD_CALL.
         for (i, rel) in rels.iter().enumerate().rev() {
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -635,8 +639,8 @@ impl Target for Sparc64 {
                     or32(loc, bits(sa.wrapping_sub(ctx.tp_addr), 9, 0) | 0b1_1100_0000_0000)
                 }
                 R_SPARC_SIZE32 => write_ub32(loc, sym.esym(ctx).st_size().wrapping_add(a) as u32),
-                R_SPARC_64 | R_SPARC_UA64 | R_SPARC_TLS_LDO_ADD | R_SPARC_TLS_IE_LD
-                | R_SPARC_TLS_IE_LDX | R_SPARC_TLS_IE_ADD => {}
+                R_SPARC_TLS_LDO_ADD | R_SPARC_TLS_IE_LD | R_SPARC_TLS_IE_LDX
+                | R_SPARC_TLS_IE_ADD => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }

@@ -299,6 +299,13 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     const R_FUNCALL: &'static [u32] =
         &[R_ARM_JUMP24, R_ARM_THM_JUMP24, R_ARM_CALL, R_ARM_THM_CALL, R_ARM_PLT32];
 
+    // R_ARM_TARGET1 is typically used for entries in .init_array and is
+    // interpreted as either ABS32 or REL32 depending on the target. All
+    // targets we support handle it as if it were ABS32.
+    fn is_absrel(rel: &ElfRel<Self>) -> bool {
+        rel.r_type() == R_ARM_ABS32 || rel.r_type() == R_ARM_TARGET1
+    }
+
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         arm32_rel_to_string(r_type)
     }
@@ -419,13 +426,12 @@ impl<const LE: bool> Target for Arm32Target<LE> {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let osec = &ctx.output_sections[isec.output_section.expect("output section").index()];
 
         for (i, rel) in rels.iter().enumerate() {
-            if rel.r_type() == R_NONE || rel.r_type() == R_ARM_V4BX {
+            if rel.r_type() == R_NONE || rel.r_type() == R_ARM_V4BX || Self::is_absrel(rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -459,8 +465,6 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             let write16 = |loc: &mut [u8], v: u16| Self::write_u16(loc, v);
 
             match rel.r_type() {
-                // Handled as absolute relocations by the output section.
-                R_ARM_ABS32 | R_ARM_TARGET1 => {}
                 R_ARM_REL32 => write32(loc, pcrel as u32),
                 R_ARM_THM_CALL => {
                     if sym.is_remaining_undef_weak() {

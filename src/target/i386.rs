@@ -265,7 +265,6 @@ impl Target for I386 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
         let mut i = 0;
@@ -274,7 +273,7 @@ impl Target for I386 {
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -299,8 +298,6 @@ impl Target for I386 {
                     check(s.wrapping_add(a) as i64, 0, 1 << 16);
                     write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
-                // Handled as an absolute relocation by the output section.
-                R_386_32 => {}
                 R_386_PC8 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     check(v as i64, -(1 << 7), 1 << 7);

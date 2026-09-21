@@ -452,7 +452,6 @@ where
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         let contents = isec.original_contents(file);
@@ -462,7 +461,7 @@ where
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            if rel.r_type() == R_NONE || rel.r_type() == R_RISCV_RELAX {
+            if rel.r_type() == R_NONE || rel.r_type() == R_RISCV_RELAX || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -488,13 +487,7 @@ where
             let orig = &contents[rel.r_offset() as usize..];
 
             match rel.r_type() {
-                R_RISCV_32 => {
-                    if IS_64 {
-                        Self::write_u32(loc, sa as u32);
-                    }
-                }
-                // Handled as absolute relocations by the output section.
-                R_RISCV_64 => {}
+                R_RISCV_32 => Self::write_u32(loc, sa as u32),
                 R_RISCV_BRANCH => {
                     check(pcrel as i64, -(1 << 12), 1 << 12);
                     write_btype(loc, pcrel);

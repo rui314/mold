@@ -260,12 +260,11 @@ impl Target for S390x {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
         for (i, rel_mut) in rels.iter_mut().enumerate() {
             let rel = *rel_mut;
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -295,8 +294,6 @@ impl Target for S390x {
             };
 
             match rel.r_type() {
-                // Handled as an absolute relocation by the output section.
-                R_390_64 => {}
                 R_390_8 => {
                     check(sa as i64, 0, 1 << 8);
                     buf[off] = sa as u8;

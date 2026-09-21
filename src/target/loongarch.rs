@@ -460,7 +460,6 @@ where
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let contents = isec.original_contents(file);
         let got = ctx.got.hdr.shdr.sh_addr.get();
@@ -470,7 +469,7 @@ where
             let rel_idx = i;
             let rel = rels[rel_idx];
             i += 1;
-            if is_marker(rel.r_type()) {
+            if is_marker(rel.r_type()) || Self::is_absrel(&rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -524,10 +523,7 @@ where
             let loc = &mut buf[r_offset as usize..];
 
             match rel.r_type() {
-                R_LARCH_32 => {
-                    debug_assert!(IS_64);
-                    write_ul32(loc, sa as u32);
-                }
+                R_LARCH_32 => write_ul32(loc, sa as u32),
                 R_LARCH_B16 => {
                     check_branch(pcrel as i64, -(1 << 17), 1 << 17);
                     write_k16(loc, pcrel >> 2);
@@ -820,7 +816,6 @@ where
                         rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
-                R_LARCH_64 => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }

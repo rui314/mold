@@ -551,13 +551,12 @@ impl Target for Ppc64V2 {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let toc = toc(ctx);
         let got = ctx.got.hdr.shdr.sh_addr.get();
 
         for (i, rel) in rels.iter().enumerate() {
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -666,8 +665,7 @@ impl Target for Ppc64V2 {
                 R_PPC64_TPREL16_LO => write_ul16(loc, lo(sa.wrapping_sub(ctx.tp_addr)) as u16),
                 R_PPC64_TPREL16_LO_DS => or16(loc, sa.wrapping_sub(ctx.tp_addr) & 0xfffc),
                 R_PPC64_TPREL34 => write34(loc, sa.wrapping_sub(ctx.tp_addr)),
-                R_PPC64_ADDR64
-                | R_PPC64_PLTSEQ
+                R_PPC64_PLTSEQ
                 | R_PPC64_PLTSEQ_NOTOC
                 | R_PPC64_PLTCALL
                 | R_PPC64_PLTCALL_NOTOC

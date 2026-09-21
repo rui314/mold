@@ -252,7 +252,6 @@ fn apply_abs_rels<E: Target>(
 ) {
     let word = E::WORD_SIZE;
 
-    // Loop-invariant, but not reads the compiler can hoist.
     let base = osec.hdr.shdr.sh_addr.get() + isec.offset();
     let apply_dynamic_relocs = ctx.args.apply_dynamic_relocs;
     let pack_dyn_relocs_relr = ctx.args.pack_dyn_relocs_relr;
@@ -412,18 +411,6 @@ fn abs_rel_kind<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> Abs
     AbsRelKind::DynRel
 }
 
-fn is_absrel<E: Target>(r: &ElfRel<E>) -> bool {
-    match E::FAMILY {
-        // On ARM32, R_ARM_TARGET1 is typically used for entries in .init_array
-        // and is interpreted as either ABS32 or REL32 depending on the target.
-        // All targets we support handle it as if it were a ABS32.
-        Family::Arm32 => r.r_type() == R_ARM_ABS32 || r.r_type() == R_ARM_TARGET1,
-        // SPARC64 defines two separate relocations for aligned and unaligned words.
-        Family::Sparc64 => r.r_type() == R_SPARC_64 || r.r_type() == R_SPARC_UA64,
-        _ => r.r_type() == E::R_ABS,
-    }
-}
-
 // Scan word-size absolute relocations (e.g. R_X86_64_64). This is
 // separated from scan_relocations() because only such relocations can
 // be promoted to dynamic relocations.
@@ -442,7 +429,7 @@ pub fn scan_abs_relocations<E: Target>(
         .flat_map_iter(|(i, &m)| {
             let isec = ctx.input_section(m);
             let file = &ctx.objs[isec.file.index()];
-            isec.rels(file).iter().filter(|r| is_absrel::<E>(r)).map(move |r| AbsRel {
+            isec.rels(file).iter().filter(|r| E::is_absrel(r)).map(move |r| AbsRel {
                 member: i as u32,
                 offset: r.r_offset(),
                 sym: file.base.symbols[r.r_sym() as usize],

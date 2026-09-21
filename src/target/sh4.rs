@@ -298,12 +298,11 @@ impl<const LE: bool> Target for Sh4Target<LE> {
         buf: &mut [u8],
     ) {
         let file = &ctx.objs[isec.file.index()];
-        // Loop-invariant, but not reads the compiler can hoist.
         let isec_addr = isec.addr(ctx);
         let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
 
         for rel in rels {
-            if rel.r_type() == R_NONE {
+            if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
@@ -319,8 +318,6 @@ impl<const LE: bool> Target for Sh4Target<LE> {
             let loc = &mut buf[rel.r_offset() as usize..];
 
             let val = match rel.r_type() {
-                // Handled as an absolute relocation by the output section.
-                R_SH_DIR32 => continue,
                 R_SH_REL32 | R_SH_PLT32 => sa.wrapping_sub(p),
                 R_SH_GOT32 => g(),
                 R_SH_GOTPC => got.wrapping_add(a).wrapping_sub(p),
