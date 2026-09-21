@@ -1134,6 +1134,13 @@ fn sym_type(sym: &Symbol) -> usize {
 /// This is for PC-relative relocations (e.g. R_X86_64_PC32).
 /// We cannot promote them to dynamic relocations because the dynamic
 /// linker generally does not support PC-relative relocations.
+///
+/// The same goes for relocations that compute a symbol's offset from
+/// the start of the GOT section, such as R_X86_64_GOTOFF64 (that is,
+/// S + A - GOT). Unlike GOT-indirect relocations such as
+/// R_X86_64_GOTPCREL, they don't go through a GOT slot that the dynamic
+/// linker could fill in, so the symbol itself has to be in the output
+/// file.
 pub fn scan_pcrel<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,

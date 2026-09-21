@@ -216,9 +216,8 @@ impl Target for X86_64 {
                 R_X86_64_8 | R_X86_64_16 | R_X86_64_32 | R_X86_64_32S => {
                     scan_absrel(ctx, isec, sym, rel)
                 }
-                R_X86_64_PC8 | R_X86_64_PC16 | R_X86_64_PC32 | R_X86_64_PC64 => {
-                    scan_pcrel(ctx, isec, sym, rel)
-                }
+                R_X86_64_PC8 | R_X86_64_PC16 | R_X86_64_PC32 | R_X86_64_PC64
+                | R_X86_64_GOTOFF64 => scan_pcrel(ctx, isec, sym, rel),
                 R_X86_64_GOT32
                 | R_X86_64_GOT64
                 | R_X86_64_GOTPC32
@@ -266,7 +265,6 @@ impl Target for X86_64 {
                 R_X86_64_TLSDESC_CALL => scan_tlsdesc(ctx, sym),
                 R_X86_64_TPOFF32 | R_X86_64_TPOFF64 => check_tlsle(ctx, isec, sym, rel),
                 R_X86_64_64
-                | R_X86_64_GOTOFF64
                 | R_X86_64_DTPOFF32
                 | R_X86_64_DTPOFF64
                 | R_X86_64_SIZE32

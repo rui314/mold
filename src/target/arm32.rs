@@ -385,7 +385,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                     }
                 }
                 R_ARM_GOT_PREL | R_ARM_GOT_BREL | R_ARM_TARGET2 => sym.add_flags(NEEDS_GOT),
-                R_ARM_MOVT_PREL | R_ARM_THM_MOVT_PREL | R_ARM_PREL31 => {
+                R_ARM_MOVT_PREL | R_ARM_THM_MOVT_PREL | R_ARM_PREL31 | R_ARM_GOTOFF32 => {
                     scan_pcrel(ctx, isec, sym, &rel)
                 }
                 R_ARM_TLS_GD32 => sym.add_flags(NEEDS_TLSGD),
@@ -401,7 +401,6 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                 | R_ARM_THM_MOVT_ABS
                 | R_ARM_REL32
                 | R_ARM_BASE_PREL
-                | R_ARM_GOTOFF32
                 | R_ARM_THM_JUMP8
                 | R_ARM_THM_JUMP11
                 | R_ARM_THM_JUMP19

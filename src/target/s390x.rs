@@ -210,11 +210,14 @@ impl Target for S390x {
                     scan_absrel(ctx, isec, sym, rel)
                 }
                 R_390_PC12DBL | R_390_PC16 | R_390_PC16DBL | R_390_PC24DBL | R_390_PC32
-                | R_390_PC32DBL | R_390_PC64 => scan_pcrel(ctx, isec, sym, rel),
+                | R_390_PC32DBL | R_390_PC64 | R_390_GOTOFF16 | R_390_GOTOFF32 | R_390_GOTOFF64 => {
+                    scan_pcrel(ctx, isec, sym, rel)
+                }
                 R_390_GOT12 | R_390_GOT16 | R_390_GOT20 | R_390_GOT32 | R_390_GOT64
-                | R_390_GOTOFF16 | R_390_GOTOFF32 | R_390_GOTOFF64 | R_390_GOTPLT12
-                | R_390_GOTPLT16 | R_390_GOTPLT20 | R_390_GOTPLT32 | R_390_GOTPLT64
-                | R_390_GOTPC | R_390_GOTPCDBL | R_390_GOTENT => sym.add_flags(NEEDS_GOT),
+                | R_390_GOTPLT12 | R_390_GOTPLT16 | R_390_GOTPLT20 | R_390_GOTPLT32
+                | R_390_GOTPLT64 | R_390_GOTPC | R_390_GOTPCDBL | R_390_GOTENT => {
+                    sym.add_flags(NEEDS_GOT)
+                }
                 R_390_PLT12DBL | R_390_PLT16DBL | R_390_PLT24DBL | R_390_PLT32 | R_390_PLT32DBL
                 | R_390_PLT64 | R_390_PLTOFF16 | R_390_PLTOFF32 | R_390_PLTOFF64 => {
                     if sym.is_imported() {

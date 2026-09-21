@@ -270,7 +270,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
             }
 
             match rel.r_type() {
-                R_SH_REL32 => scan_pcrel(ctx, isec, sym, &rel),
+                R_SH_REL32 | R_SH_GOTOFF => scan_pcrel(ctx, isec, sym, &rel),
                 R_SH_GOT32 => sym.add_flags(NEEDS_GOT),
                 R_SH_PLT32 => {
                     if sym.is_imported() {
@@ -281,7 +281,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
                 R_SH_TLS_LD_32 => ctx.needs_tlsld.store(true, Ordering::Relaxed),
                 R_SH_TLS_IE_32 => sym.add_flags(NEEDS_GOTTP),
                 R_SH_TLS_LE_32 => check_tlsle(ctx, isec, sym, &rel),
-                R_SH_DIR32 | R_SH_GOTPC | R_SH_GOTOFF | R_SH_TLS_LDO_32 => {}
+                R_SH_DIR32 | R_SH_GOTPC | R_SH_TLS_LDO_32 => {}
                 _ => fatal!(
                     "{}: unknown relocation: {}",
                     isec.display(file),
