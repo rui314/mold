@@ -6,7 +6,7 @@
 
 # A record whose length field promises fewer bytes than the CIE id needs.
 cat <<EOF | $CC -c -o $t/a.o -xassembler -
-.section .eh_frame,"a",@unwind
+.section .eh_frame,"a"
   .byte 0x03
   .byte 0x00
   .byte 0x00
@@ -21,7 +21,7 @@ grep -q 'corrupted .eh_frame' $t/a.log
 
 # A record whose length extends past the end of the section.
 cat <<EOF | $CC -c -o $t/b.o -xassembler -
-.section .eh_frame,"a",@unwind
+.section .eh_frame,"a"
   .byte 0x08
   .byte 0x00
   .byte 0x00
@@ -39,7 +39,7 @@ grep -q 'corrupted .eh_frame' $t/b.log
 
 # A CIE that fits in the section but is too small to be parsed.
 cat <<EOF | $CC -c -o $t/c.o -xassembler -
-.section .eh_frame,"a",@unwind
+.section .eh_frame,"a"
   .byte 0x05
   .byte 0x00
   .byte 0x00
