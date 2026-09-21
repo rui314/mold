@@ -319,7 +319,12 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 R_AARCH64_TLSDESC_CALL => scan_tlsdesc(ctx, sym),
                 R_AARCH64_TLSLE_MOVW_TPREL_G2
                 | R_AARCH64_TLSLE_ADD_TPREL_LO12
-                | R_AARCH64_TLSLE_ADD_TPREL_LO12_NC => check_tlsle(ctx, isec, sym, rel),
+                | R_AARCH64_TLSLE_ADD_TPREL_LO12_NC
+                | R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC
+                | R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC
+                | R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC
+                | R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC
+                | R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC => check_tlsle(ctx, isec, sym, rel),
                 R_AARCH64_ABS64
                 | R_AARCH64_ADD_ABS_LO12_NC
                 | R_AARCH64_ADR_PREL_LO21
@@ -565,6 +570,21 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 }
                 R_AARCH64_TLSLE_ADD_TPREL_LO12_NC => {
                     or_insn(loc, (bits(tprel, 11, 0) << 10) as u32)
+                }
+                R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC => {
+                    or_insn(loc, (bits(tprel, 11, 0) << 10) as u32)
+                }
+                R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC => {
+                    or_insn(loc, (bits(tprel, 11, 1) << 10) as u32)
+                }
+                R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC => {
+                    or_insn(loc, (bits(tprel, 11, 2) << 10) as u32)
+                }
+                R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC => {
+                    or_insn(loc, (bits(tprel, 11, 3) << 10) as u32)
+                }
+                R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC => {
+                    or_insn(loc, (bits(tprel, 11, 4) << 10) as u32)
                 }
                 R_AARCH64_TLSGD_ADR_PAGE21 => {
                     let val = page(sym.tlsgd_addr(ctx).wrapping_add(a)).wrapping_sub(page(p));
