@@ -220,8 +220,6 @@ impl Target for X86_64 {
                 | R_X86_64_GOTOFF64 => scan_pcrel(ctx, isec, sym, rel),
                 R_X86_64_GOT32
                 | R_X86_64_GOT64
-                | R_X86_64_GOTPC32
-                | R_X86_64_GOTPC64
                 | R_X86_64_GOTPCREL
                 | R_X86_64_GOTPCREL64
                 | R_X86_64_GOTPCRELX
@@ -265,6 +263,8 @@ impl Target for X86_64 {
                 R_X86_64_TLSDESC_CALL => scan_tlsdesc(ctx, sym),
                 R_X86_64_TPOFF32 | R_X86_64_TPOFF64 => check_tlsle(ctx, isec, sym, rel),
                 R_X86_64_64
+                | R_X86_64_GOTPC32
+                | R_X86_64_GOTPC64
                 | R_X86_64_DTPOFF32
                 | R_X86_64_DTPOFF64
                 | R_X86_64_SIZE32

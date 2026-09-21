@@ -212,7 +212,7 @@ impl Target for I386 {
                 R_386_PC8 | R_386_PC16 | R_386_PC32 | R_386_GOTOFF => {
                     scan_pcrel(ctx, isec, sym, rel)
                 }
-                R_386_GOT32 | R_386_GOTPC => sym.add_flags(NEEDS_GOT),
+                R_386_GOT32 => sym.add_flags(NEEDS_GOT),
                 R_386_GOT32X => {
                     // We always want to relax GOT32X even if --no-relax is given
                     // because static PIE doesn't work without it.
@@ -249,7 +249,7 @@ impl Target for I386 {
                 }
                 R_386_TLS_GOTDESC => scan_tlsdesc(ctx, sym),
                 R_386_TLS_LE => check_tlsle(ctx, isec, sym, rel),
-                R_386_32 | R_386_TLS_LDO_32 | R_386_SIZE32 | R_386_TLS_DESC_CALL => {}
+                R_386_32 | R_386_GOTPC | R_386_TLS_LDO_32 | R_386_SIZE32 | R_386_TLS_DESC_CALL => {}
                 _ => error!(
                     "{}: unknown relocation: {}",
                     isec.display(file),

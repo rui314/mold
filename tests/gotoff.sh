@@ -138,4 +138,11 @@ $QEMU $t/exe1 | grep '^42 1$'
 $CC -B. -no-pie -o $t/exe2 $t/a.o $t/b.o $t/c.so
 $QEMU $t/exe2 | grep '^42 1$'
 
+# Computing the GOT base must not allocate a GOT entry for
+# _GLOBAL_OFFSET_TABLE_ itself, which in a PIE would show up as a
+# RELATIVE relocation.
+$CC -B. -pie -nostdlib -o $t/exe3 $t/a.o $t/c.so -Wl,-e,get_foo
+readelf --relocs $t/exe3 > $t/log3
+not grep -q RELATIVE $t/log3
+
 not $CC -B. -shared -o $t/d.so $t/a.o $t/c.so |& grep 'recompile with -fPIC'

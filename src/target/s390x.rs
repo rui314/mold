@@ -215,9 +215,7 @@ impl Target for S390x {
                 }
                 R_390_GOT12 | R_390_GOT16 | R_390_GOT20 | R_390_GOT32 | R_390_GOT64
                 | R_390_GOTPLT12 | R_390_GOTPLT16 | R_390_GOTPLT20 | R_390_GOTPLT32
-                | R_390_GOTPLT64 | R_390_GOTPC | R_390_GOTPCDBL | R_390_GOTENT => {
-                    sym.add_flags(NEEDS_GOT)
-                }
+                | R_390_GOTPLT64 | R_390_GOTENT => sym.add_flags(NEEDS_GOT),
                 R_390_PLT12DBL | R_390_PLT16DBL | R_390_PLT24DBL | R_390_PLT32 | R_390_PLT32DBL
                 | R_390_PLT64 | R_390_PLTOFF16 | R_390_PLTOFF32 | R_390_PLTOFF64 => {
                     if sym.is_imported() {
@@ -245,8 +243,8 @@ impl Target for S390x {
                     }
                 }
                 R_390_TLS_LE32 | R_390_TLS_LE64 => check_tlsle(ctx, isec, sym, rel),
-                R_390_64 | R_390_TLS_LDO32 | R_390_TLS_LDO64 | R_390_TLS_GDCALL
-                | R_390_TLS_LDCALL => {}
+                R_390_64 | R_390_GOTPC | R_390_GOTPCDBL | R_390_TLS_LDO32 | R_390_TLS_LDO64
+                | R_390_TLS_GDCALL | R_390_TLS_LDCALL => {}
                 _ => error!(
                     "{}: unknown relocation: {}",
                     isec.display(file),
