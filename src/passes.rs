@@ -1891,17 +1891,17 @@ pub fn check_symbol_types<E: Target>(ctx: &Context<E>) {
         ty => ty,
     };
     let check = |file: &dyn std::fmt::Display, file_id: FileId, sym: &Symbol, st_type2: u32| {
-        let esym1 = &sym.esym(ctx);
+        let st_type1 = sym.st_type();
         if let Some(owner) = sym.file()
             && owner != file_id
-            && esym1.st_type() != STT_NOTYPE
+            && st_type1 != STT_NOTYPE
             && st_type2 != STT_NOTYPE
-            && canonicalize(esym1.st_type()) != canonicalize(st_type2)
+            && canonicalize(st_type1) != canonicalize(st_type2)
         {
             warn!(
                 "symbol type mismatch: {sym}\n>>> defined in {} as {}\n>>> defined in {file} as {}",
                 ctx.file_display(owner),
-                stt_to_string(esym1.st_type()),
+                stt_to_string(st_type1),
                 stt_to_string(st_type2)
             );
         }
