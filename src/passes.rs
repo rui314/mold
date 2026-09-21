@@ -1691,16 +1691,14 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
         let file_id = FileId::Obj(file.id());
         for i in file.base.first_global..file.base.elf_syms.len() {
             let esym = &file.base.elf_syms[i];
-            let sym = &ctx.symbols[file.base.symbols[i]];
 
             // Skip if our symbol is undef or weak
+            if esym.is_undef() || esym.is_common() || esym.st_bind() == STB_WEAK {
+                continue;
+            }
+            let sym = &ctx.symbols[file.base.symbols[i]];
             let Some(owner) = sym.file() else { continue };
-            if owner == file_id
-                || ctx.internal_obj.map(FileId::Obj) == Some(owner)
-                || esym.is_undef()
-                || esym.is_common()
-                || esym.st_bind() == STB_WEAK
-            {
+            if owner == file_id || ctx.internal_obj.map(FileId::Obj) == Some(owner) {
                 continue;
             }
             // Skip if our symbol is in a dead section. In most cases, the
@@ -1910,9 +1908,13 @@ pub fn check_symbol_types<E: Target>(ctx: &Context<E>) {
     ctx.objs.par_iter().for_each(|file| {
         let id = FileId::Obj(file.id());
         for i in file.base.first_global..file.base.elf_syms.len() {
+            let st_type = file.base.elf_syms[i].st_type();
+            if st_type == STT_NOTYPE {
+                continue;
+            }
             let sym = &ctx.symbols[file.base.symbols[i]];
             if sym.file().is_some() && sym.file() != Some(id) {
-                check(file, id, sym, file.base.elf_syms[i].st_type());
+                check(file, id, sym, st_type);
             }
         }
     });
