@@ -104,6 +104,20 @@ impl Origin {
             _ => unreachable!(),
         }
     }
+
+    /// Tests the tag alone, sparing hot paths the full decode.
+    #[inline]
+    fn fragment(self) -> Option<FragmentRef> {
+        (self.0 & ORIGIN_TAG_MASK == FRAGMENT_TAG).then(|| FragmentRef::from_raw(self.0 >> 2))
+    }
+
+    /// Like [`Self::fragment`].
+    #[inline]
+    fn input_section(self) -> Option<InputSectionId> {
+        // The null origin carries the section tag too.
+        (self.0 != 0 && self.0 & ORIGIN_TAG_MASK == SECTION_TAG)
+            .then(|| InputSectionId::from_raw(self.0 >> 2))
+    }
 }
 
 impl fmt::Debug for Origin {
@@ -1010,9 +1024,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn addr_with<E: Target>(&self, ctx: &Context<E>, flags: AddrFlags) -> u64 {
-        let origin = self.origin();
-
-        if let OriginValue::Fragment(frag_ref) = origin {
+        if let Some(frag_ref) = self.origin.fragment() {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
                 std::hint::cold_path();
@@ -1043,8 +1055,8 @@ impl Symbol {
             return self.plt_addr(ctx);
         }
 
-        match origin {
-            OriginValue::InputSection(section) => {
+        match self.origin.input_section() {
+            Some(section) => {
                 let isec = ctx.input_section(section);
                 if !isec.is_alive() {
                     std::hint::cold_path();
@@ -1058,7 +1070,7 @@ impl Symbol {
             }
             // Synthetic symbols hold their final address in `value`, as do
             // absolute ones.
-            _ => self.value,
+            None => self.value,
         }
     }
 
