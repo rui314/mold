@@ -1069,6 +1069,11 @@ impl<'a> ArgCursor<'a> {
     }
 
     fn read_lto_option(&mut self) -> Option<Vec<u8>> {
+        // --thinlto-index-only is a flag or takes its value after `=`, as in
+        // lld. Reading the next argument as its value swallowed an input file.
+        if let Some(value) = self.read_eq("thinlto-index-only") {
+            return Some([b"thinlto-index-only=", value.as_encoded_bytes()].concat());
+        }
         // Argument forms precede flags, as in the main option grammar.
         for (name, prefix) in [
             ("lto-cs-profile-file", "cs-profile-path="),
@@ -1080,7 +1085,6 @@ impl<'a> ArgCursor<'a> {
             ("opt-remarks-passes", "opt-remarks-passes="),
             ("lto-pseudo-probe-for-profiling", "pseudo-probe-for-profiling="),
             ("lto-sample-profile", "sample-profile="),
-            ("thinlto-index-only", "thinlto-index-only="),
             ("thinlto-object-suffix-replace", "thinlto-object-suffix-replace="),
             ("thinlto-prefix-replace", "thinlto-prefix-replace="),
             ("thinlto-cache-dir", "cache-dir="),
@@ -2155,6 +2159,19 @@ mod tests {
         assert_eq!(cursor.read_lto_option(), Some(b"save-temps".to_vec()));
         assert_eq!(cursor.read_lto_option(), Some(b"O2".to_vec()));
         assert_eq!(cursor.index, args.len());
+    }
+
+    #[test]
+    fn thinlto_index_only_takes_its_value_after_equals() {
+        let args: Vec<_> = ["mold", "--thinlto-index-only", "a.o", "--thinlto-index-only=list"]
+            .into_iter()
+            .map(|s| Cow::Borrowed(OsStr::new(s)))
+            .collect();
+        let mut cursor = ArgCursor { args: &args, index: 1 };
+        assert_eq!(cursor.read_lto_option(), Some(b"thinlto-index-only".to_vec()));
+        assert_eq!(cursor.index, 2);
+        cursor.index = 3;
+        assert_eq!(cursor.read_lto_option(), Some(b"thinlto-index-only=list".to_vec()));
     }
 
     #[cfg(unix)]
