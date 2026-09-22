@@ -801,22 +801,37 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
 // mismatch, it returns None.
 //
 // Multi-letter option names can be preceded by either a single dash
-// or double dashes except ones starting with "o", which must be
-// preceded by double dashes. For example, "-omagic" is interpreted
-// as "-o magic". If you really want to specify the "omagic" option,
-// you have to pass "--omagic". Single-letter option names take a
-// single dash.
+// or double dashes except ones starting with "o" and the ones in
+// TWO_DASHES_ONLY, which must be preceded by double dashes. For
+// example, "-omagic" is interpreted as "-o magic". If you really want
+// to specify the "omagic" option, you have to pass "--omagic".
+// Single-letter option names take a single dash.
 fn match_option<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
     let arg = arg.as_encoded_bytes().strip_prefix(b"-")?;
     if name.len() == 1 {
         return arg.strip_prefix(name.as_bytes()).map(util::os_str);
     }
-    // Options beginning with "o" require double dashes.
-    if name.starts_with('o') && !arg.starts_with(b"-") {
+    if (name.starts_with('o') || TWO_DASHES_ONLY.contains(&name)) && !arg.starts_with(b"-") {
         return None;
     }
     arg.strip_prefix(b"-").unwrap_or(arg).strip_prefix(name.as_bytes()).map(util::os_str)
 }
+
+// Options whose single-dash spelling GNU ld or lld reads as a short
+// option with an attached value, because they accept the long name only
+// after two dashes or don't have it: "-execute-only" is "-e xecute-only"
+// in both. Options starting with "o" are handled by the same rule in
+// match_option.
+const TWO_DASHES_ONLY: &[&str] = &[
+    "execute-only",
+    "export-dynamic-symbol",
+    "export-dynamic-symbol-list",
+    "max-cache-size",
+    "mmap-output-file",
+    "undefined-glob",
+    "undefined-version",
+    "use-android-relr-tags",
+];
 
 fn parse_hex(opt: &str, value: &str) -> u64 {
     let digits = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")).unwrap_or(value);
@@ -1025,6 +1040,12 @@ fn returns_etxtbsy() -> bool {
 struct ArgCursor<'a> {
     args: &'a [Cow<'a, OsStr>],
     index: usize,
+    // Whether a single-letter option may take the rest of the token as its
+    // value. parse_args first tries each token without that, so a long
+    // option spelled with one dash wins over a short one with an attached
+    // value, as in getopt_long_only: "-entry=main" is "--entry=main", not
+    // "-e ntry=main".
+    attached_shorts: bool,
 }
 
 impl<'a> ArgCursor<'a> {
@@ -1045,6 +1066,11 @@ impl<'a> ArgCursor<'a> {
                 .unwrap_or_else(|| fatal!("option -{name}: argument missing"));
             (value.as_ref(), 2)
         } else if name.len() == 1 {
+            // GNU ld reads "-lfoo" as "--library=foo" before anything else, so
+            // "-l" takes its attached value even where it spells a long option.
+            if !self.attached_shorts && name != "l" {
+                return None;
+            }
             (rest, 1)
         } else {
             (util::os_str(rest.as_encoded_bytes().strip_prefix(b"=")?), 1)
@@ -1222,7 +1248,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // we write addends to relocated places.
     a.apply_dynamic_relocs = !matches!(target.family, Family::Sparc64 | Family::RiscV);
 
-    let mut cursor = ArgCursor { args: raw_cmdline, index: 1 };
+    let mut cursor = ArgCursor { args: raw_cmdline, index: 1, attached_shorts: false };
+    // The token being read a second time with attached short values allowed.
+    let mut retry_at = None;
     let mut arg = "";
     let mut raw_arg = OsStr::new("");
 
@@ -1262,6 +1290,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     }
 
     while cursor.index < raw_cmdline.len() {
+        cursor.attached_shorts = retry_at == Some(cursor.index);
         if !cursor.current().as_encoded_bytes().starts_with(b"-") {
             let mut job = ReaderJob {
                 rctx: rctx.clone(),
@@ -1899,6 +1928,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             rctx_stack.push(rctx.clone());
         } else if cursor.read_flag("pop-state") {
             rctx = rctx_stack.pop().unwrap_or_else(|| fatal!("no state pushed before popping"));
+        } else if !cursor.attached_shorts {
+            // Nothing names the whole token, so read it again with
+            // single-letter options taking attached values ("-Tscript").
+            retry_at = Some(cursor.index);
         } else if cursor.text().starts_with("-z") && cursor.text().len() > 2 {
             warn!("unknown command line option: {}", cursor.text());
             cursor.index += 1;
@@ -2145,7 +2178,7 @@ mod tests {
         .into_iter()
         .map(|s| Cow::Borrowed(OsStr::new(s)))
         .collect();
-        let mut cursor = ArgCursor { args: &args, index: 1 };
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert_eq!(cursor.read_arg("output"), None);
         assert_eq!(cursor.index, 1);
         assert_eq!(cursor.read_arg("o"), Some(OsStr::new("utput")));
@@ -2167,7 +2200,7 @@ mod tests {
             .into_iter()
             .map(|s| Cow::Borrowed(OsStr::new(s)))
             .collect();
-        let mut cursor = ArgCursor { args: &args, index: 1 };
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert_eq!(cursor.read_lto_option(), Some(b"thinlto-index-only".to_vec()));
         assert_eq!(cursor.index, 2);
         cursor.index = 3;
@@ -2181,10 +2214,52 @@ mod tests {
             .into_iter()
             .map(|s| Cow::Borrowed(util::os_str(s)))
             .collect();
-        let mut cursor = ArgCursor { args: &args, index: 1 };
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert_eq!(cursor.read_arg("o").unwrap().as_encoded_bytes(), b"out-\xff");
         assert_eq!(cursor.read_arg("plugin-opt").unwrap().as_encoded_bytes(), b"arg-\xfe");
         assert_eq!(cursor.index, args.len());
+    }
+
+    fn parse(args: &[&str]) -> ParsedArgs {
+        let target =
+            TargetTraits { name: "x86_64", is_rela: true, family: Family::X86_64, page_size: 4096 };
+        let cmdline: Vec<_> = std::iter::once("mold")
+            .chain(args.iter().copied())
+            .map(|s| Cow::Borrowed(OsStr::new(s)))
+            .collect();
+        parse_args(&target, &cmdline)
+    }
+
+    #[test]
+    fn a_single_dash_long_wins_over_a_short_with_an_attached_value() {
+        // As in GNU ld: a long option spelled with one dash is not a short
+        // option followed by the rest of its name.
+        let parsed =
+            parse(&["-shared", "-entry=main", "-eh-frame-hdr", "-filter", "libf.so", "a.o"]);
+        assert_eq!(parsed.args.entry, b"main");
+        assert!(parsed.args.eh_frame_hdr);
+        assert_eq!(parsed.args.filter, [b"libf.so".to_vec()]);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // What names no long option still reads as a short one.
+        let parsed = parse(&["-emain", "-Tlink.ld"]);
+        assert_eq!(parsed.args.entry, b"main");
+        assert_eq!(parsed.jobs.len(), 1);
+    }
+
+    #[test]
+    fn some_long_options_need_two_dashes_as_in_gnu_ld_and_lld() {
+        let parsed = parse(&["-output"]);
+        assert_eq!(parsed.args.output, Path::new("utput"));
+        let parsed = parse(&["-export-dynamic-symbol", "a.o"]);
+        assert_eq!(parsed.args.entry, b"xport-dynamic-symbol");
+        assert_eq!(parsed.jobs.len(), 1);
+        let parsed = parse(&["-opt-remarks-filename=r.yaml"]);
+        assert_eq!(parsed.args.output, Path::new("pt-remarks-filename=r.yaml"));
+        // GNU ld reads every "-lX" as "--library=X".
+        let parsed = parse(&["-library"]);
+        assert!(parsed.jobs[0].is_lib);
+        assert_eq!(parsed.jobs[0].name, Path::new("ibrary"));
     }
 
     #[test]
