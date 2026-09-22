@@ -800,20 +800,25 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
 // matching "--foo" against "foo" yields an empty string. On
 // mismatch, it returns None.
 //
-// Multi-letter option names can be preceded by either a single dash
-// or double dashes except ones starting with "o", which must be
-// preceded by double dashes. For example, "-omagic" is interpreted
-// as "-o magic". If you really want to specify the "omagic" option,
-// you have to pass "--omagic". Single-letter option names take a
-// single dash.
+// Single-letter option names take a single dash. Multi-letter names
+// accept one or two dashes unless `name` explicitly starts with "--".
+// For example, "export-dynamic" accepts "-export-dynamic" as well as
+// "--export-dynamic", while "--execute-only" requires two dashes.
+// Which options accept a single dash is somewhat arbitrary for
+// historical reasons; we follow other linkers for compatibility.
+//
+// The parser must try long options that accept a single dash before
+// single-letter options that could consume the rest as an argument.
+// Thus "-export-dynamic" means "--export-dynamic", while "-execute-only"
+// is interpreted as "-e xecute-only".
 fn match_option<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
-    let arg = arg.as_encoded_bytes().strip_prefix(b"-")?;
+    let arg = arg.as_encoded_bytes();
+    if let Some(name) = name.strip_prefix("--") {
+        return arg.strip_prefix(b"--")?.strip_prefix(name.as_bytes()).map(util::os_str);
+    }
+    let arg = arg.strip_prefix(b"-")?;
     if name.len() == 1 {
         return arg.strip_prefix(name.as_bytes()).map(util::os_str);
-    }
-    // Options beginning with "o" require double dashes.
-    if name.starts_with('o') && !arg.starts_with(b"-") {
-        return None;
     }
     arg.strip_prefix(b"-").unwrap_or(arg).strip_prefix(name.as_bytes()).map(util::os_str)
 }
@@ -1039,10 +1044,9 @@ impl<'a> ArgCursor<'a> {
     fn read_arg(&mut self, name: &str) -> Option<&'a OsStr> {
         let rest = match_option(self.current(), name)?;
         let (value, count) = if rest.is_empty() {
-            let value = self
-                .args
-                .get(self.index + 1)
-                .unwrap_or_else(|| fatal!("option -{name}: argument missing"));
+            let value = self.args.get(self.index + 1).unwrap_or_else(|| {
+                fatal!("option {}: argument missing", self.current().to_string_lossy())
+            });
             (value.as_ref(), 2)
         } else if name.len() == 1 {
             (rest, 1)
@@ -1071,15 +1075,15 @@ impl<'a> ArgCursor<'a> {
     fn read_lto_option(&mut self) -> Option<Vec<u8>> {
         // Argument forms precede flags, as in the main option grammar.
         for (name, prefix) in [
-            ("lto-cs-profile-file", "cs-profile-path="),
-            ("lto-partitions", "lto-partitions="),
-            ("lto-obj-path", "obj-path="),
-            ("opt-remarks-filename", "opt-remarks-filename="),
-            ("opt-remarks-format", "opt-remarks-format="),
-            ("opt-remarks-hotness-threshold", "opt-remarks-hotness-threshold="),
-            ("opt-remarks-passes", "opt-remarks-passes="),
+            ("--lto-cs-profile-file", "cs-profile-path="),
+            ("--lto-partitions", "lto-partitions="),
+            ("--lto-obj-path", "obj-path="),
+            ("--opt-remarks-filename", "opt-remarks-filename="),
+            ("--opt-remarks-format", "opt-remarks-format="),
+            ("--opt-remarks-hotness-threshold", "opt-remarks-hotness-threshold="),
+            ("--opt-remarks-passes", "opt-remarks-passes="),
             ("lto-pseudo-probe-for-profiling", "pseudo-probe-for-profiling="),
-            ("lto-sample-profile", "sample-profile="),
+            ("--lto-sample-profile", "sample-profile="),
             ("thinlto-index-only", "thinlto-index-only="),
             ("thinlto-object-suffix-replace", "thinlto-object-suffix-replace="),
             ("thinlto-prefix-replace", "thinlto-prefix-replace="),
@@ -1092,13 +1096,13 @@ impl<'a> ArgCursor<'a> {
             }
         }
         for (name, value) in [
-            ("lto-cs-profile-generate", "cs-profile-generate"),
-            ("lto-debug-pass-manager", "debug-pass-manager"),
+            ("--lto-cs-profile-generate", "cs-profile-generate"),
+            ("--lto-debug-pass-manager", "debug-pass-manager"),
             ("disable-verify", "disable-verify"),
-            ("lto-emit-asm", "emit-asm"),
+            ("--lto-emit-asm", "emit-asm"),
             ("no-legacy-pass-manager", "legacy-pass-manager"),
             ("no-lto-legacy-pass-manager", "new-pass-manager"),
-            ("opt-remarks-with-hotness", "opt-remarks-with-hotness"),
+            ("--opt-remarks-with-hotness", "opt-remarks-with-hotness"),
             ("save-temps", "save-temps"),
             ("thinlto-emit-imports-files", "thinlto-emit-imports-files"),
             ("thinlto-index-only", "thinlto-index-only"),
@@ -1107,11 +1111,7 @@ impl<'a> ArgCursor<'a> {
                 return Some(value.as_bytes().to_vec());
             }
         }
-        let level = self
-            .current()
-            .as_encoded_bytes()
-            .strip_prefix(b"-lto-O")
-            .or_else(|| self.current().as_encoded_bytes().strip_prefix(b"--lto-O"))?;
+        let level = self.current().as_encoded_bytes().strip_prefix(b"--lto-O")?;
         self.index += 1;
         Some([b"O", level].concat())
     }
@@ -1227,12 +1227,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             read_value!($method, $name, false)
         };
         ($method:ident, $name:expr, $raw:expr) => {{
+            let opt = cursor.current();
             if let Some(value) = cursor.$method($name) {
                 raw_arg = value;
                 if !$raw {
-                    arg = value
-                        .to_str()
-                        .unwrap_or_else(|| fatal!("option -{}: expected a UTF-8 argument", $name));
+                    arg = value.to_str().unwrap_or_else(|| {
+                        fatal!("option {}: expected a UTF-8 argument", opt.to_string_lossy())
+                    });
                 }
                 true
             } else {
@@ -1275,7 +1276,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             std::process::exit(0);
         }
 
-        if read_arg!("o", true) || read_arg!("output", true) {
+        if read_arg!("o", true) || read_arg!("--output", true) {
             a.output = PathBuf::from(raw_arg);
         } else if read_arg!("dynamic-linker", true) || read_arg!("I", true) {
             a.dynamic_linker = PathBuf::from(raw_arg);
@@ -1298,11 +1299,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             version_shown = true;
         } else if read_arg!("mllvm", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_arg!("m") {
-            match emulation_to_target(arg) {
-                Some(name) => a.emulation = name,
-                None => fatal!("unknown -m argument: {arg}"),
-            }
         } else if cursor.read_flag("end-lib") {
             rctx.in_lib = false;
         } else if cursor.read_flag("export-dynamic") || cursor.read_flag("E") {
@@ -1326,8 +1322,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_flag("q") || cursor.read_flag("emit-relocs") {
             a.emit_relocs = true;
             a.discard_locals = false;
-        } else if read_arg!("e", true) || read_arg!("entry", true) {
-            a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if read_arg!("Map", true) {
             map_path = Some(PathBuf::from(raw_arg));
         } else if cursor.read_flag("print-dependencies") {
@@ -1403,9 +1397,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 "ignore-all" | "ignore-in-object-files" => report_undefined = Some(false),
                 _ => fatal!("unknown --unresolved-symbols argument: {arg}"),
             }
-        } else if read_arg!("undefined", true) || read_arg!("u", true) {
-            a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_arg!("undefined-glob", true) {
+        } else if read_arg!("--undefined-glob", true) {
             if !undefined_glob.add(raw_arg.as_encoded_bytes(), 0) {
                 fatal!("--undefined-glob: invalid pattern: {}", raw_arg.to_string_lossy());
             }
@@ -1495,7 +1487,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.pack_dyn_relocs_relr = false;
             a.pack_dyn_relocs_android = false;
         } else if let Some(value) =
-            cursor.read_switch("use-android-relr-tags", "no-use-android-relr-tags")
+            cursor.read_switch("--use-android-relr-tags", "no-use-android-relr-tags")
         {
             a.use_android_relr_tags = value;
         } else if read_arg!("package-metadata", true) {
@@ -1525,7 +1517,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.warn_textrel = true;
         } else if let Some(value) = cursor.read_switch("enable-new-dtags", "disable-new-dtags") {
             a.enable_new_dtags = value;
-        } else if cursor.read_flag("execute-only") {
+        } else if cursor.read_flag("--execute-only") {
             a.execute_only = true;
         } else if cursor.read_flag("zero-to-bss") {
             a.zero_to_bss = true;
@@ -1556,14 +1548,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             };
         } else if read_arg!("wrap", true) {
             a.wrap.insert(raw_arg.as_encoded_bytes().to_vec());
-        } else if cursor.read_flag("omagic") || cursor.read_flag("N") {
+        } else if cursor.read_flag("--omagic") || cursor.read_flag("N") {
             a.omagic = true;
             rctx.is_static = true;
-        } else if cursor.read_flag("no-omagic") {
+        } else if cursor.read_flag("--no-omagic") {
             a.omagic = false;
-        } else if read_arg!("oformat") {
+        } else if read_arg!("--oformat") {
             if arg != "binary" {
-                fatal!("-oformat: {arg} is not supported");
+                fatal!("--oformat: {arg} is not supported");
             }
             a.oformat_binary = true;
         } else if read_arg!("retain-symbols-file", true) {
@@ -1786,9 +1778,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 );
             }
             add_rpath(&mut a, &mut rpaths, raw_arg);
-        } else if let Some(value) = cursor.read_switch("undefined-version", "no-undefined-version")
+        } else if let Some(value) =
+            cursor.read_switch("--undefined-version", "no-undefined-version")
         {
             a.undefined_version = value;
+        } else if read_arg!("undefined", true) || read_arg!("u", true) {
+            a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
         } else if cursor.read_flag("build-id") {
             a.build_id = BuildId::Hash(20);
         } else if read_arg!("build-id") {
@@ -1807,7 +1802,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.build_id = BuildId::None;
         } else if let Some(value) = cursor.read_switch("be8", "be32") {
             be8 = value;
-        } else if read_arg!("format") || read_arg!("b") {
+        } else if read_arg!("--format") || read_arg!("b") {
             if arg == "binary" {
                 fatal!(
                     "mold does not support `-b binary`. If you want to convert a binary file into an \
@@ -1816,10 +1811,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             }
             fatal!("unknown command line option: -b {arg}");
         } else if read_arg!("fuse-ld") {
-        } else if read_arg!("auxiliary", true) || read_arg!("f", true) {
-            a.auxiliary.push(raw_arg.as_encoded_bytes().to_vec());
-        } else if read_arg!("filter", true) || read_arg!("F", true) {
-            a.filter.push(raw_arg.as_encoded_bytes().to_vec());
         } else if cursor.read_flag("allow-shlib-undefined") {
             allow_shlib_undefined = Some(true);
         } else if cursor.read_flag("no-allow-shlib-undefined") {
@@ -1863,10 +1854,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || read_z_arg!("common-page-size")
             || cursor.read_flag("no-keep-memory")
             || read_arg!("max-cache-size")
-            || cursor.read_flag("mmap-output-file")
+            || cursor.read_flag("--mmap-output-file")
             || cursor.read_flag("no-mmap-output-file")
         {
             // Ignored for compatibility.
+        } else if read_arg!("m") {
+            match emulation_to_target(arg) {
+                Some(name) => a.emulation = name,
+                None => fatal!("unknown -m argument: {arg}"),
+            }
+        } else if read_arg!("filter", true) || read_arg!("F", true) {
+            a.filter.push(raw_arg.as_encoded_bytes().to_vec());
+        } else if read_arg!("auxiliary", true) || read_arg!("f", true) {
+            a.auxiliary.push(raw_arg.as_encoded_bytes().to_vec());
         } else if read_arg!("version-script", true) {
             a.version_scripts.push(PathBuf::from(raw_arg));
         } else if read_arg!("dynamic-list", true) {
@@ -1874,15 +1874,17 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.dynamic_list.push(DynamicListSource::File(PathBuf::from(raw_arg)));
         } else if read_arg!("dynamic-list-data") {
             a.dynamic_list_data = true;
-        } else if read_arg!("export-dynamic-symbol", true) {
+        } else if read_arg!("--export-dynamic-symbol", true) {
             a.dynamic_list.push(DynamicListSource::Pattern(raw_arg.as_encoded_bytes().to_vec()));
-        } else if read_arg!("export-dynamic-symbol-list", true) {
+        } else if read_arg!("--export-dynamic-symbol-list", true) {
             a.dynamic_list.push(DynamicListSource::File(PathBuf::from(raw_arg)));
+        } else if read_arg!("entry", true) || read_arg!("e", true) {
+            a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if let Some(value) = cursor.read_switch("as-needed", "no-as-needed") {
             rctx.as_needed = value;
         } else if let Some(value) = cursor.read_switch("whole-archive", "no-whole-archive") {
             rctx.whole_archive = value;
-        } else if read_arg!("l", true) || read_arg!("library", true) {
+        } else if read_arg!("--library", true) || read_arg!("l", true) {
             if visited_libs.insert(raw_arg) {
                 let mut job =
                     ReaderJob { rctx: rctx.clone(), name: PathBuf::from(raw_arg), is_lib: true };
@@ -2148,10 +2150,10 @@ mod tests {
         .map(|s| Cow::Borrowed(OsStr::new(s)))
         .collect();
         let mut cursor = ArgCursor { args: &args, index: 1 };
-        assert_eq!(cursor.read_arg("output"), None);
+        assert_eq!(cursor.read_arg("--output"), None);
         assert_eq!(cursor.index, 1);
         assert_eq!(cursor.read_arg("o"), Some(OsStr::new("utput")));
-        assert_eq!(cursor.read_eq("output"), Some(OsStr::new("next")));
+        assert_eq!(cursor.read_eq("--output"), Some(OsStr::new("next")));
         assert!(!cursor.read_z_flag("lazy"));
         assert!(cursor.read_z_flag("now"));
         assert_eq!(cursor.read_z_arg("max-page-size"), Some("4096"));

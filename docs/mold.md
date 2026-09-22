@@ -127,13 +127,21 @@ arguments.
 
 ## OPTION NOTATIONS
 
-Multi-letter long options may precede either a single dash or double dashes,
-except for those starting with the letter "o". For historical reasons, long
-options beginning with "o" must precede double dashes.
+Long options are spelled with two dashes. Some also accept a single dash,
+but which ones do is somewhat arbitrary for historical reasons. `mold`
+follows the conventions of other linkers for compatibility. For example,
+`--export-dynamic` can be spelled `-export-dynamic`, while `--execute-only`
+requires two dashes.
 
-For example, you can spell `--as-needed` as `-as-needed`, but `--omagic` must
-not be spelled as `-omagic`. `-omagic` will be interpreted not as `--omagic`
-but as `-o magic`.
+This can cause unexpected behavior when constructing command-line options in
+a script. For example, you might use `"-e$foo"` to set the entry point symbol
+to the value of `$foo`. However, if `$foo` is `xport-dynamic`, the argument
+becomes `-export-dynamic` and is interpreted as `--export-dynamic`.
+
+To avoid such ambiguities, we recommend always using two dashes for long
+options and separating a single-letter option from its argument with a
+space. For example, use `-e $foo` or `--entry=$foo` to specify the entry
+point symbol in a script.
 
 ## MOLD-SPECIFIC OPTIONS
 
