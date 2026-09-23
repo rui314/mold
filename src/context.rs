@@ -471,6 +471,9 @@ impl<E: Target> Context<E> {
 
     /// Starts a `--perf` timer for a pass.
     pub fn timer(&self, name: &str) -> crate::util::perf::Timer {
+        // Every pass starts here, so this is where idle workers are woken
+        // for its parallel loops.
+        crate::util::parallel::rearm();
         self.timers.start(name)
     }
 }
