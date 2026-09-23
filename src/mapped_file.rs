@@ -35,7 +35,9 @@ pub fn file_pool() -> Vec<&'static MappedFile> {
 
 /// Drops the page table entries of the mapped input files, in parallel.
 /// This makes process exit faster, as the kernel otherwise reclaims them
-/// in a single thread on exit. File contents stay in the page cache.
+/// in a single thread on exit. The files' contents stay in the page cache,
+/// but the relocation records rewritten in place through these private
+/// mappings are discarded, so this must be the last use of the input data.
 pub fn drop_mappings() {
     let files = std::mem::take(&mut *MMAPPED_FILES.lock().unwrap());
     #[cfg(windows)]
@@ -101,7 +103,7 @@ impl MappedFile {
         let size = metadata.len();
 
         // True if `data` is a memory mapping of the file rather than a copy of
-        // its contents in anonymous memory. See open_file_impl().
+        // its contents in anonymous memory.
         let mut is_mmapped = false;
         let data: &'static [SyncUnsafeCell<u8>] = if size == 0 {
             &[]
