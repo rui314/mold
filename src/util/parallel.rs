@@ -1,4 +1,7 @@
 use rayon::prelude::*;
+use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// An owned Rayon job whose result is needed by a later linker pass.
 pub struct Background<T> {
@@ -30,6 +33,87 @@ impl<T: Send + 'static> Background<T> {
             }
         }
     }
+}
+
+/// Keeps idle workers polling for work between passes while it is alive.
+///
+/// An idle Rayon worker yields a few dozen times and then sleeps, and a
+/// parallel loop wakes sleeping workers one at a time as it splits, so a
+/// loop that starts while the pool sleeps has all of its threads running
+/// only after several wake-ups in a row. The linker runs dozens of short
+/// parallel passes with serial code in between, which is long enough for
+/// the workers to fall asleep before nearly every pass. Workers that keep
+/// polling start on the next pass at once, as TBB's do in C++ mold.
+///
+/// A polling worker yields the CPU whenever it finds no work and returns
+/// to Rayon, which puts it to sleep, after `IDLE_LIMIT` without work, so a
+/// long serial stretch does not keep the CPUs busy. [`rearm`] at the start
+/// of the next pass wakes all of them at once.
+pub struct KeepWarm {
+    generation: usize,
+}
+
+const IDLE_LIMIT: Duration = Duration::from_millis(2);
+
+// Advances when a KeepWarm starts or stops. A polling loop ends when it
+// changes.
+static GENERATION: AtomicUsize = AtomicUsize::new(0);
+static POLLING: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    // Set on the thread that runs the passes, which never polls.
+    static IS_OWNER: Cell<bool> = const { Cell::new(false) };
+    static IS_POLLING: Cell<bool> = const { Cell::new(false) };
+}
+
+impl KeepWarm {
+    /// Starts keeping the pool warm. Call this on the pool thread that runs
+    /// the passes.
+    pub fn start() -> Self {
+        let generation = GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+        IS_OWNER.set(true);
+        broadcast_poll(generation);
+        Self { generation }
+    }
+}
+
+impl Drop for KeepWarm {
+    fn drop(&mut self) {
+        IS_OWNER.set(false);
+        GENERATION.store(self.generation + 1, Ordering::Relaxed);
+    }
+}
+
+/// Wakes the workers that stopped polling for work. A pass calls this as it
+/// starts; it costs a few loads when all workers are polling.
+pub fn rearm() {
+    if IS_OWNER.get() && POLLING.load(Ordering::Relaxed) + 1 < rayon::current_num_threads() {
+        broadcast_poll(GENERATION.load(Ordering::Relaxed));
+    }
+}
+
+fn broadcast_poll(generation: usize) {
+    rayon::spawn_broadcast(move |_| {
+        // A worker that is polling already picks up its own new job through
+        // yield_now.
+        if IS_OWNER.get() || IS_POLLING.get() {
+            return;
+        }
+        IS_POLLING.set(true);
+        POLLING.fetch_add(1, Ordering::Relaxed);
+        let mut last_work = Instant::now();
+        while GENERATION.load(Ordering::Relaxed) == generation {
+            if matches!(rayon::yield_now(), Some(rayon::Yield::Executed)) {
+                last_work = Instant::now();
+            } else if last_work.elapsed() > IDLE_LIMIT {
+                break;
+            } else {
+                std::thread::yield_now();
+            }
+        }
+        POLLING.fetch_sub(1, Ordering::Relaxed);
+        IS_POLLING.set(false);
+    });
 }
 
 /// Stably partitions a slice, returning the number of matching elements.
@@ -95,6 +179,24 @@ mod tests {
             let job = Background::spawn("test", || (0..100usize).into_par_iter().sum::<usize>());
             assert_eq!(job.join(), 4950);
         });
+    }
+
+    #[test]
+    fn parallel_work_finishes_while_workers_are_kept_warm() {
+        for threads in [1, 2, 4] {
+            rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap().install(|| {
+                let warm = KeepWarm::start();
+                let job =
+                    Background::spawn("test", || (0..100usize).into_par_iter().sum::<usize>());
+                assert_eq!((0..10000usize).into_par_iter().sum::<usize>(), 49995000);
+                // Let the workers go idle, then wake them for another loop.
+                std::thread::sleep(IDLE_LIMIT * 2);
+                rearm();
+                assert_eq!((0..10000usize).into_par_iter().sum::<usize>(), 49995000);
+                assert_eq!(job.join(), 4950);
+                drop(warm);
+            });
+        }
     }
 
     #[test]
