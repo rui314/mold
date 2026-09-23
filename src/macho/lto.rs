@@ -57,6 +57,7 @@ impl Plugin {
 
 /// Loads libLTO from the given path (from -lto_library, with a plain
 /// "libLTO.dylib" fallback that relies on dyld's search).
+#[cfg(not(windows))]
 pub fn load_plugin(path: Option<&str>) -> Plugin {
     let path = CString::new(path.unwrap_or("libLTO.dylib")).unwrap();
     // SAFETY: dlopen/dlsym with valid NUL-terminated strings.
@@ -96,6 +97,11 @@ pub fn load_plugin(path: Option<&str>) -> Plugin {
             codegen_compile: dlsym!("lto_codegen_compile"),
         }
     }
+}
+
+#[cfg(windows)]
+pub fn load_plugin(_path: Option<&str>) -> Plugin {
+    fatal!("LTO is not supported on Windows");
 }
 
 /// A parsed bitcode module's symbol, in linker terms.

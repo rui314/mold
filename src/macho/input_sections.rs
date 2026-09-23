@@ -196,6 +196,7 @@ pub struct InputSection {
 // InputSection is the highest-count struct in a link (millions on a
 // debug build), so it is kept compact: 56 bytes, under mold-rust's 64
 // (ours carries the unwind range but no section-name/flags word).
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<InputSection>() == 56);
 
 const IS_ALIVE: u8 = 1 << 0;

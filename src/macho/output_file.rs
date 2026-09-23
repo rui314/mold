@@ -22,7 +22,11 @@
 //! still being produced on the other cores; finish() waits for the last
 //! block.
 
+use std::fs::File;
+#[cfg(not(windows))]
 use std::os::unix::fs::{FileExt, PermissionsExt};
+#[cfg(windows)]
+use std::os::windows::fs::FileExt;
 use std::path::Path;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -110,7 +114,7 @@ impl OutputFile {
                         // A method call captures the whole SharedBuf
                         // (a field alone would capture the bare pointer,
                         // which is not Send).
-                        file.write_all_at(shared.block(off, n), off as u64)
+                        write_at(&file, shared.block(off, n), off as u64)
                             .map_err(|e| e.to_string())?;
                     }
                 })
@@ -146,12 +150,34 @@ impl OutputFile {
                 Err(_) => fatal!("cannot write {}: writer thread panicked", self.path),
             }
         }
+        // Windows has no executable bit.
+        #[cfg(not(windows))]
         if let Err(e) = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o755))
         {
             fatal!("cannot chmod {}: {e}", self.path);
         }
         crate::output_file::set_tmpfile(None);
     }
+}
+
+/// Writes all of `buf` at `offset`, as pwrite does.
+#[cfg(not(windows))]
+fn write_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    file.write_all_at(buf, offset)
+}
+
+#[cfg(windows)]
+fn write_at(file: &File, mut buf: &[u8], mut offset: u64) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        match file.seek_write(buf, offset)? {
+            0 => return Err(std::io::ErrorKind::WriteZero.into()),
+            n => {
+                buf = &buf[n..];
+                offset += n as u64;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Writes a complete buffer: for output that is built in full before

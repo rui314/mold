@@ -80,6 +80,7 @@ pub struct Symbol {
 // Symbol is loaded in every resolution and layout scan, so its width
 // is kept minimal. mold-rust's is 48 with more fields (a version index,
 // a symbol index); ours packs the same way and lands at 40.
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<Symbol>() == 40);
 
 /// "No index" for `isec` and `aux_idx`.
