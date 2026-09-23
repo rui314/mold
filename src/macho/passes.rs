@@ -5581,7 +5581,7 @@ pub fn copy_chunks<E: Arch>(
             uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
             uuid[8] = (uuid[8] & 0x3f) | 0x80; // RFC 4122 variant
             *ctx.uuid.lock().unwrap() = uuid;
-            output_chunks::copy_mach_header(ctx, buf);
+            output_chunks::write_uuid(ctx, buf);
             output_chunks::misc::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
         });
     }
