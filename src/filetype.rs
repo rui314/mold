@@ -25,9 +25,7 @@ fn is_text_file(data: &[u8]) -> bool {
 
 /// Whether an ELF relocatable object is really a GCC LTO object.
 fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
-    let Some(ehdr) =
-        data.get(..std::mem::size_of::<ElfEhdr<E>>()).map(record_from_bytes::<ElfEhdr<E>>)
-    else {
+    let Some(ehdr) = data.get(..ElfEhdr::<E>::size()).map(record_from_bytes::<ElfEhdr<E>>) else {
         return false;
     };
     let Ok(shoff) = usize::try_from(ehdr.e_shoff.get()) else {
@@ -36,7 +34,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
     if shoff == 0 {
         return false;
     }
-    let shdr_size = std::mem::size_of::<ElfShdr<E>>();
+    let shdr_size = ElfShdr::<E>::size();
     let Some(first_end) = shoff.checked_add(shdr_size) else {
         return false;
     };
@@ -105,7 +103,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
         let Some(bytes) = data.get(off..off + shdr.sh_size.get() as usize) else {
             return false;
         };
-        if !bytes.len().is_multiple_of(std::mem::size_of::<ElfSym<E>>()) {
+        if !bytes.len().is_multiple_of(ElfSym::<E>::size()) {
             return false;
         }
         let syms = records_from_bytes::<ElfSym<E>>(bytes).iter();

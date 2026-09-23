@@ -3663,7 +3663,7 @@ pub fn compute_section_headers<E: Target>(ctx: &mut Context<E>) {
     }
 
     if let Some(symtab_shndx) = &mut ctx.symtab_shndx {
-        let n = ctx.symtab.shdr.sh_size.get() / std::mem::size_of::<ElfSym<E>>() as u64;
+        let n = ctx.symtab.shdr.sh_size.get() / ElfSym::<E>::size() as u64;
         symtab_shndx.shdr.sh_size.set(n * 4);
     }
 }
@@ -3783,7 +3783,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // such executable lacks the .dynamic section and thus there's no way
     // to find ifunc relocations other than these symbols.
     if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
-        let n = num_irelative_relocs(ctx) as i64 * std::mem::size_of::<ElfRel<E>>() as i64;
+        let n = num_irelative_relocs(ctx) as i64 * ElfRel::<E>::size() as i64;
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
         stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
     } else {
@@ -4190,7 +4190,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
         chunks::update_phdr(ctx);
         let phdr = ctx.phdr.as_mut().unwrap();
         phdr.phdrs.resize(n, ElfPhdr::<E>::default());
-        let size = (n * std::mem::size_of::<ElfPhdr<E>>()) as u64;
+        let size = (n * ElfPhdr::<E>::size()) as u64;
         phdr.hdr.shdr.sh_size.set(size);
     }
 

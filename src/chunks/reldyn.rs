@@ -24,7 +24,7 @@ impl<E: Target> RelDynSection<E> {
         } else {
             (".rel.dyn", SHT_REL, SHT_ANDROID_REL)
         };
-        let rel_size = std::mem::size_of::<ElfRel<E>>() as u64;
+        let rel_size = ElfRel::<E>::size() as u64;
         let (ty, entsize, align) = if args.pack_dyn_relocs_android {
             (android_ty, 0, 1)
         } else {
@@ -139,7 +139,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
         }
         reldyn.android_encoded.len() as u64
     } else {
-        (num_relocs - num_relrs) * std::mem::size_of::<ElfRel<E>>() as u64
+        (num_relocs - num_relrs) * ElfRel::<E>::size() as u64
     };
     ctx.reldyn.hdr.shdr.sh_size.set(size);
     ctx.reldyn.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
@@ -149,7 +149,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     if ctx.args.pack_dyn_relocs_android {
         buf[..ctx.reldyn.android_encoded.len()].copy_from_slice(&ctx.reldyn.android_encoded);
     } else {
-        let size = std::mem::size_of::<ElfRel<E>>();
+        let size = ElfRel::<E>::size();
         let mut rest = buf;
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);

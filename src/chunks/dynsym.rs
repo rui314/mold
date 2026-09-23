@@ -31,7 +31,7 @@ pub struct DynstrEntry {
 impl<E: Target> DynsymSection<E> {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::<E>::new(".dynsym", SHT_DYNSYM, SHF_ALLOC as u64);
-        let entsize = std::mem::size_of::<ElfSym<E>>() as u64;
+        let entsize = ElfSym::<E>::size() as u64;
         hdr.shdr.sh_entsize.set(entsize);
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         Self { hdr, symbols: Vec::new(), dynstr_entries: Vec::new() }
@@ -57,13 +57,13 @@ impl<E: Target> Default for DynsymSection<E> {
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    let size = std::mem::size_of::<ElfSym<E>>() as u64 * ctx.dynsym.symbols.len() as u64;
+    let size = ElfSym::<E>::size() as u64 * ctx.dynsym.symbols.len() as u64;
     ctx.dynsym.hdr.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
     ctx.dynsym.hdr.shdr.sh_size.set(size);
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let size = std::mem::size_of::<ElfSym<E>>();
+    let size = ElfSym::<E>::size();
     buf[..size].fill(0);
     let overflow = AtomicBool::new(false);
     buf.par_chunks_exact_mut(size)

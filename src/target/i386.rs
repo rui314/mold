@@ -114,7 +114,7 @@ impl Target for I386 {
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let reloc_offset =
-            sym.plt_idx(&ctx.symbols).unwrap() as u64 * std::mem::size_of::<ElfRel<Self>>() as u64;
+            sym.plt_idx(&ctx.symbols).unwrap() as u64 * ElfRel::<Self>::size() as u64;
         if ctx.args.pic {
             const INSN: [u8; 16] = [
                 0xb9, 0, 0, 0, 0, // mov $reloc_offset, %ecx
