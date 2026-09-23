@@ -899,17 +899,21 @@ where
                             isec.display(file)
                         );
                     }
-                    1u64 << r.r_addend()
+                    1u64.checked_shl(r.r_addend() as u32).unwrap_or(0)
                 } else {
-                    let alignment = r.r_addend() as u64 + 4;
-                    if !alignment.is_power_of_two() {
-                        fatal!(
-                            "{}: R_LARCH_ALIGN: invalid alignment requirement: {i}",
-                            isec.display(file)
-                        );
-                    }
-                    alignment
+                    (r.r_addend() as u64).wrapping_add(4)
                 };
+                // The alignment must be at least the size of an instruction,
+                // and the nops the relocation refers to must be in this section.
+                if !alignment.is_power_of_two()
+                    || alignment < 4
+                    || alignment - 4 > isec.sh_size.saturating_sub(r.r_offset())
+                {
+                    fatal!(
+                        "{}: R_LARCH_ALIGN: invalid alignment requirement: {i}",
+                        isec.display(file)
+                    );
+                }
                 let p = isec.addr(ctx) + r.r_offset() - delta as u64;
                 let desired = align_to(p, alignment);
                 let actual = p + alignment - 4;

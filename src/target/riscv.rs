@@ -404,6 +404,18 @@ where
                 R_RISCV_TLSDESC_HI20 => scan_tlsdesc(ctx, sym),
                 R_RISCV_32_PCREL | R_RISCV_PCREL_HI20 => scan_pcrel(ctx, isec, sym, &rel),
                 R_RISCV_TPREL_HI20 => check_tlsle(ctx, isec, sym, &rel),
+                R_RISCV_ALIGN => {
+                    // r_addend is the size of the nop sequence at r_offset,
+                    // which must be in this section.
+                    if rel.r_addend() < 0
+                        || rel.r_addend() as u64 > isec.sh_size.saturating_sub(rel.r_offset())
+                    {
+                        fatal!(
+                            "{}: R_RISCV_ALIGN: invalid alignment requirement",
+                            isec.display(file)
+                        );
+                    }
+                }
                 R_RISCV_64
                 | R_RISCV_BRANCH
                 | R_RISCV_JAL
@@ -425,7 +437,6 @@ where
                 | R_RISCV_SUB16
                 | R_RISCV_SUB32
                 | R_RISCV_SUB64
-                | R_RISCV_ALIGN
                 | R_RISCV_RVC_BRANCH
                 | R_RISCV_RVC_JUMP
                 | R_RISCV_RELAX
