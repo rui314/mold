@@ -3078,8 +3078,12 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
         if let Some(sec) = &file.llvm_addrsig {
             let mut p = sec.contents();
             while !p.is_empty() {
-                let idx = crate::util::read_uleb(&mut p) as usize;
-                let sym = &ctx_ref.symbols[file.base.symbols[idx]];
+                let Some(&id) = crate::util::try_read_uleb(&mut p)
+                    .and_then(|idx| file.base.symbols.get(usize::try_from(idx).ok()?))
+                else {
+                    fatal!("{file}: invalid .llvm_addrsig section");
+                };
+                let sym = &ctx_ref.symbols[id];
                 if let Some(r) = sym.input_section() {
                     ctx_ref.input_section(r).set_address_taken();
                 }

@@ -80,7 +80,7 @@ use crate::util::SyncUnsafeCell;
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Timer;
-use crate::util::read_uleb;
+use crate::util::try_read_uleb;
 
 /// A public name and its GNU kind before the name is interned in GdbNameMap.
 #[derive(Clone, Copy)]
@@ -293,16 +293,22 @@ impl<'a, E: Target> Reader<'a, E> {
         self.uint(offset_size as usize)
     }
 
+    fn rest(&self) -> &'a [u8] {
+        self.data.get(self.pos..).unwrap_or_else(|| fatal!("--gdb-index: truncated debug info"))
+    }
+
     fn uleb(&mut self) -> u64 {
-        let mut rest = &self.data[self.pos..];
+        let mut rest = self.rest();
         let before = rest.len();
-        let val = read_uleb(&mut rest);
+        let Some(val) = try_read_uleb(&mut rest) else {
+            fatal!("--gdb-index: truncated debug info");
+        };
         self.pos += before - rest.len();
         val
     }
 
     fn cstr(&mut self) -> &'a [u8] {
-        let rest = &self.data[self.pos..];
+        let rest = self.rest();
         let len = memchr::memchr(0, rest)
             .unwrap_or_else(|| fatal!("--gdb-index: unterminated string in debug info"));
         self.pos += len + 1;
