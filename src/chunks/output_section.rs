@@ -209,10 +209,8 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             } else {
                 E::TRAP
             };
-            let mut pos = 0;
-            while pos + filler.len() <= padding.len() {
-                padding[pos..pos + filler.len()].copy_from_slice(filler);
-                pos += filler.len();
+            for slot in padding.chunks_exact_mut(filler.len()) {
+                slot.copy_from_slice(filler);
             }
         } else {
             padding.fill(0);
@@ -278,12 +276,7 @@ fn apply_abs_rels<E: Target>(
             AbsRelKind::DynRel => apply_dynamic_relocs.then_some(a),
         };
         if let Some(value) = value {
-            let slot = &mut buf[loc as usize..];
-            if E::IS_64 {
-                E::write_u64(slot, value);
-            } else {
-                E::write_u32(slot, value as u32);
-            }
+            Word::<E>::new(value).write(&mut buf[loc as usize..]);
         }
     }
 }
@@ -330,13 +323,11 @@ pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec
         })
         .collect();
 
-    let mut offsets = Vec::new();
-    for (i, shard) in shards.into_iter().enumerate() {
+    for (i, shard) in shards.iter().enumerate() {
         relr_offsets[i + 1] = relr_offsets[i] + shard.len() as u64;
-        offsets.extend(shard);
     }
     osec.relr_offsets = relr_offsets;
-    offsets
+    shards.concat()
 }
 
 pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut [ElfRel<E>]) {
@@ -539,8 +530,8 @@ pub fn populate_symtab<E: Target>(
 
     for thunk in &osec.thunks {
         let suffix = format!("${}", thunk.name);
-        for (i, &sym) in thunk.symbols.iter().enumerate() {
-            let addr = osec.hdr.shdr.sh_addr.get() + thunk.offset + thunk.offsets[i];
+        for (&sym, &offset) in thunk.symbols.iter().zip(&thunk.offsets) {
+            let addr = osec.hdr.shdr.sh_addr.get() + thunk.offset + offset;
             let name = ctx.symbols[sym].name();
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));
             if E::FAMILY == Family::Arm32 {

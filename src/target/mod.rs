@@ -110,7 +110,7 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     type Rel: RelRecord;
     const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
-    const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
+    const WORD_SIZE: usize = std::mem::size_of::<Self::Word>();
 
     /// Target-specific members embedded directly in each input section.
     type InputSectionExtra: InputSectionExtra;

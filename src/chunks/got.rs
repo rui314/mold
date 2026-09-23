@@ -320,13 +320,8 @@ pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.fill(0);
     let w = word::<E>() as usize;
-    let write = |buf: &mut [u8], idx: usize, val: u64| {
-        if E::IS_64 {
-            E::write_u64(&mut buf[idx * w..], val);
-        } else {
-            E::write_u32(&mut buf[idx * w..], val as u32);
-        }
-    };
+    let write =
+        |buf: &mut [u8], idx: usize, val: u64| Word::<E>::new(val).write(&mut buf[idx * w..]);
 
     // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
     if let Some(dynamic) = &ctx.dynamic {

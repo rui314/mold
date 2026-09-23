@@ -734,7 +734,7 @@ pub(crate) fn rels_from_bytes_mut<E: Target>(data: &mut [u8]) -> &mut [ElfRel<E>
 
 /// An entry of the `.dynamic` section.
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfDyn<E: Target> {
     pub d_tag: Word<E>,
     pub d_val: Word<E>,
