@@ -128,12 +128,18 @@ arguments.
 ## OPTION NOTATIONS
 
 Multi-letter long options may precede either a single dash or double dashes,
-except for those starting with the letter "o". For historical reasons, long
-options beginning with "o" must precede double dashes.
+except for those starting with the letter "o" and a few whose single-dash
+spelling GNU ld or lld reads as a short option with an attached value:
+`--execute-only`,
+`--export-dynamic-symbol`, `--export-dynamic-symbol-list`,
+`--mmap-output-file`, `--undefined-glob`, `--undefined-version` and
+`--use-android-relr-tags`. A single dash is read as a long option before it is
+read as a short option with an attached value.
 
-For example, you can spell `--as-needed` as `-as-needed`, but `--omagic` must
-not be spelled as `-omagic`. `-omagic` will be interpreted not as `--omagic`
-but as `-o magic`.
+For example, you can spell `--as-needed` as `-as-needed` and `--entry=main` as
+`-entry=main`, but `--omagic` must not be spelled as `-omagic`. `-omagic` will
+be interpreted not as `--omagic` but as `-o magic`. As in GNU ld, `-l` always
+takes the rest of the argument, so `-library` means `-l ibrary`.
 
 ## MOLD-SPECIFIC OPTIONS
 
