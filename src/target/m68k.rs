@@ -252,9 +252,9 @@ impl Target for M68k {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for rel in isec.rels(file) {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
-                isec.resolve_nonalloc(ctx, file, rel, &mut fragment_cache)
+                isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
                 continue;
             };
