@@ -3,17 +3,13 @@
 //! that the compiler can build them in parallel, and a feature per target
 //! decides which of them are built in.
 
-use std::borrow::Cow;
-use std::ffi::OsStr;
-use std::sync::Arc;
-
 // A Rust executable can define only one global allocator, so select mimalloc
 // here rather than in the linker library.
 #[cfg(not(feature = "system-allocator"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-type LinkFn = fn(Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str>;
+type LinkFn = fn(mold::driver::Cmdline) -> mold::driver::LinkResult;
 
 // Each target has its own monomorphized link function. Start with the first
 // enabled target and switch to the matching function if the inputs differ.
@@ -60,7 +56,7 @@ const TARGETS: &[(&str, LinkFn)] = &[
     ("loongarch32", mold_target_loongarch32::link),
 ];
 
-fn link_for_target(target: &str, cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
+fn link_for_target(target: &str, cmdline: mold::driver::Cmdline) -> mold::driver::LinkResult {
     for &(name, link) in TARGETS {
         if name == target {
             return link(cmdline);
