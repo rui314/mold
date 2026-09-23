@@ -34,6 +34,7 @@ pub mod symtab;
 pub mod unwind_info;
 pub mod weak_bind_info;
 
+use rayon::prelude::*;
 use std::num::NonZeroU32;
 
 use crate::context::Context;
@@ -693,7 +694,7 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // definitions (dyld must then consider weak coalescing when it
     // binds). ld-prime sets it on an executable calling a dylib's
     // weak definition, and on any image with weak-lookup binds.
-    if ctx.symbols.syms.iter().any(|sym| match sym.file() {
+    if ctx.symbols.syms.par_iter().any(|sym| match sym.file() {
         Some(FileId::Dylib(idx)) => {
             idx != u32::MAX
                 && sym.is_used()
@@ -713,7 +714,7 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // ld-prime's eyes, referenced from within the image or not (a
     // dylib whose only weak definition nothing calls still gets
     // 0x118085), since another image's copy may replace it.
-    if ctx.symbols.syms.iter().any(|sym| {
+    if ctx.symbols.syms.par_iter().any(|sym| {
         sym.is_weak_def()
             && sym.is_extern()
             && !sym.is_private_extern()
@@ -724,7 +725,7 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }) {
         hdr.flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
     }
-    if (0..ctx.symbols.syms.len()).any(|i| ctx.overrides_weak_export(i as u32)) {
+    if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.overrides_weak_export(i as u32)) {
         hdr.flags |= MH_WEAK_DEFINES;
     }
     // -bind_at_load makes the stubs bind through the GOT instead of
@@ -746,5 +747,22 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for cmd in &cmds {
         buf[off..off + cmd.len()].copy_from_slice(cmd);
         off += cmd.len();
+    }
+}
+
+/// Writes the UUID into the LC_UUID command of a header that
+/// `copy_mach_header` already wrote, leaving everything else as it is.
+pub fn write_uuid<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let hdr = MachHeader::read_from(buf);
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..hdr.ncmds {
+        let lc = LoadCommand::read_from(&buf[off..]);
+        if lc.cmd == LC_UUID {
+            let mut cmd = UuidCommand::read_from(&buf[off..]);
+            cmd.uuid = *ctx.uuid.lock().unwrap();
+            cmd.write_to(&mut buf[off..]);
+            return;
+        }
+        off += lc.cmdsize as usize;
     }
 }
