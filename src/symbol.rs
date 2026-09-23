@@ -271,10 +271,10 @@ pub struct Symbol {
     type_and_bind: u8,
 
     pub ver_idx: u16,
-    pub visibility: AtomicU8,
+    visibility: AtomicU8,
 
     // `flags` has NEEDS_ flags.
-    pub flags: AtomicU8,
+    flags: AtomicU8,
 
     // Index into SymbolTable's side array of auxiliary data, allocated on
     // demand for dynamic symbols. Records are claimed in parallel, one file
@@ -527,17 +527,9 @@ impl Symbol {
     /// Records the lowest file priority while symbol resolution is clear.
     #[inline]
     pub(crate) fn record_comdat_owner(&self, priority: u32) {
-        let mut old = self.sym_idx.load(Ordering::Relaxed);
-        while priority < old {
-            match self.sym_idx.compare_exchange_weak(
-                old,
-                priority,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
+        // Write only if the priority is lower, keeping the cache line shared.
+        if priority < self.sym_idx.load(Ordering::Relaxed) {
+            self.sym_idx.fetch_min(priority, Ordering::Relaxed);
         }
     }
 
@@ -618,19 +610,8 @@ impl Symbol {
 
     #[inline]
     fn set_visibility_bits(&self, mask: u8, value: u8) {
-        let mut cur = self.visibility.load(Ordering::Relaxed);
-        loop {
-            let new = (cur & !mask) | (value & mask);
-            match self.visibility.compare_exchange_weak(
-                cur,
-                new,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return,
-                Err(actual) => cur = actual,
-            }
-        }
+        self.visibility
+            .update(Ordering::Relaxed, Ordering::Relaxed, |cur| (cur & !mask) | (value & mask));
     }
 
     #[inline]

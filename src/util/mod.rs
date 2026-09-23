@@ -138,7 +138,7 @@ pub(crate) unsafe fn madvise_hugepage_interior(data: *const u8, size: usize) {
     if first_page < last_page {
         // SAFETY: these complete pages lie strictly inside the caller's
         // allocation.
-        unsafe { madvise_hugepage(first_page as *mut u8, last_page - first_page) };
+        unsafe { madvise_hugepage(data.with_addr(first_page).cast_mut(), last_page - first_page) };
     }
 }
 
