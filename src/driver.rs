@@ -154,6 +154,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         }
     }
 
+    // Keep the worker threads from sleeping between passes until the link
+    // is done.
+    let _keep_warm = crate::util::parallel::KeepWarm::start();
+
     // Parse input files
     crate::reader::read_input_files(&mut ctx, jobs);
 
