@@ -403,8 +403,8 @@ pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
         let osec = &output_sections[id.index()];
         for thunk in &osec.thunks {
             let base = thunk.addr(osec);
-            for (i, &sym) in thunk.symbols.iter().enumerate() {
-                symbols.add_thunk_addr(sym, base + thunk.offsets[i]);
+            for (&sym, &offset) in thunk.symbols.iter().zip(&thunk.offsets) {
+                symbols.add_thunk_addr(sym, base + offset);
             }
         }
     }

@@ -79,6 +79,7 @@
 //! can only grow, so once two rounds produce the same count the partition
 //! into equivalence classes has converged.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
@@ -102,9 +103,8 @@ struct Digest {
 impl Digest {
     #[inline]
     fn update(self, hasher: &mut SipHash13_128) {
-        // Match hashing the native Digest representation, as C++ does.
-        hasher.update_u64(u64::from_le(self.hi));
-        hasher.update_u64(u64::from_le(self.lo));
+        hasher.update_u64(self.hi);
+        hasher.update_u64(self.lo);
     }
 
     fn from_ne_bytes(bytes: [u8; 16]) -> Self {
@@ -167,7 +167,11 @@ struct DigestSlot {
 impl DigestMap {
     fn new(n: usize) -> Self {
         let len = n.saturating_mul(2).next_power_of_two();
-        Self { round: 1, mask: len - 1, slots: (0..len).map(|_| DigestSlot::default()).collect() }
+        Self {
+            round: 1,
+            mask: len - 1,
+            slots: std::iter::repeat_with(DigestSlot::default).take(len).collect(),
+        }
     }
 
     fn next_round(&mut self) {
@@ -566,7 +570,7 @@ fn count_num_classes<E: Target>(
 
 fn print_icf_sections<E: Target>(ctx: &Context<E>, sections: &[SectionRef], output: &ReportOutput) {
     let mut leaders: Vec<(SectionRef, Vec<SectionRef>)> = Vec::new();
-    let mut map: std::collections::HashMap<SectionRef, usize> = std::collections::HashMap::new();
+    let mut map: HashMap<SectionRef, usize> = HashMap::new();
     for &r in sections {
         let leader = ctx.section(r).icf_leader_in_round();
         if leader != r {

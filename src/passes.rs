@@ -49,10 +49,12 @@ pub fn apply_exclude_libs<E: Target>(ctx: &mut Context<E>) {
     if set.is_empty() {
         return;
     }
+    let all = set.contains(b"ALL".as_slice());
     for file in &mut ctx.objs {
         if !file.archive_name.as_os_str().is_empty()
-            && (set.contains(file.archive_name.file_name().unwrap_or_default().as_encoded_bytes())
-                || set.contains(b"ALL".as_slice()))
+            && (all
+                || set
+                    .contains(file.archive_name.file_name().unwrap_or_default().as_encoded_bytes()))
         {
             file.exclude_libs = true;
         }
@@ -278,10 +280,8 @@ fn mark_live_file<E: Target>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
 fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     // Symbols named on the command line pull in their files, and keep
     // their sections under --gc-sections; so does the entry point.
-    let args = &ctx.args;
-    let names: Vec<Vec<u8>> = args.undefined.iter().chain(&args.require_defined).cloned().collect();
-    for name in names {
-        let id = ctx.get_symbol(&name);
+    for name in ctx.args.undefined.iter().chain(&ctx.args.require_defined) {
+        let id = ctx.symbols.get_or_intern(name);
         ctx.symbols[id].set_gc_root(true);
         if let Some(file) = ctx.symbols[id].file() {
             ctx.file(file).set_reachable(true);
@@ -594,10 +594,7 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     // LTO can change archive extraction and therefore the winning COMDAT
     // group. Construct the losing copies too so one can become the winner
     // after LTO.
-    let keep_discarded_comdat = ctx
-        .objs
-        .iter()
-        .any(|f| f.base.is_reachable() && (f.is_lto_input() || f.is_gcc_offload_obj));
+    let keep_discarded_comdat = has_lto_obj(ctx);
 
     let t = ctx.timer("parse_sections");
     let maximum: usize = ctx
@@ -2090,10 +2087,8 @@ pub fn fixup_ctors_in_init_array<E: Target>(ctx: &mut Context<E>) {
             let mut contents = isec.contents().to_vec();
             let n = contents.len() / word;
             for i in 0..n / 2 {
-                let (a, b) = (i * word, (n - 1 - i) * word);
-                for k in 0..word {
-                    contents.swap(a + k, b + k);
-                }
+                let (head, tail) = contents.split_at_mut((n - 1 - i) * word);
+                head[i * word..(i + 1) * word].swap_with_slice(&mut tail[..word]);
             }
             let size = isec.sh_size;
             let file = &mut ctx.objs[section_ref.file.index()];
@@ -2413,7 +2408,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // Group dynamic symbols by their owning file.
     let groups: Vec<Vec<SymbolId>> = {
         let ctx_ref: &Context<E> = ctx;
-        let objs: Vec<Vec<SymbolId>> = ctx_ref
+        let mut objs: Vec<Vec<SymbolId>> = ctx_ref
             .objs
             .par_iter()
             .map(|file| {
@@ -2447,7 +2442,8 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                     .collect()
             })
             .collect();
-        objs.into_iter().chain(dsos).collect()
+        objs.extend(dsos);
+        objs
     };
 
     if ctx.needs_tlsld.load(Ordering::Relaxed) {
@@ -3437,7 +3433,8 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
                 addr2 = align_to(addr2, hdr.shdr.sh_addralign.get());
                 hdr.shdr.sh_addr.set(addr2);
                 addr2 += hdr.shdr.sh_size.get();
-                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, ctx.chunks[i + 1]) {
+                let Some(&next) = ctx.chunks.get(i + 1) else { break };
+                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, next) {
                     break;
                 }
                 i += 1;
@@ -3702,9 +3699,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
 }
 
 fn num_irelative_relocs<E: Target>(ctx: &Context<E>) -> u64 {
-    let mut n = 0u64;
-    n += ctx.got.got_syms.iter().filter(|&&id| ctx.symbols[id].is_ifunc()).count() as u64;
-    n
+    ctx.got.got_syms.iter().filter(|&&id| ctx.symbols[id].is_ifunc()).count() as u64
 }
 
 fn to_paddr<E: Target>(ctx: &Context<E>, vaddr: u64) -> u64 {
