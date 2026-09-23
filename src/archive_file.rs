@@ -60,7 +60,7 @@ impl<'a> ArHeader<'a> {
             let len = parse_decimal(rest);
             let (name, remaining) = body.split_at(len.min(body.len()));
             *body = remaining;
-            let name = name.split(|&b| b == 0).next().unwrap_or(&[]);
+            let name = util::cstr_at(name, 0);
             return PathBuf::from(util::os_str(name));
         }
 
@@ -72,8 +72,8 @@ impl<'a> ArHeader<'a> {
             return PathBuf::from(util::os_str(&start[..end]));
         }
 
-        // Short fileanme
-        let end = self.name.iter().position(|&b| b == b'/').unwrap_or(self.name.len());
+        // Short filename
+        let end = memchr::memchr(b'/', self.name).unwrap_or(self.name.len());
         PathBuf::from(util::os_str(&self.name[..end]))
     }
 }

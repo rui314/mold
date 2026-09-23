@@ -80,23 +80,22 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
         None
     };
 
-    for i in 0..shdrs.len() {
+    for shdr in shdrs {
         // GCC FAT LTO objects contain both regular ELF sections and GCC-
         // specific LTO sections, so that they can be linked as LTO objects if
         // the LTO linker plugin is available and falls back as regular
         // objects otherwise. GCC FAT LTO object can be identified by the
         // presence of `.gcc.lto_.symtab` section.
         if let Some(offset) = shstrtab_offset {
-            let name = crate::util::cstr_at(data, offset + shdrs[i].sh_name.get() as usize);
+            let name = crate::util::cstr_at(data, offset + shdr.sh_name.get() as usize);
             if name.starts_with(b".gnu.lto_.symtab.") {
                 return true;
             }
         }
 
-        if shdrs[i].sh_type.get() != SHT_SYMTAB {
+        if shdr.sh_type.get() != SHT_SYMTAB {
             continue;
         }
-        let shdr = &shdrs[i];
 
         // GCC non-FAT LTO object contains only sections symbols followed by
         // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
