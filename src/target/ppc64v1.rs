@@ -150,7 +150,7 @@ fn toc(ctx: &Context<Ppc64V1>) -> u64 {
 // After this function, we mark symbols with the NEEDS_PPC_OPD flag if the
 // symbol needs an .opd entry. We then create an output .opd just like we
 // do for .plt or .got.
-pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
+fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("rewrite_opd");
 
     let editor = SymbolEditor::new(ctx.symbols.as_mut_slice());
@@ -248,7 +248,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
 // When a function is exported, the dynamic symbol for the function should
 // refers to the function's .opd entry. This function marks such symbols
 // with NEEDS_PPC_OPD.
-pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
+fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("scan_symbols");
     let needs_descriptor = |sym: &Symbol| sym.add_flags(NEEDS_PPC_OPD);
 

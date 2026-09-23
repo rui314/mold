@@ -32,6 +32,7 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Family, Target};
+use crate::util::endian::{write_ul16, write_ul32, write_ul64};
 use crate::util::is_int;
 use crate::{error, fatal};
 
@@ -101,8 +102,8 @@ impl Target for X86_64 {
         buf[..32].copy_from_slice(&INSN);
         let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
-        write_u32(&mut buf[8..], gotplt.wrapping_sub(plt).wrapping_sub(4) as u32);
-        write_u32(&mut buf[14..], gotplt.wrapping_sub(plt).wrapping_sub(2) as u32);
+        write_ul32(&mut buf[8..], gotplt.wrapping_sub(plt).wrapping_sub(4) as u32);
+        write_ul32(&mut buf[14..], gotplt.wrapping_sub(plt).wrapping_sub(2) as u32);
     }
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
@@ -118,8 +119,8 @@ impl Target for X86_64 {
                 0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(&mut buf[6..], plt_idx);
-            write_u32(&mut buf[12..], disp.wrapping_sub(16) as u32);
+            write_ul32(&mut buf[6..], plt_idx);
+            write_ul32(&mut buf[12..], disp.wrapping_sub(16) as u32);
         } else {
             const INSN: [u8; 16] = [
                 0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
@@ -127,8 +128,8 @@ impl Target for X86_64 {
                 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(&mut buf[2..], plt_idx);
-            write_u32(&mut buf[8..], disp.wrapping_sub(12) as u32);
+            write_ul32(&mut buf[2..], plt_idx);
+            write_ul32(&mut buf[8..], disp.wrapping_sub(12) as u32);
         }
     }
 
@@ -139,7 +140,7 @@ impl Target for X86_64 {
         ];
         buf[..8].copy_from_slice(&INSN);
         let disp = sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(6);
-        write_u32(&mut buf[2..], disp as u32);
+        write_ul32(&mut buf[2..], disp as u32);
     }
 
     fn apply_eh_reloc(
@@ -155,14 +156,14 @@ impl Target for X86_64 {
             R_NONE => {}
             R_X86_64_32 => {
                 check(val as i64, 0, 1 << 32);
-                write_u32(loc, val as u32);
+                write_ul32(loc, val as u32);
             }
-            R_X86_64_64 => write_u64(loc, val),
+            R_X86_64_64 => write_ul64(loc, val),
             R_X86_64_PC32 => {
                 check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
-                write_u32(loc, val.wrapping_sub(p) as u32);
+                write_ul32(loc, val.wrapping_sub(p) as u32);
             }
-            R_X86_64_PC64 => write_u64(loc, val.wrapping_sub(p)),
+            R_X86_64_PC64 => write_ul64(loc, val.wrapping_sub(p)),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -315,11 +316,11 @@ impl Target for X86_64 {
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 32);
-                write_u32(&mut buf[off..], val as u32);
+                write_ul32(&mut buf[off..], val as u32);
             };
             let write32s = |buf: &mut [u8], val: u64| {
                 check(val as i64, -(1 << 31), 1 << 31);
-                write_u32(&mut buf[off..], val as u32);
+                write_ul32(&mut buf[off..], val as u32);
             };
 
             match rel.r_type() {
@@ -329,7 +330,7 @@ impl Target for X86_64 {
                 }
                 R_X86_64_16 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 16);
-                    write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
+                    write_ul16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
                 R_X86_64_32 => write32(buf, s.wrapping_add(a)),
                 R_X86_64_32S => write32s(buf, s.wrapping_add(a)),
@@ -341,7 +342,7 @@ impl Target for X86_64 {
                 R_X86_64_PC16 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     check(v as i64, -(1 << 15), 1 << 15);
-                    write_u16(&mut buf[off..], v as u16);
+                    write_ul16(&mut buf[off..], v as u16);
                 }
                 R_X86_64_PC32 => write32s(buf, s.wrapping_add(a).wrapping_sub(p)),
                 R_X86_64_PLT32 => {
@@ -349,22 +350,22 @@ impl Target for X86_64 {
                     if !sym.is_remaining_undef_weak() {
                         check(v as i64, -(1 << 31), 1 << 31);
                     }
-                    write_u32(&mut buf[off..], v as u32);
+                    write_ul32(&mut buf[off..], v as u32);
                 }
-                R_X86_64_PC64 => write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p)),
+                R_X86_64_PC64 => write_ul64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p)),
                 R_X86_64_GOT32 => write32(buf, g().wrapping_add(a)),
-                R_X86_64_GOT64 => write_u64(&mut buf[off..], g().wrapping_add(a)),
+                R_X86_64_GOT64 => write_ul64(&mut buf[off..], g().wrapping_add(a)),
                 R_X86_64_GOTOFF64 | R_X86_64_PLTOFF64 => {
-                    write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got_base))
+                    write_ul64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got_base))
                 }
                 R_X86_64_GOTPC32 => write32s(buf, got_base.wrapping_add(a).wrapping_sub(p)),
                 R_X86_64_GOTPC64 => {
-                    write_u64(&mut buf[off..], got_base.wrapping_add(a).wrapping_sub(p))
+                    write_ul64(&mut buf[off..], got_base.wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPCREL => {
                     write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p))
                 }
-                R_X86_64_GOTPCREL64 => write_u64(
+                R_X86_64_GOTPCREL64 => write_ul64(
                     &mut buf[off..],
                     g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
                 ),
@@ -378,7 +379,7 @@ impl Target for X86_64 {
                         if insn != 0 {
                             buf[off - 2] = (insn >> 8) as u8;
                             buf[off - 1] = insn as u8;
-                            write_u32(&mut buf[off..], v as u32);
+                            write_ul32(&mut buf[off..], v as u32);
                             if ctx.args.emit_relocs {
                                 rels[rel_idx].set_r_type(R_X86_64_PC32);
                             }
@@ -411,11 +412,11 @@ impl Target for X86_64 {
                 }
                 R_X86_64_DTPOFF32 => write32s(buf, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
                 R_X86_64_DTPOFF64 => {
-                    write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
+                    write_ul64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
                 }
                 R_X86_64_TPOFF32 => write32s(buf, s.wrapping_add(a).wrapping_sub(ctx.tp_addr)),
                 R_X86_64_TPOFF64 => {
-                    write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr))
+                    write_ul64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr))
                 }
                 R_X86_64_GOTTPOFF | R_X86_64_CODE_4_GOTTPOFF => {
                     if sym.has_gottp(&ctx.symbols) {
@@ -463,7 +464,7 @@ impl Target for X86_64 {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         write32s(buf, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else if sym.has_gottp(&ctx.symbols) {
-                        let insn = relax_tlsdesc_to_ie(&buf[..off], &rel);
+                        let insn = relax_tlsdesc_to_ie(&buf[..off]);
                         if insn == 0 {
                             fatal!(
                                 "{}: illegal instruction sequence for {}",
@@ -499,7 +500,7 @@ impl Target for X86_64 {
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().wrapping_add(a)),
                 R_X86_64_SIZE64 => {
-                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
+                    write_ul64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
                 }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
@@ -532,11 +533,11 @@ impl Target for X86_64 {
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
             let write32 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 32);
-                write_u32(&mut buf[off..], val as u32);
+                write_ul32(&mut buf[off..], val as u32);
             };
             let write32s = |buf: &mut [u8], val: u64| {
                 check(val as i64, -(1 << 31), 1 << 31);
-                write_u32(&mut buf[off..], val as u32);
+                write_ul32(&mut buf[off..], val as u32);
             };
 
             match rel.r_type() {
@@ -546,25 +547,25 @@ impl Target for X86_64 {
                 }
                 R_X86_64_16 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 16);
-                    write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
+                    write_ul16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
                 R_X86_64_32 => write32(buf, s.wrapping_add(a)),
                 R_X86_64_32S => write32s(buf, s.wrapping_add(a)),
                 R_X86_64_64 => match isec.tombstone_with_file(ctx, file, sym, frag) {
-                    Some(v) => write_u64(&mut buf[off..], v),
-                    None => write_u64(&mut buf[off..], s.wrapping_add(a)),
+                    Some(v) => write_ul64(&mut buf[off..], v),
+                    None => write_ul64(&mut buf[off..], s.wrapping_add(a)),
                 },
                 R_X86_64_DTPOFF32 => match isec.tombstone_with_file(ctx, file, sym, frag) {
-                    Some(v) => write_u32(&mut buf[off..], v as u32),
+                    Some(v) => write_ul32(&mut buf[off..], v as u32),
                     None => write32s(buf, s.wrapping_add(a).wrapping_sub(ctx.dtp_addr)),
                 },
                 R_X86_64_DTPOFF64 => match isec.tombstone_with_file(ctx, file, sym, frag) {
-                    Some(v) => write_u64(&mut buf[off..], v),
+                    Some(v) => write_ul64(&mut buf[off..], v),
                     None => {
-                        write_u64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
+                        write_ul64(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr))
                     }
                 },
-                R_X86_64_GOTOFF64 => write_u64(
+                R_X86_64_GOTOFF64 => write_ul64(
                     &mut buf[off..],
                     s.wrapping_add(a).wrapping_sub(ctx.gotplt.shdr.sh_addr.get()),
                 ),
@@ -572,11 +573,11 @@ impl Target for X86_64 {
                     // PC-relative relocation doesn't make sense for non-memory-allocated
                     // section, but GCC 6.3.0 seems to create this reloc for
                     // _GLOBAL_OFFSET_TABLE_.
-                    write_u64(&mut buf[off..], ctx.gotplt.shdr.sh_addr.get().wrapping_add(a))
+                    write_ul64(&mut buf[off..], ctx.gotplt.shdr.sh_addr.get().wrapping_add(a))
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().wrapping_add(a)),
                 R_X86_64_SIZE64 => {
-                    write_u64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
+                    write_ul64(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a))
                 }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
@@ -586,18 +587,6 @@ impl Target for X86_64 {
             }
         }
     }
-}
-
-fn write_u16(buf: &mut [u8], v: u16) {
-    buf[..2].copy_from_slice(&v.to_le_bytes());
-}
-
-fn write_u32(buf: &mut [u8], v: u32) {
-    buf[..4].copy_from_slice(&v.to_le_bytes());
-}
-
-fn write_u64(buf: &mut [u8], v: u64) {
-    buf[..8].copy_from_slice(&v.to_le_bytes());
 }
 
 /// The bytes of a section preceding a relocated location.
@@ -702,11 +691,10 @@ fn relax_gottpoff(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
     }
 }
 
-fn relax_tlsdesc_to_ie(loc: &[u8], rel: &ElfRel<X86_64>) -> u32 {
+fn relax_tlsdesc_to_ie(loc: &[u8]) -> u32 {
     if loc.len() < 3 {
         return 0;
     }
-    let _ = rel;
     match last3(loc) {
         // lea 0(%rip), %r16 -> mov 0(%rip), %r16
         0x488d05 => 0x488b05, // lea 0(%rip), %rax -> mov 0(%rip), %rax
@@ -812,7 +800,7 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
                 0x48, 0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %rax
             ];
             buf[off - 4..off + 12].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 8..], val as u32);
+            write_ul32(&mut buf[off + 8..], val as u32);
         }
         R_X86_64_PLTOFF64 => {
             // The original instructions are the following:
@@ -827,7 +815,7 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
                 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
             ];
             buf[off - 3..off + 19].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 9..], val as u32);
+            write_ul32(&mut buf[off + 9..], val as u32);
         }
         _ => unreachable!(),
     }
@@ -841,7 +829,7 @@ fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
                 0x48, 0x03, 0x05, 0, 0, 0, 0, // add foo@gottpoff(%rip), %rax
             ];
             buf[off - 4..off + 12].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 8..], val.wrapping_sub(12) as u32);
+            write_ul32(&mut buf[off + 8..], val.wrapping_sub(12) as u32);
         }
         R_X86_64_PLTOFF64 => {
             const INSN: [u8; 22] = [
@@ -850,7 +838,7 @@ fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
                 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
             ];
             buf[off - 3..off + 19].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 9..], val.wrapping_sub(13) as u32);
+            write_ul32(&mut buf[off + 9..], val.wrapping_sub(13) as u32);
         }
         _ => unreachable!(),
     }
@@ -877,7 +865,7 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
                 0x48, 0x2d, 0, 0, 0, 0, // sub $tls_size, %rax
             ];
             buf[off - 3..off + 9].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 5..], tls_size as u32);
+            write_ul32(&mut buf[off + 5..], tls_size as u32);
         }
         R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX => {
             // The original instructions are the following:
@@ -890,7 +878,7 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
                 0x48, 0x2d, 0, 0, 0, 0, // sub $tls_size, %rax
             ];
             buf[off - 3..off + 10].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 6..], tls_size as u32);
+            write_ul32(&mut buf[off + 6..], tls_size as u32);
         }
         R_X86_64_PLTOFF64 => {
             // The original instructions are the following:
@@ -905,7 +893,7 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
                 0x0f, 0x1f, 0x80, 0x00, 0x00, 0x00, 0x00, // nop
             ];
             buf[off - 3..off + 19].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 8..], tls_size as u32);
+            write_ul32(&mut buf[off + 8..], tls_size as u32);
         }
         _ => unreachable!(),
     }
