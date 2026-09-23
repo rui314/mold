@@ -66,6 +66,60 @@ fn target_traits<E: Target>() -> TargetTraits {
     TargetTraits { name: E::NAME, is_rela: E::IS_RELA, family: E::FAMILY, page_size: E::PAGE_SIZE }
 }
 
+// The input size that keeps one thread busy. Splitting a pass among more
+// threads than this costs more than it saves, so small links are faster on
+// fewer threads.
+const BYTES_PER_THREAD: u64 = 8 << 20;
+
+/// The thread count to use when --threads is not given: one per CPU up to
+/// 32, but only about one per 8 MiB of input.
+fn default_thread_count(args: &Args, jobs: &[cmdline::ReaderJob]) -> usize {
+    // mold doesn't scale well with too many threads, so limit it to 32.
+    let max = std::thread::available_parallelism().map_or(1, |n| n.get()).min(32);
+    let size = input_size(args, jobs, max as u64 * BYTES_PER_THREAD);
+    max.min((size / BYTES_PER_THREAD).max(1) as usize)
+}
+
+/// Estimates the total size of the input files, up to `limit`, from their
+/// metadata. A library given by -l is looked up as `find_library` does.
+fn input_size(args: &Args, jobs: &[cmdline::ReaderJob], limit: u64) -> u64 {
+    let size = |path: &std::path::Path| {
+        let path = crate::mapped_file::apply_chroot(&args.chroot, path);
+        std::fs::metadata(path).map_or(0, |m| m.len())
+    };
+    let library_size = |job: &cmdline::ReaderJob| {
+        let name = job.name.as_os_str();
+        let filenames: Vec<OsString> =
+            if let Some(exact) = name.as_encoded_bytes().strip_prefix(b":") {
+                vec![crate::util::os_str(exact).into()]
+            } else {
+                let stem = |ext: &str| {
+                    let mut filename = OsString::from("lib");
+                    filename.push(name);
+                    filename.push(ext);
+                    filename
+                };
+                let shared = (!job.rctx.is_static).then(|| stem(".so"));
+                shared.into_iter().chain(std::iter::once(stem(".a"))).collect()
+            };
+        args.library_paths
+            .iter()
+            .flat_map(|dir| filenames.iter().map(move |filename| dir.join(filename)))
+            .map(|path| size(&path))
+            .find(|&n| n != 0)
+            .unwrap_or(0)
+    };
+
+    let mut total = 0;
+    for job in jobs {
+        total += if job.is_lib { library_size(job) } else { size(&job.name) };
+        if total >= limit {
+            break;
+        }
+    }
+    total
+}
+
 fn thread_count(args: &Args) -> usize {
     // mold doesn't scale well with too many threads, so limit it to 32.
     args.thread_count
@@ -87,6 +141,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     // Redo if -m does not match with our speculation.
     if ctx.args.emulation != E::NAME {
         return Err(ctx.args.emulation);
+    }
+
+    if ctx.args.thread_count.is_none() {
+        ctx.args.thread_count = Some(default_thread_count(&ctx.args, &jobs));
     }
 
     let t_all = ctx.timer("all");
