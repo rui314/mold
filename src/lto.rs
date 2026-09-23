@@ -227,6 +227,10 @@ struct ClaimedSymbol {
 }
 
 impl ClaimedSymbol {
+    /// # Safety
+    ///
+    /// `sym.name` must point to a NUL-terminated string, and `sym.comdat_key`
+    /// must be null or point to one.
     unsafe fn from_plugin(sym: &PluginSymbol) -> Self {
         let bytes = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_bytes().to_vec();
         Self {
@@ -302,18 +306,19 @@ pub unsafe extern "C" fn mold_lto_report(level: c_int, msg: *const c_char) {
     }
 }
 
-unsafe extern "C" fn register_claim_file_hook(f: ClaimFileHandler) -> c_int {
-    HOOKS.lock().unwrap().claim_file = Some(f);
+// The plugin passes C function pointers, which may be null.
+unsafe extern "C" fn register_claim_file_hook(f: Option<ClaimFileHandler>) -> c_int {
+    HOOKS.lock().unwrap().claim_file = f;
     LDPS_OK
 }
 
-unsafe extern "C" fn register_all_symbols_read_hook(f: Hook) -> c_int {
-    HOOKS.lock().unwrap().all_symbols_read = Some(f);
+unsafe extern "C" fn register_all_symbols_read_hook(f: Option<Hook>) -> c_int {
+    HOOKS.lock().unwrap().all_symbols_read = f;
     LDPS_OK
 }
 
-unsafe extern "C" fn register_cleanup_hook(f: Hook) -> c_int {
-    HOOKS.lock().unwrap().cleanup = Some(f);
+unsafe extern "C" fn register_cleanup_hook(f: Option<Hook>) -> c_int {
+    HOOKS.lock().unwrap().cleanup = f;
     LDPS_OK
 }
 
@@ -322,7 +327,11 @@ unsafe extern "C" fn add_symbols(
     nsyms: c_int,
     psyms: *const PluginSymbol,
 ) -> c_int {
-    let syms = unsafe { std::slice::from_raw_parts(psyms, nsyms as usize) };
+    let syms = match usize::try_from(nsyms) {
+        // SAFETY: the plugin passes an array of nsyms symbols.
+        Ok(n) if n > 0 && !psyms.is_null() => unsafe { std::slice::from_raw_parts(psyms, n) },
+        _ => &[],
+    };
     *CLAIMED_SYMBOLS.lock().unwrap() =
         syms.iter().map(|s| unsafe { ClaimedSymbol::from_plugin(s) }).collect();
     LDPS_OK
@@ -330,7 +339,13 @@ unsafe extern "C" fn add_symbols(
 
 /// Receives an object file the plugin compiled.
 unsafe extern "C" fn add_input_file<E: Target>(path: *const c_char) -> c_int {
-    let ctx = unsafe { &mut *CONTEXT.load(Ordering::Acquire).cast::<Context<E>>() };
+    let Some(mut ctx) = ptr::NonNull::new(CONTEXT.load(Ordering::Acquire).cast::<Context<E>>())
+    else {
+        fatal!("LTO plugin called add_input_file outside all_symbols_read");
+    };
+    // SAFETY: run_plugin publishes its exclusively borrowed context for the
+    // duration of the all_symbols_read hook and touches nothing else meanwhile.
+    let ctx = unsafe { ctx.as_mut() };
     let path = crate::util::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
     let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
@@ -429,7 +444,7 @@ unsafe extern "C" fn get_input_section_size(_section: PluginSection, _size: *mut
     LDPS_OK
 }
 
-unsafe extern "C" fn register_new_input_hook(_f: NewInputHandler) -> c_int {
+unsafe extern "C" fn register_new_input_hook(_f: Option<NewInputHandler>) -> c_int {
     LDPS_OK
 }
 
@@ -475,8 +490,16 @@ unsafe fn get_symbols<E: Target>(
     psyms: *mut PluginSymbol,
     is_v2: bool,
 ) -> c_int {
-    let ctx = unsafe { &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>) };
-    let psyms = unsafe { std::slice::from_raw_parts_mut(psyms, nsyms as usize) };
+    let Some(ctx) = ptr::NonNull::new(CONTEXT.load(Ordering::Acquire).cast::<Context<E>>()) else {
+        fatal!("LTO plugin called get_symbols outside all_symbols_read");
+    };
+    // SAFETY: as in add_input_file.
+    let ctx = unsafe { ctx.as_ref() };
+    let psyms = match usize::try_from(nsyms) {
+        // SAFETY: the plugin passes an array of nsyms symbols.
+        Ok(n) if n > 0 && !psyms.is_null() => unsafe { std::slice::from_raw_parts_mut(psyms, n) },
+        _ => &mut [],
+    };
     let handle = handle.cast::<MappedFile>();
     let Some(file) = ctx.objs.iter().find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {
@@ -496,8 +519,11 @@ unsafe fn get_symbols<E: Target>(
     // Set the symbol resolution results to psyms.
     let this = FileId::Obj(file.id());
     for (i, psym) in psyms.iter_mut().enumerate() {
-        let esym = &file.base.elf_syms[i + 1];
-        let sym = &ctx.symbols[file.base.symbols[i + 1]];
+        let (Some(esym), Some(&id)) = (file.base.elf_syms.get(i + 1), file.base.symbols.get(i + 1))
+        else {
+            fatal!("{file}: the LTO plugin asked for more symbols than the file has");
+        };
+        let sym = &ctx.symbols[id];
         psym.resolution = match sym.file() {
             None => LDPR_UNDEF,
             Some(owner) if owner == this => {
