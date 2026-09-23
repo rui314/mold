@@ -72,6 +72,45 @@ fn thread_count(args: &Args) -> usize {
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(32))
 }
 
+/// Creates the thread pool that the passes run on, with this thread as its
+/// first worker.
+///
+/// Creating a thread takes tens of microseconds, mostly in the kernel, and
+/// Rayon's global pool waits until every worker is running, which delayed
+/// each link by about a millisecond with 32 threads. A helper thread starts
+/// the other workers instead while this thread goes on to read the input
+/// files; parallel loops use each worker as soon as it is up.
+fn start_thread_pool(threads: usize) {
+    let (sender, receiver) = std::sync::mpsc::channel::<rayon::ThreadBuilder>();
+    std::thread::spawn(move || {
+        for worker in receiver {
+            let mut builder = std::thread::Builder::new();
+            if let Some(name) = worker.name() {
+                builder = builder.name(name.to_owned());
+            }
+            if let Some(size) = worker.stack_size() {
+                builder = builder.stack_size(size);
+            }
+            if let Err(err) = builder.spawn(move || worker.run()) {
+                fatal!("failed to create a thread: {err}");
+            }
+        }
+    });
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .use_current_thread()
+        .spawn_handler(move |worker| {
+            sender.send(worker).map_err(|_| std::io::Error::other("thread spawner exited"))
+        })
+        .build()
+        .expect("failed to build linker thread pool");
+
+    // Parallel iterators and rayon::spawn on this thread use the pool it
+    // belongs to. Keep the pool for the rest of the process, as a global
+    // pool would be kept.
+    std::mem::forget(pool);
+}
+
 /// Links for the target `E`, or reports the target the inputs are actually
 /// for.
 pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
@@ -100,11 +139,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::jobs::acquire_global_lock();
 
     let threads = thread_count(&ctx.args);
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .use_current_thread()
-        .build_global()
-        .expect("failed to build linker thread pool");
+    start_thread_pool(threads);
 
     // Handle --wrap options if any.
     for name in &ctx.args.wrap {
