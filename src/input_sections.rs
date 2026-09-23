@@ -284,6 +284,9 @@ impl<E: Target> InputSection<E> {
         }
 
         let (sh_size, p2align) = if compressed {
+            if contents.len() < ElfChdr::<E>::size() {
+                fatal!("{file}:({name}): corrupted compressed section");
+            }
             let chdr = record_from_bytes::<ElfChdr<E>>(contents);
             (chdr.ch_size(), to_p2align(chdr.ch_addralign()))
         } else {
@@ -555,7 +558,11 @@ impl<E: Target> InputSection<E> {
         buf: &mut [u8],
     ) {
         if !self.is_compressed() {
-            buf.copy_from_slice(&self.contents()[..buf.len()]);
+            match self.contents() {
+                // A NOBITS section has no contents and reads as zeros.
+                [] => buf.fill(0),
+                contents => buf.copy_from_slice(&contents[..buf.len()]),
+            }
             return;
         }
 
@@ -735,18 +742,19 @@ impl<E: Target> InputSection<E> {
         *self.extra.r_deltas_mut() = deltas;
     }
 
-    /// Reports a relocation whose value doesn't fit in the field.
+    /// Reports a relocation whose value doesn't fit in the field. The
+    /// record is passed in rather than looked up because the caller may
+    /// hold the relocation table mutably.
     #[inline(always)]
-    pub fn check_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
+    pub fn check_range(&self, ctx: &Context<E>, rel: &ElfRel<E>, val: i64, lo: i64, hi: i64) {
         if val < lo || hi <= val {
-            self.report_out_of_range(ctx, rel_idx, val, lo, hi);
+            self.report_out_of_range(ctx, rel, val, lo, hi);
         }
     }
 
     #[cold]
-    fn report_out_of_range(&self, ctx: &Context<E>, rel_idx: usize, val: i64, lo: i64, hi: i64) {
+    fn report_out_of_range(&self, ctx: &Context<E>, rel: &ElfRel<E>, val: i64, lo: i64, hi: i64) {
         let file = &ctx.objs[self.file.index()];
-        let rel = self.relocations(ctx).nth(rel_idx).expect("relocation index");
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
         error!(
             "{}: relocation {} against {} out of range: {val} is not in [{lo}, {hi})",
@@ -1242,22 +1250,6 @@ pub fn check_tlsle<E: Target>(
 //
 // Note that we assume that the first relocation entry for an FDE
 // always points to the function that the FDE is associated to.
-#[derive(Clone, Copy, Debug)]
-pub enum RelocationSpan {
-    Input(&'static [u8]),
-    SideTable(u32),
-}
-
-impl RelocationSpan {
-    #[inline]
-    fn rels<E: Target>(self, file: &ObjectFile<E>) -> &[ElfRel<E>] {
-        match self {
-            Self::Input(data) => rels_from_bytes::<E>(data),
-            Self::SideTable(relsec_idx) => file.relocations(Some(relsec_idx)),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct CieRecord {
     /// The `.eh_frame` input section containing the record.
@@ -1268,8 +1260,10 @@ pub struct CieRecord {
     pub output_offset: u32,
     /// Index of the first relocation applying to the record.
     pub rel_idx: u32,
-    /// The relocation table shared by this CIE and its FDEs.
-    pub(crate) relocations: RelocationSpan,
+    /// The relocation section shared by this CIE and its FDEs. It is read
+    /// through the file on each use because relocation records are
+    /// rewritten in place while fragments are attached.
+    pub(crate) relsec_idx: Option<u32>,
     // For deduplication
     pub icf_idx: u32,
     // The size of the initial_location and address_range fields of FDEs
@@ -1294,7 +1288,7 @@ impl CieRecord {
     #[inline]
     pub fn rels<'a, E: Target>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         rels_in::<E>(
-            self.relocations.rels(file),
+            file.relocations(self.relsec_idx),
             self.rel_idx,
             self.input_offset as usize + self.size::<E>(),
         )
@@ -1378,7 +1372,7 @@ impl FdeRecord {
     pub fn rels<'a, E: Target>(&self, file: &'a ObjectFile<E>) -> &'a [ElfRel<E>] {
         let cie = self.cie(file);
         let end = self.input_offset as usize + record_size::<E>(cie.contents, self.input_offset);
-        rels_in::<E>(cie.relocations.rels(file), self.rel_idx, end)
+        rels_in::<E>(file.relocations(cie.relsec_idx), self.rel_idx, end)
     }
 }
 

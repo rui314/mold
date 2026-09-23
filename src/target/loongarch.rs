@@ -509,7 +509,7 @@ where
             };
             let got_entry = || got.wrapping_add(g()).wrapping_add(a);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let check_branch = |val: i64, lo: i64, hi: i64| {
                 check(val, lo, hi);
                 if val & 0b11 != 0 {

@@ -376,7 +376,7 @@ impl Target for Sparc64 {
 
         // We iterate over relocations in reverse order so that it is easy
         // to swap instructions for R_SPARC_TLS_GD_CALL.
-        for (i, rel) in rels.iter().enumerate().rev() {
+        for rel in rels.iter().rev() {
             if rel.r_type() == R_NONE || Self::is_absrel(rel) {
                 continue;
             }
@@ -392,7 +392,7 @@ impl Target for Sparc64 {
             let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel, val, lo, hi);
 
             // Register fields of the instruction being rewritten.
             let insn = read_ub32(&buf[off..]);
@@ -649,7 +649,7 @@ impl Target for Sparc64 {
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]) {
         let mut fragment_cache = crate::input_sections::FragmentLookup::default();
         let file = &ctx.objs[isec.file.index()];
-        for (i, rel) in isec.relocations(ctx).enumerate() {
+        for rel in isec.relocations(ctx) {
             let Some(NonAllocReloc { sym, s, a, frag }) =
                 isec.resolve_nonalloc(ctx, file, &rel, &mut fragment_cache)
             else {
@@ -663,7 +663,7 @@ impl Target for Sparc64 {
                     write_ub64(loc, isec.tombstone(ctx, sym, frag).unwrap_or(sa))
                 }
                 R_SPARC_32 | R_SPARC_UA32 => {
-                    isec.check_range(ctx, i, sa as i64, 0, 1 << 32);
+                    isec.check_range(ctx, &rel, sa as i64, 0, 1 << 32);
                     write_ub32(loc, sa as u32);
                 }
                 R_SPARC_TLS_DTPOFF32 => write_ub32(loc, sa.wrapping_sub(ctx.dtp_addr) as u32),

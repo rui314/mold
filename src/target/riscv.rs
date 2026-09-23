@@ -478,7 +478,7 @@ where
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 
-            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel_idx, val, lo, hi);
+            let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, &rel, val, lo, hi);
             let utype = |loc: &mut [u8], val: u64| {
                 check(val as i64, -(1i64 << 31) - 0x800, (1i64 << 31) - 0x800);
                 write_utype(loc, val);
