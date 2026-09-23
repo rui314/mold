@@ -25,3 +25,13 @@ int main() { my_puts("hello via alias"); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/libfoo.dylib
 $t/exe | grep 'hello via alias'
+
+# An alias the export lists hide is dropped from the symbol table and
+# the export trie alike; the import it names stays.
+$CC --ld-path=$mold -shared -o $t/libfoo2.dylib $t/a.o -Wl,-alias,_puts,_my_puts \
+  -Wl,-unexported_symbol,_my_puts
+nm -m $t/libfoo2.dylib > $t/nm2
+not grep -q _my_puts $t/nm2
+grep -q 'undefined.*_puts (from libSystem)' $t/nm2
+dyld_info -exports $t/libfoo2.dylib > $t/exports2
+not grep -q _my_puts $t/exports2
