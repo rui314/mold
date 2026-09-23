@@ -51,6 +51,8 @@ $t/exe | grep '^5 ok$'
 cat <<EOF | $CC -o $t/b.o -c -x assembler -
 .section __DATA,__zero_one
 .section __DATA,__zero_two
+.section __DATA,__zero_labeled
+zero_label:
 EOF
 cat <<EOF | $CC -o $t/c.o -c -xc -
 _Thread_local int tls_var = 3;
@@ -58,3 +60,15 @@ int get_tls(void) { return tls_var; }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/c.o
 $t/exe2 | grep '^5 ok$'
+# An empty section with no symbol in it makes no output section, as
+# with ld-prime. The arm64 assembler gives every section an ltmp
+# symbol, so there all three stay.
+otool -l $t/exe2 > $t/lc2
+grep -q '__zero_labeled' $t/lc2
+if [ $ARCH = x86_64 ]; then
+  not grep -q '__zero_one' $t/lc2
+  not grep -q '__zero_two' $t/lc2
+else
+  grep -q '__zero_one' $t/lc2
+  grep -q '__zero_two' $t/lc2
+fi
