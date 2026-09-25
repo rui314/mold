@@ -27,6 +27,7 @@ pub mod objc_stubs;
 pub mod output_section;
 pub mod rebase_info;
 pub mod sectcreate;
+pub mod split_info;
 pub mod strtab;
 pub mod stub_helper;
 pub mod stubs;
@@ -143,6 +144,7 @@ pub enum ChunkId {
     ExportTrie,
     FunctionStarts,
     DataInCode,
+    SplitInfo,
     IndirectSymtab,
     Symtab,
     Strtab,
@@ -153,7 +155,7 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 23] = [
+    const UNITS: [Self; 24] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
@@ -173,6 +175,7 @@ impl ChunkId {
         Self::ExportTrie,
         Self::FunctionStarts,
         Self::DataInCode,
+        Self::SplitInfo,
         Self::IndirectSymtab,
         Self::Symtab,
         Self::Strtab,
@@ -294,6 +297,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ExportTrie => export_trie::copy_buf(ctx, buf),
         ChunkId::FunctionStarts => function_starts::copy_buf(ctx, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
+        ChunkId::SplitInfo => split_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
     }
 }
@@ -629,6 +633,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // tooling takes its absence as "old linker".
     if ctx.chunks.contains(&ChunkId::DataInCode) {
         vec.push(create_linkedit_data_cmd(LC_DATA_IN_CODE, &ctx.data_in_code.hdr));
+    }
+    if ctx.chunks.contains(&ChunkId::SplitInfo) {
+        vec.push(create_linkedit_data_cmd(LC_SEGMENT_SPLIT_INFO, &ctx.split_info.hdr));
     }
 
     if ctx.chunks.contains(&ChunkId::CodeSignature) {

@@ -4507,6 +4507,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.data_in_code_info {
         ctx.chunks.push(ChunkId::DataInCode);
     }
+    if ctx.args.split_seg_info {
+        ctx.chunks.push(ChunkId::SplitInfo);
+    }
     ctx.chunks.push(ChunkId::Symtab);
     if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {
         let lazy = if ctx.lazy_binding() { ctx.stubs.symbols.len() } else { 0 };
@@ -5484,7 +5487,9 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
                                 },
                                 || {
                                     let _t = shared.timer("data_in_code");
-                                    chunks::data_in_code::build(shared)
+                                    let dice = chunks::data_in_code::build(shared);
+                                    let split = chunks::split_info::build(shared);
+                                    (dice, split)
                                 },
                             )
                         },
@@ -5493,11 +5498,14 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             );
             // Each table's size follows from its contents; the chunk
             // loop below places them.
+            let (dice, split) = dice;
             ctx.symtab = symtab;
             ctx.symtab.hdr.size = (ctx.symtab.entries.len() * size_of::<NList>()) as u64;
             ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
             ctx.data_in_code.hdr.size = (dice.len() * 8) as u64;
             ctx.data_in_code.entries = dice;
+            ctx.split_info.hdr.size = split.len() as u64;
+            ctx.split_info.contents = split;
             match streams {
                 Streams::Chained((contents, fixups, imports, ordinals)) => {
                     let sec = &mut ctx.chained_fixups;
@@ -5597,7 +5605,8 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
                 | ChunkId::ChainedFixups
                 | ChunkId::ExportTrie
                 | ChunkId::FunctionStarts
-                | ChunkId::DataInCode => 3,
+                | ChunkId::DataInCode
+                | ChunkId::SplitInfo => 3,
                 ChunkId::IndirectSymtab => 2,
                 ChunkId::CodeSignature => 4,
                 _ => ctx.chunk_header(id).p2align,

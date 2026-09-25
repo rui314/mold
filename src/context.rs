@@ -20,6 +20,7 @@ use crate::chunks::objc_methlist::ObjcMethlistSection;
 use crate::chunks::objc_stubs::ObjcStubsSection;
 use crate::chunks::rebase_info::RebaseInfoSection;
 use crate::chunks::sectcreate::SectCreateSection;
+use crate::chunks::split_info::SplitInfoSection;
 use crate::chunks::strtab::StrtabSection;
 use crate::chunks::stub_helper::StubHelperSection;
 use crate::chunks::stubs::StubsSection;
@@ -63,6 +64,7 @@ macro_rules! chunk_header {
             ChunkId::ExportTrie => &$($mutable)? $ctx.export_trie.hdr,
             ChunkId::FunctionStarts => &$($mutable)? $ctx.function_starts.hdr,
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
+            ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
             ChunkId::IndirectSymtab => &$($mutable)? $ctx.indirect_symtab.hdr,
             ChunkId::Symtab => &$($mutable)? $ctx.symtab.hdr,
             ChunkId::Strtab => &$($mutable)? $ctx.strtab.hdr,
@@ -127,6 +129,7 @@ pub struct Context<E: Target> {
     pub export_trie: ExportTrieSection,
     pub function_starts: FunctionStartsSection,
     pub data_in_code: DataInCodeSection,
+    pub split_info: SplitInfoSection,
     pub indirect_symtab: IndirectSymtabSection,
     pub symtab: SymtabSection,
     pub strtab: StrtabSection,
@@ -214,6 +217,7 @@ impl<E: Target> Context<E> {
             export_trie: ExportTrieSection::new(),
             function_starts: FunctionStartsSection::new(),
             data_in_code: DataInCodeSection::new(),
+            split_info: SplitInfoSection::new(),
             indirect_symtab: IndirectSymtabSection::new(),
             symtab: SymtabSection::new(),
             strtab: StrtabSection::new(),

@@ -143,6 +143,8 @@ pub struct Args {
     pub function_starts: bool,
     /// Emit LC_DATA_IN_CODE (on by default).
     pub data_in_code_info: bool,
+    /// -split_seg_info: emit LC_SEGMENT_SPLIT_INFO
+    pub split_seg_info: bool,
     /// -init_offsets: emit initializers as 32-bit image offsets
     /// (__init_offsets) instead of absolute pointers (__mod_init_func).
     pub init_offsets: bool,
@@ -325,6 +327,7 @@ impl Default for Args {
             deduplicate: true,
             function_starts: true,
             data_in_code_info: true,
+            split_seg_info: false,
             init_offsets: false,
             data_const: true,
             no_implicit_dylibs: false,
@@ -910,6 +913,8 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_objc_category_merging" => args.objc_category_merging = Some(false),
             b"-no_function_starts" => args.function_starts = false,
             b"-data_in_code_info" => args.data_in_code_info = true,
+            b"-split_seg_info" => args.split_seg_info = true,
+            b"-no_split_seg_info" => args.split_seg_info = false,
             b"-no_data_in_code_info" => args.data_in_code_info = false,
 
             b"-no_uuid" => args.uuid = false,

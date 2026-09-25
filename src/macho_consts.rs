@@ -46,6 +46,7 @@ pub const LC_UUID: u32 = 0x1b;
 pub const LC_RPATH: u32 = 0x1c | LC_REQ_DYLD;
 pub const LC_SUB_FRAMEWORK: u32 = 0x12;
 pub const LC_SUB_CLIENT: u32 = 0x14;
+pub const LC_SEGMENT_SPLIT_INFO: u32 = 0x1e;
 pub const LC_CODE_SIGNATURE: u32 = 0x1d;
 pub const LC_REEXPORT_DYLIB: u32 = 0x1f | LC_REQ_DYLD;
 pub const LC_DYLD_INFO: u32 = 0x22;
