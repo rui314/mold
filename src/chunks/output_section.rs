@@ -411,18 +411,13 @@ fn abs_rel_kind<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> Abs
     AbsRelKind::DynRel
 }
 
-// Scan word-size absolute relocations (e.g. R_X86_64_64). This is
+// Collect word-size absolute relocations (e.g. R_X86_64_64). They are
 // separated from scan_relocations() because only such relocations can
 // be promoted to dynamic relocations.
-pub fn scan_abs_relocations<E: Target>(
-    ctx: &Context<E>,
-    id: OutputSectionId,
-) -> (Vec<AbsRel>, Vec<u64>) {
-    let osec = &ctx.output_sections[id.index()];
-
-    // Collect all word-size absolute relocations in member order, so that
-    // each member's relocations form one run of the vector.
-    let mut abs_rels: Vec<AbsRel> = osec
+pub fn collect_abs_relocations<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> Vec<AbsRel> {
+    // Collect them in member order, so that each member's relocations
+    // form one run of the vector.
+    ctx.output_sections[id.index()]
         .members
         .par_iter()
         .enumerate()
@@ -437,11 +432,38 @@ pub fn scan_abs_relocations<E: Target>(
                 kind: AbsRelKind::None,
             })
         })
-        .collect();
+        .collect()
+}
 
-    // We can sometimes avoid creating dynamic relocations in read-only
-    // sections by promoting symbols to canonical PLT or copy relocations.
-    let promote = !ctx.args.pic && osec.hdr.shdr.sh_flags.get() & SHF_WRITE as u64 == 0;
+// We can sometimes avoid creating dynamic relocations in read-only
+// sections by promoting symbols to canonical PLT or copy relocations.
+pub fn promote_abs_relocations<E: Target>(
+    ctx: &Context<E>,
+    id: OutputSectionId,
+    abs_rels: &[AbsRel],
+) {
+    let osec = &ctx.output_sections[id.index()];
+    if ctx.args.pic || osec.hdr.shdr.sh_flags.get() & SHF_WRITE as u64 != 0 {
+        return;
+    }
+    abs_rels.par_chunks(DYNREL_SHARD_SIZE).for_each(|shard| {
+        for r in shard {
+            let sym = &ctx.symbols[r.sym];
+            if sym.is_imported() && !sym.is_absolute() {
+                sym.add_flags(NEEDS_CANONICAL);
+            }
+        }
+    });
+}
+
+// Scan word-size absolute relocations and return the offsets of each
+// shard's dynamic relocations.
+pub fn scan_abs_relocations<E: Target>(
+    ctx: &Context<E>,
+    id: OutputSectionId,
+    abs_rels: &mut [AbsRel],
+) -> Vec<u64> {
+    let osec = &ctx.output_sections[id.index()];
 
     // Classify relocations and retain exact per-shard output counts. A
     // single output section such as .data.rel.ro can account for most of
@@ -453,9 +475,6 @@ pub fn scan_abs_relocations<E: Target>(
             let mut count = 0;
             for r in shard {
                 let sym = &ctx.symbols[r.sym];
-                if promote && sym.is_imported() && !sym.is_absolute() {
-                    sym.add_flags(NEEDS_CANONICAL);
-                }
                 r.kind = abs_rel_kind(ctx, sym);
 
                 let emit = matches!(r.kind, AbsRelKind::BaseRel | AbsRelKind::DynRel)
@@ -492,7 +511,7 @@ pub fn scan_abs_relocations<E: Target>(
     for (i, c) in counts.iter().enumerate() {
         dynrel_offsets[i + 1] = dynrel_offsets[i] + c;
     }
-    (abs_rels, dynrel_offsets)
+    dynrel_offsets
 }
 
 // Compute spaces needed for thunk symbols

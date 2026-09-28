@@ -112,8 +112,8 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
     }
 
     fn parse(bytes: &[u8]) -> Self {
+        const { assert!(std::mem::align_of::<Self>() == 1) };
         assert!(bytes.len() >= Self::size());
-        debug_assert_eq!(std::mem::align_of::<Self>(), 1);
         // SAFETY: the trait guarantees that every bit pattern is valid, and
         // the length check proves that a complete record is available.
         unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
@@ -141,8 +141,8 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
 
 /// Views one record directly in its file representation.
 pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
+    const { assert!(std::mem::align_of::<R>() == 1) };
     assert!(data.len() >= R::size());
-    debug_assert_eq!(std::mem::align_of::<R>(), 1);
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. The length check proves that one complete record is present.
     unsafe { &*data.as_ptr().cast() }
@@ -150,10 +150,9 @@ pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
 
 /// Views records directly in their file representation.
 pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
+    const { assert!(std::mem::align_of::<R>() == 1 && std::mem::size_of::<R>() != 0) };
     let size = R::size();
-    assert_ne!(size, 0);
     assert!(data.len().is_multiple_of(size));
-    debug_assert_eq!(std::mem::align_of::<R>(), 1);
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. The resulting slice covers exactly `data`.
     unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
@@ -161,10 +160,9 @@ pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
 
 /// Mutably views records directly in their file representation.
 pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
+    const { assert!(std::mem::align_of::<R>() == 1 && std::mem::size_of::<R>() != 0) };
     let size = R::size();
-    assert_ne!(size, 0);
     assert!(data.len().is_multiple_of(size));
-    debug_assert_eq!(std::mem::align_of::<R>(), 1);
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. `data` is exclusively borrowed for the returned slice.
     unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
