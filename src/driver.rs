@@ -642,7 +642,7 @@ struct Task {
 // writes `.strtab`, and relocation sections may patch addends into their
 // target sections). The buffer is split into the disjoint ranges each
 // task needs so that all tasks can run in parallel safely.
-pub fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+pub(crate) fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let t = ctx.timer("copy_chunks");
 
     let mut first: Vec<Task> = Vec::new();
