@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "August 2026" ""
+.TH "MOLD" "1" "September 2026" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -48,9 +48,11 @@ Whether good or bad, you should keep these semantics in mind to understand Unix 
 .P
 \fBmold\fR does not have any host\-specific default settings\. This is contrary to the GNU linkers, for which some configurable values, such as system\-dependent library search paths, are hard\-coded\. \fBmold\fR depends only on its command\-line arguments\.
 .SH "OPTION NOTATIONS"
-Multi\-letter long options may precede either a single dash or double dashes, except for those starting with the letter "o"\. For historical reasons, long options beginning with "o" must precede double dashes\.
+Long options are spelled with two dashes\. Some also accept a single dash, but which ones do is somewhat arbitrary for historical reasons\. \fBmold\fR follows the conventions of other linkers for compatibility\. For example, \fB\-\-export\-dynamic\fR can be spelled \fB\-export\-dynamic\fR, while \fB\-\-execute\-only\fR requires two dashes\.
 .P
-For example, you can spell \fB\-\-as\-needed\fR as \fB\-as\-needed\fR, but \fB\-\-omagic\fR must not be spelled as \fB\-omagic\fR\. \fB\-omagic\fR will be interpreted not as \fB\-\-omagic\fR but as \fB\-o magic\fR\.
+This can cause unexpected behavior when constructing command\-line options in a script\. For example, you might use \fB"\-e$foo"\fR to set the entry point symbol to the value of \fB$foo\fR\. However, if \fB$foo\fR is \fBxport\-dynamic\fR, the argument becomes \fB\-export\-dynamic\fR and is interpreted as \fB\-\-export\-dynamic\fR\.
+.P
+To avoid such ambiguities, we recommend always using two dashes for long options and separating a single\-letter option from its argument with a space\. For example, use \fB\-e $foo\fR or \fB\-\-entry=$foo\fR to specify the entry point symbol in a script\.
 .SH "MOLD\-SPECIFIC OPTIONS"
 .TP
 \fB\-\-chroot\fR=\fIdir\fR
