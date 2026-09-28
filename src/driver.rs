@@ -104,7 +104,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         .num_threads(threads)
         .use_current_thread()
         .build_global()
-        .expect("failed to build linker thread pool");
+        .unwrap_or_else(|err| fatal!("failed to build linker thread pool: {err}"));
 
     // Handle --wrap options if any.
     for name in &ctx.args.wrap {
