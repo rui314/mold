@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
+# GCC for PowerPC places foo1 and bar1 below in writable sections, so
+# there is no read-only reference to promote.
+[[ $MACHINE = ppc* ]] && skip
 
 # A read-only absolute reference to an imported symbol promotes the
 # symbol to a copy relocation or a canonical PLT entry, which fixes its
@@ -44,5 +46,8 @@ EOF
 $CC -B. -no-pie -o $t/exe $t/b.o $t/c.o $t/a.so
 $QEMU $t/exe | grep '^1 1$'
 
+# The only dynamic relocations against foo and bar are the copy
+# relocation and the PLT slot.
 readelf -rW $t/exe > $t/log
-not grep -F R_X86_64_64 $t/log
+[ "$(grep -cw foo $t/log)" = 1 ]
+[ "$(grep -cw bar $t/log)" = 1 ]
