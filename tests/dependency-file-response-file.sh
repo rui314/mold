@@ -12,6 +12,6 @@ echo "$t/a.o -Wl,-dependency-file=$t/dep" > $t/rsp
 
 $CC -B. -o $t/exe @$t/rsp
 
-grep '/exe:.*/a.o ' $t/dep
+grep -E '/exe:.*/a.o( |$)' $t/dep
 grep '/a.o:$' $t/dep
 not grep '^/tmp' $t/dep

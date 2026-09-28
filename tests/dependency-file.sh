@@ -10,5 +10,10 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-dependency-file=$t/dep
 
-grep  "dependency-file/exe:.*/a.o " $t/dep
+grep -E "dependency-file/exe:.*/a.o( |$)" $t/dep
 grep  ".*/a.o:$" $t/dep
+
+# Input files are opened in parallel, but the output must not depend on
+# the order in which they were opened.
+$CC -B. -o $t/exe $t/a.o -Wl,-dependency-file=$t/dep2
+cmp $t/dep $t/dep2

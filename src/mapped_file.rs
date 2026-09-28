@@ -28,9 +28,13 @@ static FILE_POOL: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
 /// The files that are memory-mapped, for [`drop_mappings`].
 static MMAPPED_FILES: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
 
-/// Returns all files opened during this link.
+/// Returns all files opened during this link, sorted by name. Input
+/// files are opened in parallel, so the order in which they were opened
+/// changes from run to run.
 pub fn file_pool() -> Vec<&'static MappedFile> {
-    FILE_POOL.lock().unwrap().clone()
+    let mut files = FILE_POOL.lock().unwrap().clone();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
 }
 
 /// Drops the page table entries of the mapped input files, in parallel.
