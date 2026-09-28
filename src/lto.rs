@@ -322,7 +322,10 @@ unsafe extern "C" fn add_symbols(
     nsyms: c_int,
     psyms: *const PluginSymbol,
 ) -> c_int {
-    let syms = unsafe { std::slice::from_raw_parts(psyms, nsyms as usize) };
+    // An empty array may be passed as a null pointer, which from_raw_parts
+    // does not accept even for a zero length.
+    let syms: &[PluginSymbol] =
+        if nsyms == 0 { &[] } else { unsafe { std::slice::from_raw_parts(psyms, nsyms as usize) } };
     *CLAIMED_SYMBOLS.lock().unwrap() =
         syms.iter().map(|s| unsafe { ClaimedSymbol::from_plugin(s) }).collect();
     LDPS_OK
@@ -476,7 +479,12 @@ unsafe fn get_symbols<E: Target>(
     is_v2: bool,
 ) -> c_int {
     let ctx = unsafe { &*(CONTEXT.load(Ordering::Acquire) as *const Context<E>) };
-    let psyms = unsafe { std::slice::from_raw_parts_mut(psyms, nsyms as usize) };
+    // LLVMgold passes a null pointer for a file with no symbols.
+    let psyms: &mut [PluginSymbol] = if nsyms == 0 {
+        &mut []
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(psyms, nsyms as usize) }
+    };
     let handle = handle.cast::<MappedFile>();
     let Some(file) = ctx.objs.iter().find(|f| f.base.mf.is_some_and(|mf| ptr::eq(mf, handle)))
     else {

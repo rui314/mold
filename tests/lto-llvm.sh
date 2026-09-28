@@ -14,3 +14,8 @@ EOF
 
 clang -B. -o $t/exe -flto $t/a.o
 $t/exe | grep 'Hello world'
+
+# LLVMgold passes a null symbol array for a file with no symbols.
+echo | clang -flto -c -o $t/b.o -xc -
+clang -B. -o $t/exe -flto $t/a.o $t/b.o
+$t/exe | grep 'Hello world'
