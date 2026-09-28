@@ -2,7 +2,11 @@
 //! handling for disk-full errors, and the `-run` subcommand.
 
 #[cfg(not(windows))]
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::fs::File;
+#[cfg(not(windows))]
+use std::io::{Read, Write};
+#[cfg(not(windows))]
+use std::os::unix::io::{FromRawFd, OwnedFd};
 #[cfg(not(windows))]
 use std::sync::Mutex;
 
@@ -38,12 +42,17 @@ pub fn fork_child() {
         if pid > 0 {
             // Parent
             drop(writer);
-            let mut buf = [0u8; 1];
-            if libc::read(reader.as_raw_fd(), buf.as_mut_ptr().cast(), 1) == 1 {
+            if File::from(reader).read_exact(&mut [0u8]).is_ok() {
                 libc::_exit(0);
             }
+
+            // If SIGCHLD is ignored, which is inherited across exec, the
+            // child is reaped automatically and waitpid fails. Its exit
+            // status is lost then, so report a failure.
             let mut status = 0;
-            libc::waitpid(pid, &raw mut status, 0);
+            if libc::waitpid(pid, &raw mut status, 0) == -1 {
+                libc::_exit(1);
+            }
             if libc::WIFEXITED(status) {
                 libc::_exit(libc::WEXITSTATUS(status));
             }
@@ -67,11 +76,7 @@ pub fn notify_parent() {
     let Some(writer) = PIPE_WRITER.lock().unwrap().take() else {
         return;
     };
-    let buf = [1u8];
-    // SAFETY: writer owns a valid pipe write end.
-    unsafe {
-        libc::write(writer.as_raw_fd(), buf.as_ptr().cast(), 1);
-    }
+    let _ = File::from(writer).write_all(&[1]);
 }
 
 #[cfg(windows)]
