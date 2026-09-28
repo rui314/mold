@@ -866,7 +866,6 @@ fn parse_number(opt: &str, value: &str) -> i64 {
 }
 
 fn from_hex(c: u8) -> u8 {
-    debug_assert!(c.is_ascii_hexdigit());
     match c {
         b'0'..=b'9' => c - b'0',
         b'a'..=b'f' => c - b'a' + 10,
@@ -988,15 +987,15 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
 // than 6.12.
 #[cfg(unix)]
 fn returns_etxtbsy() -> bool {
-    // SAFETY: utsname consists of byte arrays, so all zeros is a valid value.
     // uname may leave the tail of each string buffer untouched.
-    let mut buf: libc::utsname = unsafe { std::mem::zeroed() };
-    // SAFETY: buf is writable storage for a complete utsname.
-    if unsafe { libc::uname(&mut buf) } != 0 {
+    let mut buf = std::mem::MaybeUninit::<libc::utsname>::zeroed();
+    // SAFETY: buf points to writable storage for a complete utsname.
+    if unsafe { libc::uname(buf.as_mut_ptr()) } != 0 {
         return false;
     }
-    // SAFETY: uname succeeded and NUL-terminated the sysname and release
-    // strings.
+    // SAFETY: uname succeeded and initialized the structure, including
+    // NUL-terminated sysname and release strings.
+    let buf = unsafe { buf.assume_init() };
     let sysname = unsafe { std::ffi::CStr::from_ptr(buf.sysname.as_ptr()) };
     if sysname.to_bytes() != b"Linux" {
         return false;
