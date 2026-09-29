@@ -136,7 +136,7 @@ impl Target for Sparc64 {
     }
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
-        sparc64_rel_to_string(r_type & 0xff)
+        sparc64_rel_to_string(r_type)
     }
 
     // SPARC's PLT section is writable despite containing executable code.

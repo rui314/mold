@@ -282,7 +282,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
                 R_SH_TLS_IE_32 => sym.add_flags(NEEDS_GOTTP),
                 R_SH_TLS_LE_32 => check_tlsle(ctx, isec, sym, &rel),
                 R_SH_DIR32 | R_SH_GOTPC | R_SH_TLS_LDO_32 => {}
-                _ => fatal!(
+                _ => error!(
                     "{}: unknown relocation: {}",
                     isec.display(file),
                     rel.type_name::<Self>()

@@ -28,6 +28,7 @@ use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, 
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
+use crate::util::endian::{read_ul32, write_ul32};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
 
@@ -40,11 +41,11 @@ pub type Arm64Be = Arm64Target<false>;
 
 /// Instructions are always little-endian.
 fn insn(loc: &[u8]) -> u32 {
-    u32::from_le_bytes([loc[0], loc[1], loc[2], loc[3]])
+    read_ul32(loc)
 }
 
 fn write_insn(loc: &mut [u8], v: u32) {
-    loc[..4].copy_from_slice(&v.to_le_bytes());
+    write_ul32(loc, v);
 }
 
 fn or_insn(loc: &mut [u8], v: u32) {

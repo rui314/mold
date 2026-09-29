@@ -31,6 +31,7 @@ use crate::input_sections::{
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Class, ElfClass, Family, Target};
+use crate::util::endian::{read_ul16, read_ul32, write_ul16, write_ul32};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};
 
@@ -46,19 +47,19 @@ pub type Riscv32Be = RiscvTarget<false, false>;
 // Instructions are always little-endian.
 
 fn insn32(loc: &[u8]) -> u32 {
-    u32::from_le_bytes([loc[0], loc[1], loc[2], loc[3]])
+    read_ul32(loc)
 }
 
 fn insn16(loc: &[u8]) -> u16 {
-    u16::from_le_bytes([loc[0], loc[1]])
+    read_ul16(loc)
 }
 
 fn write32(loc: &mut [u8], v: u32) {
-    loc[..4].copy_from_slice(&v.to_le_bytes());
+    write_ul32(loc, v);
 }
 
 fn write16(loc: &mut [u8], v: u16) {
-    loc[..2].copy_from_slice(&v.to_le_bytes());
+    write_ul16(loc, v);
 }
 
 fn b(val: u64, hi: u32, lo: u32) -> u32 {
@@ -258,10 +259,7 @@ where
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    // The C++ RV64LE and RV32LE target structs each record this instruction:
-    // c.ebreak
-    // c.ebreak
-    const TRAP: &'static [u8] = &[0x02, 0x90];
+    const TRAP: &'static [u8] = &[0x02, 0x90]; // c.ebreak
 
     const R_COPY: u32 = R_RISCV_COPY;
     const R_GLOB_DAT: u32 = if IS_64 { R_RISCV_64 } else { R_RISCV_32 };

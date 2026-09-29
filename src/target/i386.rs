@@ -43,6 +43,7 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Family, Target};
+use crate::util::endian::{read_il16, read_il32, write_ul16, write_ul32};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -94,7 +95,7 @@ impl Target for I386 {
                 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(
+            write_ul32(
                 &mut buf[3..],
                 gotplt.wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())).wrapping_add(4)
                     as u32,
@@ -108,7 +109,7 @@ impl Target for I386 {
                 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(&mut buf[2..], (gotplt + 4) as u32);
+            write_ul32(&mut buf[2..], (gotplt + 4) as u32);
         }
     }
 
@@ -122,8 +123,8 @@ impl Target for I386 {
                 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(&mut buf[1..], reloc_offset as u32);
-            write_u32(
+            write_ul32(&mut buf[1..], reloc_offset as u32);
+            write_ul32(
                 &mut buf[7..],
                 sym.gotplt_addr(ctx).wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get())) as u32,
             );
@@ -134,8 +135,8 @@ impl Target for I386 {
                 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
-            write_u32(&mut buf[1..], reloc_offset as u32);
-            write_u32(&mut buf[7..], sym.gotplt_addr(ctx) as u32);
+            write_ul32(&mut buf[1..], reloc_offset as u32);
+            write_ul32(&mut buf[7..], sym.gotplt_addr(ctx) as u32);
         }
     }
 
@@ -146,7 +147,7 @@ impl Target for I386 {
                 0xcc, 0xcc, // (padding)
             ];
             buf[..8].copy_from_slice(&INSN);
-            write_u32(
+            write_ul32(
                 &mut buf[2..],
                 sym.got_pltgot_addr(ctx).wrapping_sub(u64::from(ctx.got.hdr.shdr.sh_addr.get()))
                     as u32,
@@ -157,7 +158,7 @@ impl Target for I386 {
                 0xcc, 0xcc, // (padding)
             ];
             buf[..8].copy_from_slice(&INSN);
-            write_u32(&mut buf[2..], sym.got_pltgot_addr(ctx) as u32);
+            write_ul32(&mut buf[2..], sym.got_pltgot_addr(ctx) as u32);
         }
     }
 
@@ -171,8 +172,8 @@ impl Target for I386 {
     ) {
         match rel.r_type() {
             R_NONE => {}
-            R_386_32 => write_u32(loc, val as u32),
-            R_386_PC32 => write_u32(loc, val.wrapping_sub(p) as u32),
+            R_386_32 => write_ul32(loc, val as u32),
+            R_386_PC32 => write_ul32(loc, val.wrapping_sub(p) as u32),
             _ => eh_frame::unsupported::<Self>(rel),
         }
     }
@@ -297,7 +298,7 @@ impl Target for I386 {
                 }
                 R_386_16 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 16);
-                    write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
+                    write_ul16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
                 R_386_PC8 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
@@ -307,45 +308,45 @@ impl Target for I386 {
                 R_386_PC16 => {
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     check(v as i64, -(1 << 15), 1 << 15);
-                    write_u16(&mut buf[off..], v as u16);
+                    write_ul16(&mut buf[off..], v as u16);
                 }
                 R_386_PC32 | R_386_PLT32 => {
-                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p) as u32)
+                    write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(p) as u32)
                 }
-                R_386_GOT32 => write_u32(&mut buf[off..], g().wrapping_add(a) as u32),
+                R_386_GOT32 => write_ul32(&mut buf[off..], g().wrapping_add(a) as u32),
                 R_386_GOT32X => {
                     if sym.has_got(&ctx.symbols) {
-                        write_u32(&mut buf[off..], g().wrapping_add(a) as u32);
+                        write_ul32(&mut buf[off..], g().wrapping_add(a) as u32);
                     } else {
                         let insn = relax_got32x(&buf[..off]);
                         debug_assert!(insn != 0);
                         buf[off - 2] = (insn >> 8) as u8;
                         buf[off - 1] = insn as u8;
-                        write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32);
+                        write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_386_GOTOFF);
                         }
                     }
                 }
                 R_386_GOTOFF => {
-                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32)
+                    write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32)
                 }
                 R_386_GOTPC => {
-                    write_u32(&mut buf[off..], got.wrapping_add(a).wrapping_sub(p) as u32)
+                    write_ul32(&mut buf[off..], got.wrapping_add(a).wrapping_sub(p) as u32)
                 }
-                R_386_TLS_GOTIE => write_u32(
+                R_386_TLS_GOTIE => write_ul32(
                     &mut buf[off..],
                     sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                 ),
                 R_386_TLS_LE => {
-                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr) as u32)
+                    write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.tp_addr) as u32)
                 }
                 R_386_TLS_IE => {
-                    write_u32(&mut buf[off..], sym.gottp_addr(ctx).wrapping_add(a) as u32)
+                    write_ul32(&mut buf[off..], sym.gottp_addr(ctx).wrapping_add(a) as u32)
                 }
                 R_386_TLS_GD => {
                     if sym.has_tlsgd(&ctx.symbols) {
-                        write_u32(
+                        write_ul32(
                             &mut buf[off..],
                             sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                         );
@@ -357,7 +358,7 @@ impl Target for I386 {
                 }
                 R_386_TLS_LDM => {
                     if ctx.got.has_tlsld() {
-                        write_u32(
+                        write_ul32(
                             &mut buf[off..],
                             ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got) as u32,
                         );
@@ -368,10 +369,10 @@ impl Target for I386 {
                     }
                 }
                 R_386_TLS_LDO_32 => {
-                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32)
+                    write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32)
                 }
                 R_386_SIZE32 => {
-                    write_u32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
+                    write_ul32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
                 }
                 R_386_TLS_GOTDESC => {
                     // i386 TLSDESC uses the following code sequence to materialize
@@ -407,7 +408,7 @@ impl Target for I386 {
                     // for -fno-pic, so TLSDESC code is always PIC (i.e. uses %ebx to
                     // store the address of GOT.)
                     if sym.has_tlsdesc(&ctx.symbols) {
-                        write_u32(
+                        write_ul32(
                             &mut buf[off..],
                             sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                         );
@@ -421,7 +422,7 @@ impl Target for I386 {
                         }
                         buf[off - 2] = (insn >> 8) as u8;
                         buf[off - 1] = insn as u8;
-                        write_u32(
+                        write_ul32(
                             &mut buf[off..],
                             sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got) as u32,
                         );
@@ -435,7 +436,7 @@ impl Target for I386 {
                         }
                         buf[off - 2] = (insn >> 8) as u8;
                         buf[off - 1] = insn as u8;
-                        write_u32(
+                        write_ul32(
                             &mut buf[off..],
                             s.wrapping_add(a).wrapping_sub(ctx.tp_addr) as u32,
                         );
@@ -474,11 +475,11 @@ impl Target for I386 {
                 }
                 R_386_16 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 16);
-                    write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
+                    write_ul16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
                 R_386_32 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => write_u32(&mut buf[off..], v as u32),
-                    None => write_u32(&mut buf[off..], s.wrapping_add(a) as u32),
+                    Some(v) => write_ul32(&mut buf[off..], v as u32),
+                    None => write_ul32(&mut buf[off..], s.wrapping_add(a) as u32),
                 },
                 R_386_PC8 => {
                     check(s.wrapping_add(a) as i64, -(1 << 7), 1 << 7);
@@ -486,22 +487,22 @@ impl Target for I386 {
                 }
                 R_386_PC16 => {
                     check(s.wrapping_add(a) as i64, -(1 << 15), 1 << 15);
-                    write_u16(&mut buf[off..], s.wrapping_add(a) as u16);
+                    write_ul16(&mut buf[off..], s.wrapping_add(a) as u16);
                 }
-                R_386_PC32 => write_u32(&mut buf[off..], s.wrapping_add(a) as u32),
-                R_386_GOTPC => write_u32(&mut buf[off..], got.wrapping_add(a) as u32),
+                R_386_PC32 => write_ul32(&mut buf[off..], s.wrapping_add(a) as u32),
+                R_386_GOTPC => write_ul32(&mut buf[off..], got.wrapping_add(a) as u32),
                 R_386_GOTOFF => {
-                    write_u32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32)
+                    write_ul32(&mut buf[off..], s.wrapping_add(a).wrapping_sub(got) as u32)
                 }
                 R_386_TLS_LDO_32 => match isec.tombstone(ctx, sym, frag) {
-                    Some(v) => write_u32(&mut buf[off..], v as u32),
-                    None => write_u32(
+                    Some(v) => write_ul32(&mut buf[off..], v as u32),
+                    None => write_ul32(
                         &mut buf[off..],
                         s.wrapping_add(a).wrapping_sub(ctx.dtp_addr) as u32,
                     ),
                 },
                 R_386_SIZE32 => {
-                    write_u32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
+                    write_ul32(&mut buf[off..], sym.esym(ctx).st_size().wrapping_add(a) as u32)
                 }
                 _ => fatal!(
                     "{}: invalid relocation for non-allocated sections: {}",
@@ -516,11 +517,11 @@ impl Target for I386 {
         match rel.r_type() {
             R_386_NONE | R_386_TLS_DESC_CALL => {}
             R_386_8 | R_386_PC8 => loc[0] = val as u8,
-            R_386_16 | R_386_PC16 => write_u16(loc, val as u16),
+            R_386_16 | R_386_PC16 => write_ul16(loc, val as u16),
             R_386_32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X | R_386_PLT32 | R_386_GOTOFF
             | R_386_GOTPC | R_386_TLS_LDM | R_386_TLS_GOTIE | R_386_TLS_LE | R_386_TLS_IE
             | R_386_TLS_GD | R_386_TLS_LDO_32 | R_386_SIZE32 | R_386_TLS_GOTDESC => {
-                write_u32(loc, val as u32)
+                write_ul32(loc, val as u32)
             }
             _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
         }
@@ -529,23 +530,15 @@ impl Target for I386 {
     fn get_addend(loc: &[u8], rel: &ElfRel<Self>) -> i64 {
         match rel.r_type() {
             R_386_8 | R_386_PC8 => loc[0] as i8 as i64,
-            R_386_16 | R_386_PC16 => i16::from_le_bytes([loc[0], loc[1]]) as i64,
+            R_386_16 | R_386_PC16 => read_il16(loc) as i64,
             R_386_32 | R_386_PC32 | R_386_GOT32 | R_386_GOT32X | R_386_PLT32 | R_386_GOTOFF
             | R_386_GOTPC | R_386_TLS_LDM | R_386_TLS_GOTIE | R_386_TLS_LE | R_386_TLS_IE
             | R_386_TLS_GD | R_386_TLS_LDO_32 | R_386_SIZE32 | R_386_TLS_GOTDESC => {
-                i32::from_le_bytes([loc[0], loc[1], loc[2], loc[3]]) as i64
+                read_il32(loc) as i64
             }
             _ => 0,
         }
     }
-}
-
-fn write_u16(buf: &mut [u8], v: u16) {
-    buf[..2].copy_from_slice(&v.to_le_bytes());
-}
-
-fn write_u32(buf: &mut [u8], v: u32) {
-    buf[..4].copy_from_slice(&v.to_le_bytes());
 }
 
 /// The bytes of a section preceding a relocated location.
@@ -578,11 +571,11 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<I386>, val: u64) {
     match rel.r_type() {
         R_386_PLT32 | R_386_PC32 => {
             buf[off - 3..off + 9].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 5..], val as u32);
+            write_ul32(&mut buf[off + 5..], val as u32);
         }
         R_386_GOT32 | R_386_GOT32X => {
             buf[off - 2..off + 10].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 6..], val as u32);
+            write_ul32(&mut buf[off + 6..], val as u32);
         }
         _ => unreachable!(),
     }
@@ -597,7 +590,7 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<I386>, tls_size: u64)
                 0x2d, 0, 0, 0, 0, // sub $tls_size, %eax
             ];
             buf[off - 2..off + 9].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 5..], tls_size as u32);
+            write_ul32(&mut buf[off + 5..], tls_size as u32);
         }
         R_386_GOT32 | R_386_GOT32X => {
             const INSN: [u8; 12] = [
@@ -605,7 +598,7 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<I386>, tls_size: u64)
                 0x81, 0xe8, 0, 0, 0, 0, // sub $tls_size, %eax
             ];
             buf[off - 2..off + 10].copy_from_slice(&INSN);
-            write_u32(&mut buf[off + 6..], tls_size as u32);
+            write_ul32(&mut buf[off + 6..], tls_size as u32);
         }
         _ => unreachable!(),
     }

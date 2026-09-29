@@ -272,11 +272,7 @@ where
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    // The C++ LOONGARCH64 and LOONGARCH32 target structs each record this
-    // instruction:
-    // break 0
-    // break 0
-    const TRAP: &'static [u8] = &[0x00, 0x00, 0x2a, 0x00];
+    const TRAP: &'static [u8] = &[0x00, 0x00, 0x2a, 0x00]; // break 0
 
     const R_COPY: u32 = R_LARCH_COPY;
     const R_GLOB_DAT: u32 = if IS_64 { R_LARCH_64 } else { R_LARCH_32 };
