@@ -15,14 +15,6 @@
 //! thunks occupy about 30 KiB (0.01%) of a ~300 MiB text section, compared
 //! with about 12.5 MiB (2.5%) of a ~500 MiB text section in TensorFlow.
 //!
-//! Range extension thunks.
-//!
-//! RISC branch instructions have small immediates: ARM32 branches reach
-//! ±16 MiB and ARM64 ones ±128 MiB, unlike x86-64's 32-bit displacements.
-//! A call whose target is further away is redirected to a thunk, a
-//! linker-synthesized code sequence between input sections that loads the
-//! full address into a register and jumps there.
-//!
 //! Thunks are created in two passes. Before addresses are known, every
 //! out-of-section call is pessimistically assumed to need a thunk; once
 //! the layout is fixed, the entries that turned out to be unneeded are

@@ -145,8 +145,6 @@
 //! unfortunately either optional or even not supported at all. So we still
 //! need to support both the traditional TLS models and the TLSDESC model.
 //!
-//! Thread-local storage layout constants.
-//!
 //! Each thread has its own copy of the thread-local variables, initialized
 //! from the PT_TLS segment's template image. A register, the thread
 //! pointer (TP), refers to the thread's copy, and where exactly TP points
