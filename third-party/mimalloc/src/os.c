@@ -14,7 +14,7 @@ terms of the MIT license. A copy of the license can be found in the file
   Initialization.
 ----------------------------------------------------------- */
 #ifndef MI_DEFAULT_PHYSICAL_MEMORY_IN_KIB
-#if MI_INTPTR_SIZE < 8
+#if MI_SIZE_SIZE < 8
 #define MI_DEFAULT_PHYSICAL_MEMORY_IN_KIB   4*MI_MiB    // 4 GiB
 #else
 #define MI_DEFAULT_PHYSICAL_MEMORY_IN_KIB   32*MI_MiB   // 32 GiB
@@ -41,6 +41,9 @@ bool _mi_os_has_virtual_reserve(void) {
   return mi_os_mem_config.has_virtual_reserve;
 }
 
+bool _mi_os_canuse_thp(void) {
+  return mi_os_mem_config.has_transparent_huge_pages;
+}
 
 // OS (small) page size
 size_t _mi_os_page_size(void) {
@@ -55,13 +58,19 @@ size_t _mi_os_large_page_size(void) {
 // minimal purge size. Can be larger than the page size if transparent huge pages are enabled.
 size_t _mi_os_minimal_purge_size(void) {
   size_t minsize = mi_option_get_size(mi_option_minimal_purge_size);
-  if (minsize != 0) {
+  if (minsize != 0) { 
+    // set by user
     return _mi_align_up(minsize, _mi_os_page_size());
   }
   else if (mi_os_mem_config.has_transparent_huge_pages && mi_option_get(mi_option_allow_thp) == 2) {
+    // don't break up THP pages; 
+    // we don't do this by default as that can lead to increased memory usage (see issue #1282).
+    // on the other hand, breaking up THP pages can lead to performance degradation and perhaps 
+    // allow_thp should be 2 by default (and the user can set the OS THP setting to [never]).
     return _mi_os_large_page_size();
   }
   else {
+    // OS page size by default
     return _mi_os_page_size();
   }
 }
@@ -110,7 +119,7 @@ bool _mi_os_commit(mi_subproc_t* subproc, void* addr, size_t size, bool* is_zero
 // On systems with enough virtual address bits, we can do efficient aligned allocation by using
 // the 2TiB to 30TiB area to allocate those. If we have at least 46 bits of virtual address
 // space (64TiB) we use this technique. (but see issue #939)
-#if (MI_INTPTR_SIZE >= 8) && !defined(MI_NO_ALIGNED_HINT) // && !defined(WIN32) && !defined(ANDROID)
+#if (MI_SIZE_SIZE >= 8) && !defined(MI_NO_ALIGNED_HINT) // && !defined(WIN32) && !defined(ANDROID)
 
 // Return a `try_alignment` aligned address that is probably available.
 // If this returns NULL, the OS will determine the address but on some OS's that may not be
@@ -352,7 +361,7 @@ static void* mi_os_prim_alloc_aligned(mi_subproc_t* subproc, size_t size, size_t
   if (!(alignment >= _mi_os_page_size() && ((alignment & (alignment - 1)) == 0))) return NULL;
   size = _mi_align_up(size, _mi_os_page_size());
 
-  #if MI_INTPTR_SIZE >= 8
+  #if MI_SIZE_SIZE >= 8
   const bool try_direct_alloc = true;
   #else
   // try a direct allocation if the alignment is below the default, or less than or equal to 1/4 fraction of the size.
@@ -721,7 +730,7 @@ and possibly associated with a specific NUMA node. (use `numa_node>=0`)
 #define MI_HUGE_OS_PAGE_SIZE  (MI_GiB)
 
 
-#if (MI_INTPTR_SIZE >= 8)
+#if (MI_SIZE_SIZE >= 8)
 // To ensure proper alignment, use our own area for huge OS pages
 static mi_decl_cache_align _Atomic(uintptr_t)  mi_huge_start; // = 0
 

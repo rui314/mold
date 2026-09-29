@@ -127,7 +127,7 @@ jobs:
         CC: clang
         CXX: clang++
         BuildType: debug-asan-clang
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_TRACK_ASAN=ON
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMI_TRACK_ASAN=ON
       Debug UBSAN Clang:
         CC: clang
         CXX: clang++
@@ -156,6 +156,7 @@ jobs:
     displayName: CTest
     env:
       MIMALLOC_GUARDED_SAMPLE_RATE: 1000
+      MIMALLOC_VERBOSE: 2
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-ubuntu-$(BuildType)
 
@@ -188,6 +189,7 @@ jobs:
   - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
+
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-macos-$(BuildType)
 

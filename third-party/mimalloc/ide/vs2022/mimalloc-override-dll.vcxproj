@@ -433,6 +433,7 @@
     <ClInclude Include="$(ProjectDir)..\..\include\mimalloc.h" />
     <ClInclude Include="..\..\include\mimalloc-new-delete.h" />
     <ClInclude Include="..\..\include\mimalloc-override.h" />
+    <ClInclude Include="..\..\include\mimalloc-profile.h" />
     <ClInclude Include="..\..\include\mimalloc-stats.h" />
     <ClInclude Include="..\..\include\mimalloc\atomic.h" />
     <ClInclude Include="..\..\include\mimalloc\bits.h" />
@@ -480,6 +481,8 @@
     </ClCompile>
     <ClCompile Include="..\..\src\heap.c" />
     <ClCompile Include="..\..\src\prim\prim-tls.c" />
+    <ClCompile Include="..\..\src\sample-guarded.c" />
+    <ClCompile Include="..\..\src\sample-profile.c" />
     <ClCompile Include="..\..\src\subproc.c" />
     <ClCompile Include="..\..\src\theap.c" />
     <ClCompile Include="..\..\src\init.c" />

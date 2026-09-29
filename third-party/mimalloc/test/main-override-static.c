@@ -50,11 +50,11 @@ int main() {
   // double_free1();
   // double_free2();
   // corrupt_free();
+  // invalid_free();  
   // block_overflow1();
   // block_overflow2();
   test_canary_leak();
   // test_aslr();
-  // invalid_free();
   // test_reserved();
   // negative_stat();
   // test_theap_walk();
@@ -349,7 +349,7 @@ static void test_large_pages(void) {
 #include <stdbool.h>
 #include <mimalloc/bits.h>
 
-#define MI_LARGE_WSIZE_MAX (4*1024*1024 / MI_INTPTR_SIZE)
+#define MI_LARGE_WSIZE_MAX (4*1024*1024 / MI_SIZE_SIZE)
 
 #define MI_BIN_HUGE 100
 //#define MI_ALIGN2W
@@ -390,10 +390,10 @@ static inline uint8_t mi_bsr32(uint32_t x) {
 // Bit scan reverse: return the index of the highest bit.
 uint8_t _mi_bsr(uintptr_t x) {
   if (x == 0) return 0;
-  #if MI_INTPTR_SIZE==8
+  #if MI_SIZE_SIZE==8
   uint32_t hi = (x >> 32);
   return (hi == 0 ? mi_bsr32((uint32_t)x) : 32 + mi_bsr32(hi));
-  #elif MI_INTPTR_SIZE==4
+  #elif MI_SIZE_SIZE==4
   return mi_bsr32(x);
   #else
   # error "define bsr for non-32 or 64-bit platforms"

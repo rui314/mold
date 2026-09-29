@@ -339,7 +339,7 @@ static void* unix_mmap_prim_aligned(void* addr, size_t size, size_t try_alignmen
     // fall back to regular mmap
   }
   #endif
-  #if (MI_INTPTR_SIZE >= 8) && !defined(MAP_ALIGNED)
+  #if (MI_SIZE_SIZE >= 8) && !defined(MAP_ALIGNED)
   // on 64-bit systems, use the virtual address area after 2TiB for 4MiB aligned allocations
   if (addr == NULL) {
     void* hint = _mi_os_get_aligned_hint(try_alignment, size);
@@ -463,15 +463,17 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
     #if !defined(MI_NO_THP)
     if (p != NULL && allow_large && mi_option_is_enabled(mi_option_allow_thp) && _mi_os_canuse_large_page(size, try_alignment)) {
       #if defined(MADV_HUGEPAGE)
-      // Many Linux systems don't allow MAP_HUGETLB but they support instead
-      // transparent huge pages (THP). Generally, it is not required to call `madvise` with MADV_HUGE
-      // though since properly aligned allocations will already use large pages if available
-      // in that case -- in particular for our large regions (in `memory.c`).
-      // However, some systems only allow THP if called with explicit `madvise`, so
-      // when large OS pages are enabled for mimalloc, we call `madvise` anyways.
-      if (unix_madvise(p, size, MADV_HUGEPAGE) == 0) {
-        // *is_large = true; // possibly
-      };
+      if (_mi_os_canuse_thp()) {
+        // Many Linux systems don't allow MAP_HUGETLB but they support instead
+        // transparent huge pages (THP). Generally, it is not required to call `madvise` with MADV_HUGE
+        // though since properly aligned allocations will already use large pages if available
+        // in that case -- in particular for our large regions (in `memory.c`).
+        // However, some systems only allow THP if called with explicit `madvise`, so
+        // when large OS pages are enabled for mimalloc, we call `madvise` anyways.
+        if (unix_madvise(p, size, MADV_HUGEPAGE) == 0) {
+          // *is_large = true; // possibly
+        };
+      }
       #elif defined(__sun)
       struct memcntl_mha cmd = {0};
       cmd.mha_pagesize = _mi_os_large_page_size();
@@ -610,7 +612,7 @@ int _mi_prim_protect(void* start, size_t size, bool protect) {
 // Huge page allocation
 //---------------------------------------------
 
-#if (MI_INTPTR_SIZE >= 8) && !defined(__HAIKU__) && !defined(__CYGWIN__)
+#if (MI_SIZE_SIZE >= 8) && !defined(__HAIKU__) && !defined(__CYGWIN__)
 
 #ifndef MPOL_PREFERRED
 #define MPOL_PREFERRED 1
@@ -631,12 +633,12 @@ int _mi_prim_alloc_huge_os_pages(void* hint_addr, size_t size, int numa_node, bo
   bool is_large = true;
   *is_zero = true;
   *addr = unix_mmap(hint_addr, size, MI_ARENA_SLICE_ALIGN, PROT_READ | PROT_WRITE, true, true, &is_large);
-  if (*addr != NULL && numa_node >= 0 && numa_node < (8*MI_INTPTR_SIZE - 1)) { // at most 63 nodes
+  if (*addr != NULL && numa_node >= 0 && numa_node < (8*MI_SIZE_SIZE - 1)) { // at most 63 nodes
     unsigned long numa_mask = (1UL << numa_node);
     // todo: does `mbind` work correctly for huge OS pages? should we
     // use `set_mempolicy` before calling mmap instead?
     // see: <https://lkml.org/lkml/2017/2/9/875>
-    long err = mi_prim_mbind(*addr, size, MPOL_PREFERRED, &numa_mask, 8*MI_INTPTR_SIZE, 0);
+    long err = mi_prim_mbind(*addr, size, MPOL_PREFERRED, &numa_mask, 8*MI_SIZE_SIZE, 0);
     if (err != 0) {
       err = errno;
       _mi_warning_message("failed to bind huge (1GiB) pages to numa node %d (error: %ld (0x%lx))\n", numa_node, err, err);

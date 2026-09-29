@@ -124,8 +124,17 @@ Further information:
 
 /// Free previously allocated memory.
 /// The pointer `p` must have been allocated before (or be \a NULL).
-/// @param p  pointer to free, or \a NULL.
+/// @param p  pointer to the block that is freed, or \a NULL.
+/// See also mi_cfree() for a checked free that validates the pointer 
+/// before free-ing.
+/// @see mi_cfree()
 void  mi_free(void* p);
+
+/// Checked `free`: just as mi_free() but always checks if the pointer `p` belongs to our heap
+/// @param p  pointer to a block that is freed, or any other arbitrary pointer.
+/// This is safe to use when a pointer might be invalid or allocated by 
+/// another allocator (in which case the pointer is ignored and not freed).
+void  mi_cfree(void* p);
 
 /// Allocate \a size bytes.
 /// @param size  number of bytes to allocate.
@@ -404,19 +413,20 @@ void* mi_realloc_aligned_at(void* p, size_t newsize, size_t alignment, size_t of
 /// \}
 
 /// \defgroup constantsize Constant size allocation
-/// Constant size allocation and freeing
+/// Inlined definitions for onstant size allocation and freeing.
+/// If the size is constant, it can pick statically between
+/// mi_malloc() and mi_malloc_small().
 /// For example:
 /// ```
 /// long* p = (long*)mi_malloc_csize(sizeof(long))
 /// ```
-/// On __v3__ these can improve performance as they will statically
-/// use mi_malloc_small(), mi_free_small(), etc. when possible.
+/// On __v3__ these can improve performance.
 /// This is especially useful for compilers and runtimes where the
 /// the size is often statically known. These functions can be used
 /// even when the size is not constant but then there is no performance benefit.
 /// \{
 
-/// @brief Allocate a constant size object.
+/// @brief __v3__: Allocate a constant size object.
 /// @param size A (compile-time) constant size.
 /// @return A pointer to an allocated block of size \a size bytes.
 /// @see mi_free_csize()
@@ -429,12 +439,21 @@ void* mi_theap_malloc_csize(mi_theap_t* theap, size_t size);
 
 void* mi_theap_zalloc_csize(mi_theap_t* theap, size_t size);
 
-/// @brief Free a pointer with a known constant size.
+/// @brief __v3__: Free a pointer with a known constant size.
 /// @param p The pointer to the allocated block (or \a NULL )
-/// @param size The (compile time constant) size with which the pointer was allocated.
+/// @param size The size with which the pointer was allocated.
 /// @see mi_malloc_csize()
 /// @see mi_free_size()
+/// @see mi_free_size_nonnull()
 void mi_free_csize(void* p, size_t size);
+
+/// @brief __v3__: Free a non-null pointer with a known constant size.
+/// @param p The pointer to the allocated block (cannot be \a NULL !)
+/// @param size The size with which the pointer was allocated.
+/// @see mi_malloc_csize()
+/// @see mi_free_size()
+/// @see mi_free_size_nonnull()
+void mi_free_csize_nonnull(void* p, size_t size);
 
 /// \}
 
@@ -1056,12 +1075,13 @@ void* mi_zalloc_small(size_t size);
 
 /// __v3__: Can be used to free an object that was allocated with mi_malloc_small() or 
 /// any allocation with a size < MI_SMALL_SIZE_MAX()
-/// @param p Pointer that was returned from #mi_malloc_small et al.
+/// @param p Pointer that was returned from #mi_malloc_small et al. (or \a NULL )
 /// @details
 /// This function is meant for use in run-time systems for best
 /// performance and does not check if the pointer was _indeed_ allocated
 /// as a small object -- use with care!
 ///
+/// @see mi_free_small_nonnull()
 /// @see mi_malloc_small()
 /// @see mi_zalloc_small()
 /// @see mi_heap_malloc_small()
@@ -1069,6 +1089,23 @@ void* mi_zalloc_small(size_t size);
 /// @see mi_theap_malloc_small()
 /// @see mi_theap_zalloc_small()
 void mi_free_small(void* p);
+
+/// __v3__: Can be used to free an object that was allocated with mi_malloc_small() or 
+/// any allocation with a size < MI_SMALL_SIZE_MAX()
+/// @param p Pointer that was returned from #mi_malloc_small et al. Cannot be \a NULL !
+/// @details
+/// This function is meant for use in run-time systems for best
+/// performance and does not check if the pointer was _indeed_ allocated
+/// as a small object or not NULL -- use with care!
+///
+/// @see mi_free_small()
+/// @see mi_malloc_small()
+/// @see mi_zalloc_small()
+/// @see mi_heap_malloc_small()
+/// @see mi_heap_zalloc_small()
+/// @see mi_theap_malloc_small()
+/// @see mi_theap_zalloc_small()
+void mi_free_small_nonnull(void* p);
 
 /// \}
 
@@ -1406,9 +1443,6 @@ void* mi_theap_realloc(mi_theap_t* theap, void* p, size_t newsize);
 ///
 /// \{
 
-/// Checked `free`: just as `mi_free` but always checks if the pointer `p` belongs to our heap
-/// and is safe to use when a pointer might be invalid or allocated by another allocator.
-void  mi_cfree(void* p);
 void* mi__expand(void* p, size_t newsize);
 
 size_t mi_malloc_size(const void* p);
@@ -1437,14 +1471,24 @@ int   mi_reallocarr(void* p, size_t count, size_t size);
 void* mi_aligned_recalloc(void* p, size_t newcount, size_t size, size_t alignment);
 void* mi_aligned_offset_recalloc(void* p, size_t newcount, size_t size, size_t alignment, size_t offset);
 
-/// @brief Free an object that was allocated with a known size.
+/// @brief Free a block that was allocated with a known size.
 /// @param p The pointer that was allocated with \a size bytes (or \a NULL )
 /// @param size The size in bytes.
-/// __v3__: this can improve performance for objects with a \size < MI_SMALL_SIZE_MAX()
+/// __v3__: this can improve performance for objects with a \a size < MI_SMALL_SIZE_MAX()
 /// as it will use mi_free_small() internally. Always use this if possible.
 /// @see mi_free_tp()
 /// @see mi_free_csize()
+/// @see mi_free_size_nonnull()
 void mi_free_size(void* p, size_t size);
+
+/// @brief Free a non-NULL pointer that was allocated with a known size.
+/// @param p The pointer that was allocated with \a size bytes (cannot be \a NULL !)
+/// @param size The size in bytes.
+/// __v3__: this can improve performance for objects with a \a size < MI_SMALL_SIZE_MAX()
+/// as it will use mi_free_small_nonnull() internally. Always use this if possible.
+/// @see mi_free_tp()
+/// @see mi_free_csize()
+void mi_free_size_nonnull(void* p, size_t size);
 
 /// @brief Free an object that was allocated aligned.
 /// @param p The pointer to the object (or \a NULL )

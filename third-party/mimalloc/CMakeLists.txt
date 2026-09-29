@@ -10,19 +10,35 @@ set_property(CACHE MI_SECURE PROPERTY STRINGS "OFF" "ON" "FULL")
 option(MI_OVERRIDE          "Override the standard malloc interface (i.e. define entry points for 'malloc', 'free', etc)" ON)
 option(MI_XMALLOC           "Enable abort() call on memory allocation failure by default" OFF)
 option(MI_SHOW_ERRORS       "Show error and warning messages by default (only enabled by default in DEBUG mode)" OFF)
-option(MI_GUARDED           "Build with guard pages behind certain object allocations (enabled by default in a debug build)" OFF)
-option(MI_USE_CXX           "Use the C++ compiler to compile the library (instead of the C compiler)" OFF)
-option(MI_OPT_ARCH          "Only for optimized builds: turn on architecture specific optimizations (for x64: '-march=haswell;-mavx2' (2013), for arm64: '-march=armv8.3-a' (2016), for riscV: '-march=rv64gcb_zacas' (2023))" OFF)
-option(MI_OPT_SIMD          "Use SIMD instructions (requires MI_OPT_ARCH to be enabled)" OFF)
 
-set(MI_FREE_IS_CHECKED "DEFAULT" CACHE STRING "Check for invalid pointers in 'mi_free': OFF, SHARED, ON, DEFAULT. 'SHARED' enables it only for the dynamic/shared library when MI_OVERRIDE is ON")
-set_property(CACHE MI_FREE_IS_CHECKED PROPERTY STRINGS "OFF" "SHARED" "ON" "DEFAULT")
+set(MI_GUARDED "DEFAULT" CACHE STRING "Build with ability to put guard pages behind certain object allocations")
+set_property(CACHE MI_GUARDED PROPERTY STRINGS "OFF" "ON" "FULL" "DEFAULT")
+
+set(MI_USE_CXX "DEFAULT" CACHE STRING "Use the C++ compiler to compile the library (instead of the C compiler)")
+set_property(CACHE MI_USE_CXX PROPERTY STRINGS "OFF" "ON" "DEFAULT")
+
+set(MI_OPT_ARCH "DEFAULT" CACHE STRING "Only for optimized builds: turn on architecture specific optimizations (for x64: '-march=haswell;-mavx2' (2013), for arm64: '-march=armv8.1-a' (2016), for riscV: '-march=rv64gcb_zacas' (2023))")
+set_property(CACHE MI_OPT_ARCH PROPERTY STRINGS "OFF" "ON" "avx2" "armv8.1" "armv8.3" "rva22" "rva23" "rv64gcb_zacas" "rv64gcb_zacas_zalasr" "DEFAULT")
 
 set(MI_DEBUG "DEFAULT" CACHE STRING "Enable assertion checks: OFF, ON, INTERNAL, FULL, DEFAULT. INTERNAL adds extra internal invariant checks, while FULL adds expensive heap invariant checks")
 set_property(CACHE MI_DEBUG PROPERTY STRINGS "OFF" "ON" "INTERNAL" "FULL" "DEFAULT")
 
 set(MI_TRACK "OFF" CACHE STRING "Enable tracking: OFF, ASAN (address sanitizer), VALGRIND, ETW (Windows event tracing). Adds a small overhead.")
 set_property(CACHE MI_TRACK PROPERTY STRINGS "OFF" "ASAN" "VALGRIND" "ETW")
+
+set(MI_STATS "DEFAULT" CACHE STRING "Enable statistics.")
+set_property(CACHE MI_STATS PROPERTY STRINGS "OFF" "ON" "FULL" "DEFAULT")
+
+set(MI_PROFILE "DEFAULT" CACHE STRING "Enable profiling.")
+set_property(CACHE MI_PROFILE PROPERTY STRINGS "OFF" "ON" "FULL" "DEFAULT")
+
+set(MI_FREE_IS_CHECKED "DEFAULT" CACHE STRING "Check for invalid pointers in 'mi_free': OFF, SHARED, ON, DEFAULT. 'SHARED' enables it only for the dynamic/shared library when MI_OVERRIDE is ON")
+set_property(CACHE MI_FREE_IS_CHECKED PROPERTY STRINGS "OFF" "SHARED" "ON" "DEFAULT")
+
+set(MI_ALLOW_THP "DEFAULT" CACHE STRING "Enable transparent huge pages on Linux: OFF, ON, FULL, DEFAULT. 'FULL' enables THP and also avoids splitting up huge pages during purging.")
+set_property(CACHE MI_ALLOW_THP PROPERTY STRINGS "OFF" "ON" "FULL" "DEFAULT")
+
+option(MI_OPT_SIMD          "Use SIMD instructions (requires MI_OPT_ARCH to be enabled)" OFF)
 
 option(MI_DEBUG_TSAN        "Build with thread sanitizer (needs clang)" OFF)
 option(MI_DEBUG_UBSAN       "Build with undefined-behavior sanitizer (needs clang++)" OFF)
@@ -64,7 +80,6 @@ set_property(CACHE MI_TLS_MODEL PROPERTY STRINGS "LOCAL" "PTHREADS" "LOCAL_DYNAM
 
 # deprecated options
 option(MI_USE_LIBATOMIC       "Deprecated: Explicitly link with -latomic (on older systems) (deprecated and detected automatically)" OFF)
-option(MI_OPT_FREE_SMALL      "Deprecated: Use aligned `mi_free_small` without pagemap lookup (can only be used if SECURE or GUARDED mode are off)" OFF)
 option(MI_DEBUG_INTERNAL      "Deprecated: Enable assertion and internal invariant checks (use MI_DEBUG=INTERNAL instead)" OFF)
 option(MI_DEBUG_FULL          "Deprecated: Enable assertion checks and expensive internal heap invariant checking (use MI_DEBUG=FULL instead)" OFF)
 option(MI_CHECK_FULL          "Deprecated: Use full internal invariant checking in DEBUG mode (use MI_DEBUG=FULL instead)" OFF)
@@ -81,6 +96,8 @@ option(MI_TRACK_VALGRIND      "Deprecated: Compile with Valgrind support (adds a
 option(MI_TRACK_ASAN          "Deprecated: Compile with address sanitizer support (adds a small overhead) (use MI_TRACK=ASAN instead)" OFF)
 option(MI_TRACK_ETW           "Deprecated: Compile with Windows event tracing (ETW) support (adds a small overhead) (use MI_TRACK=ETW instead)" OFF)
 
+set(MI_OPT_FREE_SMALL "DEFAULT" CACHE STRING "Deprecated: Use aligned `mi_free_small` without pagemap lookup (can only be used if SECURE or GUARDED mode are off)")
+set_property(CACHE MI_OPT_FREE_SMALL PROPERTY STRINGS "OFF" "ON" "DEFAULT")
 
 include(CheckLinkerFlag)    # requires cmake 3.18
 include(CheckIncludeFiles)
@@ -99,14 +116,16 @@ set(mi_sources
     src/options.c
     src/os.c
     src/page.c
-    src/page-map.c
+    src/page-map.c   
+    src/prim/prim.c
+    src/prim/prim-tls.c 
     src/random.c
+    src/sample-guarded.c
+    src/sample-profile.c
     src/stats.c
     src/subproc.c
     src/theap.c
-    src/threadlocal.c
-    src/prim/prim.c
-    src/prim/prim-tls.c)
+    src/threadlocal.c)  
 
 set(mi_cflags "")
 set(mi_cflags_static "")            # extra flags for a static library build
@@ -132,12 +151,23 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/.git/index")
   endif()
 endif()
 
+# case insensitive comparison
+function(STRIEQUAL str1 str2 is_equal)
+    string(TOUPPER "${str1}" str1_upper)
+    string(TOUPPER "${str2}" str2_upper)
+    if(str1_upper STREQUAL str2_upper)
+        set(${is_equal} TRUE PARENT_SCOPE)
+    else()
+        set(${is_equal} FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
 # -----------------------------------------------------------------------------
 # Convenience: set default build type and compiler depending on the build directory
 # -----------------------------------------------------------------------------
 
 message(STATUS "")
-if(NOT CMAKE_BUILD_TYPE)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   if ("${CMAKE_BINARY_DIR}" MATCHES ".*((D|d)ebug|asan|tsan|ubsan|valgrind)$")
     message(STATUS "No build type selected, default to 'Debug'")
     set(CMAKE_BUILD_TYPE "Debug")
@@ -159,7 +189,18 @@ endif()
 
 
 # Determine architecture
-set(MI_OPT_ARCH_FLAGS "")
+if(CMAKE_SIZEOF_VOID_P EQUAL 16)
+  set(MI_ARCH_BITS "128")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(MI_ARCH_BITS "64")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  set(MI_ARCH_BITS "32")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 2)
+  set(MI_ARCH_BITS "16")
+else()
+  set(MI_ARCH_BITS "")
+endif()
+
 set(MI_ARCH "unknown")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86|i[3456]86)$" OR CMAKE_GENERATOR_PLATFORM MATCHES "^(x86|Win32)$")
   set(MI_ARCH "x86")
@@ -170,15 +211,12 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv[89].?|ARM64)$" OR CM
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|armv[34567].?|ARM)$")
   set(MI_ARCH "arm32")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv|riscv32|riscv64)$")
-  if(CMAKE_SIZEOF_VOID_P==4)
-    set(MI_ARCH "riscv32")
-  else()
-    set(MI_ARCH "riscv64")
-  endif()
+  set(MI_ARCH "riscv${MI_ARCH_BITS}")
 else()
   set(MI_ARCH ${CMAKE_SYSTEM_PROCESSOR})
 endif()
-message(STATUS "Architecture: ${MI_ARCH}") # (${CMAKE_SYSTEM_PROCESSOR}, ${CMAKE_GENERATOR_PLATFORM}, ${CMAKE_GENERATOR})")
+
+message(STATUS "Architecture: ${MI_ARCH} (${MI_ARCH_BITS} bit)") # (${CMAKE_SYSTEM_PROCESSOR}, ${CMAKE_GENERATOR_PLATFORM}, ${CMAKE_GENERATOR})")
 
 # negative overrides (mainly to support vcpkg features)
 if(MI_NO_USE_CXX)
@@ -187,8 +225,14 @@ endif()
 
 if(MI_NO_OPT_ARCH)
   set(MI_OPT_ARCH "OFF")
-elseif(MI_ARCH STREQUAL "arm64")
-  set(MI_OPT_ARCH "ON")  # enable armv8.3-a by default (has LDAPR) on arm64 unless MI_NO_OPT_ARCH is set
+endif()
+
+if(MI_OPT_ARCH STREQUAL "DEFAULT")
+  if(MI_ARCH STREQUAL "arm64")
+    set(MI_OPT_ARCH "ON")     # enable by default for arm64 (defaults to armv8.1-a which has fast atomics)
+  else()
+    set(MI_OPT_ARCH "OFF")
+  endif()
 endif()
 
 if(DEFINED ENV{MI_TEST_LIGHT})
@@ -204,11 +248,15 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_FRONTEND_VARIANT ST
   set(MI_CLANG_CL "ON")
 endif()
 
-# force C++ compilation with msvc or clang-cl to use modern C++ atomics
-if(CMAKE_C_COMPILER_ID MATCHES "MSVC|Intel" OR MI_CLANG_CL)
-  set(MI_USE_CXX "ON")
-elseif(MI_DEBUG_UBSAN AND CMAKE_BUILD_TYPE MATCHES "Debug")  # ubsan needs C++
-  set(MI_USE_CXX "ON")
+if(MI_USE_CXX STREQUAL "DEFAULT")
+  if(CMAKE_C_COMPILER_ID MATCHES "MSVC|Intel" OR MI_CLANG_CL)
+    # force C++ compilation with msvc or clang-cl to use modern C++ atomics
+    set(MI_USE_CXX "ON")
+  elseif(MI_DEBUG_UBSAN AND (CMAKE_BUILD_TYPE MATCHES "Debug" OR NOT CMAKE_CONFIGURATION_TYPES))  # ubsan needs C++
+    set(MI_USE_CXX "ON")
+  else()
+    set(MI_USE_CXX "OFF")
+  endif()
 endif()
 
 # enable C++ ?
@@ -217,6 +265,8 @@ if(MI_USE_CXX)
   message(STATUS "Use the C++ compiler to compile (MI_USE_CXX=ON)")
   if(CMAKE_CXX_COMPILER_ID MATCHES "Intel" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
     list(APPEND mi_cflags -Kc++)
+  elseif(MSVC AND MSVC_VERSION GREATER_EQUAL 1914)
+    list(APPEND mi_cflags /Zc:__cplusplus)  
   endif()
 endif()
 
@@ -344,7 +394,7 @@ if(MI_SEE_ASM)
   if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR MI_CLANG_CL)
     list(APPEND mi_cflags -FA)
   else()
-    list(APPEND mi_cflags -save-temps)
+    list(APPEND mi_cflags -save-temps=obj)
     if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 14)
       message(STATUS "No GNU Line marker")
       list(APPEND mi_cflags -Wno-gnu-line-marker)
@@ -371,10 +421,16 @@ elseif(MI_DEBUG_INTERNAL)
 endif()
 
 if(MI_DEBUG STREQUAL "DEFAULT")
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(MI_DEBUG "INTERNAL")
+  if(CMAKE_CONFIGURATION_TYPES)
+    # Multi-config generators: Choose debug flags using generator expression
+    list(APPEND mi_defines $<IF:$<CONFIG:Debug>,MI_DEBUG=2,MI_DEBUG=0 NDEBUG=1>)
+    set(MI_DEBUG OFF) # don't go into further MI_DEBUG checks below...
   else()
-    set(MI_DEBUG "OFF")
+    if(CMAKE_BUILD_TYPE MATCHES "Debug")
+      set(MI_DEBUG "INTERNAL")
+    else()
+      set(MI_DEBUG "OFF")
+    endif()
   endif()
 endif()
 
@@ -391,15 +447,28 @@ elseif(MI_DEBUG STREQUAL "INTERNAL")
 elseif(MI_DEBUG)
   message(STATUS "Set debug level to assertion checking (MI_DEBUG=${MI_DEBUG})")
   list(APPEND mi_defines MI_DEBUG=1)   # assertion checking (mi_assert)
+elseif(NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Disable assertion checks (MI_DEBUG=${MI_DEBUG})")
+  list(APPEND mi_defines NDEBUG=1)
 endif()
 
-if(MI_DEBUG AND !MI_GUARDED)
-  message(STATUS "Enable MI_GUARDED (since MI_DEBUG is enabled)")
-  set(MI_GUARDED=ON)
+if(MI_GUARDED STREQUAL "DEFAULT")
+  if(MI_DEBUG)
+    set(MI_GUARDED "FULL")
+  else()
+    set(MI_GUARDED "OFF")
+  endif()
 endif()
-if(MI_GUARDED)
-  message(STATUS "Compile guard pages behind certain object allocations (MI_GUARDED=ON)")
+
+if(MI_GUARDED STREQUAL "FULL")
+  message(STATUS "Enable fine-grained sampling for guard pages (MI_GUARDED=FULL)")
+  list(APPEND mi_defines MI_GUARDED=2)
+elseif(MI_GUARDED)
+  message(STATUS "Enable sampled guard pages (MI_GUARDED=${MI_GUARDED})")
   list(APPEND mi_defines MI_GUARDED=1)
+else()
+  # message(STATUS "Disable guard pages (MI_GUARDED=${MI_GUARDED})")
+  list(APPEND mi_defines MI_GUARDED=0)
 endif()
 
 if(MI_NO_PADDING)
@@ -434,6 +503,44 @@ else()
   message(STATUS "Invalid value for MI_FREE_IS_CHECKED: ${MI_FREE_IS_CHECKED} (expecting: DEFAULT, OFF, SHARED, or ON)")
 endif()
 
+if(MI_STATS STREQUAL "DEFAULT")
+  if(MI_DEBUG)
+    set(MI_STATS "FULL")
+  else()
+    set(MI_STATS "ON")
+  endif()
+endif()
+
+if(MI_STATS STREQUAL "FULL")
+  message(STATUS "Enable detailed statistics including precise requested bytes (expensive) (MI_STATS=FULL)")
+  list(APPEND mi_defines MI_STATS=2)
+elseif(MI_STATS)
+  message(STATUS "Enable detailed statistics (MI_STATS=${MI_STATS})")
+  list(APPEND mi_defines MI_STATS=1)
+else()
+  message(STATUS "Disable detailed statistics (MI_STATS=${MI_STATS})")
+  list(APPEND mi_defines MI_STATS=0)
+endif()
+
+if(MI_PROFILE STREQUAL "DEFAULT")
+  if(MI_DEBUG)
+    set(MI_PROFILE "FULL")
+  else()
+    set(MI_PROFILE "ON")
+  endif()
+endif()
+
+if(MI_PROFILE STREQUAL "FULL")
+  message(STATUS "Enable fine-grained sampled profiling (MI_PROFILE=FULL)")
+  list(APPEND mi_defines MI_PROFILE=2)
+elseif(MI_PROFILE)
+  message(STATUS "Enable sampled profiling (MI_PROFILE=${MI_PROFILE})")
+  list(APPEND mi_defines MI_PROFILE=1)
+else()
+  message(STATUS "Disable profiling (MI_PROFILE=${MI_PROFILE})")
+  list(APPEND mi_defines MI_PROFILE=0)
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
   message(STATUS "Enabling MI_FREE_USE_PAGEMAP since the target (WASI) does not support large OS aligned allocations well")
   set(MI_FREE_USE_PAGEMAP ON)
@@ -444,15 +551,18 @@ if(MI_FREE_USE_PAGEMAP)
 endif()  
 
 # deprecated
-if(MI_OPT_FREE_SMALL)
+if(MI_OPT_FREE_SMALL STREQUAL "DEFAULT")
+  # do nothing
+elseif(MI_OPT_FREE_SMALL) 
   if(MI_GUARDED OR MI_SECURE)
     message(STATUS "Cannot enable MI_OPT_FREE_SMALL in secure or guarded mode (MI_OPT_FREE_SMALL=OFF)")
-  elseif(MI_OPT_FREE)
-    message(STATUS "Cannot enable MI_OPT_FREE_SMALL with MI_OPT_FREE (MI_OPT_FREE_SMALL=OFF)")
   else()
     message(STATUS "Use aligned `mi_free_small` (MI_OPT_FREE_SMALL=ON)")
     list(APPEND mi_defines MI_OPT_FREE_SMALL=1)
   endif()
+else()
+  message(STATUS "Disable aligned `mi_free_small` (MI_OPT_FREE_SMALL=OFF)")
+  list(APPEND mi_defines MI_OPT_FREE_SMALL=0)
 endif()
 
 if(MI_XMALLOC)
@@ -477,7 +587,7 @@ if(MI_DEBUG_TSAN)
 endif()
 
 if(MI_DEBUG_UBSAN)
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  if(CMAKE_BUILD_TYPE MATCHES "Debug" OR CMAKE_CONFIGURATION_TYPES)
     if(MI_USE_CXX)
       if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(STATUS "Build with undefined-behavior sanitizer (MI_DEBUG_UBSAN=ON)")
@@ -497,7 +607,23 @@ endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|Android")
   if(MI_NO_THP)
-    message(STATUS "Disable transparent huge pages support (MI_NO_THP=ON)")
+    set(MI_ALLOW_THP "OFF")
+  endif()
+  if(MI_ALLOW_THP STREQUAL "DEFAULT")
+    if(CMAKE_SYSTEM_NAME MATCHES "Android")
+      set(MI_ALLOW_THP "OFF")
+    else()
+      set(MI_ALLOW_THP "FULL")
+    endif()
+  endif()
+  if(MI_ALLOW_THP STREQUAL "FULL")
+    message(STATUS "Enable full transparent huge pages support, where purging avoids splitting huge pages (MI_ALLOW_THP=FULL)")
+    list(APPEND mi_defines MI_DEFAULT_ALLOW_THP=2)
+  elseif (MI_ALLOW_THP)
+    message(STATUS "Enable transparent huge pages support (MI_ALLOW_THP=${MI_ALLOW_THP}) (also consider using FULL for better performance)")
+    list(APPEND mi_defines MI_DEFAULT_ALLOW_THP=1)
+  else()
+    message(STATUS "Disable transparent huge pages support (MI_ALLOW_THP=${MI_ALLOW_THP})")
     list(APPEND mi_defines MI_DEFAULT_ALLOW_THP=0)
   endif()
 endif()
@@ -602,6 +728,13 @@ if(MI_ARCH MATCHES "riscv")
   endif()
 endif()
 
+if(NOT WIN32)
+  CHECK_INCLUDE_FILES("execinfo.h" MI_HAS_EXECINFOH)
+  if(MI_HAS_EXECINFOH) 
+    list(APPEND mi_defines MI_HAS_EXECINFOH=1)
+  endif()
+endif()
+
 # On Haiku use `-DCMAKE_INSTALL_PREFIX` instead, issue #788
 # if(CMAKE_SYSTEM_NAME MATCHES "Haiku")
 #   SET(CMAKE_INSTALL_LIBDIR ~/config/non-packaged/lib)
@@ -617,6 +750,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU" AND NOT MI_CLANG_CL)
   if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang")
     list(APPEND mi_cflags -Wno-static-in-inline -mno-outline)
   endif()
+  if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND MI_ARCH STREQUAL "arm64")
+    list(APPEND mi_cflags -Xclang -fno-split-cold-code)
+  endif()  
 endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "Intel")
@@ -645,34 +781,62 @@ if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel")
 endif()
 
 # Compiler and architecture specific flags
-if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel" AND NOT CMAKE_SYSTEM_NAME MATCHES "Haiku")
-  if(MI_OPT_ARCH)
-    if(APPLE AND CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" AND CMAKE_OSX_ARCHITECTURES)   # to support multi-arch binaries (#999)
-      if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-        list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_arm64;-march=armv8.3-a")
-      endif()
-      if("x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-        list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_x86_64;-march=haswell;-Xarch_x86_64;-mavx2")
-      endif()
-    elseif(MI_ARCH STREQUAL "x64")
-      set(MI_OPT_ARCH_FLAGS "-march=haswell;-mavx2")    # fast bit scan (since 2013)
-    elseif(MI_ARCH STREQUAL "arm64")
-      set(MI_OPT_ARCH_FLAGS "-march=armv8.3-a")         # fast atomics (since 2016)
-    elseif(MI_ARCH STREQUAL "riscv64")
-      set(MI_OPT_ARCH_FLAGS "-march=rv64gcb_zacas")     # fast bit scan and atomics (since 2023) TODO: add zalasr (2025) when possible.
-    elseif(MI_ARCH STREQUAL "riscv32")
-      set(MI_OPT_ARCH_FLAGS "-march=rv32gcb_zacas")     # fast bit scan and atomics (since 2023)
+if(MI_OPT_ARCH MATCHES "^(1|ON|YES|TRUE|Y)$")
+  if(APPLE AND CMAKE_OSX_ARCHITECTURES AND CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" )  
+    set(MI_OPT_ARCH "ON")    
+  elseif(MI_ARCH STREQUAL "arm64")
+    if(APPLE)
+      set(MI_OPT_ARCH "armv8.3")      # M1+ supports arm8.3-a (which includes LDAPR (load-aquire))
+    else()
+      set(MI_OPT_ARCH "armv8.1")      # enable armv8.1-a by default (which has fast atomics)
     endif()
+  elseif(MI_ARCH STREQUAL "arm32")
+    set(MI_OPT_ARCH "armv8.1")        # enable armv8.1-a by default (which has fast atomics)
+  elseif(MI_ARCH STREQUAL "x64")
+    set(MI_OPT_ARCH "avx2")
+  elseif(MI_ARCH MATCHES "riscv")
+    set(MI_OPT_ARCH "rv${MI_ARCH_BITS}gcb_zacas")  # fast bit scan and atomics (since 2023) 
+    # set(MI_OPT_ARCH "rv${MI_ARCH_BITS}gcb_zacas_zalasr")  # fast bit scan and atomics (since 2025) 
+  else()
+    set(MI_OPT_ARCH OFF)              
   endif()
 endif()
 
-if (MSVC AND MSVC_VERSION GREATER_EQUAL 1914) # vs2017+
-  list(APPEND mi_cflags /Zc:__cplusplus)
-  if(MI_OPT_ARCH AND NOT MI_CLANG_CL)
-    if(MI_ARCH STREQUAL "x64")
+# Compiler and architecture specific flags
+set(MI_OPT_ARCH_FLAGS "")
+if(NOT MI_OPT_ARCH MATCHES "^(0|OFF|NO|FALSE|N)$")
+  # apple support for multi-arch binaries (#999)
+  if(APPLE AND CMAKE_OSX_ARCHITECTURES AND CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang")  
+    if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES)
+      list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_arm64;-march=armv8.3-a")
+    endif()
+    if("x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
+      list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_x86_64;-march=haswell;-Xarch_x86_64;-mavx2")
+    endif()
+
+  # clang/gcc
+  elseif(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel" AND NOT CMAKE_SYSTEM_NAME MATCHES "Haiku")
+    if(MI_OPT_ARCH STREQUAL "avx2")
+      set(MI_OPT_ARCH_FLAGS "-march=haswell;-mavx2")      # fast bit scan (since 2013)
+    elseif(MI_OPT_ARCH MATCHES "^armv[89].*$")
+      set(MI_OPT_ARCH_FLAGS "-march=${MI_OPT_ARCH}-a")    # fast atomics
+    elseif(MI_OPT_ARCH MATCHES "^rva[0-9][0-9]$")
+      set(MI_OPT_ARCH_FLAGS "-march=${MI_OPT_ARCH}u${MI_ARCH_BITS}")      
+    elseif(MI_OPT_ARCH MATCHES "^rv.*$")
+      set(MI_OPT_ARCH_FLAGS "-march=${MI_OPT_ARCH}")
+    else()
+      set(MI_OPT_ARCH_FLAGS "-march=${MI_OPT_ARCH}")
+      message(STATUS "warning: unknown MI_OPT_ARCH=${MI_OPT_ARCH} passed as '-march=${MI_OPT_ARCH}'")
+    endif()
+
+  # msvc
+  elseif (MSVC AND MSVC_VERSION GREATER_EQUAL 1914 AND NOT MI_CLANG_CL) # vs2017+
+    if(MI_OPT_ARCH STREQUAL "avx2")
       set(MI_OPT_ARCH_FLAGS "/arch:AVX2")
-    elseif(MI_ARCH STREQUAL "arm64")
-      set(MI_OPT_ARCH_FLAGS "/arch:armv8.3")           # fast atomics (LDAPR)
+    elseif(MI_OPT_ARCH MATCHES "^armv[89].*$")
+      set(MI_OPT_ARCH_FLAGS "/arch:${MI_OPT_ARCH}")       # fast atomics
+    else()
+      message(STATUS "warning: unknown MI_OPT_ARCH=${MI_OPT_ARCH} passed as '/arch:${MI_OPT_ARCH}'")
     endif()
   endif()
 endif()
@@ -683,7 +847,7 @@ endif()
 
 if(MI_OPT_ARCH_FLAGS)
   list(APPEND mi_cflags ${MI_OPT_ARCH_FLAGS})
-  message(STATUS "Architecture specific optimization is enabled (with ${MI_OPT_ARCH_FLAGS}) (MI_OPT_ARCH=ON)")
+  message(STATUS "Architecture specific optimization is enabled (with ${MI_OPT_ARCH_FLAGS}) (MI_OPT_ARCH=${MI_OPT_ARCH})")
   if (MI_OPT_SIMD)
     list(APPEND mi_defines "MI_OPT_SIMD=1")
     message(STATUS "SIMD instructions are enabled (MI_OPT_SIMD=ON)")
@@ -691,6 +855,7 @@ if(MI_OPT_ARCH_FLAGS)
 elseif(MI_OPT_SIMD)
   message(STATUS "SIMD instructions are not enabled (either MI_OPT_ARCH=OFF or this architecture has no SIMD support)")
 endif()
+
 
 # extra needed libraries
 
@@ -733,7 +898,7 @@ endif()
 # set language for source files now
 if(MI_USE_CXX)
   set_source_files_properties(${mi_sources} PROPERTIES LANGUAGE CXX )
-  set_source_files_properties(src/static.c test/test-api.c test/test-api-fill.c test/test-stress.c test/test-stress-heaps.c  test/test-stress-subprocs.c PROPERTIES LANGUAGE CXX )
+  set_source_files_properties(src/static.c test/test-api.c test/test-api-fill.c test/test-stress.c test/test-stress-heaps.c  test/test-stress-subprocs.c test/test-profile.c PROPERTIES LANGUAGE CXX )
 endif()
 
 
@@ -766,12 +931,28 @@ endif()
 if(MI_TRACK STREQUAL "ASAN")
   set(mi_libname "${mi_libname}-asan")
 endif()
-string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LC)
-list(APPEND mi_defines "MI_CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE_LC}")  #todo: multi-config project needs $<CONFIG> ?
-if(CMAKE_BUILD_TYPE_LC MATCHES "^(release|relwithdebinfo|minsizerel|none)$")
-  list(APPEND mi_defines MI_BUILD_RELEASE)
+set(mi_libname_base "${mi_libname}") # capture the base name (without any per-config suffix)
+
+if (CMAKE_CONFIGURATION_TYPES)
+  # multi-config builds
+  # generator expression lower-case build type
+  set(mi_gx_build_type_lc $<LOWER_CASE:$<CONFIG>>)
+  # generator expression for "is this a release build?"
+  set(mi_gx_release $<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>,$<CONFIG:none>>)
+
+  list(APPEND mi_defines "MI_CMAKE_BUILD_TYPE=${mi_gx_build_type_lc}")
+  list(APPEND mi_defines $<${mi_gx_release}:MI_BUILD_RELEASE>)
+  # append build type (e.g. -debug) if not a release version
+  set(mi_libname "${mi_libname}$<$<NOT:${mi_gx_release}>:-${mi_gx_build_type_lc}>")
 else()
-  set(mi_libname "${mi_libname}-${CMAKE_BUILD_TYPE_LC}") #append build type (e.g. -debug) if not a release version
+  # single-config builds
+  string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LC)
+  list(APPEND mi_defines "MI_CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE_LC}")  #todo: multi-config project needs $<CONFIG> ?
+  if(CMAKE_BUILD_TYPE_LC MATCHES "^(release|relwithdebinfo|minsizerel|none)$")
+    list(APPEND mi_defines MI_BUILD_RELEASE)
+  else()
+    set(mi_libname "${mi_libname}-${CMAKE_BUILD_TYPE_LC}") #append build type (e.g. -debug) if not a release version
+  endif()
 endif()
 string(REGEX REPLACE "^mimalloc[-]?" "" mi_libsuffix "${mi_libname}")
 
@@ -792,7 +973,9 @@ endif()
 message(STATUS "")
 message(STATUS "Library name     : ${mi_libname}")
 message(STATUS "Version          : ${mi_version}.${mi_version_patch}")
-message(STATUS "Build type       : ${CMAKE_BUILD_TYPE_LC}")
+if(CMAKE_BUILD_TYPE_LC)
+  message(STATUS "Build type       : ${CMAKE_BUILD_TYPE_LC}")
+endif()
 if(MI_USE_CXX)
   message(STATUS "C++ Compiler     : ${CMAKE_CXX_COMPILER}")
 else()
@@ -827,7 +1010,23 @@ if(MI_BUILD_SHARED)
     # so we postfix the dll import library with `.dll.lib` (and also the .pdb debug file)
     set_property(TARGET mimalloc PROPERTY ARCHIVE_OUTPUT_NAME "${mi_libname}.dll" )
     install(FILES "$<TARGET_FILE_DIR:mimalloc>/${mi_libname}.dll.lib" DESTINATION ${CMAKE_INSTALL_LIBDIR}/mimalloc-${mi_version})
-    set_property(TARGET mimalloc PROPERTY PDB_NAME "${mi_libname}.dll")
+    if (CMAKE_CONFIGURATION_TYPES)
+      # PDB_NAME only supports generator expressions since CMake 4.1; for multi-config
+      # generators (like Visual Studio) we instead set `PDB_NAME_<CONFIG>` for each
+      # known configuration explicitly (mirroring the release/debug suffix logic above).
+      foreach(mi_cfg IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${mi_cfg}" mi_cfg_uc)
+        string(TOLOWER "${mi_cfg}" mi_cfg_lc)
+        if (mi_cfg_lc MATCHES "^(release|relwithdebinfo|minsizerel|none)$")
+          set(mi_libname_pdb "${mi_libname_base}")
+        else()
+          set(mi_libname_pdb "${mi_libname_base}-${mi_cfg_lc}")
+        endif()
+        set_property(TARGET mimalloc PROPERTY "PDB_NAME_${mi_cfg_uc}" "${mi_libname_pdb}.dll")
+      endforeach()
+    else()
+      set_property(TARGET mimalloc PROPERTY PDB_NAME "${mi_libname}.dll")
+    endif()
     # don't try to install the pdb since it may not be generated depending on the configuration
     # install(FILES "$<TARGET_FILE_DIR:mimalloc>/${mi_libname}.dll.pdb" DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
@@ -901,11 +1100,7 @@ if (MI_BUILD_OBJECT)
   )
 
   # Copy the generated object file (`static.o`) to the output directory (as `mimalloc.o`)
-  if(CMAKE_GENERATOR MATCHES "^Visual Studio.*$")
-    set(mimalloc-obj-static "${CMAKE_CURRENT_BINARY_DIR}/mimalloc-obj.dir/$<CONFIG>/static${CMAKE_C_OUTPUT_EXTENSION}")
-  else()
-    set(mimalloc-obj-static "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/mimalloc-obj.dir/src/static.c${CMAKE_C_OUTPUT_EXTENSION}")
-  endif()
+  set(mimalloc-obj-static "$<TARGET_OBJECTS:mimalloc-obj>")
   set(mimalloc-obj-out "${CMAKE_CURRENT_BINARY_DIR}/${mi_libname}${CMAKE_C_OUTPUT_EXTENSION}")
   add_custom_command(OUTPUT ${mimalloc-obj-out} DEPENDS mimalloc-obj mimalloc-static COMMAND "${CMAKE_COMMAND}" -E copy "${mimalloc-obj-static}" "${mimalloc-obj-out}")
   add_custom_target(mimalloc-obj-target ALL DEPENDS ${mimalloc-obj-out})
@@ -950,7 +1145,7 @@ if (MI_BUILD_TESTS)
   enable_testing()
 
   # static link tests
-  foreach(TEST_NAME api api-fill stress-heaps stress-subprocs stress)
+  foreach(TEST_NAME api api-fill stress-heaps stress-subprocs stress profile)
     add_executable(mimalloc-test-${TEST_NAME} test/test-${TEST_NAME}.c)
     target_compile_definitions(mimalloc-test-${TEST_NAME} PRIVATE ${mi_defines})
     target_compile_options(mimalloc-test-${TEST_NAME} PRIVATE ${mi_cflags})
@@ -962,17 +1157,19 @@ if (MI_BUILD_TESTS)
     else()
       message(STATUS "cannot build TSAN tests without MI_BUILD_SHARED being enabled")
     endif()
-    if(MI_GUARDED)
-    add_test(NAME test-${TEST_NAME} COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_GUARDED_SAMPLE_RATE=1 $<TARGET_FILE:mimalloc-test-${TEST_NAME}>)
+    if(MI_GUARDED AND NOT (TEST_NAME STREQUAL "profile"))
+    add_test(NAME test-${TEST_NAME} COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_GUARDED_SAMPLE_RATE=1024 $<TARGET_FILE:mimalloc-test-${TEST_NAME}>)
     elseif(TEST_NAME STREQUAL "stress-heaps")
     add_test(NAME test-${TEST_NAME} COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_ARENA_EAGER_COMMIT=0 MIMALLOC_PAGE_COMMIT_ON_DEMAND=0 $<TARGET_FILE:mimalloc-test-${TEST_NAME}>)
+    elseif(NOT MI_PROFILE AND (TEST_NAME STREQUAL "profile"))
+    # don't add as a test
     else()
     add_test(NAME test-${TEST_NAME} COMMAND mimalloc-test-${TEST_NAME})
     endif()
   endforeach()
 
   # static override test
-  if(MI_BUILD_OBJECT AND NOT (MI_CYGWIN OR (MI_TRACK STREQUAL "ASAN") OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN))
+  if(MI_BUILD_OBJECT AND MI_OVERRIDE AND NOT (MI_CYGWIN OR (MI_TRACK STREQUAL "ASAN") OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN))
     add_executable(mimalloc-test-stress-static test/test-stress.c)
     target_compile_definitions(mimalloc-test-stress-static PRIVATE ${mi_defines} "USE_STD_MALLOC=1")
     target_compile_options(mimalloc-test-stress-static PRIVATE ${mi_cflags})
@@ -982,7 +1179,7 @@ if (MI_BUILD_TESTS)
   endif()
 
   # dynamic override test
-  if(MI_BUILD_SHARED AND NOT (MI_CYGWIN OR (MI_TRACK STREQUAL "ASAN") OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN)) # AND NOT (APPLE AND MI_USE_CXX))
+  if(MI_BUILD_SHARED AND MI_OVERRIDE AND NOT (MI_CYGWIN OR (MI_TRACK STREQUAL "ASAN") OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN)) # AND NOT (APPLE AND MI_USE_CXX))
     add_executable(mimalloc-test-stress-dynamic test/test-stress.c)
     target_compile_definitions(mimalloc-test-stress-dynamic PRIVATE ${mi_defines} "USE_STD_MALLOC=1")
     target_compile_options(mimalloc-test-stress-dynamic PRIVATE ${mi_cflags})
