@@ -355,8 +355,7 @@ impl<E: Target> MergedSection<E> {
 
 /// Splits the members into fragments and deduplicates them.
 pub fn resolve<E: Target>(ctx: &mut Context<E>, id: MergedSectionId) {
-    let timers = ctx.timers.clone();
-    let Context { objs, merged_sections, args, .. } = ctx;
+    let Context { objs, merged_sections, args, timers, .. } = ctx;
     let msec = &merged_sections[id.index()];
     let gc_sections = args.gc_sections;
 

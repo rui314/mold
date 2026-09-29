@@ -6,7 +6,7 @@ use crate::elf::*;
 use crate::target::Target;
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
-// are sorted by their dcorresponding function addresses, so tha the
+// are sorted by their corresponding function addresses, so that the
 // runtime can quickly find an exception-handling record for the current
 // function by binary search. Without .eh_frame_hdr, the runtime would
 // have had to do linear search in .eh_frame.

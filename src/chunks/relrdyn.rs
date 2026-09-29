@@ -53,11 +53,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let hdr = ctx.chunk_header(id);
         for &val in &hdr.relr {
             let v = if val & 1 != 0 { val } else { hdr.shdr.sh_addr.get() + val };
-            if E::IS_64 {
-                E::write_u64(&mut buf[i * w..], v);
-            } else {
-                E::write_u32(&mut buf[i * w..], v as u32);
-            }
+            Word::<E>::new(v).write(&mut buf[i * w..]);
             i += 1;
         }
     }

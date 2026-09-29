@@ -32,15 +32,17 @@ pub struct ArmExidxSection<E: Target> {
 
 /// Replaces the `.ARM.exidx` output section by the synthetic one.
 pub fn create<E: Target>(ctx: &mut Context<E>) {
-    let Some(i) = ctx.chunks.iter().position(|&id| match id {
-        ChunkId::Output(osec) => {
-            ctx.output_sections[osec.index()].hdr.shdr.sh_type.get() == SHT_ARM_EXIDX
+    let exidx = ctx.chunks.iter().enumerate().find_map(|(i, &id)| match id {
+        ChunkId::Output(osec)
+            if ctx.output_sections[osec.index()].hdr.shdr.sh_type.get() == SHT_ARM_EXIDX =>
+        {
+            Some((i, osec))
         }
-        _ => false,
-    }) else {
+        _ => None,
+    });
+    let Some((i, osec)) = exidx else {
         return;
     };
-    let ChunkId::Output(osec) = ctx.chunks[i] else { unreachable!() };
 
     let mut hdr = ChunkHeader::<E>::new(".ARM.exidx", SHT_ARM_EXIDX, SHF_ALLOC as u64);
     hdr.shdr.sh_addralign.set(4);
@@ -58,10 +60,9 @@ pub fn compute_section_size<E: Target>(ctx: &mut Context<E>) {
     let osec = ctx.arm_exidx.as_ref().unwrap().output_section;
     output_section::compute_section_size(ctx, osec);
     let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size.get();
-    // +8 for sentinel
     let sec = ctx.arm_exidx.as_mut().unwrap();
+    // One more entry for the sentinel.
     sec.hdr.shdr.sh_size.set(size + ENTRY_SIZE as u64);
-    // plus the sentinel
 }
 
 // .ARM.exidx's sh_link should be set to the .text section index.
@@ -95,7 +96,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 fn text_end<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.chunks
         .iter()
-        .map(|&id| ctx.chunk_header(id).shdr)
+        .map(|&id| &ctx.chunk_header(id).shdr)
         .filter(|shdr| shdr.sh_flags.get() & SHF_EXECINSTR as u64 != 0)
         .map(|shdr| shdr.sh_addr.get() + shdr.sh_size.get())
         .max()
