@@ -75,7 +75,7 @@ fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
 
 #[cfg(windows)]
 fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
-    let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
+    let layout = Layout::from_size_align(bufsize, align_of::<Entry<T>>())
         .expect("invalid concurrent-map layout");
     // SAFETY: the layout has nonzero size.
     let entries = unsafe { alloc_zeroed(layout).cast::<Entry<T>>() };
@@ -93,7 +93,7 @@ unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
 
 #[cfg(windows)]
 unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
-    let layout = Layout::from_size_align(bufsize, std::mem::align_of::<Entry<T>>())
+    let layout = Layout::from_size_align(bufsize, align_of::<Entry<T>>())
         .expect("invalid concurrent-map layout");
     // SAFETY: `entries` was allocated by `allocate_entries` with this layout.
     unsafe { dealloc(entries.cast(), layout) };
@@ -149,7 +149,7 @@ impl<T> ConcurrentMap<T> {
     }
 
     fn bufsize(nbuckets: usize) -> usize {
-        std::mem::size_of::<Entry<T>>().checked_mul(nbuckets).expect("table size overflow")
+        size_of::<Entry<T>>().checked_mul(nbuckets).expect("table size overflow")
     }
 
     /// The number of entries, counted.

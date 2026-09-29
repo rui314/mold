@@ -126,7 +126,7 @@ impl fmt::Debug for Origin {
     }
 }
 
-const _: () = assert!(std::mem::size_of::<Origin>() == 8);
+const _: () = assert!(size_of::<Origin>() == 8);
 
 /// Symbol flags set while scanning relocations.
 pub const NEEDS_GOT: u8 = 1 << 0;
@@ -174,7 +174,7 @@ pub struct SymbolAux {
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<SymbolAux>() == 64);
+const _: () = assert!(size_of::<SymbolAux>() == 64);
 
 impl Default for SymbolAux {
     fn default() -> Self {
@@ -286,7 +286,7 @@ pub struct Symbol {
     bits: u16,
 }
 
-const _: () = assert!(std::mem::size_of::<Symbol>() == 48);
+const _: () = assert!(size_of::<Symbol>() == 48);
 
 const SYMBOL_LOCKED: u8 = 1 << 0;
 
@@ -1415,7 +1415,7 @@ impl ParallelSymbolAllocator<'_> {
 /// Asks the operating system to back the interior pages of an allocation with
 /// transparent huge pages when that advice is available.
 fn madvise_hugepage<T>(values: &Vec<T>) {
-    let Some(byte_len) = values.capacity().checked_mul(std::mem::size_of::<T>()) else {
+    let Some(byte_len) = values.capacity().checked_mul(size_of::<T>()) else {
         return;
     };
     // SAFETY: the vector's allocation covers its capacity; the helper leaves

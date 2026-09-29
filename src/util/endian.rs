@@ -5,8 +5,6 @@
 //! uses the methods on [`crate::target::Target`], which pick the byte order
 //! from the target.
 
-use std::mem::size_of;
-
 macro_rules! endian_io {
     ($int:ty, $readb:ident, $readl:ident, $writeb:ident, $writel:ident) => {
         #[inline]

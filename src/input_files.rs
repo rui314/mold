@@ -422,7 +422,7 @@ impl<E: Target> InputFile<E> {
     /// Reads the ELF and section headers.
     fn parse(mf: &'static MappedFile, display: &dyn fmt::Display) -> Self {
         let data = mf.data();
-        if data.len() < std::mem::size_of::<ElfEhdr<E>>() {
+        if data.len() < size_of::<ElfEhdr<E>>() {
             fatal!("{display}: file too small");
         }
         if !data.starts_with(b"\x7fELF") {
@@ -431,7 +431,7 @@ impl<E: Target> InputFile<E> {
 
         let ehdr = record_from_bytes::<ElfEhdr<E>>(data);
         let shoff = ehdr.e_shoff.get() as usize;
-        let shdr_size = std::mem::size_of::<ElfShdr<E>>();
+        let shdr_size = size_of::<ElfShdr<E>>();
 
         // e_shnum contains the total number of sections in an object file.
         // Since it is a 16-bit integer field, it's not large enough to
@@ -623,7 +623,7 @@ impl ComdatGroupRef {
     }
 }
 
-const _: () = assert!(std::mem::size_of::<ComdatGroupRef>() == 8);
+const _: () = assert!(size_of::<ComdatGroupRef>() == 8);
 
 /// An exceptional COMDAT signature that must be interned by name. Most groups
 /// use their file's existing global symbol and need only `ComdatGroupRef`.
@@ -635,7 +635,7 @@ pub struct PendingComdatSignature {
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<PendingComdatSignature>() == 24);
+const _: () = assert!(size_of::<PendingComdatSignature>() == 24);
 
 /// RISC-V attributes read from `.riscv.attributes`.
 #[derive(Debug, Default)]
@@ -1318,7 +1318,7 @@ impl<E: Target> ObjectFile<E> {
             // sh_info has an index of the first global symbol.
             self.base.first_global = shdr.sh_info.get() as usize;
             let contents = self.base.section_contents(idx);
-            if !contents.len().is_multiple_of(std::mem::size_of::<ElfSym<E>>()) {
+            if !contents.len().is_multiple_of(size_of::<ElfSym<E>>()) {
                 fatal!("{self}: corrupted section");
             }
             self.base.elf_syms = Cow::Borrowed(records_from_bytes::<ElfSym<E>>(contents));
@@ -2685,7 +2685,7 @@ impl<'a> SymtabEntries<'a> {
     }
 
     fn push<E: Target>(&mut self, esym: ElfSym<E>, xindex: u32) {
-        let size = std::mem::size_of::<ElfSym<E>>();
+        let size = size_of::<ElfSym<E>>();
         esym.write(&mut self.syms[self.len * size..(self.len + 1) * size]);
         if let Some(entries) = &mut self.xindex {
             E::write_u32(&mut entries[self.len * 4..], xindex);
@@ -2706,7 +2706,7 @@ impl<'a> SymtabBlock<'a> {
 
     /// Zeroes reserved space that was not used by emitted symbols.
     pub fn zero_unused<E: Target>(&mut self) {
-        let size = std::mem::size_of::<ElfSym<E>>();
+        let size = size_of::<ElfSym<E>>();
         self.locals.syms[self.locals.len * size..].fill(0);
         self.globals.syms[self.globals.len * size..].fill(0);
         self.strtab[self.strtab_len..].fill(0);
@@ -3232,7 +3232,7 @@ impl<E: Target> SharedFile<E> {
         let ehdr = record_from_bytes::<ElfEhdr<E>>(data);
         let val = self.base.elf_syms[sym.sym_idx() as usize].st_value();
         let phoff = ehdr.e_phoff.get() as usize;
-        let size = std::mem::size_of::<ElfPhdr<E>>();
+        let size = size_of::<ElfPhdr<E>>();
         let phnum = ehdr.e_phnum.get() as usize;
         let phdrs = records_from_bytes::<ElfPhdr<E>>(&data[phoff..phoff + phnum * size]);
         phdrs.iter().any(|phdr| {

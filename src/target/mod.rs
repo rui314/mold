@@ -108,7 +108,7 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     type Phdr: PhdrRecord;
     type Chdr: ChdrRecord;
     type Rel: RelRecord;
-    const IS_64: bool = std::mem::size_of::<Self::Word>() == 8;
+    const IS_64: bool = size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = if Self::IS_64 { 8 } else { 4 };
 

@@ -47,7 +47,7 @@ pub struct InputSectionId {
     index: u32,
 }
 
-const _: () = assert!(std::mem::size_of::<InputSectionId>() == 8);
+const _: () = assert!(size_of::<InputSectionId>() == 8);
 
 impl InputSectionId {
     /// A placeholder used only while a member array is being filled.
@@ -559,7 +559,7 @@ impl<E: Target> InputSection<E> {
             return;
         }
 
-        let hdr_size = std::mem::size_of::<ElfChdr<E>>();
+        let hdr_size = size_of::<ElfChdr<E>>();
         if input.len() < hdr_size {
             fatal!("{file}:({name}): corrupted compressed section");
         }

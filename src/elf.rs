@@ -108,11 +108,11 @@ impl<E: Target> U24<E> {
 /// unaligned archive members be read and written without host dependencies.
 pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
     fn size() -> usize {
-        std::mem::size_of::<Self>()
+        size_of::<Self>()
     }
 
     fn parse(bytes: &[u8]) -> Self {
-        const { assert!(std::mem::align_of::<Self>() == 1) };
+        const { assert!(align_of::<Self>() == 1) };
         assert!(bytes.len() >= Self::size());
         // SAFETY: the trait guarantees that every bit pattern is valid, and
         // the length check proves that a complete record is available.
@@ -141,7 +141,7 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
 
 /// Views one record directly in its file representation.
 pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
-    const { assert!(std::mem::align_of::<R>() == 1) };
+    const { assert!(align_of::<R>() == 1) };
     assert!(data.len() >= R::size());
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. The length check proves that one complete record is present.
@@ -150,7 +150,7 @@ pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
 
 /// Views records directly in their file representation.
 pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
-    const { assert!(std::mem::align_of::<R>() == 1 && std::mem::size_of::<R>() != 0) };
+    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
     let size = R::size();
     assert!(data.len().is_multiple_of(size));
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
@@ -160,7 +160,7 @@ pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
 
 /// Mutably views records directly in their file representation.
 pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
-    const { assert!(std::mem::align_of::<R>() == 1 && std::mem::size_of::<R>() != 0) };
+    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
     let size = R::size();
     assert!(data.len().is_multiple_of(size));
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
@@ -192,10 +192,10 @@ pub struct ElfEhdr<E: Target> {
 // not insert padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfEhdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfEhdr<I386>>() == 52);
-const _: () = assert!(std::mem::size_of::<ElfEhdr<X86_64>>() == 64);
-const _: () = assert!(std::mem::align_of::<ElfEhdr<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfEhdr<X86_64>>() == 1);
+const _: () = assert!(size_of::<ElfEhdr<I386>>() == 52);
+const _: () = assert!(size_of::<ElfEhdr<X86_64>>() == 64);
+const _: () = assert!(align_of::<ElfEhdr<I386>>() == 1);
+const _: () = assert!(align_of::<ElfEhdr<X86_64>>() == 1);
 
 /// A section header.
 #[repr(C)]
@@ -217,10 +217,10 @@ pub struct ElfShdr<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfShdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfShdr<I386>>() == 40);
-const _: () = assert!(std::mem::size_of::<ElfShdr<X86_64>>() == 64);
-const _: () = assert!(std::mem::align_of::<ElfShdr<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfShdr<X86_64>>() == 1);
+const _: () = assert!(size_of::<ElfShdr<I386>>() == 40);
+const _: () = assert!(size_of::<ElfShdr<X86_64>>() == 64);
+const _: () = assert!(align_of::<ElfShdr<I386>>() == 1);
+const _: () = assert!(align_of::<ElfShdr<X86_64>>() == 1);
 
 /// A program header.
 #[repr(C)]
@@ -255,10 +255,10 @@ unsafe impl<E: Target> FileRecord for Elf64Phdr<E> {}
 // SAFETY: see the Elf64 implementation.
 unsafe impl<E: Target> FileRecord for Elf32Phdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Phdr<I386>>() == 32);
-const _: () = assert!(std::mem::size_of::<Elf64Phdr<X86_64>>() == 56);
-const _: () = assert!(std::mem::align_of::<Elf32Phdr<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Phdr<X86_64>>() == 1);
+const _: () = assert!(size_of::<Elf32Phdr<I386>>() == 32);
+const _: () = assert!(size_of::<Elf64Phdr<X86_64>>() == 56);
+const _: () = assert!(align_of::<Elf32Phdr<I386>>() == 1);
+const _: () = assert!(align_of::<Elf64Phdr<X86_64>>() == 1);
 
 /// The common interface of the two physical program-header layouts.
 /// Accessors take and return host integers; the record itself stays in
@@ -341,10 +341,10 @@ unsafe impl<E: Target> FileRecord for Elf64Sym<E> {}
 // SAFETY: see the Elf64 implementation.
 unsafe impl<E: Target> FileRecord for Elf32Sym<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Sym<I386>>() == 16);
-const _: () = assert!(std::mem::size_of::<Elf64Sym<X86_64>>() == 24);
-const _: () = assert!(std::mem::align_of::<Elf32Sym<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Sym<X86_64>>() == 1);
+const _: () = assert!(size_of::<Elf32Sym<I386>>() == 16);
+const _: () = assert!(size_of::<Elf64Sym<X86_64>>() == 24);
+const _: () = assert!(align_of::<Elf32Sym<I386>>() == 1);
+const _: () = assert!(align_of::<Elf64Sym<X86_64>>() == 1);
 
 /// The common interface of the two physical symbol layouts. Accessors
 /// take and return host integers; the record itself stays in its file
@@ -596,14 +596,14 @@ unsafe impl<E: Target> FileRecord for ElfRela<E> {}
 // SAFETY: see ElfRela.
 unsafe impl<E: Target> FileRecord for ElfRelNoAddend<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfRela<I386>>() == 12);
-const _: () = assert!(std::mem::size_of::<ElfRela<X86_64>>() == 24);
-const _: () = assert!(std::mem::size_of::<ElfRelNoAddend<I386>>() == 8);
-const _: () = assert!(std::mem::size_of::<ElfRelNoAddend<X86_64>>() == 16);
-const _: () = assert!(std::mem::align_of::<ElfRela<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfRela<X86_64>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfRelNoAddend<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfRelNoAddend<X86_64>>() == 1);
+const _: () = assert!(size_of::<ElfRela<I386>>() == 12);
+const _: () = assert!(size_of::<ElfRela<X86_64>>() == 24);
+const _: () = assert!(size_of::<ElfRelNoAddend<I386>>() == 8);
+const _: () = assert!(size_of::<ElfRelNoAddend<X86_64>>() == 16);
+const _: () = assert!(align_of::<ElfRela<I386>>() == 1);
+const _: () = assert!(align_of::<ElfRela<X86_64>>() == 1);
+const _: () = assert!(align_of::<ElfRelNoAddend<I386>>() == 1);
+const _: () = assert!(align_of::<ElfRelNoAddend<X86_64>>() == 1);
 
 // ELF32 keeps the relocation type in the low 8 bits of r_info and the symbol
 // index above them; ELF64 gives each 32 bits.
@@ -690,8 +690,8 @@ pub struct Sparc64Rela {
 // not insert padding between fields with alignment one.
 unsafe impl FileRecord for Sparc64Rela {}
 
-const _: () = assert!(std::mem::size_of::<Sparc64Rela>() == 24);
-const _: () = assert!(std::mem::align_of::<Sparc64Rela>() == 1);
+const _: () = assert!(size_of::<Sparc64Rela>() == 24);
+const _: () = assert!(align_of::<Sparc64Rela>() == 1);
 
 #[rustfmt::skip]
 impl RelRecord for Sparc64Rela {
@@ -742,10 +742,10 @@ pub struct ElfDyn<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfDyn<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfDyn<I386>>() == 8);
-const _: () = assert!(std::mem::size_of::<ElfDyn<X86_64>>() == 16);
-const _: () = assert!(std::mem::align_of::<ElfDyn<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<ElfDyn<X86_64>>() == 1);
+const _: () = assert!(size_of::<ElfDyn<I386>>() == 8);
+const _: () = assert!(size_of::<ElfDyn<X86_64>>() == 16);
+const _: () = assert!(align_of::<ElfDyn<I386>>() == 1);
+const _: () = assert!(align_of::<ElfDyn<X86_64>>() == 1);
 
 /// The header of a compressed section.
 #[repr(C)]
@@ -771,10 +771,10 @@ unsafe impl<E: Target> FileRecord for Elf64Chdr<E> {}
 // SAFETY: see the Elf64 implementation.
 unsafe impl<E: Target> FileRecord for Elf32Chdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<Elf32Chdr<I386>>() == 12);
-const _: () = assert!(std::mem::size_of::<Elf64Chdr<X86_64>>() == 24);
-const _: () = assert!(std::mem::align_of::<Elf32Chdr<I386>>() == 1);
-const _: () = assert!(std::mem::align_of::<Elf64Chdr<X86_64>>() == 1);
+const _: () = assert!(size_of::<Elf32Chdr<I386>>() == 12);
+const _: () = assert!(size_of::<Elf64Chdr<X86_64>>() == 24);
+const _: () = assert!(align_of::<Elf32Chdr<I386>>() == 1);
+const _: () = assert!(align_of::<Elf64Chdr<X86_64>>() == 1);
 
 /// The common interface of the two physical compression-header layouts.
 /// Accessors take and return host integers; the record itself stays in
@@ -823,8 +823,8 @@ pub struct ElfNhdr<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfNhdr<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfNhdr<I386>>() == 12);
-const _: () = assert!(std::mem::align_of::<ElfNhdr<I386>>() == 1);
+const _: () = assert!(size_of::<ElfNhdr<I386>>() == 12);
+const _: () = assert!(align_of::<ElfNhdr<I386>>() == 1);
 
 /// A `.gnu.version_r` file entry.
 #[repr(C)]
@@ -841,7 +841,7 @@ pub struct ElfVerneed<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfVerneed<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerneed<I386>>() == 16);
+const _: () = assert!(size_of::<ElfVerneed<I386>>() == 16);
 
 /// A `.gnu.version_r` version entry.
 #[repr(C)]
@@ -858,7 +858,7 @@ pub struct ElfVernaux<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfVernaux<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVernaux<I386>>() == 16);
+const _: () = assert!(size_of::<ElfVernaux<I386>>() == 16);
 
 /// A `.gnu.version_d` definition entry.
 #[repr(C)]
@@ -877,7 +877,7 @@ pub struct ElfVerdef<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfVerdef<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerdef<I386>>() == 20);
+const _: () = assert!(size_of::<ElfVerdef<I386>>() == 20);
 
 /// A `.gnu.version_d` name entry.
 #[repr(C)]
@@ -891,7 +891,7 @@ pub struct ElfVerdaux<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for ElfVerdaux<E> {}
 
-const _: () = assert!(std::mem::size_of::<ElfVerdaux<I386>>() == 8);
+const _: () = assert!(size_of::<ElfVerdaux<I386>>() == 8);
 
 /// SFrame is a simple unwind information format used as a lightweight
 /// alternative to .eh_frame. A .sframe section consists of a header, an
@@ -920,8 +920,8 @@ pub struct SFrameHeader<E: Target> {
 // not insert padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for SFrameHeader<E> {}
 
-const _: () = assert!(std::mem::size_of::<SFrameHeader<I386>>() == 28);
-const _: () = assert!(std::mem::align_of::<SFrameHeader<I386>>() == 1);
+const _: () = assert!(size_of::<SFrameHeader<I386>>() == 28);
+const _: () = assert!(align_of::<SFrameHeader<I386>>() == 1);
 
 /// The index part of an SFrame Version 3 FDE. The func_start_offset field
 /// is PC-relative (relative to its own address) when the section flag
@@ -938,5 +938,5 @@ pub struct SFrameFdeIdx<E: Target> {
 // padding between fields with alignment one.
 unsafe impl<E: Target> FileRecord for SFrameFdeIdx<E> {}
 
-const _: () = assert!(std::mem::size_of::<SFrameFdeIdx<I386>>() == 16);
-const _: () = assert!(std::mem::align_of::<SFrameFdeIdx<I386>>() == 1);
+const _: () = assert!(size_of::<SFrameFdeIdx<I386>>() == 16);
+const _: () = assert!(align_of::<SFrameFdeIdx<I386>>() == 1);

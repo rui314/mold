@@ -156,7 +156,7 @@ impl NameRecord {
     }
 }
 
-const _: () = assert!(std::mem::size_of::<NameRecord>() == 16);
+const _: () = assert!(size_of::<NameRecord>() == 16);
 
 /// CU metadata carried from input parsing through final index serialization.
 /// CUs own address ranges; both CUs and TUs below may own public names.

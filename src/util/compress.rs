@@ -77,7 +77,7 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
             8,
             libz_sys::Z_DEFAULT_STRATEGY,
             libz_sys::zlibVersion(),
-            std::mem::size_of::<libz_sys::z_stream>() as i32,
+            size_of::<libz_sys::z_stream>() as i32,
         )
     };
     assert_eq!(status, libz_sys::Z_OK);
