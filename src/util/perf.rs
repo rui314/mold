@@ -2,9 +2,11 @@
 
 // Counter is used to collect statistics numbers.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Instant;
+
+use portable_atomic::AtomicI64;
 
 use crate::out;
 

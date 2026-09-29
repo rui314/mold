@@ -65,8 +65,9 @@
 //! conditions.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 
+use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::cmdline::ReportOutput;

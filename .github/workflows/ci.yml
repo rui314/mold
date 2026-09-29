@@ -20,10 +20,12 @@ jobs:
         sudo ./install-test-deps.sh
         sudo .github/workflows/install-extras.sh
     - run: cargo build --locked
-    - name: check the build for a 32-bit host
+    - name: check the build for 32-bit hosts
       run: |
-        rustup target add armv7-unknown-linux-gnueabihf
+        rustup target add armv7-unknown-linux-gnueabihf powerpc-unknown-linux-gnu
         cargo check --locked --workspace --all-targets --target armv7-unknown-linux-gnueabihf
+        # 32-bit PowerPC has no 64-bit atomics
+        cargo check --locked --workspace --all-targets --target powerpc-unknown-linux-gnu
     - name: verify all target toolchains are available
       run: |
         cargo test --locked -p mold-cli --test integration -- --list |

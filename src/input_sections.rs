@@ -1,9 +1,10 @@
 //! Input sections and the records the linker parses out of them.
 
 use std::fmt::{self, Write};
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use bstr::BStr;
+use portable_atomic::AtomicU64;
 
 use crate::chunks::OutputSectionId;
 use crate::chunks::merged::{MergedSection, MergedSectionId};
