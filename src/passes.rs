@@ -3445,8 +3445,7 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
                 addr2 = align_to(addr2, hdr.shdr.sh_addralign.get());
                 hdr.shdr.sh_addr.set(addr2);
                 addr2 += hdr.shdr.sh_size.get();
-                let Some(&next) = ctx.chunks.get(i + 1) else { break };
-                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, next) {
+                if i + 2 == ctx.chunks.len() || !is_tbss(ctx, ctx.chunks[i + 1]) {
                     break;
                 }
                 i += 1;
