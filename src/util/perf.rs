@@ -97,6 +97,7 @@ pub struct Timers {
 }
 
 /// A running timer, stopped when dropped.
+#[must_use = "a timer records its interval when dropped"]
 pub struct Timer {
     timers: Timers,
     index: usize,

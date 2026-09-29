@@ -166,7 +166,7 @@ impl Compressor {
     }
 
     pub fn compressed_size(&self) -> usize {
-        // Comput the total size
+        // Compute the total size
         match self {
             // the header and the trailer
             Self::Zlib { shards, .. } => 8 + shards.iter().map(Vec::len).sum::<usize>(),

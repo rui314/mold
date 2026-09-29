@@ -1,26 +1,18 @@
-//! This file implements the glob matcher used for symbol name patterns.
-//! Exact, prefix and suffix patterns are matched directly, and simple
-//! substring patterns are combined into an Aho-Corasick matcher. The
-//! remaining patterns are matched with the non-recursive algorithm described
-//! at https://research.swtch.com/glob. If there are many such patterns, a
-//! bit-parallel NFA matches them together.
-
-//! This file implements the Aho-Corasick algorithm to search multiple
-//! strings within an input string simultaneously. It is essentially a
-//! trie with additional links. For details, see
-//! https://en.wikipedia.org/wiki/Aho-Corasick_algorithm.
+//! The glob matcher used for symbol name patterns in version scripts and
+//! dynamic list files. Exact, prefix and suffix patterns are matched
+//! directly. Simple substring patterns such as these
 //!
-//! We use it for simple glob patterns in version scripts or dynamic
-//! list files. Here are some examples of glob patterns:
-//!
-//!    qt_private_api_tag*
 //!    *16QAccessibleCache*
 //!    *32QAbstractFileIconProviderPrivate*
 //!    *17QPixmapIconEngine*
 //!
-//! Aho-Corasick can do only substring search, so it cannot handle
-//! complex glob patterns such as `*foo*bar*`. We handle such patterns
-//! with the [`Glob`] type.
+//! are combined into an Aho-Corasick matcher, essentially a trie with
+//! additional links that searches for all of them in one pass over the
+//! input (https://en.wikipedia.org/wiki/Aho-Corasick_algorithm). It can only
+//! search substrings, so complex patterns such as `*foo*bar*` are matched
+//! with the non-recursive algorithm described at
+//! https://research.swtch.com/glob, and if there are many of them, a
+//! bit-parallel NFA matches them together.
 
 use std::collections::VecDeque;
 
@@ -90,9 +82,7 @@ impl Pattern {
                             if end < start {
                                 return None;
                             }
-                            for i in start..=end {
-                                chars[i as usize] = true;
-                            }
+                            chars[start as usize..=end as usize].fill(true);
                         } else {
                             chars[pat[0] as usize] = true;
                             pat = &pat[1..];
@@ -284,16 +274,16 @@ impl Nfa {
         for &c in s {
             let mask = &self.char_masks[c as usize * num_words..][..num_words];
             let mut carry = 0;
-            for i in 0..num_words {
-                let old = states[i];
+            for ((state, &star), &m) in states.iter_mut().zip(&self.star_states).zip(mask) {
+                let old = *state;
                 let next = (old << 1) | carry;
-                states[i] = (old & self.star_states[i]) | (next & mask[i]);
+                *state = (old & star) | (next & m);
                 carry = old >> 63;
             }
         }
 
         let mut value = -1;
-        for (i, &state) in states.iter().enumerate().take(num_words) {
+        for (i, &state) in states.iter().enumerate() {
             let mut word = state & self.accept_states[i];
             while word != 0 {
                 let bit = word.trailing_zeros() as usize;
