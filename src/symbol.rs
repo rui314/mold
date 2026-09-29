@@ -286,7 +286,8 @@ pub struct Symbol {
     bits: u16,
 }
 
-const _: () = assert!(size_of::<Symbol>() == 48);
+// It can be smaller on 32-bit hosts.
+const _: () = assert!(size_of::<Symbol>() <= 48);
 
 const SYMBOL_LOCKED: u8 = 1 << 0;
 

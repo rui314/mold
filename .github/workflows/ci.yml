@@ -22,8 +22,11 @@ jobs:
     - run: cargo build --locked
     - name: check the build for 32-bit hosts
       run: |
-        rustup target add armv7-unknown-linux-gnueabihf powerpc-unknown-linux-gnu
+        rustup target add armv7-unknown-linux-gnueabihf i686-unknown-linux-gnu \
+          powerpc-unknown-linux-gnu
         cargo check --locked --workspace --all-targets --target armv7-unknown-linux-gnueabihf
+        # i386 aligns 64-bit integers to 4 bytes
+        cargo check --locked --workspace --all-targets --target i686-unknown-linux-gnu
         # 32-bit PowerPC has no 64-bit atomics
         cargo check --locked --workspace --all-targets --target powerpc-unknown-linux-gnu
     - name: verify all target toolchains are available
