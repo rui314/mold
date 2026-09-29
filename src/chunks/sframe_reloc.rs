@@ -38,8 +38,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let fde = &ctx.objs[fi.index()].sframe_fdes[fi_idx as usize];
         let sym = &ctx.symbols[fde.sym];
         let r_offset = ctx.sframe.hdr.shdr.sh_addr.get()
-            + SFrameHeader::<E>::size() as u64
-            + (i * SFrameFdeIdx::<E>::size()) as u64;
+            + size_of::<SFrameHeader<E>>() as u64
+            + (i * size_of::<SFrameFdeIdx<E>>()) as u64;
 
         let (r_sym, r_addend) = crate::chunks::reloc::output_symidx_addend(ctx, sym, || fde.addend)
             .expect("relocation refers to a section without output");

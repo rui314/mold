@@ -208,7 +208,7 @@ impl<E: Target> ChunkHeader<E> {
 // ELF header which is at the beginning of each ELF file.
 pub fn new_ehdr<E: Target>(sh_flags: u64) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new("EHDR", 0, sh_flags);
-    hdr.shdr.sh_size.set(ElfEhdr::<E>::size() as u64);
+    hdr.shdr.sh_size.set(size_of::<ElfEhdr<E>>() as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr
 }
@@ -274,7 +274,7 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     ehdr.e_version.set(EV_CURRENT);
     ehdr.e_entry.set(entry_addr(ctx));
     ehdr.e_flags.set(E::eflags(ctx));
-    ehdr.e_ehsize.set(ElfEhdr::<E>::size() as u16);
+    ehdr.e_ehsize.set(size_of::<ElfEhdr<E>>() as u16);
 
     // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
     // The real value is stored to the zero'th section's sh_link field.
@@ -304,11 +304,11 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     if let Some(shdr) = &ctx.shdr {
         ehdr.e_shoff.set(shdr.shdr.sh_offset.get());
-        ehdr.e_shentsize.set(ElfShdr::<E>::size() as u16);
+        ehdr.e_shentsize.set(size_of::<ElfShdr<E>>() as u16);
         // Since e_shnum is a 16-bit integer field, we can't store a very
         // large value there. If it is >65535, the real value is stored to
         // the zero'th section's sh_size field.
-        let shnum = shdr.shdr.sh_size.get() / ElfShdr::<E>::size() as u64;
+        let shnum = shdr.shdr.sh_size.get() / size_of::<ElfShdr<E>>() as u64;
         ehdr.e_shnum.set(if shnum <= u16::MAX as u64 { shnum as u16 } else { 0 });
     }
 
@@ -316,7 +316,7 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 fn write_shdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let size = ElfShdr::<E>::size();
+    let size = size_of::<ElfShdr<E>>();
     buf.fill(0);
 
     let mut first = ElfShdr::<E>::default();

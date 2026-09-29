@@ -83,7 +83,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         });
     if overflow.load(Ordering::Relaxed) {
         let nshdrs =
-            ctx.shdr.as_ref().map_or(0, |s| s.shdr.sh_size.get() / ElfShdr::<E>::size() as u64);
+            ctx.shdr.as_ref().map_or(0, |s| s.shdr.sh_size.get() / size_of::<ElfShdr<E>>() as u64);
         error!(
             "{}: .dynsym: too many output sections: {nshdrs} requested, but ELF allows at most 65279",
             ctx.args.output.display()

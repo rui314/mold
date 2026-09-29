@@ -81,7 +81,7 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
     ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
 
     // Allocate a large enough buffer for .gnu.version_r.
-    let capacity = (ElfVerneed::<E>::size() + ElfVernaux::<E>::size()) * (syms.len() + 1);
+    let capacity = (size_of::<ElfVerneed<E>>() + size_of::<ElfVernaux<E>>()) * (syms.len() + 1);
     let mut builder = VerneedBuilder::<E> {
         contents: Vec::with_capacity(capacity),
         veridx: VER_NDX_LAST_RESERVED as u16 + ctx.args.version_definitions.len() as u16,
@@ -141,12 +141,12 @@ impl<E: Target> VerneedBuilder<E> {
         let pos = self.contents.len();
         self.group_pos = Some(pos);
         self.aux_pos = None;
-        self.contents.resize(pos + ElfVerneed::<E>::size(), 0);
+        self.contents.resize(pos + size_of::<ElfVerneed<E>>(), 0);
         ElfVerneed::<E> {
             vn_version: U16::new(1),
             vn_cnt: U16::default(),
             vn_file: U32::new(vn_file),
-            vn_aux: U32::new(ElfVerneed::<E>::size() as u32),
+            vn_aux: U32::new(size_of::<ElfVerneed<E>>() as u32),
             vn_next: U32::default(),
         }
         .write(&mut self.contents[pos..]);
@@ -159,7 +159,7 @@ impl<E: Target> VerneedBuilder<E> {
         vn.write(&mut self.contents[gp..]);
         if let Some(ap) = self.aux_pos {
             let mut aux = ElfVernaux::<E>::parse(&self.contents[ap..]);
-            aux.vna_next.set(ElfVernaux::<E>::size() as u32);
+            aux.vna_next.set(size_of::<ElfVernaux<E>>() as u32);
             aux.write(&mut self.contents[ap..]);
         }
         self.veridx += 1;
@@ -172,7 +172,7 @@ impl<E: Target> VerneedBuilder<E> {
         };
         let pos = self.contents.len();
         self.aux_pos = Some(pos);
-        self.contents.resize(pos + ElfVernaux::<E>::size(), 0);
+        self.contents.resize(pos + size_of::<ElfVernaux<E>>(), 0);
         aux.write(&mut self.contents[pos..]);
     }
 }

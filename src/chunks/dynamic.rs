@@ -13,7 +13,7 @@ use crate::target::{Family, Target};
 pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
-    hdr.shdr.sh_entsize.set(ElfDyn::<E>::size() as u64);
+    hdr.shdr.sh_entsize.set(size_of::<ElfDyn<E>>() as u64);
     if args.z_rodynamic {
         hdr.shdr.sh_flags.set(SHF_ALLOC as u64);
         hdr.is_relro = false;
@@ -265,7 +265,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     }
     let mut n = 0;
     for_each_entry(ctx, |_, _| n += 1);
-    let size = (n * ElfDyn::<E>::size()) as u64;
+    let size = (n * size_of::<ElfDyn<E>>()) as u64;
     let dynamic = ctx.dynamic.as_mut().unwrap();
     dynamic.shdr.sh_size.set(size);
     dynamic.shdr.sh_link.set(ctx.dynstr.hdr.shndx);
@@ -273,7 +273,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     debug_assert_eq!(ctx.dynamic.as_ref().unwrap().shdr.sh_size.get() as usize, buf.len());
-    let mut slots = buf.chunks_exact_mut(ElfDyn::<E>::size());
+    let mut slots = buf.chunks_exact_mut(size_of::<ElfDyn<E>>());
     for_each_entry(ctx, |d_tag, d_val| {
         let entry =
             ElfDyn::<E> { d_tag: Word::<E>::new(d_tag as u64), d_val: Word::<E>::new(d_val) };

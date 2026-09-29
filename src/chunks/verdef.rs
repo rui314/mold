@@ -72,8 +72,8 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
     });
 
     // Allocate a buffer for .gnu.version_d and write to it
-    let verdef_size = ElfVerdef::<E>::size();
-    let verdaux_size = ElfVerdaux::<E>::size();
+    let verdef_size = size_of::<ElfVerdef<E>>();
+    let verdaux_size = size_of::<ElfVerdaux<E>>();
     let mut contents: Vec<u8> =
         Vec::with_capacity((verdef_size + verdaux_size) * (ctx.args.version_definitions.len() + 1));
     let mut prev: Option<usize> = None;

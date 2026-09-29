@@ -78,7 +78,7 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         abi_arch: abi,
         cfa_fixed_ra_offset: if E::FAMILY == Family::X86_64 { -8 } else { 0 },
         num_fdes: U32::new(fdes.len() as u32),
-        freoff: U32::new((fdes.len() * SFrameFdeIdx::<E>::size()) as u32),
+        freoff: U32::new((fdes.len() * size_of::<SFrameFdeIdx<E>>()) as u32),
         fre_len: U32::new(fre_len),
         num_fres: U32::new(num_fres),
         ..SFrameHeader::<E>::default()
@@ -86,7 +86,7 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
 
     let sframe = &mut ctx.sframe;
     sframe.hdr.shdr.sh_size.set(
-        (SFrameHeader::<E>::size() + fdes.len() * SFrameFdeIdx::<E>::size()) as u64
+        (size_of::<SFrameHeader<E>>() + fdes.len() * size_of::<SFrameFdeIdx<E>>()) as u64
             + u64::from(hdr.fre_len.get()),
     );
     sframe.header = hdr;
@@ -118,8 +118,8 @@ pub fn sort<E: Target>(ctx: &mut Context<E>) {
 // unsorted and func_start is emitted as a relocation by SFrameRelocSection.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sframe = &ctx.sframe;
-    let hdr_size = SFrameHeader::<E>::size();
-    let idx_size = SFrameFdeIdx::<E>::size();
+    let hdr_size = size_of::<SFrameHeader<E>>();
+    let idx_size = size_of::<SFrameFdeIdx<E>>();
     // Write the header.
     sframe.header.write(buf);
 

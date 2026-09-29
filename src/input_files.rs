@@ -1474,9 +1474,9 @@ impl<E: Target> ObjectFile<E> {
     }
 
     fn parse_note_gnu_property(&mut self, mut data: &'static [u8]) {
-        while data.len() >= ElfNhdr::<E>::size() {
+        while data.len() >= size_of::<ElfNhdr<E>>() {
             let hdr = ElfNhdr::<E>::parse(data);
-            data = &data[ElfNhdr::<E>::size()..];
+            data = &data[size_of::<ElfNhdr<E>>()..];
 
             let name_len = hdr.n_namesz.get() as usize;
             let name = &data[..name_len.saturating_sub(1).min(data.len())];
@@ -2124,7 +2124,7 @@ impl<E: Target> ObjectFile<E> {
                 continue;
             }
 
-            if data.len() < SFrameHeader::<E>::size() {
+            if data.len() < size_of::<SFrameHeader<E>>() {
                 fatal!("{}: corrupted .sframe section", isec.display(self));
             }
             let hdr = SFrameHeader::<E>::parse(data);
@@ -2141,7 +2141,7 @@ impl<E: Target> ObjectFile<E> {
                 continue;
             }
 
-            let hdr_len = SFrameHeader::<E>::size() + hdr.auxhdr_len as usize;
+            let hdr_len = size_of::<SFrameHeader<E>>() + hdr.auxhdr_len as usize;
             let fde_off = hdr_len + hdr.fdeoff.get() as usize;
             let fre_off = hdr_len + hdr.freoff.get() as usize;
             let rels = isec.rels(self);
@@ -2149,7 +2149,7 @@ impl<E: Target> ObjectFile<E> {
             let mut new_fdes = Vec::new();
 
             for i in 0..hdr.num_fdes.get() as usize {
-                let idx_off = fde_off + i * SFrameFdeIdx::<E>::size();
+                let idx_off = fde_off + i * size_of::<SFrameFdeIdx<E>>();
                 let ent = SFrameFdeIdx::<E>::parse(&data[idx_off..]);
 
                 // Find the relocation for this FDE's func_start field. An FDE without
@@ -2948,7 +2948,7 @@ impl<E: Target> SharedFile<E> {
             let strtab = self.base.section_contents(shdr.sh_link.get() as usize);
             self.base
                 .section_contents(idx)
-                .chunks_exact(ElfDyn::<E>::size())
+                .chunks_exact(size_of::<ElfDyn<E>>())
                 .map(ElfDyn::<E>::parse)
                 .filter(move |entry| entry.d_tag.get() == tag)
                 .map(move |entry| cstr_at(strtab, entry.d_val.get() as usize))

@@ -3663,7 +3663,7 @@ pub fn compute_section_headers<E: Target>(ctx: &mut Context<E>) {
     }
 
     if let Some(shdr) = &mut ctx.shdr {
-        let size = shndx as u64 * ElfShdr::<E>::size() as u64;
+        let size = shndx as u64 * size_of::<ElfShdr<E>>() as u64;
         shdr.shdr.sh_size.set(size);
     }
 

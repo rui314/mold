@@ -107,33 +107,29 @@ impl<E: Target> U24<E> {
 /// and accept every bit pattern. These requirements let records in possibly
 /// unaligned archive members be read and written without host dependencies.
 pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
-    fn size() -> usize {
-        size_of::<Self>()
-    }
-
     fn parse(bytes: &[u8]) -> Self {
         const { assert!(align_of::<Self>() == 1) };
-        assert!(bytes.len() >= Self::size());
+        assert!(bytes.len() >= size_of::<Self>());
         // SAFETY: the trait guarantees that every bit pattern is valid, and
         // the length check proves that a complete record is available.
         unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
     }
 
     fn write(&self, buf: &mut [u8]) {
-        assert!(buf.len() >= Self::size());
+        assert!(buf.len() >= size_of::<Self>());
         // SAFETY: `buf` has room for the complete record, and copying bytes
         // does not depend on its alignment.
         unsafe {
             std::ptr::copy_nonoverlapping(
                 std::ptr::from_ref(self).cast::<u8>(),
                 buf.as_mut_ptr(),
-                Self::size(),
+                size_of::<Self>(),
             );
         }
     }
 
     fn write_all(records: &[Self], buf: &mut [u8]) {
-        for (record, slot) in records.iter().zip(buf.chunks_exact_mut(Self::size())) {
+        for (record, slot) in records.iter().zip(buf.chunks_exact_mut(size_of::<Self>())) {
             record.write(slot);
         }
     }
@@ -142,7 +138,7 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
 /// Views one record directly in its file representation.
 pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
     const { assert!(align_of::<R>() == 1) };
-    assert!(data.len() >= R::size());
+    assert!(data.len() >= size_of::<R>());
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. The length check proves that one complete record is present.
     unsafe { &*data.as_ptr().cast() }
@@ -151,7 +147,7 @@ pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
 /// Views records directly in their file representation.
 pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
     const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = R::size();
+    let size = size_of::<R>();
     assert!(data.len().is_multiple_of(size));
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. The resulting slice covers exactly `data`.
@@ -161,7 +157,7 @@ pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
 /// Mutably views records directly in their file representation.
 pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
     const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = R::size();
+    let size = size_of::<R>();
     assert!(data.len().is_multiple_of(size));
     // SAFETY: FileRecord requires alignment one and every bit pattern to be
     // valid. `data` is exclusively borrowed for the returned slice.
