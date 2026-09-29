@@ -195,22 +195,22 @@ pub fn output_target<E: Target>(
     mf: &'static MappedFile,
 ) -> Option<&'static str> {
     let tokens = tokenize(mf);
-    let mut tok: &[&'static [u8]] = &tokens;
+    let tok: &[&'static [u8]] = &tokens;
 
-    if tok.len() >= 3 && tok[0] == b"OUTPUT_FORMAT" && tok[1] == b"(" {
-        if tok[2] == b"elf64-x86-64" {
-            return Some("x86_64");
-        }
-        if tok[2] == b"elf32-i386" {
-            return Some("i386");
+    if let [b"OUTPUT_FORMAT", b"(", format, ..] = tok {
+        match *format {
+            b"elf64-x86-64" => return Some("x86_64"),
+            b"elf32-i386" => return Some("i386"),
+            _ => {}
         }
     }
 
-    if tok.len() >= 3 && (tok[0] == b"INPUT" || tok[0] == b"GROUP") && tok[1] == b"(" {
-        if tok.len() >= 5 && tok[2] == b"AS_NEEDED" && tok[3] == b"(" {
-            tok = &tok[2..];
-        }
-        let named = resolve_path(ctx, rctx, mf, tok[2], false);
+    if let [b"INPUT" | b"GROUP", b"(", rest @ ..] = tok {
+        let path = match rest {
+            [b"AS_NEEDED", b"(", path, ..] | [path, ..] => *path,
+            [] => return None,
+        };
+        let named = resolve_path(ctx, rctx, mf, path, false);
         return reader::get_machine_type(ctx, rctx, named);
     }
     None
@@ -306,12 +306,11 @@ impl<'a, E: Target> Script<'a, E> {
                 tok = self.skip(&tok[1..], "{");
                 tok = self.read_version_script(tok);
                 tok = self.skip(tok, "}");
-            } else if tok.len() > 3 && tok[1] == b"=" && tok[3] == b";" {
-                let name = unquote(tok[0]).to_vec();
-                let value = unquote(tok[2]).to_vec();
-                let value = DefsymValue::Symbol(value);
+            } else if let [name, b"=", value, b";", rest @ ..] = tok {
+                let name = unquote(name).to_vec();
+                let value = DefsymValue::Symbol(unquote(value).to_vec());
                 self.ctx.args.defsyms.push((name, value));
-                tok = &tok[4..];
+                tok = rest;
             } else if t == b";" {
                 tok = &tok[1..];
             } else {
@@ -496,14 +495,11 @@ impl<'a, E: Target> Script<'a, E> {
 
 /// Matches a `global:` or `local:` label.
 fn read_label<'t>(tok: &'t [&'static [u8]], label: &[u8]) -> Option<&'t [&'static [u8]]> {
-    let first = *tok.first()?;
-    if first.strip_suffix(b":") == Some(label) {
-        return Some(&tok[1..]);
+    match tok {
+        [first, rest @ ..] if first.strip_suffix(b":") == Some(label) => Some(rest),
+        [first, b":", rest @ ..] if *first == label => Some(rest),
+        _ => None,
     }
-    if first == label && tok.get(1) == Some(&&b":"[..]) {
-        return Some(&tok[2..]);
-    }
-    None
 }
 
 pub fn parse_dynamic_list<E: Target>(ctx: &mut Context<E>, path: &Path) -> Vec<DynamicPattern> {
