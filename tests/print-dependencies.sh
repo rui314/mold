@@ -17,5 +17,5 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,--print-dependencies > $t/log
 
-grep -Eq '/a\.o\t.*libSystem\S+\tu\t_printf' $t/log
-grep -Eq '/b\.o\t.*a.o\tu\t_hello' $t/log
+grep -Eq '/a\.o\s.*libSystem\S+\su\s_printf' $t/log
+grep -Eq '/b\.o\s.*a\.o\su\s_hello' $t/log
