@@ -274,10 +274,10 @@ impl Nfa {
         for &c in s {
             let mask = &self.char_masks[c as usize * num_words..][..num_words];
             let mut carry = 0;
-            for ((state, &star), &m) in states.iter_mut().zip(&self.star_states).zip(mask) {
-                let old = *state;
+            for i in 0..num_words {
+                let old = states[i];
                 let next = (old << 1) | carry;
-                *state = (old & star) | (next & m);
+                states[i] = (old & self.star_states[i]) | (next & mask[i]);
                 carry = old >> 63;
             }
         }
