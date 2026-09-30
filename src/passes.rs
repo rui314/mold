@@ -1636,15 +1636,16 @@ pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
         format!("{}\n", crate::cmdline::VERSION).as_bytes(),
     );
 
+    // Input files are archived from memory. Their contents are still those
+    // read from disk, as relocation records are rewritten in place only after
+    // symbol resolution.
     let mut seen = HashSet::new();
     for mf in crate::mapped_file::file_pool() {
         if mf.parent.is_none() && seen.insert(mf.name.as_path()) {
-            // Reopen the original contents because private mappings may have
-            // been modified. Preserve the symlink name used in response.txt.
-            let reopened = crate::mapped_file::must_open_file(&ctx.args.chroot, &mf.name);
+            // Preserve the symlink name used in response.txt.
             let abs = std::path::absolute(&mf.name)
                 .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name.display()));
-            write(&mut tar, &abs, reopened.data());
+            write(&mut tar, &abs, mf.data());
         }
     }
 }
