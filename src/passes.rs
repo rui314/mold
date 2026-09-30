@@ -2080,8 +2080,12 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     for i in undef {
         let sym = &ctx.symbols[i];
         if referenced[i].load(Ordering::Relaxed) {
-            let allowed = (ctx.args.undefined_dynamic_lookup
-                || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
+            // A -static image has no dyld to look a symbol up at run
+            // time, so ld-prime lets none stay undefined, whatever
+            // -undefined or -U say.
+            let allowed = !ctx.args.static_link
+                && (ctx.args.undefined_dynamic_lookup
+                    || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
                 && !initial.contains(&(i as crate::symbol::SymbolId));
             if allowed {
                 if ctx.args.undefined_warning {
