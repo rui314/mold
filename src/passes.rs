@@ -4426,6 +4426,120 @@ fn is_stub_selector_name<E: Target>(
         && stub_sels.contains(cstring_of(isec.data()))
 }
 
+/// The output section named `seg`,`sect` - created if no input made
+/// one - with a synthesized `tail` of `tail_size` bytes appended after
+/// its input subsections, which are placed already.
+fn tail_section<E: Target>(
+    ctx: &mut Context<E>,
+    seg: &'static str,
+    sect: &str,
+    flags: u32,
+    p2align: u32,
+    tail: Tail,
+    tail_size: u64,
+) -> OutputSectionId {
+    let id = match ctx
+        .output_sections
+        .iter()
+        .position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
+    {
+        Some(i) => OutputSectionId::new(i as u32),
+        None => {
+            let mut osec = OutputSection::new(seg, sect);
+            osec.hdr.flags = flags;
+            let id = OutputSectionId::new(ctx.output_sections.len() as u32);
+            ctx.output_sections.push(osec);
+            ctx.chunks.push(ChunkId::Output(id));
+            id
+        }
+    };
+    let osec = ctx.output_section_mut(id);
+    osec.hdr.p2align = osec.hdr.p2align.max(p2align);
+    osec.tail = tail;
+    osec.tail_off = align_to(osec.hdr.size, 1 << p2align);
+    osec.hdr.size = osec.tail_off + tail_size;
+    id
+}
+
+/// A record category merging rewrites in place of an input subsection,
+/// such as a class's ro data, takes that subsection's position among
+/// its output section's members, as ld-prime keeps
+/// __OBJC_CLASS_RO_$_Foo where the input had it. Runs while the members
+/// are still in input order; the other synthesized records go in the
+/// section's tail.
+fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
+    let blobs: hashbrown::HashSet<u32> = ctx.data_blobs.iter().map(|b| b.isec).collect();
+    let mut anchors: Vec<(u32, u32)> = (0..ctx.isecs.len())
+        .filter(|&i| blobs.contains(&ctx.isecs[i].replacement))
+        .map(|i| (i as u32, ctx.isecs[i].replacement))
+        .collect();
+    let mut seen = hashbrown::HashSet::new();
+    anchors.retain(|&(_, blob)| seen.insert(blob));
+    // Last first: a blob inserted (with its high index) then only ever
+    // sits after the members the next, lower anchor is searched among.
+    for (replaced, blob) in anchors.into_iter().rev() {
+        let hdr = ctx.hdr_of(&ctx.isecs[replaced as usize]);
+        let out = renamed_output_section(&ctx.args, false, hdr.segname(), hdr.sectname(), || {
+            let const_refs = objc_refs_are_const(ctx);
+            output_section_for(
+                false,
+                ctx.args.data_const,
+                const_refs,
+                hdr.segname(),
+                hdr.sectname(),
+            )
+        });
+        let Some(pos) = out.and_then(|(seg, sect)| {
+            ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
+        }) else {
+            continue;
+        };
+        let p2align = ctx.isecs[blob as usize].p2align as u32;
+        let osec = &mut ctx.output_sections[pos];
+        let at = osec.members.partition_point(|&m| m < replaced);
+        osec.members.insert(at, blob);
+        osec.has_blobs = true;
+        osec.hdr.p2align = osec.hdr.p2align.max(p2align);
+        ctx.isecs[blob as usize]
+            .set_output_section(ChunkId::Output(OutputSectionId::new(pos as u32)));
+    }
+}
+
+/// The synthesized Objective-C records not placed among the inputs go
+/// in the tail of the section they name.
+fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
+    let unplaced =
+        |ctx: &Context<E>, b: &DataBlob| ctx.isecs[b.isec as usize].output_section().is_none();
+    let mut sects: Vec<&'static str> =
+        ctx.data_blobs.iter().filter(|b| unplaced(ctx, b)).map(|b| b.sect).collect();
+    sects.sort();
+    sects.dedup();
+    for sect in sects {
+        let (seg, out) = output_section_for(
+            false,
+            ctx.args.data_const,
+            objc_refs_are_const(ctx),
+            "__DATA",
+            sect,
+        )
+        .unwrap();
+        let flags = output_section_flags(seg, out, 0, false);
+        let mut size = 0u64;
+        let mut offs = Vec::new();
+        for b in ctx.data_blobs.iter().filter(|b| b.sect == sect && unplaced(ctx, b)) {
+            size = align_to(size, 8);
+            offs.push((b.isec, size));
+            size += b.size();
+        }
+        let id = tail_section(ctx, seg, out, flags, 3, Tail::DataBlobs, size);
+        let tail_off = ctx.output_section(id).tail_off;
+        for (isec, off) in offs {
+            ctx.isecs[isec as usize].set_output_section(ChunkId::Output(id));
+            ctx.isecs[isec as usize].offset = (tail_off + off) as u32;
+        }
+    }
+}
+
 /// Creates output section chunks and appends each input section to its
 /// chunk, and groups chunks into segments.
 pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
@@ -4544,6 +4658,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
     }
+    place_replacing_blobs(ctx);
 
     // A final image always has a __TEXT,__text section, empty if no
     // code reached it (a dylib of only data; ld-prime writes one of
@@ -4781,35 +4896,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         // emitted @selector() unregistered.
         // The input subsections are placed already, so the tail's
         // offset and the section's final size are known here.
-        let tail_section = |ctx: &mut Context<E>,
-                            seg: &'static str,
-                            sect: &str,
-                            flags: u32,
-                            p2align: u32,
-                            tail: Tail,
-                            tail_size: u64| {
-            let id = match ctx
-                .output_sections
-                .iter()
-                .position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
-            {
-                Some(i) => OutputSectionId::new(i as u32),
-                None => {
-                    let mut osec = OutputSection::new(seg, sect);
-                    osec.hdr.flags = flags;
-                    let id = OutputSectionId::new(ctx.output_sections.len() as u32);
-                    ctx.output_sections.push(osec);
-                    ctx.chunks.push(ChunkId::Output(id));
-                    id
-                }
-            };
-            let osec = ctx.output_section_mut(id);
-            osec.hdr.p2align = osec.hdr.p2align.max(p2align);
-            osec.tail = tail;
-            osec.tail_off = align_to(osec.hdr.size, 1 << p2align);
-            osec.hdr.size = osec.tail_off + tail_size;
-            id
-        };
         let methname_size = ctx.objc_stubs.methname_data.len() as u64;
         let selrefs_size =
             (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
@@ -4844,37 +4930,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 isec.offset = (tail_off + slot as u64 * 8) as u32;
             }
         }
-        // Synthesized Objective-C records go in the tail of the section
-        // they name; each blob's subsection is placed there.
-        if !ctx.data_blobs.is_empty() {
-            let mut sects: Vec<&'static str> = ctx.data_blobs.iter().map(|b| b.sect).collect();
-            sects.sort();
-            sects.dedup();
-            for sect in sects {
-                let (seg, out) = output_section_for(
-                    false,
-                    ctx.args.data_const,
-                    objc_refs_are_const(ctx),
-                    "__DATA",
-                    sect,
-                )
-                .unwrap();
-                let flags = output_section_flags(seg, out, 0, false);
-                let mut size = 0u64;
-                let mut offs = Vec::new();
-                for b in ctx.data_blobs.iter().filter(|b| b.sect == sect) {
-                    size = align_to(size, 8);
-                    offs.push((b.isec, size));
-                    size += b.size();
-                }
-                let id = tail_section(ctx, seg, out, flags, 3, Tail::DataBlobs, size);
-                let tail_off = ctx.output_section(id).tail_off;
-                for (isec, off) in offs {
-                    ctx.isecs[isec as usize].set_output_section(ChunkId::Output(id));
-                    ctx.isecs[isec as usize].offset = (tail_off + off) as u32;
-                }
-            }
-        }
+        place_tail_blobs(ctx);
     }
 
     if !ctx.objc_methlist.lists.is_empty() {

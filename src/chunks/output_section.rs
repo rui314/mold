@@ -52,6 +52,9 @@ pub struct OutputSection {
     pub tail: Tail,
     /// Offset of the tail within the section, set at layout.
     pub tail_off: u64,
+    /// Whether synthesized records (data blobs) stand among the members
+    /// in place of the input records they replace.
+    pub has_blobs: bool,
 }
 
 impl OutputSection {
@@ -62,6 +65,7 @@ impl OutputSection {
             thunks: Vec::new(),
             tail: Tail::None,
             tail_off: 0,
+            has_blobs: false,
         }
     }
 }
@@ -96,6 +100,11 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
         E::apply_relocs(ctx, ctx.isec_relocs(id as usize), id as usize, base, slice);
     });
 
+    // Synthesized Objective-C records, in the tail or among the members.
+    if osec.tail == Tail::DataBlobs || osec.has_blobs {
+        write_data_blobs(ctx, id, buf);
+    }
+
     // The linker-synthesized tail after the inputs.
     let tail = &mut buf[osec.tail_off as usize..];
     match osec.tail {
@@ -104,25 +113,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             let data = &ctx.objc_stubs.methname_data;
             tail[..data.len()].copy_from_slice(data);
         }
-        Tail::DataBlobs => {
-            for b in ctx.data_blobs.iter().filter(|b| {
-                ctx.isecs[b.isec as usize].output_section() == Some(ChunkId::Output(id))
-            }) {
-                let mut at = ctx.isecs[b.isec as usize].offset as usize - osec.tail_off as usize;
-                for f in &b.fields {
-                    match f {
-                        DataField::Bytes(bytes) => {
-                            tail[at..at + bytes.len()].copy_from_slice(bytes);
-                            at += bytes.len();
-                        }
-                        DataField::Ptr(r) => {
-                            tail[at..at + 8].copy_from_slice(&objc_ref_addr(ctx, *r).to_le_bytes());
-                            at += 8;
-                        }
-                    }
-                }
-            }
-        }
+        // Written above with the records placed among the members.
+        Tail::DataBlobs => {}
         Tail::ObjcSelrefs => {
             let stubs = &ctx.objc_stubs;
             for i in 0..stubs.symbols.len() {
@@ -133,6 +125,30 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
                 let val = ctx.isec_addr(name as usize);
                 tail[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
+            }
+        }
+    }
+}
+
+/// Writes the synthesized records (data blobs) placed in an output
+/// section, each at its offset in it.
+fn write_data_blobs<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
+    for b in ctx
+        .data_blobs
+        .iter()
+        .filter(|b| ctx.isecs[b.isec as usize].output_section() == Some(ChunkId::Output(id)))
+    {
+        let mut at = ctx.isecs[b.isec as usize].offset as usize;
+        for f in &b.fields {
+            match f {
+                DataField::Bytes(bytes) => {
+                    buf[at..at + bytes.len()].copy_from_slice(bytes);
+                    at += bytes.len();
+                }
+                DataField::Ptr(r) => {
+                    buf[at..at + 8].copy_from_slice(&objc_ref_addr(ctx, *r).to_le_bytes());
+                    at += 8;
+                }
             }
         }
     }
