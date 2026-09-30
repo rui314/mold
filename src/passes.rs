@@ -2279,6 +2279,34 @@ pub fn shared_region_eligible<E: Target>(ctx: &Context<E>) -> bool {
         && in_shared_cache_path(crate::chunks::output_install_name(ctx))
 }
 
+/// A dylib bound for the dyld shared cache must bind each import to the
+/// dylib that exports it, which the cache builder then binds inside the
+/// cache once and for all; a flat lookup at run time defeats that.
+/// ld-prime rejects the options that ask for one before it reads any
+/// input: -flat_namespace, and -undefined dynamic_lookup (or suppress,
+/// which it takes for dynamic_lookup) or -U.
+pub fn check_shared_cache_options<E: Target>(ctx: &Context<E>) {
+    if !shared_region_eligible(ctx) {
+        return;
+    }
+    if ctx.args.flat_namespace {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
+             or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
+             (or linker flag '-not_for_dyld_shared_cache')"
+        );
+    }
+    if (ctx.args.undefined_dynamic_lookup && !ctx.args.undefined_is_warning)
+        || !ctx.args.allowed_undefined.is_empty()
+    {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
+             symbols. Remove these options or opt out of the shared cache using the build setting \
+             'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
+        );
+    }
+}
+
 /// A dylib bound for the dyld shared cache may link only libraries that
 /// are in it too, since the cache builder binds every dependency inside
 /// the cache. ld-prime rejects the first dylib in load-command order
