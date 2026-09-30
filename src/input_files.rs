@@ -97,6 +97,10 @@ pub struct ObjectFile {
     /// LC_LINKER_OPTION auto-link requests, acted on only if the file
     /// is live.
     pub linker_options: Vec<Vec<Vec<u8>>>,
+    /// Whether linker_options have been read (see
+    /// passes::read_linker_options): what is left are the libraries to
+    /// link.
+    pub linker_options_read: bool,
     /// Platforms and minimum OS versions from LC_BUILD_VERSION or
     /// LC_VERSION_MIN_*. Checked only after archive selection.
     pub platform_versions: Vec<PlatformVersion>,
@@ -161,6 +165,7 @@ impl ObjectFile {
             is_alive: true,
             priority: 0,
             linker_options: Vec::new(),
+            linker_options_read: false,
             platform_versions: Vec::new(),
             hidden: false,
             subsections_via_symbols: true,
@@ -1458,6 +1463,7 @@ impl StagedObject {
             is_alive: self.alive,
             priority: self.priority,
             linker_options: self.linker_options,
+            linker_options_read: false,
             platform_versions: self.platform_versions,
             hidden: self.hidden,
             subsections_via_symbols: self.subsections_via_symbols,
@@ -1744,6 +1750,7 @@ pub fn parse_bitcode<E: Target>(
         is_alive: alive,
         priority,
         linker_options: Vec::new(),
+        linker_options_read: false,
         platform_versions: Vec::new(),
         hidden: false,
         subsections_via_symbols: true,

@@ -936,7 +936,7 @@ impl OptionWarnings {
 /// The error for an option the command line ends before the argument
 /// of, as ld-prime words it: what the option needs, in the usage its
 /// manual page gives (which -executable_path, obsolete, has not).
-fn missing_argument(opt: &str) -> String {
+pub(crate) fn missing_argument(opt: &str) -> String {
     let usage = match opt {
         "-arch" => "missing <arch>",
         "-e"

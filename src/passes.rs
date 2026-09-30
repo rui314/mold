@@ -640,7 +640,150 @@ pub enum Autolinked {
     Objects,
 }
 
+/// Reads an object's auto-link options (LC_LINKER_OPTION) as ld-prime
+/// does: their strings in a row, as a command line of library options.
+/// Those naming a library, a framework or an archive to load are kept,
+/// one to a command. The rest are dropped: unknown words and options
+/// missing their argument with a warning, then with another the options
+/// a command line may give for a library but an object may not (weak,
+/// re-exported or upward); search paths and loading modes (-L,
+/// -all_load, ...) silently. What is kept reads the same again.
+fn read_linker_options(opts: &[Vec<Vec<u8>>], mf: &MappedFile) -> Vec<Vec<Vec<u8>>> {
+    use crate::util::display;
+    let words: Vec<&[u8]> = opts.iter().flatten().map(Vec::as_slice).collect();
+    let warn = |kind: &str, what: &str| {
+        let file = resolved_file_name(mf);
+        crate::warn!("{kind} linker option from object file ignored: '{what}' in {file}");
+    };
+    let malformed = |opt: &str| {
+        let (usage, file) = (crate::cmdline::missing_argument(opt), resolved_file_name(mf));
+        crate::warn!("malformed linker option from object file ignored: '{usage}', in {file}");
+    };
+    let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();
+    let mut unexpected: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let word = words[i];
+        let opt = display(word);
+        i += 1;
+        match word {
+            b"-l"
+            | b"-framework"
+            | b"-needed_framework"
+            | b"-lazy_framework"
+            | b"-force_load"
+            | b"-needed_library"
+            | b"-lazy_library"
+            | b"-weak_framework"
+            | b"-reexport_framework"
+            | b"-upward_framework"
+            | b"-weak_library"
+            | b"-reexport_library"
+            | b"-upward_library"
+            | b"-syslibroot"
+            | b"-bundle_loader"
+            | b"-L"
+            | b"-F" => {
+                // An empty argument is a missing one.
+                let arg = words.get(i).filter(|arg| !arg.is_empty());
+                i += 1;
+                let Some(&arg) = arg else {
+                    malformed(&opt);
+                    continue;
+                };
+                match word {
+                    b"-l" => libs.push(vec![[word, arg].concat()]),
+                    b"-weak_framework" | b"-reexport_framework" | b"-upward_framework" => {
+                        unexpected.push(format!("{opt} {}", display(arg)))
+                    }
+                    b"-weak_library" | b"-reexport_library" | b"-upward_library" => {
+                        let kind = opt.strip_suffix("_library").unwrap();
+                        unexpected.push(format!("{kind}-l{}", display(arg)));
+                    }
+                    b"-syslibroot" | b"-bundle_loader" | b"-L" | b"-F" => {}
+                    _ => libs.push(vec![word.to_vec(), arg.to_vec()]),
+                }
+            }
+            b"-all_load" | b"-ObjC" | b"-search_paths_first" | b"-search_dylibs_first" => {}
+            // The library options that take the name joined to them.
+            _ => match ["-needed-l", "-lazy-l", "-hidden-l", "-weak-l", "-reexport-l", "-upward-l"]
+                .into_iter()
+                .chain(["-l", "-L", "-F"])
+                .find(|prefix| word.starts_with(prefix.as_bytes()))
+            {
+                Some(prefix) if word.len() == prefix.len() => malformed(prefix),
+                Some("-weak-l" | "-reexport-l" | "-upward-l") => unexpected.push(opt.into_owned()),
+                Some("-L" | "-F") => {}
+                Some(_) => libs.push(vec![word.to_vec()]),
+                None => warn("unknown", &opt),
+            },
+        }
+    }
+    for what in unexpected {
+        warn("unexpected", &what);
+    }
+    libs
+}
+
+/// The file an auto-link option read by read_linker_options names, and
+/// how to load it. A library or framework not found is remembered for
+/// report_undef_errors.
+fn autolinked_input<E: Target>(
+    ctx: &mut Context<E>,
+    opt: &[Vec<u8>],
+) -> (Option<PathBuf>, ReaderContext) {
+    let rc = ReaderContext { autolinked: true, ..Default::default() };
+    let os_str = crate::util::os_str;
+    match opt {
+        [lib] => {
+            let (name, rc) = match lib.strip_prefix(b"-hidden-l") {
+                Some(name) => (name, ReaderContext { hidden: true, ..rc }),
+                None => {
+                    let name = ["-needed-l", "-lazy-l", "-l"]
+                        .iter()
+                        .find_map(|prefix| lib.strip_prefix(prefix.as_bytes()));
+                    (name.unwrap(), rc)
+                }
+            };
+            let path = find_library(ctx, os_str(name));
+            if path.is_none() {
+                ctx.autolink_misses.push(format!(
+                    "Could not find or use auto-linked library '{0}': library '{0}' not found",
+                    crate::util::display(name)
+                ));
+            }
+            (path, rc)
+        }
+        [flag, name] if flag.ends_with(b"framework") => {
+            let path = find_framework(ctx, os_str(name));
+            if path.is_none() {
+                // (The first name leaves out a ",suffix".)
+                let base = name.split(|&c| c == b',').next().unwrap();
+                ctx.autolink_misses.push(format!(
+                    "Could not find or use auto-linked framework '{}': framework '{}' not found",
+                    crate::util::display(base),
+                    crate::util::display(name)
+                ));
+            }
+            (path, rc)
+        }
+        [flag, file] if flag == b"-force_load" => {
+            (Some(PathBuf::from(os_str(file))), ReaderContext { force_load: true, ..rc })
+        }
+        [_, file] => (Some(PathBuf::from(os_str(file))), rc),
+        _ => unreachable!(),
+    }
+}
+
 pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
+    // Objects new to the link have their auto-link options read now,
+    // which reports the ones ld-prime ignores.
+    for obj in &mut ctx.objs {
+        if obj.is_alive && !obj.linker_options_read {
+            obj.linker_options = read_linker_options(&obj.linker_options, obj.mf);
+            obj.linker_options_read = true;
+        }
+    }
     // ld64 does not act on auto-link options in a -r link: the
     // LC_LINKER_OPTION commands are copied into the output object and
     // the final link resolves them. Loading them here would let the
@@ -670,12 +813,13 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     pending.dedup();
     let dylibs_before = ctx.dylibs.len();
 
-    // An auto-link option is a hint, and ld64 says nothing when it
-    // finds no library or framework for one. Header-only SDK
-    // frameworks make that routine: every Swift object importing
-    // CoreAudioTypes carries `-framework CoreAudioTypes`, whose
-    // framework directory holds headers and a module map but no
-    // binary (CotEditor's build printed the warning 317 times).
+    // An auto-link option is a hint, and ld-prime says nothing when it
+    // finds no library or framework for one unless symbols are left
+    // undefined (see report_undef_errors). Header-only SDK frameworks
+    // make that routine: every Swift object importing CoreAudioTypes
+    // carries `-framework CoreAudioTypes`, whose framework directory
+    // holds headers and a module map but no binary (CotEditor's build
+    // printed a warning 317 times).
     let before = (ctx.objs.len(), ctx.dylibs.len());
     // A library already in the link as a public re-export (Foundation's
     // stub brings CoreFoundation) that an auto-link option now names
@@ -686,19 +830,10 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     let mut queue: Vec<PendingObject> = Vec::new();
     for opt in pending {
         ctx.processed_linker_options.insert(opt.clone());
-        let path = match opt.as_slice() {
-            [flag] if flag.starts_with(b"-l") => find_library(ctx, crate::util::os_str(&flag[2..])),
-            [flag, name] if flag == b"-framework" => find_framework(ctx, crate::util::os_str(name)),
-            _ => {
-                let spelled: Vec<_> = opt.iter().map(|s| crate::util::display(s)).collect();
-                crate::warn!("unknown auto-link option: {}", spelled.join(" "));
-                None
-            }
-        };
+        let (path, rc) = autolinked_input(ctx, &opt);
         if let Some(path) = path
             && let Some(mf) = MappedFile::open(&path)
         {
-            let rc = ReaderContext { autolinked: true, ..Default::default() };
             collect_file(ctx, mf, rc, &mut queue);
         }
     }
@@ -2124,6 +2259,11 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
                 sym.set_is_imported(true);
                 sym.set_is_extern(true);
             } else {
+                // ld-prime points at the auto-linked libraries it could
+                // not find first.
+                for msg in std::mem::take(&mut ctx.autolink_misses) {
+                    crate::warn!("{msg}");
+                }
                 let file = who_wants(ctx, i as u32);
                 error!("undefined symbol: {}: {}", file, ctx.symbols[i]);
             }

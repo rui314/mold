@@ -103,6 +103,9 @@ pub struct Context<E: Target> {
     pub lto_modules: Vec<(usize, usize)>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
+    /// The libraries and frameworks auto-link options named that were
+    /// not found, as ld-prime reports them if symbols stay undefined.
+    pub autolink_misses: Vec<String>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -207,6 +210,7 @@ impl<E: Target> Context<E> {
             lto_modules: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             processed_linker_options: std::collections::HashSet::new(),
+            autolink_misses: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
             fdes: Vec::new(),
