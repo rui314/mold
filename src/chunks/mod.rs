@@ -645,19 +645,20 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 
     // Chained fixups replace the classic dyld info; the export trie
     // then gets a load command of its own. A -static image has no dyld
-    // to read either, and a dynamic symbol table only for the local
-    // relocations that slide it under -pie.
+    // to read either: it exports nothing, has only the chains
+    // -fixup_chains asks for, and has a dynamic symbol table only under
+    // -pie, for the local relocations that slide it without chains.
     // (Decided by the options, not by the tables' sizes: the layout
     // sizes the header before the tables exist.)
-    if !ctx.args.static_link {
-        if ctx.use_chained_fixups() {
-            vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
-            // Present even with nothing exported (an 8-byte empty
-            // trie), as ld-prime writes it.
+    if ctx.use_chained_fixups() {
+        vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
+        // Present even with nothing exported (an 8-byte empty trie),
+        // as ld-prime writes it.
+        if !ctx.args.static_link {
             vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
-        } else {
-            vec.push(create_dyld_info_cmd(ctx));
         }
+    } else if !ctx.args.static_link {
+        vec.push(create_dyld_info_cmd(ctx));
     }
     vec.push(create_symtab_cmd(ctx));
     if !ctx.args.static_link || ctx.args.pie {

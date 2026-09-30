@@ -296,7 +296,8 @@ pub struct Args {
     pub rename_segments: Vec<(String, String)>,
     /// ZERO_AR_DATE is set: the stabs record no modification times.
     pub zero_ar_date: bool,
-    /// -static: no dyld rebase/bind or chained fixups (the XNU kernel).
+    /// -static: an image no dyld loads (the XNU kernel), with no LC_MAIN,
+    /// imports or dyld info, and fixups only if -fixup_chains asks.
     pub static_link: bool,
     /// Whether an executable is position independent (MH_PIE):
     /// -pie / -no_pie, resolved for the target at the end of parsing.
@@ -1148,7 +1149,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 /// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
 /// PIE executables only) and which ld-prime deprecates from the OS
 /// versions that default to chained fixups. A -static image (a kernel)
-/// is PIE only with -pie.
+/// is PIE only with -pie, or with -fixup_chains, whose chains exist to
+/// slide it.
 fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     match pie {
         Some(false) if args.output_type == MH_EXECUTE && !args.static_link => {
@@ -1161,7 +1163,7 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
             target.name == "arm64"
         }
         Some(pie) => pie,
-        None => !args.static_link,
+        None => !args.static_link || args.fixup_chains == Some(true),
     }
 }
 

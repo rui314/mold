@@ -5126,7 +5126,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::EhFrame);
     }
 
-    // What dyld reads: a -static image goes without.
+    // What dyld reads. A -static image has no dyld: it has only the
+    // chains -fixup_chains asks for, or under -pie local relocations to
+    // slide by.
     if !ctx.args.static_link {
         ctx.chunks.push(ChunkId::ChainedFixups);
         ctx.chunks.push(ChunkId::RebaseInfo);
@@ -5134,6 +5136,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::WeakBindInfo);
         ctx.chunks.push(ChunkId::LazyBindInfo);
         ctx.chunks.push(ChunkId::ExportTrie);
+    } else if ctx.use_chained_fixups() {
+        ctx.chunks.push(ChunkId::ChainedFixups);
     } else if ctx.args.pie {
         ctx.chunks.push(ChunkId::LocalRelocs);
     }

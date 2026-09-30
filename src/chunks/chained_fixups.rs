@@ -102,10 +102,11 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// under DYLD_CHAINED_PTR_64 and an offset from the image's load
 /// address under DYLD_CHAINED_PTR_64_OFFSET, which dyld reads from
 /// macOS 12 on. ld-prime writes the latter for a macOS 12 target on
-/// every architecture and output kind, and the former only when
+/// every architecture and output kind, and for a -static image, which
+/// no dyld reads, whatever its target; the former only when
 /// -fixup_chains forces chains on an older one.
 fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
-    if ctx.args.platform_minos >= crate::macho::encode_version(12, 0, 0) {
+    if ctx.args.static_link || ctx.args.platform_minos >= crate::macho::encode_version(12, 0, 0) {
         DYLD_CHAINED_PTR_64_OFFSET
     } else {
         DYLD_CHAINED_PTR_64
@@ -162,8 +163,9 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     }
     pad8(&mut buf);
 
-    // Per-segment page tables
-    let image_base = ctx.args.pagezero_size;
+    // Per-segment page tables. A segment's offset counts from the
+    // image's own address, which -image_base may move.
+    let image_base = ctx.mach_header.hdr.addr;
     for (seg_idx, seg) in ctx.segments.iter().enumerate() {
         let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
         let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);

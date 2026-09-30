@@ -349,10 +349,11 @@ impl<E: Target> Context<E> {
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {
-        // A static executable (the kernel) has no dyld, so it uses no
-        // chained fixups or dyld info at all.
+        // A static executable (the kernel) has no dyld: it has no fixups
+        // unless -fixup_chains asks for chains, which its own loader
+        // then walks.
         if self.args.static_link {
-            return false;
+            return self.args.fixup_chains == Some(true);
         }
         // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
         // from macOS 13 on x86_64 (below that, classic dyld info with
