@@ -277,6 +277,17 @@ fn is_foreign<E: Target>(mf: &MappedFile) -> bool {
     true
 }
 
+/// Whether a dylib (or a universal file) a naming loaded before was
+/// ignored then: for lacking the architecture, or in a link that takes
+/// no dylib.
+fn was_ignored<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
+    match get_file_type(mf) {
+        FileType::Tapi | FileType::Dylib => !ctx.dylibs.iter().any(|d| d.path == mf.name),
+        FileType::Fat => input_files::fat_slice::<E>(mf).is_none(),
+        _ => false,
+    }
+}
+
 /// Classifies one input file. Dylib stubs and binaries are registered
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
@@ -291,12 +302,10 @@ fn collect_file<E: Target>(
     // auto-link options; load each file once, as its first naming says
     // (the first that isn't a public re-export's, for a dylib). An
     // object file, though, loads as often as it is named, as in
-    // ld-prime: twice over, its globals are duplicate definitions.
+    // ld-prime: twice over, its globals are duplicate definitions. So
+    // does a dylib ld-prime ignored, with its warning each time.
     let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
-    if !ctx.visited_files.insert(mf.name.clone()) && !object {
-        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name && d.is_implicit) {
-            name_dylib(ctx, idx, mf, rc);
-        }
+    if !ctx.visited_files.insert(mf.name.clone()) && !object && !was_ignored(ctx, mf) {
         return;
     }
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
@@ -575,7 +584,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             load_bundle_loader(ctx, path);
             continue;
         }
-        let Some(path) = path else { continue };
+        let (Some(path), Some(rc)) = (path, rc) else { continue };
         match MappedFile::try_open(&path) {
             Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
             // A bare path names a file; the other forms name a library.
@@ -659,17 +668,17 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
     Some((rc, framework, name))
 }
 
-/// How each input is named: the flags its option gives the file.
-/// ld-prime reads the library options before it reads a file, and
-/// merges what those naming one library say - those naming one
-/// framework, or finding one file: under -L., `-lfoo` and
-/// `-upward_library ./libfoo.dylib` both load an upward libfoo. A file
-/// also given by bare path, or named by options that match no other
-/// way (`-upward_library libfoo.dylib`), takes nothing from the other
-/// namings: the first to load the file decides (see collect_file).
-/// ld-prime stops at the first library it doesn't find, and at a
-/// naming check_naming refuses.
-fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<ReaderContext> {
+/// How each input is named: the flags its option gives the file, None
+/// for a library an earlier option named. ld-prime reads the library
+/// options before it reads a file, and merges what those naming one
+/// library say - those naming one framework, or finding one file: under
+/// -L., `-lfoo` and `-upward_library ./libfoo.dylib` both load an upward
+/// libfoo. A file also given by bare path, or named by options that
+/// match no other way (`-upward_library libfoo.dylib`), takes nothing
+/// from the other namings: the first to load the file decides (see
+/// collect_file). ld-prime stops at the first library it doesn't find,
+/// and at a naming check_naming refuses.
+fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option<ReaderContext>> {
     let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
     let mut keys = Vec::with_capacity(inputs.len());
     let mut all_found = true;
@@ -696,12 +705,14 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Reader
         };
         keys.push(key);
     }
+    // The options naming one library make one input, where it is first
+    // named; each other input is one of its own.
     let naming = |(arg, key): (&InputArg, Option<_>)| match key {
-        Some(key) => merged[&key],
-        None => ReaderContext {
+        Some(key) => merged.remove(&key),
+        None => Some(ReaderContext {
             force_load: matches!(arg, InputArg::ForceLoad(_)),
             ..Default::default()
-        },
+        }),
     };
     inputs.iter().zip(keys).map(naming).collect()
 }

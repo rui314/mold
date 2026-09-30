@@ -62,3 +62,13 @@ not grep -q libother $t/libs3
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/libother.tbd 2> $t/log4
 grep -q "warning: ignoring file '$t/libother.tbd': tapi error: missing required architecture" $t/log4
 not grep -q 'unexpected dylib' $t/log4
+
+# ld-prime reads each input anew: a stub named twice by path warns
+# twice, as does one a library option finds and a path names; the
+# options naming one library make one input.
+$CC --ld-path=$mold -o $t/exe5 $t/a.o $t/libother.tbd $t/libother.tbd 2> $t/log5
+[ "$(grep -c 'missing required architecture' $t/log5)" = 2 ]
+$CC --ld-path=$mold -o $t/exe6 $t/a.o -L$t -lother $t/libother.tbd 2> $t/log6
+[ "$(grep -c 'missing required architecture' $t/log6)" = 2 ]
+$CC --ld-path=$mold -o $t/exe7 $t/a.o -L$t -Wl,-lother,-weak-lother 2> $t/log7
+[ "$(grep -c 'missing required architecture' $t/log7)" = 1 ]
