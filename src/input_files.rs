@@ -1984,8 +1984,7 @@ fn load_reexports<E: Target>(
         }
         let Some(dep) = on_disk else {
             crate::warn!(
-                "{}: reexported library not found: {}",
-                parent.display(),
+                "ignoring missing indirect library: library for install name '{}' not found",
                 crate::util::display(&name)
             );
             continue;

@@ -58,5 +58,5 @@ int qux(void);
 int main() { printf("%d\n", qux()); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/libqux.dylib $t/libwrap.dylib -Wl,-rpath,$t 2> $t/log2
-not grep -q 'reexported library not found' $t/log2
+not grep -q 'missing indirect library' $t/log2
 $t/exe2 | grep '^9$'

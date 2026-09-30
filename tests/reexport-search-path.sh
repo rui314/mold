@@ -52,3 +52,9 @@ stub $t/L/libqq.tbd /usr/lib/libqq.dylib _sym3
 $CC --ld-path=$mold -o $t/exe3 $t/c.o $t/libE.tbd -L$t/L
 [ "$(from $t/exe3 sym3)" = libqq ]
 otool -L $t/exe3 | grep -q /usr/lib/libqq.dylib
+
+# A library found nowhere is left out with ld-prime's warning.
+echo 'int main() { return 0; }' | $CC -o $t/d.o -c -xc -
+stub $t/libF.tbd $t/libF.dylib _f /nonexistent/libgone.dylib
+$CC --ld-path=$mold -o $t/exe4 $t/d.o $t/libF.tbd 2> $t/log4
+grep -q "ignoring missing indirect library: library for install name '/nonexistent/libgone.dylib' not found" $t/log4
