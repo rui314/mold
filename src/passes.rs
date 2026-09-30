@@ -360,7 +360,10 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         let wave1 = tapi::prefetch(&stubs, E::NAME);
         let mut deps: Vec<&'static MappedFile> = Vec::new();
         for tbd in &wave1 {
-            for name in &tbd.external_reexports {
+            for name in &tbd.reexports {
+                if tbd.document(name).is_some() {
+                    continue;
+                }
                 if let Some(dep) = crate::input_files::find_reexport_file(ctx, name.as_bytes())
                     && get_file_type(dep) == FileType::Tapi
                 {

@@ -7,8 +7,9 @@
 //!
 //! A .tbd file may contain multiple YAML documents: the first one is the
 //! library itself, and the rest are the libraries it reexports, inlined.
-//! Since reexported symbols resolve through the top-level library, all
-//! documents' exports are merged.
+//! Each document is kept apart: the linker decides per library whether
+//! its symbols resolve through the top-level library or bind to it
+//! directly.
 
 use std::path::Path;
 
@@ -29,10 +30,23 @@ pub struct TbdFile {
     pub tlv_exports: Vec<&'static str>,
     /// The library was built without -application_extension.
     pub not_app_extension_safe: bool,
-    /// Install names of reexported libraries described in *other* files
-    /// (reexports inlined as documents in this file are already merged
-    /// into `exports`).
-    pub external_reexports: Vec<&'static str>,
+    /// Install names of the libraries this one re-exports: documents
+    /// inlined in the same file and libraries in files of their own
+    /// alike. (Every inlined document counts as re-exported, listed
+    /// or not.)
+    pub reexports: Vec<&'static str>,
+    /// The file's other documents - the re-exported libraries tapi
+    /// inlined - each parsed on its own. The linker decides per
+    /// library whether it loads as a dylib in its own right (a public
+    /// location, which ld64 binds to directly) or merges into this one.
+    pub documents: Vec<Self>,
+}
+
+impl TbdFile {
+    /// The inlined document for a re-exported library, by install name.
+    pub fn document(&self, install_name: &str) -> Option<&Self> {
+        self.documents.iter().find(|d| d.install_name == install_name)
+    }
 }
 
 /// A JSON value, as much of JSON as a TBD v5 file uses. Strings borrow
@@ -231,16 +245,6 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
     let mut p = JsonParser { file, text, pos: 0 };
     let root = p.value();
 
-    let mut tbd = TbdFile {
-        install_name: String::new(),
-        current_version: crate::macho::encode_version(1, 0, 0),
-        exports: Vec::new(),
-        weak_exports: Vec::new(),
-        tlv_exports: Vec::new(),
-        not_app_extension_safe: false,
-        external_reexports: Vec::new(),
-    };
-
     let target_of = |lib: &Json| {
         let available = lib
             .get("target_info")
@@ -290,60 +294,73 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         }
     };
 
-    let Some(main) = root.get("main_library") else {
-        fatal!("{}: no main_library in .tbd file", file.display());
-    };
-    let target = target_of(main);
-    if !library_applies(main, &target) {
-        fatal!("{}: .tbd file does not support {target}", file.display());
-    }
-    if let Some(name) = main
-        .get("install_names")
-        .map(Json::arr)
-        .and_then(|a| a.iter().find(|g| applies(g, &target)))
-        && let Some(s) = name.get("name").and_then(Json::str)
-    {
-        tbd.install_name = s.to_string();
-    }
-    if let Some(v) = main
-        .get("current_versions")
-        .map(Json::arr)
-        .and_then(|a| a.iter().find(|g| applies(g, &target)))
-        && let Some(s) = v.get("version").and_then(Json::str)
-    {
-        tbd.current_version = parse_version(s);
-    }
-    for flags in main.get("flags").map(Json::arr).unwrap_or(&[]) {
-        if applies(flags, &target)
-            && flags.strs("attributes").any(|a| a == "not_app_extension_safe")
-        {
-            tbd.not_app_extension_safe = true;
+    // One library object (the main library or an inlined re-export) as
+    // a TbdFile: its install name, version, flags, symbols and the
+    // names it re-exports, for the requested target.
+    let parse_library = |lib: &Json| -> Option<TbdFile> {
+        let target = target_of(lib);
+        if !library_applies(lib, &target) {
+            return None;
         }
-    }
-    add_symbols(&mut tbd, main);
-
-    // Reexported libraries: those inlined in "libraries" merge in here;
-    // the others live in files of their own.
-    let mut doc_names: Vec<&'static str> = Vec::new();
-    for lib in root.get("libraries").map(Json::arr).unwrap_or(&[]) {
-        for name in lib.get("install_names").map(Json::arr).unwrap_or(&[]) {
-            if let Some(s) = name.get("name").and_then(Json::str) {
-                doc_names.push(s);
+        let mut tbd = TbdFile {
+            current_version: crate::macho::encode_version(1, 0, 0),
+            ..TbdFile::default()
+        };
+        if let Some(name) = lib
+            .get("install_names")
+            .map(Json::arr)
+            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            && let Some(s) = name.get("name").and_then(Json::str)
+        {
+            tbd.install_name = s.to_string();
+        }
+        if let Some(v) = lib
+            .get("current_versions")
+            .map(Json::arr)
+            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            && let Some(s) = v.get("version").and_then(Json::str)
+        {
+            tbd.current_version = parse_version(s);
+        }
+        for flags in lib.get("flags").map(Json::arr).unwrap_or(&[]) {
+            if applies(flags, &target)
+                && flags.strs("attributes").any(|a| a == "not_app_extension_safe")
+            {
+                tbd.not_app_extension_safe = true;
             }
         }
         add_symbols(&mut tbd, lib);
-    }
-    for group in main
-        .get("reexported_libraries")
-        .map(Json::arr)
-        .unwrap_or(&[])
-        .iter()
-        .filter(|g| applies(g, &target))
-    {
-        for name in group.strs("names") {
-            if !doc_names.contains(&name) && !tbd.external_reexports.contains(&name) {
-                tbd.external_reexports.push(name);
+        for group in lib
+            .get("reexported_libraries")
+            .map(Json::arr)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|g| applies(g, &target))
+        {
+            for name in group.strs("names") {
+                if !tbd.reexports.contains(&name) {
+                    tbd.reexports.push(name);
+                }
             }
+        }
+        Some(tbd)
+    };
+
+    let Some(main) = root.get("main_library") else {
+        fatal!("{}: no main_library in .tbd file", file.display());
+    };
+    let Some(mut tbd) = parse_library(main) else {
+        fatal!("{}: .tbd file does not support {}", file.display(), target_of(main));
+    };
+    // The re-exported libraries inlined in "libraries" are documents
+    // of their own; every one counts as re-exported.
+    for lib in root.get("libraries").map(Json::arr).unwrap_or(&[]) {
+        if let Some(doc) = parse_library(lib) {
+            let name: &'static str = String::leak(doc.install_name.clone());
+            if !tbd.reexports.contains(&name) {
+                tbd.reexports.push(name);
+            }
+            tbd.documents.push(doc);
         }
     }
 
@@ -380,7 +397,7 @@ pub fn parse_version(val: &str) -> u32 {
     crate::macho::encode_version(major, minor, patch)
 }
 
-/// Parses a .tbd file, merging exports of all its documents.
+/// Parses a .tbd file, keeping each of its documents apart.
 /// A memoized parse. Stub parsing is pure string work over the mapped
 /// file, so results are cached by the file's address and target architecture.
 /// The linker currently supports only the macOS platform. The big SDK
@@ -415,18 +432,11 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
         return parse_json(&mf.name, text, arch);
     }
 
-    let mut tbd = TbdFile {
-        install_name: String::new(),
-        current_version: crate::macho::encode_version(1, 0, 0),
-        exports: Vec::new(),
-        weak_exports: Vec::new(),
-        tlv_exports: Vec::new(),
-        not_app_extension_safe: false,
-        external_reexports: Vec::new(),
-    };
-
-    let mut doc_names: Vec<&'static str> = Vec::new();
-    let mut reexports: Vec<&'static str> = Vec::new();
+    // The first document is the library itself; the others are the
+    // libraries it re-exports, inlined, each kept as a TbdFile of its
+    // own.
+    let mut main: Option<TbdFile> = None;
+    let mut documents: Vec<TbdFile> = Vec::new();
 
     for (doc, fields) in yaml_documents(text).iter().enumerate() {
         let available = fields.iter().filter(|f| f.indent == 0 && !f.item).flat_map(|f| {
@@ -441,6 +451,13 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
         if doc == 0 && !doc_active {
             fatal!("{}: .tbd file does not support {arch}-macos", mf.name.display());
         }
+        if !doc_active {
+            continue;
+        }
+        let mut tbd = TbdFile {
+            current_version: crate::macho::encode_version(1, 0, 0),
+            ..TbdFile::default()
+        };
         let mut active = doc_active;
         for (i, field) in fields.iter().enumerate() {
             if field.indent == 0 && !field.item {
@@ -454,26 +471,27 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
                 active = doc_active && yaml_matches(fields[i..end].iter(), arch);
             }
             if field.key == "install-name" {
-                doc_names.push(unquote(field.value));
-                if doc == 0 {
-                    tbd.install_name = unquote(field.value).to_string();
-                }
+                tbd.install_name = unquote(field.value).to_string();
             }
             if !active {
                 continue;
             }
             match field.key {
-                "current-version" if doc == 0 => {
-                    tbd.current_version = parse_version(unquote(field.value))
-                }
-                "flags" if doc == 0 => {
+                "current-version" => tbd.current_version = parse_version(unquote(field.value)),
+                "flags" => {
                     tbd.not_app_extension_safe =
                         field.items().any(|s| s == "not_app_extension_safe");
                 }
                 "symbols" => tbd.exports.extend(field.items()),
                 "weak-symbols" | "weak-def-symbols" => tbd.weak_exports.extend(field.items()),
                 "thread-local-symbols" => tbd.tlv_exports.extend(field.items()),
-                "libraries" | "re-exports" if doc == 0 => reexports.extend(field.items()),
+                "libraries" | "re-exports" => {
+                    for name in field.items() {
+                        if !tbd.reexports.contains(&name) {
+                            tbd.reexports.push(name);
+                        }
+                    }
+                }
                 "objc-classes" => {
                     for item in field.items() {
                         tbd.exports.push(String::leak(format!("_OBJC_CLASS_$_{item}")));
@@ -493,12 +511,22 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
                 _ => {}
             }
         }
+        if doc == 0 {
+            main = Some(tbd);
+        } else {
+            documents.push(tbd);
+        }
     }
 
-    // Reexported libraries not inlined as documents live in files of
-    // their own and must be loaded separately.
-    tbd.external_reexports =
-        reexports.into_iter().filter(|name| !doc_names.contains(name)).collect();
+    // Every inlined document counts as re-exported, listed or not.
+    let mut tbd = main.unwrap_or_default();
+    for doc in &documents {
+        let name: &'static str = String::leak(doc.install_name.clone());
+        if !tbd.reexports.contains(&name) {
+            tbd.reexports.push(name);
+        }
+    }
+    tbd.documents = documents;
 
     if tbd.install_name.is_empty() {
         fatal!("{}: no install-name in .tbd file", mf.name.display());
@@ -624,12 +652,12 @@ reexported-libraries:
         assert_eq!(arm.exports, ["_arm", "_OBJC_CLASS_$_Arm", "_OBJC_METACLASS_$_Arm"]);
         assert_eq!(arm.weak_exports, ["_weak_arm"]);
         assert_eq!(arm.tlv_exports, ["_tls_arm"]);
-        assert_eq!(arm.external_reexports, ["/arm"]);
+        assert_eq!(arm.reexports, ["/arm"]);
         let x86 = parse_cached(mf, "x86_64");
         assert_eq!(x86.exports, ["_x86"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
-        assert!(x86.external_reexports.is_empty());
+        assert!(x86.reexports.is_empty());
     }
 
     #[test]
@@ -651,7 +679,10 @@ exports:
     symbols: [ _fallback ]
 "#,
         );
-        assert_eq!(parse(mf, "arm64").exports, ["_arm", "_fallback"]);
+        let tbd = parse(mf, "arm64");
+        assert_eq!(tbd.exports, ["_arm"]);
+        assert_eq!(tbd.reexports, ["/inline"]);
+        assert_eq!(tbd.document("/inline").unwrap().exports, ["_fallback"]);
     }
 
     #[test]
@@ -690,14 +721,16 @@ exports:
             "exported_symbols":[{"text":{"global":["_inline"]}}]}]}"#,
         );
         let arm = parse(mf, "arm64");
-        assert_eq!(arm.exports, ["_both", "_inline"]);
+        assert_eq!(arm.exports, ["_both"]);
         assert_eq!(arm.weak_exports, ["_weak"]);
         assert_eq!(arm.tlv_exports, ["_tls"]);
-        assert_eq!(arm.external_reexports, ["/arm"]);
+        assert_eq!(arm.reexports, ["/arm", "/inline"]);
+        assert_eq!(arm.document("/inline").unwrap().exports, ["_inline"]);
         let x86 = parse(mf, "x86_64");
         assert_eq!(x86.exports, ["_both"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
-        assert_eq!(x86.external_reexports, ["/x86"]);
+        assert_eq!(x86.reexports, ["/x86"]);
+        assert!(x86.documents.is_empty());
     }
 }

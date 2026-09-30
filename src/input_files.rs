@@ -1828,17 +1828,25 @@ fn is_public_location(install_name: &[u8]) -> bool {
 /// implicit dylib of its own (its symbols bind to it), recursively
 /// loading what it re-exports in turn; a private one's exports are
 /// merged into `exports`/`tlv_exports` as the re-exporting dylib's,
-/// and its own re-exports are walked the same way.
+/// and its own re-exports are walked the same way. A library may be a
+/// file of its own or a document inlined in a stub (`documents`: the
+/// re-exporting stub's). A public one is loaded from its file when one
+/// exists, as ld-prime does, and from its document otherwise; a private
+/// one inlined is merged from its document.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
     parent: &Path,
+    documents: Vec<tapi::TbdFile>,
     exports: &mut hashbrown::HashSet<&'static str>,
     tlv_exports: &mut hashbrown::HashSet<&'static str>,
     weak_exports: &mut hashbrown::HashSet<&'static str>,
 ) {
     let mut queue = reexports;
     let mut visited = std::collections::HashSet::new();
+    // The inlined documents a name may resolve to: the parent's, and
+    // those of every stub merged along the way.
+    let mut pool = documents;
     while let Some((name, loader_dir, loader_rpaths)) = queue.pop() {
         if !visited.insert(name.clone()) {
             continue;
@@ -1857,7 +1865,37 @@ fn load_reexports<E: Target>(
             }
             continue;
         }
-        let Some(dep) = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths) else {
+        let inline = pool.iter().position(|d| d.install_name.as_bytes() == name);
+        let on_disk = if inline.is_some() && !public {
+            None
+        } else {
+            resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths)
+        };
+        if on_disk.is_none()
+            && let Some(i) = inline
+        {
+            let mut doc = pool[i].clone();
+            if public {
+                let idx = register_tbd(ctx, parent, doc, pool.clone());
+                ctx.dylibs[idx].is_implicit = true;
+                continue;
+            }
+            interpret_ld_symbols(ctx, &mut doc);
+            tlv_exports.extend(doc.tlv_exports.iter().copied());
+            exports.extend(doc.tlv_exports);
+            exports.extend(doc.exports);
+            weak_exports.extend(doc.weak_exports.iter().copied());
+            exports.extend(doc.weak_exports);
+            for dep_name in doc.reexports {
+                queue.push((
+                    dep_name.as_bytes().to_vec(),
+                    loader_dir.clone(),
+                    loader_rpaths.clone(),
+                ));
+            }
+            continue;
+        }
+        let Some(dep) = on_disk else {
             crate::warn!(
                 "{}: reexported library not found: {}",
                 parent.display(),
@@ -1879,7 +1917,8 @@ fn load_reexports<E: Target>(
                 exports.extend(dep_tbd.exports);
                 weak_exports.extend(dep_tbd.weak_exports.iter().copied());
                 exports.extend(dep_tbd.weak_exports);
-                for dep_name in dep_tbd.external_reexports {
+                pool.extend(dep_tbd.documents);
+                for dep_name in dep_tbd.reexports {
                     queue.push((dep_name.as_bytes().to_vec(), dir_of(&dep.name), Vec::new()));
                 }
             }
@@ -2070,7 +2109,15 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // relative to the referrer.
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> =
         reexports.into_iter().map(|name| (name, dir_of(&mf.name), rpaths.clone())).collect();
-    load_reexports(ctx, reexports, &mf.name, &mut exports, &mut tlv_exports, &mut weak_exports);
+    load_reexports(
+        ctx,
+        reexports,
+        &mf.name,
+        Vec::new(),
+        &mut exports,
+        &mut tlv_exports,
+        &mut weak_exports,
+    );
 
     let priority = ctx.next_priority();
     add_dylib(
@@ -2535,6 +2582,19 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
 
 pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     let mut tbd = tapi::parse_cached(mf, E::NAME);
+    let documents = std::mem::take(&mut tbd.documents);
+    register_tbd(ctx, &mf.name, tbd, documents)
+}
+
+/// Registers a stub's library - a file's main document, or a
+/// re-exported one inlined in it - as a dylib of the link. `documents`
+/// are the inlined libraries its re-exports may resolve to.
+fn register_tbd<E: Target>(
+    ctx: &mut Context<E>,
+    path: &Path,
+    mut tbd: tapi::TbdFile,
+    documents: Vec<tapi::TbdFile>,
+) -> usize {
     interpret_ld_symbols(ctx, &mut tbd);
     let mut exports: hashbrown::HashSet<&'static str> = tbd.exports.into_iter().collect();
     let mut weak_exports: hashbrown::HashSet<&'static str> =
@@ -2544,17 +2604,25 @@ pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> 
     exports.extend(tlv_exports.iter().copied());
 
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> = tbd
-        .external_reexports
+        .reexports
         .into_iter()
-        .map(|name| (name.as_bytes().to_vec(), dir_of(&mf.name), Vec::new()))
+        .map(|name| (name.as_bytes().to_vec(), dir_of(path), Vec::new()))
         .collect();
-    load_reexports(ctx, reexports, &mf.name, &mut exports, &mut tlv_exports, &mut weak_exports);
+    load_reexports(
+        ctx,
+        reexports,
+        path,
+        documents,
+        &mut exports,
+        &mut tlv_exports,
+        &mut weak_exports,
+    );
 
     let priority = ctx.next_priority();
     add_dylib(
         ctx,
         DylibFile {
-            path: mf.name.clone(),
+            path: path.to_path_buf(),
             install_name: tbd.install_name.into_bytes(),
             current_version: tbd.current_version,
             compatibility_version: encode_version(1, 0, 0),
