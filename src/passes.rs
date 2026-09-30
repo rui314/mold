@@ -4293,7 +4293,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::IndirectSymtab);
     }
     ctx.chunks.push(ChunkId::Strtab);
-    if ctx.args.adhoc_codesign {
+    if ctx.adhoc_codesign() {
         ctx.chunks.push(ChunkId::CodeSignature);
     }
 
@@ -5564,7 +5564,7 @@ pub fn copy_chunks<E: Target>(
     // only, not on the signature blob (whose identifier is the output's
     // basename); unsigned output hashes its pages the same way.
     let mut hashes: Vec<[u8; 32]> = Vec::new();
-    if ctx.args.uuid || ctx.args.adhoc_codesign {
+    if ctx.args.uuid || ctx.adhoc_codesign() {
         let _t = ctx.timer("page_hashes");
         hashes = chunks::code_signature::page_hashes(&buf[..sig_start]);
     }
@@ -5584,7 +5584,7 @@ pub fn copy_chunks<E: Target>(
     }
     out.queue(0, hdr_end);
 
-    if ctx.args.adhoc_codesign {
+    if ctx.adhoc_codesign() {
         let _t = ctx.timer("write_code_signature");
         chunks::code_signature::write(ctx, buf, &hashes);
     }

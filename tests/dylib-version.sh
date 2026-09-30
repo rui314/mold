@@ -11,6 +11,12 @@ otool -l $t/libfoo.dylib | grep -A5 LC_ID_DYLIB > $t/log
 grep -q 'current version 2.3.4' $t/log
 grep -q 'compatibility version 2.0.0' $t/log
 
+# Without either option both versions are 0.0.0, as ld64 writes them.
+$CC --ld-path=$mold -shared -o $t/libnov.dylib $t/a.o
+otool -l $t/libnov.dylib | grep -A5 LC_ID_DYLIB > $t/log
+grep -q 'current version 0.0.0' $t/log
+grep -q 'compatibility version 0.0.0' $t/log
+
 # -final_output names the dylib when -install_name is absent (the
 # compiler driver passes it with several -arch; Transmission's CMake
 # build does too).

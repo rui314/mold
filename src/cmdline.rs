@@ -82,7 +82,9 @@ pub struct Args {
     pub inputs: Vec<InputArg>,
     /// -rpath: LC_RPATH strings, as given.
     pub rpaths: Vec<Vec<u8>>,
-    pub adhoc_codesign: bool,
+    /// -adhoc_codesign / -no_adhoc_codesign. None means "decide from
+    /// the target".
+    pub adhoc_codesign: Option<bool>,
     pub dead_strip: bool,
     /// -S: do not emit debug stab symbols.
     pub strip_debug: bool,
@@ -277,7 +279,7 @@ impl Default for Args {
             framework_paths: Vec::new(),
             inputs: Vec::new(),
             rpaths: Vec::new(),
-            adhoc_codesign: true,
+            adhoc_codesign: None,
             dead_strip: false,
             strip_debug: false,
             all_load: false,
@@ -288,8 +290,10 @@ impl Default for Args {
             unexported_symbols: Glob::new(),
             reexported_symbols: Glob::new(),
             reexported_names: Vec::new(),
-            current_version: encode_version(1, 0, 0),
-            compatibility_version: encode_version(1, 0, 0),
+            // ld64 leaves both at 0.0.0 unless -current_version /
+            // -compatibility_version say otherwise.
+            current_version: encode_version(0, 0, 0),
+            compatibility_version: encode_version(0, 0, 0),
             map: None,
             dependency_info: None,
             sdk_imports: None,
@@ -628,8 +632,8 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i))),
             b"-fixup_chains" => args.fixup_chains = Some(true),
             b"-no_fixup_chains" => args.fixup_chains = Some(false),
-            b"-adhoc_codesign" => args.adhoc_codesign = true,
-            b"-no_adhoc_codesign" => args.adhoc_codesign = false,
+            b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
+            b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
             b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
             b"-pagezero_size" => {
