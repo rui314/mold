@@ -1123,6 +1123,8 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 /// Compiles live bitcode modules into one Mach-O object and
 /// replaces the placeholder objects' symbol claims with the real ones.
 pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     if !ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive) {
         return false;
     }
@@ -1160,19 +1162,18 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         // the common's code addresses that definition's storage. So do
         // -alias bases, which the linker itself references.
         let executable = ctx.args.output_type == MH_EXECUTE;
-        let mut native_refs: hashbrown::HashSet<crate::symbol::SymbolId> =
-            hashbrown::HashSet::new();
-        for obj in &ctx.objs {
-            if !obj.is_alive || obj.lto_module.is_some() {
-                continue;
-            }
-            let r = obj.global_range();
-            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                if !nlist.is_stab() && nlist.n_type() == N_UNDF {
-                    native_refs.insert(sym_id);
+        let native_refs: Vec<AtomicBool> =
+            (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
+        ctx.objs.par_iter().filter(|obj| obj.is_alive && obj.lto_module.is_none()).for_each(
+            |obj| {
+                let r = obj.global_range();
+                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                    if !nlist.is_stab() && nlist.n_type() == N_UNDF {
+                        native_refs[sym_id as usize].store(true, Ordering::Relaxed);
+                    }
                 }
-            }
-        }
+            },
+        );
         let mut preserve: Vec<std::ffi::CString> = Vec::new();
         for (i, sym) in ctx.symbols.syms.iter().enumerate() {
             if let Some(FileId::Obj(idx)) = sym.file()
@@ -1182,7 +1183,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
             {
                 if executable
                     && !ctx.args.export_dynamic
-                    && (!sym.is_used() || !native_refs.contains(&(i as u32)))
+                    && (!sym.is_used() || !native_refs[i].load(Ordering::Relaxed))
                     && sym.name() != ctx.args.entry
                     && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
                     && !ctx.args.aliases.iter().any(|(existing, _)| existing == sym.name())
