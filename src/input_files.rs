@@ -1916,6 +1916,20 @@ fn is_public_location(install_name: &[u8]) -> bool {
 /// exists, as ld-prime does, and from its document otherwise; a private
 /// one inlined is merged from its document. Returns the install names
 /// of the private libraries merged.
+/// Notes an input file for -t as it is loaded. ld-prime names a fat
+/// file's slice, and its members, by the file's own path.
+pub fn trace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
+    if ctx.args.trace {
+        let mut name = name.to_vec();
+        if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
+            && let Some(len) = name[i..].iter().position(|&c| c == b')')
+        {
+            name.drain(i..=i + len);
+        }
+        ctx.traced_files.push(crate::util::display(&name).to_string());
+    }
+}
+
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -1959,6 +1973,13 @@ fn load_reexports<E: Target>(
         if on_disk.is_none()
             && let Some(i) = inline
         {
+            // ld-prime names an inlined library by the file it would
+            // find for it, where there is one.
+            if ctx.args.trace {
+                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths)
+                    .map(|mf| crate::util::path_bytes(&mf.name).to_vec());
+                trace_file(ctx, found.as_deref().unwrap_or(&name));
+            }
             let mut doc = pool[i].clone();
             if DylibIdentity::of_tbd(&doc).is_public(ctx) {
                 let idx = register_tbd(ctx, parent, doc, pool.clone());
@@ -1988,6 +2009,7 @@ fn load_reexports<E: Target>(
             );
             continue;
         };
+        trace_file(ctx, crate::util::path_bytes(&dep.name));
         // The file found decides by its own install name, which a lookup
         // by leaf name may find to differ from the one re-exported:
         // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it

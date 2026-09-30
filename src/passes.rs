@@ -238,6 +238,9 @@ fn collect_file<E: Target>(
         }
         return;
     }
+    if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
+        input_files::trace_file(ctx, path_bytes(&mf.name));
+    }
     match get_file_type(mf) {
         FileType::Object => {
             let priority = ctx.next_priority();
@@ -290,6 +293,7 @@ fn collect_file<E: Target>(
             let all_load = ctx.args.all_load
                 && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
             for member in crate::archive_file::read_archive_members(mf) {
+                input_files::trace_file(ctx, path_bytes(&member.name));
                 let alive = rc.force_load
                     || all_load
                     || (ctx.args.load_objc && input_files::has_objc_sections(member));
@@ -2105,23 +2109,20 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// -t traces the link's inputs: one line per file that contributes,
-/// objects by path (archive members as archive(member)) and dylib
-/// stubs by the path they were found at. In mold's model every input
-/// is parsed eagerly, so rather than logging opens - which would list
-/// archive members the link then discards - the trace reports what
-/// actually took part.
+/// -t lists the link's inputs, one line per file loaded: objects and
+/// stubs by the path they were found at, every member of an archive
+/// as archive(member), used or not, and each library a stub re-exports
+/// (by its install name if the stub inlines it), once each, as ld-prime
+/// does. ld-prime prints them in an order that varies from run to run.
 pub fn print_trace<E: Target>(ctx: &Context<E>) {
     if !ctx.args.trace {
         return;
     }
-    for (i, obj) in ctx.objs.iter().enumerate() {
-        if obj.is_alive && !ctx.is_internal(i) {
-            println!("{}", file_display(obj));
+    let mut seen = std::collections::HashSet::new();
+    for name in &ctx.traced_files {
+        if seen.insert(name) {
+            println!("{name}");
         }
-    }
-    for dylib in &ctx.dylibs {
-        println!("{}", dylib.path.display());
     }
 }
 
