@@ -66,3 +66,29 @@ _w2: ret
 EOF2
 $mold -r -arch $ARCH -o $t/w.o $t/w1.o $t/w2.o
 otool -l $t/w.o | grep -A3 'sectname __swift5_typeref' | grep 'size 0x0000000000000013'
+
+# Each copy of a weak function brings its own LC_DATA_IN_CODE entries,
+# and only the kept copy's are written; a dropped copy's must not land
+# a second time at the kept copy's address. The final link coalesces
+# the same way.
+for n in 1 2; do
+  cat <<EOF2 | $CC -o $t/d$n.o -c -xassembler -
+.text
+.globl _jt
+.weak_definition _jt
+.p2align 2
+_jt:
+  ret
+.data_region jt32
+  .long $n
+.end_data_region
+.subsections_via_symbols
+EOF2
+done
+$mold -r -arch $ARCH -o $t/d.o $t/d1.o $t/d2.o
+otool -G $t/d.o > $t/dice
+grep -q '(1 entries)' $t/dice
+echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/d1.o $t/d2.o -Wl,-u,_jt
+otool -G $t/exe2 > $t/dice2
+grep -q '(1 entries)' $t/dice2

@@ -738,26 +738,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // and present even with no entries (ld-prime): the inputs' entries
     // at their merged addresses, which is what an object's entries
     // hold rather than file offsets.
-    let mut dice: Vec<(u32, u16, u16)> = Vec::new();
-    for obj in &ctx.objs {
-        if !obj.is_alive {
-            continue;
-        }
-        for &(o, len, kind) in &obj.dice {
-            let Some((isec, off_in)) =
-                crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, o as u64)
-            else {
-                continue;
-            };
-            let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-            if isec.is_alive() {
-                let addr = ctx.chunk_header(isec.output_section().unwrap()).addr
-                    + isec.offset as u64
-                    + off_in;
-                dice.push((addr as u32, len, kind));
-            }
-        }
-    }
+    let mut dice: Vec<(u32, u16, u16)> = crate::chunks::data_in_code::live_entries(ctx)
+        .map(|(isec, off_in, len, kind)| {
+            let addr =
+                ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + off_in;
+            (addr as u32, len, kind)
+        })
+        .collect();
     dice.sort_unstable();
     let diceoff = off;
     off += dice.len() as u64 * 8;
