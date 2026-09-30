@@ -175,17 +175,17 @@ struct PendingObject {
     priority: u32,
 }
 
-/// Gives a dylib what one naming of it says. Namings add up: one
-/// -needed_* keeps the load command under -dead_strip_dylibs, one
-/// -reexport_* re-exports it, and one -weak_* makes every import from
-/// it weak, in any order. A library so far loaded only as a public
-/// re-export of another (Foundation's stub brings CoreFoundation) got
-/// its weakness from that parent; its first command-line naming decides
-/// it instead - `-weak_framework Foundation -framework CoreFoundation`
-/// imports from CoreFoundation strongly - while an auto-link option,
-/// a hint, changes nothing. -needed_* covers the named library only;
-/// the ones its stub re-exports get a load command only if something
-/// binds to them. One -upward_* makes it an upward dependency.
+/// Gives a dylib what its first naming says (library_namings has merged
+/// what the options naming one library say): -needed_* keeps the load
+/// command under -dead_strip_dylibs, -reexport_* re-exports it, -weak_*
+/// makes every import from it weak and -upward_* makes it an upward
+/// dependency. A library so far loaded only as a public re-export of
+/// another (Foundation's stub brings CoreFoundation) got its weakness
+/// from that parent; its first command-line naming decides it instead:
+/// `-weak_framework Foundation -framework CoreFoundation` imports from
+/// CoreFoundation strongly, while an auto-link option, a hint, changes
+/// nothing. -needed_* covers the named library only; the ones its stub
+/// re-exports get a load command only if something binds to them.
 fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: ReaderContext) {
     if ctx.dylibs[idx].is_implicit {
         ctx.dylibs[idx].named_at = Some((ctx.next_priority(), mf.name.clone()));
@@ -220,6 +220,21 @@ struct ReaderContext {
     upward: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
+}
+
+impl ReaderContext {
+    /// What two namings of one library say together.
+    fn union(self, other: Self) -> Self {
+        Self {
+            force_load: self.force_load || other.force_load,
+            weak: self.weak || other.weak,
+            reexport: self.reexport || other.reexport,
+            hidden: self.hidden || other.hidden,
+            needed: self.needed || other.needed,
+            upward: self.upward || other.upward,
+            autolinked: self.autolinked && other.autolinked,
+        }
+    }
 }
 
 /// Reports a dylib that does not let this link name it directly (see
@@ -269,10 +284,10 @@ fn collect_file<E: Target>(
     out: &mut Vec<PendingObject>,
 ) {
     // A library may be named more than once, on the command line and by
-    // auto-link options; load each file once, and let a dylib take on
-    // what every naming says.
+    // auto-link options; load each file once, as its first naming says
+    // (the first that isn't a public re-export's, for a dylib).
     if !ctx.visited_files.insert(mf.name.clone()) {
-        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name) {
+        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name && d.is_implicit) {
             name_dylib(ctx, idx, mf, rc);
         }
         return;
@@ -312,7 +327,10 @@ fn collect_file<E: Target>(
             for d in &mut ctx.dylibs[first..] {
                 d.is_weak |= rc.weak;
             }
-            name_dylib(ctx, idx, mf, rc);
+            // One named before by another path keeps what that said.
+            if idx >= first || ctx.dylibs[idx].is_implicit {
+                name_dylib(ctx, idx, mf, rc);
+            }
             let dylib = &mut ctx.dylibs[idx];
             // Ordered by naming sequence.
             if dylib.load_order == u32::MAX {
@@ -513,53 +531,21 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
     }
     let inputs = std::mem::take(&mut ctx.args.inputs);
+    let paths = find_inputs(ctx, &inputs);
+    let namings = library_namings(&inputs, &paths);
 
-    // Warm the .tbd parse cache: resolve every input that will land
-    // on a stub library and parse them all on all cores, then do the
-    // same for the stubs they reexport - two waves cover an SDK's
-    // umbrella trees. The serial loop below then finds every parse
-    // already done.
+    // Warm the .tbd parse cache: parse every input that is a stub
+    // library on all cores, then do the same for the stubs they
+    // reexport - two waves cover an SDK's umbrella trees. The serial
+    // loop below then finds every parse already done.
     {
-        let mut stubs: Vec<&'static MappedFile> = Vec::new();
-        let consider = |path: &std::path::Path, stubs: &mut Vec<&'static MappedFile>| {
-            if let Some(mf) = MappedFile::open(path)
-                && get_file_type(mf) == FileType::Tapi
-            {
-                stubs.push(mf);
-            }
-        };
-        for arg in &inputs {
-            match arg {
-                InputArg::File(path)
-                | InputArg::WeakFile(path)
-                | InputArg::ReexportFile(path)
-                | InputArg::NeededFile(path)
-                | InputArg::UpwardFile(path)
-                | InputArg::LazyFile(path) => consider(path, &mut stubs),
-                InputArg::Lib(name, _)
-                | InputArg::ReexportLib(name)
-                | InputArg::NeededLib(name)
-                | InputArg::LazyLib(name) => {
-                    if let Some(path) = find_library(ctx, name) {
-                        consider(&path, &mut stubs);
-                    }
-                }
-                InputArg::UpwardLib(name) => {
-                    if let Some(path) = find_dylib(ctx, name) {
-                        consider(&path, &mut stubs);
-                    }
-                }
-                InputArg::Framework(name, _)
-                | InputArg::NeededFramework(name)
-                | InputArg::ReexportFramework(name)
-                | InputArg::UpwardFramework(name) => {
-                    if let Some(path) = find_framework(ctx, name) {
-                        consider(&path, &mut stubs);
-                    }
-                }
-                _ => {}
-            }
-        }
+        let stubs: Vec<&'static MappedFile> = inputs
+            .iter()
+            .zip(&paths)
+            .filter(|(arg, _)| !matches!(arg, InputArg::ForceLoad(_)))
+            .filter_map(|(_, path)| MappedFile::open(path.as_ref()?))
+            .filter(|mf| get_file_type(mf) == FileType::Tapi)
+            .collect();
         let wave1 = tapi::prefetch(&stubs, E::NAME, ctx.args.platform);
         let mut deps: Vec<&'static MappedFile> = Vec::new();
         for tbd in wave1.iter().flatten() {
@@ -577,69 +563,12 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         tapi::prefetch(&deps, E::NAME, ctx.args.platform);
     }
 
-    let lib = |ctx: &Context<E>, name: &OsStr| {
-        let path = find_library(ctx, name);
-        if path.is_none() {
-            error!("library '{}' not found", name.display());
-        }
-        path
-    };
-    let dylib = |ctx: &Context<E>, name: &OsStr| {
-        let path = find_dylib(ctx, name);
-        if path.is_none() {
-            error!("library '{}' not found", name.display());
-        }
-        path
-    };
-    let framework = |ctx: &Context<E>, name: &OsStr| {
-        let path = find_framework(ctx, name);
-        if path.is_none() {
-            error!("framework '{}' not found", name.display());
-        }
-        path
-    };
     let mut queue: Vec<PendingObject> = Vec::new();
-    for arg in &inputs {
-        let rc = ReaderContext::default();
-        let (path, rc) = match arg {
-            InputArg::File(path) => (Some(path.clone()), rc),
-            InputArg::ForceLoad(path) => {
-                (Some(path.clone()), ReaderContext { force_load: true, ..rc })
-            }
-            InputArg::WeakFile(path) => (Some(path.clone()), ReaderContext { weak: true, ..rc }),
-            InputArg::ReexportFile(path) => {
-                (Some(path.clone()), ReaderContext { reexport: true, ..rc })
-            }
-            InputArg::NeededFile(path) => {
-                (Some(path.clone()), ReaderContext { needed: true, ..rc })
-            }
-            InputArg::UpwardFile(path) => {
-                (Some(path.clone()), ReaderContext { upward: true, ..rc })
-            }
-            InputArg::LazyFile(path) => (Some(path.clone()), rc),
-            InputArg::Lib(name, weak) => (lib(ctx, name), ReaderContext { weak: *weak, ..rc }),
-            InputArg::ReexportLib(name) => (lib(ctx, name), ReaderContext { reexport: true, ..rc }),
-            InputArg::HiddenLib(name) => (lib(ctx, name), ReaderContext { hidden: true, ..rc }),
-            InputArg::NeededLib(name) => (lib(ctx, name), ReaderContext { needed: true, ..rc }),
-            InputArg::UpwardLib(name) => (dylib(ctx, name), ReaderContext { upward: true, ..rc }),
-            InputArg::LazyLib(name) => (lib(ctx, name), rc),
-            InputArg::Framework(name, weak) => {
-                (framework(ctx, name), ReaderContext { weak: *weak, ..rc })
-            }
-            InputArg::ReexportFramework(name) => {
-                (framework(ctx, name), ReaderContext { reexport: true, ..rc })
-            }
-            InputArg::NeededFramework(name) => {
-                (framework(ctx, name), ReaderContext { needed: true, ..rc })
-            }
-            InputArg::UpwardFramework(name) => {
-                (framework(ctx, name), ReaderContext { upward: true, ..rc })
-            }
-            InputArg::BundleLoader(path) => {
-                load_bundle_loader(ctx, path);
-                continue;
-            }
-        };
+    for ((arg, path), rc) in inputs.iter().zip(paths).zip(namings) {
+        if let InputArg::BundleLoader(path) = arg {
+            load_bundle_loader(ctx, path);
+            continue;
+        }
         let Some(path) = path else { continue };
         match MappedFile::try_open(&path) {
             Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
@@ -654,6 +583,108 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.args.inputs = inputs;
     load_pending(ctx, queue);
+}
+
+/// Finds the file each input names: ld-prime looks for every library
+/// and framework before it reads a file, and reports the ones it
+/// doesn't find. (-bundle_loader's is read apart.)
+fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
+    let find = |arg: &InputArg| {
+        let (path, kind, name) = match arg {
+            InputArg::File(path)
+            | InputArg::ForceLoad(path)
+            | InputArg::WeakFile(path)
+            | InputArg::ReexportFile(path)
+            | InputArg::NeededFile(path)
+            | InputArg::UpwardFile(path)
+            | InputArg::LazyFile(path) => return Some(path.clone()),
+            InputArg::BundleLoader(_) => return None,
+            InputArg::Lib(name, _)
+            | InputArg::ReexportLib(name)
+            | InputArg::HiddenLib(name)
+            | InputArg::NeededLib(name)
+            | InputArg::LazyLib(name) => (find_library(ctx, name), "library", name),
+            InputArg::UpwardLib(name) => (find_dylib(ctx, name), "library", name),
+            InputArg::Framework(name, _)
+            | InputArg::ReexportFramework(name)
+            | InputArg::NeededFramework(name)
+            | InputArg::UpwardFramework(name) => (find_framework(ctx, name), "framework", name),
+        };
+        if path.is_none() {
+            error!("{kind} '{}' not found", name.display());
+        }
+        path
+    };
+    inputs.iter().map(find).collect()
+}
+
+/// What a library option says of the library it names: the flags it
+/// gives the file, whether the library is a framework, and its name as
+/// the option gives it (a path, for the options that take one).
+fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
+    use InputArg::*;
+    let name = match arg {
+        Lib(name, _)
+        | ReexportLib(name)
+        | HiddenLib(name)
+        | NeededLib(name)
+        | UpwardLib(name)
+        | LazyLib(name)
+        | Framework(name, _)
+        | ReexportFramework(name)
+        | NeededFramework(name)
+        | UpwardFramework(name) => name.as_os_str(),
+        WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
+        | LazyFile(path) => path.as_os_str(),
+        File(_) | ForceLoad(_) | BundleLoader(_) => return None,
+    };
+    let rc = ReaderContext {
+        weak: matches!(arg, Lib(_, true) | Framework(_, true) | WeakFile(_)),
+        reexport: matches!(arg, ReexportLib(_) | ReexportFramework(_) | ReexportFile(_)),
+        hidden: matches!(arg, HiddenLib(_)),
+        needed: matches!(arg, NeededLib(_) | NeededFramework(_) | NeededFile(_)),
+        upward: matches!(arg, UpwardLib(_) | UpwardFramework(_) | UpwardFile(_)),
+        ..Default::default()
+    };
+    let framework = matches!(
+        arg,
+        Framework(..) | ReexportFramework(_) | NeededFramework(_) | UpwardFramework(_)
+    );
+    Some((rc, framework, name))
+}
+
+/// How each input is named: the flags its option gives the file.
+/// ld-prime merges what the options naming one library say - those
+/// naming one framework, or finding one file: under -L., `-lfoo` and
+/// `-upward_library ./libfoo.dylib` both load an upward libfoo. A file
+/// also given by bare path, or named by options that match no other
+/// way (`-upward_library libfoo.dylib`), takes nothing from the other
+/// namings: the first to load the file decides (see collect_file).
+fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<ReaderContext> {
+    // A framework by its name, any other library by the file found.
+    fn named<'a>(
+        arg: &'a InputArg,
+        path: &'a Option<PathBuf>,
+    ) -> Option<(ReaderContext, (bool, &'a OsStr))> {
+        let (rc, framework, name) = library_option(arg)?;
+        let key = if framework { name } else { path.as_ref()?.as_os_str() };
+        Some((rc, (framework, key)))
+    }
+    let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
+    for (arg, path) in inputs.iter().zip(paths) {
+        if let Some((rc, key)) = named(arg, path) {
+            let all = merged.entry(key).or_default();
+            *all = all.union(rc);
+        }
+    }
+    let naming = |(arg, path)| match named(arg, path) {
+        Some((_, key)) => merged[&key],
+        None => ReaderContext {
+            force_load: matches!(arg, InputArg::ForceLoad(_)),
+            ..Default::default()
+        },
+    };
+    inputs.iter().zip(paths).map(naming).collect()
 }
 
 /// -bundle_loader: the executable that will load this bundle. Its

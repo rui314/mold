@@ -46,3 +46,28 @@ $CC --ld-path=$mold -o $t/exe5 $t/cf.o $t/al.o -Wl,-weak_framework,Foundation
 $CC --ld-path=$mold -o $t/b.dylib -shared $t/cf.o -framework CoreFoundation \
   -Wl,-reexport_framework,CoreFoundation
 [ "$(cf_cmd $t/b.dylib)" = LC_REEXPORT_DYLIB ]
+
+# The options naming one framework, or finding one file, merge. A file
+# given by bare path, or by another path, takes nothing from the other
+# namings: the first to load it decides.
+echo 'int foo(void) { return 3; }' | $CC -o $t/foo.o -c -xc -
+$CC -o $t/libfoo.dylib -shared $t/foo.o -Wl,-install_name,/u/libfoo.dylib
+ar rcs $t/libbar.a $t/foo.o
+echo 'int foo(void); int main() { return foo(); }' | $CC -o $t/a.o -c -xc -
+
+foo_cmd() {
+  $CC --ld-path=$mold -o $t/c.dylib -shared $t/a.o -L$t "$@"
+  otool -l $t/c.dylib | awk '$1 == "cmd" { c = $2 }
+    $1 == "name" && $2 == "/u/libfoo.dylib" { print c }'
+}
+[ "$(foo_cmd -Wl,-lfoo,-upward-lfoo)" = LC_LOAD_UPWARD_DYLIB ]
+[ "$(foo_cmd -Wl,-upward-lfoo,-lfoo)" = LC_LOAD_UPWARD_DYLIB ]
+[ "$(foo_cmd -Wl,-lfoo,-upward_library,$t/libfoo.dylib)" = LC_LOAD_UPWARD_DYLIB ]
+[ "$(foo_cmd -Wl,-lfoo,-upward_library,./$t/libfoo.dylib)" = LC_LOAD_DYLIB ]
+[ "$(foo_cmd -Wl,-upward_library,./$t/libfoo.dylib,-lfoo)" = LC_LOAD_UPWARD_DYLIB ]
+[ "$(foo_cmd $t/libfoo.dylib -Wl,-upward_library,$t/libfoo.dylib)" = LC_LOAD_DYLIB ]
+[ "$(foo_cmd -Wl,-upward_library,$t/libfoo.dylib $t/libfoo.dylib)" = LC_LOAD_UPWARD_DYLIB ]
+[ "$(foo_cmd $t/libfoo.dylib -Wl,-reexport-lfoo)" = LC_LOAD_DYLIB ]
+
+$CC --ld-path=$mold -o $t/d.dylib -shared $t/a.o -L$t -Wl,-lbar,-hidden-lbar
+nm -m $t/d.dylib | grep _foo | grep -q 'was a private external'
