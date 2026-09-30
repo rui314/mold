@@ -5595,7 +5595,7 @@ fn plan_local_symbols<E: Target>(
                     {
                         continue;
                     }
-                    // -non_global_symbols_keep_list / _strip_list
+                    // -non_global_symbols_no_strip_list / _strip_list
                     // filter local symbols by name; stabs unaffected.
                     if let Some(keep) = &ctx.args.local_keep_list
                         && keep.find(sym.name().as_bytes()) == -1

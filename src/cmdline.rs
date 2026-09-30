@@ -271,7 +271,7 @@ pub struct Args {
     /// -non_global_symbols_strip_list: local symbols to drop from the
     /// output symbol table (glob patterns).
     pub local_strip_list: Glob,
-    /// -non_global_symbols_keep_list: if set, only matching local
+    /// -non_global_symbols_no_strip_list: if set, only matching local
     /// symbols stay.
     pub local_keep_list: Option<Glob>,
     pub pagezero_size: u64,
@@ -954,7 +954,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_patterns(&mut local_strip_list, name, names.iter().map(String::as_str));
             }
-            b"-non_global_symbols_keep_list" => {
+            b"-non_global_symbols_no_strip_list" => {
                 let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_patterns(
                     local_keep_list.get_or_insert_default(),

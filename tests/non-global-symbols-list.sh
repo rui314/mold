@@ -31,8 +31,12 @@ grep -q ' _main$' $t/nm1
 cat <<EOF > $t/keep
 _keep_me
 EOF
-$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-non_global_symbols_keep_list,$t/keep
+$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-non_global_symbols_no_strip_list,$t/keep
 nm $t/exe2 > $t/nm2
 ! grep -q _helper_one $t/nm2 || false
 grep -q _keep_me $t/nm2
 grep -q ' _main$' $t/nm2
+
+# ld64's option is -non_global_symbols_no_strip_list; there is no
+# -non_global_symbols_keep_list.
+not $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-non_global_symbols_keep_list,$t/keep 2> /dev/null
