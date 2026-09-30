@@ -17,3 +17,8 @@ otool -l $t/exe > $t/lc
 not grep -q '__la_symbol_ptr' $t/lc
 dyld_info -fixups $t/exe | grep '__got .* bind .*_printf'
 $t/exe | grep hi
+# Without the lazy-binding helper, x86-64 stubs are 2-byte aligned as
+# with chained fixups.
+if [ $ARCH = x86_64 ]; then
+  grep -A8 'sectname __stubs' $t/lc | grep 'align 2^1'
+fi
