@@ -3537,15 +3537,25 @@ impl SectionMap {
 /// some_instructions alone is but the assembler's note that it
 /// emitted an instruction into the section - and marks just the ObjC
 /// list sections the runtime scans, and the class references while in
-/// __DATA, as no-dead-strip. A -r output is
-/// input to another link, so ld-prime copies the type and attributes
-/// verbatim - but mold makes __DATA,__got regular data there, its
-/// relocations kept: a __got of non-lazy pointers needs the indirect
-/// symbol table to name its slots, and an object that has one is
-/// refused as input (ld-prime writes one, dropping the relocations),
-/// while a regular __got is GOT slots to either linker all the same.
-/// __eh_frame carries the compiler's fixed flags in both.
-fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
+/// __DATA, as no-dead-strip. Its rules for the Objective-C runtime's
+/// sections hold for the standard sections of their names (`standard`,
+/// see is_standard_section), in __DATA: an input's
+/// __DATA_CONST,__objc_classlist or __DATA_CONST,__objc_selrefs is data
+/// like any other. A -r output is input to another link, so ld-prime
+/// copies the type and attributes verbatim - but mold makes __DATA,__got
+/// regular data there, its relocations kept: a __got of non-lazy
+/// pointers needs the indirect symbol table to name its slots, and an
+/// object that has one is refused as input (ld-prime writes one,
+/// dropping the relocations), while a regular __got is GOT slots to
+/// either linker all the same. __eh_frame carries the compiler's fixed
+/// flags in both.
+fn output_section_flags(
+    segname: &str,
+    sectname: &str,
+    input: u32,
+    standard: bool,
+    relocatable: bool,
+) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
@@ -3557,15 +3567,21 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     }
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
-    // of a final image.
-    if segname == "__DATA" && matches!(sectname, "__objc_protorefs" | "__objc_superrefs") {
-        return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
+    // of a final image, and the protocol list its coalesced type.
+    if standard && segname == "__DATA" {
+        match sectname {
+            "__objc_protorefs" | "__objc_superrefs" => {
+                return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
+            }
+            "__objc_protolist" => return input & SECTION_TYPE,
+            _ => {}
+        }
     }
     // ld-prime knows __objc_selrefs by name: its selector references
     // stay literal pointers whatever their type - but those typed so,
     // which it makes plain data once constant (in the shared region),
     // as it does the class references.
-    if matches!(segname, "__DATA" | "__DATA_CONST") && sectname == "__objc_selrefs" {
+    if standard && sectname == "__objc_selrefs" {
         return if segname == "__DATA_CONST" && input & SECTION_TYPE == S_LITERAL_POINTERS {
             S_REGULAR
         } else {
@@ -3593,14 +3609,15 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     {
         attrs = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     }
-    if matches!(
-        sectname,
-        "__objc_classlist"
-            | "__objc_catlist"
-            | "__objc_catlist2"
-            | "__objc_nlclslist"
-            | "__objc_nlcatlist"
-    ) || (segname == "__DATA" && sectname == "__objc_classrefs")
+    if standard
+        && (matches!(
+            sectname,
+            "__objc_classlist"
+                | "__objc_catlist"
+                | "__objc_catlist2"
+                | "__objc_nlclslist"
+                | "__objc_nlcatlist"
+        ) || (segname == "__DATA" && sectname == "__objc_classrefs"))
     {
         attrs |= S_ATTR_NO_DEAD_STRIP;
     }
@@ -3706,7 +3723,7 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
         let map = SectionMap::final_link(ctx);
         let ((seg, out), (flags_seg, flags_sect)) =
             output_section_for(&ctx.args, map, "__DATA", sect, 0).unwrap();
-        let flags = output_section_flags(flags_seg, flags_sect, 0, false);
+        let flags = output_section_flags(flags_seg, flags_sect, 0, true, false);
         let mut size = 0u64;
         let mut offs = Vec::new();
         for b in ctx.data_blobs.iter().filter(|b| b.sect == sect && unplaced(ctx, b)) {
@@ -3799,7 +3816,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                                 S_REGULAR
                             } else {
                                 let input = input_section_flags(seg, sect, hdr.flags);
-                                output_section_flags(flags_name.0, flags_name.1, input, relocatable)
+                                let standard = is_standard_section(seg, sect, hdr.flags);
+                                let (seg, sect) = flags_name;
+                                output_section_flags(seg, sect, input, standard, relocatable)
                             };
                             let id = OutputSectionId::new(ctx.output_sections.len() as u32);
                             ctx.output_sections.push(osec);
@@ -4046,7 +4065,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 ctx,
                 seg,
                 sect,
-                output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, false),
+                output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, true, false),
                 p2align,
                 Tail::ObjcSelrefs,
                 selrefs_size,
@@ -4197,7 +4216,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             off += fde.data.len() as u32;
         }
 
-        ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, false);
+        ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
         ctx.eh_frame.hdr.size = off as u64;
         ctx.chunks.push(ChunkId::EhFrame);
     }
@@ -4641,7 +4660,7 @@ fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
         ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
         ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
         ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
-        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, false),
+        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
         ("__TEXT", "__const" | "__ustring" | "__gcc_except_tab" | "__objc_methlist") => S_REGULAR,
         ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
             S_NON_LAZY_SYMBOL_POINTERS
