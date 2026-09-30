@@ -4206,6 +4206,10 @@ fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
             | "__objc_doubleobj" | "__objc_dateobj" | "__objc_dictobj" | "__objc_arrayobj"
             | "__objc_arraydata" | "__const_cfobj2",
         ) => S_REGULAR,
+        // The compiler's records for the linker to encode into
+        // __unwind_info, which no output carries (but a boundary
+        // symbol's empty section).
+        ("__LD", "__compact_unwind") => S_ATTR_DEBUG,
         _ => return None,
     };
     Some(flags)
