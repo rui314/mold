@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::context::Context;
 use crate::input_sections::Reloc;
-use crate::macho::{MachRel, MachSection};
+use crate::macho::{MachRel, MachSection, R_SCATTERED};
 
 /// How a relocation type uses its target symbol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +51,85 @@ pub enum SplitRef {
     /// A 32-bit PC-relative displacement: recorded when it reaches
     /// another section, or anywhere from outside code.
     PcRel32,
+}
+
+/// Why an input relocation record is rejected. ld-prime checks each
+/// record as it reads the object and gives up on the object at the
+/// first bad one; the variants follow its diagnostics.
+#[derive(Clone, Copy, Debug)]
+pub enum RelocError {
+    /// The relocated field runs past the end of its section or atom.
+    OutOfBounds,
+    /// A scattered record, which only 32-bit targets define.
+    Scattered,
+    /// A type the target doesn't define, pcrel, length or extern fields
+    /// the type doesn't take, or half of a pair.
+    Unsupported,
+    /// A record that can't apply where it is, such as to the
+    /// instruction there; the text says why.
+    Invalid(&'static str),
+    /// An extern record's symbol index is past the symbol table.
+    SymbolOutOfRange,
+    /// A section-relative record's ordinal names no section.
+    SectionOutOfRange,
+}
+
+/// A rejected relocation record, and why.
+#[derive(Clone, Copy, Debug)]
+pub struct BadReloc {
+    pub rel: MachRel,
+    pub error: RelocError,
+}
+
+impl BadReloc {
+    #[cold]
+    #[inline(never)]
+    pub fn new(rel: &MachRel, error: RelocError) -> Self {
+        Self { rel: *rel, error }
+    }
+}
+
+/// One form of a relocation record - its pcrel, length (log2 of the
+/// field's size) and extern fields - as a bit in a set of the forms a
+/// type takes. The fields are bits 24 to 27 of the record's second
+/// word, which select the bit.
+pub const fn reloc_form(pcrel: bool, length: u32, ext: bool) -> u16 {
+    1 << (pcrel as u32 | length << 1 | (ext as u32) << 3)
+}
+
+/// Whether a record's form is one of `forms`, a set of reloc_form bits.
+/// A target lists each type's set in a match, which compiles to a
+/// table: a lookup is much cheaper than testing the fields one by one.
+#[inline]
+pub fn has_reloc_form(r: &MachRel, forms: u16) -> bool {
+    forms >> ((r.bits >> 24) & 0xf) & 1 != 0
+}
+
+/// What ld-prime checks of a record before its type: that it is not
+/// scattered, and that its field lies within the section's bytes.
+#[inline]
+pub fn check_reloc_place(r: &MachRel, contents: &[u8]) -> Result<(), BadReloc> {
+    if r.r_address & R_SCATTERED != 0 {
+        return Err(BadReloc::new(r, RelocError::Scattered));
+    }
+    if r.r_address as usize + (1 << r.r_length()) > contents.len() {
+        return Err(BadReloc::new(r, RelocError::OutOfBounds));
+    }
+    Ok(())
+}
+
+/// What ld-prime checks of a record after its type: that an extern
+/// record's symbol index is in the symbol table, and that another's
+/// section ordinal names a section.
+#[inline]
+pub fn check_reloc_index(r: &MachRel, nsects: usize, nsyms: usize) -> Result<(), BadReloc> {
+    if r.is_extern() && r.r_symbolnum() as usize >= nsyms {
+        return Err(BadReloc::new(r, RelocError::SymbolOutOfRange));
+    }
+    if !r.is_extern() && !(1..=nsects).contains(&(r.r_section() as usize)) {
+        return Err(BadReloc::new(r, RelocError::SectionOutOfRange));
+    }
+    Ok(())
 }
 
 pub trait Target: Copy + Default + Send + Sync + 'static {
@@ -170,15 +249,18 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     );
 
     /// Converts raw relocation records of one input section into
-    /// [`Reloc`]s. Mach-O encodes addends target-dependently: some are
-    /// embedded in the relocated field, some are separate records.
+    /// [`Reloc`]s, rejecting a record ld-prime rejects. Mach-O encodes
+    /// addends target-dependently: some are embedded in the relocated
+    /// field, some are separate records. `contents` is the section's
+    /// bytes and `nsyms` the size of the object's symbol table.
     fn read_relocs(
         file_name: &Path,
         sections: &[MachSection],
         hdr: &MachSection,
-        file_data: &[u8],
+        contents: &[u8],
         rels: &[MachRel],
-    ) -> Vec<Reloc>;
+        nsyms: usize,
+    ) -> Result<Vec<Reloc>, BadReloc>;
 
     /// Applies the relocations of one input section to `buf`, its bytes
     /// in the output. `isec` is the subsection's arena index and `base`

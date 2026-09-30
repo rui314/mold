@@ -11,7 +11,7 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::symbol::SymbolId;
 use crate::tapi;
-use crate::target::Target;
+use crate::target::{BadReloc, RelocError, Target};
 
 /// A file a symbol is owned by: an object or a dylib, by index in
 /// ctx.objs or ctx.dylibs. Dylib(u32::MAX) is an import resolved by
@@ -177,6 +177,62 @@ impl ObjectFile {
             && (self.subsections_via_symbols || !spans_symbol()))
         .then_some(id)
     }
+}
+
+/// Reports a relocation record ld-prime rejects, in its words. `atom`
+/// is the name of the atom holding it, and `bounds` the atom's place
+/// in the section.
+fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, atom: &str, bounds: (u32, u32)) {
+    let r = &bad.rel;
+    let fields = || {
+        format!(
+            "r_address=0x{:X}, r_type={}, r_extern={}, r_pcrel={}, r_length={}",
+            r.r_address,
+            r.r_type(),
+            r.is_extern() as u8,
+            r.is_pcrel() as u8,
+            r.r_length()
+        )
+    };
+    let name = file.display();
+    match bad.error {
+        RelocError::OutOfBounds => {
+            report_out_of_bounds(file, 1 << r.r_length(), r.r_address, bounds)
+        }
+        // The first word of a scattered record holds, from the least
+        // significant bit, address:24, type:4, length:2, pcrel:1 and
+        // the scattered bit.
+        RelocError::Scattered => crate::error!(
+            "scattered relocation in '{atom}' is not supported: r_address=0x{:X}, r_type={}, \
+             r_pcrel={}, r_length={} in '{name}'",
+            r.r_address & 0xff_ffff,
+            (r.r_address >> 24) & 0xf,
+            (r.r_address >> 30) & 1,
+            (r.r_address >> 28) & 3
+        ),
+        RelocError::Unsupported => {
+            crate::error!("relocation in '{atom}' is not supported: {} in '{name}'", fields())
+        }
+        RelocError::Invalid(what) => crate::error!("{what}: {} in '{name}'", fields()),
+        RelocError::SymbolOutOfRange => {
+            crate::error!("r_symbolnum={} out of range in '{name}'", r.r_symbolnum())
+        }
+        RelocError::SectionOutOfRange => {
+            crate::error!("sectionNum={} out of range (size={nsects}) in '{name}'", r.r_section())
+        }
+    }
+}
+
+/// Reports a relocated field of `size` bytes at `offset` in a section
+/// that runs past the end of its atom, which spans `bounds`.
+fn report_out_of_bounds(file: &Path, size: u8, offset: u32, bounds: (u32, u32)) {
+    crate::error!(
+        "{size} byte relocaton at r_address (0x{offset:04X}) is not fully within bounds of atom \
+         0x{:04X}->0x{:04X} in '{}'",
+        bounds.0,
+        bounds.1,
+        file.display()
+    );
 }
 
 /// A subsection's relocations, sliced from its object's reloc arena.
@@ -643,16 +699,29 @@ pub fn stage_object<E: Target>(
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
     let sect_isecs = obj.initialize_sections(&bare);
-    obj.read_relocations::<E>(&bare, &sect_isecs);
     obj.read_symbol_names(strtab);
+    let mut relocs_ok = obj.read_relocations::<E>(&bare, &sect_isecs);
 
-    if let Some(hdr) =
-        sect_hdrs.iter().find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+    // ld-prime checks the relocations of __compact_unwind as any
+    // section's, each 32-byte record being an atom.
+    if relocs_ok
+        && let Some(i) = sect_hdrs
+            .iter()
+            .position(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
     {
-        obj.parse_compact_unwind(hdr);
+        let end = sect_hdrs[i].size as u32;
+        let record_at = |off: u32| {
+            let start = off.min(end.saturating_sub(1)) & !31;
+            (start, start + 32)
+        };
+        match obj.read_section_relocs::<E>(i, record_at) {
+            Some(rels) => obj.parse_compact_unwind(&sect_hdrs[i], &rels),
+            None => relocs_ok = false,
+        }
     }
-    if let Some(hdr) =
-        sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
+    if relocs_ok
+        && let Some(hdr) =
+            sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
     {
         obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
     }
@@ -823,21 +892,25 @@ impl StagedObject {
     /// subsection keeps a range into it (rel_offset/nrels) - sold's
     /// layout - so a debug link's millions of relocs are one
     /// allocation, not a Vec per subsection.
+    ///
+    /// ld-prime stops reading an object at its first bad relocation;
+    /// so does this, returning false once it has reported one.
     fn read_relocations<E: Target>(
         &mut self,
         bare: &[bool],
         sect_isecs: &[std::ops::Range<usize>],
-    ) {
+    ) -> bool {
         use crate::input_sections::RelocTarget;
 
-        let data = self.mf.data();
         let sect_hdrs = self.sect_hdrs;
         for (i, sect) in sect_hdrs.iter().enumerate() {
             if sect_isecs[i].is_empty() || sect.nreloc == 0 {
                 continue;
             }
-            let raw: Vec<MachRel> = read_array(data, sect.reloff as usize, sect.nreloc as usize);
-            let mut rels = E::read_relocs(&self.mf.name, sect_hdrs, sect, data, &raw);
+            let atom_at = |off| self.subsec_at(sect_isecs[i].clone(), off);
+            let Some(mut rels) = self.read_section_relocs::<E>(i, atom_at) else {
+                return false;
+            };
             // The sort must be stable: a SUBTRACTOR and the UNSIGNED it
             // pairs with share one offset and their order is the pairing
             // (Swift's relative pointers are all such pairs). An unstable
@@ -856,13 +929,20 @@ impl StagedObject {
                 }
             }
 
+            // read_relocs has checked that each field lies within the
+            // section; ld-prime also wants it within its atom.
             let mut pos = 0;
+            let mut straddles = false;
             for sub in sect_isecs[i].clone() {
                 let sub_off = (self.isecs[sub].input_addr as u64 - sect.addr) as u32;
                 let end = sub_off + self.isecs[sub].size;
                 let start = self.relocs.len();
                 while pos < rels.len() && rels[pos].offset < end {
                     let mut rel = rels[pos];
+                    if rel.offset + rel.size as u32 > end && !straddles {
+                        report_out_of_bounds(&self.mf.name, rel.size, rel.offset, (sub_off, end));
+                        straddles = true;
+                    }
                     rel.offset -= sub_off;
                     self.relocs.push(rel);
                     pos += 1;
@@ -870,10 +950,92 @@ impl StagedObject {
                 self.isecs[sub].rel_offset = start as u32;
                 self.isecs[sub].nrels = (self.relocs.len() - start) as u32;
             }
-            if pos < rels.len() {
-                fatal!("{}: relocation outside its section", self.mf.name.display());
+            if straddles {
+                return false;
             }
         }
+        true
+    }
+
+    /// Reads the relocations of section `i`. If ld-prime would reject
+    /// one, reports the first such and returns None. `atom_at` gives the
+    /// place in the section of the atom holding an offset, which the
+    /// diagnostic names.
+    fn read_section_relocs<E: Target>(
+        &self,
+        i: usize,
+        atom_at: impl Fn(u32) -> (u32, u32),
+    ) -> Option<Vec<crate::input_sections::Reloc>> {
+        let mf = self.mf;
+        let sect = &self.sect_hdrs[i];
+        // ld-prime crashes on these.
+        if matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL) {
+            crate::error!(
+                "section '{}/{}' has a non-zero nreloc field in '{}'",
+                sect.segname(),
+                sect.sectname(),
+                mf.name.display()
+            );
+            return None;
+        }
+        let data = mf.data();
+        let raw: Vec<MachRel> = read_array(data, sect.reloff as usize, sect.nreloc as usize);
+        let contents = &data[sect.offset as usize..][..sect.size as usize];
+        let nsyms = self.nlists.len();
+        let bad = match E::read_relocs(&mf.name, self.sect_hdrs, sect, contents, &raw, nsyms) {
+            Ok(rels) => return Some(rels),
+            Err(bad) => bad,
+        };
+        let bounds = atom_at(bad.rel.r_address);
+        let name = self.atom_name(i + 1, sect.addr + bounds.0 as u64);
+        report_bad_reloc(&mf.name, self.sect_hdrs.len(), &bad, name, bounds);
+        None
+    }
+
+    /// The place in its section of the subsection holding `offset`, the
+    /// atom ld-prime names in a diagnostic: the last one for an offset
+    /// past the end. `isecs` are the section's subsections, in address
+    /// order.
+    fn subsec_at(&self, isecs: std::ops::Range<usize>, offset: u32) -> (u32, u32) {
+        let isecs = &self.isecs[isecs];
+        let sect = &self.sect_hdrs[isecs[0].shndx as usize];
+        let addr = sect.addr + offset as u64;
+        let i = isecs.partition_point(|isec| isec.input_addr as u64 <= addr);
+        let isec = &isecs[i.saturating_sub(1)];
+        let start = (isec.input_addr as u64 - sect.addr) as u32;
+        (start, start + isec.size)
+    }
+
+    /// The name ld-prime gives the atom at `addr` in section `n_sect` in
+    /// a diagnostic: that of a symbol there - an exported one before a
+    /// private extern, a local, a weak definition and an ltmpN label,
+    /// each kind by its greatest name - or none.
+    fn atom_name(&self, n_sect: usize, addr: u64) -> &'static str {
+        let rank = |nlist: &NList, name: &str| {
+            if name.starts_with("ltmp") {
+                0
+            } else if nlist.n_desc & N_WEAK_DEF != 0 {
+                1
+            } else if !nlist.is_extern() {
+                2
+            } else if nlist.n_type & N_PEXT != 0 {
+                3
+            } else {
+                4
+            }
+        };
+        self.nlists
+            .iter()
+            .zip(&self.sym_names)
+            .filter(|(n, _)| {
+                !n.is_stab()
+                    && n.n_type() == N_SECT
+                    && n.n_sect as usize == n_sect
+                    && n.n_value == addr
+            })
+            .map(|(n, &name)| (rank(n, name), name))
+            .max()
+            .map_or("", |(_, name)| name)
     }
 
     /// Reports a relocation whose target ld-prime ignores, returning
@@ -1450,14 +1612,17 @@ impl UnwindRecord {
 impl StagedObject {
     /// Parses a __LD,__compact_unwind section into unwind records. The
     /// section is an array of 32-byte entries whose pointer fields are
-    /// set by relocations.
+    /// set by relocations, `rels` as read_relocs made them of the
+    /// section's.
     ///
     /// Records that point to DWARF unwind info keep their DWARF-mode
     /// encoding; parse_eh_frame attaches the FDE (a final link
     /// regenerates the encoding from it, a -r output copies the record
     /// as it came, like ld64). Object files usually don't contain such
     /// records, but `ld -r` output does.
-    fn parse_compact_unwind(&mut self, hdr: &MachSection) {
+    fn parse_compact_unwind(&mut self, hdr: &MachSection, rels: &[crate::input_sections::Reloc]) {
+        use crate::input_sections::RelocTarget;
+
         const ENTRY_SIZE: usize = 32;
         let mf = self.mf;
         // Diagnostics spell the path lossily.
@@ -1471,11 +1636,6 @@ impl StagedObject {
             let off = hdr.offset as usize + off;
             u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
         };
-        let read_u64 = |off: usize| {
-            let off = hdr.offset as usize + off;
-            u64::from_le_bytes(data[off..off + 8].try_into().unwrap())
-        };
-
         // An entry holds the function's address, its length, the
         // encoding, the personality and the LSDA, at offsets 0, 8, 12, 16
         // and 24. The pointers are read through their relocations below.
@@ -1493,30 +1653,29 @@ impl StagedObject {
             })
             .collect();
 
-        // The address a pointer field refers to. For an extern reference
-        // the target is this object's own definition, located by its
-        // nlist value.
-        let target_addr = |r: &MachRel, value: u64| {
-            if r.is_extern() {
-                self.nlists[r.r_symbolnum() as usize].n_value + value
-            } else {
-                value
-            }
-        };
         let subsec_at = |addr: u64| find_subsec(&self.isecs, &self.subsecs, addr);
 
-        let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
-        for r in &rels {
-            if r.r_address as u64 >= hdr.size || r.r_length() != 3 {
+        for r in rels {
+            if r.size != 8 {
                 fatal!("{file_name}: __compact_unwind: unsupported relocation");
             }
-            let rec = &mut records[r.r_address as usize / ENTRY_SIZE];
-            let value = read_u64(r.r_address as usize);
+            let rec = &mut records[r.offset as usize / ENTRY_SIZE];
+            // The address a pointer field refers to. For an extern
+            // reference the target is this object's own definition,
+            // located by its nlist value.
+            let addr = match r.target() {
+                RelocTarget::Sym(sym) => {
+                    self.nlists[sym as usize].n_value.wrapping_add_signed(r.addend)
+                }
+                RelocTarget::Section(sect) => {
+                    self.sect_hdrs[sect as usize].addr.wrapping_add_signed(r.addend)
+                }
+            };
 
-            match r.r_address as usize % ENTRY_SIZE {
+            match r.offset as usize % ENTRY_SIZE {
                 // The function the record covers.
                 0 => {
-                    let Some((isec, off)) = subsec_at(target_addr(r, value)) else {
+                    let Some((isec, off)) = subsec_at(addr) else {
                         fatal!("{file_name}: __compact_unwind: bad function reference");
                     };
                     rec.isec = isec as u32;
@@ -1525,12 +1684,13 @@ impl StagedObject {
                 // The personality function, recorded as a local symbol
                 // index and mapped to a symbol at integration.
                 16 => {
-                    let sym = if r.is_extern() {
-                        Some(r.r_symbolnum() as usize)
-                    } else {
-                        // Resolve a section-relative reference back to the
-                        // symbol at that address.
-                        self.nlists.iter().position(|n| n.is_extern() && n.n_value == value)
+                    let sym = match r.target() {
+                        RelocTarget::Sym(sym) => Some(sym as usize),
+                        // Resolve a section-relative reference back to
+                        // the symbol at that address.
+                        RelocTarget::Section(_) => {
+                            self.nlists.iter().position(|n| n.is_extern() && n.n_value == addr)
+                        }
                     };
                     let Some(sym) = sym else {
                         fatal!("{file_name}: __compact_unwind: unsupported personality");
@@ -1539,7 +1699,7 @@ impl StagedObject {
                 }
                 // The language-specific data area
                 24 => {
-                    let Some((isec, off)) = subsec_at(target_addr(r, value)) else {
+                    let Some((isec, off)) = subsec_at(addr) else {
                         fatal!("{file_name}: __compact_unwind: bad LSDA reference");
                     };
                     rec.lsda_isec = isec as u32;

@@ -375,6 +375,13 @@ impl MachRel {
         self.bits & 0xff_ffff
     }
 
+    /// The 1-based ordinal of the section a non-extern record refers
+    /// to: r_symbolnum's low byte, as an nlist's n_sect is one byte.
+    /// ld-prime ignores the rest of the field.
+    pub fn r_section(&self) -> u32 {
+        self.bits & 0xff
+    }
+
     pub fn is_pcrel(&self) -> bool {
         self.bits & (1 << 24) != 0
     }

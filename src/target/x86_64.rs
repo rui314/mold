@@ -3,10 +3,14 @@
 use std::path::Path;
 
 use crate::context::Context;
-use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::{SplitRef, Target};
+use crate::symbol::SymbolId;
+use crate::target::{
+    BadReloc, RelocError, SplitRef, Target, check_reloc_index, check_reloc_place, has_reloc_form,
+    reloc_form,
+};
+use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -29,6 +33,78 @@ fn reloc_bias(r_type: u8) -> i64 {
         X86_64_RELOC_SIGNED_4 => 4,
         _ => 0,
     }
+}
+
+/// Whether ld-prime takes a record's pcrel, length and extern fields
+/// for its type.
+#[inline]
+fn is_supported(r: &MachRel) -> bool {
+    let forms = match r.r_type() {
+        X86_64_RELOC_UNSIGNED => {
+            reloc_form(false, 2, true)
+                | reloc_form(false, 3, true)
+                | reloc_form(false, 2, false)
+                | reloc_form(false, 3, false)
+        }
+        X86_64_RELOC_SUBTRACTOR => reloc_form(false, 2, true) | reloc_form(false, 3, true),
+        X86_64_RELOC_SIGNED
+        | X86_64_RELOC_SIGNED_1
+        | X86_64_RELOC_SIGNED_2
+        | X86_64_RELOC_SIGNED_4 => reloc_form(true, 2, true) | reloc_form(true, 2, false),
+        // A one-byte branch (jmp rel8) must name a symbol.
+        X86_64_RELOC_BRANCH => {
+            reloc_form(true, 2, true) | reloc_form(true, 2, false) | reloc_form(true, 0, true)
+        }
+        X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => reloc_form(true, 2, true),
+        _ => 0,
+    };
+    has_reloc_form(r, forms)
+}
+
+/// Checks record `i` as ld-prime does when it reads it: its type must
+/// take its pcrel, length and extern fields, and a SUBTRACTOR must pair
+/// with an UNSIGNED of its size at its address. ld-prime checks no
+/// instructions here.
+#[inline(always)]
+fn check_reloc(rels: &[MachRel], i: usize) -> Result<(), BadReloc> {
+    let r = &rels[i];
+    if !is_supported(r) {
+        return Err(BadReloc::new(r, RelocError::Unsupported));
+    }
+    if r.r_type() == X86_64_RELOC_SUBTRACTOR {
+        let Some(u) = rels.get(i + 1).filter(|u| {
+            u.r_type() == X86_64_RELOC_UNSIGNED && is_supported(u) && u.r_length() == r.r_length()
+        }) else {
+            return Err(BadReloc::new(r, RelocError::Unsupported));
+        };
+        if u.r_address != r.r_address {
+            return Err(BadReloc::new(
+                u,
+                RelocError::Invalid(
+                    "X86_64_RELOC_SUBTRACTOR preceeding X86_64_RELOC_UNSIGNED must have same r_address",
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Writes a one-byte branch (jmp rel8) at `loc`, whose address is `p`,
+/// to `t`, the address of `sym`. It reaches only a definition near it
+/// in the image: ld-prime gives it no stub.
+fn write_branch8(ctx: &Context<X86_64>, obj: usize, sym: SymbolId, t: u64, p: u64, loc: &mut [u8]) {
+    let sym = &ctx.symbols[sym];
+    let val = t.wrapping_sub(p + 1) as i64;
+    let file_name = ctx.objs[obj].mf.name.display();
+    if sym.is_imported() {
+        error!("{file_name}: 8-bit branch target '{sym}' does not have address");
+    } else if !(-128..128).contains(&val) {
+        error!(
+            "{file_name}: 8-bit branch out of range (displacement={val}, max is +/-127), \
+             from 0x{p:X} to 0x{t:X} ('{sym}')"
+        );
+    }
+    loc[0] = val as u8;
 }
 
 impl Target for X86_64 {
@@ -178,21 +254,26 @@ impl Target for X86_64 {
         file_name: &Path,
         sections: &[MachSection],
         hdr: &MachSection,
-        file_data: &[u8],
+        contents: &[u8],
         rels: &[MachRel],
-    ) -> Vec<Reloc> {
+        nsyms: usize,
+    ) -> Result<Vec<Reloc>, BadReloc> {
         let mut vec = Vec::with_capacity(rels.len());
 
         for (i, r) in rels.iter().enumerate() {
             // Diagnostics spell the path lossily.
             let file_name = file_name.display();
+            check_reloc_place(r, contents)?;
+            check_reloc(rels, i)?;
+            check_reloc_index(r, sections.len(), nsyms)?;
+
             // On x86-64 every relocation's addend is embedded in the
             // relocated field.
-            let off = hdr.offset as usize + r.r_address as usize;
-            let embedded = match 1 << r.r_length() {
-                4 => i32::from_le_bytes(file_data[off..off + 4].try_into().unwrap()) as i64,
-                8 => i64::from_le_bytes(file_data[off..off + 8].try_into().unwrap()),
-                _ => fatal!("{file_name}: bad relocation size"),
+            let loc = &contents[r.r_address as usize..];
+            let embedded = match r.r_length() {
+                0 => loc[0] as i8 as i64,
+                2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
+                _ => i64::from_le_bytes(loc[..8].try_into().unwrap()),
             };
             let addend = embedded + reloc_bias(r.r_type());
             let is_subtracted = i > 0 && rels[i - 1].r_type() == X86_64_RELOC_SUBTRACTOR;
@@ -206,7 +287,7 @@ impl Target for X86_64 {
                     addend as u64
                 };
                 let Some(idx) =
-                    crate::target::nonextern_target_section(sections, r.r_symbolnum(), addr)
+                    crate::target::nonextern_target_section(sections, r.r_section(), addr)
                 else {
                     fatal!("{file_name}: bad relocation: {}", r.r_address);
                 };
@@ -223,7 +304,7 @@ impl Target for X86_64 {
                 addend,
             });
         }
-        vec
+        Ok(vec)
     }
 
     fn apply_relocs(
@@ -279,18 +360,22 @@ impl Target for X86_64 {
                         write64(loc, s.wrapping_add_signed(a));
                     }
                 }
+                // read_relocs has paired it with an UNSIGNED of its size.
                 X86_64_RELOC_SUBTRACTOR => {
                     i += 1;
-                    debug_assert!(rels[i].r_type == X86_64_RELOC_UNSIGNED);
                     let val = ctx
                         .reloc_target_addr(obj, &rels[i])
                         .wrapping_add_signed(rels[i].addend)
                         .wrapping_sub(s);
-                    match r.size {
-                        4 => write32(loc, val as u32),
-                        8 => write64(loc, val),
-                        _ => fatal!("bad SUBTRACTOR relocation size"),
+                    if r.size == 4 {
+                        write32(loc, val as u32);
+                    } else {
+                        write64(loc, val);
                     }
+                }
+                X86_64_RELOC_BRANCH if r.size == 1 => {
+                    let sym = ctx.reloc_target_sym(obj, r).unwrap();
+                    write_branch8(ctx, obj, sym, s.wrapping_add_signed(a), p, loc);
                 }
                 // A kext's call to an import, without a stub, keeps
                 // its addend for kmutil's external relocation.
@@ -303,7 +388,6 @@ impl Target for X86_64 {
                     write32(loc, a as u32);
                 }
                 X86_64_RELOC_BRANCH => {
-                    debug_assert!(r.size == 4);
                     let s = match ctx.reloc_target_sym(obj, r) {
                         Some(id) => ctx.branch_target_addr(id),
                         None => s,
@@ -315,7 +399,6 @@ impl Target for X86_64 {
                 | X86_64_RELOC_SIGNED_1
                 | X86_64_RELOC_SIGNED_2
                 | X86_64_RELOC_SIGNED_4 => {
-                    debug_assert!(r.size == 4);
                     let val = s
                         .wrapping_add_signed(a)
                         .wrapping_sub(p + 4)
@@ -323,12 +406,10 @@ impl Target for X86_64 {
                     write32(loc, val as u32);
                 }
                 X86_64_RELOC_GOT_LOAD if relaxed_got_load => {
-                    debug_assert!(r.size == 4);
                     let val = s.wrapping_add_signed(a).wrapping_sub(p + 4);
                     write32(loc, val as u32);
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT => {
-                    debug_assert!(r.size == 4);
                     let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
                     let val = g.wrapping_add_signed(a).wrapping_sub(p + 4);
                     write32(loc, val as u32);
@@ -337,12 +418,10 @@ impl Target for X86_64 {
                 // GOT load: the movq of the descriptor's GOT slot
                 // becomes a leaq of the __thread_vars descriptor itself.
                 X86_64_RELOC_TLV if relaxed_got_load => {
-                    debug_assert!(r.size == 4);
                     let val = s.wrapping_add_signed(a).wrapping_sub(p + 4);
                     write32(loc, val as u32);
                 }
                 X86_64_RELOC_TLV => {
-                    debug_assert!(r.size == 4);
                     let t = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
                     let val = t.wrapping_add_signed(a).wrapping_sub(p + 4);
                     write32(loc, val as u32);

@@ -169,6 +169,12 @@ pub const ARM64_RELOC_POINTER_TO_GOT: u8 = 7;
 pub const ARM64_RELOC_TLVP_LOAD_PAGE21: u8 = 8;
 pub const ARM64_RELOC_TLVP_LOAD_PAGEOFF12: u8 = 9;
 pub const ARM64_RELOC_ADDEND: u8 = 10;
+/// arm64e's signed pointer, which base arm64 objects can't use.
+pub const ARM64_RELOC_AUTHENTICATED_POINTER: u8 = 11;
+
+/// The top bit of a relocation's first word marks a scattered record,
+/// which only 32-bit targets define.
+pub const R_SCATTERED: u32 = 0x8000_0000;
 
 // ARM64 linker optimization hint kinds
 pub const LOH_ARM64_ADRP_ADRP: u8 = 1;
