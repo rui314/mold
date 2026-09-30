@@ -4410,12 +4410,6 @@ pub fn create_output_symtab<E: Target>(
 ) -> SymtabSection {
     let mut data = SymtabSection::new();
 
-    // Names are collected alongside the entries and the string table
-    // is built afterwards in one parallel pass (below); an entry
-    // whose name is the empty sentinel keeps whatever fixed n_strx
-    // its loop assigned (the "" and "-" placeholders).
-    let mut names: Vec<&'static [u8]> = Vec::new();
-
     let t = ctx.timer("symtab-classify");
     // An import is listed only while live code or data refers to it:
     // after -dead_strip, ld-prime drops the imports only stripped
@@ -4521,96 +4515,107 @@ pub fn create_output_symtab<E: Target>(
 
     // Local symbols, then the debugger's notes: N_AST paths and stabs.
     let pexts: Vec<usize> =
-        classes.iter().enumerate().filter(|&(_, &c)| c == Class::Pext).map(|(i, _)| i).collect();
+        (0..classes.len()).into_par_iter().filter(|&i| classes[i] == Class::Pext).collect();
     let t = ctx.timer("symtab-locals");
     let locals = plan_local_symbols(ctx, &pexts, sorted_globals);
-    names.par_extend(locals.par_iter().map(|l| l.0));
-    data.entries.par_extend(locals.par_iter().map(|l| (l.1, l.2)));
-    let nplain = data.entries.len();
     drop(t);
 
-    // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
-    for path in &ctx.args.add_ast_paths {
-        let n_strx = 0;
-        names.push(leak_bytes(path_bytes(path).to_vec()));
-        data.entries.push((NList { n_strx, n_type: N_AST, ..Default::default() }, None));
-    }
-
-    let mut t = ctx.timer("symtab-stabs");
-    let mut stabs_start = data.entries.len();
-    let mut stab_names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::new();
     // Debug stabs. Mach-O binaries don't carry DWARF; instead, for each
     // object with debug info the symbol table gets stab entries telling
     // the debugger where the object file is (N_OSO) and where its
     // functions and globals ended up, and the debugger reads the DWARF
-    // from the objects.
-    if !ctx.args.strip_debug {
+    // from the objects. Each object's run is independent.
+    let t = ctx.timer("symtab-stabs");
+    let planned: Vec<StabPlan> = if ctx.args.strip_debug {
+        Vec::new()
+    } else {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let cwd = &cwd;
         let commons = common_stab_owners(ctx);
-
-        // Each object's stab run is independent; plan them in
-        // parallel and append in object order, the same shape as the
-        // per-object locals planning below.
-        let planned: Vec<StabPlan> = ctx
-            .objs
+        ctx.objs
             .par_iter()
             .enumerate()
-            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, cwd, &commons))
-            .collect();
-        // ld-prime opens the stabs with a closing N_SO of its own.
-        if planned.iter().any(|plan| !plan.is_empty()) {
-            names.push(b"");
-            data.entries.push((STAB_END, None));
-        }
-        // Write the planned stabs into prefix-summed ranges in
-        // parallel, instead of appending object by object - mold's
-        // populate_symtab shape. Each object owns a disjoint range
-        // starting after whatever entries (e.g. AST paths) precede it.
-        let start = data.entries.len();
-        debug_assert_eq!(names.len(), start);
-        let mut bases = Vec::with_capacity(planned.len());
-        let mut total = start;
-        for plan in &planned {
-            bases.push(total);
-            total += plan.len();
-        }
-        names.reserve(total - start);
-        data.entries.reserve(total - start);
-        stab_names_of.reserve(total - start);
-        struct NamePtr(*mut &'static [u8]);
-        unsafe impl Sync for NamePtr {}
-        struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
-        unsafe impl Sync for EntPtr {}
-        struct NameOfPtr(*mut Option<crate::symbol::SymbolId>);
-        unsafe impl Sync for NameOfPtr {}
-        let np = NamePtr(names.as_mut_ptr());
-        let ep = EntPtr(data.entries.as_mut_ptr());
-        let op = NameOfPtr(stab_names_of.as_mut_ptr());
-        let (np, ep, op) = (&np, &ep, &op);
-        planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
-            for (k, stab) in plan.iter().enumerate() {
-                // SAFETY: [base, base+plan.len()) ranges are disjoint
-                // across objects and lie within the reserved capacity
-                // (shifted by `start` for the notes' own array).
-                unsafe {
-                    np.0.add(base + k).write(stab.name);
-                    ep.0.add(base + k).write((stab.ent, stab.value_of));
-                    op.0.add(base - start + k).write(stab.name_of);
-                }
-            }
-        });
-        stabs_start = start;
-        // SAFETY: every slot in start..total was written above.
-        unsafe {
-            names.set_len(total);
-            data.entries.set_len(total);
-            stab_names_of.set_len(total - start);
-        }
+            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+            .collect()
+    };
+    drop(t);
+
+    let t = ctx.timer("symtab-entries");
+    // Undefined (imported) symbols, sorted by name.
+    let mut undefs: Vec<usize> =
+        (0..classes.len()).into_par_iter().filter(|&i| classes[i] == Class::Undef).collect();
+    undefs.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(ctx.symbols[i].name()));
+
+    // Every range's size is known now: the entries and their names are
+    // allocated once, and each range is filled in parallel. The names
+    // are the strings layout_strings lays out below.
+    let nstabs: usize = planned.iter().map(|plan| plan.len()).sum();
+    let total = locals.len()
+        + ctx.args.add_ast_paths.len()
+        + usize::from(nstabs != 0)
+        + nstabs
+        + sorted_globals.len()
+        + undefs.len();
+    let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
+    data.entries.reserve_exact(total);
+
+    names.par_extend(locals.par_iter().map(|l| l.0));
+    data.entries.par_extend(locals.par_iter().map(|l| (l.1, l.2)));
+    let nplain = data.entries.len();
+    drop(locals);
+
+    // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
+    for path in &ctx.args.add_ast_paths {
+        names.push(leak_bytes(path_bytes(path).to_vec()));
+        data.entries.push((NList { n_strx: 0, n_type: N_AST, ..Default::default() }, None));
     }
-    t.stop();
+
+    // ld-prime opens the stabs with a closing N_SO of its own.
+    if nstabs != 0 {
+        names.push(b"");
+        data.entries.push((STAB_END, None));
+    }
+    // Write the planned stabs into prefix-summed ranges in parallel,
+    // instead of appending object by object - mold's populate_symtab
+    // shape. Each object owns a disjoint range.
+    let stabs_start = data.entries.len();
+    let mut stab_names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::with_capacity(nstabs);
+    let mut bases = Vec::with_capacity(planned.len());
+    let mut base = stabs_start;
+    for plan in &planned {
+        bases.push(base);
+        base += plan.len();
+    }
+    struct NamePtr(*mut &'static [u8]);
+    unsafe impl Sync for NamePtr {}
+    struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
+    unsafe impl Sync for EntPtr {}
+    struct NameOfPtr(*mut Option<crate::symbol::SymbolId>);
+    unsafe impl Sync for NameOfPtr {}
+    let np = NamePtr(names.as_mut_ptr());
+    let ep = EntPtr(data.entries.as_mut_ptr());
+    let op = NameOfPtr(stab_names_of.as_mut_ptr());
+    let (np, ep, op) = (&np, &ep, &op);
+    planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
+        for (k, stab) in plan.iter().enumerate() {
+            // SAFETY: [base, base+plan.len()) ranges are disjoint across
+            // objects and lie within the reserved capacity (shifted by
+            // `stabs_start` for the notes' own array).
+            unsafe {
+                np.0.add(base + k).write(stab.name);
+                ep.0.add(base + k).write((stab.ent, stab.value_of));
+                op.0.add(base - stabs_start + k).write(stab.name_of);
+            }
+        }
+    });
+    // SAFETY: every slot in stabs_start..stabs_start + nstabs was
+    // written above.
+    unsafe {
+        names.set_len(stabs_start + nstabs);
+        data.entries.set_len(stabs_start + nstabs);
+        stab_names_of.set_len(nstabs);
+    }
+    drop(planned);
     data.nlocal = data.entries.len() as u32;
-    let t = ctx.timer("symtab-globals");
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
@@ -4640,16 +4645,7 @@ pub fn create_output_symtab<E: Target>(
     }));
     data.nextdef = data.entries.len() as u32 - data.nlocal;
 
-    // Undefined (imported) symbols, sorted by name. The library ordinal
-    // lives in the high byte of n_desc.
-    let mut undefs: Vec<usize> = classes
-        .par_iter()
-        .enumerate()
-        .filter(|&(_, &c)| c == Class::Undef)
-        .map(|(i, _)| i)
-        .collect();
-    undefs.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(ctx.symbols[i].name()));
-
+    // The imports. The library ordinal lives in the high byte of n_desc.
     names.par_extend(undefs.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
     data.entries.par_extend(undefs.par_iter().map(|&i| {
         let sym = &ctx.symbols[i];
@@ -4664,8 +4660,11 @@ pub fn create_output_symtab<E: Target>(
         (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 }, None)
     }));
     data.nundef = undefs.len() as u32;
+    debug_assert_eq!(data.entries.len(), total);
+    drop(t);
+
     // The string table, in ld-prime's layout.
-    debug_assert_eq!(names.len(), data.entries.len());
+    let t = ctx.timer("symtab-strings");
     let nlocal = data.nlocal as usize;
     let entry_of =
         crate::chunks::symtab::symbol_entries(&data.entries, nplain, nlocal, ctx.symbols.syms.len());
