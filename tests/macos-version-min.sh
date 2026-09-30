@@ -39,3 +39,13 @@ if [ $ARCH = x86_64 ]; then
 else
   grep -q 'cmd LC_BUILD_VERSION' $t/log3
 fi
+
+# ld-prime notes each use of the old spelling, bare and whatever -w or
+# -fatal_warnings say, and reports on the option under its new name.
+sdk=$(xcrun --show-sdk-path)
+link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o "$@"; }
+link -w -fatal_warnings -macosx_version_min 30.0 -macosx_version_min 30.0 -o $t/exe3 \
+  2> $t/log4
+[ "$(grep -c '^-macosx_version_min has been renamed to -macos_version_min$' $t/log4)" = 2 ]
+not link -macosx_version_min 1x -o $t/exe3 2> $t/log5
+grep -q -- "-macos_version_min: malformed 32-bit xxxx.yy.zz version number: '1x'" $t/log5

@@ -84,6 +84,12 @@ pub fn warn(msg: fmt::Arguments) {
     }
 }
 
+/// Prints a message with no prefix: ld-prime gives a few notices that
+/// are neither warnings nor errors (a renamed option).
+pub fn notice(msg: fmt::Arguments) {
+    emit("", "", msg);
+}
+
 /// Counts a warning that -w hid before it could be given.
 pub fn hidden_warning() {
     HAS_WARNING.store(true, Ordering::Relaxed);

@@ -573,6 +573,33 @@ fn is_other_platform(name: &str) -> bool {
     }
 }
 
+/// Takes the platform and minimum OS version an option names. The last
+/// option wins; ld-prime warns about another minimum version for the
+/// same platform, and about firmware replacing macOS, but refuses
+/// macOS (or another platform) replacing firmware once it has read
+/// every option.
+fn set_platform(
+    args: &mut Args,
+    warnings: &mut OptionWarnings,
+    incompatible: &mut Option<(u32, u32)>,
+    platform: u32,
+    minos: u32,
+) {
+    if args.platform == platform && args.platform_minos != minos {
+        let (old, new) = (format_version(args.platform_minos), format_version(minos));
+        let name = platform_name(platform);
+        warnings.warn(format!(
+            "passed two min versions ({old}, {new}) for platform {name}. Using {new}."
+        ));
+    } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
+        warnings.warn("conflicting -platform_version platform: macOS, using: firmware");
+    } else if args.platform != 0 && args.platform != platform {
+        incompatible.get_or_insert((args.platform, platform));
+    }
+    args.platform = platform;
+    args.platform_minos = minos;
+}
+
 /// Applies -target <arch>-<vendor>-<os><version>, which clang passes in
 /// place of -arch and -platform_version for firmware (for instance
 /// arm64-apple-firmware1.0.0). ld-prime lets the triple override both,
@@ -886,8 +913,15 @@ enum OutputKind {
 #[derive(Default)]
 struct OptionWarnings {
     quiet: bool,
-    msgs: Vec<String>,
+    msgs: Vec<OptionMessage>,
     hidden: bool,
+}
+
+/// A message given as an option is read: a warning, or a notice, which
+/// ld-prime prints bare whatever -w and -fatal_warnings say.
+enum OptionMessage {
+    Warning(String),
+    Notice(String),
 }
 
 impl OptionWarnings {
@@ -895,15 +929,18 @@ impl OptionWarnings {
         if self.quiet {
             self.hidden = true;
         } else {
-            self.msgs.push(msg.into());
+            self.msgs.push(OptionMessage::Warning(msg.into()));
         }
+    }
+
+    fn notice(&mut self, msg: impl Into<String>) {
+        self.msgs.push(OptionMessage::Notice(msg.into()));
     }
 }
 
 /// The error for an option the command line ends before the argument
 /// of, as ld-prime words it: what the option needs, in the usage its
-/// manual page gives (which -macosx_version_min, renamed, reports under
-/// its new name, and -executable_path, obsolete, not).
+/// manual page gives (which -executable_path, obsolete, has not).
 fn missing_argument(opt: &str) -> String {
     let usage = match opt {
         "-arch" => "missing <arch>",
@@ -927,7 +964,6 @@ fn missing_argument(opt: &str) -> String {
         | "-compatibility_version"
         | "-dylib_compatibility_version"
         | "-macos_version_min" => "missing <version>",
-        "-macosx_version_min" => return "-macos_version_min missing <version>".to_string(),
         "-mllvm" => "missing <value>",
         "-undefined" => "missing <dynamic_lookup>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -969,6 +1005,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut read_only_relocs: Option<bool> = None;
     let mut headerpad: Option<u64> = None;
     let mut target_triple: Option<&str> = None;
+    let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
     let mut version_shown = false;
@@ -1043,9 +1080,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let platform = text(name, next_arg(&mut i, name));
                 let minos = text(name, next_arg(&mut i, name));
                 let sdk = text(name, next_arg(&mut i, name));
-                args.platform = parse_platform(platform);
-                args.platform_minos = parse_version(name, minos);
-                args.platform_sdk = parse_version(name, sdk);
+                let platform = parse_platform(platform);
+                let minos = parse_version(name, minos);
+                let sdk = parse_version(name, sdk);
+                set_platform(
+                    &mut args,
+                    &mut warnings,
+                    &mut incompatible_platforms,
+                    platform,
+                    minos,
+                );
+                args.platform_sdk = sdk;
             }
             b"-syslibroot" => args.syslibroot.push(path(next_arg(&mut i, name))),
             b"-L" => args.library_paths.push(path(next_arg(&mut i, name))),
@@ -1495,11 +1540,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // deployment target, still emitted by clang for older
             // -mmacosx-version-min targets. It fixes the platform to
             // macOS; ld64 records the SDK as the same version (the
-            // flag carries no separate SDK).
+            // flag carries no separate SDK). ld-prime notes each use of
+            // the old spelling, and reports on the option as the new.
             b"-macos_version_min" | b"-macosx_version_min" => {
-                args.platform = PLATFORM_MACOS;
-                args.platform_minos = parse_version(name, text(name, next_arg(&mut i, name)));
-                args.platform_sdk = args.platform_minos;
+                if name == "-macosx_version_min" {
+                    warnings.notice("-macosx_version_min has been renamed to -macos_version_min");
+                }
+                let opt = "-macos_version_min";
+                let minos = parse_version(opt, text(opt, next_arg(&mut i, opt)));
+                set_platform(
+                    &mut args,
+                    &mut warnings,
+                    &mut incompatible_platforms,
+                    PLATFORM_MACOS,
+                    minos,
+                );
+                args.platform_sdk = minos;
             }
 
             // This linker's output is always deterministic, so
@@ -1641,12 +1697,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // below, but not to those given as options were read.
     crate::error::set_fatal_warnings(args.fatal_warnings);
     for msg in &warnings.msgs {
-        crate::warn!("{msg}");
+        match msg {
+            OptionMessage::Warning(msg) => crate::warn!("{msg}"),
+            OptionMessage::Notice(msg) => crate::error::notice(format_args!("{msg}")),
+        }
     }
     if warnings.hidden {
         crate::error::hidden_warning();
     }
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    if let Some((old, new)) = incompatible_platforms {
+        fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
+    }
     warn_platform_options(target, &args, read_only_relocs.is_some());
 
     for treatment in deprecated_undefined {
