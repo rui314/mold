@@ -1341,20 +1341,10 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     let names_literals = |segname: &str, sectname: &str| {
         E::CPUTYPE == CPU_TYPE_ARM64 || (segname == "__TEXT" && sectname == "__cstring")
     };
-    // The entries of the __objc_*list sections get no symbol at all
-    // (ld-prime): their labels vanish.
-    let unnamed_list = |isec: usize| -> bool {
-        let h = ctx.hdr_of(&ctx.isecs[isec]);
-        h.segname() == "__DATA"
-            && matches!(
-                h.sectname(),
-                "__objc_classlist"
-                    | "__objc_nlclslist"
-                    | "__objc_catlist"
-                    | "__objc_catlist2"
-                    | "__objc_nlcatlist"
-            )
-    };
+    // The entries of the __objc_*list sections get no symbol but their
+    // aliases (see objc_list_aliases).
+    let unnamed_list =
+        |isec: usize| crate::passes::is_unnamed_objc_list(ctx.hdr_of(&ctx.isecs[isec]));
     // (subsection, record index) -> entry in `locals`; the record
     // size of each such output section; the literal sections whose
     // atoms get no name.
@@ -1448,8 +1438,9 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         // assembler's ltmpN labels (they name the atoms) included -
         // and an alt entry means nothing there.
         let whole = !obj.subsections_via_symbols;
-        let r = obj.local_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        let aliases = crate::passes::objc_list_aliases(ctx, obj);
+        for i in obj.local_range() {
+            let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             if nlist.is_stab() || nlist.is_extern() {
                 continue;
             }
@@ -1464,7 +1455,9 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 locals[e].syms.push(sym_id);
                 continue;
             }
-            if (unnamed_list(isec) && !referenced.contains(&sym_id)) || vanishes(isec, sym_id) {
+            if (unnamed_list(isec) && !referenced.contains(&sym_id) && !aliases.contains(&i))
+                || vanishes(isec, sym_id)
+            {
                 continue;
             }
             if sym.name().starts_with("ltmp")
@@ -1477,10 +1470,13 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             // A labeled literal is an atom of its own, not a whole
             // section's.
             let whole = whole && !ctx.isecs[isec].is_labeled();
+            // An alias of a list entry is not the atom, which the
+            // section's no_dead_strip marks.
+            let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             locals.push(Local {
                 name: sym.name().to_string(),
                 n_type: nlist.n_type,
-                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
+                n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: Rename::None,
@@ -1514,7 +1510,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 }
                 let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
                 let isec = ctx.resolve_isec(input);
-                if !ctx.isecs[isec].is_alive() || vanishes(isec, sym_id) {
+                if !ctx.isecs[isec].is_alive() || unnamed_list(isec) || vanishes(isec, sym_id) {
                     continue;
                 }
                 locals.push(Local {

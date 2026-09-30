@@ -5584,49 +5584,104 @@ fn keep_local_symbol(name: &str) -> bool {
 
 /// Returns true if a non-external local symbol defined in `isec`
 /// appears in a final image's symbol table: its name must not be a
-/// label, and it must not live in one of the Objective-C list
-/// sections, whose entries ld64 never names in an output (Swift's
-/// _objc_classes_* in __objc_classlist: ld-prime's NetNewsWire has
-/// none of the 127 ours carried). A demoted private external in those
-/// sections stays (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one
-/// an earlier ld -r demoted, a local that kept N_PEXT (`demoted`). A
-/// superclass or protocol reference keeps its label, unless it is of
-/// the literal-pointer type (see has_unnamed_atoms).
+/// label, and it must not name the entry of an Objective-C list that
+/// ld-prime names no symbol for (Swift's _objc_classes_* in
+/// __objc_classlist: ld-prime's NetNewsWire has none of the 127 ours
+/// carried) but as an alias (`list_alias`, see objc_list_aliases), nor
+/// live in __objc_protolist or __objc_imageinfo. A demoted private
+/// external in those two stays (clang's __OBJC_LABEL_PROTOCOL_$_X
+/// does), as does one an earlier ld -r demoted, a local that kept
+/// N_PEXT (`demoted`). A superclass or protocol reference keeps its
+/// label, unless it is of the literal-pointer type (see
+/// has_unnamed_atoms).
 fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
     name: &str,
     isec: Option<u32>,
     demoted: bool,
+    list_alias: bool,
 ) -> bool {
     if !keep_local_symbol(name) {
         return false;
     }
+    let Some(isec) = isec else { return true };
+    let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
+    if ctx.is_internal(isec.file as usize) {
+        return true;
+    }
+    let hdr = ctx.hdr_of(isec);
+    if is_unnamed_objc_list(hdr) {
+        return list_alias;
+    }
     if demoted {
         return true;
     }
-    match isec {
-        Some(isec) => {
-            let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-            if ctx.is_internal(isec.file as usize) {
-                return true;
-            }
-            let hdr = ctx.hdr_of(isec);
-            !(hdr.sectname.starts_with(b"__objc_")
-                && [
-                    "__objc_classlist",
-                    "__objc_nlclslist",
-                    "__objc_catlist",
-                    "__objc_catlist2",
-                    "__objc_nlcatlist",
-                    "__objc_protolist",
-                    "__objc_imageinfo",
-                ]
-                .iter()
-                .any(|name| hdr.sectname_is(name))
-                || has_unnamed_atoms(hdr))
-        }
-        None => true,
+    !(hdr.segname_is("__DATA")
+        && (hdr.sectname_is("__objc_protolist") || hdr.sectname_is("__objc_imageinfo"))
+        || has_unnamed_atoms(hdr))
+}
+
+/// Whether a section is an Objective-C list whose entries ld-prime
+/// names no symbol for: __DATA's __objc_classlist, __objc_nlclslist,
+/// __objc_catlist, __objc_catlist2 and __objc_nlcatlist, and
+/// __objc_clsrolist, which only a -r output keeps.
+pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
+    hdr.segname_is("__DATA")
+        && hdr.sectname.starts_with(b"__objc_")
+        && [
+            "__objc_classlist",
+            "__objc_nlclslist",
+            "__objc_catlist",
+            "__objc_catlist2",
+            "__objc_nlcatlist",
+            "__objc_clsrolist",
+        ]
+        .iter()
+        .any(|name| hdr.sectname_is(name))
+}
+
+/// The symbols of an object, by index, that name an entry of an
+/// Objective-C list ld-prime names no symbol for (see
+/// is_unnamed_objc_list) and survive all the same. ld-prime takes one
+/// of an entry's symbols for the name of its atom, which is lost, and
+/// keeps the others as aliases: an external one (a global or a private
+/// external) is the name, else the greatest name; the arm64
+/// assembler's ltmpN labels don't count. So an entry one label names
+/// has no symbol in the output (clang's l_OBJC_LABEL_CLASS_$, Swift's
+/// _objc_classes_...), but where a private external names it too, the
+/// label stays and the private external goes.
+pub(crate) fn objc_list_aliases<E: Target>(
+    ctx: &Context<E>,
+    obj: &crate::input_files::ObjectFile,
+) -> hashbrown::HashSet<usize> {
+    let mut aliases = hashbrown::HashSet::new();
+    let lists: Vec<bool> = obj.sect_hdrs.iter().map(is_unnamed_objc_list).collect();
+    if !lists.contains(&true) {
+        return aliases;
     }
+    // (place, is external, name, index), sorted so that each place's
+    // name comes last.
+    let mut syms: Vec<((u8, u64), bool, &str, usize)> = obj
+        .nlists
+        .iter()
+        .zip(&obj.symbols)
+        .enumerate()
+        .filter_map(|(i, (nlist, &id))| {
+            if nlist.is_stab() || nlist.n_type() != N_SECT || !lists[nlist.n_sect as usize - 1] {
+                return None;
+            }
+            let name = ctx.symbols[id].name();
+            let place = (nlist.n_sect, nlist.n_value);
+            (!name.starts_with("ltmp")).then_some((place, nlist.is_extern(), name, i))
+        })
+        .collect();
+    syms.sort_unstable();
+    for w in syms.windows(2) {
+        if w[0].0 == w[1].0 {
+            aliases.insert(w[0].3);
+        }
+    }
+    aliases
 }
 
 /// Whether ld-prime makes a section's atoms by content and names none
@@ -5980,7 +6035,8 @@ pub fn plan_object_stabs<E: Target>(
     // unit's notes by address instead, but no reader depends on that:
     // dsymutil and lldb map each unit's notes by name, and an N_FUN pair
     // stays together either way.
-    for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+    let aliases = objc_list_aliases(ctx, obj);
+    for (i, (nlist, &sym_id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
         let sym = &ctx.symbols[sym_id];
         // A tentative definition gets its note in the first object that
         // declares it.
@@ -5993,6 +6049,7 @@ pub fn plan_object_stabs<E: Target>(
                     sym.name(),
                     sym.input_section(),
                     nlist.n_type & N_PEXT != 0,
+                    aliases.contains(&i),
                 ))
         {
             continue;
@@ -6115,8 +6172,9 @@ fn plan_local_symbols<E: Target>(
                 if !obj.is_alive {
                     return out;
                 }
-                let r = obj.local_range();
-                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                let aliases = objc_list_aliases(ctx, obj);
+                for i in obj.local_range() {
+                    let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
                     let sym = &ctx.symbols[sym_id];
                     if nlist.is_stab()
                         || nlist.is_extern()
@@ -6125,6 +6183,7 @@ fn plan_local_symbols<E: Target>(
                             sym.name(),
                             sym.input_section(),
                             nlist.n_type & N_PEXT != 0,
+                            aliases.contains(&i),
                         )
                     {
                         continue;
@@ -6387,8 +6446,13 @@ pub fn create_output_symtab<E: Target>(
                 // A private external becomes a local, and a label
                 // is not emitted (ld-prime keeps clang's
                 // __OBJC_LABEL_PROTOCOL_$_X, demoted, but not an
-                // l_OBJC_LABEL_PROTOCOL_$_X).
-                if !keep_local_symbol(sym.name()) {
+                // l_OBJC_LABEL_PROTOCOL_$_X), nor one that names an
+                // entry of a list ld-prime names none of (see
+                // objc_list_aliases).
+                let listed = sym.input_section().is_some_and(|isec| {
+                    is_unnamed_objc_list(ctx.hdr_of(&ctx.isecs[isec as usize]))
+                });
+                if !keep_local_symbol(sym.name()) || listed {
                     return Class::No;
                 }
                 return Class::Pext;
