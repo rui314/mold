@@ -1390,9 +1390,10 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
         let commons = crate::passes::common_stab_owners(ctx);
-        let stabs: Vec<crate::passes::Stab> = (0..ctx.objs.len())
-            .flat_map(|obj_idx| crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+        let plans: Vec<crate::passes::StabPlan> = (0..ctx.objs.len())
+            .map(|obj_idx| crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
             .collect();
+        let stabs: Vec<crate::passes::Stab> = plans.iter().flat_map(|p| p.stabs(ctx)).collect();
         if !stabs.is_empty() {
             names.push(b"");
             ents.push((NList { n_strx: 1, n_type: N_SO, n_sect: 1, ..Default::default() }, None));

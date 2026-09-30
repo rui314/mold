@@ -3951,18 +3951,9 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
     }
 }
 
-/// Plans one object's debug-note stabs, in output symbol-table form
-/// (name, entry, and the symbol whose address the entry takes, if
-/// any). An object with DWARF gets the run ld64 writes: N_SO, N_OSO
-/// naming the object, N_FUN pairs and N_GSYM/N_STSYM for its
-/// symbols, and a closing N_SO. An object that already carries such a
-/// run (a -r output: ld64 does not merge DWARF, it writes these
-/// notes) has it copied through, the address-bearing entries rebased
-/// to their subsections' output addresses and those of dead
-/// subsections dropped. Shared by the final link and -r.
-/// One planned stab entry: its name and nlist, the symbol whose final
-/// address fills in n_value, and the symbol the name is, if any -
-/// ld-prime points the entry at that symbol's own string.
+/// One stab entry: its name and nlist, the symbol whose final address
+/// fills in n_value, and the symbol the name is, if any - ld-prime
+/// points the entry at that symbol's own string.
 #[derive(Clone, Copy)]
 pub struct Stab {
     pub name: &'static [u8],
@@ -3977,9 +3968,88 @@ impl Stab {
     }
 }
 
-/// An object's planned stab entries.
-pub type StabPlan = Vec<Stab>;
+/// An object's planned stab entries: those written as they are (the
+/// N_SO pair and N_OSO that open a run of its own, or every note a -r
+/// input carries), then its symbols' notes and the N_SO closing its
+/// run. A symbol's notes are kept as the symbol until written: they
+/// are most of a large -g link's symbol table.
+#[derive(Default)]
+pub struct StabPlan {
+    fixed: Vec<Stab>,
+    syms: Vec<SymbolStabs>,
+    closed: bool,
+    len: usize,
+}
 
+impl StabPlan {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// The planned entries, in order.
+    pub fn stabs<'a, E: Target>(&'a self, ctx: &'a Context<E>) -> impl Iterator<Item = Stab> + 'a {
+        let close = self.closed.then_some(Stab::new(b"", STAB_END, None));
+        self.fixed.iter().copied().chain(self.syms.iter().flat_map(|s| s.stabs(ctx))).chain(close)
+    }
+}
+
+/// A symbol's debug notes: N_BNSYM, the N_FUN pair and N_ENSYM for a
+/// function (`size` bytes long), an N_GSYM for global data, an N_STSYM
+/// for a local's.
+#[derive(Clone, Copy)]
+struct SymbolStabs {
+    sym: crate::symbol::SymbolId,
+    size: u32,
+    n_sect: u8,
+    n_type: u8,
+}
+
+impl SymbolStabs {
+    fn len(&self) -> usize {
+        if self.n_type == N_FUN { 4 } else { 1 }
+    }
+
+    fn stabs<E: Target>(&self, ctx: &Context<E>) -> impl Iterator<Item = Stab> {
+        let id = Some(self.sym);
+        let name = ctx.symbols[self.sym].name().as_bytes();
+        let sect = self.n_sect;
+        // Named entries get their string offsets later; the rest keep 1,
+        // the empty string.
+        let stab = |n_type, n_sect| NList { n_strx: 1, n_type, n_sect, ..Default::default() };
+        let mut out = [Stab::new(b"", stab(N_BNSYM, sect), id); 4];
+        match self.n_type {
+            N_FUN => {
+                // ld64's shape: N_BNSYM, the N_FUN pair (the function's
+                // address, then its size), N_ENSYM. Its stab reader takes
+                // an N_FUN without the bracketing symbols badly (a crash
+                // on a -r output that had only the pair).
+                let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
+                out[1] = Stab { name_of: id, ..Stab::new(name, fun, id) };
+                out[2] = Stab::new(b"", NList { n_value: self.size as u64, ..stab(N_FUN, 0) }, None);
+                out[3] = Stab::new(b"", stab(N_ENSYM, sect), id);
+            }
+            // An N_GSYM names the global only, with no section or
+            // address - the debugger looks the address up by name.
+            N_GSYM => {
+                let ent = NList { n_type: N_GSYM, ..Default::default() };
+                out[0] = Stab { name, ent, value_of: None, name_of: id };
+            }
+            _ => {
+                let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
+                out[0] = Stab { name_of: id, ..Stab::new(name, ent, id) };
+            }
+        }
+        out.into_iter().take(self.len())
+    }
+}
+
+/// Plans one object's debug-note stabs. An object with DWARF gets the
+/// run ld64 writes: N_SO, N_OSO naming the object, N_FUN pairs and
+/// N_GSYM/N_STSYM for its symbols, and a closing N_SO. An object that
+/// already carries such a run (a -r output: ld64 does not merge DWARF,
+/// it writes these notes) has it copied through, the address-bearing
+/// entries rebased to their subsections' output addresses and those of
+/// dead subsections dropped. Shared by the final link and -r.
 pub fn plan_object_stabs<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
@@ -3987,10 +4057,11 @@ pub fn plan_object_stabs<E: Target>(
     commons: &hashbrown::HashMap<crate::symbol::SymbolId, usize>,
 ) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
-    let mut out: StabPlan = Vec::new();
+    let mut plan = StabPlan::default();
     if !obj.is_alive {
-        return out;
+        return plan;
     }
+    let out = &mut plan.fixed;
 
     if obj.nlists.iter().any(|n| n.n_type == N_OSO) {
         // Entries whose n_value is an address in the object (n_sect
@@ -4071,11 +4142,12 @@ pub fn plan_object_stabs<E: Target>(
             };
             out.push(Stab { name: name.as_bytes(), ent, value_of: None, name_of });
         }
-        return out;
+        plan.len = plan.fixed.len();
+        return plan;
     }
 
     if !obj.has_debug_info {
-        return out;
+        return plan;
     }
 
     // ld64 opens each object's run with two N_SO entries, the
@@ -4151,30 +4223,25 @@ pub fn plan_object_stabs<E: Target>(
         {
             continue;
         }
-        push_symbol_stabs(ctx, sym_id, nlist.is_extern(), common, &mut out);
+        plan.syms.extend(symbol_stabs(ctx, sym_id, nlist.is_extern(), common));
     }
-
-    out.push(Stab::new(b"", STAB_END, None));
-    out
+    plan.closed = true;
+    plan.len = plan.fixed.len() + plan.syms.iter().map(|s| s.len()).sum::<usize>() + 1;
+    plan
 }
 
-/// Appends a symbol's debug notes: N_BNSYM, the N_FUN pair and N_ENSYM
-/// for a function, an N_GSYM for global data, an N_STSYM for a local's.
-fn push_symbol_stabs<E: Target>(
+/// A symbol's debug notes, if it gets any.
+fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
     sym_id: crate::symbol::SymbolId,
     is_extern: bool,
     common: bool,
-    out: &mut StabPlan,
-) {
+) -> Option<SymbolStabs> {
     let sym = &ctx.symbols[sym_id];
-    let name = sym.name().as_bytes();
+    let global = SymbolStabs { sym: sym_id, size: 0, n_sect: 0, n_type: N_GSYM };
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
         // A -r output keeps a common undefined; it has no address.
-        if common {
-            out.push(global_stab(name, sym_id));
-        }
-        return;
+        return common.then_some(global);
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     // ld-prime notes no exception tables' labels and no ivar offsets.
@@ -4185,38 +4252,18 @@ fn push_symbol_stabs<E: Target>(
             ("__TEXT", "__gcc_except_tab") | ("__DATA", "__objc_ivar")
         )
     {
-        return;
+        return None;
     }
-    let sect = ctx.isec_n_sect(isec);
+    let n_sect = ctx.isec_n_sect(isec);
     let is_text = hdr.segname() == "__TEXT"
         && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
-    // Named entries get their string offsets later; the rest keep 1,
-    // the empty string.
-    let stab = |n_type, n_sect| NList { n_strx: 1, n_type, n_sect, ..Default::default() };
-    let id = Some(sym_id);
-    if is_text {
-        // ld64's shape: N_BNSYM, the N_FUN pair (the function's
-        // address, then its size), N_ENSYM. Its stab reader takes
-        // an N_FUN without the bracketing symbols badly (a crash
-        // on a -r output that had only the pair).
-        let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
-        out.push(Stab::new(b"", stab(N_BNSYM, sect), id));
-        out.push(Stab { name_of: id, ..Stab::new(name, fun, id) });
-        out.push(Stab::new(b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None));
-        out.push(Stab::new(b"", stab(N_ENSYM, sect), id));
+    Some(if is_text {
+        SymbolStabs { size: isec.size, n_sect, n_type: N_FUN, ..global }
     } else if is_extern {
-        out.push(global_stab(name, sym_id));
+        global
     } else {
-        let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
-        out.push(Stab { name_of: id, ..Stab::new(name, ent, id) });
-    }
-}
-
-/// An N_GSYM: a global's debug note, which names it only, with no
-/// section or address - the debugger looks the address up by name.
-fn global_stab(name: &'static [u8], sym_id: crate::symbol::SymbolId) -> Stab {
-    let ent = NList { n_type: N_GSYM, ..Default::default() };
-    Stab { name, ent, value_of: None, name_of: Some(sym_id) }
+        SymbolStabs { n_sect, n_type: N_STSYM, ..global }
+    })
 }
 
 /// The object whose stabs note each tentative definition that no real
@@ -4604,7 +4651,7 @@ pub fn create_output_symtab<E: Target>(
     let op = NameOfPtr(stab_names_of.as_mut_ptr());
     let (np, ep, op) = (&np, &ep, &op);
     planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
-        for (k, stab) in plan.iter().enumerate() {
+        for (k, stab) in plan.stabs(ctx).enumerate() {
             // SAFETY: [base, base+plan.len()) ranges are disjoint across
             // objects and lie within the reserved capacity (shifted by
             // `stabs_start` for the notes' own array).
