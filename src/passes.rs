@@ -331,16 +331,29 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
 }
 
 pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
-    // ld64 warns when a library is named twice; build systems that
-    // knowingly repeat -l flags pass -no_warn_duplicate_libraries.
+    // ld64 warns, once, about the library options given more than once,
+    // each as spelled (-weak-lz repeats no -lz); build systems that
+    // knowingly repeat them pass -no_warn_duplicate_libraries.
     if ctx.args.warn_duplicate_libraries {
         let mut seen = std::collections::HashSet::new();
+        let mut dups = std::collections::BTreeSet::new();
         for arg in &ctx.args.inputs {
-            if let InputArg::Lib(name, _) = arg
-                && !seen.insert(name.clone())
-            {
-                crate::warn!("ignoring duplicate libraries: '-l{}'", name.display());
+            let (option, name) = match arg {
+                InputArg::Lib(name, false) => ("-l", name),
+                InputArg::Lib(name, true) => ("-weak-l", name),
+                InputArg::NeededLib(name) => ("-needed-l", name),
+                InputArg::ReexportLib(name) => ("-reexport-l", name),
+                InputArg::HiddenLib(name) => ("-hidden-l", name),
+                _ => continue,
+            };
+            let spelled = format!("'{option}{}'", name.display());
+            if !seen.insert(spelled.clone()) {
+                dups.insert(spelled);
             }
+        }
+        if !dups.is_empty() {
+            let list: Vec<String> = dups.into_iter().collect();
+            crate::warn!("ignoring duplicate libraries: {}", list.join(", "));
         }
     }
     let inputs = std::mem::take(&mut ctx.args.inputs);
