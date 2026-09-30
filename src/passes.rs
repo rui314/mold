@@ -3917,6 +3917,28 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
         fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
     }
+    if ctx.args.no_zero_fill_sections && !ctx.args.relocatable {
+        fill_zero_fill_sections(ctx);
+    }
+}
+
+/// -no_zero_fill_sections gives every zero-fill section its bytes in
+/// the file, for a loader that copies segments from the file without
+/// zero-filling them (the x86-64 XNU kernel's booter): ld-prime makes
+/// such a section regular, once it has taken its place at the end of
+/// its segment. A thread-local one becomes S_THREAD_LOCAL_REGULAR, not
+/// S_REGULAR as in ld-prime (which ld64 left thread-local): dyld finds
+/// the thread-local template by those two types.
+fn fill_zero_fill_sections<E: Target>(ctx: &mut Context<E>) {
+    for osec in &mut ctx.output_sections {
+        let hdr = &mut osec.hdr;
+        let regular = match hdr.flags & SECTION_TYPE {
+            S_ZEROFILL => S_REGULAR,
+            S_THREAD_LOCAL_ZEROFILL => S_THREAD_LOCAL_REGULAR,
+            _ => continue,
+        };
+        hdr.flags = (hdr.flags & !SECTION_TYPE) | regular;
+    }
 }
 
 /// Where -section_order puts a section in its segment: the listed
@@ -5643,7 +5665,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
             fileoff = layout_segment(ctx, seg_idx, fileoff + gap, vmaddr);
             vmaddr
         };
-        addr = vmaddr + ctx.segments[seg_idx].cmd.vmsize;
+        addr = vmaddr + segment_span(ctx, &ctx.segments[seg_idx]);
     }
     place_segments(ctx);
     check_segment_addresses(ctx);
@@ -5656,6 +5678,21 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
 /// precedes every segment in the file.
 fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static str> {
     (!ctx.args.preload).then(|| header_segment(ctx))
+}
+
+/// The boundary the segment after a segment starts on, in memory and in
+/// the file: its -seg_page_size, else the page.
+fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
+    let sizes = &ctx.args.seg_page_sizes;
+    sizes.iter().find(|(name, _)| name == segname).map_or(ctx.segment_align(), |&(_, size)| size)
+}
+
+/// The room a segment takes from the segments after it: its size up to
+/// its -seg_page_size, which ld-prime leaves out of the size itself
+/// (the XNU x86-64 kernel starts the segment after __TEXT on a 2 MiB
+/// boundary that way).
+fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
+    align_to(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
 }
 
 /// The alignment of a segment's address: a page, or its first section's
@@ -5798,17 +5835,21 @@ fn layout_segment<E: Target>(
         !chunk_ids.is_empty() && chunk_ids.iter().all(|&id| ctx.chunk_header(id).is_zerofill());
 
     // __LINKEDIT's file contents end exactly at the code signature;
-    // other segments are padded to a page boundary in the file.
+    // other segments are padded to a page boundary in the file, and the
+    // next one starts on the segment's -seg_page_size boundary (which
+    // ld-prime counts in __LINKEDIT's size, there being no next one).
+    let seg_page = seg_page_size(ctx, ctx.segments[seg_idx].name);
     let seg = &mut ctx.segments[seg_idx];
     seg.cmd.vmaddr = vmaddr;
     seg.cmd.fileoff = if zerofill_only { 0 } else { seg_fileoff };
     if seg.name == "__LINKEDIT" {
         seg.cmd.filesize = filesize;
-    } else {
-        seg.cmd.filesize = align_to(filesize, page);
+        seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
+        return seg_fileoff + filesize;
     }
+    seg.cmd.filesize = align_to(filesize, page);
     seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
-    seg_fileoff + seg.cmd.filesize
+    seg_fileoff + align_to(seg.cmd.filesize, seg_page)
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:
@@ -5828,7 +5869,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let base = ctx.image_base();
     let header_seg = in_place_segment(ctx);
     let segs = &ctx.segments[..ctx.segments.len() - 1];
-    let range = |i: usize, addr: u64| addr..addr + segs[i].cmd.vmsize;
+    let range = |i: usize, addr: u64| addr..addr + segment_span(ctx, &segs[i]);
 
     // __PAGEZERO and the mach header's segment are laid out in place
     // already.
@@ -5844,7 +5885,8 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
             && follows_pinned_segment(ctx, segs[i].name)
             && let Some(prev) = addrs[i - 1]
         {
-            addrs[i] = Some(align_to(prev + segs[i - 1].cmd.vmsize, segment_start_align(ctx, i)));
+            let end = prev + segment_span(ctx, &segs[i - 1]);
+            addrs[i] = Some(align_to(end, segment_start_align(ctx, i)));
         }
     }
 
@@ -5861,7 +5903,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
             used.extend(fixed.iter().map(|&j| range(j, addrs[j].unwrap())));
         }
         if addrs[i].is_none() {
-            let size = segs[i].cmd.vmsize;
+            let size = segment_span(ctx, &segs[i]);
             let span = lowest_free_span(base, size, segment_start_align(ctx, i), &used);
             addrs[i] = Some(span.end - size);
             used.push(span);
@@ -5973,10 +6015,12 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
     let addr = if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
         addr
     } else if dyld_slides(ctx) || ctx.args.segaddrs.is_empty() {
-        others.iter().map(|seg| seg.cmd.vmaddr + seg.cmd.vmsize).max().unwrap_or(0)
+        others.iter().map(|seg| seg.cmd.vmaddr + segment_span(ctx, seg)).max().unwrap_or(0)
     } else {
-        let used: Vec<Range<u64>> =
-            others.iter().map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize).collect();
+        let used: Vec<Range<u64>> = others
+            .iter()
+            .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + segment_span(ctx, seg))
+            .collect();
         let size = ctx.segments[linkedit].cmd.vmsize;
         lowest_free_span(ctx.image_base(), size, ctx.segment_align(), &used).start
     };

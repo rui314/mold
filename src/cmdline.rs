@@ -307,6 +307,12 @@ pub struct Args {
     pub segprots: Vec<(String, u8, u8)>,
     /// -segment_order: segment names in output order.
     pub segment_order: Vec<String>,
+    /// -seg_page_size: (segment, size), the boundary the segment after
+    /// the named one starts on, in memory and in the file.
+    pub seg_page_sizes: Vec<(String, u64)>,
+    /// -no_zero_fill_sections: zero-fill sections take their space in
+    /// the file, as regular sections.
+    pub no_zero_fill_sections: bool,
     /// -section_order: (segment, section names), the sections that
     /// lead their segment, in this order.
     pub section_order: Vec<(String, Vec<String>)>,
@@ -442,6 +448,8 @@ impl Default for Args {
             segaddrs: Vec::new(),
             segprots: Vec::new(),
             segment_order: Vec::new(),
+            seg_page_sizes: Vec::new(),
+            no_zero_fill_sections: false,
             section_order: Vec::new(),
             rename_sections: Vec::new(),
             rename_segments: Vec::new(),
@@ -948,6 +956,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_in_code_info: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
+    let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
     let mut explicit_entry = false;
     // -read_only_relocs: whether its treatment allows text relocations.
     let mut read_only_relocs: Option<bool> = None;
@@ -1154,6 +1163,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     .map(String::from)
                     .collect();
             }
+            b"-seg_page_size" => {
+                let (Some(seg), Some(size)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
+                    fatal!("-seg_page_size needs <segname> <size>");
+                };
+                i += 2;
+                let size = text(name, size);
+                let size = u64::from_str_radix(size.trim_start_matches("0x"), 16)
+                    .unwrap_or_else(|_| fatal!("-seg_page_size: not a hexadecimal number: {size}"));
+                seg_page_sizes.push((text(name, seg).to_string(), size));
+            }
+            b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
             b"-section_order" => {
                 let (Some(seg), Some(list)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
                     fatal!("-section_order needs <segname> <section-list>");
@@ -1634,6 +1654,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     resolve_stack_size(target, &mut args, stack_size);
     args.segprots = resolve_segprots(target, segprots);
+    args.seg_page_sizes = resolve_seg_page_sizes(target, &args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
     resolve_kext(target, &mut args);
@@ -1966,6 +1987,34 @@ fn resolve_segprots(
     for (name, max, init) in segprots {
         if out.iter().all(|(seen, _, _)| *seen != name) {
             out.push((name, if target.name == "arm64" { init } else { max }, init));
+        }
+    }
+    out
+}
+
+/// -seg_page_size's (segment, size) pairs, as ld-prime takes them: a
+/// size rounds down to a power of two, with a warning; one below the
+/// page size is an error but in an object file, where it means nothing;
+/// and the first size given for a segment wins.
+fn resolve_seg_page_sizes(
+    target: &TargetTraits,
+    args: &Args,
+    sizes: Vec<(String, u64)>,
+) -> Vec<(String, u64)> {
+    let page = if args.preload { 0x1000 } else { target.page_size };
+    let mut out: Vec<(String, u64)> = Vec::new();
+    for (name, mut size) in sizes {
+        if size != 0 && !size.is_power_of_two() {
+            size = 1 << size.ilog2();
+            crate::warn!(
+                "-seg_page_size for {name} is not a power of two, rounding down to 0x{size:x}"
+            );
+        }
+        if size < page && !args.relocatable {
+            fatal!("-seg_page_size {name} 0x{size:x} can't be smaller than page size (0x{page:x})");
+        }
+        if out.iter().all(|(seen, _)| *seen != name) {
+            out.push((name, size));
         }
     }
     out
