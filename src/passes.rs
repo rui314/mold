@@ -289,8 +289,11 @@ fn collect_file<E: Target>(
 ) {
     // A library may be named more than once, on the command line and by
     // auto-link options; load each file once, as its first naming says
-    // (the first that isn't a public re-export's, for a dylib).
-    if !ctx.visited_files.insert(mf.name.clone()) {
+    // (the first that isn't a public re-export's, for a dylib). An
+    // object file, though, loads as often as it is named, as in
+    // ld-prime: twice over, its globals are duplicate definitions.
+    let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
+    if !ctx.visited_files.insert(mf.name.clone()) && !object {
         if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name && d.is_implicit) {
             name_dylib(ctx, idx, mf, rc);
         }
@@ -2512,15 +2515,22 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
 /// -t lists the link's inputs, one line per file loaded: objects and
 /// stubs by the path they were found at, every member of an archive
 /// as archive(member), used or not, and each library a stub re-exports
-/// (by its install name if the stub inlines it), once each, as ld-prime
-/// does. ld-prime prints them in an order that varies from run to run.
+/// (by its install name if the stub inlines it), once each - but an
+/// object as often as it is loaded - as ld-prime does. ld-prime prints
+/// them in an order that varies from run to run.
 pub fn print_trace<E: Target>(ctx: &Context<E>) {
     if !ctx.args.trace {
         return;
     }
+    let objects: std::collections::HashSet<String> = ctx
+        .objs
+        .iter()
+        .filter(|obj| obj.mf.parent.is_none())
+        .map(|obj| input_files::trace_name(path_bytes(&obj.mf.name)))
+        .collect();
     let mut seen = std::collections::HashSet::new();
     for name in &ctx.traced_files {
-        if seen.insert(name) {
+        if objects.contains(name) || seen.insert(name) {
             println!("{name}");
         }
     }

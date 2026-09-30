@@ -2896,7 +2896,7 @@ pub fn untrace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
     }
 }
 
-fn trace_name(name: &[u8]) -> String {
+pub fn trace_name(name: &[u8]) -> String {
     let mut name = name.to_vec();
     if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
         && let Some(len) = name[i..].iter().position(|&c| c == b')')
