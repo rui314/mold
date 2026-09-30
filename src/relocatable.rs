@@ -1424,15 +1424,14 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> u64 {
 /// addresses in each (a zerofill section comes by ordinal), then
 /// the stabs, opened by an N_SO of their own, then the defined
 /// externals and the undefined symbols, each by name.
-fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId]) -> RSymtab {
+fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSymtab {
     let referenced = referenced_syms(ctx);
-    let mut locals = Locals::new(ctx, section_chunks);
+    let mut locals = Locals::new(ctx, merged);
     locals.add_labels(&referenced);
     // Private externals (visibility hidden) are demoted unless
     // -keep_private_externs (which Apple's strip passes to the `ld -r`
     // it runs on each archive member).
-    let keep_pext = ctx.args.keep_private_externs;
-    if !keep_pext {
+    if !ctx.args.keep_private_externs {
         locals.add_private_externs();
     }
     let (locals, atoms) = locals.finish();
@@ -1484,6 +1483,36 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     }
     let nlocal = ents.len();
 
+    // The defined externals, then the undefined and tentative symbols.
+    for (ent, id) in defined_externals(ctx).into_iter().chain(undefined_symbols(ctx, &referenced)) {
+        index_of_sym.insert(id, ents.len() as u32);
+        names.push(ctx.symbols[id].name().as_bytes());
+        ents.push((ent, Some(id)));
+    }
+
+    // The string table, in ld-prime's layout (see layout_strings).
+    let entry_of =
+        crate::chunks::symtab::symbol_entries(&ents, nplain, nlocal, ctx.symbols.syms.len());
+    let size = crate::chunks::symtab::layout_strings(
+        &mut ents,
+        &mut names,
+        nlocal,
+        (nplain, &names_of),
+        &entry_of,
+    )
+    .next_multiple_of(8);
+    let mut strtab = vec![0u8; size];
+    strtab[0] = b' ';
+    for ((ent, _), name) in ents.iter().zip(&names) {
+        let off = ent.n_strx as usize;
+        strtab[off..off + name.len()].copy_from_slice(name);
+    }
+
+    RSymtab { nlists: ents.into_iter().map(|e| e.0).collect(), strtab, index_of_sym, atoms }
+}
+
+/// A -r output's defined externals, sorted by name, with their entries.
+fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, crate::symbol::SymbolId)> {
     // The n_desc flags a defined global carries in its object, which the
     // next link needs as much as this one did. N_ALT_ENTRY is the
     // critical one: it marks a symbol that does not begin a new
@@ -1508,7 +1537,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         }
     }
 
-    // Defined externals, sorted by name.
+    let keep_pext = ctx.args.keep_private_externs;
     let mut globals: Vec<usize> = (0..ctx.symbols.syms.len())
         .filter(|&i| {
             let sym = &ctx.symbols[i];
@@ -1521,48 +1550,55 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         })
         .collect();
     globals.sort_by_key(|&i| ctx.symbols[i].name());
-    for &i in &globals {
-        let sym = &ctx.symbols[i];
-        let (n_type, n_sect) = match sym.input_section() {
-            Some(isec) => (
-                N_SECT | N_EXT | if sym.is_private_extern() { N_PEXT } else { 0 },
-                ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]),
-            ),
-            None => (N_ABS | N_EXT, 0),
-        };
-        // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
-        // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
-        // makes PLCrashReporter's template instantiations local; ours
-        // stayed exported after the -r prelink lost the marker).
-        let mut n_desc = desc_of.get(&(i as u32)).copied().unwrap_or(0)
-            & (N_WEAK_DEF
-                | N_WEAK_REF
-                | N_ALT_ENTRY
-                | N_NO_DEAD_STRIP
-                | N_SYMBOL_RESOLVER
-                | N_COLD_FUNC
-                | REFERENCED_DYNAMICALLY);
-        if sym.is_weak_def() {
-            n_desc |= N_WEAK_DEF;
-        }
-        if let Some(FileId::Obj(o)) = sym.file()
-            && !ctx.objs[o as usize].subsections_via_symbols
-        {
-            n_desc = whole_desc(n_desc, true);
-        }
-        if let Some(input) = sym.input_section() {
-            n_desc |= section_desc(ctx, input as usize);
-        }
-        index_of_sym.insert(i as u32, ents.len() as u32);
-        names.push(sym.name().as_bytes());
-        let n_value = sym_addr(ctx, i as u32);
-        ents.push((NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, Some(i as u32)));
-    }
+    globals
+        .iter()
+        .map(|&i| {
+            let sym = &ctx.symbols[i];
+            let (n_type, n_sect) = match sym.input_section() {
+                Some(isec) => (
+                    N_SECT | N_EXT | if sym.is_private_extern() { N_PEXT } else { 0 },
+                    ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]),
+                ),
+                None => (N_ABS | N_EXT, 0),
+            };
+            // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
+            // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
+            // makes PLCrashReporter's template instantiations local; ours
+            // stayed exported after the -r prelink lost the marker).
+            let mut n_desc = desc_of.get(&(i as u32)).copied().unwrap_or(0)
+                & (N_WEAK_DEF
+                    | N_WEAK_REF
+                    | N_ALT_ENTRY
+                    | N_NO_DEAD_STRIP
+                    | N_SYMBOL_RESOLVER
+                    | N_COLD_FUNC
+                    | REFERENCED_DYNAMICALLY);
+            if sym.is_weak_def() {
+                n_desc |= N_WEAK_DEF;
+            }
+            if let Some(FileId::Obj(o)) = sym.file()
+                && !ctx.objs[o as usize].subsections_via_symbols
+            {
+                n_desc = whole_desc(n_desc, true);
+            }
+            if let Some(input) = sym.input_section() {
+                n_desc |= section_desc(ctx, input as usize);
+            }
+            let n_value = sym_addr(ctx, i as u32);
+            (NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, i as u32)
+        })
+        .collect()
+}
 
-    // Undefined and tentative symbols, sorted by name. ld-prime keeps
-    // an undefined one only if a relocation refers to it or the command
-    // line makes it an initial undefine (-u): a stray `.globl`, a weak
-    // or lazy reference nothing uses, goes.
+/// A -r output's undefined and tentative symbols, sorted by name, with
+/// their entries. ld-prime keeps an undefined one only if a relocation
+/// refers to it (`referenced`) or the command line makes it an initial
+/// undefine (-u): a stray `.globl`, a weak or lazy reference nothing
+/// uses, goes.
+fn undefined_symbols<E: Target>(
+    ctx: &Context<E>,
+    referenced: &HashSet<crate::symbol::SymbolId>,
+) -> Vec<(NList, crate::symbol::SymbolId)> {
     let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
     let mut undefs: Vec<usize> = (0..ctx.symbols.syms.len())
         .filter(|&i| {
@@ -1574,39 +1610,21 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         })
         .collect();
     undefs.sort_by_key(|&i| ctx.symbols[i].name());
-    for &i in &undefs {
-        let sym = &ctx.symbols[i];
-        let mut n_desc = 0;
-        let mut n_value = 0;
-        if sym.is_common() {
-            n_value = sym.value;
-            n_desc |= (sym.common_p2align as u16) << 8;
-        } else if sym.is_weak_ref() {
-            n_desc |= N_WEAK_REF;
-        }
-        index_of_sym.insert(i as u32, ents.len() as u32);
-        names.push(sym.name().as_bytes());
-        let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value };
-        ents.push((ent, Some(i as u32)));
-    }
-    let entry_of =
-        crate::chunks::symtab::symbol_entries(&ents, nplain, nlocal, ctx.symbols.syms.len());
-    let size = crate::chunks::symtab::layout_strings(
-        &mut ents,
-        &mut names,
-        nlocal,
-        (nplain, &names_of),
-        &entry_of,
-    )
-    .next_multiple_of(8);
-    let mut strtab = vec![0u8; size];
-    strtab[0] = b' ';
-    for ((ent, _), name) in ents.iter().zip(&names) {
-        let off = ent.n_strx as usize;
-        strtab[off..off + name.len()].copy_from_slice(name);
-    }
-
-    RSymtab { nlists: ents.into_iter().map(|e| e.0).collect(), strtab, index_of_sym, atoms }
+    undefs
+        .iter()
+        .map(|&i| {
+            let sym = &ctx.symbols[i];
+            let mut n_desc = 0;
+            let mut n_value = 0;
+            if sym.is_common() {
+                n_value = sym.value;
+                n_desc |= (sym.common_p2align as u16) << 8;
+            } else if sym.is_weak_ref() {
+                n_desc |= N_WEAK_REF;
+            }
+            (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value }, i as u32)
+        })
+        .collect()
 }
 
 /// The atoms ld64 names itself in a -r output's literal sections (see
