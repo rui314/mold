@@ -252,10 +252,6 @@ pub struct Args {
     /// -order_file: files of symbol names; matching atoms are placed
     /// first in their output sections, in file order.
     pub order_files: Vec<PathBuf>,
-    /// -executable_path: what @executable_path in dependent dylibs'
-    /// install names stands for at link time (defaults to the output
-    /// path when linking an executable).
-    pub executable_path: Option<PathBuf>,
     /// -object_path_lto: keep the LTO-compiled object at this path for
     /// the debugger.
     pub object_path_lto: Option<PathBuf>,
@@ -432,7 +428,6 @@ impl Default for Args {
             mark_dead_strippable_dylib: false,
             export_dynamic: false,
             order_files: Vec::new(),
-            executable_path: None,
             object_path_lto: None,
             print_dependencies: false,
             why_load: false,
@@ -1020,6 +1015,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut local_keep_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
     let mut deprecated_undefined: Vec<&str> = Vec::new();
+    let mut executable_paths = 0;
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -1512,7 +1508,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     }
                 }
             }
-            b"-executable_path" => args.executable_path = Some(path(next_arg(&mut i, name))),
+            // ld64 took what @executable_path stands for in a dylib's
+            // re-exports from this. ld-prime expands none, and ignores
+            // the option with a warning.
+            b"-executable_path" => {
+                next_arg(&mut i, name);
+                executable_paths += 1;
+            }
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
@@ -1713,6 +1715,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
+    }
+    for _ in 0..executable_paths {
+        crate::warn!("-executable_path is obsolete");
     }
     if args.kernel && kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");

@@ -3630,9 +3630,10 @@ fn dir_of(path: &Path) -> PathBuf {
 
 /// Resolves a dependent dylib's install name the way dyld would, but
 /// at link time: @loader_path is the directory of the dylib that
-/// names the dependency, @rpath tries that dylib's own LC_RPATH
-/// entries, and @executable_path stands for the output executable's
-/// directory (or -executable_path).
+/// names the dependency, and @rpath tries that dylib's own LC_RPATH
+/// entries. ld-prime expands no @executable_path (ld64 took the output
+/// executable's directory, or -executable_path's), so such a name
+/// resolves only by its leaf.
 fn resolve_dylib_ref<E: Target>(
     ctx: &Context<E>,
     name: &[u8],
@@ -3640,20 +3641,10 @@ fn resolve_dylib_ref<E: Target>(
     loader_rpaths: &[PathBuf],
 ) -> Option<&'static MappedFile> {
     use crate::util::{os_str, path_bytes};
-    // A name relative to the re-exporter, its executable or its rpaths
-    // resolves as such first, and failing that like an absolute one.
+    // A name relative to the re-exporter or its rpaths resolves as
+    // such first, and failing that like an absolute one.
     if let Some(rest) = name.strip_prefix(b"@loader_path/") {
         return find_reexport_file(ctx, path_bytes(&loader_dir.join(os_str(rest))))
-            .or_else(|| find_reexport_by_leaf(ctx, name));
-    }
-    if let Some(rest) = name.strip_prefix(b"@executable_path/") {
-        let exe = match &ctx.args.executable_path {
-            Some(path) => Some(path.clone()),
-            None if ctx.args.output_type == MH_EXECUTE => Some(ctx.args.output.clone()),
-            None => None,
-        };
-        return exe
-            .and_then(|exe| find_reexport_file(ctx, path_bytes(&dir_of(&exe).join(os_str(rest)))))
             .or_else(|| find_reexport_by_leaf(ctx, name));
     }
     if let Some(rest) = name.strip_prefix(b"@rpath/") {
