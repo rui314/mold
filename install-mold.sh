@@ -2,6 +2,7 @@
 set -e
 
 PREFIX=${PREFIX:-/usr/local}
+MOLD_LIBDIR=${MOLD_LIBDIR:-$PREFIX/lib}
 
 srcdir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 artifact_dir="${CARGO_TARGET_DIR:-$srcdir/target}/release"
@@ -14,7 +15,7 @@ if [ ! -x "$artifact_dir/mold" ] ||
 fi
 
 bindir="$DESTDIR$PREFIX/bin"
-libdir="$DESTDIR$PREFIX/lib/mold"
+libdir="$DESTDIR$MOLD_LIBDIR/mold"
 libexecdir="$DESTDIR$PREFIX/libexec/mold"
 mandir="$DESTDIR$PREFIX/share/man/man1"
 docdir="$DESTDIR$PREFIX/share/doc/mold"
