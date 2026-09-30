@@ -112,18 +112,19 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     records.par_sort_by_key(func_addr);
 
-    // Merge adjacent records with identical contents.
+    // Merge consecutive records with identical contents. An entry has no
+    // length - it covers the code up to the next one - so the padding
+    // between two functions does not keep them apart.
     let mut merged: Vec<crate::input_files::UnwindRecord> = Vec::with_capacity(records.len());
     for rec in records {
         match merged.last_mut() {
             Some(last)
-                if func_addr(last) + last.code_len as u64 == func_addr(&rec)
-                    && last.encoding == rec.encoding
+                if last.encoding == rec.encoding
                     && last.personality() == rec.personality()
                     && last.lsda().is_none()
                     && rec.lsda().is_none() =>
             {
-                last.code_len += rec.code_len;
+                last.code_len = (func_addr(&rec) + rec.code_len as u64 - func_addr(last)) as u32;
             }
             _ => merged.push(rec),
         }

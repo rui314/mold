@@ -38,6 +38,20 @@ for k in range(isc - 1):
             print(hex(0x100000000 + fo), hex(enc))
 EOF2
 }
+addr() { nm $1 | awk -v s=$2 '$3 == s { print "0x" $1 }' | sed 's/0x0*/0x/'; }
 unwind_entries $t/exe > $t/entries
-g=$(nm $t/exe | awk '$3 == "_g" { print "0x" $1 }' | sed 's/0x0*/0x/')
-grep -q "^$g 0x0$" $t/entries
+grep -q "^$(addr $t/exe _g) 0x0$" $t/entries
+
+# For the same reason two consecutive functions with the same encoding
+# share one entry, even with padding between them.
+cat <<EOF | $CC -o $t/d.o -c -xc -
+int h(void);
+int f(void) { return h() + 1; }
+__attribute__((aligned(64))) int main() { return f() - 3; }
+EOF
+echo 'int h(void) { return 2; }' | $CC -o $t/e.o -c -xc -
+$CC --ld-path=$mold -o $t/exe2 $t/d.o $t/e.o
+$t/exe2
+unwind_entries $t/exe2 > $t/entries2
+grep -q "^$(addr $t/exe2 _f) " $t/entries2
+not grep -q "^$(addr $t/exe2 _main) " $t/entries2
