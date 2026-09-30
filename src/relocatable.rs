@@ -222,6 +222,21 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// The __compact_unwind pointer fields an input set by a 4-byte
+/// relocation, as a bit per field (1 << offset / 8) by record
+/// (subsection and function offset): each keeps a 4-byte relocation,
+/// as in ld-prime's output, its value fitting (the addresses of a -r
+/// output start at zero).
+fn narrow_unwind_fields<E: Target>(ctx: &Context<E>) -> HashMap<(u32, u32), u8> {
+    let mut fields: HashMap<(u32, u32), u8> = HashMap::new();
+    for obj in &ctx.objs {
+        for &(isec, off, bit) in &obj.unwind_ptr32 {
+            *fields.entry((isec, off)).or_default() |= bit;
+        }
+    }
+    fields
+}
+
 pub fn link<E: Target>(ctx: &mut Context<E>) {
     // Lay out the merged sections from address zero, zero-fill
     // sections last: an object's file image mirrors its address
@@ -475,16 +490,20 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             sym_at.entry((ctx.resolve_isec(isec as usize), sym.value)).or_insert(symnum);
         }
     }
+    let narrow_fields = narrow_unwind_fields(ctx);
     let mut cu_data: Vec<u8> = Vec::new();
     let mut cu_relocs: Vec<MachRel> = Vec::new();
     for &r in &cu_kept {
         let rec = &ctx.unwind_records[r];
         let isec = &ctx.isecs[rec.isec as usize];
         let entry = cu_data.len() as u32;
+        // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
+        let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
+        let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
         match sym_at.get(&(rec.isec as usize, rec.input_offset as u64)) {
             Some(&symnum) => {
                 cu_data.extend_from_slice(&0u64.to_le_bytes());
-                cu_relocs.push(MachRel { r_address: entry, bits: symnum | (3 << 25) | (1 << 27) });
+                cu_relocs.push(MachRel { r_address: entry, bits: symnum | len(0) | (1 << 27) });
             }
             None => {
                 let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
@@ -493,7 +512,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 cu_data.extend_from_slice(&func_addr.to_le_bytes());
                 cu_relocs.push(MachRel {
                     r_address: entry,
-                    bits: ctx.isec_n_sect(isec) as u32 | (3 << 25),
+                    bits: ctx.isec_n_sect(isec) as u32 | len(0),
                 });
             }
         }
@@ -507,7 +526,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 };
                 cu_data.extend_from_slice(&0u64.to_le_bytes());
                 cu_relocs
-                    .push(MachRel { r_address: entry + 16, bits: symnum | (3 << 25) | (1 << 27) });
+                    .push(MachRel { r_address: entry + 16, bits: symnum | len(16) | (1 << 27) });
             }
             None => cu_data.extend_from_slice(&0u64.to_le_bytes()),
         }
@@ -520,7 +539,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                         cu_data.extend_from_slice(&0u64.to_le_bytes());
                         cu_relocs.push(MachRel {
                             r_address: entry + 24,
-                            bits: symnum | (3 << 25) | (1 << 27),
+                            bits: symnum | len(24) | (1 << 27),
                         });
                     }
                     None => {
@@ -531,7 +550,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                         cu_data.extend_from_slice(&lsda_addr.to_le_bytes());
                         cu_relocs.push(MachRel {
                             r_address: entry + 24,
-                            bits: ctx.isec_n_sect(l) as u32 | (3 << 25),
+                            bits: ctx.isec_n_sect(l) as u32 | len(24),
                         });
                     }
                 }

@@ -122,6 +122,9 @@ pub struct ObjectFile {
     /// True if the object carries DWARF debug info, so the output gets
     /// debug stabs pointing back at it.
     pub has_debug_info: bool,
+    /// The __compact_unwind pointer fields a 4-byte relocation set (see
+    /// StagedObject::unwind_ptr32), by global subsection.
+    pub unwind_ptr32: Vec<(u32, u32, u8)>,
     /// For a bitcode input, the lto_module handle: the object is a
     /// placeholder that only claims symbols until LTO compiles it.
     pub lto_module: Option<usize>,
@@ -166,6 +169,7 @@ impl ObjectFile {
             subsecs: Vec::new(),
             objc_image_info: None,
             has_debug_info: false,
+            unwind_ptr32: Vec::new(),
             lto_module: None,
             nlists: std::borrow::Cow::Owned(Vec::new()),
             first_global: None,
@@ -572,6 +576,11 @@ pub struct StagedObject {
     /// An FDE describes a function in a section of data, which
     /// ld-prime refuses (see add_fdes).
     pub data_fde: bool,
+    /// The __compact_unwind pointer fields a 4-byte relocation set, as
+    /// (subsection, function offset, 1 << field offset / 8) of their
+    /// records: x86-64 takes those as well as 8-byte ones, and a -r
+    /// output keeps them 4 bytes, as ld-prime does.
+    pub unwind_ptr32: Vec<(u32, u32, u8)>,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -840,6 +849,7 @@ pub fn stage_object<E: Target>(
         cies: Vec::new(),
         fdes: Vec::new(),
         data_fde: false,
+        unwind_ptr32: Vec::new(),
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
@@ -1341,6 +1351,9 @@ impl StagedObject {
         for sub in &mut self.subsecs {
             *sub += isec_base as u32;
         }
+        for (isec, _, _) in &mut self.unwind_ptr32 {
+            *isec += isec_base as u32;
+        }
         for rec in &mut self.unwind {
             rec.isec += isec_base as u32;
             if rec.lsda_isec != UNWIND_NONE {
@@ -1386,6 +1399,7 @@ impl StagedObject {
             subsecs: self.subsecs,
             objc_image_info: self.objc_image_info,
             has_debug_info: self.has_debug_info,
+            unwind_ptr32: self.unwind_ptr32,
             nlists: self.nlists,
             first_global: self.first_global,
             symbols,
@@ -1671,6 +1685,7 @@ pub fn parse_bitcode<E: Target>(
         subsecs: Vec::new(),
         objc_image_info: None,
         has_debug_info: false,
+        unwind_ptr32: Vec::new(),
         nlists: std::borrow::Cow::Owned(nlists),
         first_global: None,
         symbols: syms,
@@ -1810,7 +1825,8 @@ impl StagedObject {
 
         // A pointer field may take a 4-byte relocation (on x86-64, the
         // only target with 4-byte pointers) as well as an 8-byte one,
-        // but the other fields none.
+        // but the other fields none. The 4-byte ones, by record.
+        let mut ptr32: Vec<(usize, u8)> = Vec::new();
         for r in rels {
             let field = r.offset as usize % ENTRY_SIZE;
             if !matches!(field, 0 | 16 | 24) {
@@ -1818,6 +1834,9 @@ impl StagedObject {
                     "compact unwind fixup at offset of {field} but expected 16 or 24 in '{}'",
                     crate::passes::resolved_file_name(mf)
                 );
+            }
+            if r.size == 4 {
+                ptr32.push((r.offset as usize / ENTRY_SIZE, 1 << (field / 8)));
             }
             let rec = &mut records[r.offset as usize / ENTRY_SIZE];
             // The address a pointer field refers to. For an extern
@@ -1866,6 +1885,12 @@ impl StagedObject {
                     rec.lsda_off = off as u32;
                 }
                 _ => unreachable!(),
+            }
+        }
+
+        for (i, bit) in ptr32 {
+            if records[i].isec != u32::MAX {
+                self.unwind_ptr32.push((records[i].isec, records[i].input_offset, bit));
             }
         }
 

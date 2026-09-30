@@ -44,6 +44,16 @@ if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/c $t/main.o $t/c.o
   otool -s __TEXT __unwind_info $t/c | tail -n +2 > $t/c.txt
   diff $t/a.txt $t/c.txt
+
+  # A -r output keeps such a field 4 bytes (r_length 2), as ld-prime
+  # does, and an 8-byte one 8 bytes (r_length 3).
+  lengths() {
+    otool -r $1 | awk '/^Relocation information/ { s = $3 }
+      s == "(__LD,__compact_unwind)" && $1 ~ /^0/ { print $1, $3 }' | sort
+  }
+  [ "$(lengths $t/c.o)" = "$(printf '00000000 2\n00000010 2')" ]
+  $mold -arch x86_64 -r -o $t/a-r.o $t/a.o
+  [ "$(lengths $t/a-r.o)" = "$(printf '00000000 3\n00000010 3')" ]
 fi
 
 unwind d '.quad _f
