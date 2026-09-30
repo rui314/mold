@@ -25,9 +25,9 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
-use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol, SymbolId};
 use crate::target::{Family, Target, ThunkLayout};
-use crate::thunks::Thunk;
+use crate::thunks::{self, LANDING_PAD_SIZE, Thunk};
 use crate::util::endian::{read_ul32, write_ul32};
 use crate::util::{bits, is_int};
 use crate::{error, fatal};
@@ -117,6 +117,11 @@ impl<const LE: bool> Arm64Target<LE> {
             && (sym.is_canonical()
                 || sym.is_ifunc()
                 || sym.aux(&ctx.symbols).is_some_and(|aux| !aux.thunk_addrs.is_empty()))
+    }
+
+    /// The address that a thunk entry for `sym` jumps to.
+    fn thunk_dest(ctx: &Context<Self>, sym: SymbolId) -> u64 {
+        thunks::landing_pad_addr(ctx, sym).unwrap_or_else(|| ctx.symbols[sym].addr(ctx))
     }
 
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
@@ -810,10 +815,10 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         // page(0x1100) – page(0xfff) is 0x1000, even though the latter
         // distance is shorter than the former.
         let is_small = |prel: i64| is_int(prel + 0x1000, 33) && is_int(prel - 0x1000, 33);
-        let mut offsets = vec![0];
-        let mut off = 0;
+        let mut off = thunk.landing_pads.len() as u64 * LANDING_PAD_SIZE;
+        let mut offsets = vec![off];
         for &sym in &thunk.symbols {
-            let s = ctx.symbols[sym].addr(ctx);
+            let s = Self::thunk_dest(ctx, sym);
             let p = addr + off;
             let prel = page(s).wrapping_sub(page(p)) as i64;
             off += if is_small(prel) { 12 } else { 24 };
@@ -838,9 +843,25 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0x8b11_0210, // add  x16, x16, x17
             0xd61f_0200, // br   x16
         ];
+        // Landing pad for a function that doesn't start with one
+        const LANDING_PAD: [u32; 2] = [
+            0xd503_245f, // bti  c
+            0x1400_0000, // b    0
+        ];
+
+        for (i, &sym) in thunk.landing_pads.iter().enumerate() {
+            let s = ctx.symbols[sym].addr(ctx);
+            let off = i * LANDING_PAD_SIZE as usize;
+            let disp = s.wrapping_sub(addr + off as u64 + 4);
+            debug_assert!(is_int(disp as i64, 28));
+            for (j, &v) in LANDING_PAD.iter().enumerate() {
+                write_insn(&mut buf[off + j * 4..], v);
+            }
+            or_insn(&mut buf[off + 4..], bits(disp, 27, 2) as u32);
+        }
 
         for (i, &sym) in thunk.symbols.iter().enumerate() {
-            let s = ctx.symbols[sym].addr(ctx);
+            let s = Self::thunk_dest(ctx, sym);
             let p = addr + thunk.offsets[i];
             let entry = &mut buf[thunk.offsets[i] as usize..thunk.offsets[i + 1] as usize];
             if entry.len() == 12 {

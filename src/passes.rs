@@ -2255,12 +2255,13 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
     };
 
     // create_range_extension_thunks is not thread-safe
+    let landing_pads = crate::thunks::find_landing_pads(ctx);
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
         if let ChunkId::Output(osec) = id
             && needs_thunks(ctx, id)
         {
-            crate::thunks::create_range_extension_thunks(ctx, osec);
+            crate::thunks::create_range_extension_thunks(ctx, osec, &landing_pads);
         }
     }
 
