@@ -1727,7 +1727,7 @@ pub struct Cie {
     pub obj: u32,
     pub input_addr: u32,
     /// The CIE bytes: a slice of the object's __eh_frame (with its
-    /// subtraction pairs pre-applied), not a per-record copy - mold's
+    /// relocations pre-applied), not a per-record copy - mold's
     /// CieRecord borrows its contents the same way.
     pub data: &'static [u8],
     pub personality: Option<SymbolId>,
@@ -1814,10 +1814,10 @@ impl StagedObject {
         // The records borrow from a processed copy of the section, leaked
         // once per object (like its section headers): the CIE/FDE bytes
         // then need no per-record copy, and they carry the pre-applied
-        // pairs.
+        // relocations.
         let mut contents =
             data[hdr.offset as usize..(hdr.offset as u64 + hdr.size) as usize].to_vec();
-        apply_subtractor_pairs::<E>(&mut contents, &rels, &self.nlists, &mf.name);
+        apply_eh_frame_relocs::<E>(&mut contents, &rels, &self.nlists, &mf.name);
         let contents: &'static [u8] = Vec::leak(contents);
 
         // Split the section into records: a zero ID marks a CIE, anything
@@ -2167,10 +2167,12 @@ fn is_typed_data_section(hdr: &MachSection) -> bool {
     }
 }
 
-/// Pre-applies the subtraction pairs of an __eh_frame's relocations to
-/// its contents, so that the records' pointers become self-relative
-/// values. Its GOT-relative relocations, a CIE's personality
-/// reference, are left for parse_eh_frame; there may be no other kind.
+/// Pre-applies an __eh_frame's relocations to its contents, as ld-prime
+/// reads them, so that the records' pointers become plain values: a
+/// SUBTRACTOR adds the next relocation's target, whatever its type, less
+/// its own, and an UNSIGNED of no pair adds its target. Its GOT-relative
+/// relocations, a CIE's personality reference, are left for
+/// parse_eh_frame; there may be no other kind.
 ///
 /// Either half of a pair may be non-extern, naming a section instead
 /// of a symbol. The x86_64 assembler writes one for a label that no
@@ -2178,7 +2180,7 @@ fn is_typed_data_section(hdr: &MachSection) -> bool {
 /// points back at, once a named label starts the FDE) and folds the
 /// label's address into the contents instead, so such a half adds
 /// nothing here.
-fn apply_subtractor_pairs<E: Target>(
+fn apply_eh_frame_relocs<E: Target>(
     contents: &mut [u8],
     rels: &[MachRel],
     nlists: &[NList],
@@ -2191,31 +2193,61 @@ fn apply_subtractor_pairs<E: Target>(
     };
     let mut i = 0;
     while i < rels.len() {
-        let r1 = rels[i];
-        if r1.r_type() == E::RELOC_SUBTRACTOR {
-            let r2 = rels[i + 1];
-            i += 2;
-            if r2.r_type() != E::RELOC_UNSIGNED {
-                fatal!("{file_name}: __eh_frame: unsupported relocation pair");
-            }
-            let loc = &mut contents[r1.r_address as usize..];
-            let delta = target(r2).wrapping_sub(target(r1));
-            match r1.r_length() {
-                2 => {
-                    let val = u32::from_le_bytes(loc[..4].try_into().unwrap());
-                    loc[..4].copy_from_slice(&val.wrapping_add(delta as u32).to_le_bytes());
-                }
-                3 => {
-                    let val = u64::from_le_bytes(loc[..8].try_into().unwrap());
-                    let add = delta as u32 as i32 as i64 as u64;
-                    loc[..8].copy_from_slice(&val.wrapping_add(add).to_le_bytes());
-                }
-                _ => fatal!("{file_name}: __eh_frame: invalid relocation size"),
-            }
-        } else if r1.r_type() == E::RELOC_GOTPC {
+        // ld-prime checks a relocation's offset, type and size, in that
+        // order, but not those of a SUBTRACTOR's partner. It lets a
+        // field start at the section's end, which this does not.
+        let r = rels[i];
+        let off = r.r_address as usize;
+        let beyond_end = || -> ! {
+            fatal!(
+                "malformed __eh_frame relocation, offset (0x{off:08X}) is beyond end of \
+                 section, in '{file_name}'"
+            )
+        };
+        if off > contents.len() {
+            beyond_end();
+        }
+        let ty = r.r_type();
+        if ty != E::RELOC_UNSIGNED && ty != E::RELOC_SUBTRACTOR && ty != E::RELOC_GOTPC {
+            fatal!(
+                "__eh_frame unexpected relocation type ({ty}) at r_address=0x{off:08X} in \
+                 '{file_name}'"
+            );
+        }
+        let size = match r.r_length() {
+            2 => 4,
+            3 => 8,
+            len => fatal!(
+                "__eh_frame unexpected relocation size ({len}) at r_address=0x{off:08X} in \
+                 '{file_name}'"
+            ),
+        };
+        if off + size > contents.len() {
+            beyond_end();
+        }
+        i += 1;
+
+        let val = if ty == E::RELOC_SUBTRACTOR {
+            let Some(&plus) = rels.get(i) else {
+                fatal!(
+                    "malformed __eh_frame relocation, SUBTRACTOR at offset (0x{off:08X}) has \
+                     no pair, in '{file_name}'"
+                );
+            };
             i += 1;
+            target(plus).wrapping_sub(target(r))
+        } else if ty == E::RELOC_UNSIGNED {
+            target(r)
         } else {
-            fatal!("{file_name}: __eh_frame: unknown relocation type");
+            continue;
+        };
+        let loc = &mut contents[off..off + size];
+        if size == 4 {
+            let old = u32::from_le_bytes(loc.try_into().unwrap());
+            loc.copy_from_slice(&old.wrapping_add(val as u32).to_le_bytes());
+        } else {
+            let old = u64::from_le_bytes(loc.try_into().unwrap());
+            loc.copy_from_slice(&old.wrapping_add(val).to_le_bytes());
         }
     }
 }

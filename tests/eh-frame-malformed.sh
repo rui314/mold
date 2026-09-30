@@ -110,3 +110,69 @@ fail pers03 'unsupported pointer encoding 0x03' 'EH_frame0:' '.long 24' '.long 0
 fail pers10 'CIE reference to personality function not supported' 'EH_frame0:' '.long 28' \
   '.long 0' '.byte 1, 0x7a, 0x50, 0x52, 0, 1, 0x78, 30, 10, 0x10' '.quad _main - .' \
   '.byte 0x10, 0x0c, 31, 8, 0, 0'
+
+# __eh_frame's relocations: a SUBTRACTOR adds the next relocation's
+# target, whatever its type, less its own; an UNSIGNED of no pair adds
+# its target; a GOT-relative one names a personality. ld-prime checks
+# each one's offset, type and size, but not those of a SUBTRACTOR's
+# partner.
+fail unsigned 'unsupported FDE pointer encoding 0x00 in FDE' "$(cie_r 0x00)" \
+  '.long 20' '.long 28' '.quad _main' '.quad 1'
+
+# reloc <name> <change...>: the object below, one FDE whose function is
+# a SUBTRACTOR pair at 0x20, with its relocations changed: nreloc=<n>,
+# or <index>:<addr|type|len>=<value>.
+{ printf '.text\n.globl _main\n.p2align 2\n_main: ret\n.section __TEXT,__eh_frame\n'
+  cie_r 0x10
+  printf '%s\n' '.long 20' '.long 28' '.quad _main - .' '.quad 1'; } |
+  $CC -o $t/rel.o -c -xassembler -
+reloc() {
+  python3 - $t/rel.o $t/$1.o "${@:2}" <<'EOF'
+import struct, sys
+data = bytearray(open(sys.argv[1], 'rb').read())
+off = 32
+for _ in range(struct.unpack_from('<I', data, 16)[0]):
+    cmd, size = struct.unpack_from('<II', data, off)
+    if cmd == 0x19:
+        for i in range(struct.unpack_from('<I', data, off + 64)[0]):
+            hdr = off + 72 + i * 80
+            if data[hdr:hdr + 16].rstrip(b'\0') == b'__eh_frame':
+                reloff = struct.unpack_from('<I', data, hdr + 56)[0]
+                for change in sys.argv[3:]:
+                    field, val = change.split('=')
+                    if field == 'nreloc':
+                        struct.pack_into('<I', data, hdr + 60, int(val, 0))
+                        continue
+                    idx, field = field.split(':')
+                    p = reloff + int(idx) * 8
+                    addr, info = struct.unpack_from('<II', data, p)
+                    if field == 'addr':
+                        addr = int(val, 0)
+                    else:
+                        shift, mask = {'type': (28, 0xf), 'len': (25, 3)}[field]
+                        info = info & ~(mask << shift) | int(val, 0) << shift
+                    struct.pack_into('<II', data, p, addr, info)
+    off += size
+open(sys.argv[2], 'wb').write(data)
+EOF
+}
+
+# refused <name> <message> <change...>
+refused() {
+  reloc $1 "${@:3}" &&
+    not $mold -r -arch $ARCH -o $t/$1-r.o $t/$1.o 2> $t/$1.err &&
+    grep -Fq "$2" $t/$1.err
+}
+refused rtype '__eh_frame unexpected relocation type (3) at r_address=0x00000020' 0:type=3
+refused rsize '__eh_frame unexpected relocation size (1) at r_address=0x00000020' 0:len=1
+refused rbeyond 'malformed __eh_frame relocation, offset (0x00001000) is beyond end of section,' \
+  0:addr=0x1000
+
+# A SUBTRACTOR with no partner (ld-prime crashes).
+reloc rtrail nreloc=1
+not $mold -r -arch $ARCH -o $t/rtrail-r.o $t/rtrail.o 2> $t/rtrail.err
+not grep -q panicked $t/rtrail.err
+
+# The partner's type does not matter.
+reloc rpartner 1:type=3
+$mold -r -arch $ARCH -o $t/rpartner-r.o $t/rpartner.o
