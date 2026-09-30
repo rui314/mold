@@ -1281,10 +1281,8 @@ fn rewrite_field<E: Target>(
     let OutTarget::Section(target, addend) = targets.out_target(isec, rel) else {
         return;
     };
-    let t = &ctx.isecs[target];
     // The addend is negative for a target before its section's start.
-    let target_addr = (ctx.chunk_header(t.output_section().unwrap()).addr + t.offset as u64)
-        .wrapping_add_signed(addend);
+    let target_addr = ctx.isec_addr(target).wrapping_add_signed(addend);
     if let Some((_, atom_addr)) = targets.atom_target(target, addend) {
         // Now a relocation against the atom's symbol: the field holds
         // the addend relative to it, in the form an object's extern
@@ -1369,10 +1367,7 @@ enum Rank {
 fn sym_addr<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> u64 {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
-        Some(isec) => {
-            let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-            ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + sym.value
-        }
+        Some(isec) => ctx.isec_addr(isec as usize) + sym.value,
         None => sym.value,
     }
 }
