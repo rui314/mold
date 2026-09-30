@@ -125,8 +125,10 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     // since Xcode 4). -search_dylibs_first restores the older ld64
     // behavior: a dylib anywhere on the path beats an archive
     // anywhere.
-    // A -static link can use no dylib, so it looks for archives only.
-    let passes: &[&[&str]] = if ctx.args.static_link {
+    // An image no dyld loads (a -static one or a kext) can use no
+    // dylib, so it looks for archives only. A relocatable output looks
+    // for dylibs too, only to ignore them (collect_file).
+    let passes: &[&[&str]] = if ctx.args.without_dyld() {
         &[&["a"]]
     } else if ctx.args.search_dylibs_first {
         &[&["tbd", "dylib"], &["a"]]
@@ -249,16 +251,10 @@ fn collect_file<E: Target>(
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
         // A relocatable output keeps every reference undefined for the
-        // final link, so a dylib named on its command line is ignored
-        // with ld64's warning.
-        FileType::Tapi if ctx.args.relocatable => {
-            crate::warn!("{}, ignoring unexpected dylib text stub file", mf.name.display());
-        }
-        FileType::Dylib if ctx.args.relocatable => {
-            crate::warn!("{}, ignoring unexpected dylib file", mf.name.display());
-        }
-        // A -static image has no dyld to load a dylib with.
-        FileType::Tapi | FileType::Dylib if ctx.args.static_link => {
+        // final link, and an image no dyld loads (a -static one or a
+        // kext) has nothing to load a dylib with: ld-prime ignores a
+        // dylib on their command lines with a warning.
+        FileType::Tapi | FileType::Dylib if ctx.args.relocatable || ctx.args.without_dyld() => {
             crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
         }
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
