@@ -4890,12 +4890,15 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             "__DATA_CONST" => 3,
             _ => 4,
         };
-        let seg_rank = if hdr.segname == "__LINKEDIT" {
-            usize::MAX
-        } else if let Some(i) = segment_order.iter().position(|s| s == hdr.segname) {
-            i
-        } else {
-            segment_order.len() + standard
+        // -segment_order orders the rest: __TEXT, which holds the
+        // mach header, stays first and __LINKEDIT last.
+        let seg_rank = match hdr.segname {
+            "__TEXT" => 0,
+            "__LINKEDIT" => usize::MAX,
+            name => match segment_order.iter().position(|s| s == name) {
+                Some(i) => 1 + i,
+                None => 1 + segment_order.len() + standard,
+            },
         };
         let seg_rank = (seg_rank, first_seen[hdr.segname]);
         let sect_rank = match id {
@@ -4936,6 +4939,34 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.segments = segments;
     ctx.chunks = order;
+    check_segment_order(ctx);
+}
+
+/// ld-prime's warnings for a -segment_order that places __TEXT or
+/// __LINKEDIT where they cannot go, or leaves segments out (they follow
+/// the listed ones in the usual order).
+fn check_segment_order<E: Target>(ctx: &Context<E>) {
+    let order = &ctx.args.segment_order;
+    if order.is_empty() {
+        return;
+    }
+    let (text_pos, text_place) =
+        if ctx.args.pagezero_size > 0 { (1, "second") } else { (0, "first") };
+    if order.iter().position(|s| s == "__TEXT").is_some_and(|i| i != text_pos) {
+        crate::warn!(
+            "-segment_order of __TEXT is ignored, the segment must be ordered {text_place}"
+        );
+    }
+    if order.iter().position(|s| s == "__LINKEDIT").is_some_and(|i| i != order.len() - 1) {
+        crate::warn!("-segment_order of __LINKEDIT is ignored, the segment must be ordered last");
+    }
+    for seg in &ctx.segments {
+        if !matches!(seg.name, "__PAGEZERO" | "__TEXT" | "__LINKEDIT")
+            && !order.iter().any(|s| s == seg.name)
+        {
+            crate::warn!("-segment_order should list all segments, {} is missing", seg.name);
+        }
+    }
 }
 
 /// Adds a synthesized section with fixed contents to the output.

@@ -764,6 +764,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.segprots.push((seg, max, init));
             }
             b"-segment_order" => {
+                if !args.segment_order.is_empty() {
+                    fatal!("-segment_order used more than once");
+                }
                 args.segment_order = text(name, next_arg(&mut i))
                     .split(':')
                     .filter(|s| !s.is_empty())
@@ -1066,6 +1069,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.pagezero_size = 0;
     }
 
+    check_segment_order(&args);
+
     // A -static image (a kernel) carries the code tables only when
     // asked to, as ld-prime writes it, and no __DATA_CONST: nothing
     // makes that segment read-only after fixups.
@@ -1117,6 +1122,22 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
         }
         Some(pie) => pie,
         None => !args.static_link,
+    }
+}
+
+/// -segment_order lays out an image no dyld loads (ld-prime also
+/// allows -preload and firmware platforms, which mold has not).
+fn check_segment_order(args: &Args) {
+    if args.segment_order.is_empty() {
+        return;
+    }
+    if args.segment_order.len() < 2 {
+        fatal!("-segment_order should specifify at least two segments");
+    }
+    if !args.static_link {
+        fatal!(
+            "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
+        );
     }
 }
 
