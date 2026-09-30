@@ -100,7 +100,8 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8], hashes: &[[u8; SHA256_
     let nblocks = cs_off.div_ceil(CS_PAGE_SIZE);
     let cd_size = 88 + ident_size + nblocks * SHA256_SIZE as u64;
 
-    let text = ctx.segments.iter().find(|s| s.name == "__TEXT").unwrap();
+    // (__TEXT, but for a -static image's renamed by -rename_segment.)
+    let text = ctx.segments.iter().find(|s| s.name == ctx.mach_header.hdr.segname).unwrap();
     // The executable segment's limit, as ld-prime sets it: the size of
     // __TEXT,__text (0 without one), not of the whole segment.
     let text_size = ctx

@@ -2922,7 +2922,7 @@ fn merged_name(name: SectionName) -> Option<SectionName> {
 /// resulting segment then moves it - after a -rename_section too, so
 /// a section renamed into a renamed segment moves on. Neither applies
 /// twice: -rename_section chains A to B and B to C take A to B.
-fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
+pub(crate) fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
     let (seg, sect) = name;
     let (seg, sect) = match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
         Some((_, _, s, t)) => (static_name(s), static_name(t)),
@@ -3289,17 +3289,17 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     place_replacing_blobs(ctx);
 
-    // A final image always has a __TEXT,__text section, empty if no
-    // code reached it (a dylib of only data; ld-prime writes one of
-    // size 0, byte-aligned) - but for code in another segment's
-    // __text (-rename_section to __TEXT_EXEC, as a kernel or kext has).
-    if !relocatable && !by_out.keys().any(|&(_, sect)| sect == "__text") {
-        let mut osec = OutputSection::new("__TEXT", "__text");
+    // A final image always has a __text section, empty if no code
+    // reached it (a dylib of only data; ld-prime writes one of size 0,
+    // byte-aligned).
+    let text = text_section_name(ctx);
+    if !relocatable && !by_out.contains_key(&text) {
+        let mut osec = OutputSection::new(text.0, text.1);
         osec.hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         let id = OutputSectionId::new(ctx.output_sections.len() as u32);
         ctx.output_sections.push(osec);
         ctx.chunks.push(ChunkId::Output(id));
-        by_out.insert(("__TEXT", "__text"), id);
+        by_out.insert(text, id);
     }
 
     // The thread-local template (__thread_data followed by
@@ -3669,6 +3669,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     add_linkedit_chunks(ctx);
+    rename_synthetic_sections(ctx);
     add_boundary_sections(ctx);
 
     // Sort the chunks into file order: the standard segment order, and
@@ -3771,6 +3772,58 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks = order;
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
+    // The mach header's segment must come first after __PAGEZERO. A
+    // -static image's header moves with -rename_segment __TEXT, and
+    // only -segment_order can then put its segment there.
+    if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
+        fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
+    }
+}
+
+/// The segment of the mach header: __TEXT, which -rename_segment
+/// moves only in a -static image. A dynamic image's header stays in
+/// __TEXT, where dyld looks for it.
+fn header_segment<E: Target>(ctx: &Context<E>) -> &'static str {
+    if ctx.args.static_link { renamed_segment(&ctx.args, "__TEXT") } else { "__TEXT" }
+}
+
+/// The name of the __text section a final image always has: it moves
+/// with -text_exec like the code, and -rename_section and
+/// -rename_segment rename it like any section - but -rename_segment
+/// __TEXT leaves it with the mach header.
+fn text_section_name<E: Target>(ctx: &Context<E>) -> SectionName {
+    let (seg, sect) = SectionMap::final_link(ctx).builtin_name(("__TEXT", "__text"));
+    let is_renamed = ctx.args.rename_sections.iter().any(|(s, t, _, _)| s == seg && t == sect);
+    if seg == "__TEXT" && !is_renamed {
+        (header_segment(ctx), sect)
+    } else {
+        renamed(&ctx.args, (seg, sect))
+    }
+}
+
+/// Applies -rename_section and -rename_segment to the sections the
+/// linker synthesizes, as ld-prime does to all of them - the stubs and
+/// their helper, the GOT and lazy pointers, __init_offsets,
+/// __eh_frame, the Objective-C ones and -sectcreate's - but
+/// __unwind_info, which stays in __TEXT; and moves the mach header to
+/// its segment. (The output sections of input sections got their
+/// renamed names when created.)
+fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.rename_sections.is_empty() && ctx.args.rename_segments.is_empty() {
+        return;
+    }
+    ctx.mach_header.hdr.segname = header_segment(ctx);
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let hdr = ctx.chunk_header(id);
+        if !hdr.is_sect || matches!(id, ChunkId::Output(_) | ChunkId::UnwindInfo) {
+            continue;
+        }
+        let (seg, sect) = renamed(&ctx.args, (hdr.segname, static_name(&hdr.sectname)));
+        let hdr = ctx.chunk_header_mut(id);
+        hdr.segname = seg;
+        hdr.sectname = sect.to_string();
+    }
 }
 
 /// Resolves each section$start$/section$end$ and segment$start$/
@@ -3929,7 +3982,8 @@ fn check_segment_order<E: Target>(ctx: &Context<E>) {
     }
     let (text_pos, text_place) =
         if ctx.args.pagezero_size > 0 { (1, "second") } else { (0, "first") };
-    if order.iter().position(|s| s == "__TEXT").is_some_and(|i| i != text_pos) {
+    let has_text = ctx.segments.iter().any(|s| s.name == "__TEXT");
+    if has_text && order.iter().position(|s| s == "__TEXT").is_some_and(|i| i != text_pos) {
         crate::warn!(
             "-segment_order of __TEXT is ignored, the segment must be ordered {text_place}"
         );

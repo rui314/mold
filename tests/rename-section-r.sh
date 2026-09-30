@@ -2,8 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # -rename_section and -rename_segment apply to a -r output too, to the
-# input sections as they came (no __DATA_CONST move). A zero-fill
-# section still goes after its segment's other sections.
+# input sections as they came (no __DATA_CONST move) and to the merged
+# __objc_imageinfo record. A zero-fill section still goes after its
+# segment's other sections.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .zerofill __AAA,__zz,_z,64,4
 .text
@@ -16,6 +17,8 @@ _main:
 .quad 2
 .data
 .quad 3
+.section __DATA,__objc_imageinfo,regular,no_dead_strip
+.long 0, 64
 EOF
 
 sects() {
@@ -24,10 +27,11 @@ sects() {
 
 $mold -r -arch $ARCH -o $t/b.o $t/a.o -rename_section __DATA __const __FOO __bar \
   -rename_section __DATA_CONST __const __BAD __bad -rename_segment __AAA __BBB \
-  -rename_segment __DATA __CCC
+  -rename_section __DATA __objc_imageinfo __FOO __ii -rename_segment __DATA __CCC
 sects $t/b.o > $t/sects
 grep -qx '__FOO,__bar' $t/sects
 grep -qx '__BBB,__a' $t/sects
+grep -qx '__FOO,__ii' $t/sects
 grep -qx '__CCC,__data' $t/sects
 [ "$(grep __BBB $t/sects | tr '\n' ' ')" = '__BBB,__a __BBB,__zz ' ]
 not grep -q '__BAD\|__AAA\|__DATA' $t/sects

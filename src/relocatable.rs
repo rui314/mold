@@ -284,9 +284,12 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // from another image then dies with "Attempt to use unknown
     // class", and categories on framework classes never attach).
     // A prelinked object lacking it silently poisons the image that
-    // links it. ld64 writes it into __DATA in a -r output.
+    // links it. ld64 writes it into __DATA in a -r output, and
+    // ld-prime renames it like the input sections (but not the
+    // __eh_frame and __compact_unwind below).
     if ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
-        let mut e = new_extra("__DATA", "__objc_imageinfo", 0, 2, 8);
+        let (seg, sect) = crate::passes::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
+        let mut e = new_extra(seg, sect, 0, 2, 8);
         e.data = vec![0u8; 8];
         e.data[4..8].copy_from_slice(&ctx.objc_imageinfo.flags.to_le_bytes());
         extras.push(e);
