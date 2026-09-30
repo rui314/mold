@@ -50,6 +50,7 @@ macro_rules! chunk_header {
             ChunkId::StubHelper => &$($mutable)? $ctx.stub_helper.hdr,
             ChunkId::LazyPtrs => &$($mutable)? $ctx.lazy_ptrs.hdr,
             ChunkId::Got => &$($mutable)? $ctx.got.hdr,
+            ChunkId::WeakGot => &$($mutable)? $ctx.got.weak_hdr,
             ChunkId::ObjcStubs => &$($mutable)? $ctx.objc_stubs.hdr,
             ChunkId::ObjcMethlist => &$($mutable)? $ctx.objc_methlist.hdr,
             ChunkId::ObjcImageInfo => &$($mutable)? $ctx.objc_imageinfo.hdr,
@@ -630,6 +631,23 @@ impl<E: Target> Context<E> {
         }
     }
 
+    /// True for an exported Objective-C class (or metaclass) of a dylib
+    /// bound for the shared region, whose pointers ld-prime writes as
+    /// binds to the image itself rather than rebases, with chained
+    /// fixups: the cache builder may redirect them to a class that
+    /// replaces this one.
+    pub fn binds_to_self(&self, id: SymbolId) -> bool {
+        let sym = &self.symbols[id];
+        self.args.shared_region
+            && self.args.output_type == crate::macho::MH_DYLIB
+            && self.use_chained_fixups()
+            && matches!(sym.file(), Some(FileId::Obj(_)))
+            && sym.is_extern()
+            && !sym.is_private_extern()
+            && (sym.name().starts_with("_OBJC_CLASS_$_")
+                || sym.name().starts_with("_OBJC_METACLASS_$_"))
+    }
+
     /// The address a branch to `id` targets: the symbol's stub when it
     /// has one and dyld may redirect it, else the symbol itself.
     pub fn branch_target_addr(&self, id: SymbolId) -> u64 {
@@ -642,13 +660,13 @@ impl<E: Target> Context<E> {
 
     /// Returns the address of a symbol's __got slot.
     pub fn sym_got_addr(&self, id: SymbolId) -> u64 {
-        self.got.hdr.addr + self.sym_aux(id).got_idx as u64 * 8
+        self.got.slot_addr(self.sym_aux(id).got_idx as usize)
     }
 
     /// Returns the address of the __got slot the objc stubs load
     /// _objc_msgSend from.
     pub fn objc_msgsend_got_addr(&self) -> u64 {
-        self.got.hdr.addr + self.objc_stubs.msgsend_got_idx as u64 * 8
+        self.got.slot_addr(self.objc_stubs.msgsend_got_idx as usize)
     }
 
     /// Returns the symbol a relocation refers to, if it refers to one.

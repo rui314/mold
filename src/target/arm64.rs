@@ -590,12 +590,12 @@ impl Target for Arm64 {
         }
     }
 
-    // ld64 applies no hints to a dylib eligible for the dyld shared
-    // cache: on arm64 it records split-seg info v2 for one, which lets
-    // the cache builder move segments apart, out of the 1 MiB reach a
-    // rewrite relies on.
+    // ld64 applies no hints to an image bound for the dyld shared cache
+    // (resolve_shared_region sets -ignore_optimization_hints): on arm64
+    // it records split-seg info v2 for one, which lets the cache builder
+    // move segments apart, out of the 1 MiB reach a rewrite relies on.
     fn apply_optimization_hints(ctx: &Context<Self>, buf: &mut [u8]) {
-        if !ctx.args.ignore_optimization_hints && !crate::passes::shared_region_eligible(ctx) {
+        if !ctx.args.ignore_optimization_hints {
             apply_hints(ctx, buf);
         }
     }

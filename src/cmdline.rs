@@ -205,6 +205,9 @@ pub struct Args {
     /// shared cache (and spares warnings that only matter for binaries
     /// shipped to customers; there are none here).
     pub debug_variant: bool,
+    /// Whether the image is bound for the dyld shared cache (ld64's
+    /// fSharedRegionEligible): see resolve_shared_region.
+    pub shared_region: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// -application_extension: mark the image safe for app extensions.
@@ -373,6 +376,7 @@ impl Default for Args {
             warn_unused_dylibs: None,
             not_for_dyld_shared_cache: false,
             debug_variant: false,
+            shared_region: false,
             bind_at_load: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
@@ -1124,11 +1128,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     check_segment_order(&args);
 
     // A -static image (a kernel) carries the code tables only when
-    // asked to, as ld-prime writes it, and no __DATA_CONST: nothing
-    // makes that segment read-only after fixups.
+    // asked to, as ld-prime writes it.
     args.function_starts = function_starts.unwrap_or(!args.static_link);
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.static_link);
-    args.data_const = data_const.unwrap_or(!args.static_link);
 
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
@@ -1167,8 +1169,80 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
+    resolve_shared_region(&mut args);
+    // A -static image has no __DATA_CONST unless bound for the shared
+    // region: nothing else makes that segment read-only after fixups.
+    args.data_const = data_const.unwrap_or(!args.static_link || args.shared_region);
 
     args
+}
+
+/// Whether an install name lies where the dyld shared cache takes
+/// libraries from: /usr/lib or /System/Library.
+pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
+    [
+        &b"/usr/lib/"[..],
+        b"/System/Library/",
+        b"/Library/Apple/usr/lib/",
+        b"/Library/Apple/System/Library/",
+    ]
+    .iter()
+    .any(|dir| install_name.starts_with(dir))
+}
+
+/// Decides whether the image is bound for the dyld shared cache (ld64's
+/// fSharedRegionEligible): with -add_split_seg_info, or a dylib
+/// installed where the cache takes libraries from, unless
+/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
+/// image records its references between sections
+/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
+/// optimization hints); it may not look symbols up dynamically, since
+/// the cache builder binds every one to the dylib that exports it; and
+/// ld-prime warns about run paths, which an OS library must not need.
+fn resolve_shared_region(args: &mut Args) {
+    let is_dylib = args.output_type == MH_DYLIB;
+    args.shared_region = !args.not_for_dyld_shared_cache
+        && !(is_dylib && args.debug_variant)
+        && (args.add_split_seg_info
+            || (is_dylib && in_shared_cache_path(args.output_install_name())));
+    if !args.shared_region {
+        return;
+    }
+    args.ignore_optimization_hints = true;
+    if args.flat_namespace {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
+             or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
+             (or linker flag '-not_for_dyld_shared_cache')"
+        );
+    }
+    // (-undefined warning passes, but not suppress.)
+    if (args.undefined_dynamic_lookup && !args.undefined_is_warning)
+        || !args.allowed_undefined.is_empty()
+    {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
+             symbols. Remove these options or opt out of the shared cache using the build \
+             setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
+        );
+    }
+    if !args.rpaths.is_empty() {
+        crate::warn!(
+            "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
+             LD_RUNPATH_SEARCH_PATHS)"
+        );
+    }
+}
+
+impl Args {
+    /// The output's install name: -install_name, else -final_output,
+    /// else the output path.
+    pub fn output_install_name(&self) -> &[u8] {
+        self.install_name
+            .as_deref()
+            .or(self.final_output.as_deref())
+            .unwrap_or(crate::util::path_bytes(&self.output))
+    }
 }
 
 /// Whether an executable is position independent (MH_PIE). It is

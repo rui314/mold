@@ -761,7 +761,7 @@ fn pair_classref_uses<E: Target>(
     pairs
 }
 
-fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
+pub(crate) fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
     // ld-prime converts method lists in every arm64 image, and on
     // x86-64 in dylibs and bundles only: an x86-64 executable keeps
     // the compiler's absolute lists at any deployment target.

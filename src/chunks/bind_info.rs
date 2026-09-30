@@ -41,10 +41,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
     // GOT slots for imported symbols.
     {
-        let got_addr = ctx.got.hdr.addr;
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if ctx.symbols[id].is_imported() {
-                binds.push((got_addr + i as u64 * 8, id, 0));
+                binds.push((ctx.got.slot_addr(i), id, 0));
             }
         }
     }

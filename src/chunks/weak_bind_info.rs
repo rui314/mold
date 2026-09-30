@@ -44,10 +44,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let mut binds: Vec<(crate::symbol::SymbolId, u64)> = Vec::new();
     {
-        let got_addr = ctx.got.hdr.addr;
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if ctx.binds_weak_lookup(id) {
-                binds.push((id, got_addr + i as u64 * 8));
+                binds.push((id, ctx.got.slot_addr(i)));
             }
         }
     }

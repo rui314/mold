@@ -129,6 +129,7 @@ pub enum ChunkId {
     StubHelper,
     LazyPtrs,
     Got,
+    WeakGot,
     ObjcStubs,
     ObjcMethlist,
     ObjcImageInfo,
@@ -158,12 +159,13 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 25] = [
+    const UNITS: [Self; 26] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
         Self::LazyPtrs,
         Self::Got,
+        Self::WeakGot,
         Self::ObjcStubs,
         Self::ObjcMethlist,
         Self::ObjcImageInfo,
@@ -290,7 +292,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Stubs => stubs::copy_buf(ctx, buf),
         ChunkId::StubHelper => stub_helper::copy_buf(ctx, buf),
         ChunkId::LazyPtrs => lazy_ptrs::copy_buf(ctx, buf),
-        ChunkId::Got => got::copy_buf(ctx, buf),
+        ChunkId::Got => got::copy_buf(ctx, false, buf),
+        ChunkId::WeakGot => got::copy_buf(ctx, true, buf),
         ChunkId::ObjcStubs => objc_stubs::copy_buf(ctx, buf),
         ChunkId::ObjcMethlist => objc_methlist::copy_buf(ctx, buf),
         ChunkId::ObjcImageInfo => objc_imageinfo::copy_buf(ctx, buf),
@@ -548,11 +551,7 @@ fn create_dylinker_cmd() -> Vec<u8> {
 /// The install name a dylib output records in LC_ID_DYLIB: -install_name,
 /// else -final_output, else the output path.
 pub fn output_install_name<E: Target>(ctx: &Context<E>) -> &[u8] {
-    ctx.args
-        .install_name
-        .as_deref()
-        .or(ctx.args.final_output.as_deref())
-        .unwrap_or(crate::util::path_bytes(&ctx.args.output))
+    ctx.args.output_install_name()
 }
 
 fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {

@@ -75,7 +75,7 @@ fn push(out: &mut Vec<Entry>, from: Place, kind: u8, to: Option<Place>) {
 }
 
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    if !ctx.args.add_split_seg_info {
+    if !ctx.args.shared_region {
         return Vec::new();
     }
     let places = Places::new(ctx);
@@ -241,7 +241,12 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     fn got_slot(&self, id: SymbolId) -> Place {
-        self.chunk(ChunkId::Got, self.ctx.sym_aux(id).got_idx as u64 * 8)
+        self.got_index(self.ctx.sym_aux(id).got_idx as usize)
+    }
+
+    fn got_index(&self, i: usize) -> Place {
+        let (chunk, off) = self.ctx.got.slot_place(i);
+        self.chunk(chunk, off)
     }
 
     /// Where a GOT slot of a symbol of this image points. ld-prime
@@ -403,11 +408,8 @@ impl<'a, E: Target> Places<'a, E> {
             let to = helper.dyld_stub_binder.map(|id| self.got_slot(id));
             self.pcrel(out, self.chunk(ChunkId::StubHelper, binder), to);
         }
-        if has(ChunkId::Got) {
-            for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-                let from = self.chunk(ChunkId::Got, i as u64 * 8);
-                push(out, from, DYLD_CACHE_ADJ_V2_POINTER_64, self.got_target(id));
-            }
+        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+            push(out, self.got_index(i), DYLD_CACHE_ADJ_V2_POINTER_64, self.got_target(id));
         }
         for osec in &ctx.output_sections {
             for thunk in &osec.thunks {
@@ -444,7 +446,7 @@ impl<'a, E: Target> Places<'a, E> {
         let stubs = &ctx.objc_stubs;
         if ctx.chunks.contains(&ChunkId::ObjcStubs) {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
-            let msgsend_slot = self.chunk(ChunkId::Got, stubs.msgsend_got_idx as u64 * 8);
+            let msgsend_slot = self.got_index(stubs.msgsend_got_idx as usize);
             for i in 0..stubs.symbols.len() {
                 let at = i as u64 * E::OBJC_STUB_SIZE;
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));

@@ -22,7 +22,7 @@ use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
-use crate::objc::{DataBlob, DataField, ObjcRef, cstring_of};
+use crate::objc::{DataBlob, DataField, ObjcRef, cstring_of, objc_relative_method_lists};
 use crate::tapi;
 use crate::target::RelocClass;
 use crate::target::Target;
@@ -2098,71 +2098,19 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
     real(&mf.name).display().to_string()
 }
 
-/// Whether an install name lies where the dyld shared cache takes
-/// libraries from: /usr/lib, /System/Library or their counterparts
-/// under /Library/Apple.
-fn in_shared_cache_path(install_name: &[u8]) -> bool {
-    [
-        &b"/usr/lib/"[..],
-        b"/System/Library/",
-        b"/Library/Apple/usr/lib/",
-        b"/Library/Apple/System/Library/",
-    ]
-    .iter()
-    .any(|dir| install_name.starts_with(dir))
-}
-
-/// Whether the output is a dylib bound for the dyld shared cache: one
-/// installed there, unless -not_for_dyld_shared_cache or -debug_variant
-/// says otherwise. ld64 and ld-prime call it shared-region eligible.
-pub fn shared_region_eligible<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.output_type == MH_DYLIB
-        && !ctx.args.not_for_dyld_shared_cache
-        && !ctx.args.debug_variant
-        && in_shared_cache_path(crate::chunks::output_install_name(ctx))
-}
-
-/// A dylib bound for the dyld shared cache must bind each import to the
-/// dylib that exports it, which the cache builder then binds inside the
-/// cache once and for all; a flat lookup at run time defeats that.
-/// ld-prime rejects the options that ask for one before it reads any
-/// input: -flat_namespace, and -undefined dynamic_lookup (or suppress,
-/// which it takes for dynamic_lookup) or -U.
-pub fn check_shared_cache_options<E: Target>(ctx: &Context<E>) {
-    if !shared_region_eligible(ctx) {
-        return;
-    }
-    if ctx.args.flat_namespace {
-        fatal!(
-            "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
-             or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
-             (or linker flag '-not_for_dyld_shared_cache')"
-        );
-    }
-    if (ctx.args.undefined_dynamic_lookup && !ctx.args.undefined_is_warning)
-        || !ctx.args.allowed_undefined.is_empty()
-    {
-        fatal!(
-            "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
-             symbols. Remove these options or opt out of the shared cache using the build setting \
-             'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
-        );
-    }
-}
-
-/// A dylib bound for the dyld shared cache may link only libraries that
-/// are in it too, since the cache builder binds every dependency inside
-/// the cache. ld-prime rejects the first dylib in load-command order
-/// installed anywhere else (@rpath, /usr/local, /Library, ...); one that
-/// -dead_strip_dylibs drops doesn't count.
+/// An image bound for the dyld shared cache may link only libraries
+/// that are in it too, since the cache builder binds every dependency
+/// inside the cache. ld-prime rejects the first dylib in load-command
+/// order installed anywhere else (@rpath, /usr/local, /Library, ...);
+/// one that -dead_strip_dylibs drops doesn't count.
 fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
-    if !shared_region_eligible(ctx) {
+    if !ctx.args.shared_region {
         return;
     }
     if let Some(dylib) = ctx
         .dylibs
         .iter()
-        .filter(|d| !d.is_bundle_loader && !in_shared_cache_path(&d.install_name))
+        .filter(|d| !d.is_bundle_loader && !crate::cmdline::in_shared_cache_path(&d.install_name))
         .min_by_key(|d| d.dylib_idx)
     {
         error!(
@@ -2183,7 +2131,8 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 /// Foundation, which compiler drivers and project templates link by
 /// habit, are let off.
 fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.warn_unused_dylibs.unwrap_or_else(|| shared_region_eligible(ctx)) {
+    let for_shared_cache = ctx.args.shared_region && ctx.args.output_type == MH_DYLIB;
+    if !ctx.args.warn_unused_dylibs.unwrap_or(for_shared_cache) {
         return;
     }
     const EXEMPT: [&[u8]; 3] = [
@@ -2480,14 +2429,18 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     ctx.stubs.symbols = stubs;
 
     // The objc stubs' own _objc_msgSend slot goes before the one other
-    // references share.
+    // references share. In the shared region the weak-lookup slots,
+    // which form __weak_got, go last.
     let got = std::mem::take(&mut ctx.got.got_syms);
     let objc = ctx.objc_stubs.msgsend_got_idx as usize;
+    let in_weak_got = |id| ctx.args.shared_region && ctx.binds_weak_lookup(id);
     let mut order: Vec<usize> = (0..got.len()).collect();
     order.par_sort_by_key(|&i| {
         let id = got[i];
-        (got_rank(ctx, id), crate::util::name_sort_key(ctx.symbols[id].name()), i != objc)
+        let name = crate::util::name_sort_key(ctx.symbols[id].name());
+        (in_weak_got(id), got_rank(ctx, id), name, i != objc)
     });
+    ctx.got.weak_start = order.iter().position(|&i| in_weak_got(got[i])).unwrap_or(order.len());
     for (slot, &i) in order.iter().enumerate() {
         if i == objc {
             ctx.objc_stubs.msgsend_got_idx = slot as u32;
@@ -2720,7 +2673,13 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA_CONST", "__objc_superrefs") => 12,
         // The GOT closes __DATA_CONST, after every input-derived
         // section (ld-prime: __cfstring, __objc_classlist,
-        // __objc_imageinfo, then __got).
+        // __objc_imageinfo, then __got). In the shared region the lazy
+        // pointers lead it, and the class data, __weak_got and the
+        // selector references come before __got.
+        ("__DATA_CONST", "__la_symbol_ptr") => 0,
+        ("__DATA_CONST", "__objc_const") => 21,
+        ("__DATA_CONST", "__weak_got") => 22,
+        ("__DATA_CONST", "__objc_selrefs") => 23,
         ("__DATA_CONST", "__got") => 25,
         ("__DATA_CONST", _) => 20,
         ("__DATA", "__la_symbol_ptr") => 0,
@@ -2743,6 +2702,27 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", "__bss") => 3,
         ("__DATA", "__common") => 3,
         _ => 10,
+    }
+}
+
+/// Where ld-prime moves a __TEXT section of an image bound for the
+/// shared region: the stubs and the Objective-C names, which the shared
+/// cache builder bypasses and uniques, come after __unwind_info (100)
+/// and __eh_frame (101), the names in a fixed order.
+fn shared_region_text_rank<E: Target>(
+    ctx: &Context<E>,
+    hdr: &crate::chunks::ChunkHeader,
+) -> Option<u32> {
+    if !ctx.args.shared_region || hdr.segname != "__TEXT" {
+        return None;
+    }
+    match hdr.sectname.as_str() {
+        "__objc_stubs" => Some(102),
+        "__stubs" => Some(103),
+        "__objc_classname" => Some(104),
+        "__objc_methname" => Some(105),
+        "__objc_methtype" => Some(106),
+        _ => None,
     }
 }
 
@@ -2793,15 +2773,17 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
 /// an image; __objc_clsrolist is a compiler-to-linker list of the
 /// class_ro_t records of generic Swift classes (nothing references
 /// it and ld-prime emits no such section); and the __DATA sections
-/// that need no writes after fixups move to __DATA_CONST. A -r output
+/// that need no writes after fixups move to __DATA_CONST, and in the
+/// shared region, where dyld fixes them up for good, the selector
+/// references and the Objective-C runtime's class data too. A -r output
 /// keeps every input section as it came.
 fn output_section_for(
-    relocatable: bool,
-    data_const: bool,
-    objc_const_refs: bool,
+    map: SectionMap,
     segname: &str,
     sectname: &str,
 ) -> Option<(&'static str, &'static str)> {
+    let SectionMap { relocatable, data_const, objc_const_refs, shared_region, relative_methods } =
+        map;
     let intern_seg = |seg: &str| -> &'static str {
         match seg {
             "__TEXT" => "__TEXT",
@@ -2830,7 +2812,42 @@ fn output_section_for(
         {
             Some(("__DATA_CONST", String::leak(sect.to_string())))
         }
+        ("__DATA", "__objc_selrefs") if data_const && shared_region => {
+            Some(("__DATA_CONST", "__objc_selrefs"))
+        }
+        // Unless it holds absolute method lists, which the runtime
+        // sorts in place.
+        ("__DATA", "__objc_const") if data_const && shared_region && relative_methods => {
+            Some(("__DATA_CONST", "__objc_const"))
+        }
         _ => Some((intern_seg(segname), String::leak(sectname.to_string()))),
+    }
+}
+
+/// What decides where output_section_for puts an input section.
+#[derive(Clone, Copy)]
+struct SectionMap {
+    relocatable: bool,
+    data_const: bool,
+    objc_const_refs: bool,
+    shared_region: bool,
+    relative_methods: bool,
+}
+
+impl SectionMap {
+    fn new<E: Target>(ctx: &Context<E>) -> Self {
+        Self {
+            relocatable: ctx.args.relocatable,
+            data_const: ctx.args.data_const,
+            objc_const_refs: objc_refs_are_const(ctx),
+            shared_region: ctx.args.shared_region,
+            relative_methods: objc_relative_method_lists(ctx),
+        }
+    }
+
+    /// A final link's mapping, for the records the linker synthesizes.
+    fn final_link<E: Target>(ctx: &Context<E>) -> Self {
+        Self { relocatable: false, ..Self::new(ctx) }
     }
 }
 
@@ -2860,6 +2877,11 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     // of a final image.
     if segname == "__DATA" && matches!(sectname, "__objc_protorefs" | "__objc_superrefs") {
         return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
+    }
+    // Selector references made constant (in the shared region) are
+    // plain data to ld-prime.
+    if segname == "__DATA_CONST" && sectname == "__objc_selrefs" {
+        return S_REGULAR;
     }
     let mut ty = input & SECTION_TYPE;
     if ty == S_COALESCED || (segname == "__TEXT" && sectname == "__const") {
@@ -2978,14 +3000,7 @@ fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
     for (replaced, blob) in anchors.into_iter().rev() {
         let hdr = ctx.hdr_of(&ctx.isecs[replaced as usize]);
         let out = renamed_output_section(&ctx.args, false, hdr.segname(), hdr.sectname(), || {
-            let const_refs = objc_refs_are_const(ctx);
-            output_section_for(
-                false,
-                ctx.args.data_const,
-                const_refs,
-                hdr.segname(),
-                hdr.sectname(),
-            )
+            output_section_for(SectionMap::final_link(ctx), hdr.segname(), hdr.sectname())
         });
         let Some(pos) = out.and_then(|(seg, sect)| {
             ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
@@ -3013,14 +3028,7 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     sects.sort();
     sects.dedup();
     for sect in sects {
-        let (seg, out) = output_section_for(
-            false,
-            ctx.args.data_const,
-            objc_refs_are_const(ctx),
-            "__DATA",
-            sect,
-        )
-        .unwrap();
+        let (seg, out) = output_section_for(SectionMap::final_link(ctx), "__DATA", sect).unwrap();
         let flags = output_section_flags(seg, out, 0, false);
         let mut size = 0u64;
         let mut offs = Vec::new();
@@ -3048,7 +3056,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // hot loop does no allocation and no linear scans; chunks are
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
-    let objc_const_refs = objc_refs_are_const(ctx);
+    let map = SectionMap::new(ctx);
     let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16]), Option<OutputSectionId>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
@@ -3091,15 +3099,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                         relocatable,
                         hdr.segname(),
                         hdr.sectname(),
-                        || {
-                            output_section_for(
-                                relocatable,
-                                ctx.args.data_const,
-                                objc_const_refs,
-                                hdr.segname(),
-                                hdr.sectname(),
-                            )
-                        },
+                        || output_section_for(map, hdr.segname(), hdr.sectname()),
                     )
                     .map(|out| match by_out.get(&out) {
                         Some(&id) => id,
@@ -3331,47 +3331,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    if !ctx.stubs.symbols.is_empty() {
-        ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
-        ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
-        // ld-prime's x86-64 stubs are byte-aligned when all of them go
-        // through the lazy-binding helper and 2-byte aligned as soon as
-        // one doesn't (chained fixups, -bind_at_load, a weak-lookup
-        // stub): each stub has its own alignment and the section takes
-        // the largest. arm64's are instruction-aligned.
-        if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
-            let lazy = ctx.lazy_binding()
-                && ctx.stubs.symbols.iter().all(|&id| !ctx.binds_weak_lookup(id));
-            ctx.stubs.hdr.p2align = if lazy { 0 } else { 1 };
-        }
-        ctx.chunks.push(ChunkId::Stubs);
-    }
-    // (A stub bound by weak lookup goes through the GOT; only lazily
-    // bound stubs need the helper and lazy pointers.)
-    if !ctx.stubs.lazy.is_empty() {
-        ctx.stub_helper.hdr.size = E::STUB_HELPER_HEADER_SIZE
-            + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
-            - E::STUB_HELPER_ENTRY_PADDING;
-        ctx.chunks.push(ChunkId::StubHelper);
-        // Indirect symbol table entries: stubs, the GOT's, then these.
-        ctx.lazy_ptrs.hdr.reserved1 = (ctx.stubs.symbols.len() + ctx.got.got_syms.len()) as u32;
-        ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
-        ctx.chunks.push(ChunkId::LazyPtrs);
-    }
-
-    if !ctx.got.got_syms.is_empty() {
-        ctx.got.hdr.segname = data_seg(ctx);
-        // Indirect symbol table entries for stubs come first, then the
-        // GOT's.
-        ctx.got.hdr.reserved1 = ctx.stubs.symbols.len() as u32;
-        ctx.got.hdr.size = ctx.got.got_syms.len() as u64 * 8;
-        ctx.chunks.push(ChunkId::Got);
-        for i in 0..ctx.got.objc_classref_slots.len() {
-            let (slot, class) = ctx.got.objc_classref_slots[i];
-            ctx.isecs[slot as usize].offset = ctx.sym_aux(class).got_idx * 8;
-            ctx.isecs[slot as usize].set_output_section(ChunkId::Got);
-        }
-    }
+    add_stub_and_got_chunks(ctx);
 
     if !ctx.init_offsets.init_funcs.is_empty() {
         ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
@@ -3410,11 +3370,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             ctx.objc_stubs.methname = Some(id);
         }
         if selrefs_size > 0 {
+            let map = SectionMap::final_link(ctx);
+            let seg = output_section_for(map, "__DATA", "__objc_selrefs").unwrap().0;
             let id = tail_section(
                 ctx,
-                "__DATA",
+                seg,
                 "__objc_selrefs",
-                S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
+                output_section_flags(seg, "__objc_selrefs", S_LITERAL_POINTERS, false),
                 3,
                 Tail::ObjcSelrefs,
                 selrefs_size,
@@ -3600,7 +3562,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     } else if ctx.args.pie {
         ctx.chunks.push(ChunkId::LocalRelocs);
     }
-    if ctx.args.add_split_seg_info {
+    if ctx.args.shared_region {
         ctx.chunks.push(ChunkId::SplitInfo);
     }
     ctx.chunks.push(ChunkId::FunctionStarts);
@@ -3681,7 +3643,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
-            _ => 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags),
+            _ => shared_region_text_rank(ctx, hdr)
+                .unwrap_or_else(|| 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags)),
         };
         let seen = match id {
             ChunkId::Output(osec) => section_first_seen[osec.index()],
@@ -3714,7 +3677,62 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.segments = segments;
     ctx.chunks = order;
+    crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
+}
+
+/// Sizes the stubs, the lazy-binding helper and pointers, and the GOT
+/// (with __weak_got split off, see GotSection), and adds the ones in
+/// use to the output.
+fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
+    if !ctx.stubs.symbols.is_empty() {
+        ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
+        ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
+        // ld-prime's x86-64 stubs are byte-aligned when all of them go
+        // through the lazy-binding helper and 2-byte aligned as soon as
+        // one doesn't (chained fixups, -bind_at_load, a weak-lookup
+        // stub): each stub has its own alignment and the section takes
+        // the largest. arm64's are instruction-aligned.
+        if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
+            let lazy = ctx.lazy_binding()
+                && ctx.stubs.symbols.iter().all(|&id| !ctx.binds_weak_lookup(id));
+            ctx.stubs.hdr.p2align = if lazy { 0 } else { 1 };
+        }
+        ctx.chunks.push(ChunkId::Stubs);
+    }
+    // (A stub bound by weak lookup goes through the GOT; only lazily
+    // bound stubs need the helper and lazy pointers.)
+    if !ctx.stubs.lazy.is_empty() {
+        ctx.stub_helper.hdr.size = E::STUB_HELPER_HEADER_SIZE
+            + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
+            - E::STUB_HELPER_ENTRY_PADDING;
+        ctx.chunks.push(ChunkId::StubHelper);
+        // In the shared region, dyld binds them all at load, and the
+        // section joins the read-only data.
+        if ctx.args.shared_region {
+            ctx.lazy_ptrs.hdr.segname = data_seg(ctx);
+        }
+        ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
+        ctx.chunks.push(ChunkId::LazyPtrs);
+    }
+
+    let got = &mut ctx.got;
+    let weak = got.got_syms.len() - got.weak_start;
+    got.hdr.size = got.weak_start as u64 * 8;
+    got.weak_hdr.size = weak as u64 * 8;
+    let seg = data_seg(ctx);
+    for (id, len) in [(ChunkId::Got, ctx.got.weak_start), (ChunkId::WeakGot, weak)] {
+        if len > 0 {
+            ctx.chunk_header_mut(id).segname = seg;
+            ctx.chunks.push(id);
+        }
+    }
+    for i in 0..ctx.got.objc_classref_slots.len() {
+        let (slot, class) = ctx.got.objc_classref_slots[i];
+        let (chunk, off) = ctx.got.slot_place(ctx.sym_aux(class).got_idx as usize);
+        ctx.isecs[slot as usize].offset = off as u32;
+        ctx.isecs[slot as usize].set_output_section(chunk);
+    }
 }
 
 /// ld-prime's warnings for a -segment_order that places __TEXT or

@@ -60,7 +60,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let mut ctx: Context<E> = Context::new(args);
     crate::error::set_demangle(ctx.args.demangle);
     passes::resolve_image_base(&mut ctx);
-    passes::check_shared_cache_options(&ctx);
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();

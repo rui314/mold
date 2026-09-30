@@ -90,10 +90,9 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
 
     // GOT slots that hold local addresses.
     {
-        let got_addr = ctx.got.hdr.addr;
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if !ctx.symbols[id].is_imported() && !ctx.is_absolute_symbol(id) {
-                synthesized.push(got_addr + i as u64 * 8);
+                synthesized.push(ctx.got.slot_addr(i));
             }
         }
     }

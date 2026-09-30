@@ -222,12 +222,13 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
         // An import names its dylib; one of this image's own weak
         // definitions is bound by weak lookup (ordinal -3), which
         // makes dyld search every loaded image for the coalesced
-        // winner.
+        // winner, and a class bound to the image itself names it (0).
         let ordinal_bits = |bits: u32| -> u64 {
             match s.file() {
                 Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
                     ctx.chained_import_ordinal(dylib, bits)
                 }
+                _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
                 _ => (BIND_SPECIAL_DYLIB_WEAK_LOOKUP as i64 as u64) & ((1u64 << bits) - 1),
             }
         };
@@ -367,7 +368,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
                 }
                 match ctx.reloc_target_sym(isec.file as usize, rel) {
                     Some(id) if ctx.is_swift_force_load_ref(id) => None,
-                    Some(id) if ctx.binds_at_runtime(id) => {
+                    Some(id) if ctx.binds_at_runtime(id) || ctx.binds_to_self(id) => {
                         Some((addr, Some(id), rel.addend as u64, base))
                     }
                     _ => {
@@ -383,13 +384,12 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
         .collect();
 
     {
-        let addr = ctx.got.hdr.addr;
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) {
                 continue;
             }
             let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
-            let slot = addr + i as u64 * 8;
+            let slot = ctx.got.slot_addr(i);
             fixups.push((slot, sym, 0, slot));
         }
     }
