@@ -2196,21 +2196,54 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
     real(&mf.name).display().to_string()
 }
 
+/// Whether an install name lies where the dyld shared cache takes
+/// libraries from: /usr/lib or /System/Library.
+fn in_shared_cache_path(install_name: &[u8]) -> bool {
+    install_name.starts_with(b"/usr/lib/") || install_name.starts_with(b"/System/Library/")
+}
+
+/// Whether the output is a dylib bound for the dyld shared cache: one
+/// installed there, unless -not_for_dyld_shared_cache.
+fn for_shared_cache<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.output_type == MH_DYLIB
+        && !ctx.args.not_for_dyld_shared_cache
+        && in_shared_cache_path(crate::chunks::output_install_name(ctx))
+}
+
+/// A dylib bound for the dyld shared cache may link only libraries that
+/// are in it too, since the cache builder binds every dependency inside
+/// the cache. ld-prime rejects the first dylib in load-command order
+/// installed anywhere else (@rpath, /usr/local, /Library, ...); one that
+/// -dead_strip_dylibs drops doesn't count.
+fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
+    if !for_shared_cache(ctx) {
+        return;
+    }
+    if let Some(dylib) = ctx
+        .dylibs
+        .iter()
+        .filter(|d| !d.is_bundle_loader && !in_shared_cache_path(&d.install_name))
+        .min_by_key(|d| d.dylib_idx)
+    {
+        error!(
+            "Shared cache eligible dylib cannot link to ineligible dylib '{}'.  Remove link to \
+             ineligible dylib, fix its eligibility, or opt out of the shared cache using the \
+             build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag \
+             '-not_for_dyld_shared_cache')",
+            crate::util::display(&dylib.install_name)
+        );
+    }
+}
+
 /// Warns about each dylib the command line links that nothing binds
 /// to. ld-prime does so by default for a dylib bound for the dyld shared
-/// cache - one installed in /usr/lib or /System/Library, unless
-/// -not_for_dyld_shared_cache - where each needless load costs every
-/// process, and for any output under -warn_unused_dylibs. A -needed_* or
+/// cache, where each needless load costs every process, and for any
+/// output under -warn_unused_dylibs. A -needed_* or
 /// -reexport_* library is linked on purpose, and libSystem, libc++ and
 /// Foundation, which compiler drivers and project templates link by
 /// habit, are let off.
 fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
-    let install_name = crate::chunks::output_install_name(ctx);
-    let for_shared_cache = ctx.args.output_type == MH_DYLIB
-        && !ctx.args.not_for_dyld_shared_cache
-        && (install_name.starts_with(b"/usr/lib/")
-            || install_name.starts_with(b"/System/Library/"));
-    if !ctx.args.warn_unused_dylibs.unwrap_or(for_shared_cache) {
+    if !ctx.args.warn_unused_dylibs.unwrap_or_else(|| for_shared_cache(ctx)) {
         return;
     }
     const EXEMPT: [&[u8]; 3] = [
@@ -2324,6 +2357,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     for (ordinal, &i) in order.iter().enumerate() {
         ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
     }
+    check_shared_cache_deps(ctx);
 }
 
 /// Decides which symbols need a stub or a GOT slot, from how relocations
