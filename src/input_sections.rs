@@ -876,7 +876,15 @@ impl<E: Target> InputSection<E> {
         let is_undef = esym.st_shndx() == SHN_UNDEF && st_bind != STB_WEAK && sym.sym_idx() != 0;
 
         if is_undef && sym.is_undef() {
-            match ctx.args.unresolved_symbols {
+            // A hidden symbol cannot be resolved at runtime, so it must be
+            // defined even where other undefined symbols are allowed.
+            let kind = if sym.visibility() == STV_HIDDEN {
+                UnresolvedKind::Error
+            } else {
+                ctx.args.unresolved_symbols
+            };
+
+            match kind {
                 UnresolvedKind::Error if !sym.is_imported() => {
                     self.record_undefined_reference(ctx, file, rel, sym_id);
                     return !crate::error::noinhibit_exec();

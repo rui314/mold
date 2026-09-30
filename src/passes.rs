@@ -2569,9 +2569,6 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 // Report all undefined symbols, grouped by symbol.
 pub fn report_undef_errors<E: Target>(ctx: &Context<E>) {
     const MAX_ERRORS: usize = 3;
-    if ctx.args.unresolved_symbols == UnresolvedKind::Ignore {
-        return;
-    }
     let mut errors: Vec<(SymbolId, Vec<String>)> =
         std::mem::take(&mut *ctx.undef_errors.lock().unwrap()).into_iter().collect();
     errors.sort_by_key(|e| e.0);
@@ -2587,7 +2584,7 @@ pub fn report_undef_errors<E: Target>(ctx: &Context<E>) {
         }
         // Remove the trailing '\n' because Error/Warn adds it automatically
         msg.pop();
-        if ctx.args.unresolved_symbols == UnresolvedKind::Error {
+        if ctx.args.unresolved_symbols == UnresolvedKind::Error || sym.visibility() == STV_HIDDEN {
             error!("{msg}");
         } else {
             warn!("{msg}");
