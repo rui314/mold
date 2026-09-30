@@ -868,12 +868,24 @@ impl<E: Target> Context<E> {
     /// first such stub. `off` is the offset of the field in the stub.
     pub fn stub_fixup_error(&self, i: usize, off: u32, kind: &str, msg: std::fmt::Arguments) {
         let atom = if self.stubs.lazy.is_empty() { 2 } else { 6 } + i;
+        self.synthetic_fixup_error("stubs-got-file", atom, off, kind, msg);
+    }
+
+    /// Reports a relocation that can't be applied `off` bytes into
+    /// anon-`atom` of `file`, one of the files ld-prime makes its own
+    /// atoms in, as it does (see fixup_error).
+    pub fn synthetic_fixup_error(
+        &self,
+        file: &str,
+        atom: usize,
+        off: u32,
+        kind: &str,
+        msg: std::fmt::Arguments,
+    ) {
         match off {
-            0 => crate::error!(
-                "fixup error (kind={kind}) at 'anon-{atom}' from stubs-got-file, {msg}"
-            ),
+            0 => crate::error!("fixup error (kind={kind}) at 'anon-{atom}' from {file}, {msg}"),
             _ => crate::error!(
-                "fixup error (kind={kind}) at 'anon-{atom}'+0x{off:X} from stubs-got-file, {msg}"
+                "fixup error (kind={kind}) at 'anon-{atom}'+0x{off:X} from {file}, {msg}"
             ),
         }
     }

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::sectcreate::SectCreateSection;
 use crate::chunks::symtab::SymtabSection;
 use crate::chunks::{
@@ -1761,17 +1762,16 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         // ld-prime runs an -init function only from __init_offsets and
         // drops it here. ld64 named it in LC_ROUTINES_64, which dyld
         // runs before the image's other initializers; so do we, for an
-        // image dyld loads.
+        // image dyld loads, if the function is its own.
         if !ctx.args.without_dyld() {
-            ctx.init_routine = init;
+            ctx.init_routine = init.filter(|&id| ctx.symbols[id].input_section().is_some());
         }
         return;
     }
     // ld-prime makes it the first of the initializer offsets.
     if let Some(id) = init {
-        let sym = &ctx.symbols[id];
-        let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
-        ctx.init_offsets.init_funcs.push((isec, sym.value));
+        let func = init_func(ctx, id);
+        ctx.init_offsets.init_funcs.push(func);
     }
     for i in 0..ctx.isecs.len() {
         if ctx.hdr_of(&ctx.isecs[i]).section_type() != S_MOD_INIT_FUNC_POINTERS
@@ -1779,55 +1779,37 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         {
             continue;
         }
-        let relocs = initializer_relocs(ctx, i);
-        // Imported or unresolved initializers cannot be represented as
-        // local offsets. Keep their pointer section and its references.
-        if relocs.iter().any(|rel| ctx.reloc_target_isec(ctx.isecs[i].file as usize, rel).is_none())
-        {
-            continue;
-        }
-        for rel in relocs {
-            let obj = ctx.isecs[i].file as usize;
-            let target = match ctx.reloc_target_sym(obj, &rel) {
-                Some(id) => {
-                    let sym = &ctx.symbols[id];
-                    match sym.input_section() {
-                        Some(isec) => (ctx.resolve_isec(isec as usize), sym.value),
-                        None => continue,
-                    }
+        let obj = ctx.isecs[i].file as usize;
+        for rel in initializer_relocs(ctx, i) {
+            let func = match rel.target() {
+                RelocTarget::Sym(idx) => init_func(ctx, ctx.objs[obj].symbols[idx as usize]),
+                RelocTarget::Section(isec) => {
+                    InitFunc::Local(ctx.resolve_isec(isec as usize), rel.addend as u64)
                 }
-                None => match rel.target() {
-                    RelocTarget::Section(isec) => {
-                        (ctx.resolve_isec(isec as usize), rel.addend as u64)
-                    }
-                    _ => continue,
-                },
             };
-            ctx.init_offsets.init_funcs.push(target);
+            ctx.init_offsets.init_funcs.push(func);
         }
         ctx.isecs[i].set_alive(false);
     }
 }
 
-/// The function -init names, if it is one of the image's own. An
-/// undefined one is reported with the other initial undefines, and an
-/// import with ld-prime's error for an initializer offset to it. (So is
-/// an absolute symbol, whose value ld-prime takes as the offset.)
+/// The initializer symbol `id` is. One dyld binds has no offset in the
+/// image: ld-prime fails the link as it writes it (see
+/// init_offsets::copy_buf). (So does mold for an absolute symbol, whose
+/// value ld-prime takes as the offset.)
+fn init_func<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> InitFunc {
+    let sym = &ctx.symbols[id];
+    match sym.input_section() {
+        Some(isec) => InitFunc::Local(ctx.resolve_isec(isec as usize), sym.value),
+        None => InitFunc::Imported(id),
+    }
+}
+
+/// The function -init names, if it is defined. An undefined one is
+/// reported with the other initial undefines.
 fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
     let id = ctx.symbols.get(ctx.args.init.as_deref()?)?;
-    let sym = &ctx.symbols[id];
-    if !sym.is_defined() {
-        return None;
-    }
-    if sym.input_section().is_none() {
-        error!(
-            "fixup error (kind=imageOffset32) at 'anon-1' from inits-file, target '{}' does not \
-             have address",
-            sym.name()
-        );
-        return None;
-    }
-    Some(id)
+    ctx.symbols[id].is_defined().then_some(id)
 }
 
 /// The relocations naming the functions of the initializer pointers
@@ -2526,7 +2508,8 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// The symbols something in the output refers to: the target of a live
-/// relocation, or a name -u, -e or -alias insists on.
+/// relocation, an initializer __init_offsets names (whose pointer is
+/// gone), or a name -u, -e or -alias insists on.
 fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::AtomicBool> {
     use std::sync::atomic::{AtomicBool, Ordering};
     let referenced: Vec<AtomicBool> =
@@ -2538,6 +2521,11 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
             }
         }
     });
+    for &func in &ctx.init_offsets.init_funcs {
+        if let InitFunc::Imported(id) = func {
+            referenced[id as usize].store(true, Ordering::Relaxed);
+        }
+    }
     for name in ctx
         .args
         .forced_undefined

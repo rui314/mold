@@ -19,6 +19,7 @@
 
 use rayon::prelude::*;
 
+use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_files::FileId;
@@ -500,7 +501,8 @@ impl<'a, E: Target> Places<'a, E> {
         if !ctx.chunks.contains(&ChunkId::InitOffsets) {
             return;
         }
-        for (i, &(isec, off)) in ctx.init_offsets.init_funcs.iter().enumerate() {
+        for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
+            let InitFunc::Local(isec, off) = func else { continue };
             let from = self.chunk(ChunkId::InitOffsets, i as u64 * 4);
             let to = self.isec(isec).map(|(n, o)| (n, o + off));
             push(out, from, DYLD_CACHE_ADJ_V2_IMAGE_OFF_32, to);

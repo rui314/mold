@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
 
+use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
 use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
@@ -140,8 +141,10 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
 
     // Initializers converted to __init_offsets are roots; their source
     // sections are gone.
-    for &(isec, _) in &ctx.init_offsets.init_funcs {
-        enqueue(isec);
+    for &func in &ctx.init_offsets.init_funcs {
+        if let InitFunc::Local(isec, _) = func {
+            enqueue(isec);
+        }
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
@@ -393,6 +396,11 @@ pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     }
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
         ctx.symbols[id].mark();
+    }
+    for &func in &ctx.init_offsets.init_funcs {
+        if let InitFunc::Imported(id) = func {
+            ctx.symbols[id].mark();
+        }
     }
     for name in ctx
         .args

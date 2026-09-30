@@ -4,6 +4,7 @@
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
+use crate::symbol::SymbolId;
 use crate::target::Target;
 
 /// __TEXT,__init_offsets: 32-bit image-relative initializer offsets,
@@ -11,9 +12,16 @@ use crate::target::Target;
 #[derive(Debug)]
 pub struct InitOffsetsSection {
     pub hdr: ChunkHeader,
-    /// Initializer targets in run order: the subsection and offset of
-    /// each initializer function.
-    pub init_funcs: Vec<(usize, u64)>,
+    /// Initializer targets in run order.
+    pub init_funcs: Vec<InitFunc>,
+}
+
+/// An initializer function: a subsection and the function's offset in
+/// it, or a symbol dyld binds, which has no offset in the image.
+#[derive(Clone, Copy, Debug)]
+pub enum InitFunc {
+    Local(usize, u64),
+    Imported(SymbolId),
 }
 
 impl InitOffsetsSection {
@@ -31,9 +39,20 @@ impl Default for InitOffsetsSection {
     }
 }
 
+/// Writes the offsets. One of an initializer dyld binds is a fixup
+/// error, as in ld-prime, which makes the offsets the atoms of its
+/// "inits-file", the k-th initializer's anon-(2k+1), and fails the link
+/// at the first.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    for (i, &(isec, off)) in ctx.init_offsets.init_funcs.iter().enumerate() {
-        let val = (ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr) as u32;
-        buf[i * 4..i * 4 + 4].copy_from_slice(&val.to_le_bytes());
+    for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
+        let val = match func {
+            InitFunc::Local(isec, off) => ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr,
+            InitFunc::Imported(id) => {
+                let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
+                ctx.synthetic_fixup_error("inits-file", 2 * i + 1, 0, "imageOffset32", msg);
+                return;
+            }
+        };
+        buf[i * 4..i * 4 + 4].copy_from_slice(&(val as u32).to_le_bytes());
     }
 }
