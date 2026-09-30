@@ -22,6 +22,9 @@ use crate::mapped_file::MappedFile;
 pub struct TbdFile {
     pub install_name: String,
     pub current_version: u32,
+    /// The compatibility version (1.0.0 when the stub gives none), for
+    /// the client's LC_LOAD_DYLIB.
+    pub compatibility_version: u32,
     pub exports: Vec<&'static str>,
     pub weak_exports: Vec<&'static str>,
     /// Exports that are thread-local variables (listed separately in
@@ -304,6 +307,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         }
         let mut tbd = TbdFile {
             current_version: crate::macho::encode_version(1, 0, 0),
+            compatibility_version: crate::macho::encode_version(1, 0, 0),
             ..TbdFile::default()
         };
         if let Some(name) = lib
@@ -321,6 +325,14 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
             && let Some(s) = v.get("version").and_then(Json::str)
         {
             tbd.current_version = parse_version(s);
+        }
+        if let Some(v) = lib
+            .get("compatibility_versions")
+            .map(Json::arr)
+            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            && let Some(s) = v.get("version").and_then(Json::str)
+        {
+            tbd.compatibility_version = parse_version(s);
         }
         for flags in lib.get("flags").map(Json::arr).unwrap_or(&[]) {
             if applies(flags, &target)
@@ -456,6 +468,7 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
         }
         let mut tbd = TbdFile {
             current_version: crate::macho::encode_version(1, 0, 0),
+            compatibility_version: crate::macho::encode_version(1, 0, 0),
             ..TbdFile::default()
         };
         let mut active = doc_active;
@@ -478,6 +491,9 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
             }
             match field.key {
                 "current-version" => tbd.current_version = parse_version(unquote(field.value)),
+                "compatibility-version" => {
+                    tbd.compatibility_version = parse_version(unquote(field.value))
+                }
                 "flags" => {
                     tbd.not_app_extension_safe =
                         field.items().any(|s| s == "not_app_extension_safe");

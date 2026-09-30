@@ -14,6 +14,7 @@ cat > $t/libs/Some.framework/Some.tbd <<'EOF'
   "main_library": {
     "install_names": [{"name": "@rpath/Some.framework/Versions/A/Some"}],
     "current_versions": [{"version": "2.1"}],
+    "compatibility_versions": [{"version": "1.5"}],
     "target_info": [{"target": "arm64-macos", "min_deployment": "13"},
                     {"target": "x86_64-macos", "min_deployment": "13"}],
     "flags": [{"attributes": ["not_app_extension_safe"]}],
@@ -55,7 +56,7 @@ EOF
 # present, which is only a warning.
 $CC --ld-path=$mold -o $t/exe $t/a.o -F$t/libs -framework Some -framework Foundation \
   -Wl,-w
-otool -L $t/exe | grep 'Some.framework/Versions/A/Some (compatibility version 1.0.0, current version 2.1.0)'
+otool -L $t/exe | grep 'Some.framework/Versions/A/Some (compatibility version 1.5.0, current version 2.1.0)'
 nm -m $t/exe > $t/nm
 grep -q 'undefined.*_some_func (from Some)' $t/nm
 grep -q 'undefined.*_inner_func (from Some)' $t/nm

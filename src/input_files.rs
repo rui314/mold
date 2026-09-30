@@ -2625,7 +2625,7 @@ fn register_tbd<E: Target>(
             path: path.to_path_buf(),
             install_name: tbd.install_name.into_bytes(),
             current_version: tbd.current_version,
-            compatibility_version: encode_version(1, 0, 0),
+            compatibility_version: tbd.compatibility_version,
             dylib_idx: next_dylib_ordinal(ctx),
             is_bundle_loader: false,
             priority,

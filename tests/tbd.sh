@@ -39,3 +39,6 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o -F$t/libs/ -Wl,-framework,SomeFramework
 
 otool -L $t/exe | grep '/usr/frameworks/SomeFramework.framework/SomeFramework'
+
+# The load command carries the stub's compatibility version.
+otool -L $t/exe | grep -q 'SomeFramework (compatibility version 150.0.0'

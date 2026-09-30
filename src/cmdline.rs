@@ -842,11 +842,12 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The old pre-LC_BUILD_VERSION way of stating the
             // deployment target, still emitted by clang for older
             // -mmacosx-version-min targets. It fixes the platform to
-            // macOS; the SDK version stays unset, as ld64 records when
-            // it isn't told.
+            // macOS; ld64 records the SDK as the same version (the
+            // flag carries no separate SDK).
             b"-macos_version_min" | b"-macosx_version_min" => {
                 args.platform = PLATFORM_MACOS;
                 args.platform_minos = parse_version(text(name, next_arg(&mut i)));
+                args.platform_sdk = args.platform_minos;
             }
 
             // Ignored options. ld64 takes -O<n> as a linker
