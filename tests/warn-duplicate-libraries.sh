@@ -30,3 +30,12 @@ grep -q "ignoring duplicate libraries: '-lbar', '-lfoo'" $t/log3
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -lfoo -Wl,-hidden-lfoo 2> $t/log4
 not grep -q 'duplicate libraries' $t/log4
+
+# So does a library named by path twice alike, and an archive's bare
+# path, but not a dylib's or a framework option.
+$CC --ld-path=$mold -shared -o $t/libbaz.dylib $t/a.o
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/libfoo.a $t/libfoo.a $t/libbaz.dylib \
+  $t/libbaz.dylib -Wl,-weak_library,$t/libbaz.dylib,-weak_library,$t/libbaz.dylib \
+  -Wl,-force_load,$t/libfoo.a,-force_load,$t/libfoo.a -framework CoreFoundation \
+  -framework CoreFoundation 2> $t/log5
+grep -Fq "ignoring duplicate libraries: '-force_load $t/libfoo.a', '-weak_library $t/libbaz.dylib', '$t/libfoo.a'" $t/log5

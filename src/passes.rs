@@ -517,35 +517,59 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     drop(t);
 }
 
-pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
-    // ld64 warns, once, about the library options given more than once,
-    // each as spelled (-weak-lz repeats no -lz); build systems that
-    // knowingly repeat them pass -no_warn_duplicate_libraries. Under -w
-    // ld-prime leaves the warning out, -fatal_warnings or not.
-    if ctx.args.warn_duplicate_libraries && !ctx.args.suppress_warnings {
-        let mut seen = std::collections::HashSet::new();
-        let mut dups = std::collections::BTreeSet::new();
-        for arg in &ctx.args.inputs {
-            let (option, name) = match arg {
-                InputArg::Lib(name, false) => ("-l", name),
-                InputArg::Lib(name, true) => ("-weak-l", name),
-                InputArg::NeededLib(name) => ("-needed-l", name),
-                InputArg::ReexportLib(name) => ("-reexport-l", name),
-                InputArg::HiddenLib(name) => ("-hidden-l", name),
-                InputArg::UpwardLib(name) => ("-upward-l", name),
-                InputArg::LazyLib(name) => ("-lazy-l", name),
-                _ => continue,
-            };
-            let spelled = format!("'{option}{}'", name.display());
-            if !seen.insert(spelled.clone()) {
-                dups.insert(spelled);
+/// ld64 warns, once, about the libraries given more than once, each as
+/// spelled (-weak-lz repeats no -lz): the -l options, those naming a
+/// library by path, and an archive's bare path, but not a dylib's or a
+/// framework option. Build systems that knowingly repeat them pass
+/// -no_warn_duplicate_libraries. Under -w ld-prime leaves the warning
+/// out, -fatal_warnings or not.
+fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.warn_duplicate_libraries || ctx.args.suppress_warnings {
+        return;
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut seen_files = std::collections::HashSet::new();
+    let mut dups = std::collections::BTreeSet::new();
+    for arg in &ctx.args.inputs {
+        let (option, name) = match arg {
+            InputArg::Lib(name, false) => ("-l", name.as_os_str()),
+            InputArg::Lib(name, true) => ("-weak-l", name.as_os_str()),
+            InputArg::NeededLib(name) => ("-needed-l", name.as_os_str()),
+            InputArg::ReexportLib(name) => ("-reexport-l", name.as_os_str()),
+            InputArg::HiddenLib(name) => ("-hidden-l", name.as_os_str()),
+            InputArg::UpwardLib(name) => ("-upward-l", name.as_os_str()),
+            InputArg::LazyLib(name) => ("-lazy-l", name.as_os_str()),
+            InputArg::ForceLoad(path) => ("-force_load ", path.as_os_str()),
+            InputArg::WeakFile(path) => ("-weak_library ", path.as_os_str()),
+            InputArg::ReexportFile(path) => ("-reexport_library ", path.as_os_str()),
+            InputArg::NeededFile(path) => ("-needed_library ", path.as_os_str()),
+            InputArg::UpwardFile(path) => ("-upward_library ", path.as_os_str()),
+            InputArg::LazyFile(path) => ("-lazy_library ", path.as_os_str()),
+            // Objects, which are many, go without a string.
+            InputArg::File(path) => {
+                if !seen_files.insert(path)
+                    && MappedFile::open(path)
+                        .is_some_and(|mf| get_file_type(mf) == FileType::Archive)
+                {
+                    dups.insert(format!("'{}'", path.display()));
+                }
+                continue;
             }
-        }
-        if !dups.is_empty() {
-            let list: Vec<String> = dups.into_iter().collect();
-            crate::warn!("ignoring duplicate libraries: {}", list.join(", "));
+            _ => continue,
+        };
+        let spelled = format!("'{option}{}'", name.display());
+        if !seen.insert(spelled.clone()) {
+            dups.insert(spelled);
         }
     }
+    if !dups.is_empty() {
+        let list: Vec<String> = dups.into_iter().collect();
+        crate::warn!("ignoring duplicate libraries: {}", list.join(", "));
+    }
+}
+
+pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
+    warn_duplicate_libraries(ctx);
     let inputs = std::mem::take(&mut ctx.args.inputs);
     let paths = find_inputs(ctx, &inputs);
     let namings = library_namings(&inputs, &paths);
