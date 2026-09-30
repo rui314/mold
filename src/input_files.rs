@@ -2646,12 +2646,6 @@ fn dylib_binary_exports(mf: &'static MappedFile) -> DylibExports {
     (exports, tlv_exports, reexports, rpaths)
 }
 
-/// The directory dyld would use for a dylib's @loader_path: that of
-/// the real file, symlinks resolved. A framework's X.framework/X is a
-/// symlink to Versions/A/X, and its LC_RPATH entries are written for
-/// that location (XCTest's `@loader_path/../../../../PrivateFrameworks`
-/// reaches XCTestCore only from Versions/A). A fat file's name may
-/// carry the "(for architecture ...)" suffix the loader adds.
 /// An LC_RPATH entry as a search directory: @loader_path stands for the
 /// directory of the dylib that carries the entry.
 fn loader_rpath(dylib: &Path, rpath: &[u8]) -> PathBuf {
@@ -2661,6 +2655,12 @@ fn loader_rpath(dylib: &Path, rpath: &[u8]) -> PathBuf {
     }
 }
 
+/// The directory dyld would use for a dylib's @loader_path: that of
+/// the real file, symlinks resolved. A framework's X.framework/X is a
+/// symlink to Versions/A/X, and its LC_RPATH entries are written for
+/// that location (XCTest's `@loader_path/../../../../PrivateFrameworks`
+/// reaches XCTestCore only from Versions/A). A fat file's name may
+/// carry the "(for architecture ...)" suffix the loader adds.
 fn dir_of(path: &Path) -> PathBuf {
     let bytes = crate::util::path_bytes(path);
     let end = memchr::memmem::find(bytes, b"(for architecture").unwrap_or(bytes.len());
