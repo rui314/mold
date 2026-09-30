@@ -2411,11 +2411,11 @@ pub struct ObjcMethList {
 }
 
 fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
-    // ld-prime converts method lists on arm64 only; an x86-64 image
-    // keeps the compiler's absolute lists in __objc_const at any
-    // deployment target.
+    // ld-prime converts method lists in every arm64 image, and on
+    // x86-64 in dylibs and bundles only: an x86-64 executable keeps
+    // the compiler's absolute lists at any deployment target.
     ctx.args.objc_relative_method_lists.unwrap_or_else(|| {
-        E::CPUTYPE == crate::macho::CPU_TYPE_ARM64
+        (E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 || ctx.args.output_type != MH_EXECUTE)
             && ctx.args.platform == crate::macho::PLATFORM_MACOS
             && ctx.args.platform_minos >= crate::macho::encode_version(11, 0, 0)
     })
@@ -3194,7 +3194,10 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
                     fields.push(DataField::Ptr(m.types));
                     fields.push(DataField::Ptr(m.imp));
                 }
-                new_blob(ctx, "__objc_const", fields)
+                // ld-prime writes a merged absolute list into
+                // __objc_data (the protocol and property lists stay in
+                // __objc_const).
+                new_blob(ctx, "__objc_data", fields)
             }
         };
         // The class's original lists and the categories' are dropped

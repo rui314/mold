@@ -91,6 +91,8 @@ if [ $ARCH = arm64 ]; then
   grep -q '^pa pb base $' $t/props
 else
   grep -q '^pb pa base $' $t/props
+  # ...and writes the merged absolute method lists into __objc_data.
+  nm -m $t/exe | grep 'INSTANCE_METHODS_Foo(A|B)' | grep '__DATA,__objc_data'
 fi
 nm $t/exe > $t/nm
 not grep -q 'CATEGORY_INSTANCE_METHODS_Foo' $t/nm
