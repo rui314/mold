@@ -78,6 +78,13 @@ fn thm2<E: Target>(loc: &[u8]) -> u16 {
     E::read_u16(&loc[2..])
 }
 
+/// Writes a 32-bit Thumb instruction, which is a pair of halfwords rather
+/// than a word; `insn` has the first halfword in its upper 16 bits.
+fn write_thm32<E: Target>(loc: &mut [u8], insn: u32) {
+    E::write_u16(loc, (insn >> 16) as u16);
+    E::write_u16(&mut loc[2..], insn as u16);
+}
+
 fn write_arm_mov<E: Target>(loc: &mut [u8], val: u32) {
     let imm12 = b(val as u64, 11, 0);
     let imm4 = b(val as u64, 15, 12);
@@ -189,7 +196,7 @@ fn is_arm_func<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
 }
 
 const ARM_NOP: u32 = 0xe320_f000;
-const THM_NOP_W: u32 = 0x8000_f3af;
+const THM_NOP_W: u32 = 0xf3af_8000;
 
 const PLT_ENTRY: [u32; 4] = [
     0xe59f_c004, // 1: ldr ip, 2f
@@ -551,7 +558,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         // On ARM, calling an weak undefined symbol jumps to the
                         // next instruction.
                         // NOP.W
-                        write32(loc, THM_NOP_W);
+                        write_thm32::<Self>(loc, THM_NOP_W);
                         continue;
                     }
                     // THM_CALL relocation refers to either BL or BLX instruction.
@@ -647,7 +654,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                 }
                 R_ARM_THM_JUMP24 => {
                     if sym.is_remaining_undef_weak() {
-                        write32(loc, THM_NOP_W); // NOP
+                        write_thm32::<Self>(loc, THM_NOP_W); // NOP
                         continue;
                     }
                     // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
@@ -758,7 +765,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write16(&mut loc[2..], 0x6800); // ldr r0, [r0]
                     } else {
                         // nop.w
-                        write32(loc, THM_NOP_W);
+                        write_thm32::<Self>(loc, THM_NOP_W);
                     }
                 }
                 _ => error!(
