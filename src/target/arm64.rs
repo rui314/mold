@@ -20,7 +20,7 @@
 //! Instructions are little-endian even on big-endian targets, where only
 //! data is byte-swapped.
 
-use crate::chunks::eh_frame;
+use crate::chunks::{eh_frame, note_property, plt};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
@@ -94,8 +94,31 @@ fn is_add(loc: &[u8]) -> bool {
 }
 
 const NOP: u32 = 0xd503_201f;
+const BTI_C: u32 = 0xd503_245f;
+
+/// Writes a `bti c` to the beginning of `buf` if `needed` is true. Returns
+/// the offset of the next instruction.
+fn write_landing_pad(buf: &mut [u8], needed: bool) -> usize {
+    if needed {
+        write_insn(buf, BTI_C);
+        4
+    } else {
+        0
+    }
+}
 
 impl<const LE: bool> Arm64Target<LE> {
+    /// Whether a symbol's PLT entry needs a BTI landing pad. A PLT entry is
+    /// usually reached only by direct calls, but its address is used as the
+    /// function's address if the PLT is canonical or belongs to an ifunc,
+    /// and a range extension thunk jumps to it with an indirect branch.
+    fn plt_needs_landing_pad(ctx: &Context<Self>, sym: &Symbol) -> bool {
+        note_property::is_bti(ctx)
+            && (sym.is_canonical()
+                || sym.is_ifunc()
+                || sym.aux(&ctx.symbols).is_some_and(|aux| !aux.thunk_addrs.is_empty()))
+    }
+
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
     /// which the psABI allows when the target is within ±1 MiB.
     fn relaxes_adrp_add(
@@ -187,28 +210,39 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0xd420_7d00, // brk
             0xd420_7d00, // brk
         ];
-        for (i, &v) in INSN.iter().enumerate() {
-            write_insn(&mut buf[i * 4..], v);
+        // PLT entries jump to the header with an indirect branch. A landing
+        // pad, if any, replaces one of the trailing brks.
+        let off = write_landing_pad(buf, note_property::is_bti(ctx));
+        let buf = &mut buf[off..Self::PLT_HDR_SIZE as usize];
+        for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
+            write_insn(loc, v);
         }
         let gotplt = ctx.gotplt.shdr.sh_addr.get() + 16;
-        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        let plt = ctx.plt.hdr.shdr.sh_addr.get() + off as u64;
         write_adrp(&mut buf[4..], page(gotplt).wrapping_sub(page(plt + 4)));
         or_insn(&mut buf[8..], (bits(gotplt, 11, 3) << 10) as u32);
         or_insn(&mut buf[12..], ((gotplt & 0xfff) << 10) as u32);
     }
 
+    // A PLT entry is 16 bytes long by default and 24 bytes long if BTI is
+    // enabled. The extra space holds a `bti c` if the entry needs one, and
+    // the rest of the entry is filled with brks.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
-        const INSN: [u32; 4] = [
+        const INSN: [u32; 6] = [
             0x9000_0010, // adrp x16, .got.plt[n]
             0xf940_0211, // ldr  x17, [x16, .got.plt[n]]
             0x9100_0210, // add  x16, x16, .got.plt[n]
             0xd61f_0220, // br   x17
+            0xd420_7d00, // brk
+            0xd420_7d00, // brk
         ];
-        for (i, &v) in INSN.iter().enumerate() {
-            write_insn(&mut buf[i * 4..], v);
+        let off = write_landing_pad(buf, Self::plt_needs_landing_pad(ctx, sym));
+        let buf = &mut buf[off..plt::entry_size(ctx) as usize];
+        for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
+            write_insn(loc, v);
         }
         let gotplt = sym.gotplt_addr(ctx);
-        let plt = sym.plt_addr(ctx);
+        let plt = sym.plt_addr(ctx) + off as u64;
         write_adrp(buf, page(gotplt).wrapping_sub(page(plt)));
         or_insn(&mut buf[4..], (bits(gotplt, 11, 3) << 10) as u32);
         or_insn(&mut buf[8..], ((gotplt & 0xfff) << 10) as u32);
@@ -221,11 +255,14 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0xd61f_0220, // br   x17
             0xd420_7d00, // brk
         ];
-        for (i, &v) in INSN.iter().enumerate() {
-            write_insn(&mut buf[i * 4..], v);
+        // A landing pad, if any, replaces the trailing brk.
+        let off = write_landing_pad(buf, Self::plt_needs_landing_pad(ctx, sym));
+        let buf = &mut buf[off..Self::PLTGOT_SIZE as usize];
+        for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
+            write_insn(loc, v);
         }
         let got = sym.got_pltgot_addr(ctx);
-        let plt = sym.plt_addr(ctx);
+        let plt = sym.plt_addr(ctx) + off as u64;
         write_adrp(buf, page(got).wrapping_sub(page(plt)));
         or_insn(&mut buf[4..], (bits(got, 11, 3) << 10) as u32);
     }

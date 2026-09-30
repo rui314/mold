@@ -2,7 +2,7 @@
 
 use rayon::prelude::*;
 
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, note_property};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
@@ -44,8 +44,15 @@ impl<E: Target> Default for PltSection<E> {
 // it switches to a "large" entry format. This is how many small entries fit.
 pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
 
+/// The size of a PLT entry, for targets whose entries are uniformly sized.
+pub fn entry_size<E: Target>(ctx: &Context<E>) -> u64 {
+    // ARM64 PLT entries grow from 16 to 24 bytes to make room for a `bti c`
+    // landing pad if BTI is enabled.
+    if note_property::is_bti(ctx) { 24 } else { E::PLT_SIZE }
+}
+
 /// The offset of a PLT entry within `.plt`.
-pub fn entry_offset<E: Target>(idx: u32) -> u64 {
+pub fn entry_offset<E: Target>(ctx: &Context<E>, idx: u32) -> u64 {
     let idx = idx as u64;
     match E::FAMILY {
         Family::Ppc64V1 => {
@@ -71,7 +78,7 @@ pub fn entry_offset<E: Target>(idx: u32) -> u64 {
                 0x100000 + (i / 160) * 5120 + (i % 160) * 24
             }
         }
-        _ => E::PLT_HDR_SIZE + idx * E::PLT_SIZE,
+        _ => E::PLT_HDR_SIZE + idx * entry_size(ctx),
     }
 }
 
@@ -92,14 +99,14 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     } else if E::IS_SPARC {
         E::PLT_HDR_SIZE + n * E::PLT_SIZE
     } else {
-        entry_offset::<E>(n as u32)
+        entry_offset(ctx, n as u32)
     });
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_plt_header(ctx, buf);
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
-        let off = entry_offset::<E>(i as u32) as usize;
+        let off = entry_offset(ctx, i as u32) as usize;
         E::write_plt_entry(ctx, &mut buf[off..], &ctx.symbols[id]);
     }
 }

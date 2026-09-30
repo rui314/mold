@@ -171,7 +171,7 @@ pub fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::Verneed);
     chunks.push(ChunkId::NotePackage);
 
-    if E::IS_X86 {
+    if E::IS_X86 || E::FAMILY == Family::Arm64 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         chunks.push(ChunkId::NoteProperty);
     }

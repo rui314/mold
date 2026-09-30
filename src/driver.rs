@@ -334,6 +334,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     if ctx.args.z_execstack_if_needed && ctx.objs.iter().any(|f| f.needs_executable_stack) {
         ctx.args.z_execstack = true;
     }
+    // Merge .note.gnu.property contents of input files.
+    if ctx.note_property.is_some() {
+        chunks::note_property::construct(&mut ctx);
+    }
 
     // If we are linking a .so file, remaining undefined symbols does
     // not cause a linker error. Instead, they are treated as if they
