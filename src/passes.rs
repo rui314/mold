@@ -3818,7 +3818,7 @@ pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
     let size = ctx.args.pagezero_size;
     let page = ctx.segment_align();
     if !size.is_multiple_of(page) {
-        let aligned = size.wrapping_add(page - 1) & !(page - 1);
+        let aligned = page_align(size, page);
         // (As printf's %#llx spells it.)
         let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
         crate::warn!(
@@ -3877,7 +3877,7 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     if let Some(base) = ctx.args.image_base
         && !base.is_multiple_of(align)
     {
-        let aligned = base.wrapping_add(align - 1) & !(align - 1);
+        let aligned = page_align(base, align);
         crate::warn!(
             "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
         );
@@ -3965,13 +3965,13 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
 
     // An error ld-prime finds before it lays out __LINKEDIT ends the
     // link there: it prints the layout with __LINKEDIT unsized (see
-    // unsized_linkedit_addr) - twice for a segment out of order.
-    let out_of_order = check_segments_in_order(ctx);
+    // unsized_linkedit_addr) - twice for one in the segments' layout.
+    let misplaced = check_section_file_ends(ctx) || check_segments_in_order(ctx);
     if crate::error::has_early_layout_error() {
         ctx.segments[linkedit].cmd.vmaddr = unsized_linkedit_addr(ctx);
         ctx.segments[linkedit].cmd.fileoff = fileoff;
         print_final_layout(ctx);
-        if out_of_order {
+        if misplaced {
             print_final_layout(ctx);
         }
         crate::error::checkpoint();
@@ -4056,7 +4056,7 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
 /// Prints the image's segments and sections, in load command order, if
 /// an error in its layout ends the link (see error::layout_error), as
 /// ld-prime does - with its own layout's addresses, sizes and file
-/// offsets.
+/// offsets, the last in 32 bits.
 pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
     use std::fmt::Write;
     if !crate::error::has_layout_error() {
@@ -4069,7 +4069,7 @@ pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
         let _ = writeln!(
             out,
             "    {:<20} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x}, fileSize=0x{:08x}",
-            seg.name, cmd.vmaddr, cmd.vmsize, cmd.fileoff, cmd.filesize
+            seg.name, cmd.vmaddr, cmd.vmsize, cmd.fileoff as u32, cmd.filesize as u32
         );
         for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
             let zerofill = hdr.is_zerofill();
@@ -4077,7 +4077,7 @@ pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
             let _ = writeln!(
                 out,
                 "        {:<16} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x} (zerofill={})",
-                hdr.sectname, hdr.addr, hdr.size, fileoff, zerofill as u8
+                hdr.sectname, hdr.addr, hdr.size, fileoff as u32, zerofill as u8
             );
         }
     }
@@ -4147,7 +4147,7 @@ fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
 /// (the XNU x86-64 kernel starts the segment after __TEXT on a 2 MiB
 /// boundary that way).
 fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
-    align_to(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
+    page_align(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
 }
 
 /// The alignment of a segment's address: a page, or its first section's
@@ -4302,9 +4302,16 @@ fn layout_segment<E: Target>(
         seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
         return seg_fileoff + filesize;
     }
-    seg.cmd.filesize = align_to(filesize, page);
-    seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
-    seg_fileoff + align_to(seg.cmd.filesize, seg_page)
+    seg.cmd.filesize = page_align(filesize, page);
+    seg.cmd.vmsize = page_align(vm_end - vmaddr, page).max(seg.cmd.filesize);
+    seg_fileoff + page_align(seg.cmd.filesize, seg_page)
+}
+
+/// Rounds `value` up to a multiple of the page size `page` as ld-prime
+/// does, which rounds anything to 0 under a -segalign of 0.
+fn page_align(value: u64, page: u64) -> u64 {
+    let mask = page.wrapping_sub(1);
+    value.wrapping_add(mask) & !mask
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:
@@ -4440,6 +4447,32 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
             }
         }
     }
+}
+
+/// ld-prime keeps a section's file offset in 32 bits, and so its
+/// segment's end, and refuses a section that ends past that: in a
+/// segment that ends at 4 GiB, which a -segalign of 2 GiB gives one,
+/// and in any with a -segalign of 0, which leaves every segment empty.
+/// It is an error in the layout it finds before __LINKEDIT (see
+/// error::early_layout_error), of the first such section. Returns
+/// whether it found one.
+fn check_section_file_ends<E: Target>(ctx: &Context<E>) -> bool {
+    for seg in &ctx.segments[..ctx.segments.len() - 1] {
+        let seg_end = (seg.cmd.fileoff + seg.cmd.filesize) as u32;
+        for &id in &seg.chunks {
+            let hdr = ctx.chunk_header(id);
+            if hdr.is_sect && !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
+                crate::early_layout_error!(
+                    "section {},{} file end ({}) goes past the segment end ({seg_end}) ",
+                    hdr.segname,
+                    hdr.sectname,
+                    hdr.fileoff + hdr.size
+                );
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// In an image dyld slides, ld-prime refuses a segment below the one

@@ -1036,7 +1036,7 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     // -preload image, which no dyld maps: ld-prime starts the section's
     // segment on the alignment there (see lay_out_segments).
     if !ctx.args.relocatable && !ctx.args.static_link {
-        let max = ctx.segment_align().trailing_zeros();
+        let max = ctx.segment_align().max(1).trailing_zeros();
         for osec in &mut ctx.output_sections {
             if osec.hdr.p2align > max {
                 crate::warn!(

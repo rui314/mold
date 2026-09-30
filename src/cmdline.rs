@@ -2383,14 +2383,14 @@ fn resolve_segprots(
 
 /// The segment alignment: -segalign's, rounded down to a power of two
 /// with a warning as ld-prime does (the last one given wins), else the
-/// page size (4 KiB for a -preload image). ld-prime lays out nothing
-/// with 0, as no power of two lies below it.
+/// page size (4 KiB for a -preload image). ld-prime takes 0 as it is:
+/// pages of no size, and so segments of none, which fails a final link
+/// (see passes::check_section_file_ends).
 fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
     match segalign {
         None if args.preload => 0x1000,
         None => target.page_size,
-        Some(0) => fatal!("alignment for -segalign 0x0 is not a power of two"),
-        Some(align) if align.is_power_of_two() => align,
+        Some(align) if align == 0 || align.is_power_of_two() => align,
         Some(align) => {
             let p2 = 1 << align.ilog2();
             crate::warn!(
