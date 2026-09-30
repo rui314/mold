@@ -2836,10 +2836,11 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", "__got") => 25,
         ("__DATA", "__objc_const") => 2,
         ("__DATA", "__objc_selrefs") => 3,
-        ("__DATA", "__objc_classrefs") => 4,
-        ("__DATA", "__objc_superrefs") => 5,
-        ("__DATA", "__objc_ivar") => 6,
-        ("__DATA", "__objc_data") => 7,
+        ("__DATA", "__objc_protorefs") => 4,
+        ("__DATA", "__objc_classrefs") => 5,
+        ("__DATA", "__objc_superrefs") => 6,
+        ("__DATA", "__objc_ivar") => 7,
+        ("__DATA", "__objc_data") => 8,
         // The thread-local initialization image must be contiguous:
         // __thread_data last among file-backed __DATA sections, and
         // __thread_bss first among zero-fill ones (zero-fill sections
