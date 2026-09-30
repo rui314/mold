@@ -132,12 +132,47 @@ fn uleb_len(mut val: u64) -> usize {
     len
 }
 
+/// Places the trie's nodes as ld-prime lays them out, given each node's
+/// size apart from its child-offset ULEBs and its children, by pre-order
+/// index (the root is 0). The root comes first, with room for each child
+/// offset at its widest (5 bytes, a u32's ULEB128) since it is written
+/// before its children are placed; the unused bytes stay zero after its
+/// last edge. The other nodes follow in post-order, a node after its
+/// subtrees, so its children's offsets and thus its own size are known
+/// when it is placed. Returns the offsets, the sizes and the total.
+fn place_nodes(fixed: &[usize], kids: &[Vec<u32>]) -> (Vec<u32>, Vec<u32>, u32) {
+    let mut offs = vec![0u32; fixed.len()];
+    let mut sizes = vec![0u32; fixed.len()];
+    sizes[0] = (fixed[0] + 5 * kids[0].len()) as u32;
+    let mut off = sizes[0];
+    // An explicit stack of (node, next child to visit): tries of long
+    // mangled names nest deeply.
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for &top in &kids[0] {
+        stack.push((top as usize, 0));
+        while let Some(&(node, next)) = stack.last() {
+            if let Some(&child) = kids[node].get(next) {
+                stack.last_mut().unwrap().1 += 1;
+                stack.push((child as usize, 0));
+                continue;
+            }
+            stack.pop();
+            let edges: usize = kids[node].iter().map(|&c| uleb_len(offs[c as usize] as u64)).sum();
+            offs[node] = off;
+            sizes[node] = (fixed[node] + edges) as u32;
+            off += sizes[node];
+        }
+    }
+    (offs, sizes, off)
+}
+
 /// Encodes the export trie: dyld's index of the image's exported
 /// symbols. It is a radix tree; each node holds an optional terminal
 /// payload (flags and the symbol's image-relative address, both ULEB128)
 /// and edges labeled with NUL-terminated string fragments pointing at
-/// child nodes by ULEB128 offset within the trie. Since offsets are
-/// variable-length, sizing iterates to a fixed point.
+/// child nodes by ULEB128 offset within the trie. The nodes are laid out
+/// in ld-prime's order (see place_nodes), then the trie is padded to 8
+/// bytes.
 pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolId]) -> Vec<u8> {
     let base = ctx.args.pagezero_size;
 
@@ -239,15 +274,10 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
     fill(&mut root, 0, &Slots(nodes.as_mut_ptr()));
     debug_assert!(nodes.iter().all(|p| !p.is_null()));
 
-    // Assign node offsets until they stop moving. Everything except
-    // the width of the child-offset ULEBs is invariant, so the
-    // fixpoint (a couple of passes: offsets only grow as their ULEBs
-    // widen) runs over precomputed per-node fixed sizes and child
-    // index lists, no pointer chasing.
-    // Each node's fixed size and the pre-order indices of its children.
-    // flatten stamped every node's index, so a child names itself by
-    // index with no pointer hash map, and the whole pass is a pure
-    // per-node map that runs in parallel.
+    // Each node's size apart from its child-offset ULEBs, and the
+    // pre-order indices of its children. flatten stamped every node's
+    // index, so a child names itself by index with no pointer hash map,
+    // and the whole pass is a pure per-node map that runs in parallel.
     struct NodePtr(*mut TrieNode);
     unsafe impl Sync for NodePtr {}
     let node_ptrs: Vec<NodePtr> = nodes.iter().map(|&p| NodePtr(p)).collect();
@@ -269,37 +299,16 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
             (f, k)
         })
         .unzip();
-    let mut offs = vec![0u32; nodes.len()];
-    // Total encoded size, set on every pass (the loop always runs).
-    let mut total;
-    loop {
-        let mut changed = false;
-        let mut off = 0u32;
-        for i in 0..nodes.len() {
-            if offs[i] != off {
-                offs[i] = off;
-                changed = true;
-            }
-            off += fixed[i] as u32;
-            for &c in &kids[i] {
-                off += uleb_len(offs[c as usize] as u64) as u32;
-            }
-        }
-        total = off;
-        if !changed {
-            break;
-        }
-    }
+    let (offs, sizes, total) = place_nodes(&fixed, &kids);
     for (i, &node) in nodes.iter().enumerate() {
         // SAFETY: as above; each node written once.
         unsafe { (*node).offset = offs[i] as usize };
     }
 
     // Emit every node into its final slot in parallel. Node i owns the
-    // byte range [offs[i], offs[i+1]) (the last runs to `total`), the
-    // ranges are disjoint and cover the buffer, and each node reads
-    // only its children's offsets (already final) - so all writes are
-    // independent. On a big Rust debug link the trie is tens of MB, so
+    // byte range [offs[i], offs[i] + sizes[i]), the ranges are disjoint
+    // and cover the buffer, and each node reads only its children's
+    // offsets (already final) - so all writes are independent. On a big Rust debug link the trie is tens of MB, so
     // this is the difference between a serial and a parallel memcpy.
     fn write_uleb_at(dst: &mut [u8], mut pos: usize, mut val: u64) -> usize {
         let start = pos;
@@ -323,11 +332,10 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
         unsafe impl Sync for BufPtr {}
         let bp = BufPtr(buf.as_mut_ptr());
         let bp = &bp;
-        let n = nodes.len();
         node_ptrs.par_iter().enumerate().for_each(|(i, np)| {
             let node = unsafe { &*np.0 };
             let start = offs[i] as usize;
-            let end = if i + 1 < n { offs[i + 1] as usize } else { total as usize };
+            let end = start + sizes[i] as usize;
             // SAFETY: the [start, end) ranges are disjoint across nodes
             // and lie within the allocation of length `total`.
             let dst = unsafe { std::slice::from_raw_parts_mut(bp.0.add(start), end - start) };
@@ -361,7 +369,8 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
                 p += 1;
                 p += write_uleb_at(dst, p, child.offset as u64);
             }
-            debug_assert_eq!(p, end - start);
+            // The root's unused reserved offset bytes stay zero.
+            debug_assert!(if i == 0 { p <= end - start } else { p == end - start });
         });
     }
     while !buf.len().is_multiple_of(8) {
