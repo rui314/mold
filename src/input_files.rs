@@ -1025,6 +1025,7 @@ pub fn stage_object<E: Target>(
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
     obj.demote_unnamed_atom_names();
+    obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
@@ -1133,28 +1134,46 @@ impl StagedObject {
                     || has_unnamed_atoms(h) && (split || !h.sectname_is("__ustring"))
             })
             .collect();
-        if !unnamed.contains(&true) {
-            return;
+        for nlist in self.demote_externals_in(&unnamed) {
+            nlist.n_type = nlist.n_type & !N_EXT | N_PEXT;
         }
-        let names: Vec<usize> = (0..self.nlists.len())
-            .filter(|&i| {
-                let nlist = &self.nlists[i];
-                !nlist.is_stab()
-                    && nlist.is_extern()
-                    && nlist.n_type() == N_SECT
-                    && nlist.n_sect != 0
-                    && unnamed[nlist.n_sect as usize - 1]
-            })
-            .collect();
-        if names.is_empty() {
-            return;
+    }
+
+    /// Demotes the external symbols of the thread-local zero-fill
+    /// sections (__thread_bss) to plain locals, as ld-prime does: such a
+    /// symbol names a thread-local variable's initial storage, which
+    /// only its own object's __thread_vars descriptor refers to, so
+    /// another object's reference to its name is undefined, another
+    /// definition is no duplicate, and the output, -r included, lists it
+    /// as a non-external symbol, neither private external nor weak.
+    fn demote_thread_local_zerofill_names(&mut self) {
+        let zerofill: Vec<bool> =
+            self.sect_hdrs.iter().map(|h| h.section_type() == S_THREAD_LOCAL_ZEROFILL).collect();
+        for nlist in self.demote_externals_in(&zerofill) {
+            nlist.n_type &= !(N_EXT | N_PEXT);
+            nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
         }
-        let nlists = self.nlists.to_mut();
-        for i in names {
-            nlists[i].n_type = nlists[i].n_type & !N_EXT | N_PEXT;
+    }
+
+    /// The external symbols defined in the sections `demoted` marks (by
+    /// ordinal), for the caller to make local. The table then no longer
+    /// runs locals, then externals.
+    fn demote_externals_in(&mut self, demoted: &[bool]) -> Vec<&mut NList> {
+        if !demoted.contains(&true) {
+            return Vec::new();
         }
-        // The table no longer runs locals, then externals.
+        let is_demoted = |nlist: &NList| {
+            !nlist.is_stab()
+                && nlist.is_extern()
+                && nlist.n_type() == N_SECT
+                && nlist.n_sect != 0
+                && demoted[nlist.n_sect as usize - 1]
+        };
+        if !self.nlists.iter().any(is_demoted) {
+            return Vec::new();
+        }
         self.first_global = None;
+        self.nlists.to_mut().iter_mut().filter(|nlist| is_demoted(nlist)).collect()
     }
 
     /// Splits each section into subsections, the Mach-O linking
