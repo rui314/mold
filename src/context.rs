@@ -1068,7 +1068,9 @@ impl<E: Target> Context<E> {
     fn literal_label_target(&self, obj: usize, rel: &Reloc) -> Option<usize> {
         let RelocTarget::Sym(idx) = rel.target() else { return None };
         let obj = &self.objs[obj];
-        let nlist = &obj.nlists[idx as usize];
+        // A symbol the linker gave the object has no nlist (see
+        // name_classref_targets).
+        let nlist = obj.nlists.get(idx as usize)?;
         let name = self.symbols[obj.symbols[idx as usize]].name();
         if nlist.is_stab()
             || nlist.n_type() != crate::macho::N_SECT

@@ -596,10 +596,15 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
 /// any reference of the class's, in any object, pairs up otherwise,
 /// no reference is rewritten: the slot moves to the GOT and every
 /// load reads it there.
+///
+/// A slot may point at its class section-relatively, as an x86-64
+/// object refers to a class only a temporary (L) label names; ld-prime
+/// folds it all the same (see name_classref_targets).
 pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !objc_refs_are_const(ctx) {
         return;
     }
+    name_classref_targets(ctx);
     let slots: Vec<_> = (0..ctx.objs.len()).map(|i| classref_slots(ctx, i)).collect();
     let uses: Vec<_> = (0..ctx.objs.len()).map(|i| classref_uses(ctx, i, &slots[i])).collect();
     let mut unpaired = hashbrown::HashSet::new();
@@ -673,6 +678,62 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     absorb_got_slots(ctx, absorbed);
     if coalesced {
         redirect_symbols_to_replacements(ctx);
+    }
+}
+
+/// Names by a symbol of its object, anonymous and in no symbol table,
+/// the class each class-reference slot points at section-relatively,
+/// for fold_objc_classrefs to fold the slot as it does one naming a
+/// symbol; the slots of an object pointing at one class share it. A
+/// slot that points into the middle of a subsection is left alone and
+/// keeps its slot: ld-prime folds it to the start of its atom, losing
+/// the offset.
+fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
+    for obj_idx in 0..ctx.objs.len() {
+        let obj = &ctx.objs[obj_idx];
+        if !obj.is_alive
+            || !obj
+                .sect_hdrs
+                .iter()
+                .any(|h| h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
+        {
+            continue;
+        }
+        let mut named: hashbrown::HashMap<u32, u32> = hashbrown::HashMap::new();
+        for k in 0..ctx.objs[obj_idx].subsecs.len() {
+            let i = ctx.objs[obj_idx].subsecs[k] as usize;
+            let isec = &ctx.isecs[i];
+            let h = ctx.hdr_of(isec);
+            if !isec.is_alive()
+                || isec.replacement != crate::input_sections::NO_REPLACEMENT
+                || h.segname() != "__DATA"
+                || h.sectname() != "__objc_classrefs"
+                || isec.size != 8
+            {
+                continue;
+            }
+            let rel_idx = isec.rel_offset as usize;
+            let [rel] = ctx.isec_relocs(i) else { continue };
+            let RelocTarget::Section(class) = rel.target() else { continue };
+            if E::classify_reloc(rel.r_type) != RelocClass::Plain
+                || rel.addend != 0
+                || rel.size != 8
+                || rel.is_pcrel
+                || rel.is_subtracted
+            {
+                continue;
+            }
+            let idx = *named.entry(class).or_insert_with(|| {
+                let mut sym = crate::symbol::Symbol::new("");
+                sym.set_file(FileId::Obj(obj_idx as u32));
+                sym.set_input_section(Some(class));
+                ctx.symbols.syms.push(sym);
+                let obj = &mut ctx.objs[obj_idx];
+                obj.symbols.push((ctx.symbols.syms.len() - 1) as u32);
+                (obj.symbols.len() - 1) as u32
+            });
+            ctx.objs[obj_idx].relocs[rel_idx].set_target(RelocTarget::Sym(idx));
+        }
     }
 }
 
