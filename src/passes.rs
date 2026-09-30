@@ -418,7 +418,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                 obj.sect_hdrs[nlist.n_sect as usize - 1].sectname()
             );
         }
-        if obj.has_init_pointer_without_target() {
+        if obj.init_without_target {
             error!("initializer pointer has no target in '{}'", resolved_file_name(obj.mf));
         }
     }

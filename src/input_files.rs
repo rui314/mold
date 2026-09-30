@@ -593,6 +593,10 @@ pub struct StagedObject {
     /// An FDE describes a function in a section of data, which
     /// ld-prime refuses (see add_fdes).
     pub data_fde: bool,
+    /// An initializer or terminator pointer has no relocation to name
+    /// its function, which ld-prime refuses (unless it stopped at a bad
+    /// relocation first).
+    pub init_without_target: bool,
     /// The __compact_unwind pointer fields a 4-byte relocation set, as
     /// (subsection, function offset, 1 << field offset / 8) of their
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
@@ -914,6 +918,7 @@ pub fn stage_object<E: Target>(
         cies: Vec::new(),
         fdes: Vec::new(),
         data_fde: false,
+        init_without_target: false,
         unwind_ptr32: Vec::new(),
         objc_image_info,
         has_debug_info,
@@ -957,6 +962,7 @@ pub fn stage_object<E: Target>(
     {
         obj.data_fde = obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
     }
+    obj.init_without_target = relocs_ok && obj.has_init_pointer_without_target();
     // A DWARF-mode record whose FDE never turned up describes nothing.
     obj.unwind.retain(|rec| {
         rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
@@ -1049,6 +1055,11 @@ impl StagedObject {
             } else {
                 std::mem::take(&mut split_points[i])
             };
+            // Each initializer or terminator pointer is an atom of its
+            // own too, which ld-prime's diagnostics name.
+            if matches!(sect.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS) {
+                points.extend((0..sect.size).step_by(8).map(|off| sect.addr + off));
+            }
             points.push(sect.addr);
             points.retain(|&a| sect.addr <= a && a <= sect.addr + sect.size);
             points.sort_unstable();
@@ -2410,14 +2421,14 @@ impl StagedObject {
         }
     }
 
-    /// Whether an initializer or terminator pointer has no relocation
-    /// to name its function, which ld-prime refuses.
-    pub fn has_init_pointer_without_target(&self) -> bool {
+    /// Whether an initializer or terminator pointer, an atom of its own,
+    /// has no relocation to name its function.
+    fn has_init_pointer_without_target(&self) -> bool {
         self.isecs.iter().any(|isec| {
             let hdr = &self.sect_hdrs[isec.shndx as usize];
-            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
             matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
-                && (0..isec.size).step_by(8).any(|off| rels.iter().all(|r| r.offset != off))
+                && isec.size != 0
+                && isec.nrels == 0
         })
     }
 }
