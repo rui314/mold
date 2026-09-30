@@ -662,11 +662,13 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_dylinker_cmd());
     }
     vec.push(create_uuid_cmd(ctx));
-    vec.push(create_version_cmd::<E>(
-        ctx.args.platform,
-        ctx.args.platform_minos,
-        ctx.args.platform_sdk,
-    ));
+    if !ctx.args.static_link || ctx.args.version_load_command {
+        vec.push(create_version_cmd::<E>(
+            ctx.args.platform,
+            ctx.args.platform_minos,
+            ctx.args.platform_sdk,
+        ));
+    }
     vec.push(create_source_version_cmd(ctx));
     if ctx.args.output_type == MH_EXECUTE {
         vec.push(if ctx.args.static_link {

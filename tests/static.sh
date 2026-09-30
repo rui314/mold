@@ -76,3 +76,13 @@ base=$(otool -l $t/exe2 | awk -v s=$seg '$1 == "segname" && $2 == s { getline; p
 p=$(nm $t/exe2 | awk '$3 == "_p" { print $1 }')
 rel=$(printf '%08x 0 3 0 0 0 1' $((0x$p - base)))
 [ "$(awk '$1 ~ /^[0-9a-f]+$/ { print $1, $2, $3, $4, $5, $6, $7 }' $t/rel2)" = "$rel" ]
+
+# The code tables and the build version are left out unless asked for;
+# asked for, they go where they would in any image.
+for cmd in LC_FUNCTION_STARTS LC_DATA_IN_CODE LC_BUILD_VERSION; do
+  not grep -q "cmd $cmd\$" $t/lc
+done
+$mold -arch $ARCH -static -e __start -function_starts -data_in_code_info \
+  -version_load_command $t/a.o $t/b.o -o $t/exe3
+otool -l $t/exe3 | awk '$1 == "cmd" { printf "%s ", $2 }' > $t/cmds3
+grep -q 'LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_UNIXTHREAD LC_FUNCTION_STARTS LC_DATA_IN_CODE' $t/cmds3

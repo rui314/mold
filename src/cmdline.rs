@@ -142,10 +142,12 @@ pub struct Args {
     /// Fold identical functions (on by default; -no_deduplicate turns
     /// it off).
     pub deduplicate: bool,
-    /// Emit LC_FUNCTION_STARTS (on by default).
+    /// Emit LC_FUNCTION_STARTS (on by default but in a -static image).
     pub function_starts: bool,
-    /// Emit LC_DATA_IN_CODE (on by default).
+    /// Emit LC_DATA_IN_CODE (on by default but in a -static image).
     pub data_in_code_info: bool,
+    /// -version_load_command: give a -static image LC_BUILD_VERSION.
+    pub version_load_command: bool,
     /// -split_seg_info: emit LC_SEGMENT_SPLIT_INFO
     pub split_seg_info: bool,
     /// -init_offsets: emit initializers as 32-bit image offsets
@@ -331,6 +333,7 @@ impl Default for Args {
             deduplicate: true,
             function_starts: true,
             data_in_code_info: true,
+            version_load_command: false,
             split_seg_info: false,
             init_offsets: false,
             data_const: true,
@@ -640,6 +643,8 @@ pub struct TargetTraits {
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args = Args::default();
     let mut pie: Option<bool> = None;
+    let mut function_starts: Option<bool> = None;
+    let mut data_in_code_info: Option<bool> = None;
     let mut i = 1;
     let mut version_shown = false;
 
@@ -733,7 +738,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
             b"-static" => args.static_link = true,
-            b"-version_load_command" => {}
+            b"-version_load_command" => args.version_load_command = true,
             b"-pie" => pie = Some(true),
             b"-no_pie" => pie = Some(false),
             b"-no_dead_strip_inits_and_terms" => {}
@@ -966,7 +971,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
 
             b"-no_deduplicate" => args.deduplicate = false,
-            b"-function_starts" => args.function_starts = true,
+            b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,
             b"-data_const" => args.data_const = true,
             b"-no_data_const" => args.data_const = false,
@@ -975,11 +980,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_objc_relative_method_lists" => args.objc_relative_method_lists = Some(false),
             b"-objc_category_merging" => args.objc_category_merging = Some(true),
             b"-no_objc_category_merging" => args.objc_category_merging = Some(false),
-            b"-no_function_starts" => args.function_starts = false,
-            b"-data_in_code_info" => args.data_in_code_info = true,
+            b"-no_function_starts" => function_starts = Some(false),
+            b"-data_in_code_info" => data_in_code_info = Some(true),
             b"-split_seg_info" => args.split_seg_info = true,
             b"-no_split_seg_info" => args.split_seg_info = false,
-            b"-no_data_in_code_info" => args.data_in_code_info = false,
+            b"-no_data_in_code_info" => data_in_code_info = Some(false),
 
             b"-no_uuid" => args.uuid = false,
 
@@ -1056,6 +1061,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
         args.pagezero_size = 0;
     }
+
+    // A -static image (a kernel) carries the code tables only when
+    // asked to, as ld-prime writes it.
+    args.function_starts = function_starts.unwrap_or(!args.static_link);
+    args.data_in_code_info = data_in_code_info.unwrap_or(!args.static_link);
 
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
