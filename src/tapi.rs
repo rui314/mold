@@ -464,15 +464,8 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
     let mut main: Option<TbdFile> = None;
     let mut documents: Vec<TbdFile> = Vec::new();
 
-    // TAPI refuses a file naming a target it doesn't know anywhere.
     let docs = yaml_documents(text);
-    for field in docs.iter().flatten().filter(|f| f.key == "targets") {
-        if let Some(item) =
-            field.raw_items().find(|&item| !item.is_empty() && target(unquote(item)).is_none())
-        {
-            unknown_target(mf, text, item);
-        }
-    }
+    check_yaml(mf, text, &docs);
 
     for (doc, fields) in docs.iter().enumerate() {
         let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
@@ -591,24 +584,16 @@ impl YamlField {
     }
 }
 
-/// Stops the link on a target of a platform TAPI doesn't know, `item`
-/// in `text`, with ld-prime's YAML reader's diagnostic: the line, and
-/// under it the item, a quoted one as written and a plain one with the
-/// blanks up to the next delimiter. (TAPI refuses an architecture it
-/// doesn't know too, but those come and go with SDKs - arm64e.x1 -
-/// and one unknown here is merely one the link can't use.)
-fn unknown_target(mf: &MappedFile, text: &str, item: &str) -> ! {
+/// Stops the link on a malformed .tbd, `what` is wrong at `item` (a
+/// slice of `text`), with ld-prime's YAML reader's diagnostic: the line,
+/// and under it the item's first `len` columns marked.
+fn malformed(mf: &MappedFile, text: &str, item: &str, len: usize, what: &str) -> ! {
     let off = item.as_ptr() as usize - text.as_ptr() as usize;
     let line_start = text[..off].rfind('\n').map_or(0, |i| i + 1);
     let line_end = text[off..].find('\n').map_or(text.len(), |i| off + i);
     let col = off - line_start;
-    let len = if item.starts_with(['\'', '"']) {
-        unquote(item).len() + 2
-    } else {
-        item.lines().next().unwrap_or("").len()
-    };
     fatal!(
-        "tapi error: malformed file\n{}:{}:{}: error: unknown target\n{}\n{}^{}\n in '{}'",
+        "tapi error: malformed file\n{}:{}:{}: error: {what}\n{}\n{}^{}\n in '{}'",
         crate::passes::resolved_file_name(mf),
         text[..off].matches('\n').count() + 1,
         col + 1,
@@ -617,6 +602,42 @@ fn unknown_target(mf: &MappedFile, text: &str, item: &str) -> ! {
         "~".repeat(len.saturating_sub(1)),
         mf.name.display()
     );
+}
+
+/// The columns a YAML scalar spans: a quoted one's as written, a plain
+/// one's with the blanks up to the next delimiter on its line.
+fn scalar_len(item: &str) -> usize {
+    if item.starts_with(['\'', '"']) {
+        unquote(item).len() + 2
+    } else {
+        item.lines().next().unwrap_or("").len()
+    }
+}
+
+/// Stops the link on a .tbd TAPI refuses: one naming a target of a
+/// platform it doesn't know anywhere (it refuses an architecture it
+/// doesn't know too, but those come and go with SDKs - arm64e.x1 - and
+/// one unknown here is merely one the link can't use), or a version 1-3
+/// document without a platform of those it knows.
+fn check_yaml(mf: &MappedFile, text: &str, docs: &[Vec<YamlField>]) {
+    for field in docs.iter().flatten().filter(|f| f.key == "targets") {
+        if let Some(item) =
+            field.raw_items().find(|&item| !item.is_empty() && target(unquote(item)).is_none())
+        {
+            malformed(mf, text, item, scalar_len(item), "unknown target");
+        }
+    }
+    for fields in docs {
+        let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
+        if !top().any(|f| f.key == "archs") {
+            continue;
+        }
+        match top().find(|f| f.key == "platform") {
+            Some(f) if !legacy_platforms(unquote(f.value)).is_empty() => {}
+            Some(f) => malformed(mf, text, f.value, scalar_len(f.value), "unknown platform"),
+            None => malformed(mf, text, fields[0].key, 1, "missing required key 'platform'"),
+        }
+    }
 }
 
 /// The targets of a document's top-level fields: a version 4 file's, or
@@ -713,7 +734,7 @@ fn target(s: &'static str) -> Option<Target> {
 /// macOS and Mac Catalyst both.
 fn legacy_platforms(name: &str) -> &'static [u32] {
     match name {
-        "macosx" | "macos" => &[PLATFORM_MACOS],
+        "macosx" => &[PLATFORM_MACOS],
         "ios" => &[PLATFORM_IOS],
         "tvos" => &[PLATFORM_TVOS],
         "watchos" => &[PLATFORM_WATCHOS],
