@@ -51,3 +51,12 @@ $mold -arch $ARCH -r $t/b.o $t/a.o -o $t/ba.o
 [ "$(attrs $t/ba.o __keep)" = 'S_REGULAR (none)' ]
 $mold -arch $ARCH -r $t/b.o $t/c.o -o $t/bc.o
 [ "$(attrs $t/bc.o __empty)" = 'S_REGULAR (none)' ]
+
+# Each symbol of a no_dead_strip section is itself marked no-dead-strip,
+# so it survives where the output section took another member's
+# attributes.
+nm -m $t/ba.o > $t/syms-ba
+grep -q '\[no dead strip\] keep_me' $t/syms-ba
+$CC --ld-path=$mold -o $t/exe2 $t/ba.o $t/main.o -Wl,-dead_strip
+nm $t/exe2 > $t/syms-exe2
+grep -q keep_me $t/syms-exe2

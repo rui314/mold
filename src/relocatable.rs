@@ -77,6 +77,21 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     (seg, sect)
 }
 
+/// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
+/// marks every symbol of a no_dead_strip section, local or global, so
+/// the next link keeps it even when the output section takes another
+/// member's attributes - but none of __objc_classrefs.
+fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
+    let h = ctx.hdr_of(&ctx.isecs[isec]);
+    if h.flags & S_ATTR_NO_DEAD_STRIP != 0
+        && !(h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
+    {
+        N_NO_DEAD_STRIP
+    } else {
+        0
+    }
+}
+
 /// The n_desc of a symbol from an object without subsections: ld64
 /// marks the whole-section atoms no-dead-strip and drops the alt-entry
 /// marker, which means nothing there.
@@ -411,7 +426,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 locals.push(Local {
                     name: String::new(),
                     n_type: N_PEXT | N_SECT,
-                    n_desc: 0,
+                    n_desc: section_desc(ctx, id),
                     n_sect: chunk.hdr.n_sect,
                     addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
                     rename: if entsize == 0 { Rename::Cstring } else { Rename::Anon },
@@ -473,8 +488,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             let sym = &ctx.symbols[sym_id];
-            let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-            let isec = ctx.resolve_isec(isec);
+            let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+            let isec = ctx.resolve_isec(input);
             if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
                 continue;
             }
@@ -502,7 +517,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             locals.push(Local {
                 name: sym.name().to_string(),
                 n_type: nlist.n_type,
-                n_desc: whole_desc(nlist.n_desc, whole),
+                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: Rename::None,
@@ -532,8 +547,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 {
                     continue;
                 }
-                let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-                let isec = ctx.resolve_isec(isec);
+                let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+                let isec = ctx.resolve_isec(input);
                 if !ctx.isecs[isec].is_alive() {
                     continue;
                 }
@@ -543,7 +558,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     n_desc: whole_desc(
                         nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
                         !obj.subsections_via_symbols,
-                    ),
+                    ) | section_desc(ctx, input),
                     n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                     addr: sym_addr(ctx, sym_id),
                     rename: Rename::None,
@@ -650,6 +665,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             && !ctx.objs[o as usize].subsections_via_symbols
         {
             n_desc = whole_desc(n_desc, true);
+        }
+        if let Some(input) = sym.input_section() {
+            n_desc |= section_desc(ctx, input as usize);
         }
         index_of_sym.insert(i as u32, nlists_out.len() as u32);
         nlists_out.push(NList {
