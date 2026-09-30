@@ -3007,13 +3007,20 @@ pub fn untrace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
 }
 
 pub fn trace_name(name: &[u8]) -> String {
+    crate::util::display(&without_fat_arch(name)).to_string()
+}
+
+/// A file's name without the "(for architecture ...)" that fat_slice
+/// gives a fat file's slice, which ld-prime never shows: it names the
+/// slice, and the members of a fat archive, by the file's own path.
+pub fn without_fat_arch(name: &[u8]) -> Vec<u8> {
     let mut name = name.to_vec();
     if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
         && let Some(len) = name[i..].iter().position(|&c| c == b')')
     {
         name.drain(i..=i + len);
     }
-    crate::util::display(&name).to_string()
+    name
 }
 
 /// Loads the libraries a dylib re-exports. A public one becomes an

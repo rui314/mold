@@ -304,7 +304,7 @@ pub fn plan_object_stabs<E: Target>(
         return StabPlan::default();
     }
     if obj.nlists.iter().any(|n| n.n_type == N_OSO) {
-        return copy_object_stabs(ctx, obj);
+        return copy_object_stabs(ctx, obj_idx);
     }
     if !obj.has_debug_info {
         return StabPlan::default();
@@ -334,7 +334,7 @@ pub fn plan_object_stabs<E: Target>(
         {
             continue;
         }
-        plan.syms.extend(symbol_stabs(ctx, sym_id, nlist.is_extern(), common));
+        plan.syms.extend(symbol_stabs(ctx, obj, sym_id, nlist, common));
     }
     plan.closed = true;
     plan.len = plan.fixed.len() + plan.syms.iter().map(|s| s.len()).sum::<usize>() + 1;
@@ -343,9 +343,11 @@ pub fn plan_object_stabs<E: Target>(
 
 /// The stabs of an object that carries its own (an earlier -r output's),
 /// copied through: the address-bearing entries rebased to their
-/// subsections' output addresses, and those of dead subsections
-/// dropped.
-fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> StabPlan {
+/// subsections' output addresses, and those of dead subsections or ones
+/// coalesced away dropped. An N_GSYM names its symbol instead, with no
+/// address, and goes as the symbol does (see copy_global_stab).
+fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
+    let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
     // Entries whose n_value is an address in the object (n_sect
     // says which section); an N_FUN with an empty name holds the
@@ -354,25 +356,17 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> StabPlan 
         n.n_sect != 0
             && matches!(
                 n.n_type,
-                N_FUN
-                    | N_BNSYM
-                    | N_ENSYM
-                    | N_GSYM
-                    | N_STSYM
-                    | N_LCSYM
-                    | N_SLINE
-                    | N_ECOMM
-                    | N_ECOML
+                N_FUN | N_BNSYM | N_ENSYM | N_STSYM | N_LCSYM | N_SLINE | N_ECOMM | N_ECOML
             )
     };
     // The object's own local symbols by name, for the notes that
     // name them.
     let r = obj.local_range();
-    let locals: hashbrown::HashMap<&str, SymbolId> = obj.nlists[r.clone()]
+    let locals: hashbrown::HashMap<&str, (SymbolId, &NList)> = obj.nlists[r.clone()]
         .iter()
         .zip(&obj.symbols[r])
         .filter(|(n, _)| !n.is_stab())
-        .map(|(_, &id)| (ctx.symbols[id].name(), id))
+        .map(|(n, &id)| (ctx.symbols[id].name(), (id, n)))
         .collect();
     let mut skip_size = false;
     let mut in_unit = false;
@@ -396,16 +390,12 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> StabPlan 
         // would read as the name " ", and lldb then never sees
         // the unit's end.
         ent.n_strx = if name.is_empty() { 1 } else { 0 };
+        if nlist.n_type == N_GSYM {
+            out.extend(copy_global_stab(ctx, obj_idx, name, ent, &locals));
+            continue;
+        }
         if addressed(nlist) {
-            let placed = crate::input_files::find_symbol_subsec(
-                &ctx.isecs,
-                &obj.subsecs,
-                nlist.n_sect,
-                nlist.n_value,
-            )
-            .map(|(isec, off)| (ctx.resolve_isec(isec), off))
-            .filter(|&(isec, _)| ctx.isecs[isec].is_alive());
-            let Some((isec, off)) = placed else {
+            let Some((isec, off)) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value) else {
                 // Dead code: drop the note, and a function's size
                 // entry with it.
                 skip_size = nlist.n_type == N_FUN;
@@ -418,8 +408,8 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> StabPlan 
             continue;
         }
         let name_of = match nlist.n_type {
-            N_FUN | N_STSYM | N_GSYM | N_LCSYM if !name.is_empty() => {
-                locals.get(name).copied().or_else(|| ctx.symbols.get(name))
+            N_FUN | N_STSYM | N_LCSYM if !name.is_empty() => {
+                locals.get(name).map(|&(id, _)| id).or_else(|| ctx.symbols.get(name))
             }
             _ => None,
         };
@@ -428,33 +418,105 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> StabPlan 
     StabPlan { len: out.len(), fixed: out, ..Default::default() }
 }
 
+/// An N_GSYM copied from an earlier -r output, which ld-prime takes by
+/// the symbol it names: kept, with no address, if the object still
+/// defines the symbol, and dropped if another file's definition won.
+/// A symbol that is one of the object's locals - a private external
+/// the -r link demoted - gets an N_STSYM of its address instead, as it
+/// would have had in a unit with DWARF.
+fn copy_global_stab<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+    name: &'static str,
+    ent: NList,
+    locals: &hashbrown::HashMap<&str, (SymbolId, &NList)>,
+) -> Option<Stab> {
+    let obj = &ctx.objs[obj_idx];
+    if let Some(&(id, nlist)) = locals.get(name) {
+        let n_sect = if nlist.n_type() == N_ABS {
+            0
+        } else {
+            let (isec, _) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)?;
+            ctx.isec_n_sect(&ctx.isecs[isec])
+        };
+        let ent = NList { n_type: N_STSYM, n_sect, ..ent };
+        return Some(Stab { name: name.as_bytes(), ent, value_of: Some(id), name_of: Some(id) });
+    }
+    let id = ctx.symbols.get(name)?;
+    match ctx.symbols[id].file() {
+        Some(FileId::Obj(o)) if o as usize == obj_idx || ctx.is_internal(o as usize) => {
+            let ent = NList { n_sect: 0, n_value: 0, ..ent };
+            Some(Stab { name: name.as_bytes(), ent, value_of: None, name_of: Some(id) })
+        }
+        _ => None,
+    }
+}
+
+/// The live subsection holding an object's symbol or note at
+/// `n_sect`/`n_value`, with the offset in it, unless it was coalesced
+/// away (see is_coalesced_away): ld-prime notes the survivor's
+/// symbols only.
+fn noted_subsec<E: Target>(
+    ctx: &Context<E>,
+    obj: &ObjectFile,
+    n_sect: u8,
+    n_value: u64,
+) -> Option<(usize, u64)> {
+    let (isec, off) =
+        crate::input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, n_sect, n_value)?;
+    if is_coalesced_away(ctx, isec) {
+        return None;
+    }
+    let isec = ctx.resolve_isec(isec);
+    ctx.isecs[isec].is_alive().then_some((isec, off))
+}
+
+/// Whether a subsection gave way to another input's copy: a weak
+/// definition another file's won, or a function folded into an
+/// identical one. One the linker rewrote into a record of its own
+/// (a class's ro data after category merging) is still there.
+fn is_coalesced_away<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
+    let replacement = ctx.isecs[isec].replacement;
+    replacement != crate::input_sections::NO_REPLACEMENT
+        && !ctx.is_internal(ctx.isecs[replacement as usize].file as usize)
+}
+
 /// The entries that open an object's run of notes. ld64 opens each
-/// object's run with two N_SO entries, the compilation directory (with
-/// a trailing slash) and the source file, both from the DWARF compile
-/// unit; its own stab reader takes an N_SO with an empty name as the
-/// closing one, so a -r output without them crashed it. N_OSO then
-/// points at the object (or "archive(member)"), as an absolute path.
+/// object's run with two N_SO entries, the directory of the source file
+/// (with a trailing slash) and its leaf name, split at the last slash
+/// of its path in the DWARF compile unit: the unit's name, under its
+/// compilation directory unless absolute, joined as they are ("/" and
+/// "f.c" make "//" and "f.c"). Its own stab reader takes an N_SO with
+/// an empty name as the closing one, so a -r output without them
+/// crashed it. N_OSO then points at the object (or "archive(member)"),
+/// as an absolute path; a fat file's slice goes by the file's own.
 fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Path) -> Vec<Stab> {
     let mut out = Vec::new();
-    let (dir, file) = match crate::dwarf::compile_unit_name(obj.mf.data(), &obj.sect_hdrs) {
-        Some((dir, file)) => (dir, file),
+    let (dir, name) = match crate::dwarf::compile_unit_name(obj.mf.data(), &obj.sect_hdrs) {
+        Some((dir, name)) => (dir, name),
         None => {
             let leaf = obj.mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
             (Vec::new(), leaf.to_vec())
         }
     };
-    let mut dir = if dir.is_empty() { path_bytes(cwd).to_vec() } else { dir };
-    if !dir.ends_with(b"/") {
-        dir.push(b'/');
-    }
-    for name in [dir, file] {
-        out.push(Stab::new(leak_bytes(name), NList { n_type: N_SO, ..Default::default() }, None));
-    }
-    let mut oso_name: Vec<u8> = match obj.mf.parent {
-        Some(parent) if parent.name.is_absolute() => path_bytes(&obj.mf.name).to_vec(),
-        Some(_) | None if obj.mf.name.is_absolute() => path_bytes(&obj.mf.name).to_vec(),
-        _ => path_bytes(&cwd.join(&obj.mf.name)).to_vec(),
+    let path = if name.starts_with(b"/") {
+        name
+    } else {
+        let dir = if dir.is_empty() { path_bytes(cwd) } else { &dir };
+        [dir, b"/", &name].concat()
     };
+    let (dir, file) = path.split_at(path.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1));
+    for name in [dir, file] {
+        let name = leak_bytes(name.to_vec());
+        out.push(Stab::new(name, NList { n_type: N_SO, ..Default::default() }, None));
+    }
+    let path = match obj.mf.parent {
+        Some(parent) if parent.name.is_absolute() => obj.mf.name.clone(),
+        Some(_) | None if obj.mf.name.is_absolute() => obj.mf.name.clone(),
+        _ => cwd.join(&obj.mf.name),
+    };
+    let path = crate::input_files::without_fat_arch(path_bytes(&path));
+    let mut oso_name = path.clone();
     // -oso_prefix strips a leading path from every N_OSO, so
     // debug builds relocated to another machine (or built in a
     // sandbox) can still find their objects relative to a
@@ -476,7 +538,7 @@ fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Pat
     } else if let Some(date) = obj.mf.ar_date {
         date
     } else {
-        std::fs::metadata(&obj.mf.name)
+        std::fs::metadata(crate::util::os_str(&path))
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -490,40 +552,74 @@ fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Pat
     out
 }
 
-/// A symbol's debug notes, if it gets any.
+/// A symbol's debug notes, if it gets any. A symbol without a section
+/// has no address to note, but ld-prime notes an absolute one all the
+/// same: an external by name, a local with its value (in no section).
+/// A -r output keeps a common undefined; it is noted by name too.
 fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
+    obj: &ObjectFile,
     sym_id: crate::symbol::SymbolId,
-    is_extern: bool,
+    nlist: &NList,
     common: bool,
 ) -> Option<SymbolStabs> {
     let sym = &ctx.symbols[sym_id];
     let global = SymbolStabs { sym: sym_id, size: 0, n_sect: 0, n_type: N_GSYM };
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
-        // A -r output keeps a common undefined; it has no address.
-        return common.then_some(global);
+        return if common || (nlist.n_type() == N_ABS && nlist.is_extern()) {
+            Some(global)
+        } else if nlist.n_type() == N_ABS {
+            Some(SymbolStabs { n_type: N_STSYM, ..global })
+        } else {
+            None
+        };
     };
+    // The symbol has moved to the survivor if its subsection was
+    // coalesced away; its own is the one to look at.
+    if nlist.n_type() == N_SECT && noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value).is_none() {
+        return None;
+    }
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-    // ld-prime notes no exception tables' labels and no ivar offsets,
-    // nor the method lists it rewrote in the relative form, atoms of
-    // its own.
     let hdr = ctx.hdr_of(isec);
-    let text = hdr.segname_is("__TEXT");
-    if !isec.is_alive()
-        || (text && (hdr.sectname_is("__gcc_except_tab") || hdr.sectname_is("__objc_methlist")))
-        || (hdr.segname_is("__DATA") && hdr.sectname_is("__objc_ivar"))
-    {
+    if !isec.is_alive() || !has_stabs(hdr) {
         return None;
     }
     let n_sect = ctx.isec_n_sect(isec);
-    let is_text = text && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+    let is_text = hdr.segname_is("__TEXT")
+        && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
         SymbolStabs { size: isec.size, n_sect, n_type: N_FUN, ..global }
-    } else if is_extern {
+    } else if nlist.is_extern() {
         global
     } else {
         SymbolStabs { n_sect, n_type: N_STSYM, ..global }
     })
+}
+
+/// Whether ld-prime notes the symbols of an input section. It notes
+/// none in those whose contents it takes apart into atoms of its own:
+/// literals (C strings by the section type, as the 4-, 8- and 16-byte
+/// ones, and UTF-16 strings in __TEXT,__ustring), the initializer and
+/// terminator pointers, exception tables, and the Objective-C metadata
+/// it parses - the lists, the class, superclass, protocol and selector
+/// references, CFStrings and literal objects, ivar offsets, and the
+/// method lists it rewrote in the relative form. The metadata goes by
+/// the name clang gives it, in __DATA: a __DATA_CONST,__objc_protolist
+/// is noted like any other section.
+fn has_stabs(hdr: &MachSection) -> bool {
+    let literals = matches!(
+        hdr.section_type(),
+        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+    );
+    let init_term =
+        matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
+    let text = hdr.segname_is("__TEXT")
+        && (hdr.sectname_is("__gcc_except_tab") || hdr.sectname_is("__objc_methlist"));
+    let objc = hdr.segname_is("__DATA")
+        && ["__objc_ivar", "__objc_protolist", "__objc_protorefs", "__objc_superrefs"]
+            .iter()
+            .any(|name| hdr.sectname_is(name));
+    !(literals || init_term || text || objc || has_unnamed_atoms(hdr) || is_unnamed_objc_list(hdr))
 }
 
 /// The object whose stabs note each tentative definition that no real
