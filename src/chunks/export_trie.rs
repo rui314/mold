@@ -180,7 +180,7 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
     if ctx.args.without_dyld() {
         return Vec::new();
     }
-    let base = ctx.args.pagezero_size;
+    let base = ctx.mach_header.hdr.addr;
 
     // The caller hands over the defined globals already sorted by
     // name - the same list the symbol table emits, with what the

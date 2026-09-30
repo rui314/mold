@@ -33,7 +33,7 @@ impl Default for InitOffsetsSection {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &(isec, off)) in ctx.init_offsets.init_funcs.iter().enumerate() {
-        let val = (ctx.isec_addr(isec) + off - ctx.args.pagezero_size) as u32;
+        let val = (ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr) as u32;
         buf[i * 4..i * 4 + 4].copy_from_slice(&val.to_le_bytes());
     }
 }

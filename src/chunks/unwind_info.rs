@@ -39,7 +39,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..sec.contents.len()].copy_from_slice(&sec.contents);
     // Patch the personality cells now the GOT has addresses; the header
     // says where the array is (after the common encodings).
-    let base = ctx.args.pagezero_size;
+    let base = ctx.mach_header.hdr.addr;
     let personality_off = u32::from_le_bytes(sec.contents[12..16].try_into().unwrap()) as usize;
     for (i, &sym) in sec.personalities.iter().enumerate() {
         let off = personality_off + i * 4;
@@ -79,7 +79,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
     records.extend(bare_code_records(ctx, &records));
 
-    let base = ctx.args.pagezero_size;
+    let base = ctx.mach_header.hdr.addr;
     let func_addr = |r: &crate::input_files::UnwindRecord| {
         ctx.isec_addr(r.isec as usize) + r.input_offset as u64
     };
