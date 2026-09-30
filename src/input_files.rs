@@ -301,6 +301,25 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
     hdr.flags & S_ATTR_DEBUG != 0 || hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
 }
 
+/// The alignment of every record of a section of fixed-size records,
+/// whatever the section header says, as ld64 gives its atoms (with no
+/// modulus). A literal is aligned to its size: compilers emit
+/// __literal16 with p2align 3 for a 16-byte constant whose type is only
+/// 8-aligned, and rely on the linker to place it where a 16-byte load
+/// can reach it. An initializer or terminator pointer and a CFString
+/// constant are aligned to a pointer, even from a section that claims
+/// less or more, in a -r output as in an image.
+fn record_p2align(hdr: &MachSection) -> Option<u8> {
+    match hdr.section_type() {
+        S_4BYTE_LITERALS => Some(2),
+        S_8BYTE_LITERALS => Some(3),
+        S_16BYTE_LITERALS => Some(4),
+        S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => Some(3),
+        _ if hdr.segname() == "__DATA" && hdr.sectname() == "__cfstring" => Some(3),
+        _ => None,
+    }
+}
+
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
 /// know. It reads only __LD,__compact_unwind and drops any other with a
 /// warning; a symbol defined in one is gone.
@@ -729,18 +748,7 @@ impl StagedObject {
             points.sort_unstable();
             points.dedup();
 
-            // A fixed-size literal is aligned to its size, whatever the
-            // section header says: ld64's Literal{4,8,16}Section gives
-            // every atom Alignment(2/3/4) with no modulus. Compilers
-            // emit __literal16 with p2align 3 for a 16-byte constant
-            // whose type is only 8-aligned, and rely on the linker to
-            // place it where a 16-byte load can reach it.
-            let literal_p2align = match sect.section_type() {
-                S_4BYTE_LITERALS => Some(2u8),
-                S_8BYTE_LITERALS => Some(3),
-                S_16BYTE_LITERALS => Some(4),
-                _ => None,
-            };
+            let record_p2align = record_p2align(sect);
             let is_zerofill = matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL);
 
             let first = self.isecs.len();
@@ -755,7 +763,7 @@ impl StagedObject {
                 self.isecs.push(InputSection {
                     file: u32::MAX,
                     shndx: i as u32,
-                    p2align: literal_p2align.unwrap_or(sect.p2align as u8),
+                    p2align: record_p2align.unwrap_or(sect.p2align as u8),
                     input_addr: start as u32,
                     size: (end - start) as u32,
                     contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },
@@ -765,7 +773,7 @@ impl StagedObject {
                     offset: 0,
                     flags: if bare[i] {
                         InputSection::flags_dead()
-                    } else if literal_p2align.is_some() {
+                    } else if record_p2align.is_some() {
                         InputSection::flags_alive_no_modulus()
                     } else {
                         InputSection::flags_alive()

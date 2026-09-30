@@ -206,8 +206,8 @@ const IS_VISITED: u8 = 1 << 1;
 /// an output section by name.
 const IS_PLACED: u8 = 1 << 2;
 /// The subsection starts at a multiple of its alignment regardless of
-/// its input offset: a fixed-size literal, which ld64 aligns to the
-/// literal size with no modulus.
+/// its input offset: a fixed-size record (a literal, an initializer
+/// pointer, a CFString), which ld64 aligns with no modulus.
 const NO_MODULUS: u8 = 1 << 3;
 /// A literal record a symbol names: ld-prime keeps it an atom of its own,
 /// merged with no identical copy, and a -r output keeps its label.
