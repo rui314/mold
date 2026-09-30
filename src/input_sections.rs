@@ -875,7 +875,9 @@ impl<E: Target> InputSection<E> {
     }
 
     /// Test if the symbol a given relocation refers to has already been resolved.
-    /// If not, record that error and returns true.
+    /// If not, record that error and returns true, so that the caller skips the
+    /// relocation. With --noinhibit-exec, the error is reported as a warning and
+    /// we create an output file anyway, so the relocation has to be processed.
     #[inline(always)]
     pub fn record_undef_error(&self, ctx: &Context<E>, rel: &ElfRel<E>) -> bool {
         let file = &ctx.objs[self.file.index()];
@@ -921,9 +923,6 @@ impl<E: Target> InputSection<E> {
         if is_undef && sym.is_undef() {
             match ctx.args.unresolved_symbols {
                 UnresolvedKind::Error if !sym.is_imported() => {
-                    // With --noinhibit-exec, the error is reported as a warning
-                    // and we create an output file anyway, so the relocation has
-                    // to be processed as it is with --warn-unresolved-symbols.
                     self.record_undefined_reference(ctx, file, rel, sym_id);
                     return !crate::error::noinhibit_exec();
                 }
@@ -949,6 +948,12 @@ impl<E: Target> InputSection<E> {
         );
         if let Some(owner) = find_comdat_owner(ctx, file, rel.r_sym() as usize) {
             write!(msg, "\n>>> prevailing definition is in {}", ctx.objs[owner.index()]).unwrap();
+        }
+
+        // The symbol has no definition to refer to, so we can't create an
+        // output file even with --noinhibit-exec.
+        if crate::error::noinhibit_exec() {
+            fatal!("{msg}");
         }
         error!("{msg}");
     }
