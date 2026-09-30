@@ -128,6 +128,46 @@ fn write_thm_mov<E: Target>(loc: &mut [u8], val: u32) {
     E::write_u16(&mut loc[2..], second);
 }
 
+/// Writes an offset to an ARM LDR (immediate), whose U bit selects whether
+/// the 12-bit immediate is added to or subtracted from the base register.
+fn write_arm_ldr<E: Target>(loc: &mut [u8], val: i64) {
+    let u = if val < 0 { 0 } else { 1 << 23 };
+    E::write_u32(loc, (E::read_u32(loc) & 0xff7f_f000) | u | b(val.unsigned_abs(), 11, 0));
+}
+
+/// Writes an offset to an ARM ADD or SUB (immediate), making it an ADD or
+/// SUB by the offset's sign. The immediate is an 8-bit constant rotated
+/// right by an even number of bits. Like GNU ld and lld, we put the most
+/// significant bits of the offset in the constant, so this returns false
+/// if the offset has a set bit below them.
+fn write_arm_alu<E: Target>(loc: &mut [u8], val: i64) -> bool {
+    let imm = val.unsigned_abs() as u32;
+    let shift = (imm.checked_ilog2().unwrap_or(0) & !1).saturating_sub(6);
+    let rot = (32 - shift) % 32 / 2;
+    let op = if val < 0 { 0x0040_0000 } else { 0x0080_0000 };
+    E::write_u32(loc, (E::read_u32(loc) & 0xff3f_f000) | op | (rot << 8) | (imm >> shift));
+    imm.trailing_zeros() >= shift
+}
+
+/// Writes an offset to a Thumb LDR (literal), whose U bit selects whether
+/// the 12-bit immediate is added to or subtracted from the PC.
+fn write_thm_ldr<E: Target>(loc: &mut [u8], val: i64) {
+    let u = if val < 0 { 0 } else { 0x80 };
+    E::write_u16(loc, (E::read_u16(loc) & 0xff7f) | u);
+    let second = (thm2::<E>(loc) & 0xf000) | b(val.unsigned_abs(), 11, 0) as u16;
+    E::write_u16(&mut loc[2..], second);
+}
+
+/// Writes an offset to a Thumb ADR, which is an alias of ADDW or SUBW with
+/// the PC as the base, choosing between the two by the offset's sign.
+fn write_thm_adr<E: Target>(loc: &mut [u8], val: i64) {
+    let imm = val.unsigned_abs();
+    let sub = if val < 0 { 0xa0 } else { 0 };
+    E::write_u16(loc, ((E::read_u16(loc) & 0xfb0f) as u32 | sub | (bt(imm, 11) << 10)) as u16);
+    let second = ((thm2::<E>(loc) & 0x8f00) as u32 | (b(imm, 10, 8) << 12) | b(imm, 7, 0)) as u16;
+    E::write_u16(&mut loc[2..], second);
+}
+
 /// Sets the second halfword's bit that turns a Thumb BLX into a BL, or
 /// clears it for the reverse.
 fn set_thm_bl<E: Target>(loc: &mut [u8], is_bl: bool) {
@@ -378,15 +418,24 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             }
 
             match rel.r_type() {
-                R_ARM_MOVW_ABS_NC | R_ARM_THM_MOVW_ABS_NC => scan_absrel(ctx, isec, sym, &rel),
+                R_ARM_ABS8 | R_ARM_ABS16 | R_ARM_MOVW_ABS_NC | R_ARM_THM_MOVW_ABS_NC => {
+                    scan_absrel(ctx, isec, sym, &rel)
+                }
                 R_ARM_THM_CALL | R_ARM_CALL | R_ARM_JUMP24 | R_ARM_PLT32 | R_ARM_THM_JUMP24 => {
                     if sym.is_imported() {
                         sym.add_flags(NEEDS_PLT);
                     }
                 }
                 R_ARM_GOT_PREL | R_ARM_GOT_BREL | R_ARM_TARGET2 => sym.add_flags(NEEDS_GOT),
-                R_ARM_REL32 | R_ARM_MOVT_PREL | R_ARM_THM_MOVT_PREL | R_ARM_PREL31
-                | R_ARM_GOTOFF32 => scan_pcrel(ctx, isec, sym, &rel),
+                R_ARM_REL32
+                | R_ARM_MOVT_PREL
+                | R_ARM_THM_MOVT_PREL
+                | R_ARM_PREL31
+                | R_ARM_GOTOFF32
+                | R_ARM_LDR_PC_G0
+                | R_ARM_ALU_PC_G0
+                | R_ARM_THM_PC12
+                | R_ARM_THM_ALU_PREL_11_0 => scan_pcrel(ctx, isec, sym, &rel),
                 R_ARM_TLS_GD32 => sym.add_flags(NEEDS_TLSGD),
                 R_ARM_TLS_LDM32 => {
                     ctx.needs_tlsld.store(true, std::sync::atomic::Ordering::Relaxed)
@@ -462,7 +511,41 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             let write16 = |loc: &mut [u8], v: u16| Self::write_u16(loc, v);
 
             match rel.r_type() {
+                R_ARM_ABS8 => {
+                    check(sa as i64, -(1 << 7), 1 << 8);
+                    loc[0] = sa as u8;
+                }
+                R_ARM_ABS16 => {
+                    check(sa as i64, -(1 << 15), 1 << 16);
+                    write16(loc, sa as u16);
+                }
                 R_ARM_REL32 => write32(loc, pcrel as u32),
+                R_ARM_LDR_PC_G0 => {
+                    check(pcrel as i64, -0xfff, 0x1000);
+                    write_arm_ldr::<Self>(loc, pcrel as i64);
+                }
+                R_ARM_ALU_PC_G0 => {
+                    let val = (sa | t).wrapping_sub(p) as i64;
+                    if !write_arm_alu::<Self>(loc, val) {
+                        error!(
+                            "{}: relocation {} against {} cannot encode offset {val}",
+                            isec.display(file),
+                            rel.type_name::<Self>(),
+                            sym
+                        );
+                    }
+                }
+                // Thumb PC-relative loads and ADR use the PC aligned down to 4.
+                R_ARM_THM_PC12 => {
+                    let val = sa.wrapping_sub(p & !3) as i64;
+                    check(val, -0xfff, 0x1000);
+                    write_thm_ldr::<Self>(loc, val);
+                }
+                R_ARM_THM_ALU_PREL_11_0 => {
+                    let val = (sa | t).wrapping_sub(p & !3) as i64;
+                    check(val, -0xfff, 0x1000);
+                    write_thm_adr::<Self>(loc, val);
+                }
                 R_ARM_THM_CALL => {
                     if sym.is_remaining_undef_weak() {
                         // On ARM, calling an weak undefined symbol jumps to the
@@ -770,6 +853,14 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1
             | R_ARM_TARGET2 => Self::write_u32(loc, val as u32),
+            R_ARM_ABS8 => loc[0] = val as u8,
+            R_ARM_ABS16 => Self::write_u16(loc, val as u16),
+            R_ARM_LDR_PC_G0 => write_arm_ldr::<Self>(loc, val),
+            R_ARM_ALU_PC_G0 => {
+                write_arm_alu::<Self>(loc, val);
+            }
+            R_ARM_THM_PC12 => write_thm_ldr::<Self>(loc, val),
+            R_ARM_THM_ALU_PREL_11_0 => write_thm_adr::<Self>(loc, val),
             R_ARM_THM_JUMP8 => {
                 Self::write_u16(loc, (Self::read_u16(loc) & 0xff00) | b(v, 8, 1) as u16)
             }
@@ -806,6 +897,27 @@ impl<const LE: bool> Target for Arm32Target<LE> {
             | R_ARM_GOT_BREL | R_ARM_TLS_GD32 | R_ARM_TLS_LDM32 | R_ARM_TLS_LDO32
             | R_ARM_TLS_IE32 | R_ARM_TLS_LE32 | R_ARM_TLS_GOTDESC | R_ARM_TARGET1
             | R_ARM_TARGET2 => Self::read_u32(loc) as i32 as i64,
+            R_ARM_ABS8 => loc[0] as i8 as i64,
+            R_ARM_ABS16 => Self::read_u16(loc) as i16 as i64,
+            R_ARM_LDR_PC_G0 => {
+                let imm = bits(arm(), 11, 0) as i64;
+                if bit(arm(), 23) != 0 { imm } else { -imm }
+            }
+            R_ARM_ALU_PC_G0 => {
+                let imm = b(arm(), 7, 0).rotate_right(b(arm(), 11, 8) * 2) as i64;
+                if bit(arm(), 22) != 0 { -imm } else { imm }
+            }
+            R_ARM_THM_PC12 => {
+                let imm = bits(thm(1), 11, 0) as i64;
+                if bit(thm(0), 7) != 0 { imm } else { -imm }
+            }
+            R_ARM_THM_ALU_PREL_11_0 => {
+                let i = bit(thm(0), 10);
+                let imm3 = bits(thm(1), 14, 12);
+                let imm8 = bits(thm(1), 7, 0);
+                let imm = ((i << 11) | (imm3 << 8) | imm8) as i64;
+                if bit(thm(0), 7) != 0 { -imm } else { imm }
+            }
             R_ARM_THM_JUMP8 => sign_extend(thm(0), 8) << 1,
             R_ARM_THM_JUMP11 => sign_extend(thm(0), 11) << 1,
             R_ARM_THM_JUMP19 => {
