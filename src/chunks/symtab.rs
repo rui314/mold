@@ -106,14 +106,14 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// plain locals, `stabs` gives where the notes start and the symbol
 /// each one names, and [nlocal, len) are the externals. Returns every
 /// string written with its offset, and the table's size, padded to 8.
-pub fn layout_strings(
+pub fn layout_strings<'a>(
     entries: &mut [(NList, Option<SymbolId>)],
-    names: &[&'static [u8]],
+    names: &[&'a [u8]],
     nplain: usize,
     stabs: (usize, &[Option<SymbolId>]),
     nlocal: usize,
     nsyms: usize,
-) -> (Vec<(u32, &'static [u8])>, usize) {
+) -> (Vec<(u32, &'a [u8])>, usize) {
     use std::sync::atomic::{AtomicU32, Ordering};
     let n = entries.len();
 

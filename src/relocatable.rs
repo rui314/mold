@@ -319,16 +319,6 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         })
         .collect();
 
-    // The output symbol table: locals per object, then defined
-    // externals, then undefineds, with an index map for relocations.
-    let mut strtab: Vec<u8> = vec![b' ', 0];
-    let add_string = |strtab: &mut Vec<u8>, s: &[u8]| -> u32 {
-        let off = strtab.len() as u32;
-        strtab.extend_from_slice(s);
-        strtab.push(0);
-        off
-    };
-
     // Section ordinals are 1-based positions among the emitted
     // sections, synthetic ones included.
     let mut extra_ordinals = vec![0u8; extras.len()];
@@ -338,407 +328,18 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             Sect::Extra(e) => extra_ordinals[e] = i as u8 + 1,
         }
     }
-    let mut nlists_out: Vec<NList> = Vec::new();
-    let mut index_of_sym: HashMap<crate::symbol::SymbolId, u32> = HashMap::new();
-
-    let sym_addr = |ctx: &Context<E>, id: crate::symbol::SymbolId| -> u64 {
-        let sym = &ctx.symbols[id];
-        match sym.input_section() {
-            Some(isec) => {
-                let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-                ctx.chunk_header(isec.output_section().unwrap()).addr
-                    + isec.offset as u64
-                    + sym.value
-            }
-            None => sym.value,
-        }
-    };
-
-    // Debug-note stabs first, as in a final link: ld64 does not merge
-    // the inputs' DWARF into a -r output, it names the objects that
-    // hold it (N_OSO) and where their symbols landed, and a later link
-    // carries the notes through.
-    if !ctx.args.strip_debug {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let commons = crate::passes::common_stab_owners(ctx);
-        for obj_idx in 0..ctx.objs.len() {
-            for stab in crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons) {
-                let mut ent = stab.ent;
-                if let Some(id) = stab.value_of {
-                    ent.n_value = sym_addr(ctx, id);
-                }
-                ent.n_strx = add_string(&mut strtab, stab.name);
-                nlists_out.push(ent);
-            }
-        }
-    }
-
-    // Local symbols, in ld64's form. ld64 -r emits them in atom order
-    // (by address), and names some atoms itself with one shared
-    // counter: every string in a cstring-literal section becomes LC<n>
-    // (N_PEXT set, so a later link can still coalesce it), and the
-    // anonymous records of __cfstring, __objc_selrefs and
-    // __objc_classrefs (N_PEXT) and of the __objc_*list sections (no
-    // N_PEXT) become l<nnn>. Their original labels vanish, and
-    // relocations against them - by label, or section-relative as
-    // x86-64 objects refer to literals - are re-targeted at the new
-    // symbols. Otherwise assembler-local labels (L...) and
-    // linker-private ones (l...) survive only when they name an atom
-    // of their own: one no other symbol names, or that a relocation
-    // refers to (the arm64 assembler names every section-relative
-    // target ltmpN). Dropping the rest is the bulk of what made our
-    // -r symbol tables larger than ld-prime's (7739 vs 6540 symbols
-    // for NetNewsWire's RSCore.o). Private externals are demoted to
-    // non-external symbols that keep N_PEXT (below).
-    #[derive(Clone, Copy, PartialEq)]
-    enum Rename {
-        None,
-        Cstring,
-        Anon,
-    }
-    struct Local {
-        name: String,
-        n_type: u8,
-        n_desc: u16,
-        n_sect: u8,
-        addr: u64,
-        rename: Rename,
-        syms: Vec<crate::symbol::SymbolId>,
-    }
-    let mut locals: Vec<Local> = Vec::new();
-
-    // The sections whose atoms ld64 names itself, as private
-    // externals: the record size; 0 for one record per subsection, as
-    // cstring literals are split.
-    let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<u64> {
-        if flags & SECTION_TYPE == S_CSTRING_LITERALS {
-            return Some(0);
-        }
-        match (segname, sectname) {
-            ("__DATA", "__cfstring") => Some(32),
-            ("__DATA", "__objc_selrefs") | ("__DATA", "__objc_classrefs") => Some(8),
-            _ => None,
-        }
-    };
-    // The entries of the __objc_*list sections get no symbol at all
-    // (ld-prime): their labels vanish.
-    let unnamed_list = |isec: usize| -> bool {
-        let h = ctx.hdr_of(&ctx.isecs[isec]);
-        h.segname() == "__DATA"
-            && matches!(
-                h.sectname(),
-                "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
-            )
-    };
-    // (subsection, record index) -> entry in `locals`; and the record
-    // size of each such output section.
-    let mut renamed: HashMap<(usize, u64), usize> = HashMap::new();
-    let mut entsize_of: HashMap<OutputSectionId, u64> = HashMap::new();
-    for &chunk_idx in &section_chunks {
-        let chunk = ctx.output_section(chunk_idx);
-        let Some(entsize) = rename_kind(chunk.hdr.flags, chunk.hdr.segname, &chunk.hdr.sectname)
-        else {
-            continue;
-        };
-        entsize_of.insert(chunk_idx, entsize);
-        for &id in &chunk.members {
-            let id = id as usize;
-            let isec = &ctx.isecs[id];
-            if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
-                continue;
-            }
-            let size = isec.data().len() as u64;
-            if size == 0 {
-                continue;
-            }
-            let n = if entsize == 0 { 1 } else { size.div_ceil(entsize) };
-            for k in 0..n {
-                renamed.insert((id, k), locals.len());
-                locals.push(Local {
-                    name: String::new(),
-                    n_type: N_PEXT | N_SECT,
-                    n_desc: section_desc(ctx, id),
-                    n_sect: chunk.hdr.n_sect,
-                    addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
-                    rename: if entsize == 0 { Rename::Cstring } else { Rename::Anon },
-                    syms: Vec::new(),
-                });
-            }
-        }
-    }
-    // The atom a relocation into one of those sections lands in.
-    let atom_target = |t: usize, addend: i64| -> Option<usize> {
+    let RSymtab { nlists: nlists_out, strtab, index_of_sym, atoms, entsize_of } =
+        build_symtab(ctx, &section_chunks);
+    // The atom a relocation into a section whose atoms ld64 names lands
+    // in: its symbol's index and address.
+    let atom_target = |t: usize, addend: i64| -> Option<(u32, u64)> {
         let ChunkId::Output(osec) = ctx.isecs[t].output_section()? else {
             return None;
         };
         let entsize = *entsize_of.get(&osec)?;
         let k = (addend as u64).checked_div(entsize).unwrap_or(0);
-        renamed.get(&(t, k)).copied()
+        atoms.get(&(t, k)).copied()
     };
-
-    let mut referenced: HashSet<crate::symbol::SymbolId> = HashSet::new();
-    for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-            if let RelocTarget::Sym(idx) = rel.target() {
-                referenced.insert(ctx.objs[isec.file as usize].symbols[idx as usize]);
-            }
-        }
-    }
-    // How many symbols other than assembler temporaries (ltmpN) an
-    // object defines at each place, so a label there is recognized as
-    // an alias of a real name.
-    let mut named_at: HashMap<(usize, u8, u64), u32> = HashMap::new();
-    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive {
-            continue;
-        }
-        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.is_stab() || nlist.n_type() != N_SECT {
-                continue;
-            }
-            if !ctx.symbols[sym_id].name().starts_with("ltmp") {
-                *named_at.entry((obj_idx, nlist.n_sect, nlist.n_value)).or_default() += 1;
-            }
-        }
-    }
-    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive {
-            continue;
-        }
-        // Without subsections the object's sections are whole atoms,
-        // which ld64 marks no-dead-strip - every symbol, the
-        // assembler's ltmpN labels (they name the atoms) included -
-        // and an alt entry means nothing there.
-        let whole = !obj.subsections_via_symbols;
-        let r = obj.local_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if nlist.is_stab() || nlist.is_extern() {
-                continue;
-            }
-            let sym = &ctx.symbols[sym_id];
-            let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
-            let isec = ctx.resolve_isec(input);
-            if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
-                continue;
-            }
-            // A label on an atom ld64 names itself stands for that atom.
-            if let Some(e) = atom_target(isec, sym.value as i64) {
-                locals[e].syms.push(sym_id);
-                continue;
-            }
-            if unnamed_list(isec) && !referenced.contains(&sym_id) {
-                continue;
-            }
-            let is_label = sym.name().starts_with('l') || sym.name().starts_with('L');
-            if is_label && !whole && !referenced.contains(&sym_id) {
-                let others =
-                    named_at.get(&(obj_idx, nlist.n_sect, nlist.n_value)).copied().unwrap_or(0)
-                        - u32::from(!sym.name().starts_with("ltmp"));
-                if others > 0 {
-                    continue;
-                }
-                // A label on an empty section names nothing.
-                if obj.sect_hdrs.get(nlist.n_sect as usize - 1).is_some_and(|h| h.size == 0) {
-                    continue;
-                }
-            }
-            locals.push(Local {
-                name: sym.name().to_string(),
-                n_type: nlist.n_type,
-                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
-                n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
-                addr: sym_addr(ctx, sym_id),
-                rename: Rename::None,
-                syms: vec![sym_id],
-            });
-        }
-    }
-    // Private externals (visibility hidden) become non-external
-    // symbols in a -r output, as in ld64 - N_PEXT still set, which nm
-    // reports as "was a private external" - unless
-    // -keep_private_externs (which Apple's strip passes to the `ld -r`
-    // it runs on each archive member).
-    let keep_pext = ctx.args.keep_private_externs;
-    if !keep_pext {
-        for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive {
-                continue;
-            }
-            let r = obj.global_range();
-            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                let sym = &ctx.symbols[sym_id];
-                // Only the copy that won resolution is emitted.
-                if nlist.is_stab()
-                    || !nlist.is_extern()
-                    || !sym.is_private_extern()
-                    || !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
-                {
-                    continue;
-                }
-                let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
-                let isec = ctx.resolve_isec(input);
-                if !ctx.isecs[isec].is_alive() {
-                    continue;
-                }
-                locals.push(Local {
-                    name: sym.name().to_string(),
-                    n_type: N_PEXT | N_SECT,
-                    n_desc: whole_desc(
-                        nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
-                        !obj.subsections_via_symbols,
-                    ) | section_desc(ctx, input),
-                    n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
-                    addr: sym_addr(ctx, sym_id),
-                    rename: Rename::None,
-                    syms: vec![sym_id],
-                });
-            }
-        }
-    }
-    // Atom order, the linker-named atoms numbered in it.
-    let mut order: Vec<usize> = (0..locals.len()).collect();
-    order.sort_by_key(|&i| locals[i].addr);
-    let mut entry_symnum: Vec<u32> = vec![0; locals.len()];
-    let mut counter = 1u32;
-    for &i in &order {
-        let l = &mut locals[i];
-        match l.rename {
-            Rename::None => {}
-            Rename::Cstring => {
-                l.name = format!("LC{counter}");
-                counter += 1;
-            }
-            Rename::Anon => {
-                l.name = format!("l{counter:03}");
-                counter += 1;
-            }
-        }
-        let symnum = nlists_out.len() as u32;
-        entry_symnum[i] = symnum;
-        for &sym_id in &l.syms {
-            index_of_sym.insert(sym_id, symnum);
-        }
-        nlists_out.push(NList {
-            n_strx: add_string(&mut strtab, l.name.as_bytes()),
-            n_type: l.n_type,
-            n_sect: l.n_sect,
-            n_desc: l.n_desc,
-            n_value: l.addr,
-        });
-    }
-
-    // The n_desc flags a defined global carries in its object, which the
-    // next link needs as much as this one did. N_ALT_ENTRY is the
-    // critical one: it marks a symbol that does not begin a new
-    // subsection (Swift's class metadata symbol $s..CN is an alt entry
-    // into the full-metadata object $s..CMf, referenced as CMf+0x18),
-    // and a link that splits there re-aligns the tail and moves the
-    // symbol away from every non-symbolic reference to it.
-    let mut desc_of: HashMap<crate::symbol::SymbolId, u16> = HashMap::new();
-    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive {
-            continue;
-        }
-        let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab()
-                && nlist.is_extern()
-                && nlist.n_type() != N_UNDF
-                && matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
-            {
-                desc_of.insert(sym_id, nlist.n_desc);
-            }
-        }
-    }
-
-    // Defined externals, sorted by name.
-    let mut globals: Vec<usize> = (0..ctx.symbols.syms.len())
-        .filter(|&i| {
-            let sym = &ctx.symbols[i];
-            sym.is_extern()
-                && (keep_pext || !sym.is_private_extern())
-                && matches!(sym.file(), Some(FileId::Obj(_)))
-                && sym
-                    .input_section()
-                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
-        })
-        .collect();
-    globals.sort_by_key(|&i| ctx.symbols[i].name());
-    for &i in &globals {
-        let sym = &ctx.symbols[i];
-        let (n_type, n_sect) = match sym.input_section() {
-            Some(isec) => (
-                N_SECT | N_EXT | if sym.is_private_extern() { N_PEXT } else { 0 },
-                ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]),
-            ),
-            None => (N_ABS | N_EXT, 0),
-        };
-        // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
-        // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
-        // makes PLCrashReporter's template instantiations local; ours
-        // stayed exported after the -r prelink lost the marker).
-        let mut n_desc = desc_of.get(&(i as u32)).copied().unwrap_or(0)
-            & (N_WEAK_DEF
-                | N_WEAK_REF
-                | N_ALT_ENTRY
-                | N_NO_DEAD_STRIP
-                | N_SYMBOL_RESOLVER
-                | N_COLD_FUNC
-                | REFERENCED_DYNAMICALLY);
-        if sym.is_weak_def() {
-            n_desc |= N_WEAK_DEF;
-        }
-        if let Some(FileId::Obj(o)) = sym.file()
-            && !ctx.objs[o as usize].subsections_via_symbols
-        {
-            n_desc = whole_desc(n_desc, true);
-        }
-        if let Some(input) = sym.input_section() {
-            n_desc |= section_desc(ctx, input as usize);
-        }
-        index_of_sym.insert(i as u32, nlists_out.len() as u32);
-        nlists_out.push(NList {
-            n_strx: add_string(&mut strtab, sym.name().as_bytes()),
-            n_type,
-            n_sect,
-            n_desc,
-            n_value: sym_addr(ctx, i as u32),
-        });
-    }
-
-    // Undefined and tentative symbols, sorted by name.
-    let mut undefs: Vec<usize> = (0..ctx.symbols.syms.len())
-        .filter(|&i| {
-            let sym = &ctx.symbols[i];
-            sym.is_used() && (!sym.is_defined() || sym.is_common())
-        })
-        .collect();
-    undefs.sort_by_key(|&i| ctx.symbols[i].name());
-    for &i in &undefs {
-        let sym = &ctx.symbols[i];
-        let mut n_desc = 0;
-        let mut n_value = 0;
-        if sym.is_common() {
-            n_value = sym.value;
-            n_desc |= (sym.common_p2align as u16) << 8;
-        } else if sym.is_weak_ref() {
-            n_desc |= N_WEAK_REF;
-        }
-        index_of_sym.insert(i as u32, nlists_out.len() as u32);
-        nlists_out.push(NList {
-            n_strx: add_string(&mut strtab, sym.name().as_bytes()),
-            n_type: N_UNDF | N_EXT,
-            n_sect: 0,
-            n_desc,
-            n_value,
-        });
-    }
-    while !strtab.len().is_multiple_of(8) {
-        strtab.push(0);
-    }
 
     // Re-synthesize __LD,__compact_unwind so unwind info survives the
     // merge: one 32-byte entry per record, its pointer fields set by
@@ -945,10 +546,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     }
                     RelocTarget::Section(target) => {
                         let target = ctx.resolve_isec(target as usize);
-                        if let Some(e) = atom_target(target, rel.addend) {
+                        if let Some((symnum, _)) = atom_target(target, rel.addend) {
                             rels.push(MachRel {
                                 r_address,
-                                bits: entry_symnum[e]
+                                bits: symnum
                                     | ((rel.is_pcrel as u32) << 24)
                                     | (length << 25)
                                     | (1 << 27)
@@ -1261,11 +862,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     + t.offset as u64
                     + rel.addend as u64;
                 let loc = dst + rel.offset as usize;
-                if let Some(e) = atom_target(target, rel.addend) {
+                if let Some((_, atom_addr)) = atom_target(target, rel.addend) {
                     // Now a relocation against the atom's symbol: the
                     // field holds the addend relative to it, in the
                     // form an object's extern relocation uses.
-                    let mut val = (target_addr - locals[e].addr) as i64;
+                    let mut val = (target_addr - atom_addr) as i64;
                     if rel.is_pcrel {
                         val -= E::reloc_bias(rel.r_type);
                     }
@@ -1328,4 +929,474 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     crate::error::checkpoint();
     output_file::write(&ctx.args.output, &buf);
+}
+
+/// A -r output's symbol and string tables, and where relocations find
+/// the atoms ld64 names itself.
+struct RSymtab {
+    nlists: Vec<NList>,
+    strtab: Vec<u8>,
+    index_of_sym: HashMap<crate::symbol::SymbolId, u32>,
+    /// The linker-named atoms by (subsection, record index): each one's
+    /// symbol index and address.
+    atoms: HashMap<(usize, u64), (u32, u64)>,
+    /// The record size of each output section whose atoms are named; 0
+    /// for one record per subsection.
+    entsize_of: HashMap<OutputSectionId, u64>,
+}
+
+/// Builds a -r output's symbol table as ld-prime lays it out: each
+/// object's local symbols in the order of its sections and of their
+/// addresses in each (a zerofill section comes by ordinal), then
+/// the stabs, opened by an N_SO of their own, then the defined
+/// externals and the undefined symbols, each by name. Names at one
+/// address go by rank - a private external, a local, a weak definition,
+/// an ltmpN label - each rank by descending name.
+fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId]) -> RSymtab {
+    const PEXT: u8 = 0;
+    const LOCAL: u8 = 1;
+    const WEAK: u8 = 2;
+    const LTMP: u8 = 3;
+    let sym_addr = |ctx: &Context<E>, id: crate::symbol::SymbolId| -> u64 {
+        let sym = &ctx.symbols[id];
+        match sym.input_section() {
+            Some(isec) => {
+                let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
+                ctx.chunk_header(isec.output_section().unwrap()).addr
+                    + isec.offset as u64
+                    + sym.value
+            }
+            None => sym.value,
+        }
+    };
+    let mut index_of_sym: HashMap<crate::symbol::SymbolId, u32> = HashMap::new();
+    let mut ents: Vec<(NList, Option<crate::symbol::SymbolId>)> = Vec::new();
+    let mut names: Vec<&[u8]> = Vec::new();
+
+    // Local symbols, in ld64's form. ld64 -r emits them in atom order
+    // (by address), and names some atoms itself with one shared
+    // counter: every string in a cstring-literal section becomes LC<n>
+    // (N_PEXT set, so a later link can still coalesce it), and the
+    // anonymous records of __cfstring, __objc_selrefs and
+    // __objc_classrefs (N_PEXT) and of the __objc_*list sections (no
+    // N_PEXT) become l<nnn>. Their original labels vanish, and
+    // relocations against them - by label, or section-relative as
+    // x86-64 objects refer to literals - are re-targeted at the new
+    // symbols. Otherwise assembler-local labels (L...) and
+    // linker-private ones (l...) survive only when they name an atom
+    // of their own: one no other symbol names, or that a relocation
+    // refers to (the arm64 assembler names every section-relative
+    // target ltmpN). Dropping the rest is the bulk of what made our
+    // -r symbol tables larger than ld-prime's (7739 vs 6540 symbols
+    // for NetNewsWire's RSCore.o). Private externals are demoted to
+    // non-external symbols that keep N_PEXT (below).
+    #[derive(Clone, Copy, PartialEq)]
+    enum Rename {
+        None,
+        Cstring,
+        Anon,
+    }
+    struct Local {
+        name: String,
+        n_type: u8,
+        n_desc: u16,
+        n_sect: u8,
+        addr: u64,
+        rename: Rename,
+        syms: Vec<crate::symbol::SymbolId>,
+        /// The object, the section there and the address, which order
+        /// the locals.
+        at: (u32, u8, u64),
+        rank: u8,
+    }
+    let mut locals: Vec<Local> = Vec::new();
+
+    // The sections whose atoms ld64 names itself, as private
+    // externals: the record size; 0 for one record per subsection, as
+    // cstring literals are split.
+    let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<u64> {
+        if flags & SECTION_TYPE == S_CSTRING_LITERALS {
+            return Some(0);
+        }
+        match (segname, sectname) {
+            ("__DATA", "__cfstring") => Some(32),
+            ("__DATA", "__objc_selrefs") | ("__DATA", "__objc_classrefs") => Some(8),
+            _ => None,
+        }
+    };
+    // The entries of the __objc_*list sections get no symbol at all
+    // (ld-prime): their labels vanish.
+    let unnamed_list = |isec: usize| -> bool {
+        let h = ctx.hdr_of(&ctx.isecs[isec]);
+        h.segname() == "__DATA"
+            && matches!(
+                h.sectname(),
+                "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
+            )
+    };
+    // (subsection, record index) -> entry in `locals`; and the record
+    // size of each such output section.
+    let mut renamed: HashMap<(usize, u64), usize> = HashMap::new();
+    let mut entsize_of: HashMap<OutputSectionId, u64> = HashMap::new();
+    for &chunk_idx in section_chunks {
+        let chunk = ctx.output_section(chunk_idx);
+        let Some(entsize) = rename_kind(chunk.hdr.flags, chunk.hdr.segname, &chunk.hdr.sectname)
+        else {
+            continue;
+        };
+        entsize_of.insert(chunk_idx, entsize);
+        for &id in &chunk.members {
+            let id = id as usize;
+            let isec = &ctx.isecs[id];
+            if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+                continue;
+            }
+            let size = isec.data().len() as u64;
+            if size == 0 {
+                continue;
+            }
+            let n = if entsize == 0 { 1 } else { size.div_ceil(entsize) };
+            for k in 0..n {
+                renamed.insert((id, k), locals.len());
+                locals.push(Local {
+                    name: String::new(),
+                    n_type: N_PEXT | N_SECT,
+                    n_desc: section_desc(ctx, id),
+                    n_sect: chunk.hdr.n_sect,
+                    addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
+                    rename: if entsize == 0 { Rename::Cstring } else { Rename::Anon },
+                    syms: Vec::new(),
+                    at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
+                    rank: LOCAL,
+                });
+            }
+        }
+    }
+    // The atom a relocation into one of those sections lands in.
+    let atom_target = |t: usize, addend: i64| -> Option<usize> {
+        let ChunkId::Output(osec) = ctx.isecs[t].output_section()? else {
+            return None;
+        };
+        let entsize = *entsize_of.get(&osec)?;
+        let k = (addend as u64).checked_div(entsize).unwrap_or(0);
+        renamed.get(&(t, k)).copied()
+    };
+
+    let mut referenced: HashSet<crate::symbol::SymbolId> = HashSet::new();
+    for isec in ctx.isecs.iter() {
+        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
+            continue;
+        }
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            if let RelocTarget::Sym(idx) = rel.target() {
+                referenced.insert(ctx.objs[isec.file as usize].symbols[idx as usize]);
+            }
+        }
+    }
+    // How many symbols other than assembler temporaries (ltmpN) an
+    // object defines at each place, so a label there is recognized as
+    // an alias of a real name.
+    let mut named_at: HashMap<(usize, u8, u64), u32> = HashMap::new();
+    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+        if !obj.is_alive {
+            continue;
+        }
+        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+            if nlist.is_stab() || nlist.n_type() != N_SECT {
+                continue;
+            }
+            if !ctx.symbols[sym_id].name().starts_with("ltmp") {
+                *named_at.entry((obj_idx, nlist.n_sect, nlist.n_value)).or_default() += 1;
+            }
+        }
+    }
+    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+        if !obj.is_alive {
+            continue;
+        }
+        // Without subsections the object's sections are whole atoms,
+        // which ld64 marks no-dead-strip - every symbol, the
+        // assembler's ltmpN labels (they name the atoms) included -
+        // and an alt entry means nothing there.
+        let whole = !obj.subsections_via_symbols;
+        let r = obj.local_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            if nlist.is_stab() || nlist.is_extern() {
+                continue;
+            }
+            let sym = &ctx.symbols[sym_id];
+            let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+            let isec = ctx.resolve_isec(input);
+            if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
+                continue;
+            }
+            // A label on an atom ld64 names itself stands for that atom.
+            if let Some(e) = atom_target(isec, sym.value as i64) {
+                locals[e].syms.push(sym_id);
+                continue;
+            }
+            if unnamed_list(isec) && !referenced.contains(&sym_id) {
+                continue;
+            }
+            let is_label = sym.name().starts_with('l') || sym.name().starts_with('L');
+            if is_label && !whole && !referenced.contains(&sym_id) {
+                let others =
+                    named_at.get(&(obj_idx, nlist.n_sect, nlist.n_value)).copied().unwrap_or(0)
+                        - u32::from(!sym.name().starts_with("ltmp"));
+                if others > 0 {
+                    continue;
+                }
+                // A label on an empty section names nothing.
+                if obj.sect_hdrs.get(nlist.n_sect as usize - 1).is_some_and(|h| h.size == 0) {
+                    continue;
+                }
+            }
+            locals.push(Local {
+                name: sym.name().to_string(),
+                n_type: nlist.n_type,
+                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
+                n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
+                addr: sym_addr(ctx, sym_id),
+                rename: Rename::None,
+                syms: vec![sym_id],
+                at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
+                rank: if sym.name().starts_with("ltmp") { LTMP } else { LOCAL },
+            });
+        }
+    }
+    // Private externals (visibility hidden) become non-external
+    // symbols in a -r output, as in ld64 - N_PEXT still set, which nm
+    // reports as "was a private external" - unless
+    // -keep_private_externs (which Apple's strip passes to the `ld -r`
+    // it runs on each archive member).
+    let keep_pext = ctx.args.keep_private_externs;
+    if !keep_pext {
+        for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+            if !obj.is_alive {
+                continue;
+            }
+            let r = obj.global_range();
+            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                let sym = &ctx.symbols[sym_id];
+                // Only the copy that won resolution is emitted.
+                if nlist.is_stab()
+                    || !nlist.is_extern()
+                    || !sym.is_private_extern()
+                    || !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
+                {
+                    continue;
+                }
+                let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+                let isec = ctx.resolve_isec(input);
+                if !ctx.isecs[isec].is_alive() {
+                    continue;
+                }
+                locals.push(Local {
+                    name: sym.name().to_string(),
+                    n_type: N_PEXT | N_SECT,
+                    n_desc: whole_desc(
+                        nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
+                        !obj.subsections_via_symbols,
+                    ) | section_desc(ctx, input),
+                    n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
+                    addr: sym_addr(ctx, sym_id),
+                    rename: Rename::None,
+                    syms: vec![sym_id],
+                    at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
+                    rank: if sym.is_weak_def() { WEAK } else { PEXT },
+                });
+            }
+        }
+    }
+    // The locals in order, the linker-named atoms numbered in it with
+    // one counter.
+    let mut order: Vec<usize> = (0..locals.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (a, b) = (&locals[a], &locals[b]);
+        a.at.cmp(&b.at).then(a.rank.cmp(&b.rank)).then(b.name.cmp(&a.name))
+    });
+    let mut counter = 1u32;
+    for &i in &order {
+        let l = &mut locals[i];
+        match l.rename {
+            Rename::None => {}
+            Rename::Cstring => {
+                l.name = format!("LC{counter}");
+                counter += 1;
+            }
+            Rename::Anon => {
+                l.name = format!("l{counter:03}");
+                counter += 1;
+            }
+        }
+    }
+    let mut symnum_of = vec![0u32; locals.len()];
+    for &i in &order {
+        let l = &locals[i];
+        symnum_of[i] = ents.len() as u32;
+        for &sym_id in &l.syms {
+            index_of_sym.insert(sym_id, ents.len() as u32);
+        }
+        names.push(l.name.as_bytes());
+        let ent = NList {
+            n_strx: 0,
+            n_type: l.n_type,
+            n_sect: l.n_sect,
+            n_desc: l.n_desc,
+            n_value: l.addr,
+        };
+        ents.push((ent, l.syms.first().copied()));
+    }
+    let nplain = ents.len();
+
+    // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
+    // output, it names the objects that hold it (N_OSO) and where their
+    // symbols landed, and a later link carries the notes through.
+    let mut names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::new();
+    if !ctx.args.strip_debug {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let commons = crate::passes::common_stab_owners(ctx);
+        let stabs: Vec<crate::passes::Stab> = (0..ctx.objs.len())
+            .flat_map(|obj_idx| crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+            .collect();
+        if !stabs.is_empty() {
+            names.push(b"");
+            ents.push((NList { n_strx: 1, n_type: N_SO, n_sect: 1, ..Default::default() }, None));
+            names_of.push(None);
+        }
+        for stab in stabs {
+            let mut ent = stab.ent;
+            if let Some(id) = stab.value_of {
+                ent.n_value = sym_addr(ctx, id);
+            }
+            names.push(stab.name);
+            ents.push((ent, None));
+            names_of.push(stab.name_of);
+        }
+    }
+    let nlocal = ents.len();
+
+    // The n_desc flags a defined global carries in its object, which the
+    // next link needs as much as this one did. N_ALT_ENTRY is the
+    // critical one: it marks a symbol that does not begin a new
+    // subsection (Swift's class metadata symbol $s..CN is an alt entry
+    // into the full-metadata object $s..CMf, referenced as CMf+0x18),
+    // and a link that splits there re-aligns the tail and moves the
+    // symbol away from every non-symbolic reference to it.
+    let mut desc_of: HashMap<crate::symbol::SymbolId, u16> = HashMap::new();
+    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+        if !obj.is_alive {
+            continue;
+        }
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !nlist.is_stab()
+                && nlist.is_extern()
+                && nlist.n_type() != N_UNDF
+                && matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
+            {
+                desc_of.insert(sym_id, nlist.n_desc);
+            }
+        }
+    }
+
+    // Defined externals, sorted by name.
+    let mut globals: Vec<usize> = (0..ctx.symbols.syms.len())
+        .filter(|&i| {
+            let sym = &ctx.symbols[i];
+            sym.is_extern()
+                && (keep_pext || !sym.is_private_extern())
+                && matches!(sym.file(), Some(FileId::Obj(_)))
+                && sym
+                    .input_section()
+                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+        })
+        .collect();
+    globals.sort_by_key(|&i| ctx.symbols[i].name());
+    for &i in &globals {
+        let sym = &ctx.symbols[i];
+        let (n_type, n_sect) = match sym.input_section() {
+            Some(isec) => (
+                N_SECT | N_EXT | if sym.is_private_extern() { N_PEXT } else { 0 },
+                ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]),
+            ),
+            None => (N_ABS | N_EXT, 0),
+        };
+        // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
+        // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
+        // makes PLCrashReporter's template instantiations local; ours
+        // stayed exported after the -r prelink lost the marker).
+        let mut n_desc = desc_of.get(&(i as u32)).copied().unwrap_or(0)
+            & (N_WEAK_DEF
+                | N_WEAK_REF
+                | N_ALT_ENTRY
+                | N_NO_DEAD_STRIP
+                | N_SYMBOL_RESOLVER
+                | N_COLD_FUNC
+                | REFERENCED_DYNAMICALLY);
+        if sym.is_weak_def() {
+            n_desc |= N_WEAK_DEF;
+        }
+        if let Some(FileId::Obj(o)) = sym.file()
+            && !ctx.objs[o as usize].subsections_via_symbols
+        {
+            n_desc = whole_desc(n_desc, true);
+        }
+        if let Some(input) = sym.input_section() {
+            n_desc |= section_desc(ctx, input as usize);
+        }
+        index_of_sym.insert(i as u32, ents.len() as u32);
+        names.push(sym.name().as_bytes());
+        let n_value = sym_addr(ctx, i as u32);
+        ents.push((NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, Some(i as u32)));
+    }
+
+    // Undefined and tentative symbols, sorted by name.
+    let mut undefs: Vec<usize> = (0..ctx.symbols.syms.len())
+        .filter(|&i| {
+            let sym = &ctx.symbols[i];
+            sym.is_used() && (!sym.is_defined() || sym.is_common())
+        })
+        .collect();
+    undefs.sort_by_key(|&i| ctx.symbols[i].name());
+    for &i in &undefs {
+        let sym = &ctx.symbols[i];
+        let mut n_desc = 0;
+        let mut n_value = 0;
+        if sym.is_common() {
+            n_value = sym.value;
+            n_desc |= (sym.common_p2align as u16) << 8;
+        } else if sym.is_weak_ref() {
+            n_desc |= N_WEAK_REF;
+        }
+        index_of_sym.insert(i as u32, ents.len() as u32);
+        names.push(sym.name().as_bytes());
+        let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value };
+        ents.push((ent, Some(i as u32)));
+    }
+    let (uniques, size) = crate::chunks::symtab::layout_strings(
+        &mut ents,
+        &names,
+        nplain,
+        (nplain, &names_of),
+        nlocal,
+        ctx.symbols.syms.len(),
+    );
+    let mut strtab = vec![0u8; size];
+    strtab[0] = b' ';
+    for (off, name) in uniques {
+        strtab[off as usize..off as usize + name.len()].copy_from_slice(name);
+    }
+
+    let mut atoms = HashMap::new();
+    for (&key, &e) in &renamed {
+        atoms.insert(key, (symnum_of[e], locals[e].addr));
+    }
+    RSymtab {
+        nlists: ents.into_iter().map(|e| e.0).collect(),
+        strtab,
+        index_of_sym,
+        atoms,
+        entsize_of,
+    }
 }

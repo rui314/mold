@@ -5346,8 +5346,9 @@ pub fn plan_object_stabs<E: Target>(
     ));
 
     // A symbol's notes, by its address: ld-prime lists them in address
-    // order, functions and data alike.
-    let mut groups: Vec<(u64, StabPlan)> = Vec::new();
+    // order, functions and data alike, after the tentative definitions
+    // a -r output leaves without one.
+    let mut groups: Vec<(Option<u64>, StabPlan)> = Vec::new();
     for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
         let sym = &ctx.symbols[sym_id];
         // A tentative definition gets its note in the first object that
@@ -5376,12 +5377,12 @@ fn symbol_stabs<E: Target>(
     sym_id: crate::symbol::SymbolId,
     is_extern: bool,
     common: bool,
-) -> Option<(u64, StabPlan)> {
+) -> Option<(Option<u64>, StabPlan)> {
     let sym = &ctx.symbols[sym_id];
     let name = sym.name().as_bytes();
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
         // A -r output keeps a common undefined; it has no address.
-        return common.then(|| (0, vec![global_stab(name, sym_id)]));
+        return common.then(|| (None, vec![global_stab(name, sym_id)]));
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     // ld-prime notes no exception tables' labels and no ivar offsets.
@@ -5419,7 +5420,7 @@ fn symbol_stabs<E: Target>(
         let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
         vec![Stab { name_of: Some(sym_id), ..Stab::new(name, ent, Some(sym_id)) }]
     };
-    Some((addr, group))
+    Some((Some(addr), group))
 }
 
 /// An N_GSYM: a global's debug note, which names it only, with no
