@@ -1002,7 +1002,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         + version_cmd.len()
         + size_of::<LinkEditDataCommand>()
         + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>();
-    let mut off = (size_of::<MachHeader>() + sizeofcmds) as u64;
+    // ld-prime leaves -headerpad (32 unless given) free after the load
+    // commands, and more when LC_VERSION_MIN_MACOSX stands where its
+    // estimate of them counted a 32-byte LC_BUILD_VERSION.
+    let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
+    let mut off = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
 
     // File offsets mirror addresses, except that the address span of a
     // zero-fill section (with the padding up to the next section) has

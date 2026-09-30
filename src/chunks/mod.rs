@@ -642,8 +642,10 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // then gets a load command of its own. A -static image has no dyld
     // to read either, and a dynamic symbol table only for the local
     // relocations that slide it under -pie.
+    // (Decided by the options, not by the tables' sizes: the layout
+    // sizes the header before the tables exist.)
     if !ctx.args.static_link {
-        if ctx.chained_fixups.hdr.size > 0 {
+        if ctx.use_chained_fixups() {
             vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
             // Present even with nothing exported (an 8-byte empty
             // trie), as ld-prime writes it.
@@ -702,7 +704,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 
     // Also present with no functions at all (an 8-byte empty table),
     // as ld-prime writes it; -no_function_starts drops it.
-    if ctx.function_starts.hdr.size > 0 {
+    if ctx.args.function_starts {
         vec.push(create_function_starts_cmd(ctx));
     }
 
@@ -724,8 +726,53 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 /// Returns the size of the mach header chunk: the header, the load
 /// commands and the header padding.
 pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
-    let cmds: usize = create_load_commands(ctx).iter().map(Vec::len).sum();
-    size_of::<MachHeader>() as u64 + cmds as u64 + ctx.args.headerpad
+    let cmds = create_load_commands(ctx);
+    let size: usize = cmds.iter().map(Vec::len).sum();
+    size_of::<MachHeader>() as u64 + size as u64 + header_pad(ctx, &cmds)
+}
+
+/// The free space ld-prime leaves after a final image's load commands:
+/// -headerpad, at least 32 bytes, or with -headerpad_max_install_names
+/// room for each dylib command to grow by MAXPATHLEN. ld-prime places
+/// the sections after an estimate of the load commands, not their
+/// final size, so the space grows by the estimate's excess too: it
+/// counts dylib_use_command's 28-byte header for each dependency, and
+/// LC_DYLD_INFO_ONLY plus LC_DYLD_EXPORTS_TRIE unless the image is an
+/// arm64 one with chained fixups (a -static image: 32 bytes).
+fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
+    let dylib_cmds: Vec<(DylibCommand, &[u8])> = cmds
+        .iter()
+        .filter(|c| {
+            matches!(
+                LoadCommand::read_from(c).cmd,
+                LC_ID_DYLIB | LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB
+            )
+        })
+        .map(|c| (DylibCommand::read_from(c), c.as_slice()))
+        .collect();
+
+    let mut pad = ctx.args.headerpad.max(32);
+    if ctx.args.headerpad_max_install_names {
+        pad = pad.max(dylib_cmds.len() as u64 * 1024);
+    }
+
+    let mut excess = if ctx.args.static_link {
+        32
+    } else if !ctx.use_chained_fixups() {
+        16
+    } else if E::CPUTYPE == CPU_TYPE_ARM64 {
+        0
+    } else {
+        32
+    };
+    for (cmd, bytes) in dylib_cmds {
+        if cmd.cmd != LC_ID_DYLIB {
+            let name = &bytes[cmd.nameoff as usize..];
+            let len = name.iter().position(|&b| b == 0).unwrap_or(name.len()) as u64;
+            excess += crate::util::align_to(len + 29, 8) - crate::util::align_to(len + 25, 8);
+        }
+    }
+    pad + excess
 }
 
 pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

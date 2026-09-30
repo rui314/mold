@@ -200,7 +200,12 @@ pub struct Args {
     /// debugger.
     pub add_ast_paths: Vec<PathBuf>,
     pub dynamic: bool,
+    /// -headerpad: the space left free after the load commands (32
+    /// unless given; a final image never gets less).
     pub headerpad: u64,
+    /// -headerpad_max_install_names: room for every dylib load command
+    /// to grow to MAXPATHLEN.
+    pub headerpad_max_install_names: bool,
     /// -search_dylibs_first: search every path for a dylib before
     /// falling back to archives.
     pub search_dylibs_first: bool,
@@ -354,7 +359,8 @@ impl Default for Args {
             application_extension: false,
             add_ast_paths: Vec::new(),
             dynamic: true,
-            headerpad: 0x100,
+            headerpad: 32,
+            headerpad_max_install_names: false,
             search_dylibs_first: false,
             umbrella: None,
             oso_prefix: None,
@@ -973,9 +979,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
-            b"-headerpad_max_install_names" => {
-                args.headerpad = args.headerpad.max(1024);
-            }
+            b"-headerpad_max_install_names" => args.headerpad_max_install_names = true,
 
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
