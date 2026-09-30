@@ -200,6 +200,7 @@ pub const BIND_SPECIAL_DYLIB_WEAK_LOOKUP: i32 = -3;
 pub const BIND_OPCODE_SET_DYLIB_SPECIAL_IMM: u8 = 0x30;
 
 // Segment flags
+pub const SG_NORELOC: u32 = 0x4;
 pub const SG_READ_ONLY: u32 = 0x10;
 
 // Bind opcodes, for the LC_DYLD_INFO bind stream. Each opcode byte holds

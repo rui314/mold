@@ -327,6 +327,26 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     if seg.name == "__DATA_CONST" {
         cmd.flags = SG_READ_ONLY;
     }
+    // A segment of nothing but -add_empty_section anchors has nothing
+    // to relocate; ld-prime flags it SG_NORELOC. Only that option, not
+    // an empty section a `section$start$` boundary symbol conjured, and
+    // not an empty segment such as __PAGEZERO (no sections at all).
+    if !seg.chunks.is_empty()
+        && seg.chunks.iter().all(|&id| match id {
+            ChunkId::SectCreate(i) => {
+                let h = &ctx.sectcreate_sections[i as usize].hdr;
+                h.size == 0
+                    && ctx
+                        .args
+                        .add_empty_section
+                        .iter()
+                        .any(|(seg, sect)| seg == h.segname && sect == &h.sectname)
+            }
+            _ => false,
+        })
+    {
+        cmd.flags |= SG_NORELOC;
+    }
 
     let mut buf = to_vec(&cmd);
     for hdr in sects {
@@ -569,12 +589,6 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 
     if ctx.args.output_type == MH_DYLIB {
         vec.push(create_id_dylib_cmd(ctx));
-        if let Some(name) = &ctx.args.umbrella {
-            vec.push(create_string_cmd(LC_SUB_FRAMEWORK, name));
-        }
-        for client in &ctx.args.allowable_clients {
-            vec.push(create_string_cmd(LC_SUB_CLIENT, client));
-        }
     }
 
     // Chained fixups replace the classic dyld info; the export trie
@@ -606,6 +620,17 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     dylibs.sort_by_key(|d| d.dylib_idx);
     for dylib in dylibs {
         vec.push(create_load_dylib_cmd(dylib));
+    }
+
+    // The umbrella commands follow the libraries, clients first, as
+    // ld-prime orders them.
+    if ctx.args.output_type == MH_DYLIB {
+        for client in &ctx.args.allowable_clients {
+            vec.push(create_string_cmd(LC_SUB_CLIENT, client));
+        }
+        if let Some(name) = &ctx.args.umbrella {
+            vec.push(create_string_cmd(LC_SUB_FRAMEWORK, name));
+        }
     }
 
     for rpath in &ctx.args.rpaths {

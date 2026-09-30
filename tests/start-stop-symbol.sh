@@ -24,3 +24,8 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
 $t/exe > /dev/null
+# A __FOO segment conjured by a section$start boundary symbol is not an
+# -add_empty_section anchor: its segment carries no SG_NORELOC (0x0),
+# as ld-prime writes it.
+otool -l $t/exe > $t/lc
+[ "$(awk '/segname __FOO/{g=1} g&&/^ *flags/{print $2; exit}' $t/lc)" = 0x0 ]
