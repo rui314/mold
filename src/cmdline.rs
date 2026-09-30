@@ -755,17 +755,21 @@ pub struct TargetTraits {
 }
 
 /// The warnings ld-prime gives as it reads an option, which only a -w
-/// before the option silences. They wait until the parse is known to
-/// be for the target, so that they are given once.
+/// before the option silences (but -fatal_warnings still counts). They
+/// wait until the parse is known to be for the target, so that they
+/// are given once.
 #[derive(Default)]
 struct OptionWarnings {
     quiet: bool,
     msgs: Vec<String>,
+    hidden: bool,
 }
 
 impl OptionWarnings {
     fn warn(&mut self, msg: impl Into<String>) {
-        if !self.quiet {
+        if self.quiet {
+            self.hidden = true;
+        } else {
             self.msgs.push(msg.into());
         }
     }
@@ -1385,6 +1389,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     for msg in &warnings.msgs {
         crate::warn!("{msg}");
     }
+    if warnings.hidden {
+        crate::error::hidden_warning();
+    }
     crate::error::set_suppress_warnings(args.suppress_warnings);
     warn_platform_options(&args, read_only_relocs);
 
@@ -1554,7 +1561,8 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     if !has_stack && args.stack_size != 0 {
         fatal!("-stack_size option can only be used when linking a main executable");
     }
-    if !main_executable && entry {
+    // ld-prime leaves this one out under -w, -fatal_warnings or not.
+    if !main_executable && entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
     }
 }

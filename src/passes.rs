@@ -400,8 +400,9 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
 pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     // ld64 warns, once, about the library options given more than once,
     // each as spelled (-weak-lz repeats no -lz); build systems that
-    // knowingly repeat them pass -no_warn_duplicate_libraries.
-    if ctx.args.warn_duplicate_libraries {
+    // knowingly repeat them pass -no_warn_duplicate_libraries. Under -w
+    // ld-prime leaves the warning out, -fatal_warnings or not.
+    if ctx.args.warn_duplicate_libraries && !ctx.args.suppress_warnings {
         let mut seen = std::collections::HashSet::new();
         let mut dups = std::collections::BTreeSet::new();
         for arg in &ctx.args.inputs {

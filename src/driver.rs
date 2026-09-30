@@ -124,6 +124,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         // for -dependency_info and fails the build if the file is
         // missing.
         crate::mapfile::write_dependency_info(&ctx);
+        crate::error::check_fatal_warnings();
         crate::subprocess::notify_parent();
         return Ok(0);
     }
@@ -200,6 +201,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     out.finish();
     drop(t);
     drop(t_copy);
+    crate::error::check_fatal_warnings();
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
     crate::subprocess::notify_parent();
