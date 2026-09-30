@@ -28,6 +28,15 @@ $t/hi | grep hi
 
 $CC --ld-path=$mold -o $t/dl $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,dynamic_lookup
 [ "$(fmt $t/dl)" = LC_DYLD_INFO_ONLY ]
+# ...but the initializer layout still follows the deployment target:
+# __init_offsets, as ld-prime lays it out. Only an explicit
+# -no_fixup_chains keeps __mod_init_func, and an explicit -fixup_chains
+# brings __init_offsets below that deployment target too.
+[ "$(init $t/dl)" = __init_offsets ]
+$CC --ld-path=$mold -o $t/nfc $t/a.o -mmacosx-version-min=$hi -Wl,-no_fixup_chains
+[ "$(init $t/nfc)" = __mod_init_func ]
+$CC --ld-path=$mold -o $t/fc $t/a.o -mmacosx-version-min=$lo -Wl,-fixup_chains
+[ "$(init $t/fc)" = __init_offsets ]
 $CC --ld-path=$mold -o $t/dl2 $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,dynamic_lookup -Wl,-fixup_chains
 [ "$(fmt $t/dl2)" = LC_DYLD_CHAINED_FIXUPS ]
 $CC --ld-path=$mold -o $t/wn $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,warning 2> /dev/null

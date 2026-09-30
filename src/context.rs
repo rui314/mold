@@ -356,10 +356,15 @@ impl<E: Target> Context<E> {
             if self.args.undefined_dynamic_lookup && !self.args.undefined_is_warning {
                 return false;
             }
-            let min = if E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 { 12 } else { 13 };
-            self.args.platform == crate::macho::PLATFORM_MACOS
-                && self.args.platform_minos >= crate::macho::encode_version(min, 0, 0)
+            self.chained_fixups_by_default()
         })
+    }
+
+    /// Returns true if the deployment target defaults to chained fixups.
+    pub fn chained_fixups_by_default(&self) -> bool {
+        let min = if E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 { 12 } else { 13 };
+        self.args.platform == crate::macho::PLATFORM_MACOS
+            && self.args.platform_minos >= crate::macho::encode_version(min, 0, 0)
     }
 
     /// Whether the file is the internal object holding synthesized

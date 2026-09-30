@@ -1148,10 +1148,15 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
 /// __TEXT,__init_offsets section (type S_INIT_FUNC_OFFSETS), which
 /// dyld runs the same way but never has to fix up.
 pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
-    // ld64 turns this on implicitly with chained fixups: the point of
-    // chains is a fixup-free __DATA_CONST, and absolute initializer
-    // pointers would drag rebases back in.
-    if !ctx.args.init_offsets && !ctx.use_chained_fixups() {
+    // ld-prime turns this on implicitly with chained fixups: the point
+    // of chains is a fixup-free __DATA_CONST, and absolute initializer
+    // pointers would drag rebases back in. It follows -fixup_chains or
+    // the deployment target even when -undefined dynamic_lookup sends
+    // the fixups themselves back to classic dyld info; only
+    // -no_fixup_chains keeps __mod_init_func.
+    if !ctx.args.init_offsets
+        && !ctx.args.fixup_chains.unwrap_or_else(|| ctx.chained_fixups_by_default())
+    {
         return;
     }
     for i in 0..ctx.isecs.len() {
