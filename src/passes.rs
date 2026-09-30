@@ -4031,23 +4031,22 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Well-known section names are ordered the way ld64 orders them/// Well-known section names are ordered the way ld64 orders them; unknown
-/// sections come after, in input order.
-/// Where a section sits within its segment, as ld64 orders them
-/// (measured over the app corpus: these relative positions never vary
-/// in ld-prime's output, everything else follows input order). The
-/// synthesized code sections lead __TEXT; dyld's tables lead
+/// Where a section sits within its segment in a final image, as
+/// ld-prime 27037 orders them; sections of one rank keep input order.
+/// __text leads __TEXT, other code sections follow in input order, then
+/// the synthesized code and method lists; dyld's tables lead
 /// __DATA_CONST, then the read-only ObjC lists in a fixed order; the
 /// ObjC runtime data leads __DATA in the order the compiler emits it,
-/// __data next.
-fn output_section_rank(segname: &str, sectname: &str) -> u32 {
+/// and __data follows in input order among the unknown sections.
+fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
     match (segname, sectname) {
         ("__TEXT", "__text") => 0,
-        ("__TEXT", "__stubs") => 1,
-        ("__TEXT", "__stub_helper") => 2,
-        ("__TEXT", "__objc_stubs") => 3,
-        ("__TEXT", "__init_offsets") => 4,
-        ("__TEXT", "__objc_methlist") => 5,
+        ("__TEXT", "__stubs") => 2,
+        ("__TEXT", "__stub_helper") => 3,
+        ("__TEXT", "__objc_stubs") => 4,
+        ("__TEXT", "__init_offsets") => 5,
+        ("__TEXT", "__objc_methlist") => 6,
+        ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
         ("__TEXT", _) => 10,
         ("__DATA_CONST", "__mod_init_func") => 1,
         ("__DATA_CONST", "__mod_term_func") => 2,
@@ -4074,7 +4073,6 @@ fn output_section_rank(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__objc_superrefs") => 5,
         ("__DATA", "__objc_ivar") => 6,
         ("__DATA", "__objc_data") => 7,
-        ("__DATA", "__data") => 8,
         // The thread-local initialization image must be contiguous:
         // __thread_data last among file-backed __DATA sections, and
         // __thread_bss first among zero-fill ones (zero-fill sections
@@ -4963,7 +4961,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
-            _ => 1 + output_section_rank(hdr.segname, &hdr.sectname),
+            _ => 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags),
         };
         let seen = match id {
             ChunkId::Output(osec) => section_first_seen[osec.index()],
