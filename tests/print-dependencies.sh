@@ -10,4 +10,8 @@ void foo();
 int main() { foo(); }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,--print-dependencies | grep 'b\.o.*a\.o.*foo$'
+$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,--print-dependencies > $t/log
+grep 'b\.o.*a\.o.*foo$' $t/log
+
+# A blank line follows the comment header.
+grep -A1 'compiler flag\.$' $t/log | tail -1 | grep -x ''

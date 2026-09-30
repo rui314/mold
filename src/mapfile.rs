@@ -2,7 +2,7 @@
 //! sections and symbols.
 
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::fmt::{LowerHex, Write};
 
 use rayon::prelude::*;
 
@@ -14,6 +14,15 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::symbol::SymbolId;
 use crate::target::Target;
+
+// An address in a map file. Zero is written as "0" instead of "0x0".
+struct Addr(u64);
+
+impl LowerHex for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.0 == 0 { f.pad_integral(true, "", "0") } else { LowerHex::fmt(&self.0, f) }
+    }
+}
 
 // Construct a section-to-symbol map.
 fn section_symbols<E: Target>(ctx: &Context<E>) -> HashMap<InputSectionId, Vec<SymbolId>> {
@@ -48,7 +57,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>, output: &ReportOutput) {
             writeln!(
                 out,
                 "{:#18x}{:>11}{:>6} {}",
-                hdr.shdr.sh_addr.get(),
+                Addr(hdr.shdr.sh_addr.get()),
                 hdr.shdr.sh_size.get(),
                 hdr.shdr.sh_addralign.get(),
                 hdr.name
@@ -63,11 +72,11 @@ pub fn print_map<E: Target>(ctx: &Context<E>, output: &ReportOutput) {
                 .par_iter()
                 .map(|&member| {
                     let isec = ctx.input_section(member);
-                    let addr = if osec.hdr.is_alloc() {
+                    let addr = Addr(if osec.hdr.is_alloc() {
                         osec.hdr.shdr.sh_addr.get() + isec.offset()
                     } else {
                         0
-                    };
+                    });
                     let mut s = format!(
                         "{addr:#18x}{:>11}{:>6}         {}\n",
                         isec.sh_size,
@@ -80,7 +89,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>, output: &ReportOutput) {
                             writeln!(
                                 s,
                                 "{:#18x}          0     0                 {sym}",
-                                sym.addr(ctx)
+                                Addr(sym.addr(ctx))
                             )
                             .unwrap();
                         }

@@ -1544,7 +1544,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
          # regular undefined or weak undefined, respectively.\n\
          #\n\
          # If you want to obtain dependency information per function granularity,\n\
-         # compile source files with the -ffunction-sections compiler flag."
+         # compile source files with the -ffunction-sections compiler flag.\n"
         )?;
 
         let mut print = |src: &dyn std::fmt::Display, sym: &Symbol, is_weak: bool| {
