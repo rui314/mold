@@ -50,6 +50,13 @@ pub fn read_array<T: FileRecord>(buf: &[u8], off: usize, n: usize) -> Vec<T> {
     vec
 }
 
+/// Writes records one after another starting at `off`.
+pub fn write_array<T: FileRecord>(buf: &mut [u8], off: usize, records: &[T]) {
+    for (i, record) in records.iter().enumerate() {
+        record.write_to(&mut buf[off + i * size_of::<T>()..]);
+    }
+}
+
 /// Returns a 16-byte, NUL-padded section or segment name as a string.
 pub fn name_to_str(name: &[u8; 16]) -> &str {
     let len = name.iter().position(|&b| b == 0).unwrap_or(16);

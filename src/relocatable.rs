@@ -365,324 +365,92 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // placed in the file after the load commands.
     let sects = sort_sections(ctx, &synthetic);
     let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
-
-    let linker_options = relocatable_linker_options(ctx);
-    // cmd, cmdsize, count, then the NUL-terminated strings, padded to 8.
-    let linker_option_cmdsize = |opt: &Vec<Vec<u8>>| -> usize {
-        align_to(12 + opt.iter().map(|s| s.len() + 1).sum::<usize>() as u64, 8) as usize
-    };
-
-    let loh = optimization_hints(ctx);
-
-    // File layout: header, one segment command with all sections, the
-    // symtab, build version, data in code, linker option and hint
-    // commands; then section contents, relocations, data in code,
-    // hints, symbols and strings.
-    let args = &ctx.args;
-    let version_cmd = if crate::chunks::has_version_cmd(args) {
-        crate::chunks::create_version_cmd::<E>(
-            args.platform,
-            args.platform_minos,
-            args.platform_sdk,
-        )
-    } else {
-        Vec::new()
-    };
-    let ncmds =
-        3 + u32::from(!version_cmd.is_empty()) + linker_options.len() as u32 + loh.is_some() as u32;
-    let seg_cmd_size = size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>();
-    let sizeofcmds = seg_cmd_size
-        + size_of::<SymtabCommand>()
-        + version_cmd.len()
-        + size_of::<LinkEditDataCommand>()
-        + linker_options.iter().map(linker_option_cmdsize).sum::<usize>()
-        + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
-    // ld-prime leaves -headerpad (32 unless given) free after the load
-    // commands, and more when LC_VERSION_MIN_MACOSX, or no command at
-    // all, stands where its estimate of them counted a 32-byte
-    // LC_BUILD_VERSION.
-    let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
-    let seg_fileoff = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
-
+    let cmds = LoadCommands::new(ctx, sects.len());
+    let seg_fileoff = cmds.contents_offset(&ctx.args);
     let content_end = assign_file_offsets(ctx, &mut synthetic, &sects, seg_fileoff);
+
+    // The symbol table, then what refers to its symbols: the synthetic
+    // sections' contents and the relocations, regenerated against the
+    // merged tables.
     let ctx = &*ctx;
-    let section_chunks: Vec<OutputSectionId> = sects
+    let merged: Vec<OutputSectionId> = sects
         .iter()
         .filter_map(|s| match *s {
             Sect::Merged(i) => Some(i),
             Sect::Synthetic(_) => None,
         })
         .collect();
-    let symtab = build_symtab(ctx, &section_chunks);
+    let symtab = build_symtab(ctx, &merged);
     let targets = RelocTargets::new(ctx, &symtab);
     for sec in &mut synthetic {
         sec.build_contents(&targets);
     }
+    let mut relocs: Vec<Vec<MachRel>> = vec![Vec::new(); ctx.output_sections.len()];
+    for &osec in &merged {
+        relocs[osec.index()] = section_relocs(&targets, osec);
+    }
 
-    // Regenerate each section's relocations against the merged tables.
-    let sect_relocs: Vec<Vec<MachRel>> =
-        section_chunks.iter().map(|&chunk_idx| section_relocs(&targets, chunk_idx)).collect();
-
+    // After the contents: the relocations, the merged sections' in
+    // output order, then the synthetic sections', and then data in
+    // code, hints, symbols and strings.
     let mut off = align_to(content_end, 8);
-    let mut reloff = Vec::new();
-    for rels in &sect_relocs {
-        reloff.push(off);
-        off += (rels.len() * size_of::<MachRel>()) as u64;
+    let mut place = |size: usize| {
+        off += size as u64;
+        off - size as u64
+    };
+    let mut reloff = vec![0; ctx.output_sections.len()];
+    for &osec in &merged {
+        reloff[osec.index()] = place(relocs[osec.index()].len() * size_of::<MachRel>());
     }
     for sec in &mut synthetic {
-        sec.reloff = off;
-        off += (sec.relocs.len() * size_of::<MachRel>()) as u64;
+        sec.reloff = place(sec.relocs.len() * size_of::<MachRel>());
     }
-    // LC_DATA_IN_CODE, between the relocations and the symbol table
-    // and present even with no entries (ld-prime): the inputs' entries
-    // at their merged addresses, which is what an object's entries
-    // hold rather than file offsets.
-    let mut dice: Vec<(u32, u16, u16)> = crate::chunks::data_in_code::live_entries(ctx)
-        .map(|(isec, off_in, len, kind)| {
-            let addr =
-                ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + off_in;
-            (addr as u32, len, kind)
+    let layout = FileLayout {
+        vmsize,
+        seg_fileoff,
+        seg_filesize: content_end - seg_fileoff,
+        diceoff: place(cmds.dice.len() * 8),
+        lohoff: place(cmds.loh.as_ref().map_or(0, Vec::len)),
+        symoff: place(symtab.nlists.len() * size_of::<NList>()),
+        stroff: place(symtab.strtab.len()),
+    };
+    let headers: Vec<MachSection> = sects
+        .iter()
+        .map(|&s| match s {
+            Sect::Merged(i) => {
+                section_header(&ctx.output_section(i).hdr, &relocs[i.index()], reloff[i.index()])
+            }
+            Sect::Synthetic(i) => {
+                let sec = &synthetic[i];
+                section_header(&sec.hdr, &sec.relocs, sec.reloff)
+            }
         })
         .collect();
-    dice.sort_unstable();
-    let diceoff = off;
-    off += dice.len() as u64 * 8;
-    let lohoff = off;
-    off += loh.as_ref().map_or(0, |l| l.len() as u64);
-    let symoff = off;
-    off += (symtab.nlists.len() * size_of::<NList>()) as u64;
-    let stroff = off;
-    off += symtab.strtab.len() as u64;
 
     let mut buf = vec![0u8; off as usize];
-
-    // Mach header
-    let hdr = MachHeader {
-        magic: MH_MAGIC_64,
-        cputype: E::CPUTYPE,
-        cpusubtype: E::CPUSUBTYPE,
-        filetype: MH_OBJECT,
-        ncmds,
-        sizeofcmds: sizeofcmds as u32,
-        // Only if every input had it: one whole-section object makes
-        // the output whole-section too (ld64).
-        flags: if ctx
-            .objs
-            .iter()
-            .enumerate()
-            .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
-            .all(|(_, o)| o.subsections_via_symbols)
-        {
-            MH_SUBSECTIONS_VIA_SYMBOLS
-        } else {
-            0
-        },
-        reserved: 0,
-    };
-    hdr.write_to(&mut buf);
-    let mut p = size_of::<MachHeader>();
-
-    // The single nameless segment
-    let seg = SegmentCommand {
-        cmd: LC_SEGMENT_64,
-        cmdsize: seg_cmd_size as u32,
-        segname: [0; 16],
-        vmaddr: 0,
-        vmsize,
-        fileoff: seg_fileoff,
-        filesize: content_end - seg_fileoff,
-        maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-        initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-        nsects: sects.len() as u32,
-        flags: 0,
-    };
-    seg.write_to(&mut buf[p..]);
-    p += size_of::<SegmentCommand>();
-
-    let mut ci = 0;
-    for &s in &sects {
-        let hdr = sect_hdr(ctx, &synthetic, s);
-        let (relocs, reloff) = match s {
-            Sect::Merged(_) => {
-                ci += 1;
-                (&sect_relocs[ci - 1], reloff[ci - 1])
-            }
-            Sect::Synthetic(i) => (&synthetic[i].relocs, synthetic[i].reloff),
-        };
-        let sect = MachSection {
-            sectname: str_to_name(&hdr.sectname),
-            segname: str_to_name(hdr.segname),
-            addr: hdr.addr,
-            size: hdr.size,
-            offset: hdr.fileoff as u32,
-            p2align: hdr.p2align,
-            reloff: if relocs.is_empty() { 0 } else { reloff as u32 },
-            nreloc: relocs.len() as u32,
-            flags: hdr.flags,
-            reserved1: 0,
-            reserved2: 0,
-            reserved3: 0,
-        };
-        sect.write_to(&mut buf[p..]);
-        p += size_of::<MachSection>();
-    }
-
-    // ld64's order: the symbol table, the build version, data in
-    // code, then the carried auto-link options and hints. A -r output
-    // has no LC_DYSYMTAB (ld-prime writes none).
-    let st = SymtabCommand {
-        cmd: LC_SYMTAB,
-        cmdsize: size_of::<SymtabCommand>() as u32,
-        symoff: symoff as u32,
-        nsyms: symtab.nlists.len() as u32,
-        stroff: stroff as u32,
-        strsize: symtab.strtab.len() as u32,
-    };
-    st.write_to(&mut buf[p..]);
-    p += size_of::<SymtabCommand>();
-
-    buf[p..p + version_cmd.len()].copy_from_slice(&version_cmd);
-    p += version_cmd.len();
-
-    let dc = LinkEditDataCommand {
-        cmd: LC_DATA_IN_CODE,
-        cmdsize: size_of::<LinkEditDataCommand>() as u32,
-        dataoff: diceoff as u32,
-        datasize: (dice.len() * 8) as u32,
-    };
-    dc.write_to(&mut buf[p..]);
-    p += size_of::<LinkEditDataCommand>();
-    for (i, &(o, len, kind)) in dice.iter().enumerate() {
-        let q = diceoff as usize + i * 8;
-        buf[q..q + 4].copy_from_slice(&o.to_le_bytes());
-        buf[q + 4..q + 6].copy_from_slice(&len.to_le_bytes());
-        buf[q + 6..q + 8].copy_from_slice(&kind.to_le_bytes());
-    }
-
-    for opt in &linker_options {
-        let cmdsize = linker_option_cmdsize(opt);
-        buf[p..p + 4].copy_from_slice(&LC_LINKER_OPTION.to_le_bytes());
-        buf[p + 4..p + 8].copy_from_slice(&(cmdsize as u32).to_le_bytes());
-        buf[p + 8..p + 12].copy_from_slice(&(opt.len() as u32).to_le_bytes());
-        let mut q = p + 12;
-        for s in opt.iter() {
-            buf[q..q + s.len()].copy_from_slice(s);
-            q += s.len() + 1;
-        }
-        p += cmdsize;
-    }
-
-    if let Some(loh) = &loh {
-        let cmd = LinkEditDataCommand {
-            cmd: LC_LINKER_OPTIMIZATION_HINT,
-            cmdsize: size_of::<LinkEditDataCommand>() as u32,
-            dataoff: lohoff as u32,
-            datasize: loh.len() as u32,
-        };
-        cmd.write_to(&mut buf[p..]);
-        buf[lohoff as usize..lohoff as usize + loh.len()].copy_from_slice(loh);
-    }
-
-    // Section contents: raw copies, with non-external targets' embedded
-    // addresses rewritten into the merged address space.
-    for &chunk_idx in &section_chunks {
-        let osec = ctx.output_section(chunk_idx);
-        if osec.hdr.is_zerofill() {
-            continue;
-        }
-        let base = osec.hdr.fileoff as usize;
-        for &id in &osec.members {
-            let isec = &ctx.isecs[id];
-            if isec.data().is_empty() {
-                continue;
-            }
-            let dst = base + isec.offset as usize;
-            buf[dst..dst + isec.data().len()].copy_from_slice(isec.data());
-
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                if let Some(cell) = E::RELOCATABLE_GOTPC_CELL
-                    && rel.r_type == E::RELOC_GOTPC
-                    && rel.is_pcrel
-                    && rel.size == 4
-                {
-                    let loc = dst + rel.offset as usize;
-                    buf[loc..loc + 4].copy_from_slice(&cell.to_le_bytes());
-                    continue;
-                }
-                let OutTarget::Section(target, addend) = targets.out_target(isec, rel) else {
-                    continue;
-                };
-                let t = &ctx.isecs[target];
-                // The addend is negative for a target before its
-                // section's start.
-                let target_addr = (ctx.chunk_header(t.output_section().unwrap()).addr
-                    + t.offset as u64)
-                    .wrapping_add_signed(addend);
-                let loc = dst + rel.offset as usize;
-                if let Some((_, atom_addr)) = targets.atom_target(target, addend) {
-                    // Now a relocation against the atom's symbol: the
-                    // field holds the addend relative to it, in the
-                    // form an object's extern relocation uses.
-                    let mut val = (target_addr - atom_addr) as i64;
-                    if rel.is_pcrel {
-                        val -= E::reloc_bias(rel.r_type);
-                    }
-                    match rel.size {
-                        8 => buf[loc..loc + 8].copy_from_slice(&val.to_le_bytes()),
-                        4 => buf[loc..loc + 4].copy_from_slice(&(val as i32).to_le_bytes()),
-                        _ => {}
-                    }
-                    continue;
-                }
-                if rel.r_type == E::RELOC_UNSIGNED && !rel.is_pcrel {
-                    match rel.size {
-                        8 => buf[loc..loc + 8].copy_from_slice(&target_addr.to_le_bytes()),
-                        4 => buf[loc..loc + 4].copy_from_slice(&(target_addr as u32).to_le_bytes()),
-                        _ => {}
-                    }
-                } else if rel.is_pcrel {
-                    // Pcrel non-external fields embed target - (P + 4).
-                    let here = ctx.output_section(chunk_idx).hdr.addr
-                        + isec.offset as u64
-                        + rel.offset as u64;
-                    let val = target_addr
-                        .wrapping_sub(here + 4)
-                        .wrapping_sub(E::reloc_bias(rel.r_type) as u64)
-                        as u32;
-                    if rel.size == 4 {
-                        buf[loc..loc + 4].copy_from_slice(&val.to_le_bytes());
-                    }
-                } else {
-                    error!("-r: unsupported non-external relocation");
-                }
-            }
-        }
-    }
-
+    write_load_commands(ctx, &mut buf, &cmds, &headers, &layout, &symtab);
+    copy_section_contents(&targets, &merged, &mut buf);
     for sec in &synthetic {
-        let fo = sec.hdr.fileoff as usize;
-        buf[fo..fo + sec.data.len()].copy_from_slice(&sec.data);
-        let mut p = sec.reloff as usize;
-        for rel in &sec.relocs {
-            rel.write_to(&mut buf[p..]);
-            p += size_of::<MachRel>();
-        }
+        let fileoff = sec.hdr.fileoff as usize;
+        buf[fileoff..fileoff + sec.data.len()].copy_from_slice(&sec.data);
+        write_array(&mut buf, sec.reloff as usize, &sec.relocs);
     }
-
-    // Relocations, symbols, strings
-    for (i, rels) in sect_relocs.iter().enumerate() {
-        let mut p = reloff[i] as usize;
-        for rel in rels {
-            rel.write_to(&mut buf[p..]);
-            p += size_of::<MachRel>();
-        }
+    for &osec in &merged {
+        write_array(&mut buf, reloff[osec.index()] as usize, &relocs[osec.index()]);
     }
-    let mut p = symoff as usize;
-    for nlist in &symtab.nlists {
-        nlist.write_to(&mut buf[p..]);
-        p += size_of::<NList>();
+    for (i, &(addr, len, kind)) in cmds.dice.iter().enumerate() {
+        let p = layout.diceoff as usize + i * 8;
+        buf[p..p + 4].copy_from_slice(&addr.to_le_bytes());
+        buf[p + 4..p + 6].copy_from_slice(&len.to_le_bytes());
+        buf[p + 6..p + 8].copy_from_slice(&kind.to_le_bytes());
     }
-    buf[stroff as usize..stroff as usize + symtab.strtab.len()].copy_from_slice(&symtab.strtab);
+    if let Some(loh) = &cmds.loh {
+        let lohoff = layout.lohoff as usize;
+        buf[lohoff..lohoff + loh.len()].copy_from_slice(loh);
+    }
+    write_array(&mut buf, layout.symoff as usize, &symtab.nlists);
+    let stroff = layout.stroff as usize;
+    buf[stroff..stroff + symtab.strtab.len()].copy_from_slice(&symtab.strtab);
 
     crate::error::checkpoint();
     output_file::write(&ctx.args.output, &buf);
@@ -759,6 +527,108 @@ fn assign_addresses<E: Target>(
         addr += hdr.size;
     }
     addr
+}
+
+/// A -r output's load commands, in ld64's order: the single nameless
+/// segment with every section, the symbol table, the build version,
+/// data in code, then the carried auto-link options and hints. A -r
+/// output has no LC_DYSYMTAB (ld-prime writes none). Their sizes, which
+/// place the section contents, are known once the sections are laid
+/// out; the offsets they record, once the whole file is.
+struct LoadCommands {
+    nsects: usize,
+    /// LC_BUILD_VERSION or LC_VERSION_MIN_MACOSX, or nothing.
+    version: Vec<u8>,
+    /// The LC_LINKER_OPTION commands.
+    linker_options: Vec<Vec<u8>>,
+    /// LC_DATA_IN_CODE's entries: (address, length, kind).
+    dice: Vec<(u32, u16, u16)>,
+    /// LC_LINKER_OPTIMIZATION_HINT's payload, if the command is present.
+    loh: Option<Vec<u8>>,
+}
+
+impl LoadCommands {
+    fn new<E: Target>(ctx: &Context<E>, nsects: usize) -> Self {
+        let args = &ctx.args;
+        let version = if crate::chunks::has_version_cmd(args) {
+            crate::chunks::create_version_cmd::<E>(
+                args.platform,
+                args.platform_minos,
+                args.platform_sdk,
+            )
+        } else {
+            Vec::new()
+        };
+        Self {
+            nsects,
+            version,
+            linker_options: relocatable_linker_options(ctx)
+                .iter()
+                .map(|opt| linker_option_command(opt))
+                .collect(),
+            dice: data_in_code(ctx),
+            loh: optimization_hints(ctx),
+        }
+    }
+
+    fn count(&self) -> u32 {
+        3 + u32::from(!self.version.is_empty())
+            + self.linker_options.len() as u32
+            + u32::from(self.loh.is_some())
+    }
+
+    fn size(&self) -> usize {
+        size_of::<SegmentCommand>()
+            + self.nsects * size_of::<MachSection>()
+            + size_of::<SymtabCommand>()
+            + self.version.len()
+            + size_of::<LinkEditDataCommand>()
+            + self.linker_options.iter().map(Vec::len).sum::<usize>()
+            + if self.loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 }
+    }
+
+    /// Where the section contents start in the file: past the header,
+    /// the load commands and the space ld-prime leaves free after them,
+    /// -headerpad (32 unless given), and more when LC_VERSION_MIN_MACOSX,
+    /// or no command at all, stands where its estimate of them counted a
+    /// 32-byte LC_BUILD_VERSION.
+    fn contents_offset(&self, args: &crate::cmdline::Args) -> u64 {
+        let pad = args.headerpad + 32u64.saturating_sub(self.version.len() as u64);
+        (size_of::<MachHeader>() + self.size()) as u64 + pad
+    }
+}
+
+/// An LC_LINKER_OPTION command: cmd, cmdsize, count, then the
+/// NUL-terminated strings, padded to 8 bytes.
+fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
+    let mut cmd = Vec::new();
+    cmd.extend_from_slice(&LC_LINKER_OPTION.to_le_bytes());
+    cmd.extend_from_slice(&0u32.to_le_bytes());
+    cmd.extend_from_slice(&(opt.len() as u32).to_le_bytes());
+    for s in opt {
+        cmd.extend_from_slice(s);
+        cmd.push(0);
+    }
+    cmd.resize(align_to(cmd.len() as u64, 8) as usize, 0);
+    let cmdsize = cmd.len() as u32;
+    cmd[4..8].copy_from_slice(&cmdsize.to_le_bytes());
+    cmd
+}
+
+/// LC_DATA_IN_CODE's entries, between the relocations and the symbol
+/// table and present even with no entries (ld-prime): the inputs'
+/// entries at their merged addresses, which is what an object's entries
+/// hold rather than file offsets.
+fn data_in_code<E: Target>(ctx: &Context<E>) -> Vec<(u32, u16, u16)> {
+    let mut dice: Vec<(u32, u16, u16)> = crate::chunks::data_in_code::live_entries(ctx)
+        .map(|(isec, off_in, len, kind)| {
+            let addr =
+                ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + off_in;
+            (addr as u32, len, kind)
+        })
+        .collect();
+    dice.sort_unstable();
+    dice
 }
 
 /// Places the sections' contents in the file from `start`, past the
@@ -1283,6 +1153,214 @@ impl<'a, E: Target> RelocTargets<'a, E> {
             fatal!("-r: unwind personality lost: {}", self.ctx.symbols[p]);
         };
         symnum
+    }
+}
+
+/// Where the parts of a -r output lie in the file, besides the sections'
+/// contents and relocations: the segment, which the contents make up,
+/// and the tables after it.
+struct FileLayout {
+    vmsize: u64,
+    seg_fileoff: u64,
+    seg_filesize: u64,
+    diceoff: u64,
+    lohoff: u64,
+    symoff: u64,
+    stroff: u64,
+}
+
+/// A section's header in the segment command.
+fn section_header(hdr: &ChunkHeader, relocs: &[MachRel], reloff: u64) -> MachSection {
+    MachSection {
+        sectname: str_to_name(&hdr.sectname),
+        segname: str_to_name(hdr.segname),
+        addr: hdr.addr,
+        size: hdr.size,
+        offset: hdr.fileoff as u32,
+        p2align: hdr.p2align,
+        reloff: if relocs.is_empty() { 0 } else { reloff as u32 },
+        nreloc: relocs.len() as u32,
+        flags: hdr.flags,
+        reserved1: 0,
+        reserved2: 0,
+        reserved3: 0,
+    }
+}
+
+/// Writes the Mach header and the load commands.
+fn write_load_commands<E: Target>(
+    ctx: &Context<E>,
+    buf: &mut [u8],
+    cmds: &LoadCommands,
+    headers: &[MachSection],
+    layout: &FileLayout,
+    symtab: &RSymtab,
+) {
+    // Subsections only if every input had them: one whole-section
+    // object makes the output whole-section too (ld64).
+    let subsections = ctx
+        .objs
+        .iter()
+        .enumerate()
+        .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
+        .all(|(_, o)| o.subsections_via_symbols);
+    let hdr = MachHeader {
+        magic: MH_MAGIC_64,
+        cputype: E::CPUTYPE,
+        cpusubtype: E::CPUSUBTYPE,
+        filetype: MH_OBJECT,
+        ncmds: cmds.count(),
+        sizeofcmds: cmds.size() as u32,
+        flags: if subsections { MH_SUBSECTIONS_VIA_SYMBOLS } else { 0 },
+        reserved: 0,
+    };
+    hdr.write_to(buf);
+    let mut p = size_of::<MachHeader>();
+
+    let seg = SegmentCommand {
+        cmd: LC_SEGMENT_64,
+        cmdsize: (size_of::<SegmentCommand>() + size_of_val(headers)) as u32,
+        segname: [0; 16],
+        vmaddr: 0,
+        vmsize: layout.vmsize,
+        fileoff: layout.seg_fileoff,
+        filesize: layout.seg_filesize,
+        maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
+        initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
+        nsects: headers.len() as u32,
+        flags: 0,
+    };
+    seg.write_to(&mut buf[p..]);
+    p += size_of::<SegmentCommand>();
+    write_array(buf, p, headers);
+    p += size_of_val(headers);
+
+    let st = SymtabCommand {
+        cmd: LC_SYMTAB,
+        cmdsize: size_of::<SymtabCommand>() as u32,
+        symoff: layout.symoff as u32,
+        nsyms: symtab.nlists.len() as u32,
+        stroff: layout.stroff as u32,
+        strsize: symtab.strtab.len() as u32,
+    };
+    st.write_to(&mut buf[p..]);
+    p += size_of::<SymtabCommand>();
+
+    buf[p..p + cmds.version.len()].copy_from_slice(&cmds.version);
+    p += cmds.version.len();
+
+    let dc = LinkEditDataCommand {
+        cmd: LC_DATA_IN_CODE,
+        cmdsize: size_of::<LinkEditDataCommand>() as u32,
+        dataoff: layout.diceoff as u32,
+        datasize: (cmds.dice.len() * 8) as u32,
+    };
+    dc.write_to(&mut buf[p..]);
+    p += size_of::<LinkEditDataCommand>();
+
+    for cmd in &cmds.linker_options {
+        buf[p..p + cmd.len()].copy_from_slice(cmd);
+        p += cmd.len();
+    }
+
+    if let Some(loh) = &cmds.loh {
+        let cmd = LinkEditDataCommand {
+            cmd: LC_LINKER_OPTIMIZATION_HINT,
+            cmdsize: size_of::<LinkEditDataCommand>() as u32,
+            dataoff: layout.lohoff as u32,
+            datasize: loh.len() as u32,
+        };
+        cmd.write_to(&mut buf[p..]);
+    }
+}
+
+/// Copies the merged sections' contents to the output: raw copies, with
+/// non-external targets' embedded addresses rewritten into the merged
+/// address space.
+fn copy_section_contents<E: Target>(
+    targets: &RelocTargets<E>,
+    merged: &[OutputSectionId],
+    buf: &mut [u8],
+) {
+    let ctx = targets.ctx;
+    for &osec in merged {
+        let hdr = &ctx.output_section(osec).hdr;
+        if hdr.is_zerofill() {
+            continue;
+        }
+        for &id in &ctx.output_section(osec).members {
+            let isec = &ctx.isecs[id];
+            if isec.data().is_empty() {
+                continue;
+            }
+            let dst = hdr.fileoff as usize + isec.offset as usize;
+            buf[dst..dst + isec.data().len()].copy_from_slice(isec.data());
+            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+                let here = hdr.addr + isec.offset as u64 + rel.offset as u64;
+                rewrite_field(targets, isec, rel, here, &mut buf[dst + rel.offset as usize..]);
+            }
+        }
+    }
+}
+
+/// Rewrites the field a relocation at address `here` applies to, as a
+/// -r output holds it: an x86-64 GOT load's cell, or the address a
+/// non-external relocation's field embeds, now in the merged address
+/// space - or relative to the atom's symbol where the relocation becomes
+/// an extern one against it.
+fn rewrite_field<E: Target>(
+    targets: &RelocTargets<E>,
+    isec: &crate::input_sections::InputSection,
+    rel: &crate::input_sections::Reloc,
+    here: u64,
+    field: &mut [u8],
+) {
+    let ctx = targets.ctx;
+    if let Some(cell) = E::RELOCATABLE_GOTPC_CELL
+        && rel.r_type == E::RELOC_GOTPC
+        && rel.is_pcrel
+        && rel.size == 4
+    {
+        field[..4].copy_from_slice(&cell.to_le_bytes());
+        return;
+    }
+    let OutTarget::Section(target, addend) = targets.out_target(isec, rel) else {
+        return;
+    };
+    let t = &ctx.isecs[target];
+    // The addend is negative for a target before its section's start.
+    let target_addr = (ctx.chunk_header(t.output_section().unwrap()).addr + t.offset as u64)
+        .wrapping_add_signed(addend);
+    if let Some((_, atom_addr)) = targets.atom_target(target, addend) {
+        // Now a relocation against the atom's symbol: the field holds
+        // the addend relative to it, in the form an object's extern
+        // relocation uses.
+        let mut val = (target_addr - atom_addr) as i64;
+        if rel.is_pcrel {
+            val -= E::reloc_bias(rel.r_type);
+        }
+        match rel.size {
+            8 => field[..8].copy_from_slice(&val.to_le_bytes()),
+            4 => field[..4].copy_from_slice(&(val as i32).to_le_bytes()),
+            _ => {}
+        }
+        return;
+    }
+    if rel.r_type == E::RELOC_UNSIGNED && !rel.is_pcrel {
+        match rel.size {
+            8 => field[..8].copy_from_slice(&target_addr.to_le_bytes()),
+            4 => field[..4].copy_from_slice(&(target_addr as u32).to_le_bytes()),
+            _ => {}
+        }
+    } else if rel.is_pcrel {
+        // Pcrel non-external fields embed target - (P + 4).
+        let val = target_addr.wrapping_sub(here + 4).wrapping_sub(E::reloc_bias(rel.r_type) as u64)
+            as u32;
+        if rel.size == 4 {
+            field[..4].copy_from_slice(&val.to_le_bytes());
+        }
+    } else {
+        error!("-r: unsupported non-external relocation");
     }
 }
 
