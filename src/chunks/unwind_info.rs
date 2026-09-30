@@ -342,21 +342,22 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
 /// Whether __unwind_info covers addresses outside __TEXT, its own
 /// segment: code in another segment (a -rename_section can move __text
-/// out), or an LSDA there. Those are not final when the section is
-/// first encoded, with __TEXT.
+/// out), a function with unwind info in a section of data (ld-prime
+/// warns, but gives it its entry all the same), or an LSDA there.
+/// Those are not final when the section is first encoded, with __TEXT.
 pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
     let segname = ctx.unwind_info.hdr.segname;
     let code_elsewhere = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).any(|hdr| {
         hdr.segname != segname
             && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
     });
+    let elsewhere = |isec: usize| {
+        ctx.isecs[isec].output_section().is_some_and(|id| ctx.chunk_header(id).segname != segname)
+    };
     code_elsewhere
         || ctx.unwind_records.par_iter().any(|rec| {
-            function_lsda(ctx, rec).is_some_and(|(isec, _)| {
-                ctx.isecs[isec]
-                    .output_section()
-                    .is_some_and(|id| ctx.chunk_header(id).segname != segname)
-            })
+            elsewhere(rec.isec as usize)
+                || function_lsda(ctx, rec).is_some_and(|(isec, _)| elsewhere(isec))
         })
 }
 
