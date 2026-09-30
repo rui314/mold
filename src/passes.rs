@@ -4800,7 +4800,15 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         if ctx.is_internal(isec.file as usize) || is_stub_selector_name(ctx, isec, &stub_sels) {
             continue;
         }
-        let Some(ChunkId::Output(id)) = ctx.isecs[ctx.resolve_isec(i)].output_section() else {
+        // A copy merged into another input's (a literal, the losing
+        // copy of a weak definition) places nothing: ld-prime places a
+        // section by the atoms it keeps. One a synthesized record took
+        // over counts where it was.
+        let kept = ctx.resolve_isec(i);
+        if kept != i && !ctx.is_internal(ctx.isecs[kept].file as usize) {
+            continue;
+        }
+        let Some(ChunkId::Output(id)) = ctx.isecs[kept].output_section() else {
             continue;
         };
         let key = ((isec.file as u64) << 32) | isec.shndx as u64;
