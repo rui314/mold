@@ -218,15 +218,22 @@ impl ObjectFile {
 
 /// Whether ld64 names no atom after a label (its ignoreLabel): in a
 /// section of C strings or of 4-, 8- or 16-byte literals, which it
-/// splits into one atom per literal, an assembler temporary (L...) or
-/// linker-private (l...) label - the compiler's lCPI0_0 constant-pool
-/// and l_.str string labels, the assembler's ltmpN - names nothing, and
-/// the literal is known by its contents or size.
+/// splits into one atom per literal, a private label (see
+/// is_private_label) names nothing, and the literal is known by its
+/// contents or size.
 pub fn is_ignored_literal_label(section_type: u32, name: &str) -> bool {
     matches!(
         section_type,
         S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-    ) && (name.starts_with('l') || name.starts_with('L'))
+    ) && is_private_label(name)
+}
+
+/// Whether a label is one a compiler or assembler makes for itself: an
+/// assembler temporary (L...) or a linker-private label (l...) - the
+/// compiler's lCPI0_0 constant-pool and l_.str string labels, the arm64
+/// assembler's ltmpN.
+pub fn is_private_label(name: &str) -> bool {
+    name.starts_with('L') || name.starts_with('l')
 }
 
 /// How ld-prime prefers a symbol at an atom's start to name the atom in
@@ -1426,6 +1433,24 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
             | S_16BYTE_LITERALS
             | S_LITERAL_POINTERS
     ) || (sect.segname() == "__DATA" && (sect.sectname() == "__cfstring" || is_pointer_list(sect)))
+}
+
+/// Whether ld-prime merges a section's atoms by their content - the
+/// literal pools, C strings, selector references and CFStrings, not the
+/// pointer lists it takes one by one - which the labels an assembler
+/// makes for itself name none of (see Context::atom_label).
+pub fn has_merged_atoms(sect: &MachSection) -> bool {
+    is_literal_section(sect) && !(sect.segname() == "__DATA" && is_pointer_list(sect))
+}
+
+/// Whether a section's atoms are its literals or fixed-size records,
+/// whatever its labels (see initialize_sections).
+pub fn is_record_section(sect: &MachSection) -> bool {
+    is_literal_section(sect)
+        || matches!(
+            sect.section_type(),
+            S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS
+        )
 }
 
 /// Whether a __DATA section is one of pointers the linker takes one by

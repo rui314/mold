@@ -552,15 +552,6 @@ pub fn warn_unaligned_pointers<E: Target>(ctx: &Context<E>) {
 /// file's real path in parentheses. An atom is named by a symbol at its
 /// start, an exported one first.
 fn atom_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
-    let obj = &ctx.objs[ctx.isecs[isec as usize].file as usize];
-    let name = obj
-        .symbols
-        .iter()
-        .map(|&sym| &ctx.symbols[sym])
-        .filter(|sym| sym.input_section() == Some(isec) && sym.value == 0)
-        .max_by_key(|sym| (sym.is_extern() && !sym.is_private_extern(), sym.is_extern()))
-        .map_or("", |sym| sym.name());
     let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
-    let off = if off == 0 { String::new() } else { format!("+0x{off:X}") };
-    format!("'{name}'{off} ({})", crate::passes::resolved_file_name(obj.mf))
+    ctx.atom_ref(isec as usize, off as u32)
 }

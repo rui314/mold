@@ -824,14 +824,21 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The symbol that names the atom (subsection) `isec` in ld-prime's
-    /// diagnostics: of those at its start that a literal's atom does
-    /// not ignore, the one input_files::atom_name_rank ranks first.
+    /// The symbol that names the atom (subsection) `id` in ld-prime's
+    /// diagnostics: of those at its start, the one
+    /// input_files::atom_name_rank ranks first. ld-prime merges a
+    /// literal by its content (see input_files::has_merged_atoms): the
+    /// labels a compiler or assembler makes for itself (see
+    /// input_files::is_private_label) name none, and but for an ltmpN,
+    /// one takes the literal's bytes from a symbol beside it, leaving it
+    /// unnamed (see atom_ordinal).
     pub fn atom_label(&self, id: usize) -> Option<&'static str> {
+        use crate::input_files::is_private_label;
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
-        let section_type = self.hdr_of(isec).section_type();
-        obj.nlists
+        let merged = crate::input_files::has_merged_atoms(self.hdr_of(isec));
+        let labels = obj
+            .nlists
             .iter()
             .zip(&obj.symbols)
             .filter(|(n, _)| {
@@ -840,25 +847,117 @@ impl<E: Target> Context<E> {
                     && n.n_sect as u32 == isec.shndx + 1
                     && n.n_value == isec.input_addr as u64
             })
-            .map(|(n, &id)| (n, self.symbols[id].name()))
-            .filter(|&(_, name)| !crate::input_files::is_ignored_literal_label(section_type, name))
+            .map(|(n, &id)| (n, self.symbols[id].name()));
+        if merged
+            && labels.clone().any(|(_, name)| is_private_label(name) && !name.starts_with("ltmp"))
+        {
+            return None;
+        }
+        labels
+            .filter(|(_, name)| !(merged && is_private_label(name)))
             .map(|(n, name)| (crate::input_files::atom_name_rank(n, name), name))
             .max()
             .map(|(_, name)| name)
     }
 
-    /// The name ld-prime gives the atom (subsection) `isec` in a
-    /// diagnostic: its label, or else "anon-N" for the object's Nth
-    /// atom in address order.
+    /// The name ld-prime gives the atom (subsection) `id` in a
+    /// diagnostic: its label, or else "anon-N" for the object's Nth atom
+    /// (see atom_ordinal).
     pub fn atom_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
         match self.atom_label(id) {
             Some(name) => name.into(),
-            None => {
-                let obj = &self.objs[self.isecs[id].file as usize];
-                let n = obj.subsecs.iter().position(|&sub| sub as usize == id).unwrap_or(0);
-                format!("anon-{n}").into()
+            None => format!("anon-{}", self.atom_ordinal(id)).into(),
+        }
+    }
+
+    /// The number ld-prime gives atom (subsection) `id` among its
+    /// object's atoms, the N of an unnamed one's "anon-N". It numbers
+    /// them section by section in section header order, and by address
+    /// within a section. It makes none of an empty section no label is
+    /// in, of __eh_frame and __objc_imageinfo, or of the sections it
+    /// drops (the __DWARF and __LLVM segments, and __LD's but
+    /// __compact_unwind, each of whose 32-byte records is an atom).
+    /// Besides the atoms mold's subsections stand for, each label that
+    /// doesn't name one is an atom of its own, of no size: a second
+    /// label at a place, numbered before the atom with the bytes (which
+    /// an L label takes on a literal), and one inside an atom - an
+    /// alternate entry point, or in an object without subsections any
+    /// label past a section's start - but for a literal's or a
+    /// fixed-size record's. An arm64 assembler's ltmpN counts only in an
+    /// object without subsections, and after a literal's atom.
+    pub fn atom_ordinal(&self, id: usize) -> usize {
+        use crate::input_files::{has_merged_atoms, is_record_section};
+        let obj = &self.objs[self.isecs[id].file as usize];
+        let split = obj.subsections_via_symbols;
+
+        // The object's labels, by section and address: (section,
+        // address, the order of the atoms of the labels at one place,
+        // whether it is an alternate entry point).
+        let mut labels: Vec<(u32, u64, u8, bool)> = obj
+            .nlists
+            .iter()
+            .zip(&obj.symbols)
+            .filter(|(n, _)| !n.is_stab() && n.n_type() == crate::macho::N_SECT && n.n_sect != 0)
+            .filter_map(|(n, &sym)| {
+                let name = self.symbols[sym].name();
+                let order = if name.starts_with("ltmp") {
+                    2
+                } else {
+                    crate::input_files::is_private_label(name) as u8
+                };
+                let alt_entry = n.n_desc & crate::macho::N_ALT_ENTRY != 0;
+                (order != 2 || !split).then_some((n.n_sect as u32 - 1, n.n_value, order, alt_entry))
+            })
+            .collect();
+        labels.sort_unstable();
+
+        let mut subs = obj.subsecs.clone();
+        subs.sort_unstable_by_key(|&i| (self.isecs[i].shndx, self.isecs[i].input_addr));
+
+        let mut n = 0;
+        for (shndx, hdr) in obj.sect_hdrs.iter().enumerate() {
+            let shndx = shndx as u32;
+            if (hdr.segname(), hdr.sectname()) == ("__LD", "__compact_unwind") {
+                n += (hdr.size / 32) as usize;
+                continue;
+            }
+            if hdr.segname() == "__LLVM" {
+                continue;
+            }
+            let lo = subs.partition_point(|&i| self.isecs[i].shndx < shndx);
+            let hi = subs.partition_point(|&i| self.isecs[i].shndx <= shndx);
+            let sect_subs = &subs[lo..hi];
+            let lo = labels.partition_point(|l| l.0 < shndx);
+            let hi = labels.partition_point(|l| l.0 <= shndx);
+            let sect_labels = &labels[lo..hi];
+            let merged = has_merged_atoms(hdr);
+            let records = is_record_section(hdr);
+            for (j, &sub) in sect_subs.iter().enumerate() {
+                let isec = &self.isecs[sub];
+                let start = isec.input_addr as u64;
+                let at_start = sect_labels.iter().filter(|l| l.1 == start);
+                let k = at_start.clone().count();
+                let (count, content) = if merged {
+                    let beside = at_start.filter(|l| l.2 != 2).count();
+                    (k.max(1), beside.saturating_sub(1))
+                } else {
+                    let end = match sect_subs.get(j + 1) {
+                        Some(&next) => self.isecs[next].input_addr as u64,
+                        None => hdr.addr + hdr.size + 1,
+                    };
+                    let inner = sect_labels
+                        .iter()
+                        .filter(|l| start < l.1 && l.1 < end && (l.3 || !split) && !records)
+                        .count();
+                    (k.max((isec.size > 0) as usize) + inner, k.saturating_sub(1))
+                };
+                if sub as usize == id {
+                    return n + content;
+                }
+                n += count;
             }
         }
+        n
     }
 
     /// Reports that stub `i` can't reach its pointer, as ld-prime does:
@@ -894,12 +993,57 @@ impl<E: Target> Context<E> {
 
     /// How a fixup error names the target of relocation `rel` of object
     /// `obj`: by its symbol, or else by the label of the atom it points
-    /// into, if that has one.
+    /// into, if that has one - as for a label an assembler made for
+    /// itself on a literal (see literal_label_target).
     pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
-        match rel.target() {
-            RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
-            RelocTarget::Section(idx) => self.atom_label(idx as usize).unwrap_or(""),
+        match self.literal_label_target(obj, rel) {
+            Some(isec) => self.atom_label(isec).unwrap_or(""),
+            None => match rel.target() {
+                RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
+                RelocTarget::Section(idx) => self.atom_label(idx as usize).unwrap_or(""),
+            },
         }
+    }
+
+    /// How a text-relocation diagnostic names the target of relocation
+    /// `rel` of object `obj`: by its symbol, or else by the atom it
+    /// points into - as for a label an assembler made for itself on a
+    /// literal (see literal_label_target).
+    pub fn text_reloc_target_name(
+        &self,
+        obj: usize,
+        rel: &Reloc,
+    ) -> std::borrow::Cow<'static, str> {
+        match self.literal_label_target(obj, rel) {
+            Some(isec) => self.atom_name(isec),
+            None => match rel.target() {
+                RelocTarget::Sym(idx) => {
+                    self.symbols[self.objs[obj].symbols[idx as usize]].name().into()
+                }
+                RelocTarget::Section(idx) => self.atom_name(idx as usize),
+            },
+        }
+    }
+
+    /// The literal (subsection of object `obj`) relocation `rel` points
+    /// into through a label a compiler or assembler made for itself (see
+    /// input_files::is_private_label) on literals ld-prime merges by
+    /// content, which it takes for a reference to the literal: an arm64
+    /// assembler refers to a literal by such a label, and an addend.
+    fn literal_label_target(&self, obj: usize, rel: &Reloc) -> Option<usize> {
+        let RelocTarget::Sym(idx) = rel.target() else { return None };
+        let obj = &self.objs[obj];
+        let nlist = &obj.nlists[idx as usize];
+        let name = self.symbols[obj.symbols[idx as usize]].name();
+        if nlist.is_stab()
+            || nlist.n_type() != crate::macho::N_SECT
+            || !crate::input_files::is_private_label(name)
+            || !crate::input_files::has_merged_atoms(&obj.sect_hdrs[nlist.n_sect as usize - 1])
+        {
+            return None;
+        }
+        let addr = nlist.n_value.wrapping_add_signed(rel.addend);
+        crate::input_files::find_subsec(&self.isecs, &obj.subsecs, addr).map(|(id, _)| id)
     }
 
     /// Reports a relocation that can't be applied where it is, `offset`

@@ -71,14 +71,7 @@ fn atom_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
             continue;
         }
         let obj = &ctx.objs[isec.file as usize];
-        let name = obj
-            .symbols
-            .iter()
-            .map(|&sym| &ctx.symbols[sym])
-            .filter(|sym| sym.input_section() == Some(id as u32) && sym.value == 0)
-            .max_by_key(|sym| sym.is_extern())
-            .map_or_else(String::new, |sym| sym.name().to_string());
-        return (name, crate::passes::resolved_file_name(obj.mf));
+        return (ctx.atom_name(id).into_owned(), crate::passes::resolved_file_name(obj.mf));
     }
     (String::new(), String::new())
 }

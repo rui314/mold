@@ -6380,25 +6380,8 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             eprintln!("Illegal text-relocations:");
             osec = Some(isec.output_section);
         }
-        // A literal's label that names no atom leaves it anon-N.
         let rel = &ctx.isec_relocs(id as usize)[i as usize];
-        let target = match rel.target() {
-            RelocTarget::Sym(_) => {
-                let sym = &ctx.symbols[ctx.reloc_target_sym(isec.file as usize, rel).unwrap()];
-                match sym.input_section() {
-                    Some(target)
-                        if input_files::is_ignored_literal_label(
-                            ctx.hdr_of(&ctx.isecs[target]).section_type(),
-                            sym.name(),
-                        ) =>
-                    {
-                        ctx.atom_name(target as usize)
-                    }
-                    _ => sym.name().into(),
-                }
-            }
-            RelocTarget::Section(target) => ctx.atom_name(target as usize),
-        };
+        let target = ctx.text_reloc_target_name(isec.file as usize, rel);
         eprintln!("  text-relocation in {} to '{target}'", ctx.atom_ref(id as usize, rel.offset));
     }
     if !chunks::chained_fixups::report_unaligned_chain_pointer(ctx) && osec.is_some() {
