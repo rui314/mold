@@ -150,7 +150,8 @@ impl Target for X86_64 {
     // GOT_LOAD marks "movq sym@GOTPCREL(%rip), %reg" (opcode 0x8b,
     // REX prefix before it); with a local target the load of the
     // slot's content is the same as computing the address, so the
-    // opcode becomes lea (0x8d). Anything else keeps the GOT.
+    // opcode becomes lea (0x8d). A leaq of a class-reference slot
+    // takes the slot's address, and keeps the slot.
     fn got_load_form(r_type: u8) -> Option<u8> {
         match r_type {
             X86_64_RELOC_SIGNED => Some(X86_64_RELOC_GOT_LOAD),
@@ -320,16 +321,27 @@ impl Target for X86_64 {
             let r = &rels[i];
             // A GOT load of a local symbol relaxes: the movq that
             // reads the slot (opcode 0x8b) becomes a leaq (0x8d) of
-            // the target itself. The opcode sits before the fixup, so
-            // it is rewritten before the slice below is taken.
-            let mut relaxed_got_load = false;
-            if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
-                && r.offset >= 2
-                && buf[r.offset as usize - 2] == 0x8b
-                && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id))
-            {
-                buf[r.offset as usize - 2] = 0x8d;
-                relaxed_got_load = true;
+            // the target itself, and a leaq is taken as one already.
+            // ld-prime refuses any other instruction. The opcode sits
+            // before the fixup, so it is rewritten before the slice
+            // below is taken.
+            let relaxed_got_load = matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
+                && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id));
+            if relaxed_got_load {
+                match r.offset.checked_sub(2).map(|i| &mut buf[i as usize]) {
+                    Some(op) if *op == 0x8b => *op = 0x8d,
+                    Some(op) if *op == 0x8d => {}
+                    _ => {
+                        let kind = if r.r_type == X86_64_RELOC_TLV {
+                            "x86_64_was_rip_tlv_elide_got"
+                        } else {
+                            "x86_64_was_rip_got_load_elide_got"
+                        };
+                        let msg =
+                            format_args!("GOT load fixup does not point to a movq instruction");
+                        ctx.fixup_error(isec_id, r.offset, kind, msg);
+                    }
+                }
             }
             let loc = &mut buf[r.offset as usize..];
             let s = ctx.reloc_target_addr(obj, r);

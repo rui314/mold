@@ -289,10 +289,7 @@ impl<'a, E: Target> Places<'a, E> {
         };
         match E::classify_reloc(r.r_type) {
             RelocClass::Got => return Some(self.got_slot(id)),
-            RelocClass::GotLoad | RelocClass::Tlv
-                if !ctx.can_relax_got(id)
-                    || !E::can_relax_got_load(isec.data(), r.offset, r.r_type) =>
-            {
+            RelocClass::GotLoad | RelocClass::Tlv if !ctx.can_relax_got(id) => {
                 return Some(self.got_slot(id));
             }
             RelocClass::Branch => {

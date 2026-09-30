@@ -2412,15 +2412,9 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         .flat_map_iter(|isec| {
             crate::input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
-                let mut class = E::classify_reloc(rel.r_type);
-                // A relaxable GOT load of a local symbol needs no
-                // slot at all; an unrelaxable one is an ordinary GOT
-                // reference.
-                if class == RelocClass::GotLoad
-                    && !E::can_relax_got_load(isec.data(), rel.offset, rel.r_type)
-                {
-                    class = RelocClass::Got;
-                }
+                // A GOT load of a local symbol needs no slot at all:
+                // it relaxes, or ld-prime refuses the instruction.
+                let class = E::classify_reloc(rel.r_type);
                 // Plain references need no slot of any kind, and
                 // they are the overwhelming majority; dropping them
                 // here keeps the collected list (and the serial

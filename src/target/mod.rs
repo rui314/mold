@@ -201,8 +201,12 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
     fn split_ref(r_type: u8) -> SplitRef;
 
-    /// True if the GotLoad relocation at `offset` sits on the
-    /// instruction shape the relaxation rewrites.
+    /// True if a relocation of GOT-load type `r_type` at `offset` sits
+    /// on an instruction that loads the pointer, not one that computes
+    /// its address: the class-reference fold (objc.rs) turns only such
+    /// a reference to a slot into a GOT load. An object's own GOT loads
+    /// of a local symbol relax whatever the instruction, or ld-prime
+    /// refuses them.
     fn can_relax_got_load(data: &[u8], offset: u32, r_type: u8) -> bool;
 
     /// The GOT-load form of a plain relocation that loads a pointer

@@ -207,6 +207,23 @@ impl ObjectFile {
     }
 }
 
+/// How ld-prime prefers a symbol at an atom's start to name the atom in
+/// a diagnostic: an exported one before a private extern, a local, a
+/// weak definition and an ltmpN label; among equals, the greatest name.
+pub fn atom_name_rank(nlist: &NList, name: &str) -> u8 {
+    if name.starts_with("ltmp") {
+        0
+    } else if nlist.n_desc & N_WEAK_DEF != 0 {
+        1
+    } else if !nlist.is_extern() {
+        2
+    } else if nlist.n_type & N_PEXT != 0 {
+        3
+    } else {
+        4
+    }
+}
+
 /// Reports a relocation record ld-prime rejects, in its words. `atom`
 /// is the name of the atom holding it, and `bounds` the atom's place
 /// in the section.
@@ -1131,23 +1148,9 @@ impl StagedObject {
     }
 
     /// The name ld-prime gives the atom at `addr` in section `n_sect` in
-    /// a diagnostic: that of a symbol there - an exported one before a
-    /// private extern, a local, a weak definition and an ltmpN label,
-    /// each kind by its greatest name - or none.
+    /// a diagnostic: that of a symbol there, ranked by atom_name_rank,
+    /// or none.
     fn atom_name(&self, n_sect: usize, addr: u64) -> &'static str {
-        let rank = |nlist: &NList, name: &str| {
-            if name.starts_with("ltmp") {
-                0
-            } else if nlist.n_desc & N_WEAK_DEF != 0 {
-                1
-            } else if !nlist.is_extern() {
-                2
-            } else if nlist.n_type & N_PEXT != 0 {
-                3
-            } else {
-                4
-            }
-        };
         self.nlists
             .iter()
             .zip(&self.sym_names)
@@ -1157,7 +1160,7 @@ impl StagedObject {
                     && n.n_sect as usize == n_sect
                     && n.n_value == addr
             })
-            .map(|(n, &name)| (rank(n, name), name))
+            .map(|(n, &name)| (atom_name_rank(n, name), name))
             .max()
             .map_or("", |(_, name)| name)
     }

@@ -752,4 +752,43 @@ impl<E: Target> Context<E> {
             RelocTarget::Section(idx) => self.isec_addr(idx as usize),
         }
     }
+
+    /// The name ld-prime gives the atom (subsection) `isec` in a
+    /// diagnostic: that of a symbol at its start, ranked as
+    /// input_files::atom_name_rank ranks them, or none.
+    pub fn atom_name(&self, isec: usize) -> &'static str {
+        let isec = &self.isecs[isec];
+        let obj = &self.objs[isec.file as usize];
+        obj.nlists
+            .iter()
+            .zip(&obj.symbols)
+            .filter(|(n, _)| {
+                !n.is_stab()
+                    && n.n_type() == crate::macho::N_SECT
+                    && n.n_sect as u32 == isec.shndx + 1
+                    && n.n_value == isec.input_addr as u64
+            })
+            .map(|(n, &id)| {
+                let name = self.symbols[id].name();
+                (crate::input_files::atom_name_rank(n, name), name)
+            })
+            .max()
+            .map_or("", |(_, name)| name)
+    }
+
+    /// Reports a relocation that can't be applied where it is, `offset`
+    /// bytes into atom `isec`, as ld-prime does: naming the fixup's
+    /// kind as ld-prime calls it, and the object by its leaf name (an
+    /// archive member's archive[index](member)).
+    pub fn fixup_error(&self, isec: usize, offset: u32, kind: &str, msg: std::fmt::Arguments) {
+        let obj = &self.objs[self.isecs[isec].file as usize];
+        let path = crate::passes::resolved_file_name(obj.mf);
+        let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
+        let atom = self.atom_name(isec);
+        if offset == 0 {
+            crate::error!("fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
+        } else {
+            crate::error!("fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}");
+        }
+    }
 }
