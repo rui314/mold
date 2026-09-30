@@ -775,6 +775,50 @@ impl OptionWarnings {
     }
 }
 
+/// The error for an option the command line ends before the argument
+/// of, as ld-prime words it: what the option needs, in the usage its
+/// manual page gives (which -macosx_version_min, renamed, reports under
+/// its new name, and -executable_path, obsolete, not).
+fn missing_argument(opt: &str) -> String {
+    let usage = match opt {
+        "-arch" => "missing <arch>",
+        "-e"
+        | "-u"
+        | "-U"
+        | "-install_name"
+        | "-dylib_install_name"
+        | "-final_output"
+        | "-exported_symbol"
+        | "-unexported_symbol"
+        | "-sub_library"
+        | "-umbrella"
+        | "-allowable_client"
+        | "-client_name"
+        | "-why_live" => "missing <name>",
+        "-headerpad" | "-pagezero_size" | "-stack_size" => "missing <size>",
+        "-image_base" | "-seg1addr" => "missing <address>",
+        "-current_version"
+        | "-dylib_current_version"
+        | "-compatibility_version"
+        | "-dylib_compatibility_version"
+        | "-macos_version_min" => "missing <version>",
+        "-macosx_version_min" => return "-macos_version_min missing <version>".to_string(),
+        "-mllvm" => "missing <value>",
+        "-undefined" => "missing <dynamic_lookup>",
+        "-alias" => "missing <real-name> <alias-name>",
+        "-platform_version" => "missing arguments <platform> <min_version> <sdk_version>",
+        "-sectcreate" => "missing arguments <segname> <sectname> <file>",
+        "-add_empty_section" => "missing arguments <segname> <sectname>",
+        "-segaddr" => "needs <segname> <addr>",
+        "-segment_order" => "needs <segment-list>",
+        "-sectalign" => "needs <segname> <sectname> <align>",
+        "-executable_path" => return format!("obsolete option {opt} requires 1 arguments"),
+        // Files and directories: inputs, lists, outputs and search paths.
+        _ => "missing <path>",
+    };
+    format!("{opt} {usage}")
+}
+
 /// Parses all options. `cmdline` includes the program name.
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
@@ -811,11 +855,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
-    let next_arg = |i: &mut usize| -> &OsStr {
+    // An option's argument; the command line ending before it is an
+    // error in the words ld-prime has for the option.
+    let next_arg = |i: &mut usize, opt: &str| -> &OsStr {
         *i += 1;
         match cmdline.get(*i) {
             Some(val) => val.as_ref(),
-            None => fatal!("option {}: argument missing", display(cmdline[*i - 1].as_bytes())),
+            None => fatal!("{}", missing_argument(opt)),
         }
     };
     // An operand of -rename_section or -rename_segment: ld-prime
@@ -842,9 +888,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         let name = opt.to_string_lossy();
         let name: &str = &name;
         match opt.as_bytes() {
-            b"-o" => args.output = path(next_arg(&mut i)),
+            b"-o" => args.output = path(next_arg(&mut i, name)),
             b"-arch" => {
-                let arch = text(name, next_arg(&mut i));
+                let arch = text(name, next_arg(&mut i, name));
                 args.arch = Some(
                     crate::target::canonical_name(arch)
                         .unwrap_or_else(|| fatal!("unsupported target: {arch}")),
@@ -858,51 +904,69 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 target_triple = Some(text(name, triple));
             }
             b"-e" => {
-                args.entry = text(name, next_arg(&mut i)).to_string();
+                args.entry = text(name, next_arg(&mut i, name)).to_string();
                 explicit_entry = true;
             }
+            // ld-prime takes all three before it reads any.
             b"-platform_version" => {
-                args.platform = parse_platform(text(name, next_arg(&mut i)));
-                args.platform_minos = parse_version(text(name, next_arg(&mut i)));
-                args.platform_sdk = parse_version(text(name, next_arg(&mut i)));
+                let platform = text(name, next_arg(&mut i, name));
+                let minos = text(name, next_arg(&mut i, name));
+                let sdk = text(name, next_arg(&mut i, name));
+                args.platform = parse_platform(platform);
+                args.platform_minos = parse_version(minos);
+                args.platform_sdk = parse_version(sdk);
             }
-            b"-syslibroot" => args.syslibroot.push(path(next_arg(&mut i))),
-            b"-L" => args.library_paths.push(path(next_arg(&mut i))),
-            b"-l" => args.inputs.push(InputArg::Lib(next_arg(&mut i).to_owned(), false)),
+            b"-syslibroot" => args.syslibroot.push(path(next_arg(&mut i, name))),
+            b"-L" => args.library_paths.push(path(next_arg(&mut i, name))),
+            b"-l" => args.inputs.push(InputArg::Lib(next_arg(&mut i, name).to_owned(), false)),
             b"-framework" => {
-                args.inputs.push(InputArg::Framework(next_arg(&mut i).to_owned(), false))
+                args.inputs.push(InputArg::Framework(next_arg(&mut i, name).to_owned(), false))
             }
             b"-weak_framework" => {
-                args.inputs.push(InputArg::Framework(next_arg(&mut i).to_owned(), true))
+                args.inputs.push(InputArg::Framework(next_arg(&mut i, name).to_owned(), true))
             }
             b"-reexport_framework" => {
-                args.inputs.push(InputArg::ReexportFramework(next_arg(&mut i).to_owned()))
+                args.inputs.push(InputArg::ReexportFramework(next_arg(&mut i, name).to_owned()))
             }
             b"-needed_framework" => {
-                args.inputs.push(InputArg::NeededFramework(next_arg(&mut i).to_owned()))
+                args.inputs.push(InputArg::NeededFramework(next_arg(&mut i, name).to_owned()))
             }
-            b"-needed_library" => args.inputs.push(InputArg::NeededFile(path(next_arg(&mut i)))),
-            b"-weak_library" => args.inputs.push(InputArg::WeakFile(path(next_arg(&mut i)))),
+            b"-needed_library" => {
+                args.inputs.push(InputArg::NeededFile(path(next_arg(&mut i, name))))
+            }
+            b"-weak_library" => args.inputs.push(InputArg::WeakFile(path(next_arg(&mut i, name)))),
             b"-reexport_library" => {
-                args.inputs.push(InputArg::ReexportFile(path(next_arg(&mut i))))
+                args.inputs.push(InputArg::ReexportFile(path(next_arg(&mut i, name))))
             }
-            b"-sub_library" => args.inputs.push(InputArg::ReexportLib(next_arg(&mut i).to_owned())),
+            b"-sub_library" => {
+                args.inputs.push(InputArg::ReexportLib(next_arg(&mut i, name).to_owned()))
+            }
             b"-filelist" => {
-                args.inputs.extend(read_filelist(next_arg(&mut i)).into_iter().map(InputArg::File));
+                args.inputs
+                    .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
             }
-            b"-F" => args.framework_paths.push(path(next_arg(&mut i))),
+            b"-F" => args.framework_paths.push(path(next_arg(&mut i, name))),
             b"-dylib" => args.output_type = MH_DYLIB,
             b"-bundle" => args.output_type = MH_BUNDLE,
             b"-kext" => args.output_type = MH_KEXT_BUNDLE,
-            b"-bundle_loader" => args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i)))),
-            b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i))),
-            b"-keep_private_externs" => args.keep_private_externs = true,
-            b"-rpath" => args.rpaths.push(bytes(next_arg(&mut i))),
-            b"-install_name" | b"-dylib_install_name" => {
-                args.install_name = Some(bytes(next_arg(&mut i)))
+            b"-bundle_loader" => {
+                args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i, name))))
             }
-            b"-map" => args.map = Some(path(next_arg(&mut i))),
-            b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i))),
+            b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i, name))),
+            b"-keep_private_externs" => args.keep_private_externs = true,
+            // ld-prime only warns about a missing path.
+            b"-rpath" => match cmdline.get(i + 1) {
+                Some(arg) => {
+                    args.rpaths.push(bytes(arg));
+                    i += 1;
+                }
+                None => warnings.warn("-rpath missing <path>"),
+            },
+            b"-install_name" | b"-dylib_install_name" => {
+                args.install_name = Some(bytes(next_arg(&mut i, name)))
+            }
+            b"-map" => args.map = Some(path(next_arg(&mut i, name))),
+            b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
             b"-fixup_chains" => args.fixup_chains = Some(true),
             b"-no_fixup_chains" => args.fixup_chains = Some(false),
             b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
@@ -931,17 +995,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
                 );
             }
-            b"-headerpad" => headerpad = Some(parse_hex(name, text(name, next_arg(&mut i)))),
+            b"-headerpad" => headerpad = Some(parse_hex(name, text(name, next_arg(&mut i, name)))),
             b"-pagezero_size" => {
-                args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i)));
+                args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i, name)));
                 args.explicit_pagezero = true;
             }
             b"-image_base" | b"-seg1addr" => {
-                args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i))));
+                args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i, name))));
             }
             b"-segaddr" => {
-                let seg = text(name, next_arg(&mut i)).to_string();
-                let addr = parse_hex(name, text(name, next_arg(&mut i)));
+                let seg = text(name, next_arg(&mut i, name)).to_string();
+                let addr = parse_hex(name, text(name, next_arg(&mut i, name)));
                 args.segaddrs.push((seg, addr));
             }
             b"-segprot" => {
@@ -968,7 +1032,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if !args.segment_order.is_empty() {
                     fatal!("-segment_order used more than once");
                 }
-                args.segment_order = text(name, next_arg(&mut i))
+                args.segment_order = text(name, next_arg(&mut i, name))
                     .split(':')
                     .filter(|s| !s.is_empty())
                     .map(String::from)
@@ -1010,16 +1074,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
             }
-            b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i))),
+            b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i, name))),
             b"-sectcreate" => {
-                let seg = sectcreate_name("segment", text(name, next_arg(&mut i)));
-                let sect = sectcreate_name("section", text(name, next_arg(&mut i)));
-                let file = path(next_arg(&mut i));
+                let seg = sectcreate_name("segment", text(name, next_arg(&mut i, name)));
+                let sect = sectcreate_name("section", text(name, next_arg(&mut i, name)));
+                let file = path(next_arg(&mut i, name));
                 args.sectcreate.push((seg, sect, file));
             }
             b"-add_empty_section" => {
-                let seg = section_name(text(name, next_arg(&mut i)));
-                let sect = section_name(text(name, next_arg(&mut i)));
+                let seg = section_name(text(name, next_arg(&mut i, name)));
+                let sect = section_name(text(name, next_arg(&mut i, name)));
                 args.add_empty_section.push((seg, sect));
             }
             b"-x" => args.strip_locals = true,
@@ -1045,7 +1109,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // every other one (error, warning or anything else) and
             // ignores it, so none undoes an earlier dynamic_lookup.
             b"-undefined" => {
-                let treatment = text(name, next_arg(&mut i));
+                let treatment = text(name, next_arg(&mut i, name));
                 if matches!(treatment, "dynamic_lookup" | "suppress") {
                     args.undefined_dynamic_lookup = true;
                 }
@@ -1053,7 +1117,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     deprecated_undefined.push(treatment);
                 }
             }
-            b"-U" => args.allowed_undefined.push(text(name, next_arg(&mut i)).to_string()),
+            b"-U" => args.allowed_undefined.push(text(name, next_arg(&mut i, name)).to_string()),
             b"-w" => {
                 args.suppress_warnings = true;
                 warnings.quiet = true;
@@ -1076,13 +1140,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,
-            b"-add_ast_path" => args.add_ast_paths.push(path(next_arg(&mut i))),
+            b"-add_ast_path" => args.add_ast_paths.push(path(next_arg(&mut i, name))),
             b"-S" => args.strip_debug = true,
             b"-all_load" => args.all_load = true,
-            b"-u" => args.forced_undefined.push(text(name, next_arg(&mut i)).to_string()),
+            b"-u" => args.forced_undefined.push(text(name, next_arg(&mut i, name)).to_string()),
             b"-exported_symbol" => {
                 check_export_choice(&mut export_choice, ExportChoice::Exported, name);
-                let pat = text(name, next_arg(&mut i));
+                let pat = text(name, next_arg(&mut i, name));
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
                 add_patterns(exported_symbols.get_or_insert_default(), name, [pat]);
             }
@@ -1092,7 +1156,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-exported_symbols_list" => {
                 check_export_choice(&mut export_choice, ExportChoice::Exported, name);
-                let names = read_symbol_list(name, &path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 add_patterns(
                     exported_symbols.get_or_insert_default(),
@@ -1102,15 +1166,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-unexported_symbol" => {
                 check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut unexported_symbols, name, [text(name, next_arg(&mut i))])
+                add_patterns(&mut unexported_symbols, name, [text(name, next_arg(&mut i, name))])
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
-                let names = read_symbol_list(name, &path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 add_patterns(&mut unexported_symbols, name, names.iter().map(String::as_str));
             }
             b"-reexported_symbols_list" => {
-                let names = read_symbol_list(name, &path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 // Exact names force a reference even if no object
                 // mentions them. Patterns only match existing symbols.
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
@@ -1124,10 +1188,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The -dylib_ spellings are the older names ld64 still
             // accepts; Xcode passes -dylib_compatibility_version.
             b"-current_version" | b"-dylib_current_version" => {
-                args.current_version = parse_version(text(name, next_arg(&mut i)))
+                args.current_version = parse_version(text(name, next_arg(&mut i, name)))
             }
             b"-compatibility_version" | b"-dylib_compatibility_version" => {
-                args.compatibility_version = parse_version(text(name, next_arg(&mut i)))
+                args.compatibility_version = parse_version(text(name, next_arg(&mut i, name)))
             }
             // ld64 prints its version banner to stdout and continues
             // with the link.
@@ -1151,34 +1215,40 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-noall_load" => args.all_load = false,
             b"-ObjC" => args.load_objc = true,
-            b"-force_load" => args.inputs.push(InputArg::ForceLoad(path(next_arg(&mut i)))),
+            b"-force_load" => args.inputs.push(InputArg::ForceLoad(path(next_arg(&mut i, name)))),
 
             // The default library search behavior already matches
             // -search_paths_first: each path is tried for both a dylib
             // and an archive before moving to the next.
             b"-search_paths_first" => args.search_dylibs_first = false,
             b"-search_dylibs_first" => args.search_dylibs_first = true,
-            b"-umbrella" => args.umbrella = Some(bytes(next_arg(&mut i))),
-            b"-oso_prefix" => args.oso_prefix = Some(bytes(next_arg(&mut i))),
+            b"-umbrella" => args.umbrella = Some(bytes(next_arg(&mut i, name))),
+            // ld-prime takes this one without its argument.
+            b"-oso_prefix" => {
+                if let Some(arg) = cmdline.get(i + 1) {
+                    args.oso_prefix = Some(bytes(arg));
+                    i += 1;
+                }
+            }
             b"-mark_dead_strippable_dylib" => args.mark_dead_strippable_dylib = true,
             b"-export_dynamic" => args.export_dynamic = true,
-            b"-order_file" => args.order_files.push(path(next_arg(&mut i))),
+            b"-order_file" => args.order_files.push(path(next_arg(&mut i, name))),
             b"--print-dependencies" => args.print_dependencies = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
-            b"-why_live" => add_patterns(&mut why_live, name, [text(name, next_arg(&mut i))]),
-            b"-allowable_client" => args.allowable_clients.push(bytes(next_arg(&mut i))),
-            b"-client_name" => args.client_name = Some(bytes(next_arg(&mut i))),
+            b"-why_live" => add_patterns(&mut why_live, name, [text(name, next_arg(&mut i, name))]),
+            b"-allowable_client" => args.allowable_clients.push(bytes(next_arg(&mut i, name))),
+            b"-client_name" => args.client_name = Some(bytes(next_arg(&mut i, name))),
             b"-t" => args.trace = true,
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
             b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
             b"-non_global_symbols_strip_list" => {
-                let names = read_symbol_list(name, &path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 add_patterns(&mut local_strip_list, name, names.iter().map(String::as_str));
             }
             b"-non_global_symbols_no_strip_list" => {
-                let names = read_symbol_list(name, &path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 add_patterns(
                     local_keep_list.get_or_insert_default(),
                     name,
@@ -1186,9 +1256,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 );
             }
             b"-sectalign" => {
-                let seg = text(name, next_arg(&mut i)).to_string();
-                let sect = text(name, next_arg(&mut i)).to_string();
-                let val = text(name, next_arg(&mut i));
+                let seg = text(name, next_arg(&mut i, name)).to_string();
+                let sect = text(name, next_arg(&mut i, name)).to_string();
+                let val = text(name, next_arg(&mut i, name));
                 let align = parse_hex("-sectalign", val);
                 if !align.is_power_of_two() {
                     fatal!("-sectalign: alignment not a power of two: {val}");
@@ -1196,12 +1266,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.sectalign.push((seg, sect, align.trailing_zeros() as u8));
             }
             b"-alias" => {
-                let existing = text(name, next_arg(&mut i)).to_string();
-                let new = text(name, next_arg(&mut i)).to_string();
+                let existing = text(name, next_arg(&mut i, name)).to_string();
+                let new = text(name, next_arg(&mut i, name)).to_string();
                 args.aliases.push((existing, new));
             }
             b"-alias_list" => {
-                let list = path(next_arg(&mut i));
+                let list = path(next_arg(&mut i, name));
                 // ld64 links on without the aliases, warning in the
                 // words it uses for an order file.
                 let contents = match std::fs::read_to_string(&list) {
@@ -1229,7 +1299,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     }
                 }
             }
-            b"-executable_path" => args.executable_path = Some(path(next_arg(&mut i))),
+            b"-executable_path" => args.executable_path = Some(path(next_arg(&mut i, name))),
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
@@ -1260,7 +1330,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // flag carries no separate SDK).
             b"-macos_version_min" | b"-macosx_version_min" => {
                 args.platform = PLATFORM_MACOS;
-                args.platform_minos = parse_version(text(name, next_arg(&mut i)));
+                args.platform_minos = parse_version(text(name, next_arg(&mut i, name)));
                 args.platform_sdk = args.platform_minos;
             }
 
@@ -1268,16 +1338,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // -reproducible has nothing to switch on.
             b"-reproducible" => {}
 
-            b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i))),
+            b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i, name))),
 
-            b"-dependency_info" => args.dependency_info = Some(path(next_arg(&mut i))),
+            b"-dependency_info" => args.dependency_info = Some(path(next_arg(&mut i, name))),
 
             // Ignored options with an argument
-            b"-object_path_lto" => args.object_path_lto = Some(path(next_arg(&mut i))),
+            b"-object_path_lto" => args.object_path_lto = Some(path(next_arg(&mut i, name))),
 
             // Ignored options with an argument
             b"-mllvm" => {
-                next_arg(&mut i);
+                next_arg(&mut i, name);
             }
 
             raw => {

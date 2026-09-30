@@ -1,0 +1,36 @@
+#!/bin/bash
+source "$(dirname "$0")"/common.inc
+
+# A command line that ends before an option's argument is an error that
+# names the option and what it needs, as ld-prime words it for each: a
+# path, a name, a size, an address, or all of several operands, which
+# it takes before it reads any.
+echo 'int main() {}' | $CC -c -xc - -o $t/a.o
+
+# missing <message> <options...>
+missing() {
+  not $mold -arch $ARCH -o $t/exe $t/a.o "${@:2}" 2> $t/log &&
+    grep -Fq -- "$1" $t/log
+}
+missing '-o missing <path>' -o
+missing '-L missing <path>' -L
+missing '-arch missing <arch>' -arch
+missing '-e missing <name>' -e
+missing '-headerpad missing <size>' -headerpad
+missing '-image_base missing <address>' -image_base
+missing '-current_version missing <version>' -current_version
+missing '-undefined missing <dynamic_lookup>' -undefined
+missing '-mllvm missing <value>' -mllvm
+missing '-alias missing <real-name> <alias-name>' -alias _main
+missing '-platform_version missing arguments <platform> <min_version> <sdk_version>' \
+  -platform_version nosuch 13.0
+missing '-sectcreate missing arguments <segname> <sectname> <file>' -sectcreate __TEXT __foo
+missing '-add_empty_section missing arguments <segname> <sectname>' -add_empty_section __TEXT
+missing '-segaddr needs <segname> <addr>' -segaddr __FOO
+missing '-segment_order needs <segment-list>' -segment_order
+missing '-sectalign needs <segname> <sectname> <align>' -sectalign __TEXT __text
+
+# Without its path, -rpath is only a warning, and -oso_prefix nothing.
+$mold -r -arch $ARCH -o $t/b.o $t/a.o -rpath 2> $t/log
+grep -Fq -- 'warning: -rpath missing <path>' $t/log
+$mold -r -arch $ARCH -o $t/c.o $t/a.o -oso_prefix
