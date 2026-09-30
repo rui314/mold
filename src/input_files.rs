@@ -180,32 +180,26 @@ pub fn find_subsec(
     }
 }
 
-/// Like `find_subsec`, but also accepts an address at the very end of
-/// the last subsection.  Assembler places a bound label (an array's
-/// `_end`, say) right after the data it bounds, and these objects are
-/// built without MH_SUBSECTIONS_VIA_SYMBOLS, so such a symbol has no
-/// zero-length subsection of its own.  Only external symbols use this:
-/// a local label at a section's end is an alias, not an atom of its own,
-/// and a relocatable link still drops it.
-pub fn find_subsec_or_end(
+/// Finds the subsection a symbol at `addr` in section `n_sect` (1-based,
+/// as nlists count) belongs to, returning it with the offset within it.
+/// The section decides where addresses alone can't: a label on an empty
+/// section starts where the next section does, and one past a section's
+/// last byte (an array's `_end`) ends where the next one starts; both
+/// belong to their own section, as in ld-prime.
+pub fn find_symbol_subsec(
     isecs: &[InputSection],
     subsecs: &[crate::input_sections::InputSectionId],
+    n_sect: u8,
     addr: u64,
 ) -> Option<(usize, u64)> {
-    if let Some(found) = find_subsec(isecs, subsecs, addr) {
-        return Some(found);
-    }
-    let i = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
-    if i == 0 {
-        return None;
-    }
-    let id = subsecs[i - 1] as usize;
+    let shndx = u32::from(n_sect).wrapping_sub(1);
+    let end = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
+    // The nearest subsection of the section starting at or before
+    // `addr`; any in between belong to empty sections at that address.
+    let id =
+        subsecs[..end].iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
     let isec = &isecs[id];
-    if isec.input_addr as u64 + isec.size as u64 == addr {
-        Some((id, isec.size as u64))
-    } else {
-        None
-    }
+    (addr <= isec.input_addr as u64 + isec.size as u64).then(|| (id, addr - isec.input_addr as u64))
 }
 
 /// A dynamic library, from a .tbd stub or a dylib binary.

@@ -645,9 +645,12 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                     sym.value = nlist.n_value;
                 }
                 N_SECT => {
-                    if let Some((isec, off)) =
-                        crate::input_files::find_subsec(isecs, &obj.subsecs, nlist.n_value)
-                    {
+                    if let Some((isec, off)) = crate::input_files::find_symbol_subsec(
+                        isecs,
+                        &obj.subsecs,
+                        nlist.n_sect,
+                        nlist.n_value,
+                    ) {
                         sym.set_file(FileId::Obj((obj_idx) as u32));
                         sym.set_input_section(Some(isec as u32));
                         sym.value = off;
@@ -761,8 +764,12 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
         let mut align_term = 0u64;
         if class == 1
             && nlist.n_type() == N_SECT
-            && let Some((isec, _)) =
-                crate::input_files::find_subsec(isecs_for_rank, &obj.subsecs, nlist.n_value)
+            && let Some((isec, _)) = crate::input_files::find_symbol_subsec(
+                isecs_for_rank,
+                &obj.subsecs,
+                nlist.n_sect,
+                nlist.n_value,
+            )
         {
             align_term = 63 - isecs_for_rank[isec].p2align as u64;
         }
@@ -820,9 +827,10 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
                     }
                     N_SECT => {
                         sym.set_file(FileId::Obj((obj_idx) as u32));
-                        match crate::input_files::find_subsec_or_end(
+                        match crate::input_files::find_symbol_subsec(
                             isecs,
                             &obj.subsecs,
+                            nlist.n_sect,
                             nlist.n_value,
                         ) {
                             Some((isec, off)) => {
@@ -1746,9 +1754,12 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
                     continue;
                 }
                 let Some(winner) = sym.input_section().map(|i| i as usize) else { continue };
-                let Some((loser, off)) =
-                    crate::input_files::find_subsec(&shared.isecs, &obj.subsecs, nlist.n_value)
-                else {
+                let Some((loser, off)) = crate::input_files::find_symbol_subsec(
+                    &shared.isecs,
+                    &obj.subsecs,
+                    nlist.n_sect,
+                    nlist.n_value,
+                ) else {
                     continue;
                 };
                 let values = values.get_or_insert_with(|| {
@@ -4732,10 +4743,14 @@ pub fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path
             // the unit's end.
             ent.n_strx = if name.is_empty() { 1 } else { 0 };
             if addressed(nlist) {
-                let placed =
-                    crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, nlist.n_value)
-                        .map(|(isec, off)| (ctx.resolve_isec(isec), off))
-                        .filter(|&(isec, _)| ctx.isecs[isec].is_alive());
+                let placed = crate::input_files::find_symbol_subsec(
+                    &ctx.isecs,
+                    &obj.subsecs,
+                    nlist.n_sect,
+                    nlist.n_value,
+                )
+                .map(|(isec, off)| (ctx.resolve_isec(isec), off))
+                .filter(|&(isec, _)| ctx.isecs[isec].is_alive());
                 let Some((isec, off)) = placed else {
                     // Dead code: drop the note, and a function's size
                     // entry with it.
