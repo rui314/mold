@@ -1828,12 +1828,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 );
             }
             fatal!("unknown command line option: -b {arg}");
-        } else if read_arg!("fuse-ld") {
+        } else if read_arg!("fuse-ld", true) {
         } else if cursor.read_flag("allow-shlib-undefined") {
             allow_shlib_undefined = Some(true);
         } else if cursor.read_flag("no-allow-shlib-undefined") {
             allow_shlib_undefined = Some(false);
-        } else if read_arg!("O")
+        } else if read_arg!("O", true)
             || cursor.read_flag("EB")
             || cursor.read_flag("EL")
             || cursor.read_flag("O0")
@@ -1848,7 +1848,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("no-add-needed")
             || cursor.read_flag("no-call-graph-profile-sort")
             || cursor.read_flag("no-copy-dt-needed-entries")
-            || read_arg!("sort-section")
+            || read_arg!("sort-section", true)
             || cursor.read_flag("sort-common")
             || cursor.read_flag("dc")
             || cursor.read_flag("dp")
@@ -1860,12 +1860,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("no-warn-execstack")
             || cursor.read_flag("long-plt")
             || cursor.read_flag("secure-plt")
-            || read_arg!("rpath-link")
+            || read_arg!("rpath-link", true)
             || cursor.read_z_flag("combreloc")
             || cursor.read_z_flag("nocombreloc")
             || read_z_arg!("common-page-size")
             || cursor.read_flag("no-keep-memory")
-            || read_arg!("max-cache-size")
+            || read_arg!("max-cache-size", true)
             || cursor.read_flag("--mmap-output-file")
             || cursor.read_flag("no-mmap-output-file")
         {

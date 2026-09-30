@@ -25,10 +25,13 @@ printf 'INPUT("%s")\n' "$input" > "$t/$dir.script"
 ar crsT $t/thin.a "$t/$input"
 ./mold -r -o $t/thin.o --whole-archive $t/thin.a
 
+# Options that mold ignores accept any bytes.
+./mold -r -o $t/ignored.o "$t/$input" -rpath-link "$t/$dir" -fuse-ld="$t/$dir"
+
 printf '"--output=%s" "%s"\n' "$t/$output" "$t/$input" > $t/output.rsp
 ./mold -r --repro @$t/output.rsp
 
-for file in argv.o response.o library.o script.o thin.o "$output"; do
+for file in argv.o response.o library.o script.o thin.o ignored.o "$output"; do
   readelf -Ws "$t/$file" | grep -E ' FUNC +GLOBAL +DEFAULT .* [0-9]+ +foo$'
 done
 
