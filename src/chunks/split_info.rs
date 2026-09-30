@@ -10,21 +10,6 @@ use crate::target::Target;
 use crate::util::encode_uleb;
 use std::collections::BTreeMap;
 
-pub const DYLD_CACHE_ADJ_V2_FORMAT: u8 = 0x7f;
-pub const DYLD_CACHE_ADJ_V2_POINTER_32: u8 = 0x01;
-pub const DYLD_CACHE_ADJ_V2_POINTER_64: u8 = 0x02;
-pub const DYLD_CACHE_ADJ_V2_DELTA_32: u8 = 0x03;
-pub const DYLD_CACHE_ADJ_V2_DELTA_64: u8 = 0x04;
-pub const DYLD_CACHE_ADJ_V2_ARM64_ADRP: u8 = 0x05;
-pub const DYLD_CACHE_ADJ_V2_ARM64_OFF12: u8 = 0x06;
-pub const DYLD_CACHE_ADJ_V2_ARM64_BR26: u8 = 0x07;
-pub const DYLD_CACHE_ADJ_V2_ARM_MOVW_MOVT: u8 = 0x08;
-pub const DYLD_CACHE_ADJ_V2_ARM_BR24: u8 = 0x09;
-pub const DYLD_CACHE_ADJ_V2_THUMB_MOVW_MOVT: u8 = 0x0a;
-pub const DYLD_CACHE_ADJ_V2_THUMB_BR22: u8 = 0x0b;
-pub const DYLD_CACHE_ADJ_V2_IMAGE_OFF_32: u8 = 0x0c;
-pub const DYLD_CACHE_ADJ_V2_THREADED_POINTER_64: u8 = 0x0d;
-
 #[derive(Debug)]
 pub struct SplitInfoSection {
     pub hdr: ChunkHeader,
@@ -56,6 +41,10 @@ pub struct SplitEntry {
     pub from_offset: u64,
     pub to_offset: u64,
 }
+
+/// References grouped the way the V2 format encodes them: (from
+/// section, to section) -> target offset -> kind -> source offsets.
+type Grouped = BTreeMap<(u8, u8), BTreeMap<u64, BTreeMap<u8, Vec<u64>>>>;
 
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.split_seg_info {
@@ -239,7 +228,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // FromOffset    :== <kind> <count> <from-sect-offset-delta>
 
     // Grouping: (from_sect, to_sect) -> to_offset -> kind -> Vec<from_offset>
-    let mut whole: BTreeMap<(u8, u8), BTreeMap<u64, BTreeMap<u8, Vec<u64>>>> = BTreeMap::new();
+    let mut whole: Grouped = BTreeMap::new();
     for e in entries {
         whole
             .entry((e.from_sect, e.to_sect))
