@@ -22,11 +22,14 @@ pub struct ChainedFixupsSection {
     /// Every dynamic fixup location, sorted by address: (address,
     /// bound symbol or None for a rebase, addend).
     pub fixups: Vec<(u64, Option<SymbolId>, u64)>,
-    /// The import table: (symbol, table addend), sorted; and each
-    /// symbol's first ordinal.
+    /// The import table: (symbol, table addend), in ld-prime's order;
+    /// and each entry's index.
     pub imports: Vec<(SymbolId, u64)>,
-    pub ordinals: std::collections::HashMap<SymbolId, usize>,
+    pub ordinals: ImportOrdinals,
 }
+
+/// Each import's index in the table, by (symbol, table addend).
+pub type ImportOrdinals = std::collections::HashMap<(SymbolId, u64), usize>;
 
 impl ChainedFixupsSection {
     pub fn new() -> Self {
@@ -57,14 +60,43 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// encodes its target (a rebase value or an import ordinal) plus the
 /// distance to the next fixup in the page, forming a chain dyld walks.
 /// Builds the chained-fixups payload; returns the encoded bytes, the
-/// collected fixups, the import table and the symbol->import ordinal
-/// map, for the caller to store on the context.
+/// collected fixups, the import table and each import's index, for the
+/// caller to store on the context.
 pub type ChainedFixups = (
     Vec<u8>,
     Vec<(u64, Option<crate::symbol::SymbolId>, u64)>,
     Vec<(crate::symbol::SymbolId, u64)>,
-    std::collections::HashMap<crate::symbol::SymbolId, usize>,
+    ImportOrdinals,
 );
+
+/// A fixup: its address, the symbol it binds (None for a rebase), the
+/// addend, and the start of the atom holding it.
+type Fixup = (u64, Option<SymbolId>, u64, u64);
+
+/// The import-table addend of a bind: addends up to 255 are carried
+/// inline in the fixup word and share the symbol's addend-0 entry.
+fn table_addend(addend: u64) -> u64 {
+    if addend <= MAX_INLINE_ADDEND { 0 } else { addend }
+}
+
+/// The import table, in ld-prime's order: an entry per distinct
+/// (symbol, table addend), numbered as it is first met walking the
+/// binds atom by atom in address order and, within an atom, from the
+/// highest offset down. A GOT slot is an atom of its own.
+fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
+    let mut binds: Vec<&Fixup> = fixups.iter().filter(|f| f.1.is_some()).collect();
+    binds.sort_by(|a, b| a.3.cmp(&b.3).then(b.0.cmp(&a.0)));
+    let mut imports = Vec::new();
+    let mut ordinals = ImportOrdinals::new();
+    for &&(_, sym, addend, _) in &binds {
+        let key = (sym.unwrap(), table_addend(addend));
+        ordinals.entry(key).or_insert_with(|| {
+            imports.push(key);
+            imports.len() - 1
+        });
+    }
+    (imports, ordinals)
+}
 
 /// The pointer format of the chains. A rebase target is a VM address
 /// under DYLD_CHAINED_PTR_64 and an offset from the image's load
@@ -85,23 +117,10 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     // header and a starts table with no pages), as ld64 writes it:
     // dyld reads the format from the load command, and its absence
     // would mean classic dyld info.
-    let fixups = collect_fixups(ctx);
-
-    // The import table: one entry per (symbol, table addend). Addends
-    // up to 255 are carried inline in the fixup word and use the
-    // symbol's base entry.
-    let mut dynsyms: Vec<(crate::symbol::SymbolId, u64)> = fixups
-        .iter()
-        .filter_map(|&(_, sym, addend)| {
-            sym.map(|s| (s, if addend <= MAX_INLINE_ADDEND { 0 } else { addend }))
-        })
-        .collect();
-    dynsyms.sort_unstable();
-    dynsyms.dedup();
-    let mut ordinals = std::collections::HashMap::new();
-    for (i, &(sym, _)) in dynsyms.iter().enumerate().rev() {
-        ordinals.insert(sym, i);
-    }
+    let with_atoms = collect_fixups(ctx);
+    let (dynsyms, ordinals) = import_table(&with_atoms);
+    let fixups: Vec<(u64, Option<SymbolId>, u64)> =
+        with_atoms.into_iter().map(|(addr, sym, addend, _)| (addr, sym, addend)).collect();
 
     let max_addend = dynsyms.iter().map(|&(_, a)| a).max().unwrap_or(0);
     let import_format = if max_addend == 0 {
@@ -188,13 +207,13 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     // Import table
     let imports_offset = buf.len();
     buf[8..12].copy_from_slice(&(imports_offset as u32).to_le_bytes());
+    // Each import has a name string of its own after a leading NUL,
+    // repeated for a symbol imported with several addends.
     let mut name_offs = Vec::with_capacity(dynsyms.len());
-    let mut nameoff: u32 = 0;
-    for (i, &(sym, _)) in dynsyms.iter().enumerate() {
+    let mut nameoff: u32 = 1;
+    for &(sym, _) in &dynsyms {
         name_offs.push(nameoff);
-        if i + 1 == dynsyms.len() || dynsyms[i + 1].0 != sym {
-            nameoff += ctx.symbols[sym].name().len() as u32 + 1;
-        }
+        nameoff += ctx.symbols[sym].name().len() as u32 + 1;
     }
     for (i, &(sym, addend)) in dynsyms.iter().enumerate() {
         let s = &ctx.symbols[sym];
@@ -232,11 +251,10 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     // Symbol names
     let symbols_offset = buf.len();
     buf[12..16].copy_from_slice(&(symbols_offset as u32).to_le_bytes());
-    for (i, &(sym, _)) in dynsyms.iter().enumerate() {
-        if i + 1 == dynsyms.len() || dynsyms[i + 1].0 != sym {
-            buf.extend_from_slice(ctx.symbols[sym].name().as_bytes());
-            buf.push(0);
-        }
+    buf.push(0);
+    for &(sym, _) in &dynsyms {
+        buf.extend_from_slice(ctx.symbols[sym].name().as_bytes());
+        buf.push(0);
     }
     pad8(&mut buf);
 
@@ -278,16 +296,7 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             let word = match sym {
                 Some(sym) => {
                     // dyld_chained_ptr_64_bind
-                    let ordinal = if addend <= MAX_INLINE_ADDEND {
-                        ctx.chained_fixups.ordinals[&sym] as u64
-                    } else {
-                        let base = ctx.chained_fixups.ordinals[&sym];
-                        ctx.chained_fixups.imports[base..]
-                            .iter()
-                            .position(|&(s, a)| s == sym && a == addend)
-                            .map(|p| (base + p) as u64)
-                            .unwrap()
-                    };
+                    let ordinal = ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
                     let inline_addend = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
                     ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
                 }
@@ -318,12 +327,10 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 }
 
-pub fn collect_fixups<E: Target>(
-    ctx: &Context<E>,
-) -> Vec<(u64, Option<crate::symbol::SymbolId>, u64)> {
+fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
     // Every subsection's fixups are independent; collect them on all
     // cores and sort the union in parallel, as mold does.
-    let mut fixups: Vec<(u64, Option<crate::symbol::SymbolId>, u64)> = ctx
+    let mut fixups: Vec<Fixup> = ctx
         .isecs
         .par_iter()
         .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
@@ -359,11 +366,11 @@ pub fn collect_fixups<E: Target>(
                 match ctx.reloc_target_sym(isec.file as usize, rel) {
                     Some(id) if ctx.is_swift_force_load_ref(id) => None,
                     Some(id) if ctx.binds_at_runtime(id) => {
-                        Some((addr, Some(id), rel.addend as u64))
+                        Some((addr, Some(id), rel.addend as u64, base))
                     }
                     _ => {
                         if !ctx.reloc_target_is_tls(isec.file as usize, rel) {
-                            Some((addr, None, 0))
+                            Some((addr, None, 0, base))
                         } else {
                             None
                         }
@@ -380,17 +387,19 @@ pub fn collect_fixups<E: Target>(
                 continue;
             }
             let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
-            fixups.push((addr + i as u64 * 8, sym, 0));
+            let slot = addr + i as u64 * 8;
+            fixups.push((slot, sym, 0, slot));
         }
     }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        fixups.push((ctx.objc_selref_addr(i), None, 0));
+        let slot = ctx.objc_selref_addr(i);
+        fixups.push((slot, None, 0, slot));
     }
     for (addr, _) in super::rebase_info::data_blob_pointers(ctx) {
-        fixups.push((addr, None, 0));
+        fixups.push((addr, None, 0, addr));
     }
 
-    fixups.par_sort_unstable_by_key(|&(addr, _, _)| addr);
+    fixups.par_sort_unstable_by_key(|&(addr, _, _, _)| addr);
     fixups
 }
 
