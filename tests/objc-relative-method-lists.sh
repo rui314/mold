@@ -54,8 +54,21 @@ EOF2
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=15.0
 $t/exe | grep '^1 2 4 3 5 6 7$'
 otool -l $t/exe > $t/lc
-grep -A1 'sectname __objc_methlist' $t/lc | grep 'segname __TEXT'
 otool -ov $t/exe > $t/ov
+# ld-prime converts on arm64 only: an x86-64 image keeps the classic
+# lists in __objc_const at any deployment target.
+if [ $ARCH = x86_64 ]; then
+  not grep -q '__objc_methlist' $t/lc
+  grep -q 'entsize 24' $t/ov
+  not grep -q 'entsize 12 (relative)' $t/ov
+  $CC --ld-path=$mold -o $t/exe_rel $t/a.o -framework Foundation -mmacosx-version-min=15.0 \
+    -Wl,-objc_relative_method_lists
+  $t/exe_rel | grep '^1 2 4 3 5 6 7$'
+  otool -l $t/exe_rel > $t/lc
+  otool -ov $t/exe_rel > $t/ov
+  mv $t/exe_rel $t/exe
+fi
+grep -A1 'sectname __objc_methlist' $t/lc | grep 'segname __TEXT'
 # Every list is relative: none left in the classic 24-byte form.
 [ "$(grep -c 'entsize 12 (relative)' $t/ov)" -ge 8 ]
 not grep -q 'entsize 24' $t/ov

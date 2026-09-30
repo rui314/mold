@@ -57,3 +57,10 @@ $CC --ld-path=$mold -o $t/exe_ch $t/a.o -mmacosx-version-min=13.0
 $t/exe_ch | grep '^4$'
 otool -l $t/exe_ch > $t/lc_ch
 not grep -q '__la_symbol_ptr' $t/lc_ch
+
+# x86-64 stubs are byte-aligned with classic dyld info, 2-byte aligned
+# with chained fixups.
+if [ $ARCH = x86_64 ]; then
+  grep -A8 'sectname __stubs' $t/lc | grep 'align 2^0'
+  grep -A8 'sectname __stubs' $t/lc_ch | grep 'align 2^1'
+fi

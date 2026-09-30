@@ -84,7 +84,14 @@ grep -q '^pb\] b\] m\] p3\] pa\] a\] p2\] p1\] m\] base\] setBase:\] $' $t/order
 grep -E 'list\[' $t/ov | head -3 | awk '{print $NF}' | tr '\n' ' ' > $t/protos
 grep -q '^__OBJC_PROTOCOL_\$_P3 __OBJC_PROTOCOL_\$_P2 __OBJC_PROTOCOL_\$_P1 $' $t/protos
 grep -E '^ *name .* (pa|pb|base)$' $t/ov | head -3 | awk '{print $NF}' | tr '\n' ' ' > $t/props
-grep -q '^pa pb base $' $t/props
+# ld-prime merges the categories' properties in this order on arm64
+# (relative method lists) and the other way round on x86-64 (classic
+# lists); we match each.
+if [ $ARCH = arm64 ]; then
+  grep -q '^pa pb base $' $t/props
+else
+  grep -q '^pb pa base $' $t/props
+fi
 nm $t/exe > $t/nm
 not grep -q 'CATEGORY_INSTANCE_METHODS_Foo' $t/nm
 not grep -q 'OBJC_\$_CATEGORY_Foo' $t/nm

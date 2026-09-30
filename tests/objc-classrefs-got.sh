@@ -45,3 +45,6 @@ dyld_info -fixups $t/exe > $t/fixups
 $CC --ld-path=$mold -o $t/exe14 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
 $t/exe14 | grep '^Foo NSMutableArray 1 1$'
 otool -l $t/exe14 | grep 'sectname __objc_classrefs'
+# Both objects' references to NSMutableArray coalesce into one slot,
+# as ld64 keeps one class reference per class.
+[ "$(dyld_info -fixups $t/exe14 | grep '__objc_classrefs' | grep -c 'NSMutableArray')" = 1 ]

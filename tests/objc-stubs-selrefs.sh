@@ -37,3 +37,7 @@ otool -l $t/exe > $t/lc
 [ "$(grep -c 'sectname __objc_selrefs' $t/lc)" = 1 ]
 [ "$(grep -c 'sectname __objc_methname' $t/lc)" = 1 ]
 grep -q 'sectname __objc_stubs' $t/lc
+# ld-prime leaves x86-64's stubs byte-aligned (arm64's are 32-byte).
+if [ $ARCH = x86_64 ]; then
+  grep -A8 'sectname __objc_stubs' $t/lc | grep 'align 2^0'
+fi
