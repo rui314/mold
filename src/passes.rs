@@ -165,18 +165,30 @@ fn mark_needed<E: Target>(ctx: &mut Context<E>, before: usize) {
     }
 }
 
+/// How an input was named: the flags its option gives the file, as
+/// mold's ReaderContext carries --as-needed and --whole-archive.
+#[derive(Clone, Copy, Default)]
+struct ReaderContext {
+    /// -force_load: every archive member is live.
+    force_load: bool,
+    /// -weak_library, -weak-l, -weak_framework: the imports are weak.
+    weak: bool,
+    /// -reexport_library, -reexport-l, -reexport_framework.
+    reexport: bool,
+    /// -hidden-l: the archive's definitions are not exported.
+    hidden: bool,
+    /// -needed_library, -needed-l, -needed_framework.
+    needed: bool,
+}
+
 /// Classifies one input file. Dylib stubs and binaries are registered
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
 /// registered immediately since libLTO calls are kept on one thread.
-#[allow(clippy::too_many_arguments)]
 fn collect_file<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
-    force_load: bool,
-    weak: bool,
-    reexport: bool,
-    hidden: bool,
+    rc: ReaderContext,
     out: &mut Vec<PendingObject>,
 ) {
     // A library may be named both on the command line and by auto-link
@@ -187,7 +199,7 @@ fn collect_file<E: Target>(
     match get_file_type(mf) {
         FileType::Object => {
             let priority = ctx.next_priority();
-            out.push(PendingObject { mf, alive: true, hidden, priority });
+            out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
         // A relocatable output keeps every reference undefined for the
         // final link, so a dylib named on its command line is ignored
@@ -208,17 +220,20 @@ fn collect_file<E: Target>(
             // The dylibs loaded during the parse beyond this one are the
             // public libraries it re-exports; a weak parent's are weak.
             for d in &mut ctx.dylibs[first..] {
-                d.is_weak |= weak;
+                d.is_weak |= rc.weak;
             }
             let dylib = &mut ctx.dylibs[idx];
-            dylib.is_weak |= weak;
-            dylib.is_reexported |= reexport;
+            dylib.is_weak |= rc.weak;
+            dylib.is_reexported |= rc.reexport;
             // Named here (or auto-linked): no longer merely implicit,
             // and ordered by naming sequence.
             dylib.is_implicit = false;
             if dylib.load_order == u32::MAX {
                 dylib.load_order = ctx.dylib_load_seq;
                 ctx.dylib_load_seq += 1;
+            }
+            if rc.needed {
+                mark_needed(ctx, first);
             }
         }
         FileType::Archive => {
@@ -234,7 +249,7 @@ fn collect_file<E: Target>(
             let all_load = ctx.args.all_load
                 && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
             for member in crate::archive_file::read_archive_members(mf) {
-                let alive = force_load
+                let alive = rc.force_load
                     || all_load
                     || (ctx.args.load_objc && input_files::has_objc_sections(member));
                 match get_file_type(member) {
@@ -243,14 +258,14 @@ fn collect_file<E: Target>(
                     }
                     _ => {
                         let priority = ctx.next_priority();
-                        out.push(PendingObject { mf: member, alive, hidden, priority });
+                        out.push(PendingObject { mf: member, alive, hidden: rc.hidden, priority });
                     }
                 }
             }
         }
         FileType::Fat => {
             let slice = input_files::get_fat_slice::<E>(mf);
-            collect_file(ctx, slice, force_load, weak, reexport, hidden, out);
+            collect_file(ctx, slice, rc, out);
         }
         FileType::LlvmBitcode => {
             input_files::parse_bitcode(ctx, mf, true);
@@ -374,84 +389,59 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         tapi::prefetch(&deps, E::NAME);
     }
 
+    let lib = |ctx: &Context<E>, name: &OsStr, option: &str| {
+        let path = find_library(ctx, name);
+        if path.is_none() {
+            error!("library not found: {option}{}", name.display());
+        }
+        path
+    };
+    let framework = |ctx: &Context<E>, name: &OsStr| {
+        let path = find_framework(ctx, name);
+        if path.is_none() {
+            error!("framework not found: {}", name.display());
+        }
+        path
+    };
     let mut queue: Vec<PendingObject> = Vec::new();
     for arg in &inputs {
-        match arg {
-            InputArg::File(path) => {
-                let mf = MappedFile::must_open(path);
-                collect_file(ctx, mf, false, false, false, false, &mut queue);
-            }
+        let rc = ReaderContext::default();
+        let (path, rc) = match arg {
+            InputArg::File(path) => (Some(path.clone()), rc),
             InputArg::ForceLoad(path) => {
-                let mf = MappedFile::must_open(path);
-                collect_file(ctx, mf, true, false, false, false, &mut queue);
+                (Some(path.clone()), ReaderContext { force_load: true, ..rc })
             }
-            InputArg::WeakFile(path) => {
-                let mf = MappedFile::must_open(path);
-                collect_file(ctx, mf, false, true, false, false, &mut queue);
-            }
+            InputArg::WeakFile(path) => (Some(path.clone()), ReaderContext { weak: true, ..rc }),
             InputArg::ReexportFile(path) => {
-                let mf = MappedFile::must_open(path);
-                collect_file(ctx, mf, false, false, true, false, &mut queue);
+                (Some(path.clone()), ReaderContext { reexport: true, ..rc })
             }
             InputArg::NeededFile(path) => {
-                let mf = MappedFile::must_open(path);
-                let before = ctx.dylibs.len();
-                collect_file(ctx, mf, false, false, false, false, &mut queue);
-                mark_needed(ctx, before);
+                (Some(path.clone()), ReaderContext { needed: true, ..rc })
             }
-            InputArg::ReexportLib(name) => match find_library(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    collect_file(ctx, mf, false, false, true, false, &mut queue);
-                }
-                None => error!("library not found: -reexport-l{}", name.display()),
-            },
-            InputArg::HiddenLib(name) => match find_library(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    collect_file(ctx, mf, false, false, false, true, &mut queue);
-                }
-                None => error!("library not found: -hidden-l{}", name.display()),
-            },
-            InputArg::ReexportFramework(name) => match find_framework(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    collect_file(ctx, mf, false, false, true, false, &mut queue);
-                }
-                None => error!("framework not found: {}", name.display()),
-            },
-            InputArg::NeededLib(name) => match find_library(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    let before = ctx.dylibs.len();
-                    collect_file(ctx, mf, false, false, false, false, &mut queue);
-                    mark_needed(ctx, before);
-                }
-                None => error!("library not found: -needed-l{}", name.display()),
-            },
-            InputArg::NeededFramework(name) => match find_framework(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    let before = ctx.dylibs.len();
-                    collect_file(ctx, mf, false, false, false, false, &mut queue);
-                    mark_needed(ctx, before);
-                }
-                None => error!("framework not found: {}", name.display()),
-            },
-            InputArg::Lib(name, weak) => match find_library(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    collect_file(ctx, mf, false, *weak, false, false, &mut queue);
-                }
-                None => error!("library not found: -l{}", name.display()),
-            },
-            InputArg::Framework(name, weak) => match find_framework(ctx, name) {
-                Some(path) => {
-                    let mf = MappedFile::must_open(&path);
-                    collect_file(ctx, mf, false, *weak, false, false, &mut queue);
-                }
-                None => error!("framework not found: {}", name.display()),
-            },
+            InputArg::Lib(name, weak) => {
+                (lib(ctx, name, "-l"), ReaderContext { weak: *weak, ..rc })
+            }
+            InputArg::ReexportLib(name) => {
+                (lib(ctx, name, "-reexport-l"), ReaderContext { reexport: true, ..rc })
+            }
+            InputArg::HiddenLib(name) => {
+                (lib(ctx, name, "-hidden-l"), ReaderContext { hidden: true, ..rc })
+            }
+            InputArg::NeededLib(name) => {
+                (lib(ctx, name, "-needed-l"), ReaderContext { needed: true, ..rc })
+            }
+            InputArg::Framework(name, weak) => {
+                (framework(ctx, name), ReaderContext { weak: *weak, ..rc })
+            }
+            InputArg::ReexportFramework(name) => {
+                (framework(ctx, name), ReaderContext { reexport: true, ..rc })
+            }
+            InputArg::NeededFramework(name) => {
+                (framework(ctx, name), ReaderContext { needed: true, ..rc })
+            }
+        };
+        if let Some(path) = path {
+            collect_file(ctx, MappedFile::must_open(&path), rc, &mut queue);
         }
     }
     ctx.args.inputs = inputs;
@@ -543,7 +533,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
         if let Some(path) = path
             && let Some(mf) = MappedFile::open(&path)
         {
-            collect_file(ctx, mf, false, false, false, false, &mut queue);
+            collect_file(ctx, mf, ReaderContext::default(), &mut queue);
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
