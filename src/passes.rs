@@ -4959,6 +4959,13 @@ fn plan_local_symbols<E: Target>(
     let local =
         |n_sect: u8, n_value: u64| NList { n_strx: 0, n_type: N_SECT, n_sect, n_desc: 0, n_value };
 
+    // -non_global_symbols_no_strip_list / _strip_list filter local
+    // symbols by name; stabs unaffected.
+    let is_listed_out = |name: &[u8]| {
+        ctx.args.local_keep_list.as_ref().is_some_and(|keep| keep.find(name) == -1)
+            || ctx.args.local_strip_list.find(name) != -1
+    };
+
     let mut ents: Vec<Ent> = Vec::new();
     if !ctx.args.strip_locals {
         let per_obj: Vec<Vec<Ent>> = ctx
@@ -4978,14 +4985,7 @@ fn plan_local_symbols<E: Target>(
                     {
                         continue;
                     }
-                    // -non_global_symbols_no_strip_list / _strip_list
-                    // filter local symbols by name; stabs unaffected.
-                    if let Some(keep) = &ctx.args.local_keep_list
-                        && keep.find(sym.name().as_bytes()) == -1
-                    {
-                        continue;
-                    }
-                    if ctx.args.local_strip_list.find(sym.name().as_bytes()) != -1 {
+                    if is_listed_out(sym.name().as_bytes()) {
                         continue;
                     }
                     let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
@@ -5024,6 +5024,13 @@ fn plan_local_symbols<E: Target>(
             let addr = hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
             let ent = NList { n_type: N_PEXT | N_SECT, ..local(hdr.n_sect, addr) };
             ents.push((addr, PEXT, ctx.symbols[sym].name().as_bytes(), ent, None));
+        }
+        // The range-extension thunks' entries, named as ld-prime names
+        // its branch islands.
+        for (addr, n_sect, name) in crate::thunks::island_symbols(ctx) {
+            if !is_listed_out(name) {
+                ents.push((addr, LOCAL, name, local(n_sect, addr), None));
+            }
         }
     }
 
