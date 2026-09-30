@@ -1736,7 +1736,9 @@ pub struct Cie {
     /// its 'R' augmentation, or DW_EH_PE_absptr without one. Each FDE
     /// checks it as it is read.
     pub fde_enc: u8,
-    pub lsda_size: u8,
+    /// How they encode their LSDA pointer, if the CIE has an 'L'
+    /// augmentation; checked the same way.
+    pub lsda_enc: Option<u8>,
     pub output_offset: u32,
     pub is_alive: bool,
 }
@@ -1750,6 +1752,11 @@ impl Cie {
     /// DW_EH_PE_absptr (0x10, what clang writes).
     pub fn pc_size(&self) -> usize {
         if self.fde_enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 }
+    }
+
+    /// The size of an LSDA pointer of its FDEs, in the same encodings.
+    pub fn lsda_size(&self) -> usize {
+        if self.lsda_enc.is_some_and(|enc| enc & 0xf == DW_EH_PE_SDATA4) { 4 } else { 8 }
     }
 }
 
@@ -1841,7 +1848,7 @@ impl StagedObject {
             let id = u32::from_le_bytes(rec[4..8].try_into().unwrap());
             let input_addr = hdr.addr as u32 + pos as u32;
             if id == 0 {
-                let Some((fde_enc, lsda_size)) = parse_cie_augmentation(rec, &mf.name) else {
+                let Some((fde_enc, lsda_enc)) = parse_cie_augmentation(rec, &mf.name) else {
                     truncated_cfi(&mf.name, pos);
                 };
                 self.cies.push(Cie {
@@ -1851,7 +1858,7 @@ impl StagedObject {
                     personality: None,
                     personality_offset: 0,
                     fde_enc,
-                    lsda_size,
+                    lsda_enc,
                     output_offset: 0,
                     is_alive: false,
                 });
@@ -1877,14 +1884,21 @@ impl StagedObject {
         }
 
         // Personality references appear as GOT-relative relocations inside
-        // a CIE.
-        for r in rels.iter().filter(|r| r.r_type() == E::RELOC_GOTPC) {
+        // a CIE, whatever the personality's encoding says; ld-prime takes
+        // no other reference from a CIE.
+        for r in &rels {
             let addr = hdr.addr as u32 + r.r_address;
-            let Some(cie) = self
-                .cies
-                .iter_mut()
-                .find(|c| c.input_addr <= addr && addr < c.input_addr + c.data.len() as u32)
-            else {
+            let i = self.cies.partition_point(|c| c.input_addr <= addr);
+            let cie = i
+                .checked_sub(1)
+                .filter(|&i| addr < self.cies[i].input_addr + self.cies[i].data.len() as u32);
+            if r.r_type() != E::RELOC_GOTPC {
+                if cie.is_some() {
+                    fatal!("CIE reference to personality function not supported in '{file_name}'");
+                }
+                continue;
+            }
+            let Some(cie) = cie.map(|i| &mut self.cies[i]) else {
                 fatal!("{file_name}: __eh_frame: stray personality relocation");
             };
             if !r.is_extern() {
@@ -1943,13 +1957,7 @@ impl StagedObject {
             let Some(size) = pointer_size(enc) else {
                 fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
             };
-            let fits = match self.cies[cie as usize].lsda_size {
-                0 => rec.len() >= 8 + 2 * size,
-                lsda => {
-                    skip_uleb(rec, 8 + 2 * size).is_some_and(|p| p + lsda as usize <= rec.len())
-                }
-            };
-            if !fits {
+            if rec.len() < 8 + 2 * size {
                 truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
             }
             // The size is in the same format, but absolute.
@@ -1967,26 +1975,13 @@ impl StagedObject {
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
             let is_code = is_code_section(sect);
             data_fde |= is_typed_data_section(sect);
+            let lsda = self.cies[cie as usize]
+                .lsda_enc
+                .and_then(|enc| self.fde_lsda(rec, input_addr, 8 + 2 * size, enc, sect_addr));
 
             let is_covered = covered.contains(&(isec, func_offset));
             if is_covered && !keep_all_fdes {
                 continue;
-            }
-
-            // The LSDA pointer, if the CIE declares one: also pre-applied
-            // to be self-relative.
-            let mut lsda = None;
-            if self.cies[cie as usize].lsda_size != 0 {
-                // Past the augmentation data length.
-                let pos = skip_uleb(rec, 8 + 2 * size).unwrap();
-                let cell = i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap());
-                let lsda_addr = (input_addr as u64 + pos as u64).wrapping_add_signed(cell as i64);
-                let Some((lsda_isec, lsda_off)) =
-                    find_subsec(&self.isecs, &self.subsecs, lsda_addr)
-                else {
-                    fatal!("address=0x{lsda_addr:X} not in any section in '{file_name}'");
-                };
-                lsda = Some((lsda_isec as u32, lsda_off as u32));
             }
 
             let fde_idx = self.fdes.len();
@@ -2028,6 +2023,51 @@ impl StagedObject {
             });
         }
         data_fde
+    }
+
+    /// Reads the LSDA pointer of an FDE `rec` at `input_addr` whose
+    /// augmentation data's length is at `pos`, in encoding `enc`, and
+    /// returns the subsection and offset it points to. As libunwind
+    /// reads it, an FDE with no augmentation data or with a zero pointer
+    /// has none (GCC writes one for a function with no LSDA under a CIE
+    /// that declares them). Like the function's, ld-prime reads the
+    /// pointer in any encoding it knows, but takes only 0x10 and 0x1b
+    /// once it has found what it points to.
+    fn fde_lsda(
+        &self,
+        rec: &[u8],
+        input_addr: u32,
+        mut pos: usize,
+        enc: u8,
+        sect_addr: u32,
+    ) -> Option<(u32, u32)> {
+        // Diagnostics spell the path lossily.
+        let file_name = self.mf.name.display();
+        let truncated = || truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
+        if skip_uleb(rec, pos).is_none() {
+            truncated();
+        }
+        if read_uleb_at(rec, &mut pos) == 0 {
+            return None;
+        }
+        let Some(size) = pointer_size(enc) else {
+            fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
+        };
+        if pos + size > rec.len() {
+            truncated();
+        }
+        if read_pointer(rec, pos, enc & 0xf, 0) == 0 {
+            return None;
+        }
+        let addr = read_pointer(rec, pos, enc, input_addr);
+        let Some((isec, off)) = find_subsec(&self.isecs, &self.subsecs, addr) else {
+            fatal!("address=0x{addr:X} not in any section in '{file_name}'");
+        };
+        // ld-prime names the FDE's function encoding here.
+        if enc != DW_EH_PE_PCREL && enc != DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
+            fatal!("unsupported FDE pointer encoding 0x{enc:02X} in FDE to LSDA in '{file_name}'");
+        }
+        Some((isec as u32, off as u32))
     }
 
     /// Warns about each section of the object that has unwind info
@@ -2237,11 +2277,10 @@ fn read_pointer(rec: &[u8], pos: usize, enc: u8, rec_addr: u32) -> u64 {
 }
 
 /// Reads a CIE's version and augmentation, checking that they are ones
-/// the linker knows, and returns how its FDEs encode their function
-/// (see Cie::fde_enc) and the size of the LSDA pointer they carry, or 0
-/// if they have none; None if the CIE ends before its augmentation data
-/// does.
-fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, u8)> {
+/// the linker knows, and returns how its FDEs encode their function and
+/// their LSDA pointer (see Cie::fde_enc and Cie::lsda_enc); None if the
+/// CIE ends before its augmentation data does.
+fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, Option<u8>)> {
     // Diagnostics spell the path lossily.
     let file_name = file_name.display();
     // The version byte follows the length and the CIE ID, then the
@@ -2252,7 +2291,7 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, u8)> {
     }
     let aug_start = 9;
     if data.get(aug_start).copied() != Some(b'z') {
-        return Some((DW_EH_PE_ABSPTR, 0));
+        return Some((DW_EH_PE_ABSPTR, None));
     }
     let aug_end = aug_start + data[aug_start..].iter().position(|&b| b == 0)?;
     // The code and data alignment factors, the return address register
@@ -2262,24 +2301,24 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, u8)> {
         pos = skip_uleb(data, pos)?;
     }
     let mut fde_enc = DW_EH_PE_ABSPTR;
-    let mut lsda_size = 0;
+    let mut lsda_enc = None;
     for &c in &data[aug_start + 1..aug_end] {
         match c {
             b'L' => {
-                lsda_size = match data.get(pos)? & 0xf {
-                    0x3 | 0xb => 4, // DW_EH_PE_udata4, DW_EH_PE_sdata4
-                    0x0 => 8,       // DW_EH_PE_absptr
-                    enc => fatal!("{file_name}: __eh_frame: unknown LSDA encoding: {enc:#x}"),
-                };
+                lsda_enc = Some(*data.get(pos)?);
                 pos += 1;
             }
+            // The personality's encoding, then the pointer: compilers
+            // write 0x9b, a 4-byte pc-relative reference to its GOT slot
+            // (DW_EH_PE_indirect|DW_EH_PE_pcrel|DW_EH_PE_sdata4), but
+            // ld-prime reads any encoding it knows, finding the
+            // personality by the GOT-relative relocation alone.
             b'P' => {
-                // DW_EH_PE_indirect | DW_EH_PE_pcrel | DW_EH_PE_sdata4
                 let enc = *data.get(pos)?;
-                if enc != 0x9b {
-                    fatal!("{file_name}: __eh_frame: unknown personality encoding: {enc:#x}");
-                }
-                pos += 5;
+                let Some(size) = pointer_size(enc) else {
+                    fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
+                };
+                pos += 1 + size;
             }
             b'R' => {
                 fde_enc = *data.get(pos)?;
@@ -2293,7 +2332,7 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, u8)> {
             _ => {}
         }
     }
-    (pos <= data.len()).then_some((fde_enc, lsda_size))
+    (pos <= data.len()).then_some((fde_enc, lsda_enc))
 }
 
 /// Returns true if an object contains Objective-C class or category

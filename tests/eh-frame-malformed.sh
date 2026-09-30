@@ -89,3 +89,24 @@ fail noR 'unsupported FDE pointer encoding 0x00 in FDE' \
   'EH_frame0:' '.long 20' '.long 0' '.byte 1, 0x7a, 0, 1, 0x78, 30, 0, 0x0c, 31, 8, 0, 0, 0, 0, 0, 0' \
   '.long 20' '.long 28' '.quad 0' '.quad 0'
 fail noz 'unsupported FDE pointer encoding 0x00 in FDE' "$cie" '.long 20' '.long 20' '.quad 0' '.quad 0'
+
+# An FDE's LSDA pointer, in the encoding of the CIE's 'L' augmentation,
+# is read and checked the same way, when the FDE's augmentation data
+# holds any and the pointer is not zero. (ld-prime names the FDE's
+# function encoding where it refuses the LSDA's.)
+cie_l() {
+  printf '%s\n' 'EH_frame0:' '.long 20' '.long 0' \
+    ".byte 1, 0x7a, 0x4c, 0x52, 0, 1, 0x78, 30, 2, $1, 0x10, 0x0c, 31, 8, 0, 0"
+}
+fail lsda03 'unsupported pointer encoding 0x03' "$(cie_l 0x03)" \
+  '.long 25' '.long 28' '.quad _main - .' '.quad 1' '.byte 4' '.long 1'
+fail lsda1c 'in FDE to LSDA' "$(cie_l 0x1c)" \
+  '.long 29' '.long 28' '.quad _main - .' '.quad 1' '.byte 8' '.quad _main - .'
+
+# So is the personality pointer, as the CIE is read, and ld-prime takes
+# no reference from a CIE but the GOT-relative one naming it.
+fail pers03 'unsupported pointer encoding 0x03' 'EH_frame0:' '.long 24' '.long 0' \
+  '.byte 1, 0x7a, 0x50, 0x52, 0, 1, 0x78, 30, 6, 0x03, 0, 0, 0, 0, 0x10, 0x0c, 31, 8, 0, 0'
+fail pers10 'CIE reference to personality function not supported' 'EH_frame0:' '.long 28' \
+  '.long 0' '.byte 1, 0x7a, 0x50, 0x52, 0, 1, 0x78, 30, 10, 0x10' '.quad _main - .' \
+  '.byte 0x10, 0x0c, 31, 8, 0, 0'

@@ -70,10 +70,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             let pos = lsda_pos(fde.data, cie.pc_size());
             let cell_addr = fde_addr + pos as u64;
             let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
-            match cie.lsda_size {
+            match cie.lsda_size() {
                 4 => buf[off + pos..off + pos + 4].copy_from_slice(&(val as u32).to_le_bytes()),
-                8 => buf[off + pos..off + pos + 8].copy_from_slice(&val.to_le_bytes()),
-                _ => unreachable!(),
+                _ => buf[off + pos..off + pos + 8].copy_from_slice(&val.to_le_bytes()),
             }
         }
     }

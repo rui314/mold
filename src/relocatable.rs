@@ -609,7 +609,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     // The LSDA pointer, past the augmentation length.
                     if let Some((lsda, lsda_off)) = fde.lsda {
                         let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size());
-                        let size = cie.lsda_size;
+                        let size = cie.lsda_size() as u8;
                         let lsda = ctx.resolve_isec(lsda as usize);
                         let l = &ctx.isecs[lsda];
                         let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
