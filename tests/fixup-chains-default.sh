@@ -2,10 +2,10 @@
 source "$(dirname "$0")"/common.inc
 
 # ld-prime's defaults for the fixup format (measured): chained fixups
-# from macOS 12 on arm64 and from macOS 13 on x86_64, classic dyld
-# info below that; -undefined dynamic_lookup (and suppress) turn the
-# default back to classic dyld info, -undefined warning does not; an
-# explicit -fixup_chains always wins. Hammerspoon (deployment target
+# from macOS 12, except for an x86_64 executable, from macOS 13;
+# classic dyld info below that; -undefined dynamic_lookup (and
+# suppress) turn the default back to classic dyld info, -undefined
+# warning does not; an explicit -fixup_chains always wins. Hammerspoon (deployment target
 # 13, -undefined dynamic_lookup) came out chained from us and classic
 # from ld-prime.
 cat <<EOF2 | $CC -o $t/a.o -c -xc -
@@ -41,3 +41,13 @@ $CC --ld-path=$mold -o $t/dl2 $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,dyn
 [ "$(fmt $t/dl2)" = LC_DYLD_CHAINED_FIXUPS ]
 $CC --ld-path=$mold -o $t/wn $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,warning 2> /dev/null
 [ "$(fmt $t/wn)" = LC_DYLD_CHAINED_FIXUPS ]
+
+# An x86_64 dylib or bundle goes chained from macOS 12 as on arm64;
+# only an x86_64 executable waits for 13.
+$CC --ld-path=$mold -o $t/lo.dylib -shared $t/a.o -mmacosx-version-min=11.0
+[ "$(fmt $t/lo.dylib)" = LC_DYLD_INFO_ONLY ]
+$CC --ld-path=$mold -o $t/hi.dylib -shared $t/a.o -mmacosx-version-min=12.0
+[ "$(fmt $t/hi.dylib)" = LC_DYLD_CHAINED_FIXUPS ]
+[ "$(init $t/hi.dylib)" = __init_offsets ]
+$CC --ld-path=$mold -o $t/hi.bundle -bundle $t/a.o -mmacosx-version-min=12.0
+[ "$(fmt $t/hi.bundle)" = LC_DYLD_CHAINED_FIXUPS ]

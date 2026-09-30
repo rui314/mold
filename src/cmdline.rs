@@ -1039,7 +1039,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     match pie {
         Some(false) if args.output_type == MH_EXECUTE && !args.static_link => {
-            if is_new_os(target.name, args.platform, args.platform_minos) {
+            if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
                 crate::warn!("-no_pie is deprecated when targeting new OS versions");
             }
             if target.name == "arm64" {
