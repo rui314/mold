@@ -4620,29 +4620,35 @@ pub fn create_output_symtab<E: Target>(
         }
         names.reserve(total - start);
         data.entries.reserve(total - start);
+        stab_names_of.reserve(total - start);
         struct NamePtr(*mut &'static [u8]);
         unsafe impl Sync for NamePtr {}
         struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
         unsafe impl Sync for EntPtr {}
+        struct NameOfPtr(*mut Option<crate::symbol::SymbolId>);
+        unsafe impl Sync for NameOfPtr {}
         let np = NamePtr(names.as_mut_ptr());
         let ep = EntPtr(data.entries.as_mut_ptr());
-        let (np, ep) = (&np, &ep);
+        let op = NameOfPtr(stab_names_of.as_mut_ptr());
+        let (np, ep, op) = (&np, &ep, &op);
         planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
             for (k, stab) in plan.iter().enumerate() {
                 // SAFETY: [base, base+plan.len()) ranges are disjoint
-                // across objects and lie within the reserved capacity.
+                // across objects and lie within the reserved capacity
+                // (shifted by `start` for the notes' own array).
                 unsafe {
                     np.0.add(base + k).write(stab.name);
                     ep.0.add(base + k).write((stab.ent, stab.value_of));
+                    op.0.add(base - start + k).write(stab.name_of);
                 }
             }
         });
-        stab_names_of = planned.par_iter().flat_map_iter(|p| p.iter().map(|s| s.name_of)).collect();
         stabs_start = start;
         // SAFETY: every slot in start..total was written above.
         unsafe {
             names.set_len(total);
             data.entries.set_len(total);
+            stab_names_of.set_len(total - start);
         }
     }
     t.stop();
