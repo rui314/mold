@@ -92,18 +92,19 @@ fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = Symbol
     entry.into_iter().chain(&ctx.args.forced_undefined).filter_map(|name| ctx.symbols.get(name))
 }
 
-/// Sections the format keeps regardless of references: initializers,
-/// no-dead-strip sections and the ObjC image info. So is every section
-/// of an object without MH_SUBSECTIONS_VIA_SYMBOLS that ld64 cuts at
-/// symbols: it cannot tell where such an atom ends, so it models the
-/// object as one huge atom. Sections it cuts by content (literals,
-/// CFStrings, class references, thread-local variable descriptors) are
-/// stripped as usual. ld-prime strips a class reference nothing uses
-/// although clang marks __objc_classrefs no-dead-strip (it keeps unused
-/// selector references).
+/// Sections the format keeps regardless of references: initializers
+/// and terminators, no-dead-strip sections and the ObjC image info. So
+/// is every section of an object without MH_SUBSECTIONS_VIA_SYMBOLS
+/// that ld64 cuts at symbols: it cannot tell where such an atom ends,
+/// so it models the object as one huge atom. Sections it cuts by
+/// content (literals, CFStrings, class references, thread-local
+/// variable descriptors) are stripped as usual. ld-prime strips a class
+/// reference nothing uses although clang marks __objc_classrefs
+/// no-dead-strip (it keeps unused selector references).
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
-    matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS)
+    matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
+        || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
             && !(hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classrefs"))
         || hdr.sectname() == "__objc_imageinfo"
