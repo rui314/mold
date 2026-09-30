@@ -3070,18 +3070,20 @@ impl SectionMap {
 /// into the section - and marks just the ObjC list sections the
 /// runtime scans as no-dead-strip. A -r output is input to another
 /// link, so ld-prime copies the first input section's type and
-/// attributes verbatim - but for __objc_imageinfo and
-/// __objc_protolist, which lose no_dead_strip. __eh_frame carries the
-/// compiler's fixed flags in both.
+/// attributes verbatim - but for a standard section of that type,
+/// which gets the flags ld-prime's table holds for it (the ObjC
+/// constant literals and __objc_imageinfo lose no_dead_strip, __data
+/// and __const some_instructions). __eh_frame carries the compiler's
+/// fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
     if relocatable {
-        if segname == "__DATA" && matches!(sectname, "__objc_imageinfo" | "__objc_protolist") {
-            return input & !S_ATTR_NO_DEAD_STRIP;
-        }
-        return input;
+        return match standard_section_flags(segname, sectname) {
+            Some(flags) if flags & SECTION_TYPE == input & SECTION_TYPE => flags,
+            _ => input,
+        };
     }
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
@@ -4015,13 +4017,23 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
 
 /// The flags ld-prime gives a section only a section$start$ or
 /// section$end$ symbol makes, by the name the symbol gives (before any
-/// move or rename): those a compiler marks a section of that name
-/// with, or ld-prime its own sections - code (the stubs and helpers
-/// too), literals, pointer lists, the thread-local and zero-fill
-/// types, no-dead-strip for the lists the Objective-C runtime scans -
-/// and none for another name, or in another segment.
+/// move or rename): a standard section's, though the initializer and
+/// terminator lists are plain data then, and none for another name.
 fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     match (segname, sectname) {
+        ("__DATA", "__mod_init_func" | "__mod_term_func") => S_REGULAR,
+        _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
+    }
+}
+
+/// The flags of a section ld-prime's table of standard sections names:
+/// those a compiler marks a section of that name with, or ld-prime its
+/// own sections - code (the stubs and helpers too), literals, pointer
+/// lists, the thread-local and zero-fill types, no-dead-strip for the
+/// lists the Objective-C runtime scans, and none for the rest of the
+/// data. None for another name, or in another segment.
+fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
+    let flags = match (segname, sectname) {
         (
             "__TEXT",
             "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs" | "__objc_clsstubs"
@@ -4036,10 +4048,13 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
         ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
         ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, false),
+        ("__TEXT", "__const" | "__ustring" | "__gcc_except_tab" | "__objc_methlist") => S_REGULAR,
         ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
             S_NON_LAZY_SYMBOL_POINTERS
         }
         ("__DATA", "__la_symbol_ptr" | "__la_resolver") => S_LAZY_SYMBOL_POINTERS,
+        ("__DATA", "__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
+        ("__DATA", "__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
         (
             "__DATA",
             "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
@@ -4053,8 +4068,16 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__thread_data") => S_THREAD_LOCAL_REGULAR,
         ("__DATA", "__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
         ("__DATA", "__bss" | "__common") => S_ZEROFILL,
-        _ => 0,
-    }
+        (
+            "__DATA",
+            "__data" | "__const" | "__cfstring" | "__auth_ptr" | "__objc_data" | "__objc_const"
+            | "__objc_ivar" | "__objc_imageinfo" | "__objc_intobj" | "__objc_floatobj"
+            | "__objc_doubleobj" | "__objc_dateobj" | "__objc_dictobj" | "__objc_arrayobj"
+            | "__objc_arraydata" | "__const_cfobj2",
+        ) => S_REGULAR,
+        _ => return None,
+    };
+    Some(flags)
 }
 
 /// Sizes the stubs, the lazy-binding helper and pointers, and the GOT

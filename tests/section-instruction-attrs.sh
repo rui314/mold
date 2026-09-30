@@ -5,7 +5,8 @@ source "$(dirname "$0")"/common.inc
 # S_ATTR_SOME_INSTRUCTIONS. A final image keeps that mark only on code,
 # a section of pure instructions, which always carries both; ld-prime
 # drops it from any other section, in __TEXT or __DATA. A -r output
-# keeps a section's attributes as they came.
+# keeps the attributes of a section not among ld-prime's standard ones
+# as they came.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __TEXT,__foo
   nop
