@@ -666,7 +666,11 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.static_link {
         vec.push(create_dylinker_cmd());
     }
-    vec.push(create_uuid_cmd(ctx));
+    // -no_uuid leaves the command out, as ld-prime does, though dyld
+    // then refuses to load the image ("missing LC_UUID load command").
+    if ctx.args.uuid {
+        vec.push(create_uuid_cmd(ctx));
+    }
     if !ctx.args.static_link || ctx.args.version_load_command {
         vec.push(create_version_cmd::<E>(
             ctx.args.platform,
