@@ -320,9 +320,13 @@ fn collect_file<E: Target>(
 
 /// ld-prime warns of some sections of every object it parses - archive
 /// members the link doesn't use included: it drops each __LD section it
-/// doesn't know, and aligns the constants of a __DATA,__cfstring to a
-/// pointer whatever the section says. Staging runs in parallel, so the
-/// warnings come here, in input order.
+/// doesn't know, aligns the constants of a __DATA,__cfstring to a
+/// pointer whatever the section says, reads an __objc_imageinfo record
+/// only if it has its 8 bytes and no more than their worth, and ignores
+/// a label at the end of a section of fixed-size records. It fails the
+/// link on an initializer or terminator pointer with no relocation.
+/// Staging runs in parallel, so the diagnostics come here, in input
+/// order.
 fn warn_about_sections(staged: &[input_files::StagedObject]) {
     for obj in staged {
         for (i, hdr) in obj.sect_hdrs.iter().enumerate() {
@@ -341,7 +345,33 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     "section __DATA/__cfstring is not pointer aligned in {}",
                     resolved_file_name(obj.mf)
                 );
+            } else if hdr.sectname() == "__objc_imageinfo" && hdr.size > 8 {
+                crate::warn!(
+                    "section {}/{} has unexpectedly large size {} in {}",
+                    hdr.segname(),
+                    hdr.sectname(),
+                    hdr.size,
+                    resolved_file_name(obj.mf)
+                );
+            } else if hdr.sectname() == "__objc_imageinfo" && hdr.size != 0 && hdr.size < 8 {
+                crate::warn!(
+                    "can't parse {}/{} section in {}",
+                    hdr.segname(),
+                    hdr.sectname(),
+                    resolved_file_name(obj.mf)
+                );
             }
+        }
+        for &i in &obj.extraneous_labels {
+            let nlist = &obj.nlists[i as usize];
+            crate::warn!(
+                "ignoring extranenous label '{}' at end of section '{}'",
+                obj.sym_names[i as usize],
+                obj.sect_hdrs[nlist.n_sect as usize - 1].sectname()
+            );
+        }
+        if obj.has_init_pointer_without_target() {
+            error!("initializer pointer has no target in '{}'", resolved_file_name(obj.mf));
         }
     }
 }

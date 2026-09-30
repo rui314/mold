@@ -273,6 +273,11 @@ impl InputSection {
         crate::util::align_to_mod(off, align, self.input_addr as u64 & (align - 1))
     }
 
+    /// Whether this subsection is made of fixed-size records.
+    pub fn is_record(&self) -> bool {
+        self.flags.load(std::sync::atomic::Ordering::Relaxed) & NO_MODULUS != 0
+    }
+
     pub fn is_alive(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_ALIVE != 0
     }

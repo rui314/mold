@@ -336,7 +336,10 @@ pub fn find_symbol_subsec(
     let id =
         subsecs[..end].iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
     let isec = &isecs[id];
-    (addr <= isec.input_addr as u64 + isec.size as u64).then(|| (id, addr - isec.input_addr as u64))
+    // A label may sit at a section's end, except in one of fixed-size
+    // records, where it names no record (see extraneous_labels).
+    let end = isec.input_addr as u64 + isec.size as u64;
+    (addr < end || (addr == end && !isec.is_record())).then(|| (id, addr - isec.input_addr as u64))
 }
 
 /// A dynamic library, from a .tbd stub or a dylib binary.
@@ -589,6 +592,8 @@ pub struct StagedObject {
     /// LC_LINKER_OPTIMIZATION_HINT entries: (kind, instruction
     /// addresses in the object's address space).
     pub loh: Vec<(u8, Vec<u64>)>,
+    /// The labels ld-prime ignores (see extraneous_labels), sorted.
+    pub extraneous_labels: Vec<u32>,
 }
 
 /// The object's nlist_64 array as a slice of the mapped file, or None
@@ -660,12 +665,14 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
 /// output section and takes no part in ordering, in a final link and
 /// in -r alike. An arm64 assembler's ltmpN label names an atom only in
 /// an object without subsections, so it keeps an empty section there
-/// and nowhere else.
+/// and nowhere else - but for one of fixed-size records, where no label
+/// at the end names anything (see extraneous_labels).
 fn bare_sections(
     sect_hdrs: &[MachSection],
     nlists: &[NList],
     strtab: &'static [u8],
     split_ok: bool,
+    record_ends: &[Option<u64>],
 ) -> Vec<bool> {
     let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size == 0).collect();
     for nlist in nlists {
@@ -674,11 +681,45 @@ fn bare_sections(
             && let Some(b) = bare.get_mut((nlist.n_sect as usize).wrapping_sub(1))
             && *b
             && !(split_ok && symbol_name(strtab, nlist).starts_with("ltmp"))
+            && !is_at_record_end(record_ends, nlist)
         {
             *b = false;
         }
     }
     bare
+}
+
+/// Where each section of fixed-size records (see record_size) ends.
+fn record_ends(sect_hdrs: &[MachSection]) -> Vec<Option<u64>> {
+    sect_hdrs.iter().map(|hdr| record_size(hdr).map(|_| hdr.addr + hdr.size)).collect()
+}
+
+/// Whether a symbol is at the end of a section of fixed-size records,
+/// where it names no record.
+fn is_at_record_end(record_ends: &[Option<u64>], nlist: &NList) -> bool {
+    !nlist.is_stab()
+        && nlist.n_type() == N_SECT
+        && record_ends.get((nlist.n_sect as usize).wrapping_sub(1)) == Some(&Some(nlist.n_value))
+}
+
+/// The labels ld-prime ignores at the end of a section of fixed-size
+/// records, by nlist index: with a warning ("ignoring extranenous
+/// label"), but for the ltmpN label an arm64 assembler puts at an empty
+/// section's start in an object with subsections, which names nothing
+/// there anyway. A relocation can't refer to one.
+fn extraneous_labels(
+    nlists: &[NList],
+    strtab: &'static [u8],
+    split_ok: bool,
+    record_ends: &[Option<u64>],
+) -> Vec<u32> {
+    (0..nlists.len() as u32)
+        .filter(|&i| {
+            let nlist = &nlists[i as usize];
+            is_at_record_end(record_ends, nlist)
+                && !(split_ok && symbol_name(strtab, nlist).starts_with("ltmp"))
+        })
+        .collect()
 }
 
 /// The load commands of an object that staging reads: its section
@@ -822,10 +863,14 @@ pub fn stage_object<E: Target>(
     let first_global = first_global_of(&nlists, cmds.dysymtab.as_ref());
     let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
 
-    let objc_image_info = sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo").map(|s| {
-        let off = s.offset as usize + 4;
-        u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
-    });
+    // ld-prime ignores a record shorter than its 8 bytes (with a warning
+    // unless empty, see warn_about_sections) and reads a longer one's
+    // first 8.
+    let objc_image_info =
+        sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo" && s.size >= 8).map(|s| {
+            let off = s.offset as usize + 4;
+            u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
+        });
     let has_debug_info =
         sect_hdrs.iter().any(|s| s.segname() == "__DWARF" && s.sectname() == "__debug_info");
 
@@ -854,9 +899,13 @@ pub fn stage_object<E: Target>(
         has_debug_info,
         dice: cmds.dice,
         loh: cmds.loh,
+        extraneous_labels: Vec::new(),
     };
 
-    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, obj.subsections_via_symbols);
+    let split_ok = obj.subsections_via_symbols;
+    let record_ends = record_ends(sect_hdrs);
+    obj.extraneous_labels = extraneous_labels(&obj.nlists, strtab, split_ok, &record_ends);
+    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, split_ok, &record_ends);
     if !obj.subsections_via_symbols {
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
@@ -1205,7 +1254,7 @@ impl StagedObject {
     /// Reports a relocation whose target ld-prime ignores, returning
     /// false for it. A bare section can't be a relocation's target, named
     /// by section or through a label on it (an ltmpN), and neither can a
-    /// symbol in an __LD section ld-prime drops.
+    /// symbol in an __LD section ld-prime drops or an extraneous label.
     fn check_reloc_target(&self, rel: &crate::input_sections::Reloc, bare: &[bool]) -> bool {
         use crate::input_sections::RelocTarget;
 
@@ -1217,6 +1266,20 @@ impl StagedObject {
                     sect_pos + 1,
                     self.mf.name.display()
                 );
+                false
+            }
+            RelocTarget::Sym(idx) if self.extraneous_labels.binary_search(&idx).is_ok() => {
+                // ld-prime's symbol table ends at the last symbol it
+                // keeps.
+                let ignored_tail = (self.extraneous_labels.iter().rev())
+                    .zip((0..self.nlists.len() as u32).rev())
+                    .take_while(|&(&a, b)| a == b)
+                    .count();
+                if idx as usize >= self.nlists.len() - ignored_tail {
+                    crate::error!("r_symbolnum={idx} out of range in '{}'", self.mf.name.display());
+                } else {
+                    crate::error!("invalid r_symbolnum={idx} in '{}'", self.mf.name.display());
+                }
                 false
             }
             RelocTarget::Sym(idx)
@@ -2315,6 +2378,17 @@ impl StagedObject {
                 crate::passes::resolved_file_name(self.mf)
             );
         }
+    }
+
+    /// Whether an initializer or terminator pointer has no relocation
+    /// to name its function, which ld-prime refuses.
+    pub fn has_init_pointer_without_target(&self) -> bool {
+        self.isecs.iter().any(|isec| {
+            let hdr = &self.sect_hdrs[isec.shndx as usize];
+            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
+            matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
+                && (0..isec.size).step_by(8).any(|off| rels.iter().all(|r| r.offset != off))
+        })
     }
 }
 
