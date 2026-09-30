@@ -3238,12 +3238,13 @@ fn load_reexports<E: Target>(
                     continue;
                 }
                 check_dylib_versions(ctx, binary);
-                let binary_exports = dylib_binary_exports(binary);
+                let mut dylib = read_dylib_binary(binary);
+                walk.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
                 if map {
-                    record(&found.install_name, &dep.name, binary_exports.0.clone());
+                    record(&found.install_name, &dep.name, dylib.exports.clone());
                 }
                 merged.push(found.install_name);
-                walk.merge_binary(binary_exports, &dir_of(&dep.name));
+                walk.merge_binary(dylib, &dir_of(&dep.name));
             }
         }
     }
@@ -3286,15 +3287,14 @@ impl ReexportWalk<'_> {
         }
     }
 
-    /// Merges what a private library's binary contributes (see
-    /// dylib_binary_exports) into the dylib likewise: the libraries it
-    /// re-exports resolve from `loader_dir` and the binary's rpaths.
-    fn merge_binary(&mut self, binary_exports: DylibExports, loader_dir: &Path) {
-        let (exports, tlv_exports, reexports, rpaths) = binary_exports;
-        self.exports.extend(exports);
-        self.tlv_exports.extend(tlv_exports);
-        for name in reexports {
-            self.queue.push((name, loader_dir.to_path_buf(), rpaths.clone()));
+    /// Merges what a private library's binary contributes into the
+    /// dylib likewise: the libraries it re-exports resolve from
+    /// `loader_dir` and the binary's rpaths.
+    fn merge_binary(&mut self, dylib: DylibBinary, loader_dir: &Path) {
+        self.exports.extend(dylib.exports);
+        self.tlv_exports.extend(dylib.tlv_exports);
+        for name in dylib.reexports {
+            self.queue.push((name, loader_dir.to_path_buf(), dylib.rpaths.clone()));
         }
     }
 }
@@ -3374,7 +3374,7 @@ pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) 
             let tbd = read_tbd(ctx, mf).unwrap_or_default();
             [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
         }
-        _ => dylib_binary_exports(mf).0,
+        _ => read_dylib_binary(mf).exports,
     };
     names.iter().any(|name| {
         ctx.symbols.get(name).is_some_and(|id| {
@@ -3479,97 +3479,32 @@ fn check_dylib_platforms<E: Target>(
 
 pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     check_dylib_versions(ctx, mf);
-    let data = mf.data();
-    let hdr = MachHeader::read_from(data);
-
-    let mut install_name: Vec<u8> = Vec::new();
-    let mut current_version = encode_version(1, 0, 0);
-    let mut compatibility_version = encode_version(1, 0, 0);
-    let mut symtab_cmd = None;
-    let mut dysymtab_cmd = None;
-    let mut reexports: Vec<Vec<u8>> = Vec::new();
-    let mut rpaths: Vec<PathBuf> = Vec::new();
-
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        match lc.cmd {
-            LC_ID_DYLIB => {
-                let cmd = DylibCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                install_name = name[..len].to_vec();
-                current_version = cmd.current_version;
-                compatibility_version = cmd.compatibility_version;
-            }
-            LC_SYMTAB => symtab_cmd = Some(SymtabCommand::read_from(&data[off..])),
-            LC_DYSYMTAB => dysymtab_cmd = Some(DysymtabCommand::read_from(&data[off..])),
-            LC_REEXPORT_DYLIB => {
-                let cmd = DylibCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                reexports.push(name[..len].to_vec());
-            }
-            LC_RPATH => {
-                let cmd = DylinkerCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                rpaths.push(loader_rpath(&mf.name, &name[..len]));
-            }
-            _ => {}
-        }
-        off += lc.cmdsize as usize;
-    }
-
-    if install_name.is_empty() {
+    let mut dylib = read_dylib_binary(mf);
+    if dylib.install_name.is_empty() {
         fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.display());
     }
-
-    let mut exports: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    let mut weak_exports: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    let mut tlv_exports: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    if let (Some(sym), Some(dysym)) = (symtab_cmd, dysymtab_cmd) {
-        let nlists: Vec<NList> = read_array(data, sym.symoff as usize, sym.nsyms as usize);
-        let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
-        // SAFETY: input files are leaked, so the string table lives for
-        // the rest of the process.
-        let strtab: &'static [u8] =
-            validate_strtab(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) });
-        // A TLV export is recognizable by its section: n_sect names a
-        // S_THREAD_LOCAL_VARIABLES section (the __thread_vars
-        // descriptors).
-        let tlv_sects = thread_local_section_ordinals(data, &hdr);
-        let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
-        for nlist in &nlists[range] {
-            let name = symbol_name(strtab, nlist);
-            if tlv_sects.contains(&nlist.n_sect) {
-                tlv_exports.insert(name);
-            }
-            if nlist.n_desc & N_WEAK_DEF != 0 {
-                weak_exports.insert(name);
-            }
-            exports.insert(name);
-        }
-    }
-    if let Some((off, size)) = find_export_trie(data, &hdr) {
-        for (name, flags) in export_trie_entries(data, off, size) {
-            if flags as u32 & EXPORT_SYMBOL_FLAGS_KIND_MASK == EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL
-            {
-                tlv_exports.insert(name);
-            }
-            if flags as u32 & EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION != 0 {
-                weak_exports.insert(name);
-            }
-            exports.insert(name);
-        }
-    }
+    let directives = interpret_binary_ld_symbols(ctx, &mut dylib);
+    let DylibBinary {
+        install_name,
+        current_version,
+        compatibility_version,
+        exports,
+        weak_exports,
+        tlv_exports,
+        reexports,
+        rpaths,
+        ..
+    } = dylib;
+    let mut exports: hashbrown::HashSet<&'static str> = exports.into_iter().collect();
+    let mut weak_exports: hashbrown::HashSet<&'static str> = weak_exports.into_iter().collect();
+    let mut tlv_exports: hashbrown::HashSet<&'static str> = tlv_exports.into_iter().collect();
 
     // Each re-exported library keeps the referencing dylib's directory
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> =
         reexports.into_iter().map(|name| (name, dir_of(&mf.name), rpaths.clone())).collect();
-    let (merged_reexports, merged_files, moved) = load_reexports(
+    let (merged_reexports, merged_files, mut moved) = load_reexports(
         ctx,
         reexports,
         &mf.name,
@@ -3578,7 +3513,9 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
         &mut tlv_exports,
         &mut weak_exports,
     );
+    moved.extend(directives.moved);
     let moved_exports = add_moved_dylibs(ctx, &mf.name, moved, &exports);
+    let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
     let priority = ctx.next_priority();
     add_dylib(
@@ -3606,7 +3543,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             merged_reexports,
             merged_files,
             moved_exports,
-            name_source: NameSource::Own,
+            name_source,
         },
     )
 }
@@ -3816,46 +3753,77 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
     )
 }
 
-/// Reads a dylib binary's exported symbols and reexported install
-/// names, for following reexport chains.
-/// What a dylib binary contributes to a re-exporting parent: its
-/// exports, its thread-local exports, the install names it re-exports
-/// in turn, and its rpaths, resolved for its location.
-type DylibExports = (Vec<&'static str>, Vec<&'static str>, Vec<Vec<u8>>, Vec<PathBuf>);
+/// What a dylib binary says of itself: its install name and versions;
+/// its exports - all of them, the weak and the thread-local ones again
+/// by kind - and apart from them its "$ld$..." names (see
+/// LdSymbols); and the install names it re-exports, with its rpaths,
+/// resolved for its location, to look them up by.
+#[derive(Default)]
+struct DylibBinary {
+    install_name: Vec<u8>,
+    current_version: u32,
+    compatibility_version: u32,
+    exports: Vec<&'static str>,
+    weak_exports: Vec<&'static str>,
+    tlv_exports: Vec<&'static str>,
+    ld_symbols: Vec<&'static str>,
+    reexports: Vec<Vec<u8>>,
+    rpaths: Vec<PathBuf>,
+}
 
-fn dylib_binary_exports(mf: &'static MappedFile) -> DylibExports {
+fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);
+    let mut dylib = DylibBinary {
+        current_version: encode_version(1, 0, 0),
+        compatibility_version: encode_version(1, 0, 0),
+        ..Default::default()
+    };
     let mut symtab_cmd = None;
     let mut dysymtab_cmd = None;
-    let mut reexports = Vec::new();
-    let mut rpaths = Vec::new();
 
     let mut off = size_of::<MachHeader>();
     for _ in 0..hdr.ncmds {
         let lc = LoadCommand::read_from(&data[off..]);
+        let string = |nameoff: u32| {
+            let name = &data[off + nameoff as usize..off + lc.cmdsize as usize];
+            &name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())]
+        };
         match lc.cmd {
+            LC_ID_DYLIB => {
+                let cmd = DylibCommand::read_from(&data[off..]);
+                dylib.install_name = string(cmd.nameoff).to_vec();
+                dylib.current_version = cmd.current_version;
+                dylib.compatibility_version = cmd.compatibility_version;
+            }
             LC_SYMTAB => symtab_cmd = Some(SymtabCommand::read_from(&data[off..])),
             LC_DYSYMTAB => dysymtab_cmd = Some(DysymtabCommand::read_from(&data[off..])),
             LC_REEXPORT_DYLIB => {
                 let cmd = DylibCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                reexports.push(name[..len].to_vec());
+                dylib.reexports.push(string(cmd.nameoff).to_vec());
             }
             LC_RPATH => {
                 let cmd = DylinkerCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                rpaths.push(loader_rpath(&mf.name, &name[..len]));
+                dylib.rpaths.push(loader_rpath(&mf.name, string(cmd.nameoff)));
             }
             _ => {}
         }
         off += lc.cmdsize as usize;
     }
 
-    let mut exports: Vec<&'static str> = Vec::new();
-    let mut tlv_exports: Vec<&'static str> = Vec::new();
+    let mut add = |name: &'static str, weak: bool, tlv: bool| {
+        if name.starts_with("$ld$") {
+            dylib.ld_symbols.push(name);
+            return;
+        }
+        if weak {
+            dylib.weak_exports.push(name);
+        }
+        if tlv {
+            dylib.tlv_exports.push(name);
+        }
+        dylib.exports.push(name);
+    };
     if let (Some(sym), Some(dysym)) = (symtab_cmd, dysymtab_cmd) {
         let nlists: Vec<NList> = read_array(data, sym.symoff as usize, sym.nsyms as usize);
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
@@ -3863,26 +3831,26 @@ fn dylib_binary_exports(mf: &'static MappedFile) -> DylibExports {
         // the rest of the process.
         let strtab: &'static [u8] =
             validate_strtab(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) });
+        // A TLV export is recognizable by its section: n_sect names a
+        // S_THREAD_LOCAL_VARIABLES section (the __thread_vars
+        // descriptors).
         let tlv_sects = thread_local_section_ordinals(data, &hdr);
         let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
         for nlist in &nlists[range] {
-            let name = symbol_name(strtab, nlist);
-            if tlv_sects.contains(&nlist.n_sect) {
-                tlv_exports.push(name);
-            }
-            exports.push(name);
+            let weak = nlist.n_desc & N_WEAK_DEF != 0;
+            add(symbol_name(strtab, nlist), weak, tlv_sects.contains(&nlist.n_sect));
         }
     }
     if let Some((off, size)) = find_export_trie(data, &hdr) {
         for (name, flags) in export_trie_entries(data, off, size) {
-            if flags as u32 & EXPORT_SYMBOL_FLAGS_KIND_MASK == EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL
-            {
-                tlv_exports.push(name);
-            }
-            exports.push(name);
+            let flags = flags as u32;
+            let weak = flags & EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION != 0;
+            let tlv =
+                flags & EXPORT_SYMBOL_FLAGS_KIND_MASK == EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL;
+            add(name, weak, tlv);
         }
     }
-    (exports, tlv_exports, reexports, rpaths)
+    dylib
 }
 
 /// An LC_RPATH entry as a search directory: @loader_path stands for the
@@ -4028,7 +3996,7 @@ struct MovedExport {
     compatibility_version: u32,
 }
 
-/// What a stub's "$ld$..." names say for the link's target beyond its
+/// What a library's "$ld$..." names say for the link's target beyond its
 /// exports: whether its install name is an older library's, and the
 /// exports that move to one.
 struct LdDirectives {
@@ -4036,8 +4004,8 @@ struct LdDirectives {
     moved: Vec<MovedExport>,
 }
 
-/// Interprets a .tbd's "$ld$..." export names. These are not symbols
-/// but directives to the linker, invented so a stub library could
+/// A library's "$ld$..." names, read for the link's target. These are
+/// not symbols but directives to the linker, invented so a library could
 /// change shape per deployment target without a file format change:
 /// $ld$add$os<ver>$<sym> exports <sym> only when the target equals
 /// <ver>, $ld$hide$os<ver>$<sym> hides one, $ld$install_name$os<ver>$
@@ -4048,74 +4016,132 @@ struct LdDirectives {
 /// empty, else to that export alone. Apple uses these when symbols
 /// move between libraries: old targets keep binding them where they
 /// used to live (AppKit's Swift overlay functions in libswiftAppKit
-/// before macOS 14).
-fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) -> LdDirectives {
-    let minos = ctx.args.platform_minos;
-    let mut added: Vec<&'static str> = Vec::new();
-    let mut hidden: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    let mut install_name: Option<(&str, Option<u32>)> = None;
-    let mut moved: Vec<(&'static str, &'static str, Option<u32>)> = Vec::new();
+/// before macOS 14). A stub lists them among its exports, and a binary
+/// dylib exports them as absolute symbols; ld-prime obeys both.
+struct LdSymbols {
+    added: Vec<&'static str>,
+    hidden: hashbrown::HashSet<&'static str>,
+    install_name: Option<(&'static str, Option<u32>)>,
+    /// The exports that move: each with the install name it moves to
+    /// and the version the directive gives, if any.
+    moved: Vec<(&'static str, &'static str, Option<u32>)>,
+}
 
-    for name in &tbd.exports {
-        if let Some(rest) = name.strip_prefix("$ld$previous$") {
-            // A symbol name may contain '$' (Swift's do): it is what
-            // follows the fifth separator, less the final '$'.
-            let f: Vec<&'static str> = rest.splitn(6, '$').collect();
-            let Some(sym) = f.get(5).and_then(|s| s.strip_suffix('$')) else {
-                crate::warn!("malformed linker directive: {name}");
-                continue;
-            };
-            if f[2].parse::<u32>() == Ok(ctx.args.platform)
-                && tapi::parse_version(f[3]) <= minos
-                && minos < tapi::parse_version(f[4])
-            {
-                let version = (!f[1].is_empty()).then(|| tapi::parse_version(f[1]));
-                if sym.is_empty() {
-                    install_name = Some((f[0], version));
-                } else {
-                    moved.push((sym, f[0], version));
+impl LdSymbols {
+    /// Reads the directives among `names`, which may hold other names.
+    fn read<E: Target>(ctx: &Context<E>, names: &[&'static str]) -> Self {
+        let minos = ctx.args.platform_minos;
+        let mut ld = Self {
+            added: Vec::new(),
+            hidden: hashbrown::HashSet::new(),
+            install_name: None,
+            moved: Vec::new(),
+        };
+        for name in names {
+            if let Some(rest) = name.strip_prefix("$ld$previous$") {
+                // A symbol name may contain '$' (Swift's do): it is what
+                // follows the fifth separator, less the final '$'.
+                let f: Vec<&'static str> = rest.splitn(6, '$').collect();
+                let Some(sym) = f.get(5).and_then(|s| s.strip_suffix('$')) else {
+                    crate::warn!("malformed linker directive: {name}");
+                    continue;
+                };
+                if f[2].parse::<u32>() == Ok(ctx.args.platform)
+                    && tapi::parse_version(f[3]) <= minos
+                    && minos < tapi::parse_version(f[4])
+                {
+                    let version = (!f[1].is_empty()).then(|| tapi::parse_version(f[1]));
+                    if sym.is_empty() {
+                        ld.install_name = Some((f[0], version));
+                    } else {
+                        ld.moved.push((sym, f[0], version));
+                    }
                 }
-            }
-        } else if let Some(rest) = name.strip_prefix("$ld$add$os") {
-            if let Some((ver, sym)) = rest.split_once('$')
+            } else if let Some(rest) = name.strip_prefix("$ld$add$os") {
+                if let Some((ver, sym)) = rest.split_once('$')
+                    && tapi::parse_version(ver) == minos
+                {
+                    ld.added.push(sym);
+                }
+            } else if let Some(rest) = name.strip_prefix("$ld$hide$os") {
+                if let Some((ver, sym)) = rest.split_once('$')
+                    && tapi::parse_version(ver) == minos
+                {
+                    ld.hidden.insert(sym);
+                }
+            } else if let Some(rest) = name.strip_prefix("$ld$install_name$os")
+                && let Some((ver, new_name)) = rest.split_once('$')
                 && tapi::parse_version(ver) == minos
             {
-                added.push(sym);
+                ld.install_name = Some((new_name, None));
             }
-        } else if let Some(rest) = name.strip_prefix("$ld$hide$os") {
-            if let Some((ver, sym)) = rest.split_once('$')
-                && tapi::parse_version(ver) == minos
-            {
-                hidden.insert(sym);
-            }
-        } else if let Some(rest) = name.strip_prefix("$ld$install_name$os")
-            && let Some((ver, new_name)) = rest.split_once('$')
-            && tapi::parse_version(ver) == minos
-        {
-            install_name = Some((new_name, None));
         }
+        ld
     }
 
-    tbd.exports.retain(|n| !n.starts_with("$ld$") && !hidden.contains(n));
-    tbd.weak_exports.retain(|n| !hidden.contains(n));
-    tbd.exports.extend(added);
-    if let Some((name, version)) = install_name {
-        tbd.install_name = name.to_string();
-        if let Some(version) = version {
-            tbd.current_version = version;
-            tbd.compatibility_version = version;
-        }
+    /// Whether the library keeps an export: it is no directive and not
+    /// hidden.
+    fn keeps(&self, name: &str) -> bool {
+        !name.starts_with("$ld$") && !self.hidden.contains(name)
     }
-    let moved = moved
-        .into_iter()
-        .map(|(name, install_name, version)| MovedExport {
-            name,
-            install_name,
-            current_version: version.unwrap_or(tbd.current_version),
-            compatibility_version: version.unwrap_or(tbd.compatibility_version),
-        })
-        .collect();
-    LdDirectives { renamed: install_name.is_some(), moved }
+
+    /// The version the library takes with an older one's install name,
+    /// if the directive gives one.
+    fn renamed_version(&self) -> Option<u32> {
+        self.install_name.and_then(|(_, version)| version)
+    }
+
+    /// The directives' effect beyond the exports, for a library at
+    /// `current_version` and `compatibility_version` (after renaming).
+    fn finish(self, current_version: u32, compatibility_version: u32) -> LdDirectives {
+        let moved = self
+            .moved
+            .into_iter()
+            .map(|(name, install_name, version)| MovedExport {
+                name,
+                install_name,
+                current_version: version.unwrap_or(current_version),
+                compatibility_version: version.unwrap_or(compatibility_version),
+            })
+            .collect();
+        LdDirectives { renamed: self.install_name.is_some(), moved }
+    }
+}
+
+/// Applies a .tbd's "$ld$..." export names (see LdSymbols) to it.
+fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) -> LdDirectives {
+    let ld = LdSymbols::read(ctx, &tbd.exports);
+    tbd.exports.retain(|n| ld.keeps(n));
+    tbd.weak_exports.retain(|n| ld.keeps(n));
+    tbd.exports.extend(&ld.added);
+    if let Some((name, _)) = ld.install_name {
+        tbd.install_name = name.to_string();
+    }
+    if let Some(version) = ld.renamed_version() {
+        tbd.current_version = version;
+        tbd.compatibility_version = version;
+    }
+    ld.finish(tbd.current_version, tbd.compatibility_version)
+}
+
+/// Applies a dylib binary's "$ld$..." names (see LdSymbols) to it.
+fn interpret_binary_ld_symbols<E: Target>(
+    ctx: &Context<E>,
+    dylib: &mut DylibBinary,
+) -> LdDirectives {
+    let ld = LdSymbols::read(ctx, &dylib.ld_symbols);
+    dylib.exports.retain(|n| ld.keeps(n));
+    dylib.weak_exports.retain(|n| ld.keeps(n));
+    dylib.tlv_exports.retain(|n| ld.keeps(n));
+    dylib.exports.extend(&ld.added);
+    if let Some((name, _)) = ld.install_name {
+        dylib.install_name = name.as_bytes().to_vec();
+    }
+    if let Some(version) = ld.renamed_version() {
+        dylib.current_version = version;
+        dylib.compatibility_version = version;
+    }
+    ld.finish(dylib.current_version, dylib.compatibility_version)
 }
 
 /// A stub's library, read for the link's architecture and platform;
