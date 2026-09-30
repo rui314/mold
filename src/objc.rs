@@ -28,6 +28,154 @@ use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
 
+/// A reference held by a rewritten method-list entry, resolved to an
+/// address when the list is written.
+#[derive(Clone, Copy, Debug)]
+pub enum ObjcRef {
+    /// A subsection plus offset.
+    Isec(u32, u64),
+    /// A symbol plus addend.
+    Sym(crate::symbol::SymbolId, i64),
+    /// Slot `n` of the synthesized selector references in the
+    /// __objc_selrefs tail (the objc stubs' slots come first).
+    TailSelref(usize),
+    Null,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ObjcMethod {
+    /// The selector reference the entry points at (a slot holding the
+    /// uniqued selector), not the selector string.
+    pub name: ObjcRef,
+    pub types: ObjcRef,
+    pub imp: ObjcRef,
+}
+
+#[derive(Debug)]
+pub struct ObjcMethList {
+    /// The synthetic subsection standing for the rewritten list in
+    /// __TEXT,__objc_methlist.
+    pub isec: u32,
+    pub methods: Vec<ObjcMethod>,
+}
+
+/// A field of a synthesized Objective-C data record.
+#[derive(Clone, Debug)]
+pub enum DataField {
+    Bytes(Vec<u8>),
+    /// An 8-byte pointer, rebased at load (or null).
+    Ptr(ObjcRef),
+}
+
+/// A synthesized Objective-C data record, placed in the tail of the
+/// output section `sect` (mapped to its segment like an input section
+/// of that name) as the synthetic subsection `isec`.
+#[derive(Debug)]
+pub struct DataBlob {
+    pub sect: &'static str,
+    pub isec: u32,
+    pub fields: Vec<DataField>,
+}
+
+impl DataBlob {
+    pub fn size(&self) -> u64 {
+        self.fields
+            .iter()
+            .map(|f| match f {
+                DataField::Bytes(b) => b.len() as u64,
+                DataField::Ptr(_) => 8,
+            })
+            .sum()
+    }
+}
+
+/// The address a synthesized record's reference resolves to.
+pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
+    match r {
+        ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
+        ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
+        ObjcRef::TailSelref(n) => ctx.objc_selref_addr(n),
+        ObjcRef::Null => 0,
+    }
+}
+
+/// The pointer stored at `off` in a subsection: the target of the
+/// 8-byte relocation there, if any.
+fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
+    let sec = &ctx.isecs[isec];
+    if ctx.is_internal(sec.file as usize) {
+        return None;
+    }
+    let rel = ctx
+        .isec_relocs(isec as usize)
+        .iter()
+        .find(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
+    if E::classify_reloc(rel.r_type) != RelocClass::Plain {
+        return None;
+    }
+    Some(match rel.target() {
+        RelocTarget::Sym(idx) => {
+            ObjcRef::Sym(ctx.objs[sec.file as usize].symbols[idx as usize], rel.addend)
+        }
+        RelocTarget::Section(t) => ObjcRef::Isec(t, rel.addend as u64),
+    })
+}
+
+/// A reference's location as (live subsection, offset), for data
+/// defined in this link; None for an import or an absolute.
+fn objc_ref_location<E: Target>(ctx: &Context<E>, r: ObjcRef) -> Option<(u32, u64)> {
+    let (isec, off) = match r {
+        ObjcRef::Isec(isec, off) => (isec, off),
+        ObjcRef::Sym(id, addend) => {
+            let sym = &ctx.symbols[id];
+            let isec = sym.input_section()?;
+            (isec, (sym.value as i64 + addend) as u64)
+        }
+        _ => return None,
+    };
+    let isec = ctx.resolve_isec(isec as usize) as u32;
+    if !ctx.isecs[isec as usize].is_alive() {
+        return None;
+    }
+    Some((isec, off))
+}
+
+/// The relocation of the pointer field at `off` in a subsection, as
+/// (object, index into its relocation arena), for rewriting it.
+fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
+    let sec = &ctx.isecs[isec as usize];
+    if ctx.is_internal(sec.file as usize) {
+        return None;
+    }
+    let k = ctx
+        .isec_relocs(isec as usize)
+        .iter()
+        .position(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
+    Some((sec.file as usize, sec.rel_offset as usize + k))
+}
+
+/// A class's ro data: class_t.data at offset 32, whose low two bits a
+/// Swift class uses as flags (FAST_IS_SWIFT_STABLE), so the record
+/// itself sits at the pointer with those bits cleared.
+fn objc_class_ro<E: Target>(ctx: &Context<E>, cls: (u32, u64)) -> Option<(u32, u64)> {
+    let (isec, off) =
+        objc_pointer_at(ctx, cls.0, cls.1 + 32).and_then(|r| objc_ref_location(ctx, r))?;
+    Some((isec, off & !3))
+}
+
+fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<String> {
+    let (isec, off) = objc_ref_location(ctx, r?)?;
+    let data = ctx.isecs[isec as usize].data();
+    let bytes = data.get(off as usize..)?;
+    let end = bytes.iter().position(|&b| b == 0)?;
+    Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
+}
+
+/// A C string's bytes, up to its terminating NUL.
+pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
+    &data[..data.iter().position(|&b| b == 0).unwrap_or(data.len())]
+}
+
 /// Coalesces the Objective-C reference records the compiler emits
 /// once per object: __objc_selrefs entries naming the same selector,
 /// __objc_classrefs entries naming the same class, and identical
@@ -292,11 +440,6 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
     }
 }
 
-/// A C string's bytes, up to its terminating NUL.
-pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
-    &data[..data.iter().position(|&b| b == 0).unwrap_or(data.len())]
-}
-
 /// Folds __objc_classrefs into __got, as ld-prime does from a
 /// deployment target of macOS 15 on. A class reference is an 8-byte
 /// slot holding a class's address, fixed up by dyld - exactly what a
@@ -535,37 +678,6 @@ fn pair_classref_uses<E: Target>(
     pairs
 }
 
-/// A reference held by a rewritten method-list entry, resolved to an
-/// address when the list is written.
-#[derive(Clone, Copy, Debug)]
-pub enum ObjcRef {
-    /// A subsection plus offset.
-    Isec(u32, u64),
-    /// A symbol plus addend.
-    Sym(crate::symbol::SymbolId, i64),
-    /// Slot `n` of the synthesized selector references in the
-    /// __objc_selrefs tail (the objc stubs' slots come first).
-    TailSelref(usize),
-    Null,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ObjcMethod {
-    /// The selector reference the entry points at (a slot holding the
-    /// uniqued selector), not the selector string.
-    pub name: ObjcRef,
-    pub types: ObjcRef,
-    pub imp: ObjcRef,
-}
-
-#[derive(Debug)]
-pub struct ObjcMethList {
-    /// The synthetic subsection standing for the rewritten list in
-    /// __TEXT,__objc_methlist.
-    pub isec: u32,
-    pub methods: Vec<ObjcMethod>,
-}
-
 fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
     // ld-prime converts method lists in every arm64 image, and on
     // x86-64 in dylibs and bundles only: an x86-64 executable keeps
@@ -575,70 +687,6 @@ fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
             && ctx.args.platform == crate::macho::PLATFORM_MACOS
             && ctx.args.platform_minos >= crate::macho::encode_version(11, 0, 0)
     })
-}
-
-/// A class's ro data: class_t.data at offset 32, whose low two bits a
-/// Swift class uses as flags (FAST_IS_SWIFT_STABLE), so the record
-/// itself sits at the pointer with those bits cleared.
-fn objc_class_ro<E: Target>(ctx: &Context<E>, cls: (u32, u64)) -> Option<(u32, u64)> {
-    let (isec, off) =
-        objc_pointer_at(ctx, cls.0, cls.1 + 32).and_then(|r| objc_ref_location(ctx, r))?;
-    Some((isec, off & !3))
-}
-
-/// The relocation of the pointer field at `off` in a subsection, as
-/// (object, index into its relocation arena), for rewriting it.
-fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
-    let sec = &ctx.isecs[isec as usize];
-    if ctx.is_internal(sec.file as usize) {
-        return None;
-    }
-    let k = ctx
-        .isec_relocs(isec as usize)
-        .iter()
-        .position(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
-    Some((sec.file as usize, sec.rel_offset as usize + k))
-}
-
-/// The pointer stored at `off` in a subsection: the target of the
-/// 8-byte relocation there, if any.
-fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
-    let sec = &ctx.isecs[isec];
-    if ctx.is_internal(sec.file as usize) {
-        return None;
-    }
-    let rel = ctx
-        .isec_relocs(isec as usize)
-        .iter()
-        .find(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
-    if E::classify_reloc(rel.r_type) != RelocClass::Plain {
-        return None;
-    }
-    Some(match rel.target() {
-        RelocTarget::Sym(idx) => {
-            ObjcRef::Sym(ctx.objs[sec.file as usize].symbols[idx as usize], rel.addend)
-        }
-        RelocTarget::Section(t) => ObjcRef::Isec(t, rel.addend as u64),
-    })
-}
-
-/// A reference's location as (live subsection, offset), for data
-/// defined in this link; None for an import or an absolute.
-fn objc_ref_location<E: Target>(ctx: &Context<E>, r: ObjcRef) -> Option<(u32, u64)> {
-    let (isec, off) = match r {
-        ObjcRef::Isec(isec, off) => (isec, off),
-        ObjcRef::Sym(id, addend) => {
-            let sym = &ctx.symbols[id];
-            let isec = sym.input_section()?;
-            (isec, (sym.value as i64 + addend) as u64)
-        }
-        _ => return None,
-    };
-    let isec = ctx.resolve_isec(isec as usize) as u32;
-    if !ctx.isecs[isec as usize].is_alive() {
-        return None;
-    }
-    Some((isec, off))
 }
 
 /// Rewrites the Objective-C method lists in the relative form, as
@@ -875,54 +923,6 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
 /// Appends a synthesized data record for an Objective-C rewrite and
 /// returns its subsection; see merge_objc_categories.
 pub type NewBlob<E> = dyn FnMut(&mut Context<E>, &'static str, Vec<DataField>) -> u32;
-
-/// A field of a synthesized Objective-C data record.
-#[derive(Clone, Debug)]
-pub enum DataField {
-    Bytes(Vec<u8>),
-    /// An 8-byte pointer, rebased at load (or null).
-    Ptr(ObjcRef),
-}
-
-/// A synthesized Objective-C data record, placed in the tail of the
-/// output section `sect` (mapped to its segment like an input section
-/// of that name) as the synthetic subsection `isec`.
-#[derive(Debug)]
-pub struct DataBlob {
-    pub sect: &'static str,
-    pub isec: u32,
-    pub fields: Vec<DataField>,
-}
-
-impl DataBlob {
-    pub fn size(&self) -> u64 {
-        self.fields
-            .iter()
-            .map(|f| match f {
-                DataField::Bytes(b) => b.len() as u64,
-                DataField::Ptr(_) => 8,
-            })
-            .sum()
-    }
-}
-
-/// The address a synthesized record's reference resolves to.
-pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
-    match r {
-        ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
-        ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
-        ObjcRef::TailSelref(n) => ctx.objc_selref_addr(n),
-        ObjcRef::Null => 0,
-    }
-}
-
-fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<String> {
-    let (isec, off) = objc_ref_location(ctx, r?)?;
-    let data = ctx.isecs[isec as usize].data();
-    let bytes = data.get(off as usize..)?;
-    let end = bytes.iter().position(|&b| b == 0)?;
-    Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
-}
 
 /// Merges the categories of a class defined in the image into the
 /// class itself, as ld64 does unless -no_objc_category_merging:
