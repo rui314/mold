@@ -5729,6 +5729,15 @@ fn is_class_or_protocol_ref_name(sectname: &str) -> bool {
     matches!(sectname, "__objc_superrefs" | "__objc_protorefs")
 }
 
+/// Whether a symbol names a method list convert_objc_method_lists
+/// rewrote in the relative form, in __TEXT,__objc_methlist.
+fn names_relative_method_list<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> bool {
+    ctx.symbols[id].input_section().is_some_and(|isec| {
+        let hdr = ctx.hdr_of(&ctx.isecs[ctx.resolve_isec(isec as usize)]);
+        hdr.segname_is("__TEXT") && hdr.sectname_is("__objc_methlist")
+    })
+}
+
 /// One stab entry: its name and nlist, the symbol whose final address
 /// fills in n_value, and the symbol the name is, if any - ld-prime
 /// points the entry at that symbol's own string.
@@ -6076,11 +6085,13 @@ fn symbol_stabs<E: Target>(
         return common.then_some(global);
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-    // ld-prime notes no exception tables' labels and no ivar offsets.
+    // ld-prime notes no exception tables' labels and no ivar offsets,
+    // nor the method lists it rewrote in the relative form, atoms of
+    // its own.
     let hdr = ctx.hdr_of(isec);
     let text = hdr.segname_is("__TEXT");
     if !isec.is_alive()
-        || (text && hdr.sectname_is("__gcc_except_tab"))
+        || (text && (hdr.sectname_is("__gcc_except_tab") || hdr.sectname_is("__objc_methlist")))
         || (hdr.segname_is("__DATA") && hdr.sectname_is("__objc_ivar"))
     {
         return None;
@@ -6273,8 +6284,13 @@ fn plan_local_symbols<E: Target>(
             }
             (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local(0, sym.value) }, None),
         };
-        // A demoted weak definition keeps N_WEAK_DEF.
-        let (rank, ent) = if sym.is_weak_def() {
+        // A demoted weak definition keeps N_WEAK_DEF. A method list
+        // rewritten in the relative form is ld-prime's own atom, whose
+        // name is a plain local: Swift's protocol method lists are weak
+        // private externals.
+        let (rank, ent) = if names_relative_method_list(ctx, i as u32) {
+            (LOCAL, NList { n_type: N_SECT, ..ent })
+        } else if sym.is_weak_def() {
             (WEAK, NList { n_desc: N_WEAK_DEF, ..ent })
         } else {
             (PEXT, ent)
