@@ -348,7 +348,7 @@ pub fn stage_object<E: Target>(
     alive: bool,
     hidden: bool,
     priority: u32,
-    keep_all_fdes: bool,
+    relocatable: bool,
 ) -> StagedObject {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);
@@ -475,39 +475,48 @@ pub fn stage_object<E: Target>(
             }
         }
     } else {
-        // Without subsections a section is one atom, which ld64 names
-        // after the symbol at its start - and an atom is never weak:
-        // that symbol loses N_WEAK_DEF (later symbols in the section
-        // keep theirs, as aliases into the atom). Measured on
-        // ld-prime: a section holding only a weak _w exports _w as a
-        // plain definition, and a weak _w followed by a strong _pad2
-        // makes both plain.
-        let mut first: Vec<Option<u64>> = vec![None; sect_hdrs.len()];
-        for nlist in nlists.iter() {
-            if !nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && nlist.n_sect >= 1
-                && let Some(slot) = first.get_mut(nlist.n_sect as usize - 1)
+        // Without subsections a section is one atom, and ld64 takes the
+        // atom's attributes from one symbol at the section's start (the
+        // arm64 assembler's ltmpN labels don't count): a non-weak one
+        // if there is any, local or global, else the last weak one in
+        // symbol table order. An atom cannot be swapped for another
+        // copy, so a weak symbol that names it is no longer weak; the
+        // other symbols are labels into the atom and keep their flags.
+        // A .weak_def_can_be_hidden name becomes a hidden non-weak
+        // definition, except in a -r output, which keeps it as is.
+        let mut named_by_strong = vec![false; sect_hdrs.len()];
+        let mut last_weak: Vec<Option<usize>> = vec![None; sect_hdrs.len()];
+        for (i, nlist) in nlists.iter().enumerate() {
+            if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_sect == 0 {
+                continue;
+            }
+            let sect = nlist.n_sect as usize - 1;
+            if sect_hdrs.get(sect).is_none_or(|h| h.addr != nlist.n_value)
+                || symbol_name(strtab, nlist).starts_with("ltmp")
             {
-                *slot = Some(slot.map_or(nlist.n_value, |v| v.min(nlist.n_value)));
+                continue;
+            }
+            if nlist.is_extern() && nlist.n_desc & N_WEAK_DEF != 0 {
+                last_weak[sect] = Some(i);
+            } else {
+                named_by_strong[sect] = true;
             }
         }
-        let strengthen: Vec<usize> = nlists
+        let names: Vec<usize> = last_weak
             .iter()
-            .enumerate()
-            .filter(|(_, n)| {
-                !n.is_stab()
-                    && n.n_type() == N_SECT
-                    && n.n_desc & N_WEAK_DEF != 0
-                    && n.n_sect >= 1
-                    && first.get(n.n_sect as usize - 1).copied().flatten() == Some(n.n_value)
-            })
-            .map(|(i, _)| i)
+            .zip(&named_by_strong)
+            .filter_map(|(&weak, &strong)| if strong { None } else { weak })
             .collect();
-        if !strengthen.is_empty() {
+        if !names.is_empty() {
             let owned = nlists.to_mut();
-            for i in strengthen {
-                owned[i].n_desc &= !N_WEAK_DEF;
+            for i in names {
+                let nlist = &mut owned[i];
+                if nlist.n_desc & N_WEAK_REF == 0 {
+                    nlist.n_desc &= !N_WEAK_DEF;
+                } else if !relocatable {
+                    nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
+                    nlist.n_type |= N_PEXT;
+                }
             }
         }
     }
@@ -719,7 +728,7 @@ pub fn stage_object<E: Target>(
             &mut unwind,
             &mut cies,
             &mut fdes,
-            keep_all_fdes,
+            relocatable,
         );
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
