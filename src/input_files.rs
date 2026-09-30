@@ -1732,6 +1732,10 @@ pub struct Cie {
     pub data: &'static [u8],
     pub personality: Option<SymbolId>,
     pub personality_offset: u32,
+    /// How the CIE's FDEs encode their function's address and size:
+    /// its 'R' augmentation, or DW_EH_PE_absptr without one. Each FDE
+    /// checks it as it is read.
+    pub fde_enc: u8,
     pub lsda_size: u8,
     pub output_offset: u32,
     pub is_alive: bool,
@@ -1739,6 +1743,15 @@ pub struct Cie {
 
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<Cie>() == 48);
+
+impl Cie {
+    /// The size of the function address and size that start its FDEs'
+    /// fields: 4 bytes in DW_EH_PE_sdata4 (GCC's 0x1b), 8 in
+    /// DW_EH_PE_absptr (0x10, what clang writes).
+    pub fn pc_size(&self) -> usize {
+        if self.fde_enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 }
+    }
+}
 
 /// A DWARF Frame Description Entry from an object's __eh_frame.
 #[derive(Debug)]
@@ -1828,7 +1841,7 @@ impl StagedObject {
             let id = u32::from_le_bytes(rec[4..8].try_into().unwrap());
             let input_addr = hdr.addr as u32 + pos as u32;
             if id == 0 {
-                let Some(lsda_size) = cie_lsda_size(rec, &mf.name) else {
+                let Some((fde_enc, lsda_size)) = parse_cie_augmentation(rec, &mf.name) else {
                     truncated_cfi(&mf.name, pos);
                 };
                 self.cies.push(Cie {
@@ -1837,6 +1850,7 @@ impl StagedObject {
                     data: rec,
                     personality: None,
                     personality_offset: 0,
+                    fde_enc,
                     lsda_size,
                     output_offset: 0,
                     is_alive: false,
@@ -1857,16 +1871,6 @@ impl StagedObject {
                     }
                     fatal!("{file_name}: __eh_frame: FDE with an invalid CIE pointer");
                 };
-                // The function's address and size follow the ID, then,
-                // if the CIE has an LSDA, the augmentation data's length
-                // and the LSDA pointer.
-                let fits = match self.cies[cie].lsda_size {
-                    0 => rec.len() >= 24,
-                    size => skip_uleb(rec, 24).is_some_and(|p| p + size as usize <= rec.len()),
-                };
-                if !fits {
-                    truncated_cfi(&mf.name, pos);
-                }
                 fdes.push((input_addr, rec, cie as u32));
             }
             pos += 4 + len;
@@ -1891,18 +1895,18 @@ impl StagedObject {
             cie.personality_offset = addr - cie.input_addr;
         }
 
-        self.add_fdes::<E>(&fdes, keep_all_fdes)
+        self.add_fdes::<E>(&fdes, hdr.addr as u32, keep_all_fdes)
     }
 
-    /// Adds an __eh_frame's FDEs, given as (input address, bytes, CIE
-    /// index), and ties them to the functions' unwind records. A
-    /// function that already has a compact unwind record doesn't need
-    /// its FDE; the compact record wins. A DWARF-mode record is the
-    /// exception: it exists to point at the FDE. `keep_all_fdes` keeps
-    /// the FDEs of covered functions too: a -r output carries every
-    /// input CIE and FDE through, as ld64's does, and a -static image
-    /// has no __unwind_info for the compact record; any other final
-    /// image has no use for them.
+    /// Adds the FDEs of the __eh_frame at `sect_addr`, given as (input
+    /// address, bytes, CIE index), and ties them to the functions'
+    /// unwind records. A function that already has a compact unwind
+    /// record doesn't need its FDE; the compact record wins. A
+    /// DWARF-mode record is the exception: it exists to point at the
+    /// FDE. `keep_all_fdes` keeps the FDEs of covered functions too: a
+    /// -r output carries every input CIE and FDE through, as ld64's
+    /// does, and a -static image has no __unwind_info for the compact
+    /// record; any other final image has no use for them.
     ///
     /// ld-prime unwinds only code. An FDE for a function in a section
     /// of data it refuses: returns true for that. One in a section of
@@ -1911,6 +1915,7 @@ impl StagedObject {
     fn add_fdes<E: Target>(
         &mut self,
         fdes: &[(u32, &'static [u8], u32)],
+        sect_addr: u32,
         keep_all_fdes: bool,
     ) -> bool {
         // Diagnostics spell the path lossily.
@@ -1928,16 +1933,36 @@ impl StagedObject {
         }
 
         for &(input_addr, rec, cie) in fdes {
-            // The function address: the pre-applied pc_begin field is
-            // relative to itself.
-            let pc_begin = i64::from_le_bytes(rec[8..16].try_into().unwrap());
-            let func_addr = (input_addr as u64 + 8).wrapping_add_signed(pc_begin);
-            let code_len = u64::from_le_bytes(rec[16..24].try_into().unwrap()) as u32;
+            // The function's address and size follow the CIE pointer, in
+            // the CIE's encoding, then, if the CIE has an LSDA, the
+            // augmentation data's length and the LSDA pointer. ld-prime
+            // reads any pointer of 4 or 8 bytes, absolute or relative to
+            // itself, and looks the function up before it refuses all
+            // but the pc-relative ones compilers write.
+            let enc = self.cies[cie as usize].fde_enc;
+            let Some(size) = pointer_size(enc) else {
+                fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
+            };
+            let fits = match self.cies[cie as usize].lsda_size {
+                0 => rec.len() >= 8 + 2 * size,
+                lsda => {
+                    skip_uleb(rec, 8 + 2 * size).is_some_and(|p| p + lsda as usize <= rec.len())
+                }
+            };
+            if !fits {
+                truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
+            }
+            // The size is in the same format, but absolute.
+            let func_addr = read_pointer(rec, 8, enc, input_addr);
+            let code_len = read_pointer(rec, 8 + size, enc & 0xf, 0) as u32;
 
             let Some((isec, func_offset)) = find_subsec(&self.isecs, &self.subsecs, func_addr)
             else {
                 fatal!("address=0x{func_addr:X} not in any section in '{file_name}'");
             };
+            if enc != DW_EH_PE_PCREL && enc != DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
+                fatal!("unsupported FDE pointer encoding 0x{enc:02X} in FDE in '{file_name}'");
+            }
             let func_offset = func_offset as u32;
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
             let is_code = is_code_section(sect);
@@ -1953,7 +1978,7 @@ impl StagedObject {
             let mut lsda = None;
             if self.cies[cie as usize].lsda_size != 0 {
                 // Past the augmentation data length.
-                let pos = skip_uleb(rec, 24).unwrap();
+                let pos = skip_uleb(rec, 8 + 2 * size).unwrap();
                 let cell = i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap());
                 let lsda_addr = (input_addr as u64 + pos as u64).wrapping_add_signed(cell as i64);
                 let Some((lsda_isec, lsda_off)) =
@@ -2171,11 +2196,52 @@ fn skip_uleb(data: &[u8], pos: usize) -> Option<usize> {
     Some(pos + len + 1)
 }
 
+// DWARF pointer encodings (DW_EH_PE_*): the low four bits give the
+// format, the next three what the value is relative to.
+const DW_EH_PE_ABSPTR: u8 = 0x00;
+const DW_EH_PE_SDATA4: u8 = 0x0b;
+const DW_EH_PE_SDATA8: u8 = 0x0c;
+const DW_EH_PE_PCREL: u8 = 0x10;
+
+/// The size of a pointer __eh_frame encodes with `enc`, if ld-prime
+/// reads that encoding: an 8-byte value (DW_EH_PE_absptr or
+/// DW_EH_PE_sdata8) or a sign-extended 4-byte one (DW_EH_PE_sdata4),
+/// absolute or relative to its own address (DW_EH_PE_pcrel). The top
+/// bit, an indirection (DW_EH_PE_indirect), does not change it.
+fn pointer_size(enc: u8) -> Option<usize> {
+    if enc & 0x70 != DW_EH_PE_ABSPTR && enc & 0x70 != DW_EH_PE_PCREL {
+        return None;
+    }
+    match enc & 0xf {
+        DW_EH_PE_ABSPTR | DW_EH_PE_SDATA8 => Some(8),
+        DW_EH_PE_SDATA4 => Some(4),
+        _ => None,
+    }
+}
+
+/// Reads the pointer at `pos` of an __eh_frame record at input address
+/// `rec_addr`, in encoding `enc` (one pointer_size takes), and returns
+/// the address it names. ld-prime reads an indirect pointer, whatever
+/// it is relative to, as the address itself; it refuses the encoding
+/// only afterwards.
+fn read_pointer(rec: &[u8], pos: usize, enc: u8, rec_addr: u32) -> u64 {
+    let val = match enc & 0xf {
+        DW_EH_PE_SDATA4 => i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap()) as i64,
+        _ => i64::from_le_bytes(rec[pos..pos + 8].try_into().unwrap()),
+    };
+    if enc & 0xf0 == DW_EH_PE_PCREL {
+        (rec_addr as u64 + pos as u64).wrapping_add_signed(val)
+    } else {
+        val as u64
+    }
+}
+
 /// Reads a CIE's version and augmentation, checking that they are ones
-/// the linker knows, and returns the size of the LSDA pointer the CIE's
-/// FDEs carry, or 0 if they have none; None if the CIE ends before its
-/// augmentation data does.
-fn cie_lsda_size(data: &[u8], file_name: &Path) -> Option<u8> {
+/// the linker knows, and returns how its FDEs encode their function
+/// (see Cie::fde_enc) and the size of the LSDA pointer they carry, or 0
+/// if they have none; None if the CIE ends before its augmentation data
+/// does.
+fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, u8)> {
     // Diagnostics spell the path lossily.
     let file_name = file_name.display();
     // The version byte follows the length and the CIE ID, then the
@@ -2186,7 +2252,7 @@ fn cie_lsda_size(data: &[u8], file_name: &Path) -> Option<u8> {
     }
     let aug_start = 9;
     if data.get(aug_start).copied() != Some(b'z') {
-        return Some(0);
+        return Some((DW_EH_PE_ABSPTR, 0));
     }
     let aug_end = aug_start + data[aug_start..].iter().position(|&b| b == 0)?;
     // The code and data alignment factors, the return address register
@@ -2195,6 +2261,7 @@ fn cie_lsda_size(data: &[u8], file_name: &Path) -> Option<u8> {
     for _ in 0..4 {
         pos = skip_uleb(data, pos)?;
     }
+    let mut fde_enc = DW_EH_PE_ABSPTR;
     let mut lsda_size = 0;
     for &c in &data[aug_start + 1..aug_end] {
         match c {
@@ -2214,7 +2281,10 @@ fn cie_lsda_size(data: &[u8], file_name: &Path) -> Option<u8> {
                 }
                 pos += 5;
             }
-            b'R' => pos += 1,
+            b'R' => {
+                fde_enc = *data.get(pos)?;
+                pos += 1;
+            }
             // The rest carry no augmentation data: 'S' marks a signal
             // frame and, on AArch64, 'B' return addresses signed with
             // the pointer-authentication B key and 'G' an MTE-tagged
@@ -2223,7 +2293,7 @@ fn cie_lsda_size(data: &[u8], file_name: &Path) -> Option<u8> {
             _ => {}
         }
     }
-    (pos <= data.len()).then_some(lsda_size)
+    (pos <= data.len()).then_some((fde_enc, lsda_size))
 }
 
 /// Returns true if an object contains Objective-C class or category

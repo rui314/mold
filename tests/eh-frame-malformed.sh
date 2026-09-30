@@ -53,11 +53,39 @@ fail short '' '.byte 1'
 fail cie '' '.long 4' '.long 0'
 fail fde '' "$cie" '.long 12' '.long 20' '.quad 0'
 
+# cie_r <encoding>: a CIE whose 'R' augmentation gives how its FDEs
+# encode their function, 24 bytes, labeled so that an FDE's pointer to
+# _main (at address 0) is a SUBTRACTOR pair against the label.
+cie_r() {
+  printf '%s\n' 'EH_frame0:' '.long 20' '.long 0' \
+    ".byte 1, 0x7a, 0x52, 0, 1, 0x78, 30, 1, $1, 0x0c, 31, 8, 0, 0, 0, 0"
+}
+
 # An FDE whose function is outside every section, at the address
 # ld-prime reads for it: the pc-relative pointer's own plus its value.
-cie_zr='.long 20
-.long 0
-.byte 1, 0x7a, 0x52, 0, 1, 0x78, 30, 1, 0x10, 0x0c, 31, 8, 0, 0, 0, 0'
-fail nowhere 'not in any section' "$cie_zr" '.long 20' '.long 28' '.quad 0x1000' '.quad 0'
+fail nowhere 'not in any section' "$(cie_r 0x10)" '.long 20' '.long 28' '.quad 0x1000' '.quad 0'
 eh=$(otool -l $t/nowhere.o | awk '$2 == "__eh_frame" { f = 1 } f && $1 == "addr" { print $2; exit }')
 grep -Fq "address=0x$(printf %X $((eh + 0x1020))) not in any section" $t/nowhere.err
+
+# ld-prime reads an FDE's function in a format of 4 or 8 bytes
+# (DW_EH_PE_absptr 0x0, sdata4 0xb or sdata8 0xc), absolute or
+# pc-relative (0x10), and with the top bit (DW_EH_PE_indirect) set or
+# not; it refuses any other encoding as it reads the pointer. It looks
+# the function up, then refuses all but 0x10 and 0x1b, clang's and
+# GCC's. A CIE without an 'R' augmentation counts as 0x00.
+fail enc03 'unsupported pointer encoding 0x03' "$(cie_r 0x03)" \
+  '.long 12' '.long 28' '.long 0' '.long 0'
+fail enc30 'unsupported pointer encoding 0x30' "$(cie_r 0x30)" \
+  '.long 20' '.long 28' '.quad 0' '.quad 0'
+fail encff 'unsupported pointer encoding 0xFF' "$(cie_r 0xff)" \
+  '.long 20' '.long 28' '.quad 0' '.quad 0'
+fail enc0c 'unsupported FDE pointer encoding 0x0C in FDE' "$(cie_r 0x0c)" \
+  '.long 20' '.long 28' '.quad 0' '.quad 0'
+fail enc1c 'unsupported FDE pointer encoding 0x1C in FDE' "$(cie_r 0x1c)" \
+  '.long 20' '.long 28' '.quad _main - .' '.quad 0'
+fail enc90 'unsupported FDE pointer encoding 0x90 in FDE' "$(cie_r 0x90)" \
+  '.long 20' '.long 28' '.quad 0' '.quad 0'
+fail noR 'unsupported FDE pointer encoding 0x00 in FDE' \
+  'EH_frame0:' '.long 20' '.long 0' '.byte 1, 0x7a, 0, 1, 0x78, 30, 0, 0x0c, 31, 8, 0, 0, 0, 0, 0, 0' \
+  '.long 20' '.long 28' '.quad 0' '.quad 0'
+fail noz 'unsupported FDE pointer encoding 0x00 in FDE' "$cie" '.long 20' '.long 20' '.quad 0' '.quad 0'

@@ -599,20 +599,17 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     let cie_delta = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
                     eh_data[o + 4..o + 8].copy_from_slice(&cie_delta.to_le_bytes());
                     // pc_begin: the function, relative to the field.
+                    let cie = &ctx.cies[fde.cie as usize];
                     let func_isec = ctx.resolve_isec(fde.isec as usize);
                     let isec = &ctx.isecs[func_isec];
                     let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
                         + isec.offset as u64
                         + fde.func_offset as u64;
-                    eh_patches.push((off + 8, func_addr, 8));
+                    eh_patches.push((off + 8, func_addr, cie.pc_size() as u8));
                     // The LSDA pointer, past the augmentation length.
                     if let Some((lsda, lsda_off)) = fde.lsda {
-                        let mut pos = 24;
-                        while eh_data[o + pos] & 0x80 != 0 {
-                            pos += 1;
-                        }
-                        pos += 1;
-                        let size = ctx.cies[fde.cie as usize].lsda_size;
+                        let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size());
+                        let size = cie.lsda_size;
                         let lsda = ctx.resolve_isec(lsda as usize);
                         let l = &ctx.isecs[lsda];
                         let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr

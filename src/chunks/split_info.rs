@@ -556,12 +556,17 @@ impl<'a, E: Target> Places<'a, E> {
         }
         for fde in &ctx.fdes {
             let off = fde.output_offset as u64;
+            let cie = &ctx.cies[fde.cie as usize];
             push(out, at(off + 4), DYLD_CACHE_ADJ_V2_DELTA_32, Some(at(off)));
             let func = self.isec(fde.isec as usize).map(|(n, o)| (n, o + fde.func_offset as u64));
-            push(out, at(off + 8), DYLD_CACHE_ADJ_V2_DELTA_64, func);
+            let kind = match cie.pc_size() {
+                4 => DYLD_CACHE_ADJ_V2_DELTA_32,
+                _ => DYLD_CACHE_ADJ_V2_DELTA_64,
+            };
+            push(out, at(off + 8), kind, func);
             if let Some((isec, lsda_off)) = fde.lsda {
-                let pos = crate::chunks::eh_frame::lsda_pos(fde.data) as u64;
-                let kind = match ctx.cies[fde.cie as usize].lsda_size {
+                let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size()) as u64;
+                let kind = match cie.lsda_size {
                     8 => DYLD_CACHE_ADJ_V2_DELTA_64,
                     _ => DYLD_CACHE_ADJ_V2_DELTA_32,
                 };

@@ -50,22 +50,27 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for fde in &ctx.fdes {
         let off = base_off + fde.output_offset as usize;
         let fde_addr = base_addr + fde.output_offset as u64;
+        let cie = &ctx.cies[fde.cie as usize];
         buf[off..off + fde.data.len()].copy_from_slice(fde.data);
 
         // The CIE pointer is the distance back to the owning CIE.
-        let cie_ptr = fde.output_offset + 4 - ctx.cies[fde.cie as usize].output_offset;
+        let cie_ptr = fde.output_offset + 4 - cie.output_offset;
         buf[off + 4..off + 8].copy_from_slice(&cie_ptr.to_le_bytes());
 
-        // pc_begin: self-relative pointer to the function.
+        // pc_begin: self-relative pointer to the function, of the size
+        // the CIE's encoding gives.
         let func_addr = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
-        let pc_begin = func_addr.wrapping_sub(fde_addr + 8) as i64;
-        buf[off + 8..off + 16].copy_from_slice(&pc_begin.to_le_bytes());
+        let pc_begin = func_addr.wrapping_sub(fde_addr + 8);
+        match cie.pc_size() {
+            4 => buf[off + 8..off + 12].copy_from_slice(&(pc_begin as u32).to_le_bytes()),
+            _ => buf[off + 8..off + 16].copy_from_slice(&pc_begin.to_le_bytes()),
+        }
 
         if let Some((lsda_isec, lsda_off)) = fde.lsda {
-            let pos = lsda_pos(fde.data);
+            let pos = lsda_pos(fde.data, cie.pc_size());
             let cell_addr = fde_addr + pos as u64;
             let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
-            match ctx.cies[fde.cie as usize].lsda_size {
+            match cie.lsda_size {
                 4 => buf[off + pos..off + pos + 4].copy_from_slice(&(val as u32).to_le_bytes()),
                 8 => buf[off + pos..off + pos + 8].copy_from_slice(&val.to_le_bytes()),
                 _ => unreachable!(),
@@ -76,9 +81,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
 /// The offset of an FDE's LSDA pointer: the augmentation data, past
 /// its ULEB128 length, after the length, CIE pointer, pc_begin and
-/// pc_range.
-pub fn lsda_pos(fde: &[u8]) -> usize {
-    let mut pos = 24;
+/// pc_range (`pc_size` bytes each, see Cie::pc_size).
+pub fn lsda_pos(fde: &[u8], pc_size: usize) -> usize {
+    let mut pos = 8 + 2 * pc_size;
     while fde[pos] & 0x80 != 0 {
         pos += 1;
     }
