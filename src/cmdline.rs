@@ -2047,6 +2047,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     if !a.section_start.is_empty() && !a.section_order.is_empty() {
         fatal!("--section-start may not be used with --section-order");
     }
+    if a.strip_all && a.emit_relocs && !a.relocatable {
+        fatal!("--strip-all may not be used with --emit-relocs");
+    }
     if a.image_base % a.page_size != 0 {
         fatal!("-image-base must be a multiple of -max-page-size");
     }
