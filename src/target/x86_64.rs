@@ -51,6 +51,7 @@ impl Target for X86_64 {
     const RELOC_UNSIGNED: u8 = X86_64_RELOC_UNSIGNED;
     const RELOC_SUBTRACTOR: u8 = X86_64_RELOC_SUBTRACTOR;
     const RELOC_GOTPC: u8 = X86_64_RELOC_GOT;
+    const RELOCATABLE_GOTPC_CELL: Option<u32> = None;
     // x86-64 embeds every addend in the relocated field.
     const RELOC_ADDEND: u8 = 0xff;
     // x86_THREAD_STATE64: rax..r15, then rip.

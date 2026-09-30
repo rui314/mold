@@ -61,6 +61,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const RELOC_UNSIGNED: u8;
     const RELOC_SUBTRACTOR: u8;
     const RELOC_GOTPC: u8;
+    /// What a -r output writes into a 4-byte pcrel GOT reference
+    /// (RELOC_GOTPC), whose relocation says all there is: ld-prime
+    /// writes 4 on arm64, where the assembler leaves arbitrary bytes,
+    /// and keeps the object's addend on x86-64.
+    const RELOCATABLE_GOTPC_CELL: Option<u32>;
     /// The explicit-addend relocation type, for targets that have one.
     const RELOC_ADDEND: u8;
     /// The register state LC_UNIXTHREAD holds: its flavor, its size in

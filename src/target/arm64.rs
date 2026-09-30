@@ -94,6 +94,7 @@ impl Target for Arm64 {
     const RELOC_UNSIGNED: u8 = ARM64_RELOC_UNSIGNED;
     const RELOC_SUBTRACTOR: u8 = ARM64_RELOC_SUBTRACTOR;
     const RELOC_GOTPC: u8 = ARM64_RELOC_POINTER_TO_GOT;
+    const RELOCATABLE_GOTPC_CELL: Option<u32> = Some(4);
     const RELOC_ADDEND: u8 = ARM64_RELOC_ADDEND;
     // ARM_THREAD_STATE64: x0..x28, fp, lr, sp, then pc.
     const THREAD_STATE_FLAVOR: u32 = 6;
