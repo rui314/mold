@@ -32,3 +32,20 @@ $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,r,r \
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/a.o -Wl,-segprot,__LINKEDIT,rw,rw 2> $t/log3
 grep -q -- '-segprot cannot be used to modify __LINKEDIT protections' $t/log3
 [ "$(prot $t/exe3 __LINKEDIT)" = '1 1' ]
+
+# ld64 takes the letters in either case. ld-prime warns about any other
+# character, each time it appears, and ignores it.
+$CC --ld-path=$mold -o $t/exe4 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,RWX,Rw
+if [ $ARCH = arm64 ]; then
+  [ "$(prot $t/exe4 __MYSEG)" = '3 3' ]
+else
+  [ "$(prot $t/exe4 __MYSEG)" = '7 3' ]
+fi
+
+$CC --ld-path=$mold -o $t/exe5 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,r7w7,r 2> $t/log5
+[ "$(grep -c "unknown -segprot letter '7'" $t/log5)" = 2 ]
+if [ $ARCH = arm64 ]; then
+  [ "$(prot $t/exe5 __MYSEG)" = '1 1' ]
+else
+  [ "$(prot $t/exe5 __MYSEG)" = '3 1' ]
+fi

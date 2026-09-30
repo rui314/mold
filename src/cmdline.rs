@@ -522,16 +522,18 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
     }
 }
 
-/// Parses ld64's `-segprot` protection strings ("r", "w", "x").
-fn parse_prot(opt: &str, val: &str) -> u8 {
+/// Parses a -segprot protection: the letters r, w and x in either
+/// case, and '-' for none. ld-prime warns about any other letter and
+/// ignores it.
+fn parse_prot(val: &str) -> u8 {
     let mut prot = 0u8;
     for c in val.chars() {
-        match c {
+        match c.to_ascii_lowercase() {
             'r' => prot |= 1,
             'w' => prot |= 2,
             'x' => prot |= 4,
             '-' => {}
-            _ => fatal!("{opt}: invalid protection: {val}"),
+            _ => crate::warn!("unknown -segprot letter '{c}'"),
         }
     }
     prot
@@ -676,6 +678,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut data_const: Option<bool> = None;
+    let mut segprots: Vec<(String, String, String)> = Vec::new();
     let mut i = 1;
     let mut version_shown = false;
 
@@ -788,9 +791,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-segprot" => {
                 let seg = text(name, next_arg(&mut i)).to_string();
-                let max = parse_prot(name, text(name, next_arg(&mut i)));
-                let init = parse_prot(name, text(name, next_arg(&mut i)));
-                args.segprots.push((seg, max, init));
+                let max = text(name, next_arg(&mut i)).to_string();
+                let init = text(name, next_arg(&mut i)).to_string();
+                segprots.push((seg, max, init));
             }
             b"-segment_order" => {
                 if !args.segment_order.is_empty() {
@@ -1145,7 +1148,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_fatal_warnings(args.fatal_warnings);
 
     args.pie = resolve_pie(target, &args, pie);
-    args.segprots = resolve_segprots(target, std::mem::take(&mut args.segprots));
+    args.segprots = resolve_segprots(target, segprots);
 
     args
 }
@@ -1194,13 +1197,16 @@ fn check_segment_order(args: &Args) {
 /// __LINKEDIT, which dyld reads, keeps its own.
 fn resolve_segprots(
     target: &TargetTraits,
-    segprots: Vec<(String, u8, u8)>,
+    segprots: Vec<(String, String, String)>,
 ) -> Vec<(String, u8, u8)> {
     let mut out: Vec<(String, u8, u8)> = Vec::new();
     for (name, max, init) in segprots {
         if name == "__LINKEDIT" {
             crate::warn!("-segprot cannot be used to modify __LINKEDIT protections");
-        } else if out.iter().all(|(seen, _, _)| *seen != name) {
+            continue;
+        }
+        let (max, init) = (parse_prot(&max), parse_prot(&init));
+        if out.iter().all(|(seen, _, _)| *seen != name) {
             out.push((name, if target.name == "arm64" { init } else { max }, init));
         }
     }
