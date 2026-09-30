@@ -3739,7 +3739,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::ObjcImageInfo);
     }
 
-    if !ctx.unwind_records.is_empty() && ctx.args.unwind_info() {
+    if ctx.args.unwind_info() && chunks::unwind_info::is_needed(ctx) {
         ctx.chunks.push(ChunkId::UnwindInfo);
     }
 

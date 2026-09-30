@@ -79,10 +79,10 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         })
         .cloned()
         .collect();
+    records.extend(bare_code_records(ctx, &records));
     if records.is_empty() {
         return (Vec::new(), Vec::new());
     }
-    records.extend(bare_code_records(ctx, &records));
 
     let base = ctx.mach_header.hdr.addr;
     let func_addr = |r: &crate::input_files::UnwindRecord| {
@@ -340,6 +340,14 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     (buf, personalities)
 }
 
+/// Whether the image has __unwind_info: ld-prime writes it for any
+/// unwind info, an FDE of a function that gets no entry of its own
+/// (not being code) too, listing each code atom then.
+pub fn is_needed<E: Target>(ctx: &Context<E>) -> bool {
+    !ctx.unwind_records.is_empty()
+        || (!ctx.fdes.is_empty() && ctx.isecs.par_iter().any(|isec| is_code_atom(ctx, isec)))
+}
+
 /// Whether __unwind_info covers addresses outside __TEXT, its own
 /// segment: code in another segment (a -rename_section can move __text
 /// out), a function with unwind info in a section of data (ld-prime
@@ -393,15 +401,7 @@ fn bare_code_records<E: Target>(
     ctx.isecs
         .par_iter()
         .enumerate()
-        .filter(|&(i, isec)| {
-            isec.is_alive()
-                && isec.replacement == crate::input_sections::NO_REPLACEMENT
-                && !ctx.is_internal(isec.file as usize)
-                && isec
-                    .output_section()
-                    .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)
-                && !covered.contains(&(i as u32))
-        })
+        .filter(|&(i, isec)| is_code_atom(ctx, isec) && !covered.contains(&(i as u32)))
         .map(|(i, isec)| UnwindRecord {
             isec: i as u32,
             input_offset: 0,
@@ -413,4 +413,15 @@ fn bare_code_records<E: Target>(
             fde_idx: UNWIND_NONE,
         })
         .collect()
+}
+
+/// Whether an atom is one of a code section, which ld-prime gives an
+/// entry whatever its unwind info (see bare_code_records).
+fn is_code_atom<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
+    isec.is_alive()
+        && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        && !ctx.is_internal(isec.file as usize)
+        && isec
+            .output_section()
+            .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)
 }

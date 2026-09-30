@@ -86,6 +86,10 @@ f=$(nm $t/bar | awk '$3 == "_f" { print $1 }' | sed 's/^0*//')
 dwarfdump --eh-frame $t/bar | grep -q "FDE cie=.* pc=0*$f\.\.\."
 objdump --unwind-info $t/bar > $t/bar.unwind
 not grep -qi "function offset=0x0*${f: -5}," $t/bar.unwind
+# The FDE still gets the image an __unwind_info, which lists the code:
+# _main, with no unwind info of its own (encoding 0).
+m=$(nm $t/bar | awk '$3 == "_main" { print $1 }' | sed 's/^0*//')
+grep -qi "function offset=0x0*${m: -5}, encoding.*=0x00000000" $t/bar.unwind
 $mold -r -arch $ARCH -o $t/bar-r.o $t/bar.o 2> $t/bar-r.log
 warned $t/bar-r.log __DATA,__bar $t/bar.o
 dwarfdump --eh-frame $t/bar-r.o | grep -q 'FDE cie='
