@@ -1274,7 +1274,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     // constant literals) - by content: their labels vanish, all but
     // those of the cstring and fixed-size literals a symbol names
     // (labeled, kept apart). arm64 relocations must name what they
-    // refer to, so there ld64 names each such atom itself, with one
+    // refer to, so there ld64 names each such atom itself, and each
+    // superclass or protocol reference no label names, with one
     // shared counter: a cstring literal LC<n>, the others l<nnn>, all
     // with N_PEXT set so that a later link can still coalesce them.
     // x86-64 ones refer to them section-relatively, and only the
@@ -1323,11 +1324,17 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         }
         let h = ctx.hdr_of(&ctx.isecs[isec]);
         if !crate::passes::has_unnamed_atoms(h) {
-            return None;
+            // Superclass and protocol references are cut one per
+            // pointer too; on arm64 ld-prime names those no label
+            // names (a labeled one keeps its label).
+            return (E::CPUTYPE == CPU_TYPE_ARM64 && crate::passes::is_class_or_protocol_ref(h))
+                .then_some(8);
         }
         match h.sectname() {
             "__cfstring" => Some(32),
-            "__objc_selrefs" | "__objc_classrefs" => Some(8),
+            "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" => {
+                Some(8)
+            }
             _ => Some(0),
         }
     };

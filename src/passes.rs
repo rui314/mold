@@ -2006,7 +2006,8 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
 /// merged with no identical copy, and a -r output keeps its label
 /// rather than naming it LC<n>/l<nnn>. So it keeps an __objc_superrefs
 /// or __objc_protorefs entry any symbol names, even the ltmpN label of
-/// its section's start (see coalesce_objc_refs).
+/// its section's start (see coalesce_objc_refs), unless the section
+/// is of the literal-pointer type (see is_class_or_protocol_ref).
 fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| {
         if let Some(i) = sym.input_section()
@@ -2018,11 +2019,8 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
                 S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
                     !sym.name().starts_with(['l', 'L'])
                 }
-                _ => {
-                    hdr.segname_is("__DATA")
-                        && (hdr.sectname_is("__objc_superrefs")
-                            || hdr.sectname_is("__objc_protorefs"))
-                }
+                S_LITERAL_POINTERS => false,
+                _ => is_class_or_protocol_ref(hdr),
             };
             if labeled {
                 isec.mark_labeled();
@@ -4089,6 +4087,17 @@ fn output_section_flags(
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
+    // Superclass and protocol references of the literal-pointer type
+    // come out with the flags of the standard section of their name.
+    let input = match standard_section_flags(segname, sectname) {
+        Some(table)
+            if input & SECTION_TYPE == S_LITERAL_POINTERS
+                && is_class_or_protocol_ref_name(sectname) =>
+        {
+            table
+        }
+        _ => input,
+    };
     if relocatable {
         if (segname, sectname) == ("__DATA", "__got") {
             return input & !SECTION_TYPE;
@@ -5137,7 +5146,10 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
 /// GOT slots whatever its type (see fold_input_got), its own, which
 /// says whether the object asks for an indirect-symbol GOT (see
 /// check_sections); but neither is ever split into strings or
-/// literals. Its own flags otherwise.
+/// literals. Superclass and protocol references keep the
+/// literal-pointer type, whose references all merge (see
+/// has_unnamed_atoms), though the output has the table's flags. Its
+/// own flags otherwise.
 pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     if (segname, sectname) == ("__TEXT", "__constructor") {
         return S_MOD_INIT_FUNC_POINTERS;
@@ -5157,7 +5169,13 @@ pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32)
     if sectname == "__objc_selrefs" {
         return if is_literal { flags & !SECTION_TYPE } else { flags };
     }
-    if ty == table & SECTION_TYPE { flags } else { table }
+    if ty == table & SECTION_TYPE
+        || (ty == S_LITERAL_POINTERS && is_class_or_protocol_ref_name(sectname))
+    {
+        flags
+    } else {
+        table
+    }
 }
 
 /// Whether ld-prime places an input section of a standard name (see
@@ -5571,7 +5589,9 @@ fn keep_local_symbol(name: &str) -> bool {
 /// _objc_classes_* in __objc_classlist: ld-prime's NetNewsWire has
 /// none of the 127 ours carried). A demoted private external in those
 /// sections stays (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one
-/// an earlier ld -r demoted, a local that kept N_PEXT (`demoted`).
+/// an earlier ld -r demoted, a local that kept N_PEXT (`demoted`). A
+/// superclass or protocol reference keeps its label, unless it is of
+/// the literal-pointer type (see has_unnamed_atoms).
 fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
     name: &str,
@@ -5599,8 +5619,6 @@ fn keep_local_symbol_in<E: Target>(
                     "__objc_catlist2",
                     "__objc_nlcatlist",
                     "__objc_protolist",
-                    "__objc_superrefs",
-                    "__objc_protorefs",
                     "__objc_imageinfo",
                 ]
                 .iter()
@@ -5615,13 +5633,16 @@ fn keep_local_symbol_in<E: Target>(
 /// of them: CFStrings, selector and class references, UTF-16 literals
 /// and Objective-C constant literals (@42, @[...], @{...}). No label
 /// of theirs is in an output's symbol table; a -r output names the
-/// atoms itself on arm64 (see relocatable.rs).
+/// atoms itself on arm64 (see relocatable.rs). Superclass and protocol
+/// references of the literal-pointer type are taken for class
+/// references too, which merge whatever labels them (see
+/// is_class_or_protocol_ref).
 pub(crate) fn has_unnamed_atoms(hdr: &MachSection) -> bool {
     if hdr.segname_is("__TEXT") {
         return hdr.sectname_is("__ustring");
     }
     hdr.segname_is("__DATA")
-        && [
+        && ([
             "__cfstring",
             "__objc_selrefs",
             "__objc_classrefs",
@@ -5635,6 +5656,21 @@ pub(crate) fn has_unnamed_atoms(hdr: &MachSection) -> bool {
         ]
         .iter()
         .any(|name| hdr.sectname_is(name))
+            || (hdr.section_type() == S_LITERAL_POINTERS && is_class_or_protocol_ref(hdr)))
+}
+
+/// Whether a section holds superclass or protocol references,
+/// __DATA,__objc_superrefs or __objc_protorefs. ld-prime cuts them one
+/// per pointer and merges the unlabeled ones of one target; one a
+/// symbol names stays apart and keeps its label (see
+/// mark_labeled_literals), unless the section has the literal-pointer
+/// type, which merges them all (see has_unnamed_atoms).
+pub(crate) fn is_class_or_protocol_ref(hdr: &MachSection) -> bool {
+    hdr.segname_is("__DATA") && is_class_or_protocol_ref_name(hdr.sectname())
+}
+
+fn is_class_or_protocol_ref_name(sectname: &str) -> bool {
+    matches!(sectname, "__objc_superrefs" | "__objc_protorefs")
 }
 
 /// One stab entry: its name and nlist, the symbol whose final address
