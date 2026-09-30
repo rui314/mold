@@ -2564,11 +2564,16 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // gives without wildcards) or by the alias in its
     // "command-line-aliases-file" (an -alias base) - unless -dead_strip
     // strips the alias, which only an export root survives. The alias
-    // itself counts as defined.
+    // itself counts as defined. The lazy dylibs' __dyld_lazy_load is
+    // none: ld-prime wants it from its "<lazy-load-undefs>", as an
+    // ordinary reference, which a kext's dynamic lookup lets stay.
+    let lazy_load = ctx.symbols.get("__dyld_lazy_load").filter(|_| ctx.args.lazy_load);
     let mut initial: hashbrown::HashMap<crate::symbol::SymbolId, &str> = hashbrown::HashMap::new();
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     for name in ctx.args.forced_undefined.iter().chain(entry) {
-        if let Some(id) = ctx.symbols.get(name) {
+        if let Some(id) = ctx.symbols.get(name)
+            && Some(id) != lazy_load
+        {
             initial.insert(id, "<initial-undefines>");
         }
     }
@@ -2605,6 +2610,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         });
         match map.get(&id) {
             Some(&obj_idx) => file_display(&ctx.objs[obj_idx]).to_string(),
+            None if Some(id) == lazy_load => "<lazy-load-undefs>".to_string(),
             None => initial.get(&id).copied().unwrap_or("<synthesized>").to_string(),
         }
     };
@@ -3064,7 +3070,8 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
 /// linked without libSystem by mistake (a stray -nostdlib) and refuses
 /// it: an executable other than a -static one, or a dylib or bundle,
 /// -static or not. Any dylib left after -dead_strip_dylibs, the bundle
-/// loader included, will do, libSystem or not. ld-prime does the same
+/// loader included, will do, libSystem or not, but a lazy one, which
+/// has no load command, won't. ld-prime does the same
 /// and, like ld64, lets off libsystem_kernel, which libSystem is built
 /// on, and any link with an exit-asm.o (a stopgap for rdar://39514191).
 /// Firmware has no libSystem to link.
@@ -3077,7 +3084,7 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
         MH_DYLIB | MH_BUNDLE => true,
         _ => false,
     };
-    if !dynamic || !ctx.dylibs.is_empty() {
+    if !dynamic || ctx.dylibs.iter().any(|d| !d.is_lazy) {
         return;
     }
     let is_exit_asm = |obj: &input_files::ObjectFile| {
