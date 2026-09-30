@@ -1133,8 +1133,9 @@ pub fn integrate_objects<E: Target>(
         id_base += nids;
     }
 
-    // The rebasing, in parallel; each object also reports its local
-    // symbol names in order for the serial arena extension below.
+    // The rebasing, in parallel. Each object's nlists map to symbols
+    // first: its locals to the slots its prefix sum reserved (they are
+    // initialized below), its globals to the ids interned for the batch.
     let syms_of: Vec<Vec<crate::symbol::SymbolId>> = staged
         .par_iter_mut()
         .enumerate()
