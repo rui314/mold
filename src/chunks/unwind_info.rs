@@ -5,6 +5,7 @@ use rayon::prelude::*;
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
+use crate::input_files::UnwindRecord;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -88,15 +89,29 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         ctx.isec_addr(r.isec as usize) + r.input_offset as u64
     };
 
-    // Records synthesized from DWARF unwind info encode the FDE's
-    // offset in __eh_frame in the low 24 bits.
+    // A DWARF-mode record's encoding holds its FDE's offset in
+    // __eh_frame in the low 24 bits. Its personality and LSDA are the
+    // FDE's, which ld-prime lists in the tables below as a compact
+    // record's, though the unwinder reads them from the FDE.
     for rec in &mut records {
         if let Some(fde) = rec.fde() {
             rec.encoding = E::UNWIND_MODE_DWARF | (ctx.fdes[fde].output_offset & 0xff_ffff);
+            if let Some(p) = function_personality(ctx, rec) {
+                rec.personality_sym = p;
+            }
+            if let Some((isec, off)) = function_lsda(ctx, rec) {
+                (rec.lsda_isec, rec.lsda_off) = (isec as u32, off);
+                rec.encoding |= UNWIND_HAS_LSDA;
+            }
         }
     }
 
-    // Assign personality indices, encoded in bits 28-29 of the encoding.
+    // An empty atom shares its address with the function after it, and
+    // comes first, as in the input.
+    records.par_sort_by_key(|r| (func_addr(r), r.isec));
+
+    // Assign personality indices, encoded in bits 28-29 of the
+    // encoding, in order of first use by address.
     let mut personalities: Vec<SymbolId> = Vec::new();
     for rec in &mut records {
         if let Some(p) = rec.personality() {
@@ -113,10 +128,6 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             rec.encoding |= ((idx + 1) as u32) << UNWIND_PERSONALITY_MASK.trailing_zeros();
         }
     }
-
-    // An empty atom shares its address with the function after it, and
-    // comes first, as in the input.
-    records.par_sort_by_key(|r| (func_addr(r), r.isec));
 
     // The table ends where the last function does, as in ld64, however
     // much of it its unwind record covers.
@@ -341,12 +352,27 @@ pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
     });
     code_elsewhere
         || ctx.unwind_records.par_iter().any(|rec| {
-            rec.lsda().is_some_and(|(isec, _)| {
+            function_lsda(ctx, rec).is_some_and(|(isec, _)| {
                 ctx.isecs[isec]
                     .output_section()
                     .is_some_and(|id| ctx.chunk_header(id).segname != segname)
             })
         })
+}
+
+/// The personality routine of a record's function: the record's own,
+/// or for one in DWARF mode, its FDE's CIE's.
+fn function_personality<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> Option<SymbolId> {
+    rec.personality().or_else(|| ctx.cies[ctx.fdes[rec.fde()?].cie as usize].personality)
+}
+
+/// The LSDA of a record's function: the record's own, or for one in
+/// DWARF mode, its FDE's.
+fn function_lsda<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> Option<(usize, u32)> {
+    rec.lsda().or_else(|| {
+        let (isec, off) = ctx.fdes[rec.fde()?].lsda?;
+        Some((isec as usize, off))
+    })
 }
 
 /// Records for the code that has no unwind information: ld-prime gives
