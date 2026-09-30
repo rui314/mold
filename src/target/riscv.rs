@@ -709,8 +709,6 @@ where
                 R_RISCV_TLSDESC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         utype(loc, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
-                    } else if !sym.has_tlsdesc(&ctx.symbols) && ctx.args.emit_relocs {
-                        rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
                 R_RISCV_TLSDESC_LOAD_LO12 | R_RISCV_TLSDESC_ADD_LO12 | R_RISCV_TLSDESC_CALL => {
@@ -826,6 +824,18 @@ where
                     overwrite_uleb(loc, cur.wrapping_sub(sa));
                 }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
+            }
+        }
+
+        // With --emit-relocs, a relaxed TLSDESC_HI20 is emitted as R_NONE. We
+        // rewrite it after the above loop because find_paired_reloc() needs its
+        // type to pair it with the other relocations of the TLSDESC sequence.
+        if ctx.args.emit_relocs {
+            for rel in rels.iter_mut().filter(|rel| rel.r_type() == R_RISCV_TLSDESC_HI20) {
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+                if !sym.has_tlsdesc(&ctx.symbols) {
+                    rel.set_r_type(R_NONE);
+                }
             }
         }
     }
