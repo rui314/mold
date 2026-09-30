@@ -145,6 +145,9 @@ struct MapFiles<'a> {
     /// The number of the merged library each symbol a dylib provides
     /// through one comes from.
     merged: hashbrown::HashMap<SymbolId, usize>,
+    /// The object whose tentative definition each common symbol's
+    /// subsection stands for, by subsection.
+    commons: hashbrown::HashMap<u32, u32>,
 }
 
 impl<'a> MapFiles<'a> {
@@ -220,6 +223,7 @@ impl<'a> MapFiles<'a> {
             objs: vec![0; ctx.objs.len()],
             dylibs: vec![0; ctx.dylibs.len()],
             merged: hashbrown::HashMap::new(),
+            commons: crate::passes::common_owners(ctx),
         };
         let mut merged_numbers: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
         let named = named.into_iter().map(|(_, file)| file);
@@ -252,13 +256,18 @@ impl<'a> MapFiles<'a> {
         files
     }
 
-    /// The number of the file that defines a symbol.
+    /// The number of the file that defines a symbol: of a common
+    /// symbol, the object whose tentative definition won.
     fn of_symbol<E: Target>(&self, ctx: &Context<E>, sym: SymbolId) -> usize {
         if let Some(&number) = self.merged.get(&sym) {
             return number;
         }
-        match ctx.symbols[sym].file() {
-            Some(FileId::Obj(i)) => self.objs[i as usize],
+        let sym = &ctx.symbols[sym];
+        match sym.file() {
+            Some(FileId::Obj(i)) => {
+                let owner = sym.input_section().and_then(|isec| self.commons.get(&isec));
+                self.objs[owner.copied().unwrap_or(i) as usize]
+            }
             Some(FileId::Dylib(i)) => self.dylibs.get(i as usize).copied().unwrap_or(0),
             None => 0,
         }
@@ -442,7 +451,6 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// It credits itself with an atom it rewrote (a method list in the
 /// relative form).
 fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
-    let common_owners = crate::passes::common_owners(ctx);
     let nlists = defining_nlists(ctx);
     let mut syms: Vec<(SymbolId, usize)> = Vec::new();
     for i in 0..ctx.symbols.syms.len() as SymbolId {
@@ -454,7 +462,7 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
         if !ctx.isecs[isec].is_alive() {
             continue;
         }
-        let file = match common_owners.get(&(isec as u32)) {
+        let file = match files.commons.get(&(isec as u32)) {
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
             None if is_rewritten_method_list(ctx, isec) => 0,

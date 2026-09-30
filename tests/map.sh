@@ -45,6 +45,33 @@ grep -Fq $'\t[  1] literal string: Hello world\\n' $t/map
 grep -Fq $'\t[  0] compact unwind info' $t/map
 grep -Fq $'\t[  1] _common_sym' $t/map
 
+# So does a common symbol's GOT slot, whichever object's tentative
+# definition won: the one of the largest size, here the second's.
+if [ $ARCH = arm64 ]; then
+  cat <<'EOF' | $CC -o $t/d.o -c -xassembler -
+.globl _main
+.p2align 2
+_main:
+  ret
+.section __TEXT,__const
+.p2align 2
+  .long _big_common@GOT - .
+.comm _big_common, 4, 2
+EOF
+else
+  cat <<'EOF' | $CC -o $t/d.o -c -xassembler -
+.globl _main
+_main:
+  addq _big_common@GOTPCREL(%rip), %rax
+  ret
+.comm _big_common, 4, 2
+EOF
+fi
+echo '.comm _big_common, 16, 4' | $CC -o $t/e.o -c -xassembler -
+$CC --ld-path=$mold -o $t/exe3 $t/d.o $t/e.o -Wl,-map,$t/map3
+grep -Fq $'\t[  2] _big_common.got' $t/map3
+grep -Eq $'\t\\[  2\\] _big_common$' $t/map3
+
 # With -dead_strip, removed atoms are reported in their own section,
 # after a blank line, with "<<dead>>" in the address column.
 cat <<EOF | $CC -o $t/c.o -c -xc -
