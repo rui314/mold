@@ -3420,7 +3420,8 @@ impl SectionMap {
 /// strip_static_syms and no_toc direct the linker, not dyld, and
 /// some_instructions alone is but the assembler's note that it
 /// emitted an instruction into the section - and marks just the ObjC
-/// list sections the runtime scans as no-dead-strip. A -r output is
+/// list sections the runtime scans, and the class references while in
+/// __DATA, as no-dead-strip. A -r output is
 /// input to another link, so ld-prime copies the type and attributes
 /// verbatim. __eh_frame carries the compiler's fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
@@ -3436,10 +3437,16 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     if segname == "__DATA" && matches!(sectname, "__objc_protorefs" | "__objc_superrefs") {
         return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
     }
-    // Selector references made constant (in the shared region) are
-    // plain data to ld-prime.
-    if segname == "__DATA_CONST" && sectname == "__objc_selrefs" {
-        return S_REGULAR;
+    // ld-prime knows __objc_selrefs by name: its selector references
+    // stay literal pointers whatever their type - but those typed so,
+    // which it makes plain data once constant (in the shared region),
+    // as it does the class references.
+    if matches!(segname, "__DATA" | "__DATA_CONST") && sectname == "__objc_selrefs" {
+        return if segname == "__DATA_CONST" && input & SECTION_TYPE == S_LITERAL_POINTERS {
+            S_REGULAR
+        } else {
+            S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP
+        };
     }
     let ty = match input & SECTION_TYPE {
         S_GB_ZEROFILL => S_ZEROFILL,
@@ -3454,7 +3461,6 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
         | S_THREAD_LOCAL_ZEROFILL
         | S_THREAD_LOCAL_VARIABLES) => ty,
         S_DTRACE_DOF if input == S_DTRACE_DOF => S_DTRACE_DOF,
-        S_LITERAL_POINTERS if sectname == "__objc_selrefs" => S_LITERAL_POINTERS,
         _ => S_REGULAR,
     };
     let mut attrs = 0;
@@ -3470,9 +3476,8 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
             | "__objc_catlist2"
             | "__objc_nlclslist"
             | "__objc_nlcatlist"
-            | "__objc_selrefs"
-            | "__objc_classrefs"
-    ) {
+    ) || (segname == "__DATA" && sectname == "__objc_classrefs")
+    {
         attrs |= S_ATTR_NO_DEAD_STRIP;
     }
     ty | attrs
