@@ -454,6 +454,11 @@ where
         let contents = isec.original_contents(file);
         let mut i = 0;
 
+        // TLSDESC_ADD_LO12 sets this to the address of the AUIPC it writes when
+        // relaxing TLSDESC to initial-exec, and the TLSDESC_CALL that follows
+        // uses it. See the comment for R_RISCV_TLSDESC_HI20 below.
+        let mut tlsdesc_auipc_addr = 0;
+
         while i < rels.len() {
             let rel_idx = i;
             let rel = rels[rel_idx];
@@ -706,6 +711,11 @@ where
                 // If the code-shrinking relaxation is disabled, we may leave
                 // original useless instructions instead of deleting them, but we
                 // accept that because relaxations are enabled by default.
+                //
+                // The AUIPC in the initial-exec sequence is at TLSDESC_ADD_LO12's
+                // place, which is not TLSDESC_HI20's place unless the instructions
+                // between them are deleted. The GOT entry's address is computed
+                // relative to the former.
                 R_RISCV_TLSDESC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         utype(loc, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
@@ -743,7 +753,8 @@ where
                                 );
                             } else if sym2.has_gottp(&ctx.symbols) {
                                 write32(loc, 0x517); // auipc a0,<hi20>
-                                utype(loc, sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p2));
+                                utype(loc, sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p));
+                                tlsdesc_auipc_addr = p;
                             } else {
                                 write32(loc, 0x537); // lui a0,<hi20>
                                 utype(loc, tprel);
@@ -757,7 +768,9 @@ where
                                 write32(loc, if IS_64 { 0x53503 } else { 0x52503 });
                                 write_itype(
                                     loc,
-                                    sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
+                                    sym2.gottp_addr(ctx)
+                                        .wrapping_add(a2)
+                                        .wrapping_sub(tlsdesc_auipc_addr),
                                 );
                             } else {
                                 let insn = if is_int(tprel as i64, 12) {
