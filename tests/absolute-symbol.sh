@@ -25,3 +25,7 @@ for fixups in -fixup_chains -no_fixup_chains; do
   $CC --ld-path=$mold $t/main.o $t/absolute.o -Wl,$fixups -o $t/exe
   $t/exe | grep '^42 43 43 43 1$'
 done
+
+# The private-external absolute symbol stays in the symbol table as a
+# local, as ld64 keeps it.
+nm -m $t/exe | grep '(absolute) non-external (was a private external) _private_answer'

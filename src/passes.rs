@@ -4820,6 +4820,60 @@ pub fn create_output_symtab<E: Target>(
     }
     t.stop();
     let t = ctx.timer("symtab-globals");
+    // An import is listed only while live code or data refers to it:
+    // after -dead_strip, ld-prime drops the imports only stripped
+    // functions used. A reference is a relocation from a live
+    // subsection or a stub or GOT slot (unwind personalities, the
+    // selector stubs' _objc_msgSend and dyld_stub_binder have slots).
+    let live_ref: Vec<std::sync::atomic::AtomicBool> =
+        (0..ctx.symbols.syms.len()).map(|_| std::sync::atomic::AtomicBool::new(false)).collect();
+    {
+        use std::sync::atomic::Ordering;
+        ctx.isecs
+            .par_iter()
+            .filter(|isec| {
+                isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+            })
+            .for_each(|isec| {
+                for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+                    if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
+                        live_ref[id as usize].store(true, Ordering::Relaxed);
+                    }
+                }
+            });
+        let slots = ctx
+            .stubs
+            .symbols
+            .iter()
+            .chain(&ctx.got.got_syms)
+            .copied()
+            .chain(ctx.objc_stubs.msgsend_sym)
+            .chain(ctx.stub_helper.dyld_stub_binder);
+        for id in slots {
+            live_ref[id as usize].store(true, Ordering::Relaxed);
+        }
+        // The pointer fields of synthesized records (merged category
+        // lists, the class registrations) refer to symbols too.
+        for blob in &ctx.data_blobs {
+            for field in &blob.fields {
+                if let DataField::Ptr(ObjcRef::Sym(id, _)) = field {
+                    live_ref[*id as usize].store(true, Ordering::Relaxed);
+                }
+            }
+        }
+        // -u names an import the program must keep whether or not
+        // anything refers to it, and an -alias of an import re-exports
+        // it by name (the N_INDR entry points at the import's).
+        for name in &ctx.args.forced_undefined {
+            if let Some(id) = ctx.symbols.get(name) {
+                live_ref[id as usize].store(true, Ordering::Relaxed);
+            }
+        }
+        for &(_, target) in &ctx.indirect_aliases {
+            live_ref[target as usize].store(true, Ordering::Relaxed);
+        }
+    }
+
     // One parallel pass classifies the whole symbol table - private
     // externals (emitted among the locals), defined globals and
     // undefineds - instead of three full scans over millions of
@@ -4835,19 +4889,23 @@ pub fn create_output_symtab<E: Target>(
         .map(|i| {
             let sym = &ctx.symbols[i];
             if matches!(sym.file(), Some(FileId::Dylib(_))) {
-                return Class::Undef;
+                return if live_ref[i].load(std::sync::atomic::Ordering::Relaxed) {
+                    Class::Undef
+                } else {
+                    Class::No
+                };
             }
+            // A private external in a live object: a definition in a
+            // live subsection, or a sectionless one - an absolute
+            // symbol (N_ABS) or a hidden __mh_execute_header, which
+            // ld64 keeps as locals too, but not a hidden -alias of an
+            // import, which it drops.
             if sym.is_extern()
                 && sym.is_private_extern()
-                && let Some(FileId::Obj(obj)) = sym.file()
+                && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.objs[o as usize].is_alive)
                 && match sym.input_section() {
                     Some(isec) => ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive(),
-                    // __mh_execute_header, hidden by an export
-                    // list, stays a local as in ld-prime's output.
-                    None => {
-                        ctx.is_internal(obj as usize)
-                            && !ctx.indirect_aliases.iter().any(|&(a, _)| a == i as u32)
-                    }
+                    None => !ctx.indirect_aliases.iter().any(|&(a, _)| a == i as u32),
                 }
             {
                 // A private external becomes a local, and a label
@@ -4871,18 +4929,39 @@ pub fn create_output_symtab<E: Target>(
         }
         let sym = &ctx.symbols[i];
         names.push(sym.name().as_bytes());
-        let ent = NList {
-            n_strx: 0,
-            n_type: N_SECT | N_PEXT,
-            // A symbol with no section sits in the first one, the
-            // mach header, like a global __mh_execute_header.
-            n_sect: sym
-                .input_section()
-                .map_or(1, |isec| ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)])),
-            n_desc: 0,
-            n_value: 0,
+        let ent = match (sym.file(), sym.input_section()) {
+            (_, Some(isec)) => {
+                let isec = ctx.resolve_isec(isec as usize);
+                (
+                    NList {
+                        n_strx: 0,
+                        n_type: N_SECT | N_PEXT,
+                        n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
+                        n_desc: 0,
+                        n_value: 0,
+                    },
+                    Some(i as u32),
+                )
+            }
+            // A hidden __mh_execute_header (an export list that omits
+            // it, or -no_exported_symbols) sits in the first section,
+            // the mach header.
+            (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => (
+                NList { n_strx: 0, n_type: N_SECT | N_PEXT, n_sect: 1, n_desc: 0, n_value: 0 },
+                Some(i as u32),
+            ),
+            (_, None) => (
+                NList {
+                    n_strx: 0,
+                    n_type: N_ABS | N_PEXT,
+                    n_sect: 0,
+                    n_desc: 0,
+                    n_value: sym.value,
+                },
+                None,
+            ),
         };
-        data.entries.push((ent, Some(i as u32)));
+        data.entries.push(ent);
     }
     data.nlocal = data.entries.len() as u32;
 

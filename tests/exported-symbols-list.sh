@@ -19,9 +19,24 @@ not grep -q _bar $t/exports
 
 # ld-prime turns what the list leaves out into a private extern: a
 # local in the symbol table, not only a name missing from the trie.
-nm -m $t/exe > $t/syms
-grep -q 'non-external (was a private external) _bar' $t/syms
-grep -q 'non-external (was a private external) __mh_execute_header' $t/syms
+nm -m $t/exe > $t/syms-exe
+grep -q 'non-external (was a private external) _bar' $t/syms-exe
+grep -q 'non-external (was a private external) __mh_execute_header' $t/syms-exe
+
+# _main is demoted too when the list omits it; _foo stays external.
+grep -q 'non-external (was a private external) _main' $t/syms-exe
+grep -q ' external _foo' $t/syms-exe
+
+# -unexported_symbols_list demotes only what it names.
+echo _bar > $t/unlist
+$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-unexported_symbols_list,$t/unlist
+dyld_info -exports $t/exe2 > $t/exports2
+grep -q _foo $t/exports2
+not grep -q _bar $t/exports2
+nm -m $t/exe2 > $t/nm2
+grep -q 'non-external (was a private external) _bar' $t/nm2
+grep -q ' external _main' $t/nm2
+grep -q ' external __mh_execute_header' $t/nm2
 
 cat <<EOF2 | $CC -o $t/b.o -c -xc -
 __attribute__((weak)) int wf(void) { return 1; }

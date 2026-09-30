@@ -14,6 +14,9 @@ done
 
 $CC --ld-path=$mold $t/a.o -Wl,-no_exported_symbols,-dead_strip -o $t/exe
 $t/exe
+# The hidden header symbol stays in the symbol table as a local.
+nm -m $t/exe > $t/nm
+grep -q 'non-external (was a private external) __mh_execute_header' $t/nm
 $CC --ld-path=$mold $t/a.o -dynamiclib \
   -Wl,-no_exported_symbols,-dead_strip -o $t/libfoo.dylib
 nm $t/libfoo.dylib > $t/syms
