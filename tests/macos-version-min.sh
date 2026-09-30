@@ -49,3 +49,11 @@ link -w -fatal_warnings -macosx_version_min 30.0 -macosx_version_min 30.0 -o $t/
 [ "$(grep -c '^-macosx_version_min has been renamed to -macos_version_min$' $t/log4)" = 2 ]
 not link -macosx_version_min 1x -o $t/exe3 2> $t/log5
 grep -q -- "-macos_version_min: malformed 32-bit xxxx.yy.zz version number: '1x'" $t/log5
+
+# The notes and warnings given as options are read come before the
+# error an option runs into.
+not link -macosx_version_min 30.0 -sectalign __TEXT __text 3 -headerpad xyz -o $t/exe3 \
+  2> $t/log6
+grep -q '^-macosx_version_min has been renamed to -macos_version_min$' $t/log6
+grep -q 'alignment for -sectalign __TEXT __text is not a power of two' $t/log6
+grep -q -- '-headerpad: not a hexadecimal number: xyz' $t/log6

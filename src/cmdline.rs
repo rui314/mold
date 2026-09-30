@@ -9,6 +9,7 @@ use std::io::IsTerminal;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
+use crate::error::Held;
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files::PlatformVersion;
@@ -831,10 +832,12 @@ fn section_name(name: &str) -> String {
 /// A -sectcreate segment or section name, cut to 16 bytes with
 /// ld-prime's warning. (-add_empty_section's are cut silently: ld-prime
 /// fails an assertion on them.)
-fn sectcreate_name(kind: &str, name: &str) -> String {
+fn sectcreate_name(kind: &str, name: &str, warnings: &mut OptionWarnings) -> String {
     let cut = section_name(name);
     if cut.len() < name.len() {
-        crate::warn!("-sectcreate {kind} name too long ('{name}'), will be truncated to '{cut}'");
+        warnings.warn(format!(
+            "-sectcreate {kind} name too long ('{name}'), will be truncated to '{cut}'"
+        ));
     }
     cut
 }
@@ -984,21 +987,15 @@ enum OutputKind {
 }
 
 /// The warnings ld-prime gives as it reads an option, which only a -w
-/// before the option silences (but -fatal_warnings still counts). They
-/// wait until the parse is known to be for the target, so that they
-/// are given once.
+/// before the option silences (but -fatal_warnings still counts), and
+/// its notices, which it prints bare whatever -w and -fatal_warnings
+/// say. They are held back until the parse is known to be for the
+/// target, so that they are given once, but come before the error a
+/// later option runs into (see error::hold).
 #[derive(Default)]
 struct OptionWarnings {
     quiet: bool,
-    msgs: Vec<OptionMessage>,
     hidden: bool,
-}
-
-/// A message given as an option is read: a warning, or a notice, which
-/// ld-prime prints bare whatever -w and -fatal_warnings say.
-enum OptionMessage {
-    Warning(String),
-    Notice(String),
 }
 
 impl OptionWarnings {
@@ -1006,22 +1003,17 @@ impl OptionWarnings {
         if self.quiet {
             self.hidden = true;
         } else {
-            self.msgs.push(OptionMessage::Warning(msg.into()));
+            crate::error::hold(Held::Warning(msg.into()));
         }
     }
 
     fn notice(&mut self, msg: impl Into<String>) {
-        self.msgs.push(OptionMessage::Notice(msg.into()));
+        crate::error::hold(Held::Notice(msg.into()));
     }
 
     /// Gives the messages, once the parse is known to be the last.
     fn print(&self) {
-        for msg in &self.msgs {
-            match msg {
-                OptionMessage::Warning(msg) => crate::warn!("{msg}"),
-                OptionMessage::Notice(msg) => crate::error::notice(format_args!("{msg}")),
-            }
-        }
+        crate::error::release_held();
         if self.hidden {
             crate::error::hidden_warning();
         }
@@ -1114,7 +1106,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
-    let mut deprecated_undefined: Vec<&str> = Vec::new();
     // The obsolete options given, which ld-prime ignores with a
     // warning once it has read them all.
     let mut obsolete: Vec<&str> = Vec::new();
@@ -1427,8 +1418,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 );
             }
             b"-sectcreate" => {
-                let seg = sectcreate_name("segment", text(name, next_arg(&mut i, name)));
-                let sect = sectcreate_name("section", text(name, next_arg(&mut i, name)));
+                let seg = text(name, next_arg(&mut i, name));
+                let seg = sectcreate_name("segment", seg, &mut warnings);
+                let sect = text(name, next_arg(&mut i, name));
+                let sect = sectcreate_name("section", sect, &mut warnings);
                 let file = path(next_arg(&mut i, name));
                 args.sectcreate.push((seg, sect, file));
             }
@@ -1463,7 +1456,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.undefined_dynamic_lookup = true;
                 }
                 if treatment != "dynamic_lookup" {
-                    deprecated_undefined.push(treatment);
+                    warnings.warn(format!("-undefined {treatment} is deprecated"));
                 }
             }
             b"-U" => args.allowed_undefined.push(text(name, next_arg(&mut i, name)).to_string()),
@@ -1798,7 +1791,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // ld-prime reports the options it doesn't know together, once it
     // has read the others (and given their warnings).
     if !unknown.is_empty() {
-        warnings.print();
         fatal!("unknown options: {unknown}");
     }
 
@@ -1834,6 +1826,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.arch = Some(detect_target(&args.inputs));
     }
     if args.arch != Some(target.name) {
+        crate::error::drop_held();
         return args;
     }
     if args.platform == 0 {
@@ -1900,9 +1893,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     warn_platform_options(target, &args, read_only_relocs.is_some());
 
-    for treatment in deprecated_undefined {
-        crate::warn!("-undefined {treatment} is deprecated");
-    }
     for lib in lazy_libraries {
         if args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0) {
             crate::warn!(

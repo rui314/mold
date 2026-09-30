@@ -63,10 +63,45 @@ fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
     let _ = io::stderr().write_all(text.as_bytes());
 }
 
-/// Reports an unrecoverable error and exits.
+/// Reports an unrecoverable error and exits, giving the messages held
+/// back first.
 pub fn fatal(msg: fmt::Arguments) -> ! {
+    release_held();
     emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
     exit_after_cleanup(1);
+}
+
+/// A message held back: a warning, or a notice printed bare.
+pub enum Held {
+    Warning(String),
+    Notice(String),
+}
+
+/// The messages ld-prime gives as it reads the options, which wait
+/// until the options are known to be read for the target (see
+/// cmdline's OptionWarnings), but come out before the error an option
+/// runs into.
+static HELD: Mutex<Vec<Held>> = Mutex::new(Vec::new());
+
+pub fn hold(msg: Held) {
+    HELD.lock().unwrap_or_else(|e| e.into_inner()).push(msg);
+}
+
+/// Gives the messages held back.
+pub fn release_held() {
+    let held = std::mem::take(&mut *HELD.lock().unwrap_or_else(|e| e.into_inner()));
+    for msg in held {
+        match msg {
+            Held::Warning(msg) => warn(format_args!("{msg}")),
+            Held::Notice(msg) => notice(format_args!("{msg}")),
+        }
+    }
+}
+
+/// Forgets the messages held back, of options read for another target
+/// that are read again.
+pub fn drop_held() {
+    HELD.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
 /// Reports an error.

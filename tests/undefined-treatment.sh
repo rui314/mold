@@ -42,9 +42,14 @@ EOF
 $mold -arch $ARCH -kext -U _kernel_var $t/k.o -o $t/kext 2> $t/log8
 grep -q -- '-U option is redundant when using -undefined dynamic_lookup' $t/log8
 
-# The warnings obey -fatal_warnings and -w.
+# The warnings obey -fatal_warnings and -w. ld-prime deprecates a
+# treatment as it reads the option, which only a -w before silences.
 not $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-undefined,dynamic_lookup \
   -Wl,-undefined,error -Wl,-fatal_warnings 2> /dev/null
 $CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-w -Wl,-undefined,suppress -Wl,-U,_missing \
   2> $t/log7
 not grep -q warning $t/log7
+$CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-undefined,suppress -Wl,-U,_missing -Wl,-w \
+  2> $t/log9
+grep -q -- '-undefined suppress is deprecated' $t/log9
+not grep -q -- '-U option is redundant' $t/log9
