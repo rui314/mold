@@ -359,8 +359,9 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     (cmd.maxprot, cmd.initprot) = segment_prots(ctx, seg.name);
     // dyld makes __DATA_CONST read-only once binds are applied; not in
     // an image bound for the shared region, which ld-prime leaves to
-    // the cache (or kernel collection) builder.
-    if seg.name == "__DATA_CONST" && !ctx.args.shared_region {
+    // the cache (or kernel collection) builder, but for dyld itself,
+    // which makes its own read-only once it has slid itself.
+    if seg.name == "__DATA_CONST" && (!ctx.args.shared_region || ctx.args.is_dylinker()) {
         cmd.flags = SG_READ_ONLY;
     }
     // A segment of nothing but sections the command line made
@@ -594,19 +595,6 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
     buf
 }
 
-fn create_dylinker_cmd() -> Vec<u8> {
-    let cmd = DylinkerCommand {
-        cmd: LC_LOAD_DYLINKER,
-        cmdsize: 0,
-        nameoff: size_of::<DylinkerCommand>() as u32,
-    };
-    let mut buf = to_vec(&cmd);
-    append_string(&mut buf, b"/usr/lib/dyld");
-    let size = buf.len() as u32;
-    buf[4..8].copy_from_slice(&size.to_le_bytes());
-    buf
-}
-
 /// The install name a dylib output records in LC_ID_DYLIB: -install_name,
 /// else -final_output, else the output path.
 pub fn output_install_name<E: Target>(ctx: &Context<E>) -> &[u8] {
@@ -633,9 +621,10 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     buf
 }
 
-// LC_RPATH and LC_SUB_FRAMEWORK share the layout of every
-// single-string load command: a cmd/cmdsize header plus the offset of
-// an inline NUL-terminated string, padded to an 8-byte multiple.
+// LC_RPATH, LC_SUB_FRAMEWORK and the dylinker commands share the
+// layout of every single-string load command: a cmd/cmdsize header
+// plus the offset of an inline NUL-terminated string, padded to an
+// 8-byte multiple.
 fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
     let cmd =
         DylinkerCommand { cmd: kind, cmdsize: 0, nameoff: size_of::<DylinkerCommand>() as u32 };
@@ -661,10 +650,10 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
-/// A -static image has no dyld to read LC_MAIN; the kernel (or a boot
-/// loader) starts its thread from LC_UNIXTHREAD's register state, all
-/// zero but the program counter at the entry point, and the stack
-/// pointer at the top of a -stack_size stack.
+/// A -static image has no dyld to read LC_MAIN, nor has dyld itself;
+/// the kernel (or a boot loader) starts its thread from LC_UNIXTHREAD's
+/// register state, all zero but the program counter at the entry
+/// point, and the stack pointer at the top of a -stack_size stack.
 fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let size = 16 + E::THREAD_STATE_COUNT as usize * 4;
     let mut buf = Vec::with_capacity(size);
@@ -743,8 +732,12 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if !ctx.args.static_link || ctx.args.pie {
         vec.push(create_dysymtab_cmd(ctx));
     }
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.static_link {
-        vec.push(create_dylinker_cmd());
+    // An executable names the dynamic linker that loads it, and dyld
+    // names itself (as /usr/lib/dyld whatever -install_name says).
+    if ctx.args.is_dylinker() {
+        vec.push(create_string_cmd(LC_ID_DYLINKER, b"/usr/lib/dyld"));
+    } else if ctx.args.output_type == MH_EXECUTE && !ctx.args.static_link {
+        vec.push(create_string_cmd(LC_LOAD_DYLINKER, b"/usr/lib/dyld"));
     }
     // -no_uuid leaves the command out, as ld-prime does, though dyld
     // then refuses to load the image ("missing LC_UUID load command").
@@ -761,12 +754,10 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if !ctx.args.preload {
         vec.push(create_source_version_cmd(ctx));
     }
-    if ctx.args.output_type == MH_EXECUTE {
-        vec.push(if ctx.args.static_link {
-            create_unixthread_cmd(ctx)
-        } else {
-            create_main_cmd(ctx)
-        });
+    if ctx.args.is_dylinker() || (ctx.args.output_type == MH_EXECUTE && ctx.args.static_link) {
+        vec.push(create_unixthread_cmd(ctx));
+    } else if ctx.args.output_type == MH_EXECUTE {
+        vec.push(create_main_cmd(ctx));
     }
     if ctx.chunks.contains(&ChunkId::SplitInfo) {
         vec.push(create_linkedit_data_cmd(LC_SEGMENT_SPLIT_INFO, &ctx.split_info.hdr));
@@ -833,8 +824,10 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 /// stack.
 fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
-    // segments, and ld-prime leaves nothing free after its commands.
-    if ctx.args.preload {
+    // segments, and ld-prime leaves nothing free after its commands;
+    // nor after dyld's, whose __text starts on the next 4 KiB boundary
+    // (see create_output_sections), whatever -headerpad says.
+    if ctx.args.preload || ctx.args.is_dylinker() {
         return 0;
     }
     let dylib_cmds: Vec<(DylibCommand, &[u8])> = cmds
@@ -968,8 +961,9 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // -bind_at_load makes the stubs bind through the GOT instead of
     // lazily; ld-prime does not set MH_BINDATLOAD for it (dyld binds
     // everything at load anyway). MH_APP_EXTENSION_SAFE is for dyld
-    // too, and ld-prime leaves it out of an image no dyld loads.
-    if ctx.args.application_extension && !ctx.args.static_link {
+    // too, and ld-prime leaves it out of an image no dyld loads and out
+    // of dyld itself.
+    if ctx.args.application_extension && !ctx.args.static_link && !ctx.args.is_dylinker() {
         hdr.flags |= MH_APP_EXTENSION_SAFE;
     }
     if ctx

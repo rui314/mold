@@ -605,8 +605,13 @@ impl<E: Target> Context<E> {
     /// so that C++'s one-definition rule holds across images (an
     /// inline function's static local is one variable, not one per
     /// dylib). In a relocatable output the references stay relocations.
+    /// Nor does another image's copy replace one of dyld's own: dyld
+    /// fixes itself up before it loads any image, and by rebases alone.
+    /// (ld-prime reaches them directly from code too, but binds a
+    /// pointer to one in data by weak lookup, a bind dyld could not
+    /// carry out.)
     pub fn is_weak_coalesced(&self, id: SymbolId) -> bool {
-        if self.args.relocatable {
+        if self.args.relocatable || self.args.is_dylinker() {
             return false;
         }
         let sym = &self.symbols[id];

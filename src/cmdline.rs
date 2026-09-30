@@ -72,9 +72,9 @@ pub enum InputArg {
 #[derive(Debug)]
 pub struct Args {
     pub output: PathBuf,
-    /// The output file type: MH_EXECUTE, MH_DYLIB, MH_BUNDLE or
-    /// MH_KEXT_BUNDLE (MH_EXECUTE for a relocatable object, which the
-    /// relocatable flag makes).
+    /// The output file type: MH_EXECUTE, MH_DYLIB, MH_BUNDLE,
+    /// MH_KEXT_BUNDLE or MH_DYLINKER (MH_EXECUTE for a relocatable
+    /// object, which the relocatable flag makes).
     pub output_type: u32,
     /// -install_name: the LC_ID_DYLIB string, kept as the bytes given.
     pub install_name: Option<Vec<u8>>,
@@ -87,7 +87,7 @@ pub struct Args {
     /// -arch, canonicalized to the target's own spelling of its name.
     pub arch: Option<&'static str>,
     /// -e: the entry point, "_main" unless given ("start" for an image
-    /// no dyld loads).
+    /// no dyld loads, and for dyld itself).
     pub entry: String,
     /// The deployment target: -platform_version's platform (PLATFORM_*),
     /// minimum OS and SDK versions, else those of the first object
@@ -958,10 +958,10 @@ pub struct TargetTraits {
 
 /// What the command line links: ld64's output kinds, which ld-prime
 /// chooses the same way. The last of -execute, -dylib, -bundle, -r,
-/// -preload and -kext names the kind, but -static is a modifier as much
-/// as a kind: it makes a static executable of anything but a relocatable
-/// object or a kext, which it leaves as they are, and a later -execute
-/// leaves a static executable static.
+/// -preload, -kext and -dylinker names the kind, but -static is a
+/// modifier as much as a kind: it makes a static executable of anything
+/// but a relocatable object or a kext, which it leaves as they are, and
+/// a later -execute leaves a static executable static.
 #[derive(Clone, Copy, PartialEq)]
 enum OutputKind {
     DynamicExecutable,
@@ -971,6 +971,7 @@ enum OutputKind {
     Object,
     Preload,
     Kext,
+    Dylinker,
 }
 
 /// The warnings ld-prime gives as it reads an option, which only a -w
@@ -1029,6 +1030,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-U"
         | "-install_name"
         | "-dylib_install_name"
+        | "-dylinker_install_name"
         | "-final_output"
         | "-exported_symbol"
         | "-unexported_symbol"
@@ -1235,6 +1237,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-dylib" => kind = OutputKind::Dylib,
             b"-bundle" => kind = OutputKind::Bundle,
             b"-kext" => kind = OutputKind::Kext,
+            b"-dylinker" => kind = OutputKind::Dylinker,
             b"-bundle_loader" => {
                 args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i, name))))
             }
@@ -1252,7 +1255,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
                 None => warnings.warn("-rpath missing <path>"),
             },
-            b"-install_name" | b"-dylib_install_name" => {
+            // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
+            // -dylinker_install_name says.)
+            b"-install_name" | b"-dylib_install_name" | b"-dylinker_install_name" => {
                 args.install_name = Some(bytes(next_arg(&mut i, name)))
             }
             b"-map" => args.map = Some(path(next_arg(&mut i, name))),
@@ -1763,6 +1768,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         OutputKind::Dylib => MH_DYLIB,
         OutputKind::Bundle => MH_BUNDLE,
         OutputKind::Kext => MH_KEXT_BUNDLE,
+        OutputKind::Dylinker => MH_DYLINKER,
         _ => MH_EXECUTE,
     };
     args.relocatable = kind == OutputKind::Object;
@@ -1823,10 +1829,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.platform == PLATFORM_FIRMWARE && !args.without_dyld() && !args.relocatable;
     args.headerpad = headerpad.unwrap_or(if dyld_loaded_firmware { 128 } else { 32 });
 
-    // An image no dyld loads starts from LC_UNIXTHREAD at "start",
-    // crt1.o's entry point, as every executable did before LC_MAIN had
-    // dyld call _main.
-    if args.static_link && !explicit_entry {
+    // An image no dyld loads, and dyld, which the kernel loads, start
+    // from LC_UNIXTHREAD at "start", crt1.o's entry point, as every
+    // executable did before LC_MAIN had dyld call _main.
+    if (args.static_link || args.is_dylinker()) && !explicit_entry {
         args.entry = "start".to_string();
     }
 
@@ -1939,14 +1945,15 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
 
 /// Decides whether the image is bound for the dyld shared cache or a
 /// kernel collection (ld64's fSharedRegionEligible): with
-/// -add_split_seg_info or -kernel, an arm64 kext, or a dylib installed
-/// where the cache takes libraries from, unless
+/// -add_split_seg_info or -kernel, an arm64 kext, dyld, or a dylib
+/// installed where the cache takes libraries from, unless
 /// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
 /// image records its references between sections
 /// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
 /// optimization hints); it may not look symbols up dynamically, since
 /// the cache builder binds every one to the dylib that exports it; and
 /// ld-prime warns about run paths, which an OS library must not need.
+/// (It lets dyld, which binds nothing, have a flat namespace.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     let is_dylib = args.output_type == MH_DYLIB;
     args.shared_region = !args.not_for_dyld_shared_cache
@@ -1954,12 +1961,13 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
         && (args.add_split_seg_info
             || args.kernel
             || (args.is_kext() && target.name == "arm64")
+            || args.is_dylinker()
             || (is_dylib && in_shared_cache_path(args.output_install_name())));
     if !args.shared_region {
         return;
     }
     args.ignore_optimization_hints = true;
-    if args.flat_namespace {
+    if args.flat_namespace && !args.is_dylinker() {
         fatal!(
             "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
              or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
@@ -2001,6 +2009,28 @@ impl Args {
         self.output_type == MH_KEXT_BUNDLE
     }
 
+    /// Whether the image is dyld itself (ld64's kDyld, MH_DYLINKER),
+    /// which the kernel maps next to a main executable and starts: it
+    /// loads no dylib, and slides itself by its fixups before it loads
+    /// anything else.
+    pub fn is_dylinker(&self) -> bool {
+        self.output_type == MH_DYLINKER
+    }
+
+    /// Whether the image starts at an entry point (-e): a main
+    /// executable, or dyld.
+    pub fn has_entry_point(&self) -> bool {
+        (self.output_type == MH_EXECUTE && !self.relocatable) || self.is_dylinker()
+    }
+
+    /// Whether the image may link dylibs: not an image no dyld loads,
+    /// with nothing to load them, nor dyld, which is what loads them.
+    /// ld-prime searches -l for archives alone in either, and ignores a
+    /// dylib named outright.
+    pub fn links_dylibs(&self) -> bool {
+        !self.without_dyld() && !self.is_dylinker()
+    }
+
     /// Whether no dyld loads the image: a -static one, which loads (and
     /// slides) itself, or a kext, which kmutil links into the kernel
     /// by its relocations.
@@ -2028,21 +2058,24 @@ impl Args {
 }
 
 /// Rejects the options the kind of output has no use for, as ld-prime
-/// does. Only a main executable has an entry point, a main-thread
-/// stack, a __PAGEZERO and the MH_PIE flag (a -preload one, copied to
-/// wherever its segments say, has neither stack nor __PAGEZERO), and a
-/// client name is what a bundle or an executable presents to the
-/// umbrella it links against. A relocatable object also leaves the
-/// __DATA_CONST split to the link that consumes it. (-stack_size is
-/// checked with its other limits: resolve_stack.)
+/// does. Only a main executable (and dyld) has an entry point, only a
+/// main executable a main-thread stack, a __PAGEZERO and the MH_PIE
+/// flag (a -preload one, copied to wherever its segments say, has
+/// neither stack nor __PAGEZERO), and a client name is what a bundle or
+/// an executable presents to the umbrella it links against. A
+/// relocatable object also leaves the __DATA_CONST split to the link
+/// that consumes it. (-stack_size is checked with its other limits:
+/// resolve_stack.)
 fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     let has_stack = main_executable && !args.preload;
-    if args.client_name.is_some() && (args.relocatable || args.output_type == MH_DYLIB) {
+    if args.client_name.is_some()
+        && (args.relocatable || matches!(args.output_type, MH_DYLIB | MH_DYLINKER))
+    {
         fatal!("-client_name can only be used when creating a bundle or main executable");
     }
     if pie == Some(true) && !main_executable {
-        if args.relocatable {
+        if args.relocatable || args.is_dylinker() {
             fatal!("-pie can only be used when linking a main executable");
         }
         crate::warn!("-pie being ignored. It is only used when linking a main executable");
@@ -2054,7 +2087,7 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
         fatal!("-pagezero_size can only be used when linking a main executable");
     }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
-    if !main_executable && entry && !args.suppress_warnings {
+    if !args.has_entry_point() && entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
     }
 }
@@ -2166,8 +2199,7 @@ fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
 
 /// Whether the command line may lay out the image's segments and
 /// sections: an image no dyld loads (a -static or a -preload one) or
-/// firmware (ld-prime also allows sepOS, and -section_order a
-/// -dylinker image, which mold has not).
+/// firmware (ld-prime also allows sepOS, which mold has not).
 fn custom_layout(args: &Args) -> bool {
     args.static_link || args.platform == PLATFORM_FIRMWARE
 }
@@ -2203,8 +2235,9 @@ fn complete_segment_order(args: &mut Args) {
     }
 }
 
+/// dyld may order its sections too, though not its segments.
 fn check_section_order(args: &Args) {
-    if !args.section_order.is_empty() && !custom_layout(args) {
+    if !args.section_order.is_empty() && !custom_layout(args) && !args.is_dylinker() {
         fatal!(
             "-section_order can only be used with -preload, -dylinker, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );

@@ -125,10 +125,10 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     // since Xcode 4). -search_dylibs_first restores the older ld64
     // behavior: a dylib anywhere on the path beats an archive
     // anywhere.
-    // An image no dyld loads (a -static one or a kext) can use no
-    // dylib, so it looks for archives only. A relocatable output looks
-    // for dylibs too, only to ignore them (collect_file).
-    let passes: &[&[&str]] = if ctx.args.without_dyld() {
+    // An image that links no dylib (Args::links_dylibs) looks for
+    // archives only. A relocatable output looks for dylibs too, only to
+    // ignore them (collect_file).
+    let passes: &[&[&str]] = if !ctx.args.links_dylibs() {
         &[&["a"]]
     } else if ctx.args.search_dylibs_first {
         &[&["tbd", "dylib"], &["a"]]
@@ -289,11 +289,11 @@ fn collect_file<E: Target>(
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
         // A relocatable output keeps every reference undefined for the
-        // final link, and an image no dyld loads (a -static one or a
-        // kext) has nothing to load a dylib with: ld-prime reads a dylib
-        // on their command lines (and ignores a stub without the
-        // architecture as ever), then ignores it with a warning.
-        FileType::Tapi | FileType::Dylib if ctx.args.relocatable || ctx.args.without_dyld() => {
+        // final link, and the other images that link no dylib have
+        // nothing to load one with (Args::links_dylibs): ld-prime reads
+        // a dylib on their command lines (and ignores a stub without
+        // the architecture as ever), then ignores it with a warning.
+        FileType::Tapi | FileType::Dylib if ctx.args.relocatable || !ctx.args.links_dylibs() => {
             if get_file_type(mf) == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
                 crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
             }
@@ -1013,7 +1013,7 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
     let mut named: Vec<String> = ctx.args.forced_undefined.clone();
     // Not for -r, whose output type is still the executable default: the
     // relocatable output would carry a spurious undefined _main.
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.relocatable {
+    if ctx.args.has_entry_point() {
         named.push(ctx.args.entry.clone());
     }
     // -alias bases too: Xcode aliases an app extension's debug dylib
@@ -2337,7 +2337,7 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
         .args
         .forced_undefined
         .iter()
-        .chain((ctx.args.output_type == MH_EXECUTE).then_some(&ctx.args.entry))
+        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
         .chain(ctx.args.aliases.iter().map(|(base, _)| base))
     {
         if let Some(id) = ctx.symbols.get(name) {
@@ -2917,16 +2917,17 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
+    // dyld may find its own mach header by __mh_dylinker_header, which
+    // ld-prime defines as it does ___dso_handle below, out of the
+    // symbol table.
+    if ctx.args.is_dylinker() {
+        define_header_alias(ctx, "__mh_dylinker_header", internal, header_addr);
+    }
+
     // ___dso_handle identifies the image; C++ static destructors pass it
     // to __cxa_atexit. It resolves to the mach header but is never
     // exported.
-    let id = ctx.symbols.intern("___dso_handle");
-    let sym = &mut ctx.symbols[id];
-    if !sym.is_defined() {
-        sym.set_file(FileId::Obj(internal));
-        sym.value = header_addr;
-        sym.set_is_extern(false);
-    }
+    define_header_alias(ctx, "___dso_handle", internal, header_addr);
 
     // -alias gives an existing definition a second name: the new
     // symbol shares the original's subsection and offset, so it lands
@@ -3005,6 +3006,23 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         sym.set_file(FileId::Obj(internal));
         sym.set_is_extern(false);
         ctx.boundary_syms.push((id as u32, is_start, seg, sect));
+    }
+}
+
+/// Defines `name` at the mach header unless an input does, as a local
+/// symbol of the internal object, which the symbol table leaves out.
+fn define_header_alias<E: Target>(
+    ctx: &mut Context<E>,
+    name: &'static str,
+    internal: u32,
+    addr: u64,
+) {
+    let id = ctx.symbols.intern(name);
+    let sym = &mut ctx.symbols[id];
+    if !sym.is_defined() {
+        sym.set_file(FileId::Obj(internal));
+        sym.value = addr;
+        sym.set_is_extern(false);
     }
 }
 
@@ -3779,6 +3797,15 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 osec.hdr.p2align = max;
             }
         }
+    }
+
+    // dyld wants its code at a stable address, whatever its load
+    // commands take: ld64 aligns its __text to 4 KiB, on any target and
+    // whatever the inputs or -sectalign ask, and leaves no room between
+    // the load commands and it (see chunks::header_pad).
+    if ctx.args.is_dylinker() {
+        let id = by_out[&text];
+        ctx.output_sections[id.index()].hdr.p2align = 12;
     }
 
     // -order_file moves the atoms it names to the front of their
@@ -6644,7 +6671,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
 
 /// Resolves the entry point symbol.
 pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.output_type != MH_EXECUTE {
+    if !ctx.args.has_entry_point() {
         return;
     }
     match ctx.symbols.get(&ctx.args.entry) {
@@ -6666,7 +6693,7 @@ pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
 /// LC_MAIN will name; runs after scan_relocations, with the stubs of
 /// the branch targets.
 pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.output_type != MH_EXECUTE {
+    if !ctx.args.has_entry_point() {
         return;
     }
     if let Some(id) = ctx.symbols.get(&ctx.args.entry)

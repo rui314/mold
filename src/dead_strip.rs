@@ -173,7 +173,7 @@ fn collect_root_set<E: Target>(
         }
     }
 
-    if ctx.args.output_type == MH_EXECUTE
+    if ctx.args.has_entry_point()
         && let Some(id) = ctx.symbols.get(&ctx.args.entry)
         && let Some(isec) = ctx.symbols[id].input_section()
     {
@@ -401,7 +401,7 @@ pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
         .args
         .forced_undefined
         .iter()
-        .chain((ctx.args.output_type == MH_EXECUTE).then_some(&ctx.args.entry))
+        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
         .chain(ctx.args.aliases.iter().map(|(base, _)| base))
     {
         if let Some(id) = ctx.symbols.get(name) {
