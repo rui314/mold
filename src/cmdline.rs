@@ -476,6 +476,38 @@ fn parse_platform(arg: &str) -> u32 {
     }
 }
 
+/// Applies -target <arch>-<vendor>-<os><version>, which clang passes in
+/// place of -arch and -platform_version for firmware (for instance
+/// arm64-apple-firmware1.0.0). ld-prime lets the triple override both,
+/// before or after it, and records no SDK version.
+fn apply_target_triple(args: &mut Args, triple: &str) {
+    let mut parts = triple.splitn(3, '-');
+    let (Some(arch), Some(_vendor), Some(os)) = (parts.next(), parts.next(), parts.next()) else {
+        fatal!("missing dashes in target triple '{triple}'");
+    };
+    let (os_name, version) = os.split_at(os.find(|c: char| c.is_ascii_digit()).unwrap_or(os.len()));
+    args.platform = match os_name {
+        "macos" | "macosx" => PLATFORM_MACOS,
+        "firmware" => PLATFORM_FIRMWARE,
+        _ => 0,
+    };
+    // An environment after the version (clang makes x86-64 firmware
+    // x86_64-apple-firmware1.0.0-simulator) names no OS either.
+    if args.platform == 0 || version.contains('-') {
+        fatal!("unknown OS in target triple '{triple}'");
+    }
+    // Firmware tracks no OS versions; macOS must say which.
+    args.platform_minos = match version {
+        "" if args.platform == PLATFORM_FIRMWARE => encode_version(0, 0, 0),
+        "" => fatal!("missing OS version in target triple '{triple}'"),
+        _ => parse_version(version),
+    };
+    args.platform_sdk = encode_version(0, 0, 0);
+    args.arch = Some(
+        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
+    );
+}
+
 /// Parses a symbol list file: one symbol per line, '#' starts a
 /// comment.
 /// Reads a symbol-list file for an option, fatal on I/O error.
@@ -757,6 +789,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut explicit_entry = false;
     let mut read_only_relocs = false;
     let mut headerpad: Option<u64> = None;
+    let mut target_triple: Option<&str> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
     let mut version_shown = false;
@@ -812,6 +845,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     crate::target::canonical_name(arch)
                         .unwrap_or_else(|| fatal!("unsupported target: {arch}")),
                 );
+            }
+            b"-target" => {
+                let Some(triple) = cmdline.get(i + 1) else {
+                    fatal!("-target missing <target-triple>");
+                };
+                i += 1;
+                target_triple = Some(text(name, triple));
             }
             b"-e" => {
                 args.entry = text(name, next_arg(&mut i)).to_string();
@@ -1266,6 +1306,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
         }
         i += 1;
+    }
+
+    if let Some(triple) = target_triple {
+        apply_target_triple(&mut args, triple);
     }
 
     // `ld -v` with nothing to link just reports the version; build
