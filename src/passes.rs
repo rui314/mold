@@ -5619,7 +5619,12 @@ fn plan_local_symbols<E: Target>(
             }
             (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local(0, sym.value) }, None),
         };
-        let rank = if sym.is_weak_def() { WEAK } else { PEXT };
+        // A demoted weak definition keeps N_WEAK_DEF.
+        let (rank, ent) = if sym.is_weak_def() {
+            (WEAK, NList { n_desc: N_WEAK_DEF, ..ent })
+        } else {
+            (PEXT, ent)
+        };
         ents.push((ctx.sym_addr(i as u32), rank, sym.name().as_bytes(), ent, id));
     }
 
