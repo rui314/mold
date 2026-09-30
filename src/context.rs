@@ -334,9 +334,12 @@ impl<E: Target> Context<E> {
 
     /// Returns true if the output is ad-hoc code signed. ld-prime signs
     /// arm64 images by default and leaves x86_64 ones unsigned (Intel
-    /// Macs and Rosetta run unsigned code).
+    /// Macs and Rosetta run unsigned code), and a -static image (a
+    /// kernel, signed if at all by whoever packages it) unsigned too.
     pub fn adhoc_codesign(&self) -> bool {
-        self.args.adhoc_codesign.unwrap_or(E::CPUTYPE == crate::macho::CPU_TYPE_ARM64)
+        self.args
+            .adhoc_codesign
+            .unwrap_or(E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 && !self.args.static_link)
     }
 
     /// Returns true if the output uses chained fixups rather than

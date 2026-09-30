@@ -86,3 +86,8 @@ $mold -arch $ARCH -static -e __start -function_starts -data_in_code_info \
   -version_load_command $t/a.o $t/b.o -o $t/exe3
 otool -l $t/exe3 | awk '$1 == "cmd" { printf "%s ", $2 }' > $t/cmds3
 grep -q 'LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_UNIXTHREAD LC_FUNCTION_STARTS LC_DATA_IN_CODE' $t/cmds3
+
+# Nor is it ad-hoc signed, even on arm64, unless -adhoc_codesign says so.
+not grep -q 'cmd LC_CODE_SIGNATURE$' $t/lc
+$mold -arch $ARCH -static -e __start -adhoc_codesign $t/a.o $t/b.o -o $t/exe4
+otool -l $t/exe4 | grep -q 'cmd LC_CODE_SIGNATURE$'
