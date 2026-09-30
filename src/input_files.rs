@@ -1783,9 +1783,16 @@ impl StagedObject {
 
         let subsec_at = |addr: u64| find_subsec(&self.isecs, &self.subsecs, addr);
 
+        // A pointer field may take a 4-byte relocation (on x86-64, the
+        // only target with 4-byte pointers) as well as an 8-byte one,
+        // but the other fields none.
         for r in rels {
-            if r.size != 8 {
-                fatal!("{file_name}: __compact_unwind: unsupported relocation");
+            let field = r.offset as usize % ENTRY_SIZE;
+            if !matches!(field, 0 | 16 | 24) {
+                fatal!(
+                    "compact unwind fixup at offset of {field} but expected 16 or 24 in '{}'",
+                    crate::passes::resolved_file_name(mf)
+                );
             }
             let rec = &mut records[r.offset as usize / ENTRY_SIZE];
             // The address a pointer field refers to. For an extern
@@ -1800,7 +1807,7 @@ impl StagedObject {
                 }
             };
 
-            match r.offset as usize % ENTRY_SIZE {
+            match field {
                 // The function the record covers.
                 0 => {
                     let Some((isec, off)) = subsec_at(addr) else {
@@ -1833,7 +1840,7 @@ impl StagedObject {
                     rec.lsda_isec = isec as u32;
                     rec.lsda_off = off as u32;
                 }
-                _ => fatal!("{file_name}: __compact_unwind: unsupported relocation"),
+                _ => unreachable!(),
             }
         }
 
