@@ -99,6 +99,113 @@ pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
     }
 }
 
+/// Appends a live synthetic subsection of `sect`, a section of the
+/// internal object as add_synthetic_section returns it, and returns
+/// it. Its output section and offset are set by hand (IS_PLACED), not
+/// by create_output_sections; `offset` is its offset if already known.
+fn add_placed_isec<E: Target>(
+    ctx: &mut Context<E>,
+    sect: (u32, u32),
+    p2align: u8,
+    size: u64,
+    offset: u64,
+) -> u32 {
+    let (file, shndx) = sect;
+    ctx.isecs.push(InputSection {
+        file,
+        shndx,
+        p2align,
+        input_addr: 0,
+        size: size as u32,
+        contents: 0,
+        rel_offset: 0,
+        nrels: 0,
+        output_section: u32::MAX,
+        offset: offset as u32,
+        flags: InputSection::flags_placed(),
+        replacement: crate::input_sections::NO_REPLACEMENT,
+        unwind_offset: 0,
+        nunwind: 0,
+    });
+    (ctx.isecs.len() - 1) as u32
+}
+
+/// Appends a synthetic subsection of `sect` standing for an 8-byte slot
+/// a chunk writes (a GOT entry, an objc stub's selector reference), for
+/// input subsections to be replaced by, and returns it. It is not
+/// alive: it gets the slot's output section and offset once the chunk
+/// is laid out.
+fn add_slot_stand_in<E: Target>(ctx: &mut Context<E>, sect: (u32, u32)) -> u32 {
+    let (file, shndx) = sect;
+    ctx.isecs.push(InputSection {
+        file,
+        shndx,
+        p2align: 3,
+        input_addr: 0,
+        size: 8,
+        contents: 0,
+        rel_offset: 0,
+        nrels: 0,
+        output_section: u32::MAX,
+        offset: u32::MAX,
+        flags: InputSection::flags_dead(),
+        replacement: crate::input_sections::NO_REPLACEMENT,
+        unwind_offset: 0,
+        nunwind: 0,
+    });
+    (ctx.isecs.len() - 1) as u32
+}
+
+/// Appends a synthesized record to the tail of __DATA,`sect` (a section
+/// with the given flags) and returns its subsection.
+fn add_data_blob<E: Target>(
+    ctx: &mut Context<E>,
+    sect: &'static str,
+    flags: u32,
+    fields: Vec<DataField>,
+) -> u32 {
+    let hdr = ctx.add_synthetic_section(MachSection {
+        sectname: str_to_name(sect),
+        segname: str_to_name("__DATA"),
+        p2align: 3,
+        flags,
+        ..Default::default()
+    });
+    let blob = DataBlob { sect, isec: 0, fields };
+    let isec = add_placed_isec(ctx, hdr, 3, blob.size(), 0);
+    ctx.data_blobs.push(DataBlob { isec, ..blob });
+    isec
+}
+
+/// A new __TEXT,__objc_methlist section of the internal object, for
+/// method lists rewritten in the relative form.
+fn add_methlist_section<E: Target>(ctx: &mut Context<E>) -> (u32, u32) {
+    ctx.add_synthetic_section(MachSection {
+        sectname: str_to_name("__objc_methlist"),
+        segname: str_to_name("__TEXT"),
+        p2align: 2,
+        flags: S_REGULAR,
+        ..Default::default()
+    })
+}
+
+/// Appends a method list in the relative form, at `*offset` in `sect`
+/// (an __objc_methlist section of the internal object), and returns
+/// its subsection.
+fn add_relative_method_list<E: Target>(
+    ctx: &mut Context<E>,
+    sect: (u32, u32),
+    offset: &mut u64,
+    methods: Vec<ObjcMethod>,
+) -> u32 {
+    let size = 8 + 12 * methods.len() as u64;
+    *offset = align_to(*offset, 4);
+    let isec = add_placed_isec(ctx, sect, 2, size, *offset);
+    *offset += size;
+    ctx.objc_methlist.lists.push(ObjcMethList { isec, methods });
+    isec
+}
+
 /// The pointer stored at `off` in a subsection: the target of the
 /// 8-byte relocation there, if any.
 fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
@@ -402,7 +509,7 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
     if absorbed.is_empty() {
         return;
     }
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
+    let sect = ctx.add_synthetic_section(MachSection {
         sectname: str_to_name("__objc_selrefs"),
         segname: str_to_name("__DATA"),
         p2align: 3,
@@ -414,23 +521,7 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
         let synth = match synth_of.get(&stub) {
             Some(&synth) => synth,
             None => {
-                ctx.isecs.push(InputSection {
-                    file,
-                    shndx,
-                    p2align: 3,
-                    input_addr: 0,
-                    size: 8,
-                    contents: 0,
-                    rel_offset: 0,
-                    nrels: 0,
-                    output_section: u32::MAX,
-                    offset: u32::MAX,
-                    flags: std::sync::atomic::AtomicU8::new(0),
-                    replacement: crate::input_sections::NO_REPLACEMENT,
-                    unwind_offset: 0,
-                    nunwind: 0,
-                });
-                let synth = (ctx.isecs.len() - 1) as u32;
+                let synth = add_slot_stand_in(ctx, sect);
                 synth_of.insert(stub, synth);
                 ctx.objc_stubs.absorbed.push((synth, stub));
                 synth
@@ -523,33 +614,16 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             // A synthetic subsection standing for the GOT entry; not
             // alive, since the __got chunk writes the slot and the
             // slot's local symbol is not emitted.
-            let (file, shndx) = *got_hdr.get_or_insert_with(|| {
-                let (file, shndx) = ctx.add_synthetic_section(MachSection {
+            let sect = *got_hdr.get_or_insert_with(|| {
+                ctx.add_synthetic_section(MachSection {
                     sectname: str_to_name("__got"),
                     segname: str_to_name(data_seg(ctx)),
                     p2align: 3,
                     flags: S_NON_LAZY_SYMBOL_POINTERS,
                     ..Default::default()
-                });
-                (file, shndx)
+                })
             });
-            ctx.isecs.push(InputSection {
-                file,
-                shndx,
-                p2align: 3,
-                input_addr: 0,
-                size: 8,
-                contents: 0,
-                rel_offset: 0,
-                nrels: 0,
-                output_section: u32::MAX,
-                offset: u32::MAX,
-                flags: std::sync::atomic::AtomicU8::new(0),
-                replacement: crate::input_sections::NO_REPLACEMENT,
-                unwind_offset: 0,
-                nunwind: 0,
-            });
-            let synth = (ctx.isecs.len() - 1) as u32;
+            let synth = add_slot_stand_in(ctx, sect);
             ctx.isecs[slot as usize].replacement = synth;
             ctx.got.objc_classref_slots.push((synth, class));
         }
@@ -818,13 +892,7 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
         return;
     }
 
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__objc_methlist"),
-        segname: str_to_name("__TEXT"),
-        p2align: 2,
-        flags: S_REGULAR,
-        ..Default::default()
-    });
+    let sect = add_methlist_section(ctx);
     let mut extra_of: hashbrown::HashMap<u32, usize> = hashbrown::HashMap::new();
     let stub_of: hashbrown::HashMap<Vec<u8>, usize> = ctx
         .objc_stubs
@@ -885,29 +953,9 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
         if !ok {
             continue;
         }
-        let size = 8 + 12 * count;
-        offset = align_to(offset, 4);
-        ctx.isecs.push(InputSection {
-            file,
-            shndx,
-            p2align: 2,
-            input_addr: 0,
-            size: size as u32,
-            contents: 0,
-            rel_offset: 0,
-            nrels: 0,
-            output_section: u32::MAX,
-            offset: offset as u32,
-            flags: InputSection::flags_placed(),
-            replacement: crate::input_sections::NO_REPLACEMENT,
-            unwind_offset: 0,
-            nunwind: 0,
-        });
-        offset += size;
-        let synth = (ctx.isecs.len() - 1) as u32;
+        let synth = add_relative_method_list(ctx, sect, &mut offset, methods);
         ctx.isecs[list as usize].replacement = synth;
         repoint.insert(list, synth);
-        ctx.objc_methlist.lists.push(ObjcMethList { isec: synth, methods });
     }
     // The lists' own symbols (__OBJC_$_INSTANCE_METHODS_Foo ...) follow
     // them into __objc_methlist.
@@ -1275,71 +1323,13 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         }
 
         // Emit the merged lists.
-        let mut new_blob =
-            |ctx: &mut Context<E>, sect: &'static str, fields: Vec<DataField>| -> u32 {
-                let (file, shndx) = ctx.add_synthetic_section(MachSection {
-                    sectname: str_to_name(sect),
-                    segname: str_to_name("__DATA"),
-                    p2align: 3,
-                    flags: 0,
-                    ..Default::default()
-                });
-                let blob = DataBlob { sect, isec: 0, fields };
-                let size = blob.size();
-                ctx.isecs.push(InputSection {
-                    file,
-                    shndx,
-                    p2align: 3,
-                    input_addr: 0,
-                    size: size as u32,
-                    contents: 0,
-                    rel_offset: 0,
-                    nrels: 0,
-                    output_section: u32::MAX,
-                    offset: 0,
-                    flags: InputSection::flags_placed(),
-                    replacement: crate::input_sections::NO_REPLACEMENT,
-                    unwind_offset: 0,
-                    nunwind: 0,
-                });
-                let isec = (ctx.isecs.len() - 1) as u32;
-                ctx.data_blobs.push(DataBlob { isec, ..blob });
-                isec
-            };
+        let mut new_blob = |ctx: &mut Context<E>, sect: &'static str, fields: Vec<DataField>| {
+            add_data_blob(ctx, sect, 0, fields)
+        };
         let mut new_methlist = |ctx: &mut Context<E>, methods: Vec<ObjcMethod>| -> u32 {
             if relative {
-                let (file, shndx) = *methlist_hdr.get_or_insert_with(|| {
-                    let (file, shndx) = ctx.add_synthetic_section(MachSection {
-                        sectname: str_to_name("__objc_methlist"),
-                        segname: str_to_name("__TEXT"),
-                        p2align: 2,
-                        flags: S_REGULAR,
-                        ..Default::default()
-                    });
-                    (file, shndx)
-                });
-                let size = 8 + 12 * methods.len() as u64;
-                methlist_off = align_to(methlist_off, 4);
-                ctx.isecs.push(InputSection {
-                    file,
-                    shndx,
-                    p2align: 2,
-                    input_addr: 0,
-                    size: size as u32,
-                    contents: 0,
-                    rel_offset: 0,
-                    nrels: 0,
-                    output_section: u32::MAX,
-                    offset: methlist_off as u32,
-                    flags: InputSection::flags_placed(),
-                    replacement: crate::input_sections::NO_REPLACEMENT,
-                    unwind_offset: 0,
-                    nunwind: 0,
-                });
-                methlist_off += size;
-                let isec = (ctx.isecs.len() - 1) as u32;
-                ctx.objc_methlist.lists.push(ObjcMethList { isec, methods });
-                isec
+                let sect = *methlist_hdr.get_or_insert_with(|| add_methlist_section(ctx));
+                add_relative_method_list(ctx, sect, &mut methlist_off, methods)
             } else {
                 let mut fields = vec![
                     DataField::Bytes(24u32.to_le_bytes().to_vec()),
@@ -1568,66 +1558,19 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
             continue;
         }
         let sect: &'static str = if ls.nonlazy { "__objc_nlcatlist" } else { "__objc_catlist" };
-        let (file, shndx) = ctx.add_synthetic_section(MachSection {
-            sectname: str_to_name(sect),
-            segname: str_to_name("__DATA"),
-            p2align: 3,
-            flags: S_ATTR_NO_DEAD_STRIP,
-            ..Default::default()
-        });
-        ctx.isecs.push(InputSection {
-            file,
-            shndx,
-            p2align: 3,
-            input_addr: 0,
-            size: (survivors.len() * 8) as u32,
-            contents: 0,
-            rel_offset: 0,
-            nrels: 0,
-            output_section: u32::MAX,
-            offset: 0,
-            flags: InputSection::flags_placed(),
-            replacement: crate::input_sections::NO_REPLACEMENT,
-            unwind_offset: 0,
-            nunwind: 0,
-        });
-        let isec = (ctx.isecs.len() - 1) as u32;
-        ctx.data_blobs.push(DataBlob { sect, isec, fields: survivors });
+        add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
     }
 
     // Classes that absorbed a +load category become non-lazy.
     if !nonlazy_classes.is_empty() {
         let _ = nlclslist_sects;
         for cls in nonlazy_classes {
-            let (file, shndx) = ctx.add_synthetic_section(MachSection {
-                sectname: str_to_name("__objc_nlclslist"),
-                segname: str_to_name("__DATA"),
-                p2align: 3,
-                flags: S_ATTR_NO_DEAD_STRIP,
-                ..Default::default()
-            });
-            ctx.isecs.push(InputSection {
-                file,
-                shndx,
-                p2align: 3,
-                input_addr: 0,
-                size: 8,
-                contents: 0,
-                rel_offset: 0,
-                nrels: 0,
-                output_section: u32::MAX,
-                offset: 0,
-                flags: InputSection::flags_placed(),
-                replacement: crate::input_sections::NO_REPLACEMENT,
-                unwind_offset: 0,
-                nunwind: 0,
-            });
-            let isec = (ctx.isecs.len() - 1) as u32;
-            ctx.data_blobs.push(DataBlob {
-                sect: "__objc_nlclslist",
-                isec,
-                fields: vec![DataField::Ptr(ObjcRef::Isec(cls.0, cls.1))],
-            });
+            add_data_blob(
+                ctx,
+                "__objc_nlclslist",
+                S_ATTR_NO_DEAD_STRIP,
+                vec![DataField::Ptr(ObjcRef::Isec(cls.0, cls.1))],
+            );
         }
     }
 }
