@@ -29,7 +29,8 @@ pub fn acquire_global_lock() {
         return;
     }
 
-    let path = if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+    // Like other XDG variables, an empty XDG_RUNTIME_DIR counts as unset.
+    let path = if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
         std::path::PathBuf::from(dir).join("mold-lock")
     } else {
         // SAFETY: getpwuid returns either null or a pointer to process-global
