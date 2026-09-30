@@ -3572,9 +3572,14 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Publishes selected imports without reexporting their whole dylib.
+/// Publishes selected imports without reexporting their whole dylib:
+/// those -reexported_symbols_list names, and those an export list
+/// matches - an export list re-exports a dylib's symbol it names (a
+/// plain name is an initial undefine, so it is always in the link) or a
+/// pattern of it matches one the link imports anyway.
 pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.reexported_symbols.is_empty() {
+    let exported = ctx.args.exported_symbols.as_ref();
+    if ctx.args.reexported_symbols.is_empty() && exported.is_none() {
         return;
     }
     for name in &ctx.args.reexported_names {
@@ -3591,8 +3596,10 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         .iter()
         .enumerate()
         .filter(|(_, sym)| {
+            let name = sym.name().as_bytes();
             matches!(sym.file(), Some(FileId::Dylib(_)))
-                && ctx.args.reexported_symbols.find(sym.name().as_bytes()) != -1
+                && (ctx.args.reexported_symbols.find(name) != -1
+                    || exported.is_some_and(|exported| exported.find(name) != -1))
         })
         .map(|(i, _)| i as u32)
         .collect();
