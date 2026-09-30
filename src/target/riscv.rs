@@ -284,9 +284,9 @@ where
         let mut ret = first.base.e_flags;
         for file in objs {
             let flags = file.base.e_flags;
-            if flags & EF_RISCV_RVC != 0 {
-                ret |= EF_RISCV_RVC;
-            }
+            // The output needs the C extension or the TSO memory model if
+            // any input does.
+            ret |= flags & (EF_RISCV_RVC | EF_RISCV_TSO);
             if flags & EF_RISCV_FLOAT_ABI != ret & EF_RISCV_FLOAT_ABI {
                 error!(
                     "{file}: cannot link object files with different floating-point ABI from {first}"
