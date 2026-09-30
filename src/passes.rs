@@ -1339,10 +1339,12 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     // pointers would drag rebases back in. It follows -fixup_chains or
     // the deployment target even when -undefined dynamic_lookup sends
     // the fixups themselves back to classic dyld info; only
-    // -no_fixup_chains keeps __mod_init_func.
-    if !ctx.args.init_offsets
-        && !ctx.args.fixup_chains.unwrap_or_else(|| ctx.chained_fixups_by_default())
-    {
+    // -no_fixup_chains keeps __mod_init_func. Not so for a -static
+    // image, whose initializers dyld never runs (XNU runs the kernel's
+    // __mod_init_func itself): it converts only with -init_offsets.
+    let implied = !ctx.args.static_link
+        && ctx.args.fixup_chains.unwrap_or_else(|| ctx.chained_fixups_by_default());
+    if !ctx.args.init_offsets && !implied {
         return;
     }
     for i in 0..ctx.isecs.len() {
