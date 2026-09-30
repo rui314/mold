@@ -101,6 +101,20 @@ fn whole_desc(desc: u16, whole: bool) -> u16 {
     if whole { (desc | N_NO_DEAD_STRIP) & !N_ALT_ENTRY } else { desc }
 }
 
+/// The deployment target (platform, minos, sdk) a -r output records:
+/// -platform_version's, else the first object's that has one (ld64
+/// warns about later inputs built for a newer OS).
+pub fn output_target<E: Target>(ctx: &Context<E>) -> (u32, u32, u32) {
+    if ctx.args.platform_minos != 0 {
+        return (ctx.args.platform, ctx.args.platform_minos, ctx.args.platform_sdk);
+    }
+    ctx.objs
+        .iter()
+        .filter(|o| o.is_alive)
+        .find_map(|o| o.platform_versions.first())
+        .map_or((ctx.args.platform, 0, 0), |v| (v.platform, v.minos, v.sdk))
+}
+
 pub fn link<E: Target>(ctx: &mut Context<E>) {
     // Lay out the merged sections from address zero, zero-fill
     // sections last: an object's file image mirrors its address
@@ -968,10 +982,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let ncmds = 4 + linker_options.len() as u32;
     let num_sections = sects.len();
     let seg_cmd_size = size_of::<SegmentCommand>() + num_sections * size_of::<MachSection>();
+    let (platform, minos, sdk) = output_target(ctx);
+    let version_cmd = crate::chunks::create_version_cmd::<E>(platform, minos, sdk);
     let sizeofcmds = seg_cmd_size
         + size_of::<SymtabCommand>()
-        + size_of::<BuildVersionCommand>()
-        + 8
+        + version_cmd.len()
         + size_of::<LinkEditDataCommand>()
         + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>();
     let mut off = (size_of::<MachHeader>() + sizeofcmds) as u64;
@@ -1170,32 +1185,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     st.write_to(&mut buf[p..]);
     p += size_of::<SymtabCommand>();
 
-    // The build version: -platform_version's, else the first object's
-    // (ld64 warns about inputs built for a newer OS than the first,
-    // whose target the output takes), with the linker's tool entry as
-    // in a final image.
-    let (platform, minos, sdk) = if ctx.args.platform_minos != 0 {
-        (ctx.args.platform, ctx.args.platform_minos, ctx.args.platform_sdk)
-    } else {
-        ctx.objs
-            .iter()
-            .filter(|o| o.is_alive)
-            .find_map(|o| o.platform_versions.first())
-            .map_or((ctx.args.platform, 0, 0), |v| (v.platform, v.minos, v.sdk))
-    };
-    let bv = BuildVersionCommand {
-        cmd: LC_BUILD_VERSION,
-        cmdsize: (size_of::<BuildVersionCommand>() + 8) as u32,
-        platform,
-        minos,
-        sdk,
-        ntools: 1,
-    };
-    bv.write_to(&mut buf[p..]);
-    p += size_of::<BuildVersionCommand>();
-    buf[p..p + 4].copy_from_slice(&54321u32.to_le_bytes());
-    buf[p + 4..p + 8].copy_from_slice(&1u32.to_le_bytes());
-    p += 8;
+    buf[p..p + version_cmd.len()].copy_from_slice(&version_cmd);
+    p += version_cmd.len();
 
     let dc = LinkEditDataCommand {
         cmd: LC_DATA_IN_CODE,

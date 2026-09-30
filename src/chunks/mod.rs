@@ -454,13 +454,30 @@ fn create_uuid_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
-fn create_build_version_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+/// The load command naming the deployment target, for a final image
+/// and for -r alike. LC_BUILD_VERSION came with macOS 10.14; for an
+/// x86-64 target older than that, ld-prime writes the legacy
+/// LC_VERSION_MIN_MACOSX {version, sdk} that its loader reads (arm64
+/// macOS gets LC_BUILD_VERSION at any version).
+pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec<u8> {
+    if E::CPUTYPE != CPU_TYPE_ARM64
+        && platform == PLATFORM_MACOS
+        && minos != 0
+        && minos < encode_version(10, 14, 0)
+    {
+        return to_vec(&VersionMinCommand {
+            cmd: LC_VERSION_MIN_MACOSX,
+            cmdsize: size_of::<VersionMinCommand>() as u32,
+            version: minos,
+            sdk,
+        });
+    }
     let cmd = BuildVersionCommand {
         cmd: LC_BUILD_VERSION,
         cmdsize: (size_of::<BuildVersionCommand>() + 8) as u32,
-        platform: ctx.args.platform,
-        minos: ctx.args.platform_minos,
-        sdk: ctx.args.platform_sdk,
+        platform,
+        minos,
+        sdk,
         ntools: 1,
     };
     let mut buf = to_vec(&cmd);
@@ -612,7 +629,11 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_dylinker_cmd());
     }
     vec.push(create_uuid_cmd(ctx));
-    vec.push(create_build_version_cmd(ctx));
+    vec.push(create_version_cmd::<E>(
+        ctx.args.platform,
+        ctx.args.platform_minos,
+        ctx.args.platform_sdk,
+    ));
     vec.push(create_source_version_cmd(ctx));
     if ctx.args.output_type == MH_EXECUTE {
         vec.push(create_main_cmd(ctx));
