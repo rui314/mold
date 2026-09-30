@@ -828,7 +828,7 @@ impl LoadCommands {
                         let sect_off =
                             off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
                         let mut sect = MachSection::read_from(&data[sect_off..]);
-                        sect.flags = crate::passes::canonical_section_flags(
+                        sect.flags = crate::output_sections::canonical_section_flags(
                             sect.segname(),
                             sect.sectname(),
                             sect.flags,

@@ -19,6 +19,7 @@ pub(crate) mod mapfile;
 pub(crate) mod mapped_file;
 pub(crate) mod objc;
 pub(crate) mod output_file;
+pub(crate) mod output_sections;
 pub(crate) mod passes;
 pub(crate) mod relocatable;
 pub(crate) mod subprocess;

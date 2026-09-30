@@ -9,6 +9,7 @@ use crate::context::Context;
 use crate::dead_strip;
 use crate::objc;
 use crate::output_file;
+use crate::output_sections;
 use crate::passes;
 use crate::target::Target;
 
@@ -117,7 +118,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         // per-object conformance and metadata records doubled
         // NetNewsWire's RSCore prelink's __DATA,__const otherwise.
         passes::coalesce_weak_defs(&mut ctx);
-        passes::create_output_sections(&mut ctx);
+        output_sections::create_output_sections(&mut ctx);
         crate::relocatable::link(&mut ctx);
         crate::error::checkpoint();
         // Xcode asks every link, its single-object prelinks included,
@@ -181,7 +182,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::sort_stubs_and_got(&mut ctx);
 
     // Decide the output layout
-    timed!("create_output_sections", passes::create_output_sections(&mut ctx));
+    timed!("create_output_sections", output_sections::create_output_sections(&mut ctx));
     // The output symbol table builds inside set_osec_offsets, as part
     // of the parallel __LINKEDIT task group.
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));

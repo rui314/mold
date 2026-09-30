@@ -223,7 +223,7 @@ impl<'a> MapFiles<'a> {
             objs: vec![0; ctx.objs.len()],
             dylibs: vec![0; ctx.dylibs.len()],
             merged: hashbrown::HashMap::new(),
-            commons: crate::passes::common_owners(ctx),
+            commons: crate::output_sections::common_owners(ctx),
         };
         let mut merged_numbers: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
         let named = named.into_iter().map(|(_, file)| file);
