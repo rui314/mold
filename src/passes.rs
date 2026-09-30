@@ -3100,30 +3100,25 @@ impl SectionMap {
     }
 }
 
-/// The flags an output section carries. In a final image ld64 keeps
-/// the section type (a coalesced input section becomes regular; a
-/// literal pool folded into __TEXT,__const is regular), marks code
-/// (pure instructions) as having some instructions, drops every other
-/// input attribute - no_dead_strip, live_support, strip_static_syms
-/// and no_toc direct the linker, not dyld, and some_instructions
-/// alone is but the assembler's note that it emitted an instruction
-/// into the section - and marks just the ObjC list sections the
-/// runtime scans as no-dead-strip. A -r output is input to another
-/// link, so ld-prime copies the first input section's type and
-/// attributes verbatim - but for a standard section of that type,
-/// which gets the flags ld-prime's table holds for it (the ObjC
-/// constant literals and __objc_imageinfo lose no_dead_strip, __data
-/// and __const some_instructions). __eh_frame carries the compiler's
-/// fixed flags in both.
+/// The flags an output section carries, from the flags ld-prime reads
+/// its first member as having (see input_section_flags). In a final
+/// image ld64 keeps the section type (a coalesced input section
+/// becomes regular; a literal pool folded into __TEXT,__const is
+/// regular), marks code (pure instructions) as having some
+/// instructions, drops every other input attribute - no_dead_strip,
+/// live_support, strip_static_syms and no_toc direct the linker, not
+/// dyld, and some_instructions alone is but the assembler's note that
+/// it emitted an instruction into the section - and marks just the
+/// ObjC list sections the runtime scans as no-dead-strip. A -r output
+/// is input to another link, so ld-prime copies the type and
+/// attributes verbatim. __eh_frame carries the compiler's fixed flags
+/// in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
     if relocatable {
-        return match standard_section_flags(segname, sectname) {
-            Some(flags) if flags & SECTION_TYPE == input & SECTION_TYPE => flags,
-            _ => input,
-        };
+        return input;
     }
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
@@ -3335,9 +3330,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                         Some(&id) => (id, flags_name),
                         None => {
                             let mut osec = OutputSection::new(out.0, out.1);
-                            let (seg, sect) = flags_name;
-                            osec.hdr.flags =
-                                output_section_flags(seg, sect, hdr.flags, relocatable);
+                            osec.hdr.flags = if !relocatable && out == ("__TEXT", "__text") {
+                                // ld-prime makes a final image's __text
+                                // itself, as code, whatever its members.
+                                S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+                            } else {
+                                let input = input_section_flags(seg, sect, hdr.flags);
+                                output_section_flags(flags_name.0, flags_name.1, input, relocatable)
+                            };
                             let id = OutputSectionId::new(ctx.output_sections.len() as u32);
                             ctx.output_sections.push(osec);
                             ctx.chunks.push(ChunkId::Output(id));
@@ -3367,19 +3367,17 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
         let osec = &mut ctx.output_sections[osec_id.index()];
         osec.hdr.p2align = osec.hdr.p2align.max(ctx.isecs[i].p2align as u32);
-        // A final image merges the members' attributes; a -r output
-        // takes those of the first non-empty member alone, as ld-prime
-        // does.
-        if !relocatable {
-            osec.hdr.flags |=
-                output_section_flags(flags_seg, flags_sect, hdr.flags, false) & !SECTION_TYPE;
-        } else if hdr.size != 0 {
+        // The first member decides the flags, as in ld-prime: code
+        // following data in a section doesn't make it code. In a -r
+        // output, the first non-empty member does.
+        if relocatable && hdr.size != 0 {
             let idx = osec_id.index();
             if flags_from_data.len() <= idx {
                 flags_from_data.resize(idx + 1, false);
             }
             if !flags_from_data[idx] {
-                osec.hdr.flags = output_section_flags(flags_seg, flags_sect, hdr.flags, true);
+                let input = input_section_flags(hdr.segname(), hdr.sectname(), hdr.flags);
+                osec.hdr.flags = output_section_flags(flags_seg, flags_sect, input, true);
                 flags_from_data[idx] = true;
             }
         }
@@ -4092,6 +4090,19 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     match (segname, sectname) {
         ("__DATA", "__mod_init_func" | "__mod_term_func") => S_REGULAR,
         _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
+    }
+}
+
+/// The flags ld-prime reads an input section as having: those its
+/// table holds for the section's name (see standard_section_flags) if
+/// the section has the table's type - a __TEXT,__const or __DATA,__data
+/// an assembler nop landed in is plain data again, a regular __text
+/// code - and its own otherwise (a regular __cstring holds no literals
+/// to merge).
+fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
+    match standard_section_flags(segname, sectname) {
+        Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
+        _ => flags,
     }
 }
 
