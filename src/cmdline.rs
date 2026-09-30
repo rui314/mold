@@ -83,7 +83,8 @@ Options:
   --chroot DIR                Set a given path to the root directory
   --color-diagnostics=[auto,always,never]
                               Use colors in diagnostics
-  --color-diagnostics         Alias for --color-diagnostics=always
+  --color-diagnostics         Alias for --color-diagnostics=auto
+    --no-color-diagnostics    Alias for --color-diagnostics=never
   --compress-debug-sections=[none,zlib,zlib:0,...,zlib:9,zstd,zstd:1,...,zstd:22]
                               Compress .debug_* sections
   --dc                        Ignored
@@ -192,7 +193,7 @@ Options:
   --wrap SYMBOL               Use a wrapper function for a given symbol
   --zero-to-bss               Convert all-zero data sections into BSS
   -z defs                     Report undefined symbols (even with --shared)
-    -z nodefs
+    -z undefs
   -z common-page-size=VALUE   Ignored
   -z execstack                Require an executable stack
     -z noexecstack
@@ -214,7 +215,7 @@ Options:
     -z nopack-relative-relocs
   -z sectionheader            Do not omit section header (default)
     -z nosectionheader        Omit section header
-  -z start_stop_visibility=[hidden,protected]
+  -z start-stop-visibility=[hidden,protected]
                               Specify symbol visibility for \"__start_SECNAME\" and \"__stop_SECNAME\" symbols
   -z separate-loadable-segments
                               Separate all loadable segments onto different pages
@@ -1520,7 +1521,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             crate::error::set_color(std::io::stderr().is_terminal());
         } else if cursor.read_flag("color-diagnostics=always") {
             crate::error::set_color(true);
-        } else if cursor.read_flag("color-diagnostics=never") {
+        } else if cursor.read_flag("color-diagnostics=never")
+            || cursor.read_flag("no-color-diagnostics")
+        {
             crate::error::set_color(false);
         } else if let Some(value) = cursor.read_switch("warn-common", "no-warn-common") {
             a.warn_common = value;

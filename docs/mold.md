@@ -908,7 +908,7 @@ point symbol in a script.
 
   `noseparate-code` does not add any paddings between segments.
 
-* `-z defs`, `-z nodefs`:
+* `-z defs`, `-z undefs`:
   Report undefined symbols (even with `--shared`).
 
 * `-z shstk`:
@@ -917,14 +917,14 @@ point symbol in a script.
   Control-flow Enforcement Technology (CET), which is available since Tiger
   Lake (2020).
 
-* `-z start_stop_visibility`=[ `hidden` | `protected` ]:
+* `-z start-stop-visibility`=[ `hidden` | `protected` ]:
   If a section name is valid as a C identifier (i.e., it matches
   `/^[_a-zA-Z][_a-zA-Z0-9]*$/`), mold creates `__start_SECNAME` and
   `__stop_SECNAME` symbols to mark the beginning and end of the section,
   where `SECNAME` is the section name.
 
   You can make these marker symbols visible from other ELF modules by passing
-  `-z start_stop_visibility=protected`. Default is `hidden`.
+  `-z start-stop-visibility=protected`. Default is `hidden`.
 
 * `-z text`, `-z notext`, `-z textoff`:
   `mold` by default reports an error if dynamic relocations are created in
