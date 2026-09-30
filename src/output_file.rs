@@ -151,8 +151,18 @@ fn preallocate(file: &File, offset: u64, size: u64) {
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn preallocate(_file: &File, _offset: u64, _size: u64) {}
 
-fn map_file(file: &File, size: u64) -> io::Result<Option<MmapMut>> {
-    if size == 0 {
+/// Returns the length of the buffer that holds a file of the given size.
+/// No Rust object can be larger than isize::MAX bytes, which limits the
+/// output to 2 GiB on 32-bit hosts.
+fn buffer_len(path: &Path, size: u64) -> usize {
+    if isize::try_from(size).is_err() {
+        fatal!("{}: output file is too large for this host: {size} bytes", path.display());
+    }
+    size as usize
+}
+
+fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
+    if len == 0 {
         return Ok(None);
     }
     // We map the file with twice as much address space as its size, so
@@ -163,7 +173,7 @@ fn map_file(file: &File, size: u64) -> io::Result<Option<MmapMut>> {
     //
     // SAFETY: the file is private to this process until it's closed.
     #[cfg(not(windows))]
-    let map = unsafe { MmapOptions::new().len(size as usize * 2).map_mut(file) }
+    let map = unsafe { MmapOptions::new().len(len * 2).map_mut(file) }
         // If the address space is too tight, map just the file.
         .or_else(|_| unsafe { MmapMut::map_mut(file) });
     #[cfg(windows)]
@@ -217,13 +227,14 @@ impl OutputFile {
     }
 
     fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> Self {
+        let len = buffer_len(path, size);
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
         if is_special {
             return Self {
                 path: path.to_path_buf(),
                 tmp_path: None,
-                storage: Storage::Memory(vec![0; size as usize]),
+                storage: Storage::Memory(vec![0; len]),
                 perm,
             };
         }
@@ -273,12 +284,12 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {}", tmp.display(), strerror(&e)));
         preallocate(&file, 0, size);
 
-        let map = map_file(&file, size)
+        let map = map_file(&file, len)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", path.display(), strerror(&e)));
         let output = Self {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
-            storage: Storage::File { file, map, len: size as usize },
+            storage: Storage::File { file, map, len },
             perm,
         };
         #[cfg(not(windows))]
@@ -323,15 +334,16 @@ impl OutputFile {
 
     /// Sets the size of a file opened with [`Self::open_locked`].
     pub fn resize(&mut self, size: u64) {
+        let new_len = buffer_len(&self.path, size);
         let Storage::File { file, map, len } = &mut self.storage else {
             panic!("resizing an output file that isn't a file");
         };
         file.set_len(size).unwrap_or_else(|e| {
             fatal!("{}: ftruncate failed: {}", self.path.display(), strerror(&e))
         });
-        *map = map_file(file, size)
+        *map = map_file(file, new_len)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e)));
-        *len = size as usize;
+        *len = new_len;
         #[cfg(not(windows))]
         self.publish_output_buffer();
     }
@@ -362,7 +374,7 @@ impl OutputFile {
     // written. The new space is zero-initialized, and the output buffer may
     // move.
     pub fn extend(&mut self, size: usize) {
-        let new_len = self.len() + size;
+        let new_len = buffer_len(&self.path, self.len() as u64 + size as u64);
         match &mut self.storage {
             Storage::Memory(vec) => vec.resize(new_len, 0),
             Storage::File { file, map, len } => {
@@ -376,7 +388,7 @@ impl OutputFile {
                 if map.as_ref().is_none_or(|map| new_len > map.len()) {
                     // The appended data does not fit in the existing mapping, so map
                     // the grown file again.
-                    *map = map_file(file, new_len as u64).unwrap_or_else(|e| {
+                    *map = map_file(file, new_len).unwrap_or_else(|e| {
                         fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e))
                     });
                 }
