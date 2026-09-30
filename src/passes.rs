@@ -123,7 +123,10 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     // since Xcode 4). -search_dylibs_first restores the older ld64
     // behavior: a dylib anywhere on the path beats an archive
     // anywhere.
-    let passes: &[&[&str]] = if ctx.args.search_dylibs_first {
+    // A -static link can use no dylib, so it looks for archives only.
+    let passes: &[&[&str]] = if ctx.args.static_link {
+        &[&["a"]]
+    } else if ctx.args.search_dylibs_first {
         &[&["tbd", "dylib"], &["a"]]
     } else {
         &[&["tbd", "dylib", "a"]]
@@ -248,6 +251,10 @@ fn collect_file<E: Target>(
         }
         FileType::Dylib if ctx.args.relocatable => {
             crate::warn!("{}, ignoring unexpected dylib file", mf.name.display());
+        }
+        // A -static image has no dyld to load a dylib with.
+        FileType::Tapi | FileType::Dylib if ctx.args.static_link => {
+            crate::warn!("ignoring unexpected dylib '{}'", mf.name.display());
         }
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
