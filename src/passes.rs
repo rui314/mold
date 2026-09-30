@@ -3780,6 +3780,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.segments = segments;
     ctx.chunks = order;
+    add_boundary_segments(ctx);
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
     // The mach header's segment must come first after __PAGEZERO. A
@@ -3872,6 +3873,29 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             add_sectcreate(ctx, sec);
         }
     }
+}
+
+/// Gives a segment$start$ or segment$end$ symbol naming a segment the
+/// image lacks - no input has one, or -rename_section emptied it - an
+/// empty segment (no sections, vmsize 0) to point at, as ld-prime
+/// does: just before __LINKEDIT and at its address, in the order of
+/// the symbols' names.
+fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
+    let mut syms: Vec<(&str, &str)> = ctx
+        .boundary_syms
+        .iter()
+        .filter(|(_, _, seg, sect)| sect.is_none() && !ctx.segments.iter().any(|s| s.name == seg))
+        .map(|(id, _, seg, _)| (ctx.symbols[*id].name(), seg.as_str()))
+        .collect();
+    syms.sort_unstable();
+    let mut missing: Vec<&'static str> = Vec::new();
+    for (_, seg) in syms {
+        if !missing.contains(&seg) {
+            missing.push(static_name(seg));
+        }
+    }
+    let linkedit = ctx.segments.len() - 1;
+    ctx.segments.splice(linkedit..linkedit, missing.into_iter().map(OutputSegment::new));
 }
 
 /// The flags ld-prime gives a section only a section$start$ or
