@@ -34,6 +34,8 @@ grep -q '__DATA_CONST,__weak_got ' $t/sects
 grep -q '__DATA_CONST,__objc_selrefs ' $t/sects
 grep -q '__TEXT,__unwind_info .*__TEXT,__stubs .*__TEXT,__objc_methname __TEXT,__objc_methtype ' $t/sects
 grep -A10 'sectname __objc_selrefs' $t/lc | grep -q 'flags 0x00000000'
+# The cache builder, not dyld, protects __DATA_CONST.
+grep -A10 'segname __DATA_CONST' $t/lc | grep -q 'flags 0x0$'
 dyld_info -fixups $t/a.dylib > $t/fixups
 grep -q '__objc_classlist .* bind *<this-image>/_OBJC_CLASS_$_Foo' $t/fixups
 grep -q '__weak_got .* bind .*__ZZ6weakfnvE1s' $t/fixups
@@ -41,6 +43,7 @@ grep -q '__weak_got .* bind .*__ZZ6weakfnvE1s' $t/fixups
 # Without, or opting out, none of that.
 link b.dylib
 sects b.dylib > $t/sects_b
+otool -l $t/b.dylib | grep -A10 'segname __DATA_CONST' | grep -q 'flags 0x10$'
 grep -q '__DATA,__objc_const ' $t/sects_b
 not grep -q '__weak_got' $t/sects_b
 link c.dylib -Wl,-add_split_seg_info -Wl,-not_for_dyld_shared_cache

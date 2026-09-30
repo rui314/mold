@@ -52,6 +52,7 @@ if [ $ARCH = arm64 ]; then
   [ "$segs" = '__TEXT __TEXT_EXEC __DATA __DATA_CONST __LINKEDIT ' ]
   grep -A8 'segname __TEXT$' $t/lc | grep -q 'maxprot 0x00000001'
   grep -A8 'segname __TEXT_EXEC' $t/lc | grep -q 'maxprot 0x00000005'
+  grep -A10 'segname __DATA_CONST' $t/lc | grep -q 'flags 0x0$'
   grep -q 'LC_SOURCE_VERSION LC_SEGMENT_SPLIT_INFO $' $t/cmds
   grep -A1 'sectname __stubs' $t/lc | grep -q __TEXT_EXEC
   grep -A10 'sectname __got' $t/lc | grep -q 'flags 0x00000000'

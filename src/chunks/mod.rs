@@ -353,8 +353,10 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
         cmd.maxprot = u32::from(max);
         cmd.initprot = u32::from(init);
     }
-    // dyld makes __DATA_CONST read-only once binds are applied.
-    if seg.name == "__DATA_CONST" {
+    // dyld makes __DATA_CONST read-only once binds are applied; not in
+    // an image bound for the shared region, which ld-prime leaves to
+    // the cache (or kernel collection) builder.
+    if seg.name == "__DATA_CONST" && !ctx.args.shared_region {
         cmd.flags = SG_READ_ONLY;
     }
     // A segment of nothing but sections the command line made
