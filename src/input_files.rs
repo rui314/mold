@@ -372,6 +372,10 @@ pub struct DylibFile {
     pub is_reexported: bool,
     /// -needed-l: keep the load command even under -dead_strip_dylibs.
     pub is_needed: bool,
+    /// -upward-l: an upward dependency (LC_LOAD_UPWARD_DYLIB), one that
+    /// depends on this image in turn, so dyld need not initialize it
+    /// first.
+    pub is_upward: bool,
     /// Loaded through an object's LC_LINKER_OPTION rather than the
     /// command line: a hint, so ld64 gives it a load command only if
     /// something binds to it.
@@ -3319,6 +3323,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_weak: false,
             is_reexported: false,
             is_needed: false,
+            is_upward: false,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
@@ -3523,6 +3528,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_weak: false,
             is_reexported: false,
             is_needed: false,
+            is_upward: false,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
@@ -3874,6 +3880,7 @@ fn register_tbd<E: Target>(
             is_weak: false,
             is_reexported: false,
             is_needed: false,
+            is_upward: false,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,

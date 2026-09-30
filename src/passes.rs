@@ -135,6 +135,21 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     } else {
         &[&["tbd", "dylib", "a"]]
     };
+    search_library(ctx, name, passes)
+}
+
+/// Looks for a dylib only, as -upward-l does.
+fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
+    search_library(ctx, name, &[&["tbd", "dylib"]])
+}
+
+/// Looks for lib<name>.<ext> in the library search path, for each pass
+/// of extensions in turn.
+fn search_library<E: Target>(
+    ctx: &Context<E>,
+    name: &OsStr,
+    passes: &[&[&str]],
+) -> Option<PathBuf> {
     for exts in passes {
         for dir in library_search_dirs(ctx) {
             for ext in *exts {
@@ -170,7 +185,7 @@ struct PendingObject {
 /// imports from CoreFoundation strongly - while an auto-link option,
 /// a hint, changes nothing. -needed_* covers the named library only;
 /// the ones its stub re-exports get a load command only if something
-/// binds to them.
+/// binds to them. One -upward_* makes it an upward dependency.
 fn name_dylib(dylib: &mut input_files::DylibFile, rc: ReaderContext) {
     if dylib.is_implicit && !rc.autolinked {
         dylib.is_weak = rc.weak;
@@ -179,6 +194,7 @@ fn name_dylib(dylib: &mut input_files::DylibFile, rc: ReaderContext) {
     }
     dylib.is_reexported |= rc.reexport;
     dylib.is_needed |= rc.needed;
+    dylib.is_upward |= rc.upward;
     dylib.is_implicit = false;
 }
 
@@ -196,6 +212,8 @@ struct ReaderContext {
     hidden: bool,
     /// -needed_library, -needed-l, -needed_framework.
     needed: bool,
+    /// -upward_library, -upward-l, -upward_framework.
+    upward: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
 }
@@ -476,6 +494,8 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 InputArg::NeededLib(name) => ("-needed-l", name),
                 InputArg::ReexportLib(name) => ("-reexport-l", name),
                 InputArg::HiddenLib(name) => ("-hidden-l", name),
+                InputArg::UpwardLib(name) => ("-upward-l", name),
+                InputArg::LazyLib(name) => ("-lazy-l", name),
                 _ => continue,
             };
             let spelled = format!("'{option}{}'", name.display());
@@ -509,17 +529,26 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 InputArg::File(path)
                 | InputArg::WeakFile(path)
                 | InputArg::ReexportFile(path)
-                | InputArg::NeededFile(path) => consider(path, &mut stubs),
+                | InputArg::NeededFile(path)
+                | InputArg::UpwardFile(path)
+                | InputArg::LazyFile(path) => consider(path, &mut stubs),
                 InputArg::Lib(name, _)
                 | InputArg::ReexportLib(name)
-                | InputArg::NeededLib(name) => {
+                | InputArg::NeededLib(name)
+                | InputArg::LazyLib(name) => {
                     if let Some(path) = find_library(ctx, name) {
+                        consider(&path, &mut stubs);
+                    }
+                }
+                InputArg::UpwardLib(name) => {
+                    if let Some(path) = find_dylib(ctx, name) {
                         consider(&path, &mut stubs);
                     }
                 }
                 InputArg::Framework(name, _)
                 | InputArg::NeededFramework(name)
-                | InputArg::ReexportFramework(name) => {
+                | InputArg::ReexportFramework(name)
+                | InputArg::UpwardFramework(name) => {
                     if let Some(path) = find_framework(ctx, name) {
                         consider(&path, &mut stubs);
                     }
@@ -551,6 +580,13 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
         path
     };
+    let dylib = |ctx: &Context<E>, name: &OsStr| {
+        let path = find_dylib(ctx, name);
+        if path.is_none() {
+            error!("library '{}' not found", name.display());
+        }
+        path
+    };
     let framework = |ctx: &Context<E>, name: &OsStr| {
         let path = find_framework(ctx, name);
         if path.is_none() {
@@ -573,10 +609,16 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             InputArg::NeededFile(path) => {
                 (Some(path.clone()), ReaderContext { needed: true, ..rc })
             }
+            InputArg::UpwardFile(path) => {
+                (Some(path.clone()), ReaderContext { upward: true, ..rc })
+            }
+            InputArg::LazyFile(path) => (Some(path.clone()), rc),
             InputArg::Lib(name, weak) => (lib(ctx, name), ReaderContext { weak: *weak, ..rc }),
             InputArg::ReexportLib(name) => (lib(ctx, name), ReaderContext { reexport: true, ..rc }),
             InputArg::HiddenLib(name) => (lib(ctx, name), ReaderContext { hidden: true, ..rc }),
             InputArg::NeededLib(name) => (lib(ctx, name), ReaderContext { needed: true, ..rc }),
+            InputArg::UpwardLib(name) => (dylib(ctx, name), ReaderContext { upward: true, ..rc }),
+            InputArg::LazyLib(name) => (lib(ctx, name), rc),
             InputArg::Framework(name, weak) => {
                 (framework(ctx, name), ReaderContext { weak: *weak, ..rc })
             }
@@ -585,6 +627,9 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             }
             InputArg::NeededFramework(name) => {
                 (framework(ctx, name), ReaderContext { needed: true, ..rc })
+            }
+            InputArg::UpwardFramework(name) => {
+                (framework(ctx, name), ReaderContext { upward: true, ..rc })
             }
             InputArg::BundleLoader(path) => {
                 load_bundle_loader(ctx, path);
@@ -2576,6 +2621,19 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     });
     for (ordinal, &i) in order.iter().enumerate() {
         ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
+    }
+    // Only a dylib can have an upward dependency, one that depends on
+    // it in turn: ld-prime loads the library as usual for anything else,
+    // with a warning.
+    if ctx.args.output_type != MH_DYLIB {
+        for &i in &order {
+            let dylib = &mut ctx.dylibs[i];
+            if dylib.is_upward {
+                let name = crate::util::display(&dylib.install_name);
+                crate::warn!("ignoring upward dylib option for {name}");
+                dylib.is_upward = false;
+            }
+        }
     }
     check_shared_cache_deps(ctx);
     check_libsystem_linked(ctx);

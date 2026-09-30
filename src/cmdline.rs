@@ -53,6 +53,16 @@ pub enum InputArg {
     NeededLib(OsString),
     NeededFramework(OsString),
     NeededFile(PathBuf),
+    /// -upward-lfoo / -upward_framework Foo / -upward_library path: a
+    /// dylib that depends on this one in turn (LC_LOAD_UPWARD_DYLIB).
+    /// -upward-l looks for a dylib only.
+    UpwardLib(OsString),
+    UpwardFramework(OsString),
+    UpwardFile(PathBuf),
+    /// -lazy-lfoo / -lazy_library path: a library as ld-prime links it
+    /// for an OS before macOS 27 (-lazy_framework is -framework).
+    LazyLib(OsString),
+    LazyFile(PathBuf),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
     BundleLoader(PathBuf),
@@ -568,6 +578,13 @@ fn is_other_platform(name: &str) -> bool {
     }
 }
 
+/// Notes a library a -lazy_ option names, once, for its warning.
+fn add_lazy(libs: &mut Vec<Vec<u8>>, name: &[u8]) {
+    if !libs.iter().any(|lib| lib == name) {
+        libs.push(name.to_vec());
+    }
+}
+
 /// Takes the platform and minimum OS version an option names. The last
 /// option wins; ld-prime warns about another minimum version for the
 /// same platform, and about firmware replacing macOS, but refuses
@@ -1016,6 +1033,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut export_choice: Option<ExportChoice> = None;
     let mut deprecated_undefined: Vec<&str> = Vec::new();
     let mut executable_paths = 0;
+    let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -1109,6 +1127,25 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-weak_library" => args.inputs.push(InputArg::WeakFile(path(next_arg(&mut i, name)))),
             b"-reexport_library" => {
                 args.inputs.push(InputArg::ReexportFile(path(next_arg(&mut i, name))))
+            }
+            b"-upward_library" => {
+                args.inputs.push(InputArg::UpwardFile(path(next_arg(&mut i, name))))
+            }
+            b"-upward_framework" => {
+                args.inputs.push(InputArg::UpwardFramework(next_arg(&mut i, name).to_owned()))
+            }
+            // A dylib loaded lazily, at its first use, is in ld-prime
+            // for macOS 27 on (LC_LAZY_LOAD_DYLIB_INFO); otherwise it
+            // links the library as usual, with a warning.
+            b"-lazy_library" => {
+                let arg = next_arg(&mut i, name);
+                add_lazy(&mut lazy_libraries, arg.as_bytes());
+                args.inputs.push(InputArg::LazyFile(path(arg)));
+            }
+            b"-lazy_framework" => {
+                let arg = next_arg(&mut i, name);
+                add_lazy(&mut lazy_libraries, arg.as_bytes());
+                args.inputs.push(InputArg::Framework(arg.to_owned(), false));
             }
             b"-sub_library" => {
                 args.inputs.push(InputArg::ReexportLib(next_arg(&mut i, name).to_owned()))
@@ -1592,6 +1629,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.inputs.push(InputArg::HiddenLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-needed-l") {
                     args.inputs.push(InputArg::NeededLib(os_name(lib)));
+                } else if let Some(lib) = raw.strip_prefix(b"-upward-l") {
+                    args.inputs.push(InputArg::UpwardLib(os_name(lib)));
+                } else if let Some(lib) = raw.strip_prefix(b"-lazy-l") {
+                    add_lazy(&mut lazy_libraries, lib);
+                    args.inputs.push(InputArg::LazyLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-weak-l") {
                     args.inputs.push(InputArg::Lib(os_name(lib), true));
                 } else if let Some(lib) = raw.strip_prefix(b"-l") {
@@ -1726,6 +1768,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     for _ in 0..executable_paths {
         crate::warn!("-executable_path is obsolete");
+    }
+    for lib in lazy_libraries {
+        if args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0) {
+            crate::warn!(
+                "lazy-load is not supported, '{}' will be loaded at launch",
+                display(&lib)
+            );
+        } else {
+            crate::warn!(
+                "lazy-load will be ignored for '{}' because deployment target version is too low",
+                display(&lib)
+            );
+        }
     }
     if args.kernel && kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");

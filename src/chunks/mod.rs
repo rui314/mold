@@ -544,11 +544,28 @@ fn create_source_version_cmd<E: Target>(_ctx: &Context<E>) -> Vec<u8> {
 }
 
 fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
+    // An upward dylib that is also weak or re-exported takes a
+    // dylib_use_command, whose flags say all of it: the header grows by
+    // them, and a marker stands in the timestamp. ld-prime writes the
+    // compatibility version as 1.0.0, which dyld no longer checks.
+    let flags = if dylib.is_upward && (dylib.is_weak || dylib.is_reexported) {
+        DYLIB_USE_UPWARD
+            | if dylib.is_weak { DYLIB_USE_WEAK_LINK } else { 0 }
+            | if dylib.is_reexported { DYLIB_USE_REEXPORT } else { 0 }
+    } else {
+        0
+    };
     let cmd = DylibCommand {
-        cmd: if dylib.is_reexported {
+        cmd: if flags & DYLIB_USE_WEAK_LINK != 0 {
+            LC_LOAD_WEAK_DYLIB
+        } else if flags != 0 {
+            LC_LOAD_DYLIB
+        } else if dylib.is_reexported {
             LC_REEXPORT_DYLIB
         } else if dylib.is_weak {
             LC_LOAD_WEAK_DYLIB
+        } else if dylib.is_upward {
+            LC_LOAD_UPWARD_DYLIB
         } else {
             LC_LOAD_DYLIB
         },
@@ -558,7 +575,19 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
         current_version: dylib.current_version,
         compatibility_version: dylib.compatibility_version,
     };
+    let cmd = match flags {
+        0 => cmd,
+        _ => DylibCommand {
+            nameoff: cmd.nameoff + 4,
+            timestamp: DYLIB_USE_MARKER,
+            compatibility_version: encode_version(1, 0, 0),
+            ..cmd
+        },
+    };
     let mut buf = to_vec(&cmd);
+    if flags != 0 {
+        buf.extend_from_slice(&flags.to_le_bytes());
+    }
     append_string(&mut buf, &dylib.install_name);
     let size = buf.len() as u32;
     buf[4..8].copy_from_slice(&size.to_le_bytes());
@@ -811,7 +840,11 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
         .filter(|c| {
             matches!(
                 LoadCommand::read_from(c).cmd,
-                LC_ID_DYLIB | LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB
+                LC_ID_DYLIB
+                    | LC_LOAD_DYLIB
+                    | LC_LOAD_WEAK_DYLIB
+                    | LC_REEXPORT_DYLIB
+                    | LC_LOAD_UPWARD_DYLIB
             )
         })
         .map(|c| (DylibCommand::read_from(c), c.as_slice()))
@@ -834,7 +867,7 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
         32
     };
     for (cmd, bytes) in dylib_cmds {
-        if cmd.cmd != LC_ID_DYLIB {
+        if cmd.cmd != LC_ID_DYLIB && cmd.timestamp != DYLIB_USE_MARKER {
             let name = &bytes[cmd.nameoff as usize..];
             let len = name.iter().position(|&b| b == 0).unwrap_or(name.len()) as u64;
             excess += crate::util::align_to(len + 29, 8) - crate::util::align_to(len + 25, 8);

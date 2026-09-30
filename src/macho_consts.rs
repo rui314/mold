@@ -59,6 +59,14 @@ pub const LC_SUB_CLIENT: u32 = 0x14;
 pub const LC_SEGMENT_SPLIT_INFO: u32 = 0x1e;
 pub const LC_CODE_SIGNATURE: u32 = 0x1d;
 pub const LC_REEXPORT_DYLIB: u32 = 0x1f | LC_REQ_DYLD;
+pub const LC_LOAD_UPWARD_DYLIB: u32 = 0x23 | LC_REQ_DYLD;
+
+// dylib_use_command: a dylib load command with flags, told apart from
+// a dylib_command by the marker where that has its timestamp.
+pub const DYLIB_USE_MARKER: u32 = 0x1a74_1800;
+pub const DYLIB_USE_WEAK_LINK: u32 = 0x1;
+pub const DYLIB_USE_REEXPORT: u32 = 0x2;
+pub const DYLIB_USE_UPWARD: u32 = 0x4;
 pub const LC_DYLD_INFO: u32 = 0x22;
 pub const LC_DYLD_INFO_ONLY: u32 = 0x22 | LC_REQ_DYLD;
 pub const LC_VERSION_MIN_MACOSX: u32 = 0x24;
