@@ -270,7 +270,8 @@ pub struct Args {
     pub why_live: Glob,
     /// -alias/-alias_list: (existing, new) symbol aliases to define.
     pub aliases: Vec<(String, String)>,
-    /// -sectalign: (segment, section, p2align) overrides.
+    /// -sectalign: (segment, section, p2align), the alignment of an
+    /// output section whatever its members ask for.
     pub sectalign: Vec<(String, String, u8)>,
     /// -allowable_client: clients that may link this subframework
     /// (LC_SUB_CLIENT).
@@ -1414,15 +1415,23 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     names.iter().map(String::as_str),
                 );
             }
+            // ld64 takes the largest power of two that divides the
+            // alignment (1 for 0), and the first -sectalign given for a
+            // section.
             b"-sectalign" => {
                 let seg = text(name, next_arg(&mut i, name)).to_string();
                 let sect = text(name, next_arg(&mut i, name)).to_string();
-                let val = text(name, next_arg(&mut i, name));
-                let align = parse_hex("-sectalign", val);
+                let align = parse_hex(name, text(name, next_arg(&mut i, name)));
+                let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
                 if !align.is_power_of_two() {
-                    fatal!("-sectalign: alignment not a power of two: {val}");
+                    warnings.warn(format!(
+                        "alignment for -sectalign {seg} {sect} is not a power of two, using 0x{:X}",
+                        1u64 << p2align
+                    ));
                 }
-                args.sectalign.push((seg, sect, align.trailing_zeros() as u8));
+                if !args.sectalign.iter().any(|(s1, s2, _)| *s1 == seg && *s2 == sect) {
+                    args.sectalign.push((seg, sect, p2align));
+                }
             }
             b"-alias" => {
                 let existing = text(name, next_arg(&mut i, name)).to_string();

@@ -3507,6 +3507,27 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.output_sections[bss.index()].hdr.p2align = p2align;
     }
 
+    // -sectalign sets an output section's alignment, e.g. to
+    // page-align a blob that will be mapped or measured separately.
+    // ld64 lowers it too, with a warning: its members keep their
+    // offsets within the section, so one may end up misaligned (a
+    // fixup that can't reach it then fails).
+    for (seg, sect, p2align) in &ctx.args.sectalign {
+        let p2align = *p2align as u32;
+        for osec in &mut ctx.output_sections {
+            if osec.hdr.segname == *seg && osec.hdr.sectname == *sect {
+                if p2align < osec.hdr.p2align {
+                    crate::warn!(
+                        "-sectalign reduces alignment of {seg},{sect} from {} to {}",
+                        1u64 << osec.hdr.p2align,
+                        1u64 << p2align
+                    );
+                }
+                osec.hdr.p2align = p2align;
+            }
+        }
+    }
+
     // A section cannot be aligned beyond the segment's page: ld64
     // reduces the alignment with a warning (an x86-64 .align 16 asks
     // for 64KB). Not in a -static or -preload image, which no dyld
@@ -3524,18 +3545,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                     1u64 << max
                 );
                 osec.hdr.p2align = max;
-            }
-        }
-    }
-
-    // -sectalign overrides an output section's alignment, e.g. to
-    // page-align a blob that will be mapped or measured separately.
-    // It can only raise the alignment: subsections were placed by
-    // their own requirements, which must still hold.
-    for (seg, sect, p2align) in &ctx.args.sectalign.clone() {
-        for osec in &mut ctx.output_sections {
-            if osec.hdr.segname == *seg && osec.hdr.sectname == *sect {
-                osec.hdr.p2align = osec.hdr.p2align.max(*p2align as u32);
             }
         }
     }
