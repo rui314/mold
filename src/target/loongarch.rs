@@ -63,6 +63,10 @@ fn page(val: u64) -> u64 {
 //
 // This is similar but different from RISC-V because RISC-V's AUIPC
 // doesn't zero-clear [11:0].
+//
+// PCALAU12I also begins the extreme code model's 64-bit sequence shown
+// below, whose offset may exceed ±2 GiB. Therefore, we don't range-check
+// *_PC_HI20 relocations.
 fn hi20(val: u64, pc: u64) -> u64 {
     bits(page(val.wrapping_add(0x800)).wrapping_sub(page(pc)), 31, 12)
 }
@@ -637,9 +641,7 @@ where
                 R_LARCH_TLS_IE64_LO20 => write_j20(loc, sym.gottp_addr(ctx).wrapping_add(a) >> 32),
                 R_LARCH_TLS_IE64_HI12 => write_k12(loc, sym.gottp_addr(ctx).wrapping_add(a) >> 52),
                 R_LARCH_TLS_GD_PC_HI20 | R_LARCH_TLS_LD_PC_HI20 => {
-                    let val = sym.tlsgd_addr(ctx).wrapping_add(a);
-                    check(val.wrapping_sub(p) as i64, -(1 << 31), 1 << 31);
-                    write_j20(loc, hi20(val, p));
+                    write_j20(loc, hi20(sym.tlsgd_addr(ctx).wrapping_add(a), p))
                 }
                 R_LARCH_TLS_GD_HI20 | R_LARCH_TLS_LD_HI20 => {
                     write_j20(loc, sym.tlsgd_addr(ctx).wrapping_add(a) >> 12)
