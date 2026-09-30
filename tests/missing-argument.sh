@@ -34,3 +34,26 @@ missing '-sectalign needs <segname> <sectname> <align>' -sectalign __TEXT __text
 $mold -r -arch $ARCH -o $t/b.o $t/a.o -rpath 2> $t/log
 grep -Fq -- 'warning: -rpath missing <path>' $t/log
 $mold -r -arch $ARCH -o $t/c.o $t/a.o -oso_prefix
+
+# ld-prime takes an empty argument for a missing one, but for a dylib's
+# versions, which it takes for 0, and the few options that don't need
+# one. A library option with the name joined to it needs one too.
+missing '-e missing <name>' -e ''
+missing '-target missing <target-triple>' -target ''
+missing '-read_only_relocs missing <option>' -read_only_relocs ''
+missing '-platform_version missing arguments <platform> <min_version> <sdk_version>' \
+  -platform_version macos '' 13.0
+missing '-macos_version_min missing <version>' -macos_version_min ''
+missing '-weak-l missing <path>' -weak-l
+missing '-needed-l missing <path>' -needed-l
+missing '-seg_page_size needs <segname> <size>' -seg_page_size '' 4000
+$mold -r -arch $ARCH -o $t/d.o $t/a.o -rpath '' -current_version '' 2> $t/log
+grep -Fq -- 'warning: -rpath missing <path>' $t/log
+
+# An architecture ld-prime doesn't know is reported as such.
+not $mold -arch foo -o $t/exe $t/a.o 2> $t/log
+grep -Fq -- 'unknown -arch name: foo' $t/log
+not $mold -target foo-apple-macos14.0 -o $t/exe $t/a.o 2> $t/log
+grep -Fq -- "unknown architecture in target triple 'foo-apple-macos14.0'" $t/log
+not $mold -arch i386 -o $t/exe $t/a.o 2> $t/log
+grep -Fq -- 'linking for i386 is no longer supported' $t/log

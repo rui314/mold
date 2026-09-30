@@ -529,8 +529,11 @@ fn parse_version(opt: &str, arg: &str) -> u32 {
 /// Parses a dylib's current or compatibility version, which ld-prime
 /// truncates to fit, with a warning: each number to its most, and the
 /// numbers past the third dropped (ld64 took five for the current
-/// version).
+/// version). An empty one is 0.
 fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u32 {
+    if arg.is_empty() {
+        return encode_version(0, 0, 0);
+    }
     let nums = version_numbers(opt, arg);
     if !fits_version(&nums) {
         warnings.warn(format!("truncating {opt} to fit in 32-bit space used by old mach-o format"));
@@ -622,8 +625,42 @@ fn apply_target_triple(args: &mut Args, triple: &str) {
     args.platform_minos = minos;
     args.platform_sdk = encode_version(0, 0, 0);
     args.arch = Some(
-        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
+        target_arch(arch)
+            .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'")),
     );
+}
+
+/// The target an architecture name ld-prime knows stands for, None for
+/// a name it does not know. mold links for arm64 and x86_64 of them,
+/// and ld-prime no longer for i386.
+fn target_arch(arch: &str) -> Option<&'static str> {
+    // As `ld -v` lists them.
+    const KNOWN: [&str; 15] = [
+        "armv6",
+        "armv7",
+        "armv7s",
+        "arm64",
+        "arm64e",
+        "arm64_32",
+        "i386",
+        "x86_64",
+        "x86_64h",
+        "armv6m",
+        "armv7k",
+        "armv7m",
+        "armv7em",
+        "armv8m.main",
+        "armv8.1m.main",
+    ];
+    if arch == "i386" {
+        fatal!("linking for i386 is no longer supported");
+    }
+    if !KNOWN.contains(&arch) {
+        return None;
+    }
+    Some(
+        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
+    )
 }
 
 /// Splits a target triple, <arch>-<vendor>-<os><version>, into its
@@ -996,6 +1033,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-macos_version_min" => "missing <version>",
         "-mllvm" => "missing <value>",
         "-undefined" => "missing <dynamic_lookup>",
+        "-read_only_relocs" => "missing <option>",
+        "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
         "-platform_version" => "missing arguments <platform> <min_version> <sdk_version>",
         "-sectcreate" => "missing arguments <segname> <sectname> <file>",
@@ -1055,9 +1094,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
-    // An option's argument; the command line ending before it is an
-    // error in the words ld-prime has for the option.
+    // An option's argument. ld-prime takes an empty one for none, and
+    // the command line ending before it is an error in the words it
+    // has for the option.
     let next_arg = |i: &mut usize, opt: &str| -> &OsStr {
+        *i += 1;
+        match cmdline.get(*i) {
+            Some(val) if !val.is_empty() => val.as_ref(),
+            _ => fatal!("{}", missing_argument(opt)),
+        }
+    };
+    // An argument that may be empty, as ld-prime takes a few.
+    let arg_or_empty = |i: &mut usize, opt: &str| -> &OsStr {
         *i += 1;
         match cmdline.get(*i) {
             Some(val) => val.as_ref(),
@@ -1091,18 +1139,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-o" => args.output = path(next_arg(&mut i, name)),
             b"-arch" => {
                 let arch = text(name, next_arg(&mut i, name));
-                args.arch = Some(
-                    crate::target::canonical_name(arch)
-                        .unwrap_or_else(|| fatal!("unsupported target: {arch}")),
-                );
+                args.arch =
+                    Some(target_arch(arch).unwrap_or_else(|| fatal!("unknown -arch name: {arch}")));
             }
-            b"-target" => {
-                let Some(triple) = cmdline.get(i + 1) else {
-                    fatal!("-target missing <target-triple>");
-                };
-                i += 1;
-                target_triple = Some(text(name, triple));
-            }
+            b"-target" => target_triple = Some(text(name, next_arg(&mut i, name))),
             b"-e" => {
                 args.entry = text(name, next_arg(&mut i, name)).to_string();
                 explicit_entry = true;
@@ -1186,10 +1226,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i, name))),
             b"-keep_private_externs" => args.keep_private_externs = true,
-            // ld-prime only warns about a missing path.
+            // ld-prime only warns about a missing (or empty) path.
             b"-rpath" => match cmdline.get(i + 1) {
                 Some(arg) => {
-                    args.rpaths.push(bytes(arg));
+                    if arg.is_empty() {
+                        warnings.warn("-rpath missing <path>");
+                    } else {
+                        args.rpaths.push(bytes(arg));
+                    }
                     i += 1;
                 }
                 None => warnings.warn("-rpath missing <path>"),
@@ -1284,6 +1328,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let (Some(seg), Some(size)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
                     fatal!("-seg_page_size needs <segname> <size>");
                 };
+                if seg.is_empty() || size.is_empty() {
+                    fatal!("-seg_page_size needs <segname> <size>");
+                }
                 i += 2;
                 let size = parse_hex(name, text(name, size));
                 if size > u32::MAX as u64 {
@@ -1296,7 +1343,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let (Some(seg), Some(list)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
                     fatal!("-section_order needs <segname> <section-list>");
                 };
-                if list.is_empty() {
+                if seg.is_empty() || list.is_empty() {
                     fatal!("-section_order needs <segname> <section-list>");
                 }
                 i += 2;
@@ -1361,13 +1408,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // warning either way), error refuses them. See
             // resolve_text_relocs.
             b"-read_only_relocs" => {
-                let Some(treatment) = cmdline.get(i + 1) else {
-                    fatal!("-read_only_relocs missing <option>");
-                };
+                let treatment = next_arg(&mut i, name);
                 if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
                     fatal!("-read_only_relocs invalid option (warning | error | suppress)");
                 }
-                i += 1;
                 read_only_relocs = Some(treatment.as_bytes() != b"error");
             }
             // ld-prime knows one treatment besides the default error:
@@ -1455,11 +1499,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The -dylib_ spellings are the older names ld64 still
             // accepts; Xcode passes -dylib_compatibility_version.
             b"-current_version" | b"-dylib_current_version" => {
-                let version = text(name, next_arg(&mut i, name));
+                let version = text(name, arg_or_empty(&mut i, name));
                 args.current_version = parse_dylib_version(name, version, &mut warnings);
             }
             b"-compatibility_version" | b"-dylib_compatibility_version" => {
-                let version = text(name, next_arg(&mut i, name));
+                let version = text(name, arg_or_empty(&mut i, name));
                 args.compatibility_version = parse_dylib_version(name, version, &mut warnings);
             }
             // ld64 prints its version banner to stdout and continues
@@ -1583,7 +1627,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // re-exports from this. ld-prime expands none, and ignores
             // the option with a warning.
             b"-executable_path" => {
-                next_arg(&mut i, name);
+                arg_or_empty(&mut i, name);
                 executable_paths += 1;
             }
 
@@ -1648,6 +1692,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
 
             raw => {
+                // The library options with the name joined to them
+                // want one.
+                for prefix in
+                    ["-reexport-l", "-hidden-l", "-needed-l", "-upward-l", "-lazy-l", "-weak-l"]
+                {
+                    if raw == prefix.as_bytes() {
+                        fatal!("{}", missing_argument(prefix));
+                    }
+                }
                 let os_name = |rest: &[u8]| os_str(rest).to_owned();
                 if let Some(lib) = raw.strip_prefix(b"-reexport-l") {
                     args.inputs.push(InputArg::ReexportLib(os_name(lib)));
