@@ -187,12 +187,14 @@ pub struct SymtabBlock<'a> {
 }
 
 impl SymtabBlock<'_> {
+    #[inline]
     pub fn push(&mut self, nlist: NList) {
         nlist.write_to(&mut self.syms[self.len * size_of::<NList>()..]);
         self.len += 1;
     }
 
     /// Adds a string, returning its offset in the string table.
+    #[inline]
     pub fn add_string(&mut self, name: &[u8]) -> u32 {
         let strx = self.strtab_base + self.strtab_len as u32;
         let strs = &mut self.strtab[self.strtab_len..];

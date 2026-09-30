@@ -4021,10 +4021,15 @@ impl StabPlan {
         strx_of: &[u32],
         block: &mut crate::chunks::symtab::SymtabBlock<'_>,
     ) {
+        // A function's notes take its address three times in a row.
+        let mut addr = (u32::MAX, 0);
         for stab in self.stabs(ctx) {
             let mut ent = stab.ent;
             if let Some(id) = stab.value_of {
-                ent.n_value = ctx.sym_addr(id);
+                if addr.0 != id {
+                    addr = (id, ctx.sym_addr(id));
+                }
+                ent.n_value = addr.1;
             }
             ent.n_strx = match stab.shared_strx(strx_of) {
                 Some(strx) => strx,

@@ -57,6 +57,7 @@ pub fn name_to_str(name: &[u8; 16]) -> &str {
 }
 
 /// Whether a 16-byte, NUL-padded section or segment name is `s`.
+#[inline]
 fn name_is(name: &[u8; 16], s: &str) -> bool {
     let s = s.as_bytes();
     name.starts_with(s) && name.get(s.len()).is_none_or(|&b| b == 0)
@@ -155,11 +156,13 @@ impl MachSection {
 
     /// Whether the section is named `s`, as sectname() == s says but
     /// without converting the name: for loops over millions of symbols.
+    #[inline]
     pub fn sectname_is(&self, s: &str) -> bool {
         name_is(&self.sectname, s)
     }
 
     /// Whether the segment is named `s`; see sectname_is.
+    #[inline]
     pub fn segname_is(&self, s: &str) -> bool {
         name_is(&self.segname, s)
     }
