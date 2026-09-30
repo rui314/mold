@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A dylib bound for the dyld shared cache - installed in /usr/lib or
-# /System/Library - gets ld-prime's warning for each library it links
-# but binds nothing from; -warn_unused_dylibs asks for it for any
-# output. -needed_* and -reexport_* libraries are linked on purpose,
+# A dylib bound for the dyld shared cache - installed in /usr/lib,
+# /System/Library or those under /Library/Apple, and neither
+# -not_for_dyld_shared_cache nor -debug_variant - gets ld-prime's
+# warning for each library it links but binds nothing from;
+# -warn_unused_dylibs asks for it for any output. -needed_* and -reexport_* libraries are linked on purpose,
 # and libSystem, libc++ and Foundation are let off.
 echo 'int x(void) { return 1; }' | $CC -o $t/a.o -c -xc -
 
@@ -29,6 +30,10 @@ link -Wl,-install_name,/usr/lib/libb.dylib -lz -Wl,-no_warn_unused_dylibs
 not grep -q 'not using any symbols' $t/log
 link -Wl,-install_name,/usr/lib/libb.dylib -lz -Wl,-not_for_dyld_shared_cache
 not grep -q 'not using any symbols' $t/log
+link -Wl,-install_name,/usr/lib/libb.dylib -lz -Wl,-debug_variant
+not grep -q 'not using any symbols' $t/log
+link -Wl,-install_name,/Library/Apple/usr/lib/libb.dylib -lz
+grep -qF "$msg" $t/log
 
 echo 'int main() { return 0; }' | $CC -o $t/m.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/m.o -lz 2> $t/log

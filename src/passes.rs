@@ -2249,31 +2249,27 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
 }
 
 /// Whether an install name lies where the dyld shared cache takes
-/// libraries from: /usr/lib or /System/Library.
+/// libraries from: /usr/lib, /System/Library or their counterparts
+/// under /Library/Apple.
 fn in_shared_cache_path(install_name: &[u8]) -> bool {
-    install_name.starts_with(b"/usr/lib/") || install_name.starts_with(b"/System/Library/")
+    [
+        &b"/usr/lib/"[..],
+        b"/System/Library/",
+        b"/Library/Apple/usr/lib/",
+        b"/Library/Apple/System/Library/",
+    ]
+    .iter()
+    .any(|dir| install_name.starts_with(dir))
 }
 
 /// Whether the output is a dylib bound for the dyld shared cache: one
-/// installed there, unless -not_for_dyld_shared_cache.
-fn for_shared_cache<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.output_type == MH_DYLIB
-        && !ctx.args.not_for_dyld_shared_cache
-        && in_shared_cache_path(crate::chunks::output_install_name(ctx))
-}
-
-/// Whether ld64 deems the output eligible for the dyld shared cache: a
-/// dylib installed in /usr/lib, /System/Library or their counterparts
-/// under /Library/Apple, unless -not_for_dyld_shared_cache or
-/// -debug_variant says otherwise.
+/// installed there, unless -not_for_dyld_shared_cache or -debug_variant
+/// says otherwise. ld64 and ld-prime call it shared-region eligible.
 pub fn shared_region_eligible<E: Target>(ctx: &Context<E>) -> bool {
-    let path = crate::chunks::output_install_name(ctx);
     ctx.args.output_type == MH_DYLIB
         && !ctx.args.not_for_dyld_shared_cache
         && !ctx.args.debug_variant
-        && (in_shared_cache_path(path)
-            || path.starts_with(b"/Library/Apple/usr/lib/")
-            || path.starts_with(b"/Library/Apple/System/Library/"))
+        && in_shared_cache_path(crate::chunks::output_install_name(ctx))
 }
 
 /// A dylib bound for the dyld shared cache may link only libraries that
@@ -2282,7 +2278,7 @@ pub fn shared_region_eligible<E: Target>(ctx: &Context<E>) -> bool {
 /// installed anywhere else (@rpath, /usr/local, /Library, ...); one that
 /// -dead_strip_dylibs drops doesn't count.
 fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
-    if !for_shared_cache(ctx) {
+    if !shared_region_eligible(ctx) {
         return;
     }
     if let Some(dylib) = ctx
@@ -2309,7 +2305,7 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 /// Foundation, which compiler drivers and project templates link by
 /// habit, are let off.
 fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.warn_unused_dylibs.unwrap_or_else(|| for_shared_cache(ctx)) {
+    if !ctx.args.warn_unused_dylibs.unwrap_or_else(|| shared_region_eligible(ctx)) {
         return;
     }
     const EXEMPT: [&[u8]; 3] = [

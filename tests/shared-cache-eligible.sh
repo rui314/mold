@@ -32,3 +32,16 @@ $CC --ld-path=$mold -o $t/d.dylib -shared $t/foo.o $t/librpath.dylib $t/liblocal
 echo 'int baz(void) { return 2; } int foo(void) { return 1; }' | $CC -o $t/e.o -c -xc -
 $CC --ld-path=$mold -o $t/e.dylib -shared $t/e.o $t/libsys.dylib $t/librpath.dylib \
   -Wl,-install_name,/usr/lib/libfoo.dylib -Wl,-dead_strip_dylibs 2> /dev/null
+
+# /Library/Apple/usr/lib and /Library/Apple/System/Library count as
+# well, as the output's install name or a dependency's; -debug_variant
+# opts out as -not_for_dyld_shared_cache does.
+not $CC --ld-path=$mold -o $t/f.dylib -shared $t/foo.o $t/librpath.dylib $t/liblocal.dylib \
+  -Wl,-install_name,/Library/Apple/usr/lib/libfoo.dylib 2> $t/log3
+grep -q "ineligible dylib '@rpath/librpath.dylib'" $t/log3
+$CC --ld-path=$mold -o $t/g.dylib -shared $t/foo.o $t/librpath.dylib $t/liblocal.dylib \
+  -Wl,-install_name,/usr/lib/libfoo.dylib -Wl,-debug_variant
+$CC --ld-path=$mold -o $t/libapple.dylib -shared $t/baz.o \
+  -Wl,-install_name,/Library/Apple/System/Library/Frameworks/A.framework/A
+$CC --ld-path=$mold -o $t/h.dylib -shared $t/foo.o $t/libsys.dylib $t/libapple.dylib \
+  -Wl,-install_name,/usr/lib/libfoo.dylib
