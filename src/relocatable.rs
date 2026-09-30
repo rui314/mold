@@ -17,7 +17,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::chunks::{ChunkId, OutputSectionId};
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -353,11 +353,6 @@ fn narrow_unwind_fields<E: Target>(ctx: &Context<E>) -> HashMap<(u32, u32), u8> 
 }
 
 pub fn link<E: Target>(ctx: &mut Context<E>) {
-    // Lay out the merged sections from address zero, zero-fill
-    // sections last: an object's file image mirrors its address
-    // space (each section's file offset is the segment's plus its
-    // address), so content sections must precede the sections that
-    // occupy addresses but no file bytes.
     // Synthetic sections: the merged __objc_imageinfo, the
     // re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
     let mut extras: Vec<SyntheticSection> = Vec::new();
@@ -373,74 +368,58 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         extras.len() - 1
     });
 
-    // Every output section, merged or synthetic, in ld64's order:
-    // ranked, and first-seen within a rank (a synthetic section after
-    // the merged ones).
-    #[derive(Clone, Copy)]
-    enum Sect {
-        Chunk(OutputSectionId),
-        Extra(usize),
-    }
-    let mut sects: Vec<Sect> = (0..ctx.output_sections.len())
-        .map(|i| Sect::Chunk(OutputSectionId::new(i as u32)))
-        .chain((0..extras.len()).map(Sect::Extra))
-        .collect();
-    let name_of = |s: Sect| match s {
-        Sect::Chunk(i) => {
-            let h = &ctx.output_section(i).hdr;
-            (h.segname, &*h.sectname, h.flags)
-        }
-        Sect::Extra(i) => (extras[i].segname, extras[i].sectname, extras[i].flags),
-    };
-    let mut segs_seen: Vec<&str> = Vec::new();
-    for &s in &sects {
-        let seg = name_of(s).0;
-        if !segs_seen.contains(&seg) {
-            segs_seen.push(seg);
-        }
-    }
-    sects.sort_by_key(|&s| {
-        let (seg, sect, flags) = name_of(s);
-        let (seg_rank, sect_rank) = section_rank(seg, sect, flags);
-        (seg_rank, segs_seen.iter().position(|&x| x == seg), sect_rank)
-    });
+    // Every section in ld64's order, laid out from address zero, and
+    // placed in the file after the load commands.
+    let sects = sort_sections(ctx, &extras);
+    let vmsize = assign_addresses(ctx, &mut extras, &sects);
 
-    // Addresses run from zero in that order; zero-fill sections take
-    // address space like any other (ld64 leaves them in place too).
-    let mut addr: u64 = 0;
-    for &s in &sects {
-        match s {
-            Sect::Chunk(i) => {
-                let hdr = &mut ctx.output_section_mut(i).hdr;
-                addr = align_to(addr, 1 << hdr.p2align);
-                hdr.addr = addr;
-                addr += hdr.size;
-            }
-            Sect::Extra(i) => {
-                addr = align_to(addr, 1 << extras[i].p2align);
-                extras[i].addr = addr;
-                addr += extras[i].size;
-            }
-        }
-    }
-    let vmsize = addr;
+    let linker_options = relocatable_linker_options(ctx);
+    // cmd, cmdsize, count, then the NUL-terminated strings, padded to 8.
+    let linker_option_cmdsize = |opt: &Vec<Vec<u8>>| -> usize {
+        align_to(12 + opt.iter().map(|s| s.len() + 1).sum::<usize>() as u64, 8) as usize
+    };
+
+    let loh = optimization_hints(ctx);
+
+    // File layout: header, one segment command with all sections, the
+    // symtab, build version, data in code, linker option and hint
+    // commands; then section contents, relocations, data in code,
+    // hints, symbols and strings.
+    let args = &ctx.args;
+    let version_cmd = if crate::chunks::has_version_cmd(args) {
+        crate::chunks::create_version_cmd::<E>(
+            args.platform,
+            args.platform_minos,
+            args.platform_sdk,
+        )
+    } else {
+        Vec::new()
+    };
+    let ncmds =
+        3 + u32::from(!version_cmd.is_empty()) + linker_options.len() as u32 + loh.is_some() as u32;
+    let seg_cmd_size = size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>();
+    let sizeofcmds = seg_cmd_size
+        + size_of::<SymtabCommand>()
+        + version_cmd.len()
+        + size_of::<LinkEditDataCommand>()
+        + linker_options.iter().map(linker_option_cmdsize).sum::<usize>()
+        + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
+    // ld-prime leaves -headerpad (32 unless given) free after the load
+    // commands, and more when LC_VERSION_MIN_MACOSX, or no command at
+    // all, stands where its estimate of them counted a 32-byte
+    // LC_BUILD_VERSION.
+    let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
+    let seg_fileoff = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
+
+    let content_end = assign_file_offsets(ctx, &mut extras, &sects, seg_fileoff);
+    let ctx = &*ctx;
     let section_chunks: Vec<OutputSectionId> = sects
         .iter()
         .filter_map(|s| match *s {
-            Sect::Chunk(i) => Some(i),
-            Sect::Extra(_) => None,
+            Sect::Merged(i) => Some(i),
+            Sect::Synthetic(_) => None,
         })
         .collect();
-
-    // Section ordinals are 1-based positions among the emitted
-    // sections, synthetic ones included.
-    let mut extra_ordinals = vec![0u8; extras.len()];
-    for (i, &s) in sects.iter().enumerate() {
-        match s {
-            Sect::Chunk(id) => ctx.output_section_mut(id).hdr.n_sect = i as u8 + 1,
-            Sect::Extra(e) => extra_ordinals[e] = i as u8 + 1,
-        }
-    }
     let RSymtab { nlists: nlists_out, strtab, index_of_sym, atoms, entsize_of } =
         build_symtab(ctx, &section_chunks);
     // The symbol a reference to offset `off` of subsection `t` names
@@ -520,7 +499,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         }
     }
     if let Some(slot) = cu_slot {
-        debug_assert_eq!(cu_data.len() as u64, extras[slot].size);
+        debug_assert_eq!(cu_data.len() as u64, extras[slot].hdr.size);
         extras[slot].data = cu_data;
         extras[slot].relocs = cu_relocs;
     }
@@ -600,7 +579,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         }
     }
     if let Some(slot) = eh_slot {
-        debug_assert_eq!(eh_data.len() as u64, extras[slot].size);
+        debug_assert_eq!(eh_data.len() as u64, extras[slot].hdr.size);
         extras[slot].data = eh_data;
         extras[slot].relocs = eh_relocs;
         extras[slot].patches = eh_patches;
@@ -612,85 +591,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         .map(|&chunk_idx| section_relocs(ctx, chunk_idx, &index_of_sym, &atom_target))
         .collect();
 
-    let linker_options = relocatable_linker_options(ctx);
-    // cmd, cmdsize, count, then the NUL-terminated strings, padded to 8.
-    let linker_option_cmdsize = |opt: &Vec<Vec<u8>>| -> usize {
-        align_to(12 + opt.iter().map(|s| s.len() + 1).sum::<usize>() as u64, 8) as usize
-    };
-
-    let loh = optimization_hints(ctx);
-
-    // File layout: header, one segment command with all sections, the
-    // symtab, build version, data in code, linker option and hint
-    // commands; then section contents, relocations, data in code,
-    // hints, symbols and strings.
-    let args = &ctx.args;
-    let version_cmd = if crate::chunks::has_version_cmd(args) {
-        crate::chunks::create_version_cmd::<E>(
-            args.platform,
-            args.platform_minos,
-            args.platform_sdk,
-        )
-    } else {
-        Vec::new()
-    };
-    let ncmds =
-        3 + u32::from(!version_cmd.is_empty()) + linker_options.len() as u32 + loh.is_some() as u32;
-    let num_sections = sects.len();
-    let seg_cmd_size = size_of::<SegmentCommand>() + num_sections * size_of::<MachSection>();
-    let sizeofcmds = seg_cmd_size
-        + size_of::<SymtabCommand>()
-        + version_cmd.len()
-        + size_of::<LinkEditDataCommand>()
-        + linker_options.iter().map(linker_option_cmdsize).sum::<usize>()
-        + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
-    // ld-prime leaves -headerpad (32 unless given) free after the load
-    // commands, and more when LC_VERSION_MIN_MACOSX, or no command at
-    // all, stands where its estimate of them counted a 32-byte
-    // LC_BUILD_VERSION.
-    let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
-    let mut off = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
-
-    // File offsets mirror addresses, except that the address span of a
-    // zero-fill section (with the padding up to the next section) has
-    // no file bytes: as in ld64's output, __bss can sit before
-    // __LD,__compact_unwind without leaving a hole in the file.
-    let seg_fileoff = off;
-    let mut sect_offsets = Vec::new();
-    let mut zerofill_start: Option<u64> = None;
-    let mut skipped: u64 = 0;
-    for &s in &sects {
-        let (addr, size, zerofill) = match s {
-            Sect::Chunk(i) => {
-                let h = &ctx.output_section(i).hdr;
-                (h.addr, h.size, h.is_zerofill())
-            }
-            Sect::Extra(i) => (extras[i].addr, extras[i].size, false),
-        };
-        if zerofill {
-            zerofill_start.get_or_insert(addr);
-            if let Sect::Chunk(_) = s {
-                sect_offsets.push(0u64);
-            }
-            continue;
-        }
-        if let Some(start) = zerofill_start.take() {
-            skipped += addr - start;
-        }
-        let fileoff = seg_fileoff + addr - skipped;
-        match s {
-            Sect::Chunk(i) => {
-                ctx.output_sections[i.index()].hdr.fileoff = fileoff;
-                sect_offsets.push(fileoff);
-            }
-            Sect::Extra(i) => extras[i].fileoff = fileoff,
-        }
-        off = fileoff + size;
-    }
     for extra in &mut extras {
         // Self-relative cells can be resolved now the address is set.
         for &(cell, target, size) in &extra.patches {
-            let val = target.wrapping_sub(extra.addr + cell as u64);
+            let val = target.wrapping_sub(extra.hdr.addr + cell as u64);
             let cell = cell as usize;
             match size {
                 4 => extra.data[cell..cell + 4].copy_from_slice(&(val as u32).to_le_bytes()),
@@ -699,8 +603,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
-    let content_end = off;
-    off = align_to(off, 8);
+    let mut off = align_to(content_end, 8);
     let mut reloff = Vec::new();
     for rels in &sect_relocs {
         reloff.push(off);
@@ -770,7 +673,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         filesize: content_end - seg_fileoff,
         maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
         initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-        nsects: num_sections as u32,
+        nsects: sects.len() as u32,
         flags: 0,
     };
     seg.write_to(&mut buf[p..]);
@@ -778,43 +681,27 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     let mut ci = 0;
     for &s in &sects {
-        let sect = match s {
-            Sect::Chunk(chunk_idx) => {
-                let i = ci;
+        let hdr = sect_hdr(ctx, &extras, s);
+        let (relocs, reloff) = match s {
+            Sect::Merged(_) => {
                 ci += 1;
-                let chunk = ctx.output_section(chunk_idx);
-                MachSection {
-                    sectname: str_to_name(&chunk.hdr.sectname),
-                    segname: str_to_name(chunk.hdr.segname),
-                    addr: chunk.hdr.addr,
-                    size: chunk.hdr.size,
-                    offset: sect_offsets[i] as u32,
-                    p2align: chunk.hdr.p2align,
-                    reloff: if sect_relocs[i].is_empty() { 0 } else { reloff[i] as u32 },
-                    nreloc: sect_relocs[i].len() as u32,
-                    flags: chunk.hdr.flags,
-                    reserved1: 0,
-                    reserved2: 0,
-                    reserved3: 0,
-                }
+                (&sect_relocs[ci - 1], reloff[ci - 1])
             }
-            Sect::Extra(e) => {
-                let extra = &extras[e];
-                MachSection {
-                    sectname: str_to_name(extra.sectname),
-                    segname: str_to_name(extra.segname),
-                    addr: extra.addr,
-                    size: extra.data.len() as u64,
-                    offset: extra.fileoff as u32,
-                    p2align: extra.p2align as u32,
-                    reloff: if extra.relocs.is_empty() { 0 } else { extra.reloff as u32 },
-                    nreloc: extra.relocs.len() as u32,
-                    flags: extra.flags,
-                    reserved1: 0,
-                    reserved2: 0,
-                    reserved3: 0,
-                }
-            }
+            Sect::Synthetic(i) => (&extras[i].relocs, extras[i].reloff),
+        };
+        let sect = MachSection {
+            sectname: str_to_name(&hdr.sectname),
+            segname: str_to_name(hdr.segname),
+            addr: hdr.addr,
+            size: hdr.size,
+            offset: hdr.fileoff as u32,
+            p2align: hdr.p2align,
+            reloff: if relocs.is_empty() { 0 } else { reloff as u32 },
+            nreloc: relocs.len() as u32,
+            flags: hdr.flags,
+            reserved1: 0,
+            reserved2: 0,
+            reserved3: 0,
         };
         sect.write_to(&mut buf[p..]);
         p += size_of::<MachSection>();
@@ -878,13 +765,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     // Section contents: raw copies, with non-external targets' embedded
     // addresses rewritten into the merged address space.
-    for (i, &chunk_idx) in section_chunks.iter().enumerate() {
-        let isecs = &ctx.output_section(chunk_idx).members;
-        if sect_offsets[i] == 0 {
+    for &chunk_idx in &section_chunks {
+        let osec = ctx.output_section(chunk_idx);
+        if osec.hdr.is_zerofill() {
             continue;
         }
-        let base = sect_offsets[i] as usize;
-        for &id in isecs {
+        let base = osec.hdr.fileoff as usize;
+        for &id in &osec.members {
             let isec = &ctx.isecs[id];
             if isec.data().is_empty() {
                 continue;
@@ -954,7 +841,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
 
     for extra in &extras {
-        let fo = extra.fileoff as usize;
+        let fo = extra.hdr.fileoff as usize;
         buf[fo..fo + extra.data.len()].copy_from_slice(&extra.data);
         let mut p = extra.reloff as usize;
         for rel in &extra.relocs {
@@ -982,6 +869,110 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     output_file::write(&ctx.args.output, &buf);
 }
 
+/// A section of the -r output: merged from input subsections, or
+/// synthetic.
+#[derive(Clone, Copy)]
+enum Sect {
+    Merged(OutputSectionId),
+    Synthetic(usize),
+}
+
+fn sect_hdr<'a, E: Target>(
+    ctx: &'a Context<E>,
+    synthetic: &'a [SyntheticSection],
+    s: Sect,
+) -> &'a ChunkHeader {
+    match s {
+        Sect::Merged(i) => &ctx.output_section(i).hdr,
+        Sect::Synthetic(i) => &synthetic[i].hdr,
+    }
+}
+
+fn sect_hdr_mut<'a, E: Target>(
+    ctx: &'a mut Context<E>,
+    synthetic: &'a mut [SyntheticSection],
+    s: Sect,
+) -> &'a mut ChunkHeader {
+    match s {
+        Sect::Merged(i) => &mut ctx.output_section_mut(i).hdr,
+        Sect::Synthetic(i) => &mut synthetic[i].hdr,
+    }
+}
+
+/// Every output section, merged or synthetic, in ld64's order: ranked
+/// (see section_rank), and first-seen within a rank (a synthetic
+/// section after the merged ones).
+fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
+    let mut sects: Vec<Sect> = (0..ctx.output_sections.len())
+        .map(|i| Sect::Merged(OutputSectionId::new(i as u32)))
+        .chain((0..synthetic.len()).map(Sect::Synthetic))
+        .collect();
+    let mut segs_seen: Vec<&str> = Vec::new();
+    for &s in &sects {
+        let seg = sect_hdr(ctx, synthetic, s).segname;
+        if !segs_seen.contains(&seg) {
+            segs_seen.push(seg);
+        }
+    }
+    sects.sort_by_key(|&s| {
+        let hdr = sect_hdr(ctx, synthetic, s);
+        let (seg_rank, sect_rank) = section_rank(hdr.segname, &hdr.sectname, hdr.flags);
+        (seg_rank, segs_seen.iter().position(|&x| x == hdr.segname), sect_rank)
+    });
+    sects
+}
+
+/// Assigns the sections their addresses, from zero in output order, and
+/// their ordinals, 1-based positions among them. Zero-fill sections take
+/// address space like any other (ld64 leaves them in place too).
+/// Returns the size of the address space.
+fn assign_addresses<E: Target>(
+    ctx: &mut Context<E>,
+    synthetic: &mut [SyntheticSection],
+    sects: &[Sect],
+) -> u64 {
+    let mut addr = 0;
+    for (i, &s) in sects.iter().enumerate() {
+        let hdr = sect_hdr_mut(ctx, synthetic, s);
+        addr = align_to(addr, 1 << hdr.p2align);
+        hdr.addr = addr;
+        hdr.n_sect = i as u8 + 1;
+        addr += hdr.size;
+    }
+    addr
+}
+
+/// Places the sections' contents in the file from `start`, past the
+/// load commands, returning where they end. File offsets mirror
+/// addresses, except that the address span of a zero-fill section
+/// (with the padding up to the next section) has no file bytes: as in
+/// ld64's output, __bss can sit before __LD,__compact_unwind without
+/// leaving a hole in the file.
+fn assign_file_offsets<E: Target>(
+    ctx: &mut Context<E>,
+    synthetic: &mut [SyntheticSection],
+    sects: &[Sect],
+    start: u64,
+) -> u64 {
+    let mut end = start;
+    let mut zerofill_start: Option<u64> = None;
+    let mut skipped = 0;
+    for &s in sects {
+        let hdr = sect_hdr_mut(ctx, synthetic, s);
+        if hdr.is_zerofill() {
+            zerofill_start.get_or_insert(hdr.addr);
+            hdr.fileoff = 0;
+            continue;
+        }
+        if let Some(zerofill_start) = zerofill_start.take() {
+            skipped += hdr.addr - zerofill_start;
+        }
+        hdr.fileoff = start + hdr.addr - skipped;
+        end = hdr.fileoff + hdr.size;
+    }
+    end
+}
+
 /// A section the -r output synthesizes rather than merges from input
 /// subsections: the merged __objc_imageinfo, the re-synthesized
 /// __LD,__compact_unwind and __TEXT,__eh_frame. Its size is known
@@ -990,40 +981,21 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 /// `patches` are self-relative pointer cells filled then: value =
 /// target_addr - (section_addr + offset).
 struct SyntheticSection {
-    segname: &'static str,
-    sectname: &'static str,
-    flags: u32,
-    p2align: u8,
-    size: u64,
+    hdr: ChunkHeader,
     data: Vec<u8>,
     relocs: Vec<MachRel>,
     patches: Vec<(u32, u64, u8)>,
-    addr: u64,
-    fileoff: u64,
+    /// Where the relocations start in the file.
     reloff: u64,
 }
 
 impl SyntheticSection {
-    fn new(
-        segname: &'static str,
-        sectname: &'static str,
-        flags: u32,
-        p2align: u8,
-        size: u64,
-    ) -> Self {
-        Self {
-            segname,
-            sectname,
-            flags,
-            p2align,
-            size,
-            data: Vec::new(),
-            relocs: Vec::new(),
-            patches: Vec::new(),
-            addr: 0,
-            fileoff: 0,
-            reloff: 0,
-        }
+    fn new(segname: &'static str, sectname: &str, flags: u32, p2align: u32, size: u64) -> Self {
+        let mut hdr = ChunkHeader::new(segname, sectname);
+        hdr.flags = flags;
+        hdr.p2align = p2align;
+        hdr.size = size;
+        Self { hdr, data: Vec::new(), relocs: Vec::new(), patches: Vec::new(), reloff: 0 }
     }
 }
 
@@ -1079,7 +1051,7 @@ fn compact_unwind_section<E: Target>(ctx: &Context<E>, records: &[usize]) -> Syn
                 .iter()
                 .find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
         })
-        .map(|s| s.p2align as u8)
+        .map(|s| s.p2align)
         .max()
         .unwrap_or(3);
     SyntheticSection::new(
