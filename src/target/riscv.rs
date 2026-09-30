@@ -826,11 +826,15 @@ where
                 R_RISCV_SET8 => loc[0] = sa as u8,
                 R_RISCV_SET16 => Self::write_u16(loc, sa as u16),
                 R_RISCV_SET32 => Self::write_u32(loc, sa as u32),
-                R_RISCV_PLT32 | R_RISCV_32_PCREL => Self::write_u32(loc, pcrel as u32),
-                R_RISCV_GOT32_PCREL => Self::write_u32(
-                    loc,
-                    g().wrapping_add(got).wrapping_add(a).wrapping_sub(p) as u32,
-                ),
+                R_RISCV_PLT32 | R_RISCV_32_PCREL => {
+                    check(pcrel as i64, -(1 << 31), 1 << 31);
+                    Self::write_u32(loc, pcrel as u32);
+                }
+                R_RISCV_GOT32_PCREL => {
+                    let val = g().wrapping_add(got).wrapping_add(a).wrapping_sub(p);
+                    check(val as i64, -(1 << 31), 1 << 31);
+                    Self::write_u32(loc, val as u32);
+                }
                 R_RISCV_SET_ULEB128 => overwrite_uleb(loc, sa),
                 R_RISCV_SUB_ULEB128 => {
                     let cur = read_uleb(&mut &loc[..]);
