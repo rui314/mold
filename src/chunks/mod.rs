@@ -822,13 +822,15 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 }
 
 /// The free space ld-prime leaves after a final image's load commands:
-/// -headerpad, at least 32 bytes, or with -headerpad_max_install_names
-/// room for each dylib command to grow by MAXPATHLEN. ld-prime places
-/// the sections after an estimate of the load commands, not their
-/// final size, so the space grows by the estimate's excess too: it
-/// counts dylib_use_command's 28-byte header for each dependency, and
-/// LC_DYLD_INFO_ONLY plus LC_DYLD_EXPORTS_TRIE unless the image is an
-/// arm64 one with chained fixups (a -static image: 32 bytes).
+/// -headerpad (at least 32 bytes in an image dyld loads), or with
+/// -headerpad_max_install_names room for each dylib command to grow by
+/// MAXPATHLEN. ld-prime places the sections after an estimate of the
+/// load commands, not their final size, so the space grows by the
+/// estimate's excess too: it counts dylib_use_command's 28-byte header
+/// for each dependency, LC_DYLD_INFO_ONLY plus LC_DYLD_EXPORTS_TRIE
+/// unless the image is an arm64 one with chained fixups (a -static
+/// image: 32 bytes), and a section header for a static executable's
+/// stack.
 fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
     // segments, and ld-prime leaves nothing free after its commands.
@@ -850,7 +852,10 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
         .map(|c| (DylibCommand::read_from(c), c.as_slice()))
         .collect();
 
-    let mut pad = ctx.args.headerpad.max(32);
+    // An image dyld loads keeps room to add a code signature's command
+    // in, whatever -headerpad says.
+    let mut pad =
+        if ctx.args.without_dyld() { ctx.args.headerpad } else { ctx.args.headerpad.max(32) };
     if ctx.args.headerpad_max_install_names {
         pad = pad.max(dylib_cmds.len() as u64 * 1024);
     }
@@ -866,6 +871,11 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
     } else {
         32
     };
+    // The estimate gives __UNIXSTACK the header of a __stack section,
+    // which the segment's command goes without.
+    if ctx.segments.iter().any(|seg| seg.name == "__UNIXSTACK") {
+        excess += size_of::<MachSection>() as u64;
+    }
     for (cmd, bytes) in dylib_cmds {
         if cmd.cmd != LC_ID_DYLIB && cmd.timestamp != DYLIB_USE_MARKER {
             let name = &bytes[cmd.nameoff as usize..];

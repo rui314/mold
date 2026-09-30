@@ -238,8 +238,8 @@ pub struct Args {
     pub add_ast_paths: Vec<PathBuf>,
     pub dynamic: bool,
     /// -headerpad: the space left free after the load commands (32
-    /// unless given, 128 in firmware dyld loads; a final image never
-    /// gets less than 32).
+    /// unless given, 128 in firmware dyld loads; an image dyld loads
+    /// never gets less than 32).
     pub headerpad: u64,
     /// -headerpad_max_install_names: room for every dylib load command
     /// to grow to MAXPATHLEN.
@@ -1847,6 +1847,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     for _ in 0..executable_paths {
         crate::warn!("-executable_path is obsolete");
+    }
+    // An image dyld loads keeps 32 bytes for the command of a code
+    // signature added later (see chunks::header_pad).
+    if let Some(size) = headerpad
+        && size < 32
+        && !args.without_dyld()
+        && !args.relocatable
+    {
+        crate::warn!(
+            "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
+        );
     }
     for lib in lazy_libraries {
         if args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0) {
