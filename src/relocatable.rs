@@ -99,6 +99,63 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     }
 }
 
+/// Whether a symbol lies in an initializer or terminator pointer list
+/// whose atoms dead stripping keeps by their section type alone: there
+/// ld-prime marks only the name of each atom no-dead-strip, not its
+/// aliases - unless the section says no_dead_strip itself.
+fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: crate::symbol::SymbolId) -> bool {
+    let Some(isec) = ctx.symbols[sym].input_section() else { return false };
+    let h = ctx.hdr_of(&ctx.isecs[isec as usize]);
+    matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
+        && h.flags & S_ATTR_NO_DEAD_STRIP == 0
+}
+
+/// Where the -r output's defined externals sit, as (object, section,
+/// address): an external names its atom over any local there (a weak
+/// one only in an object with subsections).
+fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
+    let mut places = HashSet::new();
+    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+        if !obj.is_alive {
+            continue;
+        }
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            let sym = &ctx.symbols[sym_id];
+            if !nlist.is_stab()
+                && nlist.is_extern()
+                && nlist.n_type() == N_SECT
+                && (ctx.args.keep_private_externs || !sym.is_private_extern())
+                && (obj.subsections_via_symbols || !sym.is_weak_def())
+                && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
+            {
+                places.insert((obj_idx as u32, nlist.n_sect, nlist.n_value));
+            }
+        }
+    }
+    places
+}
+
+/// The places an object names with a symbol other than an assembler
+/// temporary (ltmpN), where an ltmpN label is a mere alias.
+fn named_places<E: Target>(ctx: &Context<E>) -> HashSet<(usize, u8, u64)> {
+    let mut places = HashSet::new();
+    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
+        if !obj.is_alive {
+            continue;
+        }
+        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+            if !nlist.is_stab()
+                && nlist.n_type() == N_SECT
+                && !ctx.symbols[sym_id].name().starts_with("ltmp")
+            {
+                places.insert((obj_idx, nlist.n_sect, nlist.n_value));
+            }
+        }
+    }
+    places
+}
+
 /// The n_desc of a symbol from an object without subsections: ld64
 /// marks the whole-section atoms no-dead-strip and drops the alt-entry
 /// marker, which means nothing there.
@@ -1128,22 +1185,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             }
         }
     }
-    // The places an object names with a symbol other than an assembler
-    // temporary (ltmpN), where an ltmpN label is a mere alias.
-    let mut named_at: HashSet<(usize, u8, u64)> = HashSet::new();
-    for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive {
-            continue;
-        }
-        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.is_stab() || nlist.n_type() != N_SECT {
-                continue;
-            }
-            if !ctx.symbols[sym_id].name().starts_with("ltmp") {
-                named_at.insert((obj_idx, nlist.n_sect, nlist.n_value));
-            }
-        }
-    }
+    let named_at = named_places(ctx);
     for (obj_idx, obj) in ctx.objs.iter().enumerate() {
         if !obj.is_alive {
             continue;
@@ -1259,6 +1301,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         }
     }
     let mut symnum_of = vec![0u32; locals.len()];
+    let externals = external_places(ctx);
+    let mut prev_at = None;
     for &i in &order {
         let l = &locals[i];
         symnum_of[i] = ents.len() as u32;
@@ -1266,13 +1310,16 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             index_of_sym.insert(sym_id, ents.len() as u32);
         }
         names.push(l.name.as_bytes());
-        let ent = NList {
-            n_strx: 0,
-            n_type: l.n_type,
-            n_sect: l.n_sect,
-            n_desc: l.n_desc,
-            n_value: l.addr,
+        // The first name at a place names the atom, unless an external
+        // there does; the others are its aliases.
+        let alias = prev_at == Some(l.at) || externals.contains(&l.at);
+        prev_at = Some(l.at);
+        let n_desc = if alias && in_init_term_list(ctx, l.syms[0]) {
+            l.n_desc & !N_NO_DEAD_STRIP
+        } else {
+            l.n_desc
         };
+        let ent = NList { n_strx: 0, n_type: l.n_type, n_sect: l.n_sect, n_desc, n_value: l.addr };
         ents.push((ent, l.syms.first().copied()));
     }
     let nplain = ents.len();
