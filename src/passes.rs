@@ -1106,12 +1106,39 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
 /// definitions in a synthetic __DATA,__common zero-fill section.
 pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
+    // Where the __common section sorts: with the first object that
+    // claims a common symbol still unresolved by a definition.
+    ctx.common_first_obj = ctx
+        .objs
+        .iter()
+        .position(|obj| {
+            obj.is_alive
+                && obj.nlists.iter().zip(&obj.symbols).any(|(nlist, &id)| {
+                    !nlist.is_stab()
+                        && nlist.is_extern()
+                        && nlist.n_type() == N_UNDF
+                        && nlist.is_common()
+                        && ctx.symbols[id].is_common()
+                        && !ctx.symbols[id].is_defined()
+                })
+        })
+        .map(|i| i as u32);
     for i in 0..ctx.symbols.syms.len() {
         let sym = &ctx.symbols[i];
         if !sym.is_common() || sym.is_defined() {
             continue;
         }
-        let (size, p2align) = (sym.value, sym.common_p2align);
+        let size = sym.value;
+        // An alignment the object gave (.comm's third operand) is kept;
+        // without one, ld64 aligns the symbol to its size rounded up to
+        // a power of two, capped at the page on arm64 (a 100000-byte
+        // array lands 16KB-aligned) and at 16 bytes on x86-64.
+        let p2align = if sym.common_p2align != 0 || size == 0 {
+            sym.common_p2align
+        } else {
+            let cap = if E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 { 14 } else { 4 };
+            (size.next_power_of_two().trailing_zeros() as u8).min(cap)
+        };
 
         let (file, shndx) = ctx.add_synthetic_section(MachSection {
             sectname: str_to_name("__common"),
@@ -3632,7 +3659,6 @@ fn output_section_rank(segname: &str, sectname: &str) -> u32 {
         ("__TEXT", "__init_offsets") => 4,
         ("__TEXT", "__objc_methlist") => 5,
         ("__TEXT", _) => 10,
-        ("__DATA_CONST", "__got") => 0,
         ("__DATA_CONST", "__mod_init_func") => 1,
         ("__DATA_CONST", "__mod_term_func") => 2,
         ("__DATA_CONST", "__const") => 3,
@@ -3645,6 +3671,10 @@ fn output_section_rank(segname: &str, sectname: &str) -> u32 {
         ("__DATA_CONST", "__objc_imageinfo") => 10,
         ("__DATA_CONST", "__objc_protorefs") => 11,
         ("__DATA_CONST", "__objc_superrefs") => 12,
+        // The GOT closes __DATA_CONST, after every input-derived
+        // section (ld-prime: __cfstring, __objc_classlist,
+        // __objc_imageinfo, then __got).
+        ("__DATA_CONST", "__got") => 25,
         ("__DATA_CONST", _) => 20,
         ("__DATA", "__la_symbol_ptr") => 0,
         ("__DATA", "__got") => 1,
@@ -3662,8 +3692,10 @@ fn output_section_rank(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__thread_vars") => 30,
         ("__DATA", "__thread_data") => 31,
         ("__DATA", "__thread_bss") => 0,
+        // __bss and __common in first-seen order: the synthesized
+        // __common counts from the first object with a common symbol.
         ("__DATA", "__bss") => 3,
-        ("__DATA", "__common") => 4,
+        ("__DATA", "__common") => 3,
         _ => 10,
     }
 }
@@ -3898,6 +3930,51 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 & !SECTION_TYPE;
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
+    }
+
+    // A final image always has a __TEXT,__text section, empty if no
+    // code reached it (a dylib of only data; ld-prime writes one of
+    // size 0, byte-aligned).
+    if !relocatable && !by_out.contains_key(&("__TEXT", "__text")) {
+        let mut osec = OutputSection::new("__TEXT", "__text");
+        osec.hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+        let id = OutputSectionId::new(ctx.output_sections.len() as u32);
+        ctx.output_sections.push(osec);
+        ctx.chunks.push(ChunkId::Output(id));
+        by_out.insert(("__TEXT", "__text"), id);
+    }
+
+    // The thread-local template (__thread_data followed by
+    // __thread_bss) is one image dyld copies per thread, so ld64 gives
+    // both sections the stricter of their alignments.
+    if let (Some(&data), Some(&bss)) =
+        (by_out.get(&("__DATA", "__thread_data")), by_out.get(&("__DATA", "__thread_bss")))
+    {
+        let p2align = ctx.output_sections[data.index()]
+            .hdr
+            .p2align
+            .max(ctx.output_sections[bss.index()].hdr.p2align);
+        ctx.output_sections[data.index()].hdr.p2align = p2align;
+        ctx.output_sections[bss.index()].hdr.p2align = p2align;
+    }
+
+    // A section cannot be aligned beyond the segment's page: ld64
+    // reduces the alignment with a warning (an x86-64 .align 16 asks
+    // for 64KB).
+    if !relocatable {
+        let max = E::PAGE_SIZE.trailing_zeros();
+        for osec in &mut ctx.output_sections {
+            if osec.hdr.p2align > max {
+                crate::warn!(
+                    "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
+                    osec.hdr.segname,
+                    osec.hdr.sectname,
+                    1u64 << osec.hdr.p2align,
+                    1u64 << max
+                );
+                osec.hdr.p2align = max;
+            }
+        }
     }
 
     // -sectalign overrides an output section's alignment, e.g. to
@@ -4348,8 +4425,32 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Sort the chunks into file order: the standard segment order, and
-    // section ranks within a segment (the sort is stable, so chunks of
-    // one rank keep their creation order).
+    // section ranks within a segment. Sections of one rank follow the
+    // order their first input section was seen in - object, then
+    // section ordinal - as ld-prime lays them out (__cstring before
+    // __gcc_except_tab when the object has them that way); a merged
+    // literal section counts from its first input, not from the pass
+    // that merged it. Purely synthetic sections keep their creation
+    // order (the sort is stable).
+    let mut first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
+    for (i, isec) in ctx.isecs.iter().enumerate() {
+        if ctx.is_internal(isec.file as usize) {
+            continue;
+        }
+        let Some(ChunkId::Output(id)) = ctx.isecs[ctx.resolve_isec(i)].output_section() else {
+            continue;
+        };
+        let key = ((isec.file as u64) << 32) | isec.shndx as u64;
+        let slot = &mut first_seen[id.index()];
+        *slot = (*slot).min(key);
+    }
+    if let Some(obj) = ctx.common_first_obj {
+        for (i, osec) in ctx.output_sections.iter().enumerate() {
+            if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
+                first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
+            }
+        }
+    }
     let mut order = ctx.chunks.clone();
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
@@ -4367,9 +4468,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             ChunkId::CodeSignature => u32::MAX,
             _ => 1 + output_section_rank(hdr.segname, &hdr.sectname),
         };
+        let seen = match id {
+            ChunkId::Output(osec) => first_seen[osec.index()],
+            _ => u64::MAX,
+        };
         // Zero-fill sections go last in their segment so that they don't
         // occupy file space in the middle of it.
-        (seg_rank, hdr.is_zerofill(), sect_rank)
+        (seg_rank, hdr.is_zerofill(), sect_rank, seen)
     });
 
     // Group them into segments, and number the sections: an nlist's

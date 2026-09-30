@@ -40,7 +40,11 @@ EOF
 # alignment), so the two functions stay 4 bytes apart - not 16, which
 # rounding each atom up to the section alignment would give. (This is
 # sold's test, whose expectation of 16 came from that rounding.)
-$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o 2> $t/log
+# b.o's .align 16 asks for a 64KB-aligned __text, beyond the page;
+# ld64 reduces it with a warning, and dyld_info rejects an unreduced one.
+grep -q 'reducing alignment of section __TEXT,__text' $t/log
+dyld_info -exports $t/exe | grep _main
 if [ $ARCH = arm64 ]; then
   $t/exe | grep '^4 1$'
 else

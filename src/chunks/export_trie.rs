@@ -179,8 +179,10 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
             Some((sym.name(), Export::Addr { flags, addr }))
         })
         .collect();
+    // Nothing exported: an empty root node (terminal size 0, no
+    // children), padded to 8 bytes as ld-prime writes it.
     if exports.is_empty() {
-        return Vec::new();
+        return vec![0; 8];
     }
 
     let mut root = build_trie(&exports, 0);

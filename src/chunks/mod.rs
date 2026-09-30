@@ -581,9 +581,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // then gets a load command of its own.
     if ctx.chained_fixups.hdr.size > 0 {
         vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
-        if ctx.export_trie.hdr.size > 0 {
-            vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
-        }
+        // Present even with nothing exported (an 8-byte empty trie),
+        // as ld-prime writes it.
+        vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
     } else {
         vec.push(create_dyld_info_cmd(ctx));
     }
@@ -612,6 +612,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_string_cmd(LC_RPATH, rpath));
     }
 
+    // Also present with no functions at all (an 8-byte empty table),
+    // as ld-prime writes it; -no_function_starts drops it.
     if ctx.function_starts.hdr.size > 0 {
         vec.push(create_function_starts_cmd(ctx));
     }
