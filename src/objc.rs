@@ -980,13 +980,19 @@ fn relative_methods<E: Target>(
     {
         return None;
     }
-    let mut methods = Vec::with_capacity(count as usize);
+    // Every name must be a whole selector string in the image before
+    // any gets a selector reference: a list left absolute needs none.
+    let mut sels = Vec::with_capacity(count as usize);
     for i in 0..count {
-        let at = 8 + 24 * i;
-        let name = objc_pointer_at(ctx, list, at);
+        let name = objc_pointer_at(ctx, list, 8 + 24 * i);
+        let Some((sel, 0)) = name.and_then(|r| objc_ref_location(ctx, r)) else { return None };
+        sels.push(sel);
+    }
+    let mut methods = Vec::with_capacity(count as usize);
+    for (i, sel) in sels.into_iter().enumerate() {
+        let at = 8 + 24 * i as u64;
         let types = objc_pointer_at(ctx, list, at + 8).unwrap_or(ObjcRef::Null);
         let imp = objc_pointer_at(ctx, list, at + 16).unwrap_or(ObjcRef::Null);
-        let Some((sel, 0)) = name.and_then(|r| objc_ref_location(ctx, r)) else { return None };
         methods.push(ObjcMethod { name: selrefs.get(ctx, sel), types, imp });
     }
     Some(methods)
