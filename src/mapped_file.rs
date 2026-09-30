@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(windows))]
 use rayon::prelude::*;
 
+use crate::error::strerror;
 use crate::fatal;
 use crate::util;
 use crate::util::SyncUnsafeCell;
@@ -127,7 +128,8 @@ impl MappedFile {
         let file = File::open(path)?;
 
         let display = path.display();
-        let metadata = file.metadata().unwrap_or_else(|e| fatal!("{display}: fstat failed: {e}"));
+        let metadata =
+            file.metadata().unwrap_or_else(|e| fatal!("{display}: fstat failed: {}", strerror(&e)));
         let size = metadata.len();
 
         // True if `data` is a memory mapping of the file rather than a copy of
@@ -140,7 +142,7 @@ impl MappedFile {
             (&file)
                 .take(size)
                 .read_to_end(&mut buf)
-                .unwrap_or_else(|e| fatal!("{display}: read failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{display}: read failed: {}", strerror(&e)));
             if buf.len() as u64 != size {
                 fatal!("{display}: file is shorter than its reported size");
             }
@@ -156,7 +158,7 @@ impl MappedFile {
             let map_len = usize::try_from(size)
                 .unwrap_or_else(|_| fatal!("{display}: file is too large to map"));
             let map = unsafe { memmap2::MmapOptions::new().len(map_len).map_copy(&file) }
-                .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
+                .unwrap_or_else(|e| fatal!("{display}: mmap failed: {}", strerror(&e)));
             is_mmapped = true;
             SyncUnsafeCell::from_mut(Box::leak(Box::new(map)).as_mut())
         };
@@ -184,14 +186,15 @@ impl MappedFile {
         match Self::open_impl(path) {
             Ok(mf) => Some(mf),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-            Err(e) => fatal!("opening {} failed: {e}", path.display()),
+            Err(e) => fatal!("opening {} failed: {}", path.display(), strerror(&e)),
         }
     }
 
     /// Opens a file that must exist.
     pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();
-        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
+        Self::open_impl(path)
+            .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)))
     }
 
     /// Returns a view of a member of this archive.
@@ -300,5 +303,5 @@ pub fn open_file(chroot: &Path, path: impl AsRef<Path>) -> Option<&'static Mappe
 pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedFile {
     let path = path.as_ref();
     MappedFile::open_impl(&apply_chroot(chroot, path))
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
+        .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)))
 }

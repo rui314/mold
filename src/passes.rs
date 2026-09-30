@@ -26,6 +26,7 @@ use crate::cmdline::{
 };
 use crate::context::Context;
 use crate::elf::*;
+use crate::error::strerror;
 use crate::input_files::{
     FileId, FileList, ObjId, ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
     resolved_symbol_rank, symbol_resolution_rank,
@@ -1636,10 +1637,11 @@ pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     let mut basedir = ctx.args.output.file_name().unwrap_or_default().to_os_string();
     basedir.push(".repro");
     let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)));
 
     let write = |tar: &mut crate::util::tar::TarWriter, name: &std::path::Path, data: &[u8]| {
-        tar.append(name, data).unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
+        tar.append(name, data)
+            .unwrap_or_else(|e| fatal!("{}: write failed: {}", path.display(), strerror(&e)));
     };
     write(&mut tar, std::path::Path::new("response.txt"), &create_response_file(ctx));
     write(
@@ -1655,8 +1657,9 @@ pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     for mf in crate::mapped_file::file_pool() {
         if mf.parent.is_none() && seen.insert(mf.name.as_path()) {
             // Preserve the symlink name used in response.txt.
-            let abs = std::path::absolute(&mf.name)
-                .unwrap_or_else(|e| fatal!("{}: cannot get absolute path: {e}", mf.name.display()));
+            let abs = std::path::absolute(&mf.name).unwrap_or_else(|e| {
+                fatal!("{}: cannot get absolute path: {}", mf.name.display(), strerror(&e))
+            });
             write(&mut tar, &abs, mf.data());
         }
     }

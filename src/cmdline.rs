@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use bstr::{ByteSlice, ByteVec};
 
 use crate::elf::*;
+use crate::error::strerror;
 use crate::mapped_file::MappedFile;
 use crate::target::{Family, emulation_to_target};
 use crate::util::glob::{Glob, GlobBuilder};
@@ -322,12 +323,13 @@ impl ReportOutput {
                 let _ = write(&mut out).and_then(|()| out.flush());
             }
             Self::File(path) => {
-                let file = std::fs::File::create(path)
-                    .unwrap_or_else(|e| fatal!("{option}: cannot open {}: {e}", path.display()));
+                let file = std::fs::File::create(path).unwrap_or_else(|e| {
+                    fatal!("{option}: cannot open {}: {}", path.display(), strerror(&e))
+                });
                 let mut out = std::io::BufWriter::new(file);
-                write(&mut out)
-                    .and_then(|()| out.flush())
-                    .unwrap_or_else(|e| fatal!("{option}: writing {} failed: {e}", path.display()));
+                write(&mut out).and_then(|()| out.flush()).unwrap_or_else(|e| {
+                    fatal!("{option}: writing {} failed: {}", path.display(), strerror(&e))
+                });
             }
         }
     }
@@ -1946,7 +1948,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     if !directory.as_os_str().is_empty() {
         a.orig_cwd = std::env::current_dir().ok();
         if let Err(e) = std::env::set_current_dir(&directory) {
-            fatal!("chdir failed: {}: {e}", directory.display());
+            fatal!("chdir failed: {}: {}", directory.display(), strerror(&e));
         }
     }
 

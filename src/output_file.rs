@@ -19,6 +19,7 @@ use memmap2::MmapMut;
 #[cfg(not(windows))]
 use memmap2::MmapOptions;
 
+use crate::error::strerror;
 use crate::fatal;
 
 /// The temporary file being written, removed on a fatal error.
@@ -262,17 +263,18 @@ impl OutputFile {
                 .create(true)
                 .truncate(true)
                 .open(&tmp)
-                .unwrap_or_else(|e| fatal!("cannot open {}: {e}", tmp.display()))
+                .unwrap_or_else(|e| fatal!("cannot open {}: {}", tmp.display(), strerror(&e)))
         });
         set_tmpfile(Some(&tmp));
 
         set_permissions(&file, perm)
-            .unwrap_or_else(|e| fatal!("{}: fchmod failed: {e}", tmp.display()));
-        file.set_len(size).unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", tmp.display()));
+            .unwrap_or_else(|e| fatal!("{}: fchmod failed: {}", tmp.display(), strerror(&e)));
+        file.set_len(size)
+            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {}", tmp.display(), strerror(&e)));
         preallocate(&file, 0, size);
 
         let map = map_file(&file, size)
-            .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", path.display()));
+            .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", path.display(), strerror(&e)));
         let output = Self {
             path: path.to_path_buf(),
             tmp_path: Some(tmp),
@@ -296,7 +298,7 @@ impl OutputFile {
             .write(true)
             .create(true)
             .open(path)
-            .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
+            .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)));
         // SAFETY: flock on a valid descriptor.
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_EX);
@@ -305,7 +307,7 @@ impl OutputFile {
         // make the file unusable so that gdb won't use it by accident until
         // it's ready.
         file.write_all(&[0; 256])
-            .unwrap_or_else(|e| fatal!("{}: write failed: {e}", path.display()));
+            .unwrap_or_else(|e| fatal!("{}: write failed: {}", path.display(), strerror(&e)));
         Self {
             path: path.to_path_buf(),
             tmp_path: None,
@@ -324,10 +326,11 @@ impl OutputFile {
         let Storage::File { file, map, len } = &mut self.storage else {
             panic!("resizing an output file that isn't a file");
         };
-        file.set_len(size)
-            .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
+        file.set_len(size).unwrap_or_else(|e| {
+            fatal!("{}: ftruncate failed: {}", self.path.display(), strerror(&e))
+        });
         *map = map_file(file, size)
-            .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
+            .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e)));
         *len = size as usize;
         #[cfg(not(windows))]
         self.publish_output_buffer();
@@ -363,8 +366,9 @@ impl OutputFile {
         match &mut self.storage {
             Storage::Memory(vec) => vec.resize(new_len, 0),
             Storage::File { file, map, len } => {
-                file.set_len(new_len as u64)
-                    .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {e}", self.path.display()));
+                file.set_len(new_len as u64).unwrap_or_else(|e| {
+                    fatal!("{}: ftruncate failed: {}", self.path.display(), strerror(&e))
+                });
                 // Allocate only the appended range. Reallocating the already
                 // written prefix can flush dirty extents on filesystems such
                 // as btrfs and serialize a large part of .gdb_index output.
@@ -372,8 +376,9 @@ impl OutputFile {
                 if map.as_ref().is_none_or(|map| new_len > map.len()) {
                     // The appended data does not fit in the existing mapping, so map
                     // the grown file again.
-                    *map = map_file(file, new_len as u64)
-                        .unwrap_or_else(|e| fatal!("{}: mmap failed: {e}", self.path.display()));
+                    *map = map_file(file, new_len as u64).unwrap_or_else(|e| {
+                        fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e))
+                    });
                 }
                 *len = new_len;
             }
@@ -399,7 +404,7 @@ impl OutputFile {
                     stdout
                         .write_all(&vec)
                         .and_then(|()| stdout.flush())
-                        .unwrap_or_else(|e| fatal!("write failed: {e}"));
+                        .unwrap_or_else(|e| fatal!("write failed: {}", strerror(&e)));
                     // Close the descriptor too: the parent process may
                     // already have exited, and a program that then runs
                     // the output would fail with ETXTBSY while this
@@ -416,9 +421,12 @@ impl OutputFile {
                     .create(true)
                     .truncate(true)
                     .open(&self.path)
-                    .unwrap_or_else(|e| fatal!("cannot open {}: {e}", self.path.display()));
-                file.write_all(&vec)
-                    .unwrap_or_else(|e| fatal!("{}: write failed: {e}", self.path.display()));
+                    .unwrap_or_else(|e| {
+                        fatal!("cannot open {}: {}", self.path.display(), strerror(&e))
+                    });
+                file.write_all(&vec).unwrap_or_else(|e| {
+                    fatal!("{}: write failed: {}", self.path.display(), strerror(&e))
+                });
                 None
             }
         };
@@ -432,7 +440,12 @@ impl OutputFile {
                 std::mem::forget(old);
             }
             std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!("cannot rename {} to {}: {e}", tmp.display(), self.path.display())
+                fatal!(
+                    "cannot rename {} to {}: {}",
+                    tmp.display(),
+                    self.path.display(),
+                    strerror(&e)
+                )
             });
             set_tmpfile(None);
         }

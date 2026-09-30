@@ -181,7 +181,7 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
         .env("LD_PRELOAD", &dso)
         .env("MOLD_PATH", &self_path)
         .exec();
-    fatal!("mold -run failed: {}: {err}", argv[2].to_string_lossy());
+    fatal!("mold -run failed: {}: {}", argv[2].to_string_lossy(), crate::error::strerror(&err));
 }
 
 #[cfg(target_os = "macos")]

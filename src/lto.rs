@@ -38,6 +38,7 @@ use rayon::prelude::*;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
+use crate::error::strerror;
 use crate::input_files::{FileId, ObjectFile, ObjectOrigin};
 use crate::mapped_file::{MappedFile, must_open_file};
 use crate::symbol::SymbolId;
@@ -716,7 +717,7 @@ fn supports_v3_api<E: Target>(ctx: &Context<E>) -> bool {
 fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
     let container = mf.parent.unwrap_or(mf);
     let file = File::open(&container.name)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", container.name.display()));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {}", container.name.display(), strerror(&e)));
     let input = PluginInputFile {
         name: CString::new(container.name.as_os_str().as_encoded_bytes()).unwrap().into_raw(),
         #[cfg(not(windows))]
@@ -837,7 +838,7 @@ fn restart_process<E: Target>(ctx: &Context<E>) -> ! {
         unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };
         std::io::Error::last_os_error()
     };
-    eprintln!("mold: execv failed: {err}");
+    eprintln!("mold: execv failed: {}", strerror(&err));
     std::process::exit(1);
 }
 

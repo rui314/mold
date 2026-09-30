@@ -68,7 +68,8 @@ fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
         )
     };
     if entries == libc::MAP_FAILED {
-        panic!("mmap of {bufsize} bytes failed: {}", std::io::Error::last_os_error());
+        let err = std::io::Error::last_os_error();
+        panic!("mmap of {bufsize} bytes failed: {}", crate::error::strerror(&err));
     }
     entries.cast()
 }
