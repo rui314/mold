@@ -522,6 +522,12 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     // framework directory holds headers and a module map but no
     // binary (CotEditor's build printed the warning 317 times).
     let before = (ctx.objs.len(), ctx.dylibs.len());
+    // A library already in the link as a public re-export (Foundation's
+    // stub brings CoreFoundation) that an auto-link option now names
+    // is a hint like any other auto-linked library: listed only if
+    // something binds to it (ld-prime drops CoreFoundation from a
+    // Swift program that never binds to it).
+    let implicit_before: Vec<bool> = ctx.dylibs.iter().map(|d| d.is_implicit).collect();
     let mut queue: Vec<PendingObject> = Vec::new();
     for opt in pending {
         ctx.processed_linker_options.insert(opt.clone());
@@ -542,6 +548,9 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
         dylib.is_autolinked = true;
+    }
+    for (dylib, was_implicit) in ctx.dylibs.iter_mut().zip(implicit_before) {
+        dylib.is_autolinked |= was_implicit && !dylib.is_implicit;
     }
     load_pending(ctx, queue);
     if ctx.objs.len() != before.0 {
