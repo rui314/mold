@@ -822,7 +822,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     create_segments(ctx);
     add_boundary_segments(ctx);
     add_stack_segment(ctx);
-    cap_section_alignments(ctx, text);
+    finish_section_alignments(ctx, text);
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
     check_section_order(ctx);
@@ -993,9 +993,8 @@ fn find_output_section<E: Target>(ctx: &Context<E>, name: SectionName) -> Option
 }
 
 /// Settles the output sections' alignments, which their members raised
-/// to the largest of theirs: the thread-local template's two sections
-/// share the stricter one, and -sectalign sets a section's (see also
-/// cap_section_alignments).
+/// to the largest of theirs: the thread-local template's sections share
+/// the strictest one (see also finish_section_alignments).
 fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
     // The thread-local template (the initial values, __thread_data,
     // followed by the zero fill, __thread_bss) is one image dyld copies
@@ -1010,52 +1009,56 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
             osec.hdr.p2align = p2align;
         }
     }
-
-    // -sectalign sets an output section's alignment, e.g. to
-    // page-align a blob that will be mapped or measured separately.
-    // ld64 lowers it too, with a warning: its members keep their
-    // offsets within the section, so one may end up misaligned (a
-    // fixup that can't reach it then fails).
-    for (seg, sect, p2align) in &ctx.args.sectalign {
-        let p2align = *p2align as u32;
-        for osec in &mut ctx.output_sections {
-            if osec.hdr.segname == *seg && osec.hdr.sectname == *sect {
-                if p2align < osec.hdr.p2align {
-                    crate::warn!(
-                        "-sectalign reduces alignment of {seg},{sect} from {} to {}",
-                        1u64 << osec.hdr.p2align,
-                        1u64 << p2align
-                    );
-                }
-                osec.hdr.p2align = p2align;
-            }
-        }
-    }
 }
 
-/// A section cannot be aligned beyond its segment's (the page, unless
-/// -segalign says otherwise): ld64 reduces the alignment with a warning
-/// (an x86-64 .align 16 asks for 64KB), for each section in output
-/// order, the linker's own (__stubs, __got, __unwind_info...) as well.
-/// Not in a -static or -preload image, which no dyld maps: ld-prime
+/// Settles each section's alignment in output order, the linker's own
+/// (__stubs, __got, __unwind_info...) as well, and warns about a section
+/// in that order as ld-prime does. -sectalign sets the alignment, e.g.
+/// to page-align a blob that will be mapped or measured separately;
+/// ld64 lowers it too, with a warning: its members keep their offsets
+/// within the section, so one may end up misaligned (a fixup that can't
+/// reach it then fails). Then a section cannot be aligned beyond its
+/// segment's (the page, unless -segalign says otherwise): ld64 reduces
+/// the alignment with a warning (an x86-64 .align 16 asks for 64KB) -
+/// but not in a -static or -preload image, which no dyld maps: ld-prime
 /// starts the section's segment on the alignment there (see
 /// lay_out_segments).
-fn cap_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
-    if !ctx.args.relocatable && !ctx.args.static_link {
-        let max = ctx.segment_align().max(1).trailing_zeros();
-        let ids: Vec<ChunkId> = ctx.segments.iter().flat_map(|seg| seg.chunks.clone()).collect();
-        for id in ids {
-            let hdr = ctx.chunk_header_mut(id);
-            if hdr.is_sect && hdr.p2align > max {
+fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+    let capped = !ctx.args.relocatable && !ctx.args.static_link;
+    let max = ctx.segment_align().max(1).trailing_zeros();
+    for id in ctx.chunks.clone() {
+        let hdr = ctx.chunk_header(id);
+        if !hdr.is_sect {
+            continue;
+        }
+        let sectalign = ctx
+            .args
+            .sectalign
+            .iter()
+            .find(|(seg, sect, _)| hdr.segname == seg && hdr.sectname == *sect);
+        let sectalign = sectalign.map(|&(_, _, p2align)| p2align as u32);
+        let hdr = ctx.chunk_header_mut(id);
+        if let Some(p2align) = sectalign {
+            if p2align < hdr.p2align {
                 crate::warn!(
-                    "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
+                    "-sectalign reduces alignment of {},{} from {} to {}",
                     hdr.segname,
                     hdr.sectname,
                     1u64 << hdr.p2align,
-                    1u64 << max
+                    1u64 << p2align
                 );
-                hdr.p2align = max;
             }
+            hdr.p2align = p2align;
+        }
+        if capped && hdr.p2align > max {
+            crate::warn!(
+                "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
+                hdr.segname,
+                hdr.sectname,
+                1u64 << hdr.p2align,
+                1u64 << max
+            );
+            hdr.p2align = max;
         }
     }
 

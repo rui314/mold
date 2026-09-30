@@ -29,3 +29,34 @@ not grep -q 'not a power of two' $t/log2
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-sectalign,__DATA,__vec,4 2> $t/log2
 grep -q -- '-sectalign reduces alignment of __DATA,__vec from 16 to 4' $t/log2
 otool -l $t/exe | grep -A6 'sectname __vec' | grep 'align 2\^2'
+
+# ld-prime settles each section's alignment in output order, the
+# linker's own sections (__got here) too, and warns about each section
+# in that order: of a -sectalign that lowers the alignment, then of one
+# beyond the segment's maximum.
+cat <<EOF | $CC -o $t/c.o -c -xassembler -
+.data
+.p2align 3
+_d: .quad 1
+.section __DATA,__big
+.p2align 16
+_big: .quad 2
+.section __DATA,__mid
+.p2align 4
+_mid: .quad 3
+.section __TEXT,__tbig
+.p2align 15
+_tbig: .quad 4
+.subsections_via_symbols
+EOF
+cat <<EOF | $CC -o $t/d.o -c -xc -
+#include <stdio.h>
+int main() { puts("hi"); }
+EOF
+$CC --ld-path=$mold -o $t/exe3 $t/c.o $t/d.o -Wl,-sectalign,__DATA,__mid,2 \
+  -Wl,-sectalign,__DATA,__big,0x8000 -Wl,-sectalign,__DATA_CONST,__got,1 2> $t/log3
+$t/exe3 | grep -q hi
+awk '/alignment/ { for (i = 1; i <= NF; i++) if ($i ~ /^__[A-Z_]+,__/) { print $i; break } }' \
+  $t/log3 | tr '\n' ' ' > $t/order
+[ "$(cat $t/order)" = '__TEXT,__tbig __DATA_CONST,__got __DATA,__big __DATA,__big __DATA,__mid ' ]
+otool -l $t/exe3 | grep -A6 'sectname __got' | grep -q 'align 2\^0'
