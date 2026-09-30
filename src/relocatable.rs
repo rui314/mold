@@ -1335,7 +1335,8 @@ struct Local {
     /// a literal atom ld64 names itself (none, often).
     syms: Vec<SymbolId>,
     /// The object, the section there and the address, which order the
-    /// locals.
+    /// locals - for an absolute symbol, section 0 and its index in the
+    /// object's symbol table.
     at: (u32, u8, u64),
     rank: Rank,
 }
@@ -1505,13 +1506,16 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
         .iter()
         .map(|&i| {
             let sym = &ctx.symbols[i];
-            let (n_type, n_sect) = match sym.input_section() {
-                Some(isec) => (
-                    N_SECT | N_EXT | if sym.is_private_extern() { N_PEXT } else { 0 },
-                    ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]),
-                ),
-                None => (N_ABS | N_EXT, 0),
+            let pext = if sym.is_private_extern() { N_PEXT } else { 0 };
+            // An absolute symbol names no atom, and ld-prime gives it no
+            // n_desc flags (the assembler marks one N_NO_DEAD_STRIP).
+            let Some(input) = sym.input_section() else {
+                let ent =
+                    NList { n_type: N_ABS | N_EXT | pext, n_value: sym.value, ..NList::default() };
+                return (ent, i as u32);
             };
+            let n_type = N_SECT | N_EXT | pext;
+            let n_sect = ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(input as usize)]);
             // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
             // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
             // makes PLCrashReporter's template instantiations local; ours
@@ -1532,9 +1536,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
             {
                 n_desc = whole_desc(n_desc, true);
             }
-            if let Some(input) = sym.input_section() {
-                n_desc |= section_desc(ctx, input as usize);
-            }
+            n_desc |= section_desc(ctx, input as usize);
             let n_value = sym_addr(ctx, i as u32);
             (NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, i as u32)
         })
@@ -1769,7 +1771,12 @@ impl<'a, E: Target> Locals<'a, E> {
                     continue;
                 }
                 let sym = &ctx.symbols[sym_id];
-                let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+                let Some(input) = sym.input_section().map(|i| i as usize) else {
+                    if nlist.n_type() == N_ABS {
+                        self.add_absolute(obj_idx, i, sym_id, N_ABS, Rank::Local);
+                    }
+                    continue;
+                };
                 let isec = ctx.resolve_isec(input);
                 if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
                     continue;
@@ -1824,8 +1831,8 @@ impl<'a, E: Target> Locals<'a, E> {
             if !obj.is_alive {
                 continue;
             }
-            let r = obj.global_range();
-            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            for i in obj.global_range() {
+                let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
                 let sym = &ctx.symbols[sym_id];
                 // Only the copy that won resolution is emitted.
                 if nlist.is_stab()
@@ -1835,7 +1842,12 @@ impl<'a, E: Target> Locals<'a, E> {
                 {
                     continue;
                 }
-                let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
+                let Some(input) = sym.input_section().map(|i| i as usize) else {
+                    if nlist.n_type() == N_ABS {
+                        self.add_absolute(obj_idx, i, sym_id, N_PEXT | N_ABS, Rank::PrivateExtern);
+                    }
+                    continue;
+                };
                 let isec = ctx.resolve_isec(input);
                 if !ctx.isecs[isec].is_alive()
                     || self.in_unnamed_list(isec)
@@ -1861,15 +1873,35 @@ impl<'a, E: Target> Locals<'a, E> {
         }
     }
 
+    /// Adds absolute symbol `i` of object `obj_idx`, which is in no
+    /// section: ld-prime lists an object's absolute symbols after the
+    /// symbols of its sections, in the object's order, and gives them no
+    /// n_desc flags (the assembler marks one N_NO_DEAD_STRIP).
+    fn add_absolute(&mut self, obj_idx: usize, i: usize, sym_id: SymbolId, n_type: u8, rank: Rank) {
+        let sym = &self.ctx.symbols[sym_id];
+        self.locals.push(Local {
+            name: sym.name().to_string(),
+            n_type,
+            n_desc: 0,
+            n_sect: 0,
+            addr: sym.value,
+            rename: Rename::None,
+            syms: vec![sym_id],
+            at: (obj_idx as u32, 0, i as u64),
+            rank,
+        });
+    }
+
     /// The locals in ld-prime's order, the literal atoms ld64 names
     /// numbered in it with one counter, and those atoms' symbol indices
     /// (the locals open the symbol table) and addresses.
     fn finish(self) -> (Vec<Local>, LiteralAtoms<(u32, u64)>) {
         let Self { ctx, locals, atoms, .. } = self;
         let mut order: Vec<usize> = (0..locals.len()).collect();
+        let place = |l: &Local| (l.at.0, l.n_type & N_TYPE == N_ABS, l.at.1, l.at.2);
         order.sort_by(|&a, &b| {
             let (a, b) = (&locals[a], &locals[b]);
-            a.at.cmp(&b.at).then(a.rank.cmp(&b.rank)).then(b.name.cmp(&a.name))
+            place(a).cmp(&place(b)).then(a.rank.cmp(&b.rank)).then(b.name.cmp(&a.name))
         });
         let mut index_of = vec![0u32; locals.len()];
         for (i, &e) in order.iter().enumerate() {

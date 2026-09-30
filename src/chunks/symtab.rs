@@ -670,7 +670,9 @@ const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n
 /// highest-ranked symbol - a strong external, then a private external,
 /// a local, a weak definition, each rank by descending name - and it
 /// lists the other names in that order before the atom's own (a strong
-/// external's goes with the externals). -x keeps only private externals.
+/// external's goes with the externals). The absolute symbols, which are
+/// in no section, follow by value, locals before private externals
+/// where values tie. -x keeps only private externals.
 fn plan_local_symbols<E: Target>(
     ctx: &Context<E>,
     pexts: &[usize],
@@ -716,8 +718,16 @@ fn plan_local_symbols<E: Target>(
         ents.push((ctx.sym_addr(i as u32), rank, sym.name().as_bytes(), ent, id));
     }
 
-    ents.par_sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(a.2)));
-    put_atom_names_last(ctx, &mut ents, sorted_globals);
+    // A stable sort, so that absolute symbols of one value keep the
+    // order they were added in.
+    let is_abs = |e: &LocalEnt| e.3.n_type() == N_ABS;
+    ents.par_sort_by(|a, b| {
+        is_abs(a).cmp(&is_abs(b)).then(a.0.cmp(&b.0)).then_with(|| {
+            if is_abs(a) { std::cmp::Ordering::Equal } else { a.1.cmp(&b.1).then(b.2.cmp(a.2)) }
+        })
+    });
+    let nsect = ents.partition_point(|e| !is_abs(e));
+    put_atom_names_last(ctx, &mut ents[..nsect], sorted_globals);
     ents
 }
 
@@ -817,7 +827,15 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
         if is_listed_out(ctx, sym.name().as_bytes()) {
             continue;
         }
-        let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
+        // An absolute symbol (N_ABS, as `.set x, 5` makes) is kept too,
+        // in no section.
+        let Some(isec) = sym.input_section().map(|i| i as usize) else {
+            if nlist.n_type() == N_ABS {
+                let ent = NList { n_type: N_ABS, ..local_nlist(0, 0) };
+                out.push((sym.value, RANK_LOCAL, sym.name().as_bytes(), ent, Some(sym_id)));
+            }
+            continue;
+        };
         let isec = ctx.resolve_isec(isec);
         if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[isec].is_alive() {
             continue;
