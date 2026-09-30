@@ -4310,7 +4310,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             fatal!("-sectcreate: cannot read {}", path.display());
         };
         let segname: &'static str = String::leak(seg.clone());
-        add_sectcreate(ctx, SectCreateSection::new(segname, sect, Vec::leak(data)));
+        add_sectcreate(ctx, SectCreateSection::new(segname, sect, Vec::leak(data), true));
     }
     ctx.args.sectcreate = sectcreate;
 
@@ -4320,7 +4320,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let empties = std::mem::take(&mut ctx.args.add_empty_section);
     for (seg, sect) in &empties {
         let segname: &'static str = String::leak(seg.clone());
-        add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[]));
+        add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], true));
     }
     ctx.args.add_empty_section = empties;
 
@@ -4334,7 +4334,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             hdr.is_sect && hdr.segname == *seg && hdr.sectname == *sect
         }) {
             let segname: &'static str = String::leak(seg.clone());
-            add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[]));
+            add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], false));
         }
     }
 

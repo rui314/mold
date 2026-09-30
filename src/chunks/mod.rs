@@ -327,21 +327,14 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     if seg.name == "__DATA_CONST" {
         cmd.flags = SG_READ_ONLY;
     }
-    // A segment of nothing but -add_empty_section anchors has nothing
-    // to relocate; ld-prime flags it SG_NORELOC. Only that option, not
-    // an empty section a `section$start$` boundary symbol conjured, and
-    // not an empty segment such as __PAGEZERO (no sections at all).
+    // A segment of nothing but sections the command line made
+    // (-sectcreate contents or -add_empty_section anchors) has nothing
+    // to relocate; ld-prime flags it SG_NORELOC. Not so an empty
+    // section a `section$start$` boundary symbol conjured, any input
+    // section, or a segment of no sections at all such as __PAGEZERO.
     if !seg.chunks.is_empty()
         && seg.chunks.iter().all(|&id| match id {
-            ChunkId::SectCreate(i) => {
-                let h = &ctx.sectcreate_sections[i as usize].hdr;
-                h.size == 0
-                    && ctx
-                        .args
-                        .add_empty_section
-                        .iter()
-                        .any(|(seg, sect)| seg == h.segname && sect == &h.sectname)
-            }
+            ChunkId::SectCreate(i) => ctx.sectcreate_sections[i as usize].from_option,
             _ => false,
         })
     {
