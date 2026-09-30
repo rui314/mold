@@ -123,7 +123,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
     const FAMILY: Family = Family::Sh4;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_SH;
-    const PLT_HDR_SIZE: u64 = 16;
+    const PLT_HDR_SIZE: u64 = 20;
     const PLT_SIZE: u64 = 20;
     const PLTGOT_SIZE: u64 = 12;
     // illegal instruction
@@ -153,31 +153,39 @@ impl<const LE: bool> Target for Sh4Target<LE> {
         }
     }
 
+    // The lazy resolver takes the link map in r0 and the relocation offset
+    // in r1. We use r2 to jump to the resolver, but r2 may carry a pointer
+    // to a buffer for a struct return value, so we restore it from the
+    // stack in the jump's delay slot.
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
         let gotplt = u64::from(ctx.gotplt.shdr.sh_addr.get());
         if ctx.args.pic {
-            const INSN: [u16; 6] = [
-                0xd202, //    mov.l   1f, r2
+            const INSN: [u16; 8] = [
+                0x2f26, //    mov.l   r2, @-r15
+                0xd203, //    mov.l   1f, r2
                 0x32cc, //    add     r12, r2
-                0x5022, //    mov.l   @(8, r2), r0
-                0x5221, //    mov.l   @(4, r2), r2
-                0x402b, //    jmp     @r0
-                0xe000, //    mov     #0, r0
+                0x5021, //    mov.l   @(4, r2), r0
+                0x5222, //    mov.l   @(8, r2), r2
+                0x422b, //    jmp     @r2
+                0x62f6, //    mov.l   @r15+, r2
+                0x0009, //    nop
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
             let got = u64::from(ctx.got.hdr.shdr.sh_addr.get());
-            Self::write_u32(&mut buf[12..], gotplt.wrapping_sub(got) as u32);
+            Self::write_u32(&mut buf[16..], gotplt.wrapping_sub(got) as u32);
         } else {
-            const INSN: [u16; 6] = [
-                0xd202, //    mov.l   1f, r2
-                0x5022, //    mov.l   @(8, r2), r0
-                0x5221, //    mov.l   @(4, r2), r2
-                0x402b, //    jmp     @r0
-                0xe000, //    mov     #0, r0
-                0xfffd, //    (illegal)
+            const INSN: [u16; 8] = [
+                0x2f26, //    mov.l   r2, @-r15
+                0xd203, //    mov.l   1f, r2
+                0x5021, //    mov.l   @(4, r2), r0
+                0x5222, //    mov.l   @(8, r2), r2
+                0x422b, //    jmp     @r2
+                0x62f6, //    mov.l   @r15+, r2
+                0x0009, //    nop
+                0x0009, //    nop
             ]; // 1: .long GOTPLT
             Self::write_insns(buf, &INSN);
-            Self::write_u32(&mut buf[12..], gotplt as u32);
+            Self::write_u32(&mut buf[16..], gotplt as u32);
         }
     }
 
