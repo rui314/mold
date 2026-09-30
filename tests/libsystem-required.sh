@@ -3,10 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # ld64 takes a dynamic image that would load no dylib at all for one
 # linked without libSystem by mistake, and refuses it: an executable
-# unless -static, and a dylib or bundle even with -static. Any dylib
-# left after -dead_strip_dylibs will do, libSystem or not, and so will
-# a bundle loader. libsystem_kernel, which libSystem is built on, and a
-# link with an exit-asm.o are let off.
+# unless -static, and a dylib or bundle (-dylib after -static still
+# makes a dylib). Any dylib left after -dead_strip_dylibs will do,
+# libSystem or not, and so will a bundle loader. libsystem_kernel,
+# which libSystem is built on, and a link with an exit-asm.o are let
+# off.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main

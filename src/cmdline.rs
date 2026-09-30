@@ -62,7 +62,9 @@ pub enum InputArg {
 #[derive(Debug)]
 pub struct Args {
     pub output: PathBuf,
-    /// The output file type: MH_EXECUTE, MH_DYLIB or MH_BUNDLE.
+    /// The output file type: MH_EXECUTE, MH_DYLIB, MH_BUNDLE or
+    /// MH_KEXT_BUNDLE (MH_EXECUTE for a relocatable object, which the
+    /// relocatable flag makes).
     pub output_type: u32,
     /// -install_name: the LC_ID_DYLIB string, kept as the bytes given.
     pub install_name: Option<Vec<u8>>,
@@ -313,9 +315,9 @@ pub struct Args {
     pub rename_segments: Vec<(String, String)>,
     /// ZERO_AR_DATE is set: the stabs record no modification times.
     pub zero_ar_date: bool,
-    /// -static: an image no dyld loads (the XNU kernel), with no LC_MAIN
-    /// or imports, and fixups only if -fixup_chains or -no_fixup_chains
-    /// asks.
+    /// A static executable (-static, -preload): an image no dyld loads
+    /// (the XNU kernel), with no LC_MAIN or imports, and fixups only if
+    /// -fixup_chains or -no_fixup_chains asks.
     pub static_link: bool,
     /// -preload: a -static executable (static_link is set too) whose
     /// mach header, load commands and symbol table lie outside its
@@ -774,6 +776,23 @@ pub struct TargetTraits {
     pub name: &'static str,
 }
 
+/// What the command line links: ld64's output kinds, which ld-prime
+/// chooses the same way. The last of -execute, -dylib, -bundle, -r,
+/// -preload and -kext names the kind, but -static is a modifier as much
+/// as a kind: it makes a static executable of anything but a relocatable
+/// object or a kext, which it leaves as they are, and a later -execute
+/// leaves a static executable static.
+#[derive(Clone, Copy, PartialEq)]
+enum OutputKind {
+    DynamicExecutable,
+    StaticExecutable,
+    Dylib,
+    Bundle,
+    Object,
+    Preload,
+    Kext,
+}
+
 /// The warnings ld-prime gives as it reads an option, which only a -w
 /// before the option silences (but -fatal_warnings still counts). They
 /// wait until the parse is known to be for the target, so that they
@@ -849,6 +868,7 @@ fn missing_argument(opt: &str) -> String {
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args =
         Args { zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(), ..Default::default() };
+    let mut kind = OutputKind::DynamicExecutable;
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
@@ -967,9 +987,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
             }
             b"-F" => args.framework_paths.push(path(next_arg(&mut i, name))),
-            b"-dylib" => args.output_type = MH_DYLIB,
-            b"-bundle" => args.output_type = MH_BUNDLE,
-            b"-kext" => args.output_type = MH_KEXT_BUNDLE,
+            b"-execute" => {
+                if kind != OutputKind::StaticExecutable {
+                    kind = OutputKind::DynamicExecutable;
+                }
+            }
+            b"-dylib" => kind = OutputKind::Dylib,
+            b"-bundle" => kind = OutputKind::Bundle,
+            b"-kext" => kind = OutputKind::Kext,
             b"-bundle_loader" => {
                 args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i, name))))
             }
@@ -993,16 +1018,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
-            // The last of -static and -preload names the output type.
             b"-static" => {
-                args.static_link = true;
-                args.preload = false;
+                if !matches!(kind, OutputKind::Object | OutputKind::Kext) {
+                    kind = OutputKind::StaticExecutable;
+                }
             }
-            b"-preload" => {
-                args.output_type = MH_EXECUTE;
-                args.static_link = true;
-                args.preload = true;
-            }
+            b"-preload" => kind = OutputKind::Preload,
             b"-kernel" => args.kernel = true,
             b"-version_load_command" => args.version_load_command = true,
             b"-pie" => pie = Some(true),
@@ -1109,7 +1130,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-x" => args.strip_locals = true,
             b"-Z" => args.no_standard_dirs = true,
-            b"-r" => args.relocatable = true,
+            b"-r" => kind = OutputKind::Object,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
             // How relocations in read-only segments are treated:
@@ -1404,6 +1425,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         i += 1;
     }
 
+    args.output_type = match kind {
+        OutputKind::Dylib => MH_DYLIB,
+        OutputKind::Bundle => MH_BUNDLE,
+        OutputKind::Kext => MH_KEXT_BUNDLE,
+        _ => MH_EXECUTE,
+    };
+    args.relocatable = kind == OutputKind::Object;
+    args.static_link = matches!(kind, OutputKind::StaticExecutable | OutputKind::Preload);
+    args.preload = kind == OutputKind::Preload;
+
     if let Some(triple) = target_triple {
         apply_target_triple(&mut args, triple);
     }
@@ -1496,7 +1527,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
     }
-    if args.kernel && !args.static_link {
+    if args.kernel && kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");
     }
     check_output_kind(&args, pie, data_const, explicit_entry);
