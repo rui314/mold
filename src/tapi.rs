@@ -251,7 +251,12 @@ impl JsonParser<'_> {
 /// Parses a TBD v5 file: JSON with a "main_library" object and, for
 /// reexported libraries inlined in the same file, a "libraries" array
 /// of objects of the same shape. Each group applies only to its targets.
-fn parse_json(file: &Path, text: &'static str, arch: &'static str, platform: u32) -> TbdFile {
+fn parse_json(
+    file: &Path,
+    text: &'static str,
+    arch: &'static str,
+    platform: u32,
+) -> Option<TbdFile> {
     let mut p = JsonParser { file, text, pos: 0 };
     let root = p.value();
 
@@ -364,9 +369,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &'static str, platform: u32
     let Some(main) = root.get("main_library") else {
         fatal!("{}: no main_library in .tbd file", file.display());
     };
-    let Some(mut tbd) = parse_library(main) else {
-        fatal!("{}: .tbd file does not support {}", file.display(), target_name(target_of(main)));
-    };
+    let mut tbd = parse_library(main)?;
     tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
     // The re-exported libraries inlined in "libraries" are documents
     // of their own; every one counts as re-exported.
@@ -383,7 +386,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &'static str, platform: u32
     if tbd.install_name.is_empty() {
         fatal!("{}: no install name in .tbd file", file.display());
     }
-    tbd
+    Some(tbd)
 }
 
 /// Strips a YAML scalar's surrounding quotes, if any.
@@ -419,8 +422,8 @@ pub fn parse_version(val: &str) -> u32 {
 /// architecture and platform. The big SDK stubs (libSystem's tree,
 /// framework umbrellas) can be parsed once, in parallel, by prefetch()
 /// before the serial input loop needs them.
-pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> TbdFile {
-    type Cache = hashbrown::HashMap<(usize, &'static str, u32), TbdFile>;
+pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
+    type Cache = hashbrown::HashMap<(usize, &'static str, u32), Option<TbdFile>>;
     static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
     let key = (mf.data().as_ptr() as usize, arch, platform);
     if let Some(tbd) = CACHE.lock().unwrap().get_or_insert_with(Cache::new).get(&key) {
@@ -432,13 +435,18 @@ pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) 
 }
 
 /// Warms the parse cache on all cores.
-pub fn prefetch(mfs: &[&'static MappedFile], arch: &'static str, platform: u32) -> Vec<TbdFile> {
+pub fn prefetch(
+    mfs: &[&'static MappedFile],
+    arch: &'static str,
+    platform: u32,
+) -> Vec<Option<TbdFile>> {
     mfs.par_iter().map(|mf| parse_cached(mf, arch, platform)).collect()
 }
 
 /// Parses a .tbd file for the architecture `arch` of a link for
-/// `platform`.
-pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> TbdFile {
+/// `platform`. None if the library has no target on the architecture,
+/// which makes ld-prime ignore the file.
+pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     let Ok(text): Result<&'static str, _> = std::str::from_utf8(mf.data()) else {
         fatal!("{}: invalid UTF-8 in .tbd file", mf.name.display());
     };
@@ -456,12 +464,22 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> TbdFile {
     let mut main: Option<TbdFile> = None;
     let mut documents: Vec<TbdFile> = Vec::new();
 
-    for (doc, fields) in yaml_documents(text).iter().enumerate() {
+    // TAPI refuses a file naming a target it doesn't know anywhere.
+    let docs = yaml_documents(text);
+    for field in docs.iter().flatten().filter(|f| f.key == "targets") {
+        if let Some(item) =
+            field.raw_items().find(|&item| !item.is_empty() && target(unquote(item)).is_none())
+        {
+            unknown_target(mf, text, item);
+        }
+    }
+
+    for (doc, fields) in docs.iter().enumerate() {
         let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
         let (target, platforms) = select_target(arch, platform, &yaml_targets(top()));
         let doc_active = yaml_matches(top(), target);
         if doc == 0 && !doc_active {
-            fatal!("{}: .tbd file does not support {}", mf.name.display(), target_name(target));
+            return None;
         }
         if !doc_active {
             continue;
@@ -550,7 +568,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> TbdFile {
     if tbd.install_name.is_empty() {
         fatal!("{}: no install-name in .tbd file", mf.name.display());
     }
-    tbd
+    Some(tbd)
 }
 
 // Retain indentation and list-item boundaries so a target selector applies
@@ -564,13 +582,41 @@ struct YamlField {
 
 impl YamlField {
     fn items(&self) -> impl Iterator<Item = &'static str> {
-        self.value
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .split(',')
-            .map(unquote)
-            .filter(|s| !s.is_empty())
+        self.raw_items().map(unquote).filter(|s| !s.is_empty())
     }
+
+    /// The items of a flow list as written, with any blanks after one.
+    fn raw_items(&self) -> impl Iterator<Item = &'static str> {
+        self.value.trim_start_matches('[').trim_end_matches(']').split(',').map(str::trim_start)
+    }
+}
+
+/// Stops the link on a target of a platform TAPI doesn't know, `item`
+/// in `text`, with ld-prime's YAML reader's diagnostic: the line, and
+/// under it the item, a quoted one as written and a plain one with the
+/// blanks up to the next delimiter. (TAPI refuses an architecture it
+/// doesn't know too, but those come and go with SDKs - arm64e.x1 -
+/// and one unknown here is merely one the link can't use.)
+fn unknown_target(mf: &MappedFile, text: &str, item: &str) -> ! {
+    let off = item.as_ptr() as usize - text.as_ptr() as usize;
+    let line_start = text[..off].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = text[off..].find('\n').map_or(text.len(), |i| off + i);
+    let col = off - line_start;
+    let len = if item.starts_with(['\'', '"']) {
+        unquote(item).len() + 2
+    } else {
+        item.lines().next().unwrap_or("").len()
+    };
+    fatal!(
+        "tapi error: malformed file\n{}:{}:{}: error: unknown target\n{}\n{}^{}\n in '{}'",
+        crate::passes::resolved_file_name(mf),
+        text[..off].matches('\n').count() + 1,
+        col + 1,
+        &text[line_start..line_end],
+        " ".repeat(col),
+        "~".repeat(len.saturating_sub(1)),
+        mf.name.display()
+    );
 }
 
 /// The targets of a document's top-level fields: a version 4 file's, or
@@ -663,11 +709,6 @@ fn target(s: &'static str) -> Option<Target> {
     TARGET_PLATFORMS.iter().find(|&&(n, _)| n == name).map(|&(_, p)| (arch, p))
 }
 
-fn target_name((arch, platform): Target) -> String {
-    let name = TARGET_PLATFORMS.iter().find(|&&(_, p)| p == platform).map_or("", |&(n, _)| n);
-    format!("{arch}-{name}")
-}
-
 /// The platforms a version 1-3 file's "platform" names; "zippered" is
 /// macOS and Mac Catalyst both.
 fn legacy_platforms(name: &str) -> &'static [u32] {
@@ -747,12 +788,12 @@ reexported-libraries:
     libraries: [ /ios ]
 "#,
         );
-        let arm = parse_cached(mf, "arm64", PLATFORM_MACOS);
+        let arm = parse_cached(mf, "arm64", PLATFORM_MACOS).unwrap();
         assert_eq!(arm.exports, ["_arm", "_OBJC_CLASS_$_Arm", "_OBJC_METACLASS_$_Arm"]);
         assert_eq!(arm.weak_exports, ["_weak_arm"]);
         assert_eq!(arm.tlv_exports, ["_tls_arm"]);
         assert_eq!(arm.reexports, ["/arm"]);
-        let x86 = parse_cached(mf, "x86_64", PLATFORM_MACOS);
+        let x86 = parse_cached(mf, "x86_64", PLATFORM_MACOS).unwrap();
         assert_eq!(x86.exports, ["_x86"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
@@ -778,7 +819,7 @@ exports:
     symbols: [ _fallback ]
 "#,
         );
-        let tbd = parse(mf, "arm64", PLATFORM_MACOS);
+        let tbd = parse(mf, "arm64", PLATFORM_MACOS).unwrap();
         assert_eq!(tbd.exports, ["_arm"]);
         assert_eq!(tbd.reexports, ["/inline"]);
         assert_eq!(tbd.document("/inline").unwrap().exports, ["_fallback"]);
@@ -798,8 +839,8 @@ exports:
     symbols: [ _x86 ]
 "#,
         );
-        assert_eq!(parse(mf, "arm64", PLATFORM_MACOS).exports, ["_arm"]);
-        assert_eq!(parse(mf, "x86_64", PLATFORM_MACOS).exports, ["_x86"]);
+        assert_eq!(parse(mf, "arm64", PLATFORM_MACOS).unwrap().exports, ["_arm"]);
+        assert_eq!(parse(mf, "x86_64", PLATFORM_MACOS).unwrap().exports, ["_x86"]);
     }
 
     #[test]
@@ -819,13 +860,13 @@ exports:
             "install_names":[{"name":"/inline"}],
             "exported_symbols":[{"text":{"global":["_inline"]}}]}]}"#,
         );
-        let arm = parse(mf, "arm64", PLATFORM_MACOS);
+        let arm = parse(mf, "arm64", PLATFORM_MACOS).unwrap();
         assert_eq!(arm.exports, ["_both"]);
         assert_eq!(arm.weak_exports, ["_weak"]);
         assert_eq!(arm.tlv_exports, ["_tls"]);
         assert_eq!(arm.reexports, ["/arm", "/inline"]);
         assert_eq!(arm.document("/inline").unwrap().exports, ["_inline"]);
-        let x86 = parse(mf, "x86_64", PLATFORM_MACOS);
+        let x86 = parse(mf, "x86_64", PLATFORM_MACOS).unwrap();
         assert_eq!(x86.exports, ["_both"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());

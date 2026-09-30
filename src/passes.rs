@@ -252,10 +252,13 @@ fn collect_file<E: Target>(
         }
         // A relocatable output keeps every reference undefined for the
         // final link, and an image no dyld loads (a -static one or a
-        // kext) has nothing to load a dylib with: ld-prime ignores a
-        // dylib on their command lines with a warning.
+        // kext) has nothing to load a dylib with: ld-prime reads a dylib
+        // on their command lines (and ignores a stub without the
+        // architecture as ever), then ignores it with a warning.
         FileType::Tapi | FileType::Dylib if ctx.args.relocatable || ctx.args.without_dyld() => {
-            crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
+            if get_file_type(mf) == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
+                crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
+            }
         }
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
@@ -263,8 +266,9 @@ fn collect_file<E: Target>(
             let idx = if get_file_type(mf) == FileType::Tapi {
                 input_files::parse_dylib(ctx, mf)
             } else {
-                input_files::parse_dylib_binary(ctx, mf)
+                Some(input_files::parse_dylib_binary(ctx, mf))
             };
+            let Some(idx) = idx else { return };
             // The dylibs loaded during the parse beyond this one are the
             // public libraries it re-exports; a weak parent's are weak.
             for d in &mut ctx.dylibs[first..] {
@@ -503,7 +507,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
         let wave1 = tapi::prefetch(&stubs, E::NAME, ctx.args.platform);
         let mut deps: Vec<&'static MappedFile> = Vec::new();
-        for tbd in &wave1 {
+        for tbd in wave1.iter().flatten() {
             for name in &tbd.reexports {
                 if tbd.document(name).is_some() {
                     continue;

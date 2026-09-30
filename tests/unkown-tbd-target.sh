@@ -1,6 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# TAPI refuses a .tbd naming a target of a platform it doesn't know,
+# pointing at the target in the file.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo();
 int main() { foo(); }
@@ -26,5 +28,12 @@ exports:
 ...
 EOF
 
-! $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.tbd 2> $t/log || false
-grep -q "does not support $ARCH-macos" $t/log
+not $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.tbd 2> $t/log
+grep -q 'tapi error: malformed file$' $t/log
+grep -A3 "^/.*/$t/b.tbd:3:20: error: unknown target$" $t/log > $t/diag
+diff - $t/diag <<EOF
+$(cd $t && pwd -P)/b.tbd:3:20: error: unknown target
+targets:         [ x86_64-bar, arm64-bar ]
+                   ^~~~~~~~~~
+ in '$t/b.tbd'
+EOF

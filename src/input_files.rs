@@ -2875,9 +2875,9 @@ fn load_reexports<E: Target>(
         // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
         match crate::filetype::get_file_type(dep) {
             crate::filetype::FileType::Tapi => {
-                let mut dep_tbd = read_tbd(ctx, dep);
+                let Some(mut dep_tbd) = load_tbd(ctx, dep) else { continue };
                 if DylibIdentity::of_tbd(&dep_tbd).is_public(ctx) {
-                    let idx = parse_dylib(ctx, dep);
+                    let idx = register_tbd_file(ctx, dep, dep_tbd);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
@@ -3007,7 +3007,9 @@ impl DylibIdentity {
 /// The identity of the dylib in a stub or binary file.
 pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> DylibIdentity {
     match crate::filetype::get_file_type(mf) {
-        crate::filetype::FileType::Tapi => DylibIdentity::of_tbd(&read_tbd(ctx, mf)),
+        crate::filetype::FileType::Tapi => {
+            DylibIdentity::of_tbd(&read_tbd(ctx, mf).unwrap_or_default())
+        }
         _ => DylibIdentity::of_binary(mf),
     }
 }
@@ -3018,7 +3020,7 @@ pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> D
 pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
     let names: Vec<&'static str> = match crate::filetype::get_file_type(mf) {
         crate::filetype::FileType::Tapi => {
-            let tbd = read_tbd(ctx, mf);
+            let tbd = read_tbd(ctx, mf).unwrap_or_default();
             [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
         }
         _ => dylib_binary_exports(mf).0,
@@ -3721,13 +3723,38 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
     }
 }
 
-/// A stub's library, read for the link's architecture and platform.
-fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> tapi::TbdFile {
+/// A stub's library, read for the link's architecture and platform;
+/// None if it has no target on the architecture.
+fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
     tapi::parse_cached(mf, E::NAME, ctx.args.platform)
 }
 
-pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
-    let mut tbd = read_tbd(ctx, mf);
+/// A stub's library to load, or None, with ld-prime's warning, if it
+/// has no target on the architecture: the file is then ignored.
+pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
+    let tbd = read_tbd(ctx, mf);
+    if tbd.is_none() {
+        crate::warn!(
+            "ignoring file '{}': tapi error: missing required architecture {} in file {}",
+            mf.name.display(),
+            E::NAME,
+            crate::passes::resolved_file_name(mf)
+        );
+    }
+    tbd
+}
+
+pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {
+    let tbd = load_tbd(ctx, mf)?;
+    Some(register_tbd_file(ctx, mf, tbd))
+}
+
+/// Registers the library of a stub file as a dylib of the link.
+fn register_tbd_file<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    mut tbd: tapi::TbdFile,
+) -> usize {
     check_dylib_platforms(ctx, mf, &tbd.platforms, &platforms_name(&tbd.platforms));
     let documents = std::mem::take(&mut tbd.documents);
     register_tbd(ctx, &mf.name, tbd, documents)
