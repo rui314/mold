@@ -1037,21 +1037,19 @@ fn relative_methods<E: Target>(
 /// lists take the categories in order, then the class's. The
 /// class_ro_t records are rewritten to point at the merged lists
 /// (their symbols follow), the categories leave __objc_catlist, and a
-/// class that absorbed a +load category joins __objc_nlclslist. A
-/// category on a class from another image, or one whose data is not
-/// in the expected shape, is left alone. Runs after the method lists
-/// have been rewritten in relative form, when it merges those; with
-/// classic lists the merged list is a classic one.
+/// class that absorbed a +load category joins __objc_nlclslist. The
+/// categories on a class from another image merge into the first of
+/// them instead (see merge_into_first_category). A category whose data
+/// is not in the expected shape is left alone. Runs after the method
+/// lists have been rewritten in relative form, when it merges those;
+/// with classic lists the merged list is a classic one.
 pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !ctx.args.objc_category_merging {
         return;
     }
     let relative = objc_relative_method_lists(ctx);
     let (mut classes, class_idx) = defined_classes(ctx);
-    if classes.is_empty() {
-        return;
-    }
-    let (mut cats, catlists) = find_categories(ctx, &mut classes, &class_idx);
+    let (mut cats, catlists, imported) = find_categories(ctx, &mut classes, &class_idx);
     if cats.is_empty() {
         return;
     }
@@ -1108,6 +1106,9 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         if !class.nonlazy && class.cats.iter().any(|&ci| cats[ci].nonlazy) {
             nonlazy_classes.push(class.cls);
         }
+    }
+    for class in &imported {
+        merge_into_first_category(ctx, &mut writer, &mut cats, class);
     }
 
     rebuild_category_lists(ctx, &catlists, &cats);
@@ -1188,18 +1189,23 @@ struct CategoryList {
     entries: Vec<(ObjcRef, Option<usize>)>,
 }
 
-/// The categories on classes defined in the image, in __objc_catlist
-/// order, each noted on its class, and the category-list subsections.
-/// A category sits in __objc_catlist and, if it has a +load, in
-/// __objc_nlcatlist too; a list subsection may hold several.
+/// The categories on classes defined in the image and on classes other
+/// images define, in __objc_catlist order, each noted on its class (an
+/// imported one by its symbol, in the order first extended), and the
+/// category-list subsections. A category sits in __objc_catlist and, if
+/// it has a +load, in __objc_nlcatlist too; a list subsection may hold
+/// several.
 fn find_categories<E: Target>(
     ctx: &Context<E>,
     classes: &mut [DefinedClass],
     class_idx: &hashbrown::HashMap<(u32, u64), usize>,
-) -> (Vec<Category>, Vec<CategoryList>) {
+) -> (Vec<Category>, Vec<CategoryList>, Vec<ImportedClass>) {
     let mut cats: Vec<Category> = Vec::new();
     let mut cat_idx: hashbrown::HashMap<u32, usize> = hashbrown::HashMap::new();
     let mut lists = Vec::new();
+    let mut imported: Vec<ImportedClass> = Vec::new();
+    let mut imported_idx: hashbrown::HashMap<crate::symbol::SymbolId, usize> =
+        hashbrown::HashMap::new();
     for i in 0..ctx.isecs.len() {
         let isec = &ctx.isecs[i];
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
@@ -1213,14 +1219,23 @@ fn find_categories<E: Target>(
         let mut list = CategoryList { isec: i as u32, nonlazy, entries: Vec::new() };
         for r in list_entries(ctx, i as u32) {
             let r = r.unwrap_or(ObjcRef::Null);
-            let ci = category_on_defined_class(ctx, r, class_idx).and_then(|(cat, class)| {
+            let ci = category_and_class(ctx, r, class_idx).and_then(|(cat, class)| {
                 if let Some(&ci) = cat_idx.get(&cat) {
                     return Some(ci);
                 }
                 let name = objc_cstring_at(ctx, objc_pointer_at(ctx, cat, 0))?;
                 cats.push(Category { isec: cat, name, nonlazy: false, merged: false });
                 cat_idx.insert(cat, cats.len() - 1);
-                classes[class].cats.push(cats.len() - 1);
+                match class {
+                    Extended::Defined(class) => classes[class].cats.push(cats.len() - 1),
+                    Extended::Imported(sym) => {
+                        let k = *imported_idx.entry(sym).or_insert_with(|| {
+                            imported.push(ImportedClass { sym, cats: Vec::new() });
+                            imported.len() - 1
+                        });
+                        imported[k].cats.push(cats.len() - 1);
+                    }
+                }
                 Some(cats.len() - 1)
             });
             if let Some(ci) = ci {
@@ -1230,24 +1245,145 @@ fn find_categories<E: Target>(
         }
         lists.push(list);
     }
-    (cats, lists)
+    (cats, lists, imported)
+}
+
+/// A class another image defines, by its symbol, and the categories on
+/// it that can merge, in __objc_catlist order.
+struct ImportedClass {
+    sym: crate::symbol::SymbolId,
+    cats: Vec<usize>,
+}
+
+/// The class a category extends: one defined in the image (its index
+/// among the defined classes), or one another image defines, by its
+/// symbol.
+#[derive(Clone, Copy)]
+enum Extended {
+    Defined(usize),
+    Imported(crate::symbol::SymbolId),
 }
 
 /// The category a category-list entry points at and the class it
-/// extends, if that class is defined in the image and the category_t
-/// is a subsection of its own, long enough to have instance properties.
-fn category_on_defined_class<E: Target>(
+/// extends, if that class is defined in the image or imported, and the
+/// category_t is a subsection of its own, long enough to have instance
+/// properties.
+fn category_and_class<E: Target>(
     ctx: &Context<E>,
     r: ObjcRef,
     class_idx: &hashbrown::HashMap<(u32, u64), usize>,
-) -> Option<(u32, usize)> {
+) -> Option<(u32, Extended)> {
     let (cat, off) = objc_ref_location(ctx, r)?;
     if off != 0 || ctx.isecs[cat as usize].size < 48 {
         return None;
     }
     // category_t: name, cls, ...
-    let cls = objc_pointer_at(ctx, cat, 8).and_then(|r| objc_ref_location(ctx, r))?;
-    Some((cat, *class_idx.get(&cls)?))
+    match objc_pointer_at(ctx, cat, 8)? {
+        ObjcRef::Sym(id, 0) if ctx.symbols[id].input_section().is_none() => {
+            Some((cat, Extended::Imported(id)))
+        }
+        cls => Some((cat, Extended::Defined(*class_idx.get(&objc_ref_location(ctx, cls)?)?))),
+    }
+}
+
+/// Merges the categories on a class another image defines, given in
+/// __objc_catlist order, into the first of them, as ld-prime does: the
+/// runtime then attaches one category. Only the lists of a kind another
+/// category has merge - into a new list named after the class and the
+/// categories, __OBJC_$_INSTANCE_METHODS_NSView(A|B), in the order
+/// merging into a class gives them - and the first category's record,
+/// which stays in __objc_catlist, points at them; the other categories
+/// go, with the lists merged. ld-prime merges none of a class's
+/// categories if one has a +load: the runtime calls each category's.
+fn merge_into_first_category<E: Target>(
+    ctx: &mut Context<E>,
+    writer: &mut MergedListWriter,
+    cats: &mut [Category],
+    class: &ImportedClass,
+) {
+    let class_cats = &class.cats;
+    if class_cats.len() < 2 || class_cats.iter().any(|&ci| cats[ci].nonlazy) {
+        return;
+    }
+    let cat_lists: Vec<ListRefs> =
+        class_cats.iter().map(|&ci| ListRefs::of_category(ctx, cats[ci].isec)).collect();
+    let Some(mut lists) = merge_lists(ctx, &ListRefs::default(), &cat_lists, writer.relative)
+    else {
+        return;
+    };
+    let others =
+        |list: fn(&ListRefs) -> Option<ObjcRef>| cat_lists[1..].iter().any(|c| list(c).is_some());
+    if !others(|c| c.imethods) {
+        lists.imethods = None;
+    }
+    if !others(|c| c.cmethods) {
+        lists.cmethods = None;
+    }
+    if !others(|c| c.protocols) {
+        lists.protocols = None;
+    }
+    if !others(|c| c.iprops) {
+        lists.iprops = None;
+    }
+    if !others(|c| c.cprops) {
+        lists.cprops = None;
+    }
+    // A record from an older compiler has no class properties field.
+    let first = cats[class_cats[0]].isec;
+    if lists.cprops.is_some() && ctx.isecs[first as usize].size < 56 {
+        return;
+    }
+
+    let name = ctx.symbols[class.sym].name();
+    let class_name = name.strip_prefix("_OBJC_CLASS_$_").unwrap_or(name).to_string();
+    let cat_names: Vec<&str> = class_cats.iter().map(|&ci| cats[ci].name.as_str()).collect();
+    let merged = writer.write(ctx, lists, &format!("{class_name}({})", cat_names.join("|")));
+    let superseded: Vec<ListRefs> = cat_lists.iter().map(|c| c.of_kinds(&merged)).collect();
+    drop_superseded_lists(ctx, &ListRefs::default(), &merged, &superseded);
+
+    // category_t: name, cls, instanceMethods, classMethods, protocols,
+    // instanceProperties, _classProperties.
+    let fields = [merged.imethods, merged.cmethods, merged.protocols, merged.iprops, merged.cprops];
+    for (off, list) in (16..).step_by(8).zip(fields) {
+        if let Some(ObjcRef::Isec(list, 0)) = list {
+            set_pointer_field(ctx, first, off, list);
+        }
+    }
+    for &ci in &class_cats[1..] {
+        ctx.isecs[cats[ci].isec as usize].set_alive(false);
+        cats[ci].merged = true;
+    }
+}
+
+/// Points the pointer field at `off` of a record at subsection `to`: its
+/// relocation is retargeted, or a null field gets one.
+fn set_pointer_field<E: Target>(ctx: &mut Context<E>, rec: u32, off: u64, to: u32) {
+    if let Some((obj, k)) = objc_pointer_reloc(ctx, rec, off) {
+        let rel = &mut ctx.objs[obj].relocs[k];
+        rel.set_target(RelocTarget::Section(to));
+        rel.addend = 0;
+        return;
+    }
+    // The record's relocations are a run of its object's; the run
+    // moves to the end, one longer.
+    let isec = &ctx.isecs[rec as usize];
+    let obj = &mut ctx.objs[isec.file as usize];
+    let run = isec.rel_offset as usize..(isec.rel_offset + isec.nrels) as usize;
+    let mut rels = obj.relocs[run].to_vec();
+    rels.push(crate::input_sections::Reloc {
+        offset: off as u32,
+        r_type: E::RELOC_UNSIGNED,
+        size: 8,
+        is_pcrel: false,
+        is_subtracted: false,
+        target: RelocTarget::Section(to).pack(),
+        addend: 0,
+    });
+    let start = obj.relocs.len() as u32;
+    obj.relocs.extend(rels);
+    let isec = &mut ctx.isecs[rec as usize];
+    isec.rel_offset = start;
+    isec.nrels += 1;
 }
 
 /// The five lists a category adds to its class, and a class has of its
@@ -1277,6 +1413,18 @@ impl ListRefs {
             protocols: field(32),
             iprops: field(40),
             cprops: if has_class_props { field(48) } else { None },
+            meta_protocols: None,
+        }
+    }
+
+    /// These lists, of the kinds `kinds` has only.
+    fn of_kinds(&self, kinds: &ListRefs) -> Self {
+        Self {
+            imethods: kinds.imethods.and(self.imethods),
+            cmethods: kinds.cmethods.and(self.cmethods),
+            protocols: kinds.protocols.and(self.protocols),
+            iprops: kinds.iprops.and(self.iprops),
+            cprops: kinds.cprops.and(self.cprops),
             meta_protocols: None,
         }
     }
