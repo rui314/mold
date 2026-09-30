@@ -3213,6 +3213,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // A -r output section's flags come from its first non-empty input
     // section (ld-prime skips empty ones); whether that one was seen.
     let mut flags_from_data: Vec<bool> = Vec::new();
+    // Whether each output section has zero-fill (bit 0) and
+    // file-backed (bit 1) input sections; renames can mix them.
+    let mut fill_kinds: Vec<u8> = Vec::new();
     for i in 0..ctx.isecs.len() {
         if !ctx.isecs[i].is_alive()
             || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
@@ -3251,6 +3254,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                     id
                 }
             };
+            if let Some((id, _)) = id {
+                if fill_kinds.len() <= id.index() {
+                    fill_kinds.resize(id.index() + 1, 0);
+                }
+                fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
+            }
             last_hdr = hdr_ptr;
             last_osec = id;
             id
@@ -3286,6 +3295,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
+    }
+    if !relocatable {
+        warn_zerofill_conflicts(ctx, &fill_kinds);
     }
     place_replacing_blobs(ctx);
 
@@ -3970,6 +3982,53 @@ fn collect_relocations<E: Target>(ctx: &mut Context<E>) {
         ctx.extern_relocs.relocs = chunks::extern_relocs::build(ctx);
         ctx.extern_relocs.hdr.size = (ctx.extern_relocs.relocs.len() * size_of::<MachRel>()) as u64;
     }
+}
+
+/// ld-prime's warning for each output section that renames fill with
+/// both zero-fill and file-backed input sections - bits 0 and 1 of
+/// `fill_kinds`, by output section. The section takes the first
+/// member's type, so a zero-fill one drops the contents of the others.
+fn warn_zerofill_conflicts<E: Target>(ctx: &Context<E>, fill_kinds: &[u8]) {
+    for (i, &kinds) in fill_kinds.iter().enumerate() {
+        if kinds == 3 {
+            warn_zerofill_conflict(ctx, ctx.output_section(OutputSectionId::new(i as u32)));
+        }
+    }
+}
+
+/// The warning names the first file with a zero-fill member, and
+/// those with file-backed ones, the last first.
+fn warn_zerofill_conflict<E: Target>(ctx: &Context<E>, osec: &OutputSection) {
+    let mut defined_in = None;
+    let mut missing_in = Vec::new();
+    for &member in &osec.members {
+        let isec = &ctx.isecs[member as usize];
+        // (Sections the linker synthesizes come from no file.)
+        if ctx.is_internal(isec.file as usize) {
+            continue;
+        }
+        if ctx.hdr_of(isec).is_zerofill() {
+            defined_in.get_or_insert(isec.file);
+        } else {
+            missing_in.push(isec.file);
+        }
+    }
+    let Some(defined_in) = defined_in else {
+        return;
+    };
+    missing_in.sort_unstable_by(|a, b| b.cmp(a));
+    missing_in.dedup();
+    let name = |file: u32| resolved_file_name(ctx.objs[file as usize].mf);
+    let mut msg = format!(
+        "section {},{} has a conflicting zerofill flag defined in {} but missing in:",
+        osec.hdr.segname,
+        osec.hdr.sectname,
+        name(defined_in)
+    );
+    for file in missing_in {
+        msg += &format!("\n  {}", name(file));
+    }
+    crate::warn!("{msg}");
 }
 
 /// ld-prime's warnings for a -segment_order that places __TEXT or

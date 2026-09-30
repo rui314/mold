@@ -170,6 +170,10 @@ impl MachSection {
     pub fn section_type(&self) -> u32 {
         self.flags & SECTION_TYPE
     }
+
+    pub fn is_zerofill(&self) -> bool {
+        matches!(self.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL)
+    }
 }
 
 #[derive(Clone, Copy, Default, Debug)]
