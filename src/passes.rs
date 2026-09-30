@@ -2882,10 +2882,11 @@ const DATA_CONST_SECTIONS: &[&str] = &[
     "__objc_protolist",
 ];
 
-/// Protocol and superclass references are written by the Objective-C
-/// runtime on older systems, so they stay in __DATA - with their input
-/// flags - unless the deployment target is macOS 15 or later, where
-/// ld64 moves them to __DATA_CONST (dyld fixes them up there).
+/// Class, protocol and superclass references are written by the
+/// Objective-C runtime on older systems, so they stay in __DATA unless
+/// the deployment target is macOS 15 or later, where ld64 moves them to
+/// __DATA_CONST (dyld fixes them up there; most class references fold
+/// into __got).
 pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
     ctx.args.platform == crate::macho::PLATFORM_MACOS
         && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
@@ -3017,7 +3018,7 @@ impl SectionMap {
     fn const_name(self, name: SectionName) -> SectionName {
         let (seg, sect) = name;
         let is_const = match sect {
-            "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
+            "__objc_classrefs" | "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
             "__objc_selrefs" => self.shared_region,
             // Unless it holds absolute method lists, which the runtime
             // sorts in place.
@@ -3025,6 +3026,21 @@ impl SectionMap {
             _ => DATA_CONST_SECTIONS.contains(&sect),
         };
         if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
+    }
+
+    /// The section a section$start$ or section$end$ symbol names: the
+    /// one an input section of that name lands in - or, for a pointer
+    /// section only the linker makes, where ld-prime puts it: its GOTs
+    /// in __DATA_CONST and, in the shared region, its lazy pointers
+    /// too. (An input section of one of those names is data like any
+    /// other to ld-prime, which rejects one typed as pointers.)
+    fn boundary_name(self, name: SectionName) -> SectionName {
+        let is_const = match name {
+            ("__DATA", "__auth_got" | "__weak_got" | "__weak_auth_got") => true,
+            ("__DATA", "__la_symbol_ptr" | "__lazy_load_got") => self.shared_region,
+            _ => false,
+        };
+        if self.data_const && is_const { ("__DATA_CONST", name.1) } else { self.const_name(name) }
     }
 
     fn new<E: Target>(ctx: &Context<E>) -> Self {
@@ -3944,7 +3960,8 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
 /// creates the sections nothing else does. ld-prime renames the name
 /// as it does an input section's - __DATA,__const becomes
 /// __DATA_CONST,__const, and -rename_section and -rename_segment
-/// apply - but merges and drops nothing: section$start$__TEXT$__literal8
+/// apply - or as its own section's (see SectionMap::boundary_name),
+/// but merges and drops nothing: section$start$__TEXT$__literal8
 /// names an empty __literal8 of its own.
 fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
@@ -3956,7 +3973,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             continue;
         };
         let flags = boundary_section_flags(seg, sect);
-        let name = map.const_name((static_name(seg), static_name(sect)));
+        let name = map.boundary_name((static_name(seg), static_name(sect)));
         let (seg, sect) = renamed(&ctx.args, name);
         ctx.boundary_syms[i].2 = seg.to_string();
         ctx.boundary_syms[i].3 = Some(sect.to_string());
@@ -4012,7 +4029,9 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
         ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
         ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, false),
-        ("__DATA", "__got" | "__auth_got") => S_NON_LAZY_SYMBOL_POINTERS,
+        ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
+            S_NON_LAZY_SYMBOL_POINTERS
+        }
         ("__DATA", "__la_symbol_ptr") => S_LAZY_SYMBOL_POINTERS,
         (
             "__DATA",
