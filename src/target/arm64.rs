@@ -774,6 +774,27 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
     });
 }
 
+/// Reports the offset half of a GOT load, relocation `i` of subsection
+/// `isec` (whose bytes are `buf`), that ld-prime can't relax: neither
+/// an ldr nor a 64-bit add. ld-prime makes a load one fixup with the
+/// GOT adrp before it that sets its base register, and names that.
+fn report_got_pageoff(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, buf: &[u8]) {
+    let r = &rels[i];
+    let load = parse_ldst(read32(&buf[r.offset as usize..])).filter(|ls| !ls.is_store);
+    let adrp = load.and_then(|ls| {
+        rels[..i].iter().rev().find(|adrp| {
+            adrp.r_type == ARM64_RELOC_GOT_LOAD_PAGE21
+                && adrp.target == r.target
+                && read32(&buf[adrp.offset as usize..]) & 0x1f == ls.base
+        })
+    });
+    let msg = format_args!("non-LDR instruction");
+    match adrp {
+        Some(adrp) => ctx.fixup_error(isec, adrp.offset, "arm64_was_adrp_ldr_got_elide_got", msg),
+        None => ctx.fixup_error(isec, r.offset, "arm64_was_ld12_got_elide_got", msg),
+    }
+}
+
 impl Target for Arm64 {
     const NAME: &'static str = "arm64";
     const CPUTYPE: u32 = CPU_TYPE_ARM64;
@@ -1107,13 +1128,17 @@ impl Target for Arm64 {
                         let t = ctx.sym_got_addr(id);
                         write_add_ldst(loc, t.wrapping_add_signed(a));
                     } else {
+                        // ld-prime relaxes an ldr of either width.
                         let insn = read32(loc);
-                        if insn & 0xffc0_0000 != 0xf940_0000 {
-                            fatal!("unexpected instruction under TLVP_LOAD_PAGEOFF12");
+                        if is_ldr_imm(insn) {
+                            let target = s.wrapping_add_signed(a);
+                            let add =
+                                0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
+                            write32(loc, add);
+                        } else {
+                            let msg = format_args!("non-LDR instruction");
+                            ctx.fixup_error(isec_id, r.offset, "arm64_was_ld12_tlv_elide_got", msg);
                         }
-                        let target = s.wrapping_add_signed(a);
-                        let add = 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
-                        write32(loc, add);
                     }
                 }
                 ARM64_RELOC_PAGE21 => write_adrp(loc, s.wrapping_add_signed(a), p),
@@ -1123,7 +1148,8 @@ impl Target for Arm64 {
                 // A GOT load of a local symbol relaxes to computing
                 // the address directly: the adrp retargets from the
                 // slot's page to the symbol's, and the ldr becomes
-                // "add Xn, Xm, #pageoff".
+                // "add Xn, Xm, #pageoff". ld-prime takes a 64-bit add
+                // as one already, and refuses any other instruction.
                 ARM64_RELOC_GOT_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target = if !ctx.can_relax_got(id) { ctx.sym_got_addr(id) } else { s };
@@ -1136,12 +1162,14 @@ impl Target for Arm64 {
                         write_add_ldst(loc, g.wrapping_add_signed(a));
                     } else {
                         let insn = read32(loc);
-                        if !is_ldr_imm(insn) {
-                            fatal!("unexpected instruction under GOT_LOAD_PAGEOFF12");
+                        if is_ldr_imm(insn) || insn & 0xffc0_0000 == 0x9100_0000 {
+                            let target = s.wrapping_add_signed(a);
+                            let add =
+                                0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
+                            write32(loc, add);
+                        } else {
+                            report_got_pageoff(ctx, isec_id, rels, i, buf);
                         }
-                        let target = s.wrapping_add_signed(a);
-                        let add = 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
-                        write32(loc, add);
                     }
                 }
                 ARM64_RELOC_POINTER_TO_GOT => {
