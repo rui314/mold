@@ -4021,12 +4021,22 @@ pub fn plan_object_stabs<E: Target>(
             .map(|(_, &id)| (ctx.symbols[id].name(), id))
             .collect();
         let mut skip_size = false;
+        let mut in_unit = false;
         for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
             if !nlist.is_stab() {
                 continue;
             }
             let mut ent = *nlist;
             let name = ctx.symbols[sym_id].name();
+            // The closing N_SO that opens the input's stabs is not
+            // copied: the output has its own.
+            if nlist.n_type == N_SO && name.is_empty() {
+                if !std::mem::replace(&mut in_unit, false) {
+                    continue;
+                }
+            } else {
+                in_unit = true;
+            }
             // The string table starts " \0": offset 1 is the empty
             // name (a closing N_SO, an N_FUN size entry); offset 0
             // would read as the name " ", and lldb then never sees
@@ -4061,7 +4071,7 @@ pub fn plan_object_stabs<E: Target>(
             };
             out.push(Stab { name: name.as_bytes(), ent, value_of: None, name_of });
         }
-        return sort_copied_stabs(ctx, out);
+        return out;
     }
 
     if !obj.has_debug_info {
@@ -4126,10 +4136,10 @@ pub fn plan_object_stabs<E: Target>(
         None,
     ));
 
-    // A symbol's notes, by its address: ld-prime lists them in address
-    // order, functions and data alike, after the tentative definitions
-    // a -r output leaves without one.
-    let mut groups: Vec<(Option<u64>, StabPlan)> = Vec::new();
+    // The symbols' notes, in symbol-table order. ld-prime lists a
+    // unit's notes by address instead, but no reader depends on that:
+    // dsymutil and lldb map each unit's notes by name, and an N_FUN pair
+    // stays together either way.
     for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
         let sym = &ctx.symbols[sym_id];
         // A tentative definition gets its note in the first object that
@@ -4141,29 +4151,30 @@ pub fn plan_object_stabs<E: Target>(
         {
             continue;
         }
-        groups.extend(symbol_stabs(ctx, sym_id, nlist.is_extern(), common));
+        push_symbol_stabs(ctx, sym_id, nlist.is_extern(), common, &mut out);
     }
-    groups.sort_by_key(|g| g.0);
-    out.extend(groups.into_iter().flat_map(|g| g.1));
 
     out.push(Stab::new(b"", STAB_END, None));
     out
 }
 
-/// A symbol's debug notes, with the address they sort by: N_BNSYM, the
-/// N_FUN pair and N_ENSYM for a function, an N_GSYM for global data,
-/// an N_STSYM for a local's.
-fn symbol_stabs<E: Target>(
+/// Appends a symbol's debug notes: N_BNSYM, the N_FUN pair and N_ENSYM
+/// for a function, an N_GSYM for global data, an N_STSYM for a local's.
+fn push_symbol_stabs<E: Target>(
     ctx: &Context<E>,
     sym_id: crate::symbol::SymbolId,
     is_extern: bool,
     common: bool,
-) -> Option<(Option<u64>, StabPlan)> {
+    out: &mut StabPlan,
+) {
     let sym = &ctx.symbols[sym_id];
     let name = sym.name().as_bytes();
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
         // A -r output keeps a common undefined; it has no address.
-        return common.then(|| (None, vec![global_stab(name, sym_id)]));
+        if common {
+            out.push(global_stab(name, sym_id));
+        }
+        return;
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     // ld-prime notes no exception tables' labels and no ivar offsets.
@@ -4174,34 +4185,31 @@ fn symbol_stabs<E: Target>(
             ("__TEXT", "__gcc_except_tab") | ("__DATA", "__objc_ivar")
         )
     {
-        return None;
+        return;
     }
-    let addr = ctx.sym_addr(sym_id);
     let sect = ctx.isec_n_sect(isec);
-    let is_text = ctx.hdr_of(isec).segname() == "__TEXT"
-        && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+    let is_text = hdr.segname() == "__TEXT"
+        && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     // Named entries get their string offsets later; the rest keep 1,
     // the empty string.
     let stab = |n_type, n_sect| NList { n_strx: 1, n_type, n_sect, ..Default::default() };
-    let group = if is_text {
+    let id = Some(sym_id);
+    if is_text {
         // ld64's shape: N_BNSYM, the N_FUN pair (the function's
         // address, then its size), N_ENSYM. Its stab reader takes
         // an N_FUN without the bracketing symbols badly (a crash
         // on a -r output that had only the pair).
         let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
-        vec![
-            Stab::new(b"", stab(N_BNSYM, sect), Some(sym_id)),
-            Stab { name_of: Some(sym_id), ..Stab::new(name, fun, Some(sym_id)) },
-            Stab::new(b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None),
-            Stab::new(b"", stab(N_ENSYM, sect), Some(sym_id)),
-        ]
+        out.push(Stab::new(b"", stab(N_BNSYM, sect), id));
+        out.push(Stab { name_of: id, ..Stab::new(name, fun, id) });
+        out.push(Stab::new(b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None));
+        out.push(Stab::new(b"", stab(N_ENSYM, sect), id));
     } else if is_extern {
-        vec![global_stab(name, sym_id)]
+        out.push(global_stab(name, sym_id));
     } else {
         let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
-        vec![Stab { name_of: Some(sym_id), ..Stab::new(name, ent, Some(sym_id)) }]
-    };
-    Some((Some(addr), group))
+        out.push(Stab { name_of: id, ..Stab::new(name, ent, id) });
+    }
 }
 
 /// An N_GSYM: a global's debug note, which names it only, with no
@@ -4245,56 +4253,6 @@ pub fn common_stab_owners<E: Target>(
         }
     }
     owners
-}
-
-/// Stabs an input carries through (a -r output's) in final-link order:
-/// one run per compilation unit, the symbol notes of each sorted by
-/// their addresses now - an N_GSYM by its global's - and without the
-/// closing N_SO that opened the input's stabs (the output has its own).
-fn sort_copied_stabs<E: Target>(ctx: &Context<E>, plan: StabPlan) -> StabPlan {
-    let is_end = |e: &NList, name: &[u8]| e.n_type == N_SO && name.is_empty();
-    let mut out: StabPlan = Vec::with_capacity(plan.len());
-    let mut groups: Vec<(u64, StabPlan)> = Vec::new();
-    let mut in_unit = false;
-    let mut i = 0;
-    while i < plan.len() {
-        let Stab { name, ent, .. } = plan[i];
-        if is_end(&ent, name) {
-            groups.sort_by_key(|g| g.0);
-            out.extend(groups.drain(..).flat_map(|g| g.1));
-            if in_unit {
-                out.push(plan[i]);
-            }
-            in_unit = false;
-            i += 1;
-            continue;
-        }
-        in_unit = true;
-        // A function's notes run from N_BNSYM to N_ENSYM, or are an
-        // N_FUN pair; any other note stands alone.
-        let len = match ent.n_type {
-            N_BNSYM => plan[i..].iter().position(|e| e.ent.n_type == N_ENSYM).map_or(1, |n| n + 1),
-            N_FUN if !name.is_empty() => 2.min(plan.len() - i),
-            _ => 1,
-        };
-        let addr = match ent.n_type {
-            N_GSYM => ctx
-                .symbols
-                .get(std::str::from_utf8(name).unwrap_or(""))
-                .map_or(0, |id| ctx.sym_addr(id)),
-            N_SO | N_OSO | N_AST => {
-                out.push(plan[i]);
-                i += 1;
-                continue;
-            }
-            _ => ent.n_value,
-        };
-        groups.push((addr, plan[i..i + len].to_vec()));
-        i += len;
-    }
-    groups.sort_by_key(|g| g.0);
-    out.extend(groups.into_iter().flat_map(|g| g.1));
-    out
 }
 
 /// An N_SO with an empty name: it closes an object's stabs, and

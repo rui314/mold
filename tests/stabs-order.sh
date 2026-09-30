@@ -2,11 +2,12 @@
 source "$(dirname "$0")"/common.inc
 
 # A final image's debug notes (stabs) follow its non-debug local
-# symbols, open with a closing N_SO of their own, and list each
-# compilation unit's symbols by address - functions and data alike -
-# as ld-prime does. A global's N_GSYM carries no section or address
-# (the debugger looks it up by name), and a tentative definition gets
-# one in the first object that declares it.
+# symbols and open with a closing N_SO of their own. Each compilation
+# unit notes its functions and data once; ld-prime lists them by
+# address, mold in symbol-table order, and neither dsymutil nor lldb
+# cares: both map a unit's notes by name. A global's N_GSYM carries no
+# section or address (the debugger looks it up by name), and a
+# tentative definition gets one in the first object that declares it.
 cat <<EOF | $CC -o $t/a.o -c -g -xc -
 static int s1 = 1;
 int g1 = 2;
@@ -32,17 +33,17 @@ awk '{ if ($2 == "-") exit; print $3 }' $t/nm > $t/locals
 [ "$(sort $t/locals | tr '\n' ' ')" = '_f1 _s1 _s2 _sz ' ]
 awk '$2 == "-" { print $5, $6; exit }' $t/nm | grep -qx 'SO '
 
-# Each unit's notes by address: an N_GSYM counts at its global's.
-awk 'NR == FNR { if ($2 != "-") addr[$3] = $1; next }
-     $2 == "-" && $5 == "SO" && $6 == "" { print "--" }
-     $2 == "-" && ($5 == "FUN" || $5 == "STSYM") && $6 != "" { print $1, $6 }
-     $2 == "-" && $5 == "GSYM" { print addr[$6], $6 }' $t/nm $t/nm > $t/order
-awk '$1 == "--" { prev = ""; next }
-     { if (prev != "" && ($1 "") < prev) { print "out of order:", $0; exit 1 } prev = $1 "" }' $t/order
-grep -q ' _gz$' $t/order
-[ "$(grep -c ' _gz$' $t/order)" = 1 ]
+# dsymutil's debug map: each unit's symbols, at their addresses in the
+# image, the functions with their sizes from the N_FUN pairs.
+dsymutil --dump-debug-map $t/exe > $t/map
+[ "$(awk '/filename:/ { print "--" } /sym:/ { print $4 }' $t/map | tr -d , | tr '\n' ' ')" = \
+  '-- _c1 _f1 _f2 _g1 _gz _main _s1 _s2 _sz -- _f3 ' ]
+sed -n 's/.*sym: \([^,]*\),.*binAddr: 0x\([0-9A-F]*\),.*/\1 \2/p' $t/map > $t/map-addrs
+[ "$(wc -l < $t/map-addrs)" -eq 10 ]
+nm -p $t/exe | awk '{ a = toupper($1); sub(/^0+/, "", a); print $3, a }' > $t/addrs
+not grep -vxFf $t/addrs $t/map-addrs
+not grep -E 'sym: _(f1|f2|f3|main),.*size: 0x0 ' $t/map
 
 # An N_GSYM names no section and no address.
 grep ' GSYM ' $t/nm > $t/gsym
 not grep -v '^0000000000000000 - 00 0000  GSYM ' $t/gsym
-[ "$(awk '$2 == "_gz" { print NR }' $t/order)" -lt "$(awk '$1 == "--" { n++ } n == 2 { print NR; exit }' $t/order)" ]
