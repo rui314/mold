@@ -256,6 +256,13 @@ fn entry_addr<E: Target>(ctx: &Context<E>) -> u64 {
     if let Some(FileId::Obj(_)) = sym.file() {
         return sym.addr(ctx);
     }
+
+    // As in GNU ld and lld, the entry point can also be given as an address
+    // if no symbol has that name.
+    let addr = std::str::from_utf8(sym.name()).ok().and_then(crate::cmdline::parse_c_number);
+    if let Some(addr) = addr {
+        return addr;
+    }
     if !ctx.args.shared {
         warn!("entry symbol is not defined: {sym}");
     }
