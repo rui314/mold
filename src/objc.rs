@@ -23,7 +23,10 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
-use crate::passes::{add_got, data_seg, objc_refs_are_const, redirect_symbols_to_replacements};
+use crate::passes::{
+    absorb_got_slots, add_got, objc_refs_are_const, pointer_target,
+    redirect_symbols_to_replacements,
+};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
@@ -136,7 +139,7 @@ fn add_placed_isec<E: Target>(
 /// input subsections to be replaced by, and returns it. It is not
 /// alive: it gets the slot's output section and offset once the chunk
 /// is laid out.
-fn add_slot_stand_in<E: Target>(ctx: &mut Context<E>, sect: (u32, u32)) -> u32 {
+pub(crate) fn add_slot_stand_in<E: Target>(ctx: &mut Context<E>, sect: (u32, u32)) -> u32 {
     let (file, shndx) = sect;
     ctx.isecs.push(InputSection {
         file,
@@ -590,7 +593,7 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     let mut unreferenced: hashbrown::HashMap<crate::symbol::SymbolId, u32> =
         hashbrown::HashMap::new();
     let mut coalesced = false;
-    let mut got_hdr: Option<(u32, u32)> = None;
+    let mut absorbed = Vec::new();
     for obj_idx in 0..ctx.objs.len() {
         let slots = &slots[obj_idx];
         if slots.is_empty() {
@@ -645,23 +648,10 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 ctx.isecs[slot as usize].set_alive(false);
                 continue;
             }
-            // A synthetic subsection standing for the GOT entry; not
-            // alive, since the __got chunk writes the slot and the
-            // slot's local symbol is not emitted.
-            let sect = *got_hdr.get_or_insert_with(|| {
-                ctx.add_synthetic_section(MachSection {
-                    sectname: str_to_name("__got"),
-                    segname: str_to_name(data_seg(ctx)),
-                    p2align: 3,
-                    flags: S_NON_LAZY_SYMBOL_POINTERS,
-                    ..Default::default()
-                })
-            });
-            let synth = add_slot_stand_in(ctx, sect);
-            ctx.isecs[slot as usize].replacement = synth;
-            ctx.got.objc_classref_slots.push((synth, class));
+            absorbed.push((slot, class));
         }
     }
+    absorb_got_slots(ctx, absorbed);
     if coalesced {
         redirect_symbols_to_replacements(ctx);
     }
@@ -679,31 +669,16 @@ fn classref_slots<E: Target>(
     }
     for &i in &ctx.objs[obj_idx].subsecs {
         let isec = &ctx.isecs[i];
-        if !isec.is_alive()
-            || isec.replacement != crate::input_sections::NO_REPLACEMENT
-            || isec.size != 8
-        {
+        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
             continue;
         }
         let h = ctx.hdr_of(isec);
         if h.segname() != "__DATA" || h.sectname() != "__objc_classrefs" {
             continue;
         }
-        let rels = ctx.isec_relocs(i as usize);
-        if rels.len() != 1 {
-            continue;
+        if let Some(idx) = pointer_target(ctx, i as usize) {
+            slots.insert(i, (idx, ctx.objs[obj_idx].symbols[idx as usize]));
         }
-        let rel = rels[0];
-        let RelocTarget::Sym(idx) = rel.target() else { continue };
-        if E::classify_reloc(rel.r_type) != RelocClass::Plain
-            || rel.size != 8
-            || rel.is_pcrel
-            || rel.is_subtracted
-            || rel.addend != 0
-        {
-            continue;
-        }
-        slots.insert(i, (idx, ctx.objs[obj_idx].symbols[idx as usize]));
     }
     slots
 }

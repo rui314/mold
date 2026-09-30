@@ -1362,7 +1362,7 @@ impl StagedObject {
 /// Whether a section's contents are fixed-shape records the linker
 /// coalesces by content, as ld64 does: literal pools, literal pointers,
 /// __cfstring, whose 32-byte CFString constants x86-64 compilers emit
-/// without labels, and __objc_classrefs, whose class pointers ld64
+/// without labels, and __objc_classrefs and __got, whose pointers ld64
 /// takes one by one whatever the labels (an x86-64 -r output has
 /// none).
 pub fn is_literal_section(sect: &MachSection) -> bool {
@@ -1374,7 +1374,7 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
             | S_16BYTE_LITERALS
             | S_LITERAL_POINTERS
     ) || (sect.segname() == "__DATA"
-        && matches!(sect.sectname(), "__cfstring" | "__objc_classrefs"))
+        && matches!(sect.sectname(), "__cfstring" | "__objc_classrefs" | "__got"))
 }
 
 /// Where the elements of a literal section start: each NUL-terminated
@@ -1400,9 +1400,9 @@ fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
         S_16BYTE_LITERALS => 16,
         // A literal-pointer section (__objc_selrefs) is one atom per
         // pointer, as in ld64, so references to the same selector can be
-        // coalesced across objects; so is __objc_classrefs.
+        // coalesced across objects; so are __objc_classrefs and __got.
         S_LITERAL_POINTERS => 8,
-        _ if sect.sectname() == "__objc_classrefs" => 8,
+        _ if matches!(sect.sectname(), "__objc_classrefs" | "__got") => 8,
         // __cfstring: one 32-byte constant per record.
         _ => 32,
     };

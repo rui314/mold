@@ -21,10 +21,11 @@ pub struct GotSection {
     pub weak_hdr: ChunkHeader,
     pub weak_start: usize,
     /// Synthetic subsections standing for __got slots that absorbed
-    /// __objc_classrefs entries (see fold_objc_classrefs), with their
-    /// classes; they are placed at the classes' slots once the section
-    /// exists.
-    pub objc_classref_slots: Vec<(u32, SymbolId)>,
+    /// input pointers - __objc_classrefs entries (see
+    /// fold_objc_classrefs) and an input __got's slots (see
+    /// fold_input_got) - with their symbols; they are placed at the
+    /// symbols' slots once the section exists.
+    pub stand_ins: Vec<(u32, SymbolId)>,
 }
 
 impl GotSection {
@@ -35,7 +36,7 @@ impl GotSection {
         let mut weak_hdr = ChunkHeader::new("__DATA", "__weak_got");
         weak_hdr.flags = S_NON_LAZY_SYMBOL_POINTERS;
         weak_hdr.p2align = 3;
-        Self { hdr, got_syms: Vec::new(), weak_hdr, weak_start: 0, objc_classref_slots: Vec::new() }
+        Self { hdr, got_syms: Vec::new(), weak_hdr, weak_start: 0, stand_ins: Vec::new() }
     }
 
     /// The section slot `i` lies in, and its offset there.

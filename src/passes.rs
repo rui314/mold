@@ -2816,6 +2816,80 @@ pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::Symbol
     }
 }
 
+/// Replaces input subsections, each an 8-byte pointer to a symbol, by
+/// the symbol's GOT entry: each by a synthetic subsection standing for
+/// the entry, placed once __got is, so what refers to the input slot
+/// reads the entry. A stand-in is not alive: the __got chunk writes the
+/// slot, and the input slot's local symbol is not emitted. `slots`
+/// pairs an input slot with its symbol.
+pub(crate) fn absorb_got_slots<E: Target>(
+    ctx: &mut Context<E>,
+    slots: Vec<(u32, crate::symbol::SymbolId)>,
+) {
+    if slots.is_empty() {
+        return;
+    }
+    let sect = ctx.add_synthetic_section(MachSection {
+        sectname: str_to_name("__got"),
+        segname: str_to_name(data_seg(ctx)),
+        p2align: 3,
+        flags: S_NON_LAZY_SYMBOL_POINTERS,
+        ..Default::default()
+    });
+    for (slot, id) in slots {
+        add_got(ctx, id);
+        let synth = crate::objc::add_slot_stand_in(ctx, sect);
+        ctx.isecs[slot as usize].replacement = synth;
+        ctx.got.stand_ins.push((synth, id));
+    }
+}
+
+/// Moves the slots of each input __DATA,__got into the GOT. ld-prime
+/// reads such a section, whatever its type, as non-lazy pointers, and
+/// makes each slot an entry of its own __got, named in the indirect
+/// symbol table; mold makes each the entry of the symbol it points at,
+/// which a load through the GOT may share. A slot that is no plain
+/// pointer to a symbol (with an addend, or a constant, on which
+/// ld-prime crashes) stays data, in a section of that name of its own.
+pub fn fold_input_got<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.relocatable {
+        return;
+    }
+    let is_got = |hdr: &MachSection| hdr.segname() == "__DATA" && hdr.sectname() == "__got";
+    let mut slots = Vec::new();
+    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+        if !obj.sect_hdrs.iter().any(is_got) {
+            continue;
+        }
+        for &i in &obj.subsecs {
+            let isec = &ctx.isecs[i];
+            if isec.is_alive()
+                && isec.replacement == crate::input_sections::NO_REPLACEMENT
+                && is_got(ctx.hdr_of(isec))
+                && let Some(idx) = pointer_target(ctx, i as usize)
+            {
+                slots.push((i, obj.symbols[idx as usize]));
+            }
+        }
+    }
+    absorb_got_slots(ctx, slots);
+}
+
+/// The symbol, by its index in the object, that subsection `i` is a
+/// pointer to: 8 bytes an 8-byte absolute relocation of the symbol
+/// fills, with no addend.
+pub(crate) fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u32> {
+    let [rel] = ctx.isec_relocs(i) else { return None };
+    let RelocTarget::Sym(idx) = rel.target() else { return None };
+    let plain = E::classify_reloc(rel.r_type) == RelocClass::Plain
+        && ctx.isecs[i].size == 8
+        && rel.size == 8
+        && !rel.is_pcrel
+        && !rel.is_subtracted
+        && rel.addend == 0;
+    plain.then_some(idx)
+}
+
 /// Lays out __stubs and __got in ld-prime's order rather than in the
 /// order relocations first reached them. Stubs - and with them the
 /// lazy pointers, their helper entries and the indirect symbol table -
@@ -3465,12 +3539,20 @@ impl SectionMap {
 /// list sections the runtime scans, and the class references while in
 /// __DATA, as no-dead-strip. A -r output is
 /// input to another link, so ld-prime copies the type and attributes
-/// verbatim. __eh_frame carries the compiler's fixed flags in both.
+/// verbatim - but mold makes __DATA,__got regular data there, its
+/// relocations kept: a __got of non-lazy pointers needs the indirect
+/// symbol table to name its slots, and an object that has one is
+/// refused as input (ld-prime writes one, dropping the relocations),
+/// while a regular __got is GOT slots to either linker all the same.
+/// __eh_frame carries the compiler's fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
     if relocatable {
+        if (segname, sectname) == ("__DATA", "__got") {
+            return input & !SECTION_TYPE;
+        }
         return input;
     }
     // The two reference lists the runtime may still write keep the
@@ -4480,11 +4562,20 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
 /// standard_section_flags): one of another type has the table's flags,
 /// so a regular __objc_methname is C strings and a list typed as
 /// strings or literals is pointers still. __objc_selrefs keeps its own
-/// type, which says whether its references merge, but is never split
-/// into strings or literals. Its own flags otherwise.
+/// type, which says whether its references merge, and __DATA,__got,
+/// GOT slots whatever its type (see fold_input_got), its own, which
+/// says whether the object asks for an indirect-symbol GOT (see
+/// check_sections); but neither is ever split into strings or
+/// literals. Its own flags otherwise.
 pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     if (segname, sectname) == ("__TEXT", "__constructor") {
         return S_MOD_INIT_FUNC_POINTERS;
+    }
+    let ty = flags & SECTION_TYPE;
+    let is_literal =
+        matches!(ty, S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS);
+    if (segname, sectname) == ("__DATA", "__got") {
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
     }
     if !sectname.starts_with("__objc_") {
         return flags;
@@ -4492,14 +4583,8 @@ pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32)
     let Some(table) = standard_section_flags(segname, sectname) else {
         return flags;
     };
-    let ty = flags & SECTION_TYPE;
     if sectname == "__objc_selrefs" {
-        return match ty {
-            S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
-                flags & !SECTION_TYPE
-            }
-            _ => flags,
-        };
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
     }
     if ty == table & SECTION_TYPE { flags } else { table }
 }
@@ -4526,10 +4611,8 @@ fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
 /// has the table's type - a __TEXT,__const or __DATA,__data an
 /// assembler nop landed in is plain data again, a regular __text
 /// code - and its own otherwise (a regular __cstring holds no literals
-/// to merge). __got keeps its own type (though ld-prime makes a
-/// regular one's slots entries of its GOT, named in the indirect symbol
-/// table: a -r output of it then has non-lazy pointers ld-prime refuses
-/// as input).
+/// to merge). __got keeps its own type, what is left of it once its
+/// slots moved to the GOT (see fold_input_got).
 fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
         Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
@@ -4649,9 +4732,9 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
             ctx.chunks.push(id);
         }
     }
-    for i in 0..ctx.got.objc_classref_slots.len() {
-        let (slot, class) = ctx.got.objc_classref_slots[i];
-        let (chunk, off) = ctx.got.slot_place(ctx.sym_aux(class).got_idx as usize);
+    for i in 0..ctx.got.stand_ins.len() {
+        let (slot, id) = ctx.got.stand_ins[i];
+        let (chunk, off) = ctx.got.slot_place(ctx.sym_aux(id).got_idx as usize);
         ctx.isecs[slot as usize].offset = off as u32;
         ctx.isecs[slot as usize].set_output_section(chunk);
     }
