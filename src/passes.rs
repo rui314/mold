@@ -1337,12 +1337,7 @@ fn definition_rank(
 fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64 {
     let private = nlist.n_type & N_PEXT != 0 || hidden;
     let auto_hide = !private && nlist.n_desc & N_WEAK_REF != 0;
-    let modulus = nlist.n_value & ((1 << isec.p2align) - 1);
-    let p2align = if isec.is_record() || modulus == 0 {
-        isec.p2align as u64
-    } else {
-        modulus.trailing_zeros() as u64
-    };
+    let p2align = isec.p2align_at(nlist.n_value) as u64;
     ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
 }
 
@@ -2035,19 +2030,27 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
     });
 }
 
-/// Merges identical literal elements across all live inputs: the first
-/// live copy wins and the rest redirect to it. Only the elements
-/// ld-prime merges take part (see is_mergeable_literal); a labeled
-/// record stays apart, and so do copies in sections of different
-/// names, as in ld-prime: a class named "Foo" keeps its name in
-/// __objc_classname though __cstring has a "Foo" too.
+/// Merges identical literal elements across all live inputs: the most
+/// aligned live copy wins, the first of equals, and the rest redirect
+/// to it. Only the elements ld-prime merges take part (see
+/// is_mergeable_literal); a labeled record stays apart, and so do
+/// copies in sections of different names, as in ld-prime: a class
+/// named "Foo" keeps its name in __objc_classname though __cstring has
+/// a "Foo" too.
+///
+/// A C string keeps its input offset modulo its section's alignment,
+/// as any atom does (see InputSection::align_offset), and like ld64
+/// ld-prime keeps the copy that alignment favors most (see
+/// InputSection::p2align_at): Swift pads the strings of its 16-aligned
+/// __objc_methname so that many start at a multiple of 16, and a copy
+/// from Swift then wins over clang's, which has no alignment.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     mark_labeled_literals(ctx);
     // Deduplication follows the symbol table's sharded shape: every
     // element's content hash is computed in parallel, elements bin by
     // hash, and the shards resolve independently - within a shard the
-    // first occurrence in input order wins, which is exactly the
-    // winner the old serial single-map walk picked.
+    // copies meet in input order, as in the old serial single-map
+    // walk.
     let hashed: Vec<(u64, &MachSection, u32)> = ctx
         .isecs
         .par_iter()
@@ -2078,13 +2081,18 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
         .into_par_iter()
         .map(|bin| {
             // Keyed by the content hash already computed; a match is
-            // the same bytes in a section of the same name.
-            let mut table: hashbrown::HashTable<(u64, &MachSection, u32)> =
+            // the same bytes in a section of the same name. An entry
+            // holds its first copy and its group, whose winner so far
+            // is in `best`.
+            let mut table: hashbrown::HashTable<(u64, &MachSection, u32, u32)> =
                 hashbrown::HashTable::new();
-            let mut out = Vec::new();
+            let mut best: Vec<u32> = Vec::new();
+            let mut losers: Vec<(u32, u32)> = Vec::new();
+            let p2align =
+                |i: u32| isecs[i as usize].p2align_at(isecs[i as usize].input_addr as u64);
             for (hash, hdr, i) in bin {
                 let data = isecs[i as usize].data();
-                let same = |&(h, other, j): &(u64, &MachSection, u32)| {
+                let same = |&(h, other, j, _): &(u64, &MachSection, u32, u32)| {
                     h == hash
                         && other.segname == hdr.segname
                         && other.sectname == hdr.sectname
@@ -2092,22 +2100,30 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
                         && isecs[j as usize].data() == data
                 };
                 match table.entry(hash, same, |e| e.0) {
-                    hashbrown::hash_table::Entry::Occupied(e) => out.push((i, e.get().2)),
+                    hashbrown::hash_table::Entry::Occupied(e) => {
+                        let group = e.get().3;
+                        let winner = &mut best[group as usize];
+                        if p2align(i) > p2align(*winner) {
+                            losers.push((*winner, group));
+                            *winner = i;
+                        } else {
+                            losers.push((i, group));
+                        }
+                    }
                     hashbrown::hash_table::Entry::Vacant(e) => {
-                        e.insert((hash, hdr, i));
+                        e.insert((hash, hdr, i, best.len() as u32));
+                        best.push(i);
                     }
                 }
             }
-            out
+            losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect::<Vec<_>>()
         })
         .collect();
 
+    // The winner keeps its own alignment: a loser's is no stricter.
     for fold in folds {
         for (loser, winner) in fold {
-            let p2align = ctx.isecs[loser as usize].p2align;
             ctx.isecs[loser as usize].replacement = winner;
-            let w = &mut ctx.isecs[winner as usize];
-            w.p2align = w.p2align.max(p2align);
         }
     }
 

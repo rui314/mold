@@ -278,6 +278,17 @@ impl InputSection {
         crate::util::align_to_mod(off, align, self.input_addr as u64 & (align - 1))
     }
 
+    /// The alignment, as a power of two, that an atom of this
+    /// subsection starting at object address `addr` has in ld64's
+    /// terms: the section's, unless the atom sits at a nonzero offset
+    /// modulo it, whose trailing zeros count instead (an atom at 8 mod
+    /// 16 is 8-aligned). ld64 keeps the most aligned of two copies of a
+    /// weak definition or a literal.
+    pub fn p2align_at(&self, addr: u64) -> u8 {
+        let modulus = addr & ((1 << self.p2align) - 1);
+        if self.is_record() || modulus == 0 { self.p2align } else { modulus.trailing_zeros() as u8 }
+    }
+
     /// Whether this subsection is made of fixed-size records.
     pub fn is_record(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & NO_MODULUS != 0
