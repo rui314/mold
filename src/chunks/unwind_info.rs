@@ -224,7 +224,11 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         }
     }
 
-    let num_lsda = records.iter().filter(|r| r.lsda().is_some()).count();
+    // The LSDA index lists a record's LSDA only if its encoding says it
+    // has one (UNWIND_HAS_LSDA), as ld-prime does; a record with an
+    // LSDA is kept apart from its neighbors above all the same.
+    let listed_lsda = |r: &UnwindRecord| r.lsda().filter(|_| r.encoding & UNWIND_HAS_LSDA != 0);
+    let num_lsda = records.iter().filter(|r| listed_lsda(r).is_some()).count();
 
     // Compute the layout of the section. ld-prime sizes the first-level
     // index before it picks page formats, for the most pages the records
@@ -273,7 +277,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             let mut page2 = Vec::new();
             let mut lsda = Vec::new();
             for rec in span {
-                if let Some((isec, off)) = rec.lsda() {
+                if let Some((isec, off)) = listed_lsda(rec) {
                     push32(&mut lsda, func_addr(rec).wrapping_sub(base) as u32);
                     push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
                 }
