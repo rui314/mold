@@ -509,6 +509,142 @@ fn output_section_flags(
     ty | attrs
 }
 
+/// The flags ld-prime reads a section of an input object as having,
+/// which decide how the link splits the section into atoms and what it
+/// makes of them - mold's canonicalize_type for a section typed by name
+/// alone. __TEXT,__constructor, where GCC put the constructors of code
+/// built without dyld (-static, -mkernel) with the assembler's
+/// .constructor directive, is a list of initializer pointers whatever
+/// its type (__TEXT,__destructor stays data). ld-prime knows the
+/// Objective-C runtime's sections by name too (see
+/// standard_section_flags): one of another type has the table's flags,
+/// so a regular __objc_methname is C strings and a list typed as
+/// strings or literals is pointers still. __objc_selrefs keeps its own
+/// type, which says whether its references merge, and __DATA,__got,
+/// GOT slots whatever its type (see fold_input_got), its own, which
+/// says whether the object asks for an indirect-symbol GOT (see
+/// check_sections); but neither is ever split into strings or
+/// literals. Superclass and protocol references keep the
+/// literal-pointer type, whose references all merge (see
+/// has_unnamed_atoms), though the output has the table's flags. Its
+/// own flags otherwise.
+pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
+    if (segname, sectname) == ("__TEXT", "__constructor") {
+        return S_MOD_INIT_FUNC_POINTERS;
+    }
+    let ty = flags & SECTION_TYPE;
+    let is_literal =
+        matches!(ty, S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS);
+    if (segname, sectname) == ("__DATA", "__got") {
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
+    }
+    if !sectname.starts_with("__objc_") {
+        return flags;
+    }
+    let Some(table) = standard_section_flags(segname, sectname) else {
+        return flags;
+    };
+    if sectname == "__objc_selrefs" {
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
+    }
+    if ty == table & SECTION_TYPE
+        || (ty == S_LITERAL_POINTERS && is_class_or_protocol_ref_name(sectname))
+    {
+        flags
+    } else {
+        table
+    }
+}
+
+/// Whether ld-prime places an input section of a standard name (see
+/// standard_section_flags) as that standard section: one of the
+/// table's type, or of any type for the Objective-C runtime's sections
+/// and __got, which it knows by name. Only such a section moves to
+/// __DATA_CONST or merges into another section in a final image; any
+/// other, such as a __mod_init_func or __literal8 assembled without
+/// its type, stays where data of its name goes.
+fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
+    let Some(table) = standard_section_flags(segname, sectname) else {
+        return false;
+    };
+    table & SECTION_TYPE == flags & SECTION_TYPE
+        || sectname.starts_with("__objc_")
+        || (segname, sectname) == ("__DATA", "__got")
+}
+
+/// The flags ld-prime reads an input section as having, from its
+/// canonical ones (see canonical_section_flags): those its table holds
+/// for the section's name (see standard_section_flags) if the section
+/// has the table's type - a __TEXT,__const or __DATA,__data an
+/// assembler nop landed in is plain data again, a regular __text
+/// code - and its own otherwise (a regular __cstring holds no literals
+/// to merge). (A final image has no input __got left: its slots are
+/// the GOT's, see fold_input_got.)
+fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
+    match standard_section_flags(segname, sectname) {
+        Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
+        _ => flags,
+    }
+}
+
+/// The flags of a section ld-prime's table of standard sections names:
+/// those a compiler marks a section of that name with, or ld-prime its
+/// own sections - code (the stubs and helpers too), literals, pointer
+/// lists, the thread-local and zero-fill types, no-dead-strip for the
+/// lists the Objective-C runtime scans, and none for the rest of the
+/// data. None for another name, or in another segment.
+fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
+    let flags = match (segname, sectname) {
+        (
+            "__TEXT",
+            "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs" | "__objc_clsstubs"
+            | "__delay_stubs" | "__delay_helper" | "__lazy_helpers" | "__resolver_help",
+        ) => S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+        (
+            "__TEXT",
+            "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype"
+            | "__oslogstring",
+        ) => S_CSTRING_LITERALS,
+        ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
+        ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
+        ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
+        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
+        ("__TEXT", "__const" | "__ustring" | "__gcc_except_tab" | "__objc_methlist") => S_REGULAR,
+        ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
+            S_NON_LAZY_SYMBOL_POINTERS
+        }
+        ("__DATA", "__la_symbol_ptr" | "__la_resolver") => S_LAZY_SYMBOL_POINTERS,
+        ("__DATA", "__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
+        ("__DATA", "__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
+        (
+            "__DATA",
+            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
+            | "__objc_nlcatlist" | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
+        ) => S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__objc_protolist") => S_COALESCED,
+        ("__DATA", "__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__thread_vars") => S_THREAD_LOCAL_VARIABLES,
+        ("__DATA", "__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
+        ("__DATA", "__thread_data") => S_THREAD_LOCAL_REGULAR,
+        ("__DATA", "__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
+        ("__DATA", "__bss" | "__common") => S_ZEROFILL,
+        (
+            "__DATA",
+            "__data" | "__const" | "__cfstring" | "__auth_ptr" | "__objc_data" | "__objc_const"
+            | "__objc_ivar" | "__objc_imageinfo" | "__objc_intobj" | "__objc_floatobj"
+            | "__objc_doubleobj" | "__objc_dateobj" | "__objc_dictobj" | "__objc_arrayobj"
+            | "__objc_arraydata" | "__const_cfobj2",
+        ) => S_REGULAR,
+        // The compiler's records for the linker to encode into
+        // __unwind_info, which no output carries (but a boundary
+        // symbol's empty section).
+        ("__LD", "__compact_unwind") => S_ATTR_DEBUG,
+        _ => return None,
+    };
+    Some(flags)
+}
+
 /// Whether an input subsection is an __objc_methname string that the
 /// selector name synthesized for an objc_msgSend$ stub absorbs. ld-prime
 /// keeps the synthesized string of the two, so such an input string
@@ -1541,142 +1677,6 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__mod_init_func" | "__mod_term_func") => S_REGULAR,
         _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
     }
-}
-
-/// The flags ld-prime reads a section of an input object as having,
-/// which decide how the link splits the section into atoms and what it
-/// makes of them - mold's canonicalize_type for a section typed by name
-/// alone. __TEXT,__constructor, where GCC put the constructors of code
-/// built without dyld (-static, -mkernel) with the assembler's
-/// .constructor directive, is a list of initializer pointers whatever
-/// its type (__TEXT,__destructor stays data). ld-prime knows the
-/// Objective-C runtime's sections by name too (see
-/// standard_section_flags): one of another type has the table's flags,
-/// so a regular __objc_methname is C strings and a list typed as
-/// strings or literals is pointers still. __objc_selrefs keeps its own
-/// type, which says whether its references merge, and __DATA,__got,
-/// GOT slots whatever its type (see fold_input_got), its own, which
-/// says whether the object asks for an indirect-symbol GOT (see
-/// check_sections); but neither is ever split into strings or
-/// literals. Superclass and protocol references keep the
-/// literal-pointer type, whose references all merge (see
-/// has_unnamed_atoms), though the output has the table's flags. Its
-/// own flags otherwise.
-pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
-    if (segname, sectname) == ("__TEXT", "__constructor") {
-        return S_MOD_INIT_FUNC_POINTERS;
-    }
-    let ty = flags & SECTION_TYPE;
-    let is_literal =
-        matches!(ty, S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS);
-    if (segname, sectname) == ("__DATA", "__got") {
-        return if is_literal { flags & !SECTION_TYPE } else { flags };
-    }
-    if !sectname.starts_with("__objc_") {
-        return flags;
-    }
-    let Some(table) = standard_section_flags(segname, sectname) else {
-        return flags;
-    };
-    if sectname == "__objc_selrefs" {
-        return if is_literal { flags & !SECTION_TYPE } else { flags };
-    }
-    if ty == table & SECTION_TYPE
-        || (ty == S_LITERAL_POINTERS && is_class_or_protocol_ref_name(sectname))
-    {
-        flags
-    } else {
-        table
-    }
-}
-
-/// Whether ld-prime places an input section of a standard name (see
-/// standard_section_flags) as that standard section: one of the
-/// table's type, or of any type for the Objective-C runtime's sections
-/// and __got, which it knows by name. Only such a section moves to
-/// __DATA_CONST or merges into another section in a final image; any
-/// other, such as a __mod_init_func or __literal8 assembled without
-/// its type, stays where data of its name goes.
-fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
-    let Some(table) = standard_section_flags(segname, sectname) else {
-        return false;
-    };
-    table & SECTION_TYPE == flags & SECTION_TYPE
-        || sectname.starts_with("__objc_")
-        || (segname, sectname) == ("__DATA", "__got")
-}
-
-/// The flags ld-prime reads an input section as having, from its
-/// canonical ones (see canonical_section_flags): those its table holds
-/// for the section's name (see standard_section_flags) if the section
-/// has the table's type - a __TEXT,__const or __DATA,__data an
-/// assembler nop landed in is plain data again, a regular __text
-/// code - and its own otherwise (a regular __cstring holds no literals
-/// to merge). (A final image has no input __got left: its slots are
-/// the GOT's, see fold_input_got.)
-fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
-    match standard_section_flags(segname, sectname) {
-        Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
-        _ => flags,
-    }
-}
-
-/// The flags of a section ld-prime's table of standard sections names:
-/// those a compiler marks a section of that name with, or ld-prime its
-/// own sections - code (the stubs and helpers too), literals, pointer
-/// lists, the thread-local and zero-fill types, no-dead-strip for the
-/// lists the Objective-C runtime scans, and none for the rest of the
-/// data. None for another name, or in another segment.
-fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
-    let flags = match (segname, sectname) {
-        (
-            "__TEXT",
-            "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs" | "__objc_clsstubs"
-            | "__delay_stubs" | "__delay_helper" | "__lazy_helpers" | "__resolver_help",
-        ) => S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
-        (
-            "__TEXT",
-            "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype"
-            | "__oslogstring",
-        ) => S_CSTRING_LITERALS,
-        ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
-        ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
-        ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
-        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
-        ("__TEXT", "__const" | "__ustring" | "__gcc_except_tab" | "__objc_methlist") => S_REGULAR,
-        ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
-            S_NON_LAZY_SYMBOL_POINTERS
-        }
-        ("__DATA", "__la_symbol_ptr" | "__la_resolver") => S_LAZY_SYMBOL_POINTERS,
-        ("__DATA", "__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
-        ("__DATA", "__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
-        (
-            "__DATA",
-            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
-            | "__objc_nlcatlist" | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
-        ) => S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__objc_protolist") => S_COALESCED,
-        ("__DATA", "__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__thread_vars") => S_THREAD_LOCAL_VARIABLES,
-        ("__DATA", "__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
-        ("__DATA", "__thread_data") => S_THREAD_LOCAL_REGULAR,
-        ("__DATA", "__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
-        ("__DATA", "__bss" | "__common") => S_ZEROFILL,
-        (
-            "__DATA",
-            "__data" | "__const" | "__cfstring" | "__auth_ptr" | "__objc_data" | "__objc_const"
-            | "__objc_ivar" | "__objc_imageinfo" | "__objc_intobj" | "__objc_floatobj"
-            | "__objc_doubleobj" | "__objc_dateobj" | "__objc_dictobj" | "__objc_arrayobj"
-            | "__objc_arraydata" | "__const_cfobj2",
-        ) => S_REGULAR,
-        // The compiler's records for the linker to encode into
-        // __unwind_info, which no output carries (but a boundary
-        // symbol's empty section).
-        ("__LD", "__compact_unwind") => S_ATTR_DEBUG,
-        _ => return None,
-    };
-    Some(flags)
 }
 
 /// Sizes the stubs, the lazy-binding helper and pointers, the
