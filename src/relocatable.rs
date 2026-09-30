@@ -362,13 +362,12 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         let cwd = std::env::current_dir().unwrap_or_default();
         let commons = crate::passes::common_stab_owners(ctx);
         for obj_idx in 0..ctx.objs.len() {
-            for (name, mut ent, sym) in
-                crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons)
-            {
-                if let Some(id) = sym {
+            for stab in crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons) {
+                let mut ent = stab.ent;
+                if let Some(id) = stab.value_of {
                     ent.n_value = sym_addr(ctx, id);
                 }
-                ent.n_strx = add_string(&mut strtab, name);
+                ent.n_strx = add_string(&mut strtab, stab.name);
                 nlists_out.push(ent);
             }
         }

@@ -5179,9 +5179,25 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
 /// notes) has it copied through, the address-bearing entries rebased
 /// to their subsections' output addresses and those of dead
 /// subsections dropped. Shared by the final link and -r.
-/// An object's planned stab entries: each name, the nlist it gets, and
-/// the symbol whose final address fills in n_value, if any.
-pub type StabPlan = Vec<(&'static [u8], NList, Option<crate::symbol::SymbolId>)>;
+/// One planned stab entry: its name and nlist, the symbol whose final
+/// address fills in n_value, and the symbol the name is, if any -
+/// ld-prime points the entry at that symbol's own string.
+#[derive(Clone, Copy)]
+pub struct Stab {
+    pub name: &'static [u8],
+    pub ent: NList,
+    pub value_of: Option<crate::symbol::SymbolId>,
+    pub name_of: Option<crate::symbol::SymbolId>,
+}
+
+impl Stab {
+    fn new(name: &'static [u8], ent: NList, value_of: Option<crate::symbol::SymbolId>) -> Self {
+        Self { name, ent, value_of, name_of: None }
+    }
+}
+
+/// An object's planned stab entries.
+pub type StabPlan = Vec<Stab>;
 
 pub fn plan_object_stabs<E: Target>(
     ctx: &Context<E>,
@@ -5214,6 +5230,15 @@ pub fn plan_object_stabs<E: Target>(
                         | N_ECOML
                 )
         };
+        // The object's own local symbols by name, for the notes that
+        // name them.
+        let r = obj.local_range();
+        let locals: hashbrown::HashMap<&str, crate::symbol::SymbolId> = obj.nlists[r.clone()]
+            .iter()
+            .zip(&obj.symbols[r])
+            .filter(|(n, _)| !n.is_stab())
+            .map(|(_, &id)| (ctx.symbols[id].name(), id))
+            .collect();
         let mut skip_size = false;
         for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
             if !nlist.is_stab() {
@@ -5247,7 +5272,13 @@ pub fn plan_object_stabs<E: Target>(
                 skip_size = false;
                 continue;
             }
-            out.push((name.as_bytes(), ent, None));
+            let name_of = match nlist.n_type {
+                N_FUN | N_STSYM | N_GSYM | N_LCSYM if !name.is_empty() => {
+                    locals.get(name).copied().or_else(|| ctx.symbols.get(name))
+                }
+                _ => None,
+            };
+            out.push(Stab { name: name.as_bytes(), ent, value_of: None, name_of });
         }
         return sort_copied_stabs(ctx, out);
     }
@@ -5274,7 +5305,7 @@ pub fn plan_object_stabs<E: Target>(
         dir.push(b'/');
     }
     for name in [dir, file] {
-        out.push((leak_bytes(name), NList { n_strx: 0, n_type: N_SO, ..Default::default() }, None));
+        out.push(Stab::new(leak_bytes(name), NList { n_type: N_SO, ..Default::default() }, None));
     }
     let mut oso_name: Vec<u8> = match obj.mf.parent {
         Some(parent) if parent.name.is_absolute() => path_bytes(&obj.mf.name).to_vec(),
@@ -5308,7 +5339,7 @@ pub fn plan_object_stabs<E: Target>(
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs())
     };
-    out.push((
+    out.push(Stab::new(
         leak_bytes(std::mem::take(&mut oso_name)),
         NList { n_strx: 0, n_type: N_OSO, n_sect: E::CPUSUBTYPE as u8, n_desc: 1, n_value: mtime },
         None,
@@ -5333,7 +5364,7 @@ pub fn plan_object_stabs<E: Target>(
     groups.sort_by_key(|g| g.0);
     out.extend(groups.into_iter().flat_map(|g| g.1));
 
-    out.push((b"", STAB_END, None));
+    out.push(Stab::new(b"", STAB_END, None));
     out
 }
 
@@ -5350,7 +5381,7 @@ fn symbol_stabs<E: Target>(
     let name = sym.name().as_bytes();
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
         // A -r output keeps a common undefined; it has no address.
-        return common.then(|| (0, vec![(name, global_stab(), None)]));
+        return common.then(|| (0, vec![global_stab(name, sym_id)]));
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     if !isec.is_alive() {
@@ -5368,25 +5399,27 @@ fn symbol_stabs<E: Target>(
         // address, then its size), N_ENSYM. Its stab reader takes
         // an N_FUN without the bracketing symbols badly (a crash
         // on a -r output that had only the pair).
+        let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
         vec![
-            (&b""[..], stab(N_BNSYM, sect), Some(sym_id)),
-            (name, NList { n_strx: 0, ..stab(N_FUN, sect) }, Some(sym_id)),
-            (b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None),
-            (b"", stab(N_ENSYM, sect), Some(sym_id)),
+            Stab::new(b"", stab(N_BNSYM, sect), Some(sym_id)),
+            Stab { name_of: Some(sym_id), ..Stab::new(name, fun, Some(sym_id)) },
+            Stab::new(b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None),
+            Stab::new(b"", stab(N_ENSYM, sect), Some(sym_id)),
         ]
     } else if is_extern {
-        // A global's note names it only; the debugger looks the
-        // address up by name.
-        vec![(name, global_stab(), None)]
+        vec![global_stab(name, sym_id)]
     } else {
-        vec![(name, NList { n_strx: 0, ..stab(N_STSYM, sect) }, Some(sym_id))]
+        let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
+        vec![Stab { name_of: Some(sym_id), ..Stab::new(name, ent, Some(sym_id)) }]
     };
     Some((addr, group))
 }
 
-/// An N_GSYM: a global's debug note, with no section or address.
-fn global_stab() -> NList {
-    NList { n_strx: 0, n_type: N_GSYM, ..Default::default() }
+/// An N_GSYM: a global's debug note, which names it only, with no
+/// section or address - the debugger looks the address up by name.
+fn global_stab(name: &'static [u8], sym_id: crate::symbol::SymbolId) -> Stab {
+    let ent = NList { n_type: N_GSYM, ..Default::default() };
+    Stab { name, ent, value_of: None, name_of: Some(sym_id) }
 }
 
 /// The object whose stabs note each tentative definition that no real
@@ -5436,7 +5469,7 @@ fn sort_copied_stabs<E: Target>(ctx: &Context<E>, plan: StabPlan) -> StabPlan {
     let mut in_unit = false;
     let mut i = 0;
     while i < plan.len() {
-        let (name, ent, _) = plan[i];
+        let Stab { name, ent, .. } = plan[i];
         if is_end(&ent, name) {
             groups.sort_by_key(|g| g.0);
             out.extend(groups.drain(..).flat_map(|g| g.1));
@@ -5451,7 +5484,7 @@ fn sort_copied_stabs<E: Target>(ctx: &Context<E>, plan: StabPlan) -> StabPlan {
         // A function's notes run from N_BNSYM to N_ENSYM, or are an
         // N_FUN pair; any other note stands alone.
         let len = match ent.n_type {
-            N_BNSYM => plan[i..].iter().position(|e| e.1.n_type == N_ENSYM).map_or(1, |n| n + 1),
+            N_BNSYM => plan[i..].iter().position(|e| e.ent.n_type == N_ENSYM).map_or(1, |n| n + 1),
             N_FUN if !name.is_empty() => 2.min(plan.len() - i),
             _ => 1,
         };
@@ -5624,11 +5657,6 @@ pub fn create_output_symtab<E: Target>(
     sorted_globals: &[crate::symbol::SymbolId],
 ) -> SymtabSection {
     let mut data = SymtabSection::new();
-    // The string table opens with " \0-\0": offset 1 is the empty
-    // string, offset 2 the "-" placeholder for stab source-file
-    // entries. copy_symtab writes this prefix; the deduplicated
-    // strings follow it starting at offset 4.
-    const STRTAB_PREFIX: usize = 4;
 
     // Names are collected alongside the entries and the string table
     // is built afterwards in one parallel pass (below); an entry
@@ -5747,6 +5775,7 @@ pub fn create_output_symtab<E: Target>(
         names.push(name);
         data.entries.push((ent, sym));
     }
+    let nplain = data.entries.len();
     drop(t);
 
     // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
@@ -5757,6 +5786,8 @@ pub fn create_output_symtab<E: Target>(
     }
 
     let mut t = ctx.timer("symtab-stabs");
+    let mut stabs_start = data.entries.len();
+    let mut stab_names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::new();
     // Debug stabs. Mach-O binaries don't carry DWARF; instead, for each
     // object with debug info the symbol table gets stab entries telling
     // the debugger where the object file is (N_OSO) and where its
@@ -5803,15 +5834,17 @@ pub fn create_output_symtab<E: Target>(
         let ep = EntPtr(data.entries.as_mut_ptr());
         let (np, ep) = (&np, &ep);
         planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
-            for (k, &(name, ent, sym)) in plan.iter().enumerate() {
+            for (k, stab) in plan.iter().enumerate() {
                 // SAFETY: [base, base+plan.len()) ranges are disjoint
                 // across objects and lie within the reserved capacity.
                 unsafe {
-                    np.0.add(base + k).write(name);
-                    ep.0.add(base + k).write((ent, sym));
+                    np.0.add(base + k).write(stab.name);
+                    ep.0.add(base + k).write((stab.ent, stab.value_of));
                 }
             }
         });
+        stab_names_of = planned.par_iter().flat_map_iter(|p| p.iter().map(|s| s.name_of)).collect();
+        stabs_start = start;
         // SAFETY: every slot in start..total was written above.
         unsafe {
             names.set_len(total);
@@ -5878,122 +5911,18 @@ pub fn create_output_symtab<E: Target>(
         data.entries.push((ent, None));
     }
     data.nundef = undefs.len() as u32;
-    // Build the string table and assign every entry's n_strx in one
-    // parallel pass, the same sharded shape as the symbol table:
-    // names bin, each shard deduplicates its bin (first appearance
-    // wins) and lays its unique names out as one blob, prefix sums
-    // place the blobs, and the entries' offsets follow. Entries with
-    // the empty sentinel keep their fixed placeholder offsets (1 is
-    // "", 2 is "-").
-    //
-    // Dedup by pointer, not by string content: hashing 1.1M long
-    // mangled names in full was the single most expensive step of a
-    // debug link. Global, undefined and private-external names are
-    // interned to canonical pointers, so pointer-dedup folds them
-    // completely - including the weak-template names that repeat
-    // across thousands of objects. Local and stab names instead point
-    // into their object's mapped string table, so they dedup within an
-    // object but keep one copy per object that defines them; that
-    // costs about 1MB of a 154MB string table (still under ld64's),
-    // far less than mold, which dedups nothing here at all.
-    {
-        debug_assert_eq!(names.len(), data.entries.len());
-        // The bin key must (a) send equal names to one shard, so the
-        // pointer-dedup inside the shard sees every copy, and (b) be
-        // deterministic: a name's string-table offset is its shard's
-        // base plus its rank there, so a key that moves one name to
-        // another shard shifts every later shard's base and the n_strx
-        // of most of the symbol table. Keying by the name's address
-        // failed (b): stab strings such as N_OSO paths are heap
-        // allocations made in a parallel per-object pass, and their
-        // addresses follow thread scheduling, so the output was not
-        // reproducible (mold guarantees it is). Key by the entry's
-        // symbol id instead: it is assigned deterministically, equal
-        // interned names share it (so dedup is unchanged), and reading
-        // it touches no name bytes. The few id-less entries (N_SO,
-        // N_OSO: one or two per object) hash their name's tail.
-        const FIB: u64 = 0x9E37_79B9_7F4A_7C15;
-        let hashes: Vec<u64> = names
-            .par_iter()
-            .zip(data.entries.par_iter())
-            .map(|(n, (_, sym))| match sym {
-                Some(id) => (*id as u64).wrapping_mul(FIB),
-                None => xxhash_rust::xxh3::xxh3_64(&n[n.len().saturating_sub(16)..]),
-            })
-            .collect();
-        const NS: usize = 64;
-        let mut bins: Vec<Vec<u32>> = vec![Vec::new(); NS];
-        for (i, (&h, n)) in hashes.iter().zip(&names).enumerate() {
-            if !n.is_empty() {
-                bins[(h % NS as u64) as usize].push(i as u32);
-            }
-        }
-
-        struct ShardOut {
-            /// Unique names in first-appearance order, with their
-            /// shard-local byte offsets.
-            uniq: Vec<(&'static [u8], u32)>,
-            blob_len: u32,
-            /// (entry index, shard-local unique index)
-            resolved: Vec<(u32, u32)>,
-        }
-        let names_ref = &names;
-        let shard_outs: Vec<ShardOut> = bins
-            .into_par_iter()
-            .map(|bin| {
-                // Keyed by pointer: interned names dedup by identity.
-                let mut map: hashbrown::HashMap<*const u8, u32> = hashbrown::HashMap::new();
-                let mut uniq: Vec<(&'static [u8], u32)> = Vec::new();
-                let mut blob_len = 0u32;
-                let mut resolved = Vec::with_capacity(bin.len());
-                for e in bin {
-                    let name = names_ref[e as usize];
-                    let idx = *map.entry(name.as_ptr()).or_insert_with(|| {
-                        let off = blob_len;
-                        uniq.push((name, off));
-                        blob_len += name.len() as u32 + 1;
-                        uniq.len() as u32 - 1
-                    });
-                    resolved.push((e, idx));
-                }
-                ShardOut { uniq, blob_len, resolved }
-            })
-            .collect();
-
-        let mut bases = Vec::with_capacity(NS);
-        let mut base = STRTAB_PREFIX as u32;
-        for so in &shard_outs {
-            bases.push(base);
-            base += so.blob_len;
-        }
-
-        // Stamp each entry's n_strx in parallel (a name binned to one
-        // shard and an entry resolved in one bin make the writes
-        // disjoint). The string bytes are NOT materialized here -
-        // copy_symtab writes them straight into the output file, so a
-        // debug link avoids allocating, filling and then re-copying a
-        // 150MB temporary string table.
-        struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
-        unsafe impl Sync for EntPtr {}
-        let ents = EntPtr(data.entries.as_mut_ptr());
-        let ents = &ents;
-        shard_outs.par_iter().zip(&bases).for_each(|(so, &b)| {
-            for &(e, idx) in &so.resolved {
-                unsafe {
-                    (*ents.0.add(e as usize)).0.n_strx = b + so.uniq[idx as usize].1;
-                }
-            }
-        });
-
-        // Collect the distinct strings with their final offsets for
-        // copy_symtab to write.
-        data.strtab_uniques = shard_outs
-            .par_iter()
-            .zip(&bases)
-            .flat_map_iter(|(so, &b)| so.uniq.iter().map(move |&(name, off)| (b + off, name)))
-            .collect();
-        data.strtab_size = align_to(base as u64, 8) as usize;
-    }
+    // The string table, in ld-prime's layout.
+    debug_assert_eq!(names.len(), data.entries.len());
+    let (uniques, size) = crate::chunks::symtab::layout_strings(
+        &mut data.entries,
+        &names,
+        nplain,
+        (stabs_start, &stab_names_of),
+        data.nlocal as usize,
+        ctx.symbols.syms.len(),
+    );
+    data.strtab_uniques = uniques;
+    data.strtab_size = size;
 
     // Record each global symbol's index for the indirect symbol table.
     data.output_sym_indices = vec![u32::MAX; ctx.symbols.syms.len()];
