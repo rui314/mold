@@ -1662,15 +1662,6 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
             sym.set_is_imported(true);
             sym.set_is_extern(true);
         }
-
-        // Build the __objc_methname contents: one NUL-terminated string
-        // per selector.
-        for i in 0..ctx.objc_stubs.symbols.len() {
-            ctx.objc_stubs.methname_offs.push(ctx.objc_stubs.methname_data.len() as u64);
-            let sel = ctx.objc_stubs.symbols[i].1.clone();
-            ctx.objc_stubs.methname_data.extend_from_slice(sel.as_bytes());
-            ctx.objc_stubs.methname_data.push(0);
-        }
     }
 }
 
@@ -2327,44 +2318,64 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     // A stub loads an input's selector reference when one names its
     // selector, as ld64's does; only selectors no input refers to get
     // a slot in the __objc_selrefs tail (NetNewsWire's debug dylib
-    // had 155 such duplicate slots).
+    // had 155 such duplicate slots). Such a slot points at an input's
+    // __objc_methname string of the selector's name when there is one,
+    // since ld-prime coalesces the two, and only names no input spells
+    // go in the __objc_methname tail.
     let mut slot_of: hashbrown::HashMap<&'static [u8], u32> = hashbrown::HashMap::new();
+    let mut name_of: hashbrown::HashMap<&'static [u8], u32> = hashbrown::HashMap::new();
     for i in 0..ctx.isecs.len() {
         let isec = &ctx.isecs[i];
         if !isec.is_alive()
             || ctx.is_internal(isec.file as usize)
             || isec.replacement != crate::input_sections::NO_REPLACEMENT
-            || isec.size != 8
         {
             continue;
         }
         let h = ctx.hdr_of(isec);
-        if h.sectname() != "__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
+        if h.sectname() == "__objc_methname" && h.section_type() == S_CSTRING_LITERALS {
+            name_of.entry(cstring_of(isec.data())).or_insert(i as u32);
+            continue;
+        }
+        if h.sectname() != "__objc_selrefs"
+            || h.section_type() != S_LITERAL_POINTERS
+            || isec.size != 8
+        {
             continue;
         }
         let Some(target) = objc_pointer_at(ctx, i as u32, 0) else { continue };
         let Some((name, 0)) = objc_ref_location(ctx, target) else { continue };
-        let data = ctx.isecs[name as usize].data();
-        let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
-        slot_of.entry(&data[..end]).or_insert(i as u32);
+        slot_of.entry(cstring_of(ctx.isecs[name as usize].data())).or_insert(i as u32);
     }
+    let n = ctx.objc_stubs.symbols.len();
+    let stubs = &mut ctx.objc_stubs;
+    stubs.selref = Vec::with_capacity(n);
+    stubs.tail = Vec::with_capacity(n);
+    stubs.name_isec = Vec::with_capacity(n);
+    stubs.methname_offs = Vec::with_capacity(n);
     let mut tail = 0u32;
-    ctx.objc_stubs.selref = Vec::with_capacity(ctx.objc_stubs.symbols.len());
-    ctx.objc_stubs.tail = Vec::with_capacity(ctx.objc_stubs.symbols.len());
-    for i in 0..ctx.objc_stubs.symbols.len() {
-        match slot_of.get(ctx.objc_stubs.symbols[i].1.as_bytes()) {
-            Some(&slot) => {
-                ctx.objc_stubs.selref.push(slot);
-                ctx.objc_stubs.tail.push(u32::MAX);
-            }
-            None => {
-                ctx.objc_stubs.selref.push(u32::MAX);
-                ctx.objc_stubs.tail.push(tail);
-                tail += 1;
+    for i in 0..n {
+        let sel = stubs.symbols[i].1.as_bytes();
+        let slot = slot_of.get(sel).copied();
+        stubs.selref.push(slot.unwrap_or(u32::MAX));
+        stubs.tail.push(if slot.is_some() { u32::MAX } else { tail });
+        let name = if slot.is_some() { None } else { name_of.get(sel).copied() };
+        stubs.name_isec.push(name.unwrap_or(u32::MAX));
+        stubs.methname_offs.push(stubs.methname_data.len() as u64);
+        if slot.is_none() {
+            tail += 1;
+            if name.is_none() {
+                stubs.methname_data.extend_from_slice(sel);
+                stubs.methname_data.push(0);
             }
         }
     }
-    ctx.objc_stubs.tail_slots = tail as usize;
+    stubs.tail_slots = tail as usize;
+}
+
+/// A C string's bytes, up to its terminating NUL.
+fn cstring_of(data: &[u8]) -> &[u8] {
+    &data[..data.iter().position(|&b| b == 0).unwrap_or(data.len())]
 }
 
 /// Personality functions are referenced from __unwind_info through the
@@ -4041,6 +4052,21 @@ fn renamed_output_section(
     Some((seg, sect))
 }
 
+/// Whether an input subsection is an __objc_methname string that the
+/// selector name synthesized for an objc_msgSend$ stub absorbs. ld-prime
+/// keeps the synthesized string of the two, so such an input string
+/// does not place its output section: when every input string is one,
+/// __objc_methname follows every input-derived __TEXT section.
+fn is_stub_selector_name<E: Target>(
+    ctx: &Context<E>,
+    isec: &InputSection,
+    stub_sels: &hashbrown::HashSet<&[u8]>,
+) -> bool {
+    !stub_sels.is_empty()
+        && ctx.hdr_of(isec).sectname() == "__objc_methname"
+        && stub_sels.contains(cstring_of(isec.data()))
+}
+
 /// Creates output section chunks and appends each input section to its
 /// chunk, and groups chunks into segments.
 pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
@@ -4666,8 +4692,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // -segment_order, then the standard order; segments stay together,
     // and __LINKEDIT is always last.
     let mut section_first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
+    let stub_sels: hashbrown::HashSet<&[u8]> =
+        ctx.objc_stubs.symbols.iter().map(|(_, sel)| sel.as_bytes()).collect();
     for (i, isec) in ctx.isecs.iter().enumerate() {
-        if ctx.is_internal(isec.file as usize) {
+        if ctx.is_internal(isec.file as usize) || is_stub_selector_name(ctx, isec, &stub_sels) {
             continue;
         }
         let Some(ChunkId::Output(id)) = ctx.isecs[ctx.resolve_isec(i)].output_section() else {
@@ -4677,6 +4705,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         let slot = &mut section_first_seen[id.index()];
         *slot = (*slot).min(key);
     }
+    drop(stub_sels);
     if let Some(obj) = ctx.common_first_obj {
         for (i, osec) in ctx.output_sections.iter().enumerate() {
             if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {

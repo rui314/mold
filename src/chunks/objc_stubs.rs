@@ -33,6 +33,10 @@ pub struct ObjcStubsSection {
     /// selector's offset in it.
     pub methname_data: Vec<u8>,
     pub methname_offs: Vec<u64>,
+    /// Per stub: the input __objc_methname string of its selector's
+    /// name that its synthesized selector reference points at, when an
+    /// input has one (u32::MAX: the name is in the tail).
+    pub name_isec: Vec<u32>,
     /// The output sections carrying the synthesized selector strings
     /// and selector references as their tail.
     pub methname: Option<OutputSectionId>,
@@ -55,6 +59,7 @@ impl ObjcStubsSection {
             extra_selrefs: Vec::new(),
             methname_data: Vec::new(),
             methname_offs: Vec::new(),
+            name_isec: Vec::new(),
             methname: None,
             selrefs: None,
             msgsend_sym: None,

@@ -37,6 +37,15 @@ otool -l $t/exe > $t/lc
 [ "$(grep -c 'sectname __objc_selrefs' $t/lc)" = 1 ]
 [ "$(grep -c 'sectname __objc_methname' $t/lc)" = 1 ]
 grep -q 'sectname __objc_stubs' $t/lc
+# A stub's selector name is an input's string of that name where there
+# is one (ld-prime coalesces the two): each name appears once. Every
+# input string here is a stub's selector, taken over by the synthesized
+# one, so __objc_methname follows the input-derived __TEXT sections.
+otool -X -s __TEXT __objc_methname -V $t/exe | sort | uniq -d > $t/dups
+[ ! -s $t/dups ]
+awk '$1 == "sectname" { s = $2; next }
+  $1 == "segname" { if ($2 == "__TEXT" && s != "") print s; s = "" }' $t/lc > $t/text
+[ "$(grep -A1 '^__cstring$' $t/text | tail -1)" = __objc_methname ]
 # ld-prime leaves x86-64's stubs byte-aligned (arm64's are 32-byte).
 if [ $ARCH = x86_64 ]; then
   grep -A8 'sectname __objc_stubs' $t/lc | grep 'align 2^0'
