@@ -477,10 +477,14 @@ fn add_patterns<'a>(glob: &mut GlobBuilder, opt: &str, pats: impl IntoIterator<I
     }
 }
 
-fn read_symbol_list(path: &Path) -> Vec<String> {
+fn read_symbol_list(opt: &str, path: &Path) -> Vec<String> {
     match std::fs::read_to_string(path) {
         Ok(text) => symbol_list(&text),
-        Err(_) => fatal!("cannot read symbol list: {}", path.display()),
+        Err(e) => fatal!(
+            "{opt} file '{}' could not be opened, {}",
+            path.display(),
+            crate::error::errno_text(&e)
+        ),
     }
 }
 
@@ -621,9 +625,10 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
         ),
         None => (Path::new(arg), None),
     };
-    let Ok(text) = std::fs::read(path) else {
-        fatal!("cannot read -filelist file: {}", path.display());
-    };
+    let text = std::fs::read(path).unwrap_or_else(|e| {
+        let errno = crate::error::errno_text(&e);
+        fatal!("-filelist file '{}' could not be opened, {errno}", path.display())
+    });
     text.split(|&b| b == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
         .filter(|line| !line.is_empty())
@@ -848,7 +853,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-exported_symbols_list" => {
                 check_export_choice(&mut export_choice, ExportChoice::Exported, name);
-                let names = read_symbol_list(&path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 add_patterns(
                     exported_symbols.get_or_insert_default(),
@@ -862,11 +867,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
-                let names = read_symbol_list(&path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_patterns(&mut unexported_symbols, name, names.iter().map(String::as_str));
             }
             b"-reexported_symbols_list" => {
-                let names = read_symbol_list(&path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 // Exact names force a reference even if no object
                 // mentions them. Patterns only match existing symbols.
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
@@ -930,11 +935,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
             b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
             b"-non_global_symbols_strip_list" => {
-                let names = read_symbol_list(&path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_patterns(&mut local_strip_list, name, names.iter().map(String::as_str));
             }
             b"-non_global_symbols_keep_list" => {
-                let names = read_symbol_list(&path(next_arg(&mut i)));
+                let names = read_symbol_list(name, &path(next_arg(&mut i)));
                 add_patterns(
                     local_keep_list.get_or_insert_default(),
                     name,

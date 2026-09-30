@@ -94,6 +94,11 @@ impl MappedFile {
         }
     }
 
+    /// Opens a file, handing any failure to the caller to word.
+    pub fn try_open(path: impl AsRef<Path>) -> io::Result<&'static Self> {
+        Self::open_impl(path.as_ref())
+    }
+
     /// Opens a file that must exist.
     pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();

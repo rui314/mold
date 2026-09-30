@@ -453,17 +453,17 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         tapi::prefetch(&deps, E::NAME);
     }
 
-    let lib = |ctx: &Context<E>, name: &OsStr, option: &str| {
+    let lib = |ctx: &Context<E>, name: &OsStr| {
         let path = find_library(ctx, name);
         if path.is_none() {
-            error!("library not found: {option}{}", name.display());
+            error!("library '{}' not found", name.display());
         }
         path
     };
     let framework = |ctx: &Context<E>, name: &OsStr| {
         let path = find_framework(ctx, name);
         if path.is_none() {
-            error!("framework not found: {}", name.display());
+            error!("framework '{}' not found", name.display());
         }
         path
     };
@@ -482,18 +482,10 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             InputArg::NeededFile(path) => {
                 (Some(path.clone()), ReaderContext { needed: true, ..rc })
             }
-            InputArg::Lib(name, weak) => {
-                (lib(ctx, name, "-l"), ReaderContext { weak: *weak, ..rc })
-            }
-            InputArg::ReexportLib(name) => {
-                (lib(ctx, name, "-reexport-l"), ReaderContext { reexport: true, ..rc })
-            }
-            InputArg::HiddenLib(name) => {
-                (lib(ctx, name, "-hidden-l"), ReaderContext { hidden: true, ..rc })
-            }
-            InputArg::NeededLib(name) => {
-                (lib(ctx, name, "-needed-l"), ReaderContext { needed: true, ..rc })
-            }
+            InputArg::Lib(name, weak) => (lib(ctx, name), ReaderContext { weak: *weak, ..rc }),
+            InputArg::ReexportLib(name) => (lib(ctx, name), ReaderContext { reexport: true, ..rc }),
+            InputArg::HiddenLib(name) => (lib(ctx, name), ReaderContext { hidden: true, ..rc }),
+            InputArg::NeededLib(name) => (lib(ctx, name), ReaderContext { needed: true, ..rc }),
             InputArg::Framework(name, weak) => {
                 (framework(ctx, name), ReaderContext { weak: *weak, ..rc })
             }
@@ -504,8 +496,16 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 (framework(ctx, name), ReaderContext { needed: true, ..rc })
             }
         };
-        if let Some(path) = path {
-            collect_file(ctx, MappedFile::must_open(&path), rc, &mut queue);
+        let Some(path) = path else { continue };
+        match MappedFile::try_open(&path) {
+            Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
+            // A bare path names a file; the other forms name a library.
+            Err(e) if matches!(arg, InputArg::File(_)) => error!(
+                "file cannot be open()ed, {} path={p} in '{p}'",
+                crate::error::errno_text(&e),
+                p = path.display()
+            ),
+            Err(_) => error!("library '{}' not found", path.display()),
         }
     }
     ctx.args.inputs = inputs;
@@ -518,7 +518,9 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         if ctx.args.output_type != MH_BUNDLE {
             fatal!("-bundle_loader can only be used with -bundle");
         }
-        let mf = MappedFile::must_open(&path);
+        let Ok(mf) = MappedFile::try_open(&path) else {
+            fatal!("library '{}' not found", path.display());
+        };
         crate::input_files::parse_bundle_loader(ctx, mf);
     }
     load_pending(ctx, queue);
@@ -4753,9 +4755,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // Sections synthesized from files by -sectcreate.
     let sectcreate = std::mem::take(&mut ctx.args.sectcreate);
     for (seg, sect, path) in &sectcreate {
-        let Ok(data) = std::fs::read(path) else {
-            fatal!("-sectcreate: cannot read {}", path.display());
-        };
+        let data = std::fs::read(path).unwrap_or_else(|e| {
+            let errno = crate::error::errno_text(&e);
+            fatal!("file cannot be open()ed, {errno} path={}", path.display())
+        });
         let segname: &'static str = String::leak(seg.clone());
         add_sectcreate(ctx, SectCreateSection::new(segname, sect, Vec::leak(data), true));
     }

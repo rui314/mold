@@ -29,6 +29,18 @@ static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
+/// An I/O error as ld64 words it: "errno=2 (No such file or directory)".
+pub fn errno_text(e: &io::Error) -> String {
+    let text = e.to_string();
+    match e.raw_os_error() {
+        Some(n) => {
+            let text = text.strip_suffix(&format!(" (os error {n})")).unwrap_or(&text);
+            format!("errno={n} ({text})")
+        }
+        None => text,
+    }
+}
+
 pub fn set_color(on: bool) {
     COLOR.store(on, Ordering::Relaxed);
 }
