@@ -4437,7 +4437,7 @@ fn resolve_zerofill_conflict<E: Target>(
 /// The object each common symbol's subsection stands for the tentative
 /// definition of, by subsection: the one declaring the largest size,
 /// the first of equals, as in ld-prime.
-fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
+pub(crate) fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
     let mut decls: hashbrown::HashMap<crate::symbol::SymbolId, (u64, u32)> =
         hashbrown::HashMap::new();
     for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
