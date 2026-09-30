@@ -4997,9 +4997,10 @@ pub fn create_output_symtab<E: Target>(
 
 /// -image_base (or -seg1addr) sets the address of the first segment
 /// after __PAGEZERO, for an image that stays where it was linked. dyld
-/// slides a PIE executable, and a dylib or bundle with chained fixups,
-/// wherever it likes; ld-prime ignores the option for those with a
-/// warning, and rounds a base up to a page.
+/// slides a PIE executable wherever it likes, and ld-prime ignores the
+/// option for one with a warning; it ignores it too for any other image
+/// dyld loads with chained fixups (a non-PIE executable only when
+/// -fixup_chains asks for them), and rounds a base up to a page.
 pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     let Some(base) = ctx.args.image_base else { return };
     // ld-prime takes a zero base as none at all.
@@ -5020,7 +5021,7 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     } else if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
         crate::warn!("Linking with PIE, -image_base will be ignored");
         ctx.args.image_base = None;
-    } else if matches!(ctx.args.output_type, MH_DYLIB | MH_BUNDLE) && ctx.use_chained_fixups() {
+    } else if !ctx.args.static_link && ctx.use_chained_fixups() {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         ctx.args.image_base = None;
     } else if base % E::PAGE_SIZE != 0 {

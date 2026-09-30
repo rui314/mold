@@ -3,10 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # -image_base (or -seg1addr) puts the first segment after __PAGEZERO at
 # the given address, for an image that stays where it was linked: a
-# -static one, a non-PIE x86-64 executable, a dylib or bundle with
-# classic dyld info. dyld slides a PIE executable and a chained-fixups
-# dylib anyway, and ld-prime ignores the option for those with a
-# warning. A base inside __PAGEZERO is an error.
+# -static one, or one with classic dyld info (a non-PIE x86-64
+# executable has that by default). dyld slides a PIE executable anyway,
+# and ld-prime ignores the option with a warning for that and for any
+# other image dyld loads with chained fixups. A base inside __PAGEZERO
+# is an error.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 text() { otool -l $1 | awk '$1 == "segname" && $2 == "__TEXT" { getline; print $2; exit }'; }
@@ -33,6 +34,17 @@ if [ $ARCH = x86_64 ]; then
     -mmacosx-version-min=12.0
   [ "$(text $t/exe3)" = 0x0000000200000000 ]
   $t/exe3
+
+  $CC --ld-path=$mold -o $t/exe8 $t/a.o -Wl,-no_pie -Wl,-image_base,0x200000000 \
+    -mmacosx-version-min=14.0 2> /dev/null
+  [ "$(text $t/exe8)" = 0x0000000200000000 ]
+  $t/exe8
+
+  $CC --ld-path=$mold -o $t/exe9 $t/a.o -Wl,-no_pie -Wl,-image_base,0x200000000 \
+    -mmacosx-version-min=14.0 -Wl,-fixup_chains 2> $t/log9
+  grep -q 'prefered load addresses (-seg1addr) are disabled with chained fixups' $t/log9
+  [ "$(text $t/exe9)" = 0x0000000100000000 ]
+  $t/exe9
 fi
 
 not $mold -arch $ARCH -static -e _main $t/a.o -image_base 0x100000 -o $t/exe4 2> $t/log4
