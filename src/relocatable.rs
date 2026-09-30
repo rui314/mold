@@ -513,72 +513,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Regenerate each section's relocations against the merged tables.
-    let mut sect_relocs: Vec<Vec<MachRel>> = Vec::new();
-    for &chunk_idx in &section_chunks {
-        let isecs = &ctx.output_section(chunk_idx).members;
-        let mut rels: Vec<MachRel> = Vec::new();
-        for &id in isecs {
-            let isec = &ctx.isecs[id];
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                let r_address = (isec.offset as u64 + rel.offset as u64) as u32;
-                let length = rel.size.trailing_zeros();
-
-                match rel.target() {
-                    RelocTarget::Sym(idx) => {
-                        let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
-                        let Some(&symnum) = index_of_sym.get(&sym_id) else {
-                            fatal!(
-                                "-r: cannot re-emit relocation against {}",
-                                ctx.symbols[sym_id].name()
-                            );
-                        };
-                        // An explicit addend record precedes relocations
-                        // whose instruction can't hold one.
-                        if rel.addend != 0 && E::relocatable_needs_addend(rel.r_type) {
-                            rels.push(MachRel {
-                                r_address,
-                                bits: (rel.addend as u32 & 0xff_ffff)
-                                    | (2 << 25)
-                                    | ((E::RELOC_ADDEND as u32) << 28),
-                            });
-                        }
-                        rels.push(MachRel {
-                            r_address,
-                            bits: symnum
-                                | ((rel.is_pcrel as u32) << 24)
-                                | (length << 25)
-                                | (1 << 27)
-                                | ((rel.r_type as u32) << 28),
-                        });
-                    }
-                    RelocTarget::Section(target) => {
-                        let target = ctx.resolve_isec(target as usize);
-                        if let Some((symnum, _)) = atom_target(target, rel.addend) {
-                            rels.push(MachRel {
-                                r_address,
-                                bits: symnum
-                                    | ((rel.is_pcrel as u32) << 24)
-                                    | (length << 25)
-                                    | (1 << 27)
-                                    | ((rel.r_type as u32) << 28),
-                            });
-                            continue;
-                        }
-                        let t = &ctx.isecs[target];
-                        let ord = ctx.isec_n_sect(t) as u32;
-                        rels.push(MachRel {
-                            r_address,
-                            bits: ord
-                                | ((rel.is_pcrel as u32) << 24)
-                                | (length << 25)
-                                | ((rel.r_type as u32) << 28),
-                        });
-                    }
-                }
-            }
-        }
-        sect_relocs.push(rels);
-    }
+    let sect_relocs: Vec<Vec<MachRel>> = section_chunks
+        .iter()
+        .map(|&chunk_idx| section_relocs(ctx, chunk_idx, &index_of_sym, &atom_target))
+        .collect();
 
     // Auto-link requests are not acted on in a -r link; each distinct
     // one is carried into the output as an LC_LINKER_OPTION command,
@@ -945,6 +883,85 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     crate::error::checkpoint();
     output_file::write(&ctx.args.output, &buf);
+}
+
+/// A -r output section's relocations, regenerated against the merged
+/// tables. ld-prime writes each atom's relocations by descending offset
+/// whatever the input's order, keeping a pair - a SUBTRACTOR and its
+/// UNSIGNED, an arm64 ADDEND and its PAGE21 or PAGEOFF12 - in order.
+fn section_relocs<E: Target>(
+    ctx: &Context<E>,
+    chunk_idx: OutputSectionId,
+    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
+    atom_target: &impl Fn(usize, i64) -> Option<(u32, u64)>,
+) -> Vec<MachRel> {
+    let mut rels = Vec::new();
+    for &id in &ctx.output_section(chunk_idx).members {
+        let isec = &ctx.isecs[id];
+        let mut groups: Vec<Vec<MachRel>> = Vec::new();
+        let mut open: Vec<MachRel> = Vec::new();
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            let mut group = std::mem::take(&mut open);
+            push_reloc(ctx, isec, rel, index_of_sym, atom_target, &mut group);
+            if rel.r_type == E::RELOC_SUBTRACTOR {
+                open = group;
+            } else {
+                groups.push(group);
+            }
+        }
+        if !open.is_empty() {
+            groups.push(open);
+        }
+        groups.sort_by_key(|g| std::cmp::Reverse(g[0].r_address));
+        rels.extend(groups.into_iter().flatten());
+    }
+    rels
+}
+
+/// Appends the -r relocation entries standing for one input relocation.
+fn push_reloc<E: Target>(
+    ctx: &Context<E>,
+    isec: &crate::input_sections::InputSection,
+    rel: &crate::input_sections::Reloc,
+    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
+    atom_target: &impl Fn(usize, i64) -> Option<(u32, u64)>,
+    out: &mut Vec<MachRel>,
+) {
+    let r_address = (isec.offset as u64 + rel.offset as u64) as u32;
+    let (symnum, is_extern) = match rel.target() {
+        RelocTarget::Sym(idx) => {
+            let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
+            let Some(&symnum) = index_of_sym.get(&sym_id) else {
+                fatal!("-r: cannot re-emit relocation against {}", ctx.symbols[sym_id].name());
+            };
+            // An explicit addend record precedes relocations whose
+            // instruction can't hold one.
+            if rel.addend != 0 && E::relocatable_needs_addend(rel.r_type) {
+                out.push(MachRel {
+                    r_address,
+                    bits: (rel.addend as u32 & 0xff_ffff)
+                        | (2 << 25)
+                        | ((E::RELOC_ADDEND as u32) << 28),
+                });
+            }
+            (symnum, true)
+        }
+        RelocTarget::Section(target) => {
+            let target = ctx.resolve_isec(target as usize);
+            match atom_target(target, rel.addend) {
+                Some((symnum, _)) => (symnum, true),
+                None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
+            }
+        }
+    };
+    out.push(MachRel {
+        r_address,
+        bits: symnum
+            | ((rel.is_pcrel as u32) << 24)
+            | (rel.size.trailing_zeros() << 25)
+            | ((is_extern as u32) << 27)
+            | ((rel.r_type as u32) << 28),
+    });
 }
 
 /// A -r output's symbol and string tables, and where relocations find
