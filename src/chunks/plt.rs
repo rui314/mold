@@ -130,16 +130,16 @@ pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>)
     };
     use crate::chunks::strtab::{ARM, DATA};
     if E::FAMILY == Family::Arm32 {
-        block.push_mapping_symbol::<E>(ARM, func(plt.hdr.shdr.sh_addr.get()));
-        block.push_mapping_symbol::<E>(DATA, func(plt.hdr.shdr.sh_addr.get() + 16));
+        block.push_mapping_symbol::<E>(ARM, plt.hdr.shndx, plt.hdr.shdr.sh_addr.get());
+        block.push_mapping_symbol::<E>(DATA, plt.hdr.shndx, plt.hdr.shdr.sh_addr.get() + 16);
     }
     for &id in &plt.symbols {
         let sym = &ctx.symbols[id];
         let addr = sym.plt_addr(ctx);
         block.push_synthetic::<E>(sym.name(), b"$plt", func(addr));
         if E::FAMILY == Family::Arm32 {
-            block.push_mapping_symbol::<E>(ARM, func(addr));
-            block.push_mapping_symbol::<E>(DATA, func(addr + 12));
+            block.push_mapping_symbol::<E>(ARM, plt.hdr.shndx, addr);
+            block.push_mapping_symbol::<E>(DATA, plt.hdr.shndx, addr + 12);
         }
     }
 }

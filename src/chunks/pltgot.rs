@@ -81,8 +81,8 @@ pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>)
         let addr = sym.plt_addr(ctx);
         block.push_synthetic::<E>(sym.name(), b"$pltgot", func(addr));
         if E::FAMILY == Family::Arm32 {
-            block.push_mapping_symbol::<E>(ARM, func(addr));
-            block.push_mapping_symbol::<E>(DATA, func(addr + 12));
+            block.push_mapping_symbol::<E>(ARM, pltgot.hdr.shndx, addr);
+            block.push_mapping_symbol::<E>(DATA, pltgot.hdr.shndx, addr + 12);
         }
     }
 }

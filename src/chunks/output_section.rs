@@ -581,9 +581,9 @@ pub fn populate_symtab<E: Target>(
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));
             if E::FAMILY == Family::Arm32 {
                 // Emit "$t", "$a" and "$d" if ARM32.
-                block.push_mapping_symbol::<E>(crate::chunks::strtab::THUMB, func(addr));
-                block.push_mapping_symbol::<E>(crate::chunks::strtab::ARM, func(addr + 4));
-                block.push_mapping_symbol::<E>(crate::chunks::strtab::DATA, func(addr + 12));
+                block.push_mapping_symbol::<E>(crate::chunks::strtab::THUMB, shndx, addr);
+                block.push_mapping_symbol::<E>(crate::chunks::strtab::ARM, shndx, addr + 4);
+                block.push_mapping_symbol::<E>(crate::chunks::strtab::DATA, shndx, addr + 12);
             }
         }
     }

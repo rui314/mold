@@ -2723,11 +2723,13 @@ impl<'a> SymtabBlock<'a> {
         self.locals.push::<E>(esym, 0);
     }
 
-    /// Adds a local symbol whose name is a fixed `.strtab` entry, such as
-    /// an ARM32 mapping symbol.
-    pub fn push_mapping_symbol<E: Target>(&mut self, st_name: u32, esym: ElfSym<E>) {
-        let mut esym = esym;
+    /// Adds an ARM32 mapping symbol, an STT_NOTYPE local symbol whose name
+    /// is a fixed `.strtab` entry.
+    pub fn push_mapping_symbol<E: Target>(&mut self, st_name: u32, shndx: u32, addr: u64) {
+        let mut esym = ElfSym::<E>::default();
         esym.set_st_name(st_name);
+        esym.set_st_shndx(shndx);
+        esym.set_st_value(addr);
         self.locals.push::<E>(esym, 0);
     }
 }
