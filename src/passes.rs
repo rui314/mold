@@ -687,31 +687,37 @@ fn providing_dylib(
     idx
 }
 
+/// Makes `sym`, found in `dylibs[idx]`'s exports, an import from the
+/// dylib that provides it, and returns that dylib's index.
+fn import_from_dylib(
+    sym: &mut crate::symbol::Symbol,
+    dylibs: &[input_files::DylibFile],
+    providers: &[Vec<usize>],
+    idx: usize,
+) -> usize {
+    let owner = providing_dylib(dylibs, providers, idx, sym.name());
+    sym.set_file(FileId::Dylib(owner as u32));
+    sym.set_is_imported(true);
+    sym.set_is_extern(true);
+    sym.set_input_section(None);
+    sym.set_is_common(false);
+    owner
+}
+
 /// Lets newly auto-linked dylibs claim still-unresolved symbols. They
 /// carry later priorities than every file already resolved, so they
 /// can steal nothing - a full re-resolution would reach exactly this
 /// outcome, at many times the cost.
 pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
-    struct SymsPtr(*mut crate::symbol::Symbol);
-    unsafe impl Sync for SymsPtr {}
-    let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
-    let syms_ptr = &syms_ptr;
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
-    (0..ctx.symbols.syms.len()).into_par_iter().for_each(|i| {
-        // SAFETY: each index is written only by its own iteration.
-        let sym = unsafe { &mut *syms_ptr.0.add(i) };
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if !sym.is_used() || sym.is_defined() {
             return;
         }
         for (dylib_idx, dylib) in dylibs.iter().enumerate().skip(first) {
             if dylib.exports.contains(sym.name()) {
-                let owner = providing_dylib(dylibs, &providers, dylib_idx, sym.name());
-                sym.set_file(FileId::Dylib(owner as u32));
-                sym.set_is_imported(true);
-                sym.set_is_extern(true);
-                sym.set_input_section(None);
-                sym.set_is_common(false);
+                import_from_dylib(sym, dylibs, &providers, dylib_idx);
                 break;
             }
         }
@@ -737,12 +743,34 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 /// the archive members whose definitions are actually referenced, and
 /// a second round restricted to live files settles the final owners.
 pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
+    intern_command_line_symbols(ctx);
     clear_claims(ctx);
     do_resolve(ctx, false);
     mark_live_objects(ctx);
     clear_claims(ctx);
     do_resolve(ctx, true);
     claim_locals(ctx);
+}
+
+/// Symbols the command line names (-e, -u) exist even when no object
+/// mentions them, so that a dylib export can claim them: an app
+/// extension's entry point, _NSExtensionMain, lives in Foundation and
+/// nothing in the extension references it.
+fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
+    let mut named: Vec<String> = ctx.args.forced_undefined.clone();
+    // Not for -r, whose output type is still the executable default: the
+    // relocatable output would carry a spurious undefined _main.
+    if ctx.args.output_type == MH_EXECUTE && !ctx.args.relocatable {
+        named.push(ctx.args.entry.clone());
+    }
+    // -alias bases too: Xcode aliases an app extension's debug dylib
+    // entry point to Foundation's _NSExtensionMain.
+    named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.clone()));
+    for name in named {
+        if ctx.symbols.get(&name).is_none() {
+            ctx.symbols.intern(String::leak(name));
+        }
+    }
 }
 
 /// Non-external symbols are private to their object and never compete:
@@ -808,126 +836,169 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
+/// One resolution round over the objects - all of them, or with
+/// `only_alive` just the live ones - like mold's resolve_symbols_pass:
+/// definitions race for each symbol by rank and the winners claim it,
+/// common symbols merge, and dylib exports claim what the objects
+/// leave undefined.
 fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
 
-    // Symbols the command line names (-e, -u) exist even when no
-    // object mentions them, so that a dylib export can claim them: an
-    // app extension's entry point, _NSExtensionMain, lives in
-    // Foundation and nothing in the extension references it.
-    let mut named: Vec<String> = ctx.args.forced_undefined.clone();
-    // Not for -r, whose output type is still the executable default: the
-    // relocatable output would carry a spurious undefined _main.
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.relocatable {
-        named.push(ctx.args.entry.clone());
-    }
-    // -alias bases too: Xcode aliases an app extension's debug dylib
-    // entry point to Foundation's _NSExtensionMain.
-    named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.clone()));
-    for name in named {
-        if ctx.symbols.get(&name).is_none() {
-            ctx.symbols.intern(String::leak(name));
+    let refs = collect_references(ctx, only_alive);
+    let best = race_definitions(ctx, only_alive);
+    claim_definitions(ctx, only_alive, &best);
+    merge_common_symbols(ctx, &best);
+
+    // Record the references seen this round. A symbol is a weak import
+    // only if every reference to it is weak: one strong reference
+    // anywhere makes it strong (ld64's default, -weak_reference_
+    // mismatches non-weak), and so binds it non-weakly and keeps its
+    // dylib loaded non-weakly.
+    for i in 0..ctx.symbols.syms.len() {
+        if refs.strong[i].load(Ordering::Relaxed) {
+            let sym = &mut ctx.symbols.syms[i];
+            sym.set_is_strong_ref(true);
+            sym.set_is_weak_ref(false);
+        } else if refs.weak[i].load(Ordering::Relaxed) && !ctx.symbols.syms[i].is_strong_ref() {
+            ctx.symbols.syms[i].set_is_weak_ref(true);
         }
     }
 
-    let n = ctx.symbols.syms.len();
+    // A relocatable link keeps every reference undefined rather than
+    // binding it to a dylib.
+    if !ctx.args.relocatable {
+        claim_dylib_exports(ctx, &refs.used, &best);
+    }
 
-    // Which symbols the files considered this round actually reference.
-    // References from dead archive members must not count: they would
-    // otherwise demand definitions nothing live needs.
-    let used: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
-    let weak_ref: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
-    let strong_ref: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+    // Record the final usage set for downstream passes.
+    for (i, u) in refs.used.iter().enumerate() {
+        ctx.symbols.syms[i].set_is_used(u.load(Ordering::Relaxed));
+    }
+}
+
+/// Which symbols the objects considered in a round reference, and how.
+struct References {
+    used: Vec<std::sync::atomic::AtomicBool>,
+    weak: Vec<std::sync::atomic::AtomicBool>,
+    strong: Vec<std::sync::atomic::AtomicBool>,
+}
+
+/// Which symbols the files considered this round actually reference.
+/// References from dead archive members must not count: they would
+/// otherwise demand definitions nothing live needs. What the command
+/// line names (-u, -e, -alias) counts as referenced.
+fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> References {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let n = ctx.symbols.syms.len();
+    let refs = References {
+        used: (0..n).map(|_| AtomicBool::new(false)).collect(),
+        weak: (0..n).map(|_| AtomicBool::new(false)).collect(),
+        strong: (0..n).map(|_| AtomicBool::new(false)).collect(),
+    };
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             if !nlist.is_stab() && nlist.is_extern() && nlist.n_type() == N_UNDF {
-                used[sym_id as usize].store(true, Ordering::Relaxed);
+                refs.used[sym_id as usize].store(true, Ordering::Relaxed);
                 if nlist.n_desc & N_WEAK_REF != 0 {
-                    weak_ref[sym_id as usize].store(true, Ordering::Relaxed);
+                    refs.weak[sym_id as usize].store(true, Ordering::Relaxed);
                 } else {
-                    strong_ref[sym_id as usize].store(true, Ordering::Relaxed);
+                    refs.strong[sym_id as usize].store(true, Ordering::Relaxed);
                 }
             }
         }
     });
-    for name in &ctx.args.forced_undefined {
+
+    let named = ctx
+        .args
+        .forced_undefined
+        .iter()
+        .chain(std::iter::once(&ctx.args.entry))
+        .chain(ctx.args.aliases.iter().map(|(existing, _)| existing));
+    for name in named {
         if let Some(id) = ctx.symbols.get(name) {
-            used[id as usize].store(true, Ordering::Relaxed);
+            refs.used[id as usize].store(true, Ordering::Relaxed);
         }
     }
-    if let Some(id) = ctx.symbols.get(&ctx.args.entry) {
-        used[id as usize].store(true, Ordering::Relaxed);
-    }
-    for (existing, _) in &ctx.args.aliases {
-        if let Some(id) = ctx.symbols.get(existing) {
-            used[id as usize].store(true, Ordering::Relaxed);
-        }
-    }
+    refs
+}
 
-    // The rank of a definition: (class << 40) | (alignment term << 32)
-    // | priority, lower is better. Ranks race into `best` with an
-    // atomic minimum, as in mold: the race is order-free because the
-    // winner is the same whatever the interleaving, and since each
-    // object has a unique priority, exactly one object ends up owning
-    // each symbol. Among weak definitions ld64 keeps the copy with the
-    // greatest alignment (a Swift metadata record comes 8-aligned from
-    // one object and 16-aligned from another; the first copy wins only
-    // at equal alignment), so a live weak definition's rank carries
-    // its subsection's alignment, inverted.
-    let isecs_for_rank = &ctx.isecs;
-    let rank_of = |obj: &crate::input_files::ObjectFile, nlist: &NList| -> Option<u64> {
-        if nlist.is_stab() || !nlist.is_extern() {
-            return None;
-        }
-        let is_weak = nlist.n_desc & N_WEAK_DEF != 0;
-        let class: u64 = match nlist.n_type() {
-            N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
-            N_SECT | N_ABS if obj.is_alive => 1,
-            N_SECT | N_ABS => 2,
-            N_UNDF if nlist.is_common() && obj.is_alive => 3,
-            _ => return None,
-        };
-        let mut align_term = 0u64;
-        if class == 1
-            && nlist.n_type() == N_SECT
-            && let Some((isec, _)) = crate::input_files::find_symbol_subsec(
-                isecs_for_rank,
-                &obj.subsecs,
-                nlist.n_sect,
-                nlist.n_value,
-            )
-        {
-            align_term = 63 - isecs_for_rank[isec].p2align as u64;
-        }
-        Some((class << 40) | (align_term << 32) | obj.priority as u64)
+/// The rank of a definition: (class << 40) | (alignment term << 32) |
+/// priority, lower is better. Among weak definitions ld64 keeps the
+/// copy with the greatest alignment (a Swift metadata record comes
+/// 8-aligned from one object and 16-aligned from another; the first
+/// copy wins only at equal alignment), so a live weak definition's rank
+/// carries its subsection's alignment, inverted.
+fn definition_rank(
+    isecs: &[InputSection],
+    obj: &crate::input_files::ObjectFile,
+    nlist: &NList,
+) -> Option<u64> {
+    if nlist.is_stab() || !nlist.is_extern() {
+        return None;
+    }
+    let is_weak = nlist.n_desc & N_WEAK_DEF != 0;
+    let class: u64 = match nlist.n_type() {
+        N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
+        N_SECT | N_ABS if obj.is_alive => 1,
+        N_SECT | N_ABS => 2,
+        N_UNDF if nlist.is_common() && obj.is_alive => 3,
+        _ => return None,
     };
+    let mut align_term = 0u64;
+    if class == 1
+        && nlist.n_type() == N_SECT
+        && let Some((isec, _)) =
+            crate::input_files::find_symbol_subsec(isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
+    {
+        align_term = 63 - isecs[isec].p2align as u64;
+    }
+    Some((class << 40) | (align_term << 32) | obj.priority as u64)
+}
 
-    let best: Vec<AtomicU64> = (0..n).map(|_| AtomicU64::new(u64::MAX)).collect();
+/// The best definition rank of each symbol. Ranks race into it with an
+/// atomic minimum, as in mold: the race is order-free because the
+/// winner is the same whatever the interleaving, and since each object
+/// has a unique priority, exactly one object ends up owning each
+/// symbol.
+fn race_definitions<E: Target>(
+    ctx: &Context<E>,
+    only_alive: bool,
+) -> Vec<std::sync::atomic::AtomicU64> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let best: Vec<AtomicU64> =
+        (0..ctx.symbols.syms.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if let Some(rank) = rank_of(obj, nlist) {
+            if let Some(rank) = definition_rank(&ctx.isecs, obj, nlist) {
                 best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
             }
         }
     });
+    best
+}
 
-    // Claim phase: each object writes the symbols whose race it won.
-    // Ranks are unique per object, so every symbol has exactly one
-    // writer and the parallel writes are disjoint.
+/// Each object writes the symbols whose race it won. Ranks are unique
+/// per object, so every symbol has exactly one writer and the parallel
+/// writes are disjoint.
+fn claim_definitions<E: Target>(
+    ctx: &mut Context<E>,
+    only_alive: bool,
+    best: &[std::sync::atomic::AtomicU64],
+) {
+    use std::sync::atomic::Ordering;
     struct SymsPtr(*mut crate::symbol::Symbol);
     unsafe impl Sync for SymsPtr {}
     let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
     let syms_ptr = &syms_ptr;
     let isecs = &ctx.isecs;
-    let objs = &ctx.objs;
 
-    objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive).for_each(
+    ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive).for_each(
         |(obj_idx, obj)| {
             let r = obj.global_range();
             for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                let Some(rank) = rank_of(obj, nlist) else {
+                let Some(rank) = definition_rank(isecs, obj, nlist) else {
                     continue;
                 };
                 let won = best[sym_id as usize].load(Ordering::Relaxed);
@@ -984,14 +1055,17 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
             }
         },
     );
+}
 
-    // Common symbols merge: the largest size and strictest alignment
-    // win regardless of input order, gathered from every common claim
-    // once the class-3 winners are known.
+/// Common symbols merge: the largest size and strictest alignment win
+/// regardless of input order, gathered from every common claim once
+/// the class-3 winners are known.
+fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atomic::AtomicU64]) {
+    use std::sync::atomic::Ordering;
     let commons: Vec<(crate::symbol::SymbolId, u64, u8)> = ctx
         .objs
         .par_iter()
-        .filter(|obj| (!only_alive || obj.is_alive) && obj.is_alive)
+        .filter(|obj| obj.is_alive)
         .flat_map_iter(|obj| {
             let r = obj.global_range();
             obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(nlist, &sym_id)| {
@@ -1013,69 +1087,42 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
         sym.value = sym.value.max(size);
         sym.common_p2align = sym.common_p2align.max(p2align);
     }
+}
 
-    // Record the references seen this round. A symbol is a weak import
-    // only if every reference to it is weak: one strong reference
-    // anywhere makes it strong (ld64's default, -weak_reference_
-    // mismatches non-weak), and so binds it non-weakly and keeps its
-    // dylib loaded non-weakly.
-    for i in 0..n {
-        if strong_ref[i].load(Ordering::Relaxed) {
-            let sym = &mut ctx.symbols.syms[i];
-            sym.set_is_strong_ref(true);
-            sym.set_is_weak_ref(false);
-        } else if weak_ref[i].load(Ordering::Relaxed) && !ctx.symbols.syms[i].is_strong_ref() {
-            ctx.symbols.syms[i].set_is_weak_ref(true);
-        }
-    }
-
-    // Dylib exports claim unresolved (or lazily-claimed) symbols; an
-    // earlier dylib beats a later archive member and vice versa. A
-    // relocatable link keeps every reference undefined instead.
-    if ctx.args.relocatable {
-        for (i, u) in used.iter().enumerate() {
-            ctx.symbols.syms[i].set_is_used(u.load(Ordering::Relaxed));
-        }
-        return;
-    }
+/// Dylib exports claim the referenced symbols that no object defines,
+/// or that only a lazy archive member does; an earlier dylib beats a
+/// later archive member and vice versa.
+fn claim_dylib_exports<E: Target>(
+    ctx: &mut Context<E>,
+    used: &[std::sync::atomic::AtomicBool],
+    best: &[std::sync::atomic::AtomicU64],
+) {
+    use std::sync::atomic::Ordering;
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
-    (0..n).into_par_iter().for_each(|i| {
+    ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
         if !used[i].load(Ordering::Relaxed) {
             return;
         }
-        // SAFETY: each index is written only by its own iteration.
-        let sym = unsafe { &mut *syms_ptr.0.add(i) };
-        if sym.is_common() || best[i].load(Ordering::Relaxed) >> 40 < 2 {
+        let won = best[i].load(Ordering::Relaxed);
+        if sym.is_common() || won >> 40 < 2 {
             return;
         }
         for (dylib_idx, dylib) in dylibs.iter().enumerate() {
             let rank = (2u64 << 40) | dylib.priority as u64;
-            if rank < best[i].load(Ordering::Relaxed) && dylib.exports.contains(sym.name()) {
-                best[i].store(rank, Ordering::Relaxed);
-                let owner = providing_dylib(dylibs, &providers, dylib_idx, sym.name());
-                let dylib = &dylibs[owner];
-                sym.set_file(FileId::Dylib(owner as u32));
-                sym.set_is_imported(true);
-                sym.set_is_extern(true);
-                sym.set_input_section(None);
-                sym.set_is_common(false);
+            if rank < won && dylib.exports.contains(sym.name()) {
+                let owner = import_from_dylib(sym, dylibs, &providers, dylib_idx);
                 // -weak_framework / -weak_library / -weak-l: every
                 // import from the library is a weak import (ld64 binds
                 // it weak-import and marks it N_WEAK_REF), whatever the
                 // references say.
-                if dylib.is_weak {
+                if dylibs[owner].is_weak {
                     sym.set_is_weak_ref(true);
                 }
                 break;
             }
         }
     });
-
-    // Record the final usage set for downstream passes.
-    for (i, u) in used.iter().enumerate() {
-        ctx.symbols.syms[i].set_is_used(u.load(Ordering::Relaxed));
-    }
 }
 
 /// Marks archive members whose definitions live code references,
