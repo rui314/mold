@@ -1547,7 +1547,16 @@ impl<E: Target> ObjectFile<E> {
                     ELF_TAG_RISCV_UNALIGNED_ACCESS => {
                         self.riscv_attributes.unaligned_access = read_uleb(&mut p) != 0
                     }
-                    _ => {}
+                    // Skip other attributes. An attribute with an odd tag number
+                    // has a NUL-terminated string value, and one with an even tag
+                    // number has a ULEB128 value.
+                    _ if tag % 2 == 1 => {
+                        let end = p.iter().position(|&b| b == 0).unwrap_or(p.len());
+                        p = &p[(end + 1).min(p.len())..];
+                    }
+                    _ => {
+                        read_uleb(&mut p);
+                    }
                 }
             }
         }
