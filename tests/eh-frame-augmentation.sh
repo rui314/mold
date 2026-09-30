@@ -63,3 +63,9 @@ for aug in zRS zRB zRG zRQ zRSBG; do
   link $aug $aug $size
   cmp $t/zR.unwind $t/$aug.unwind
 done
+
+# The first-level index of __unwind_info ends one byte past the last
+# function, however much of it the last unwind record covers: an FDE
+# for the first instruction of _f only gives the same table.
+link short zR $((size / 2))
+cmp $t/zR.unwind $t/short.unwind

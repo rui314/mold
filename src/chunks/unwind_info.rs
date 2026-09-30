@@ -112,24 +112,20 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     records.par_sort_by_key(func_addr);
 
+    // The table ends where the last function does, as in ld64, however
+    // much of it its unwind record covers.
+    let last = records.last().unwrap();
+    let end = ctx.isec_addr(last.isec as usize) + ctx.isecs[last.isec as usize].size as u64;
+
     // Merge consecutive records with identical contents. An entry has no
     // length - it covers the code up to the next one - so the padding
     // between two functions does not keep them apart.
-    let mut merged: Vec<crate::input_files::UnwindRecord> = Vec::with_capacity(records.len());
-    for rec in records {
-        match merged.last_mut() {
-            Some(last)
-                if last.encoding == rec.encoding
-                    && last.personality() == rec.personality()
-                    && last.lsda().is_none()
-                    && rec.lsda().is_none() =>
-            {
-                last.code_len = (func_addr(&rec) + rec.code_len as u64 - func_addr(last)) as u32;
-            }
-            _ => merged.push(rec),
-        }
-    }
-    let records = merged;
+    records.dedup_by(|rec, last| {
+        last.encoding == rec.encoding
+            && last.personality() == rec.personality()
+            && last.lsda().is_none()
+            && rec.lsda().is_none()
+    });
 
     // The common encodings table: the encodings the image uses more
     // than once, most frequent first, up to 127 of them (a compressed
@@ -316,8 +312,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
 
     // The terminating first-level entry.
-    let last = records.last().unwrap();
-    push32(&mut page1, (func_addr(last) + last.code_len as u64 + 1 - base) as u32);
+    push32(&mut page1, (end + 1 - base) as u32);
     push32(&mut page1, 0);
     push32(&mut page1, (lsda_off + lsda.len()) as u32);
     page1.resize(index_len, 0);
