@@ -184,7 +184,8 @@ impl Target for M68k {
             let sa = s.wrapping_add(a);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel, val, lo, hi);
 
-            // The narrower fields come in unsigned and signed flavors.
+            // Narrower fields are signed displacements except for the absolute
+            // R_68K_16 and R_68K_8.
             let write32 = |buf: &mut [u8], val: u64| write_ub32(&mut buf[off..], val as u32);
             let write16 = |buf: &mut [u8], val: u64| {
                 check(val as i64, 0, 1 << 16);
@@ -213,23 +214,25 @@ impl Target for M68k {
                 R_68K_GOTPCREL16 => write16s(buf, got.wrapping_add(a).wrapping_sub(p)),
                 R_68K_GOTPCREL8 => write8s(buf, got.wrapping_add(a).wrapping_sub(p)),
                 R_68K_GOTOFF32 => write32(buf, g().wrapping_add(a)),
-                R_68K_GOTOFF16 => write16(buf, g().wrapping_add(a)),
-                R_68K_GOTOFF8 => write8(buf, g().wrapping_add(a)),
+                R_68K_GOTOFF16 => write16s(buf, g().wrapping_add(a)),
+                R_68K_GOTOFF8 => write8s(buf, g().wrapping_add(a)),
                 R_68K_TLS_GD32 => {
                     write32(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_GD16 => {
-                    write16(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got))
+                    write16s(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got))
                 }
-                R_68K_TLS_GD8 => write8(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got)),
+                R_68K_TLS_GD8 => {
+                    write8s(buf, sym.tlsgd_addr(ctx).wrapping_add(a).wrapping_sub(got))
+                }
                 R_68K_TLS_LDM32 => {
                     write32(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_LDM16 => {
-                    write16(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
+                    write16s(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_LDM8 => {
-                    write8(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
+                    write8s(buf, ctx.got.tlsld_addr().wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_LDO32 => write32(buf, sa.wrapping_sub(ctx.dtp_addr)),
                 R_68K_TLS_LDO16 => write16s(buf, sa.wrapping_sub(ctx.dtp_addr)),
@@ -238,12 +241,14 @@ impl Target for M68k {
                     write32(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got))
                 }
                 R_68K_TLS_IE16 => {
-                    write16(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got))
+                    write16s(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got))
                 }
-                R_68K_TLS_IE8 => write8(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got)),
+                R_68K_TLS_IE8 => {
+                    write8s(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(got))
+                }
                 R_68K_TLS_LE32 => write32(buf, sa.wrapping_sub(ctx.tp_addr)),
-                R_68K_TLS_LE16 => write16(buf, sa.wrapping_sub(ctx.tp_addr)),
-                R_68K_TLS_LE8 => write8(buf, sa.wrapping_sub(ctx.tp_addr)),
+                R_68K_TLS_LE16 => write16s(buf, sa.wrapping_sub(ctx.tp_addr)),
+                R_68K_TLS_LE8 => write8s(buf, sa.wrapping_sub(ctx.tp_addr)),
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }
