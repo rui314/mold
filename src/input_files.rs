@@ -980,14 +980,90 @@ fn literal_split_points(sect: &MachSection, data: &[u8], file_name: &Path) -> Ve
     (0..sect.size).step_by(elem_size).map(|o| sect.addr + o).collect()
 }
 
-/// Appends a staged object to the global arenas, rebasing its local
-/// indices and interning its symbol names.
-pub fn integrate_object<E: Target>(ctx: &mut Context<E>, staged: StagedObject) -> usize {
-    integrate_object_with(ctx, staged, None)
+impl StagedObject {
+    /// Rebases the object's local indices to the global arenas, where
+    /// it is object `obj_idx` and its subsections, CIEs and FDEs start at
+    /// the given bases. `syms` maps its nlists to symbols, for the
+    /// personality functions its unwind info names by nlist index.
+    fn rebase(
+        &mut self,
+        obj_idx: usize,
+        isec_base: usize,
+        cie_base: usize,
+        fde_base: usize,
+        syms: &[crate::symbol::SymbolId],
+    ) {
+        use crate::input_sections::RelocTarget;
+
+        for isec in &mut self.isecs {
+            isec.file = obj_idx as u32;
+        }
+        // Section relocation targets are object-local subsection
+        // indices; rebase them to global once over the object's reloc
+        // arena (rel_offset/nrels stay object-local).
+        for rel in &mut self.relocs {
+            if let RelocTarget::Section(local) = rel.target() {
+                rel.set_target(RelocTarget::Section(isec_base as u32 + local));
+            }
+        }
+        for sub in &mut self.subsecs {
+            *sub += isec_base as u32;
+        }
+        for rec in &mut self.unwind {
+            rec.isec += isec_base as u32;
+            if rec.lsda_isec != UNWIND_NONE {
+                rec.lsda_isec += isec_base as u32;
+            }
+            if rec.fde_idx != UNWIND_NONE {
+                rec.fde_idx += fde_base as u32;
+            }
+            if rec.personality_sym != UNWIND_NONE {
+                rec.personality_sym = syms[rec.personality_sym as usize];
+            }
+        }
+        for cie in &mut self.cies {
+            cie.obj = obj_idx as u32;
+            if let Some(p) = &mut cie.personality {
+                *p = syms[*p as usize];
+            }
+        }
+        for fde in &mut self.fdes {
+            fde.obj = obj_idx as u32;
+            fde.isec += isec_base as u32;
+            fde.cie += cie_base as u32;
+            if let Some((lsda, _)) = &mut fde.lsda {
+                *lsda += isec_base as u32;
+            }
+        }
+    }
+
+    /// The object file a rebased staged object becomes, once its
+    /// subsections, unwind records, CIEs and FDEs have moved to the
+    /// global arenas.
+    fn into_object_file(self, symbols: Vec<crate::symbol::SymbolId>) -> ObjectFile {
+        ObjectFile {
+            mf: self.mf,
+            is_alive: self.alive,
+            priority: self.priority,
+            linker_options: self.linker_options,
+            platform_versions: self.platform_versions,
+            hidden: self.hidden,
+            subsections_via_symbols: self.subsections_via_symbols,
+            sect_hdrs: std::borrow::Cow::Borrowed(self.sect_hdrs),
+            relocs: self.relocs,
+            subsecs: self.subsecs,
+            objc_image_info: self.objc_image_info,
+            has_debug_info: self.has_debug_info,
+            nlists: self.nlists,
+            first_global: self.first_global,
+            symbols,
+            lto_module: None,
+            dice: self.dice,
+            loh: self.loh,
+        }
+    }
 }
 
-/// Like integrate_object, with the global symbols' ids already interned
-/// by a bulk pass (in nlist order, one entry per extern non-stab nlist).
 /// Integrates a whole staging batch at once, mold-style: every
 /// object's arena positions (subsection, CIE, FDE and local-symbol
 /// bases) come from prefix sums over the batch, so the rebasing of
@@ -1054,8 +1130,6 @@ pub fn integrate_objects<E: Target>(
         .enumerate()
         .map(|(i, st)| {
             let base = &bases[i];
-            let obj_idx = obj_base + i;
-
             let mut syms = Vec::with_capacity(st.nlists.len());
             let mut next_local = base.locals as u32;
             let mut next_id = base.ids;
@@ -1069,22 +1143,6 @@ pub fn integrate_objects<E: Target>(
                 }
             }
 
-            for isec in &mut st.isecs {
-                isec.file = obj_idx as u32;
-            }
-            // Section relocation targets are object-local subsection
-            // indices; rebase them to global once over the object's
-            // reloc arena (rel_offset/nrels stay object-local).
-            for rel in &mut st.relocs {
-                if let crate::input_sections::RelocTarget::Section(local) = rel.target() {
-                    rel.set_target(crate::input_sections::RelocTarget::Section(
-                        base.isec as u32 + local,
-                    ));
-                }
-            }
-            for sub in &mut st.subsecs {
-                *sub += base.isec as u32;
-            }
             // Hand each subsection its compact-unwind range (records
             // arrive grouped by function), before the indices rebase.
             let mut run = 0;
@@ -1097,32 +1155,7 @@ pub fn integrate_objects<E: Target>(
                 st.isecs[isec as usize].unwind_offset = (base.unwind + start) as u32;
                 st.isecs[isec as usize].nunwind = (run - start) as u32;
             }
-            for rec in &mut st.unwind {
-                rec.isec += base.isec as u32;
-                if rec.lsda_isec != UNWIND_NONE {
-                    rec.lsda_isec += base.isec as u32;
-                }
-                if rec.fde_idx != UNWIND_NONE {
-                    rec.fde_idx += base.fde as u32;
-                }
-                if rec.personality_sym != UNWIND_NONE {
-                    rec.personality_sym = syms[rec.personality_sym as usize];
-                }
-            }
-            for cie in &mut st.cies {
-                cie.obj = obj_idx as u32;
-                if let Some(p) = &mut cie.personality {
-                    *p = syms[*p as usize];
-                }
-            }
-            for fde in &mut st.fdes {
-                fde.obj = obj_idx as u32;
-                fde.isec += base.isec as u32;
-                fde.cie += base.cie as u32;
-                if let Some((lsda, _)) = &mut fde.lsda {
-                    *lsda += base.isec as u32;
-                }
-            }
+            st.rebase(obj_base + i, base.isec, base.cie, base.fde, &syms);
             syms
         })
         .collect();
@@ -1196,76 +1229,30 @@ pub fn integrate_objects<E: Target>(
     par_moves(&mut ctx.fdes, take_parts!(fdes, fde));
 
     for (st, syms) in staged.into_iter().zip(syms_of) {
-        ctx.objs.push(ObjectFile {
-            mf: st.mf,
-            is_alive: st.alive,
-            priority: st.priority,
-            linker_options: st.linker_options,
-            platform_versions: st.platform_versions,
-            hidden: st.hidden,
-            subsections_via_symbols: st.subsections_via_symbols,
-            sect_hdrs: std::borrow::Cow::Borrowed(st.sect_hdrs),
-            relocs: st.relocs,
-            subsecs: st.subsecs,
-            objc_image_info: st.objc_image_info,
-            has_debug_info: st.has_debug_info,
-            nlists: st.nlists,
-            first_global: st.first_global,
-            symbols: syms,
-            lto_module: None,
-            dice: st.dice,
-            loh: st.loh,
-        });
+        ctx.objs.push(st.into_object_file(syms));
     }
 }
 
-pub fn integrate_object_with<E: Target>(
-    ctx: &mut Context<E>,
-    staged: StagedObject,
-    pre_interned: Option<Vec<crate::symbol::SymbolId>>,
-) -> usize {
+/// Appends a staged object to the global arenas, rebasing its local
+/// indices and interning its symbol names: integrate_objects for a
+/// batch of one, done serially.
+pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -> usize {
     let obj_idx = ctx.objs.len();
     let isec_base = ctx.isecs.len();
-    let fde_base = ctx.fdes.len();
-    let cie_base = ctx.cies.len();
-
-    for mut isec in staged.isecs {
-        isec.file = obj_idx as u32;
-        ctx.isecs.push(isec);
-    }
-    let mut obj_relocs = staged.relocs;
-    for rel in &mut obj_relocs {
-        if let crate::input_sections::RelocTarget::Section(local) = rel.target() {
-            rel.set_target(crate::input_sections::RelocTarget::Section(isec_base as u32 + local));
-        }
-    }
 
     let mut syms = Vec::with_capacity(staged.nlists.len());
-    let mut pre = pre_interned.map(Vec::into_iter);
     for (nlist, name) in staged.nlists.iter().zip(&staged.sym_names) {
         let id = if nlist.is_stab() || !nlist.is_extern() {
             ctx.symbols.add_local(name)
         } else {
-            match &mut pre {
-                Some(iter) => iter.next().unwrap(),
-                None => ctx.symbols.intern(name),
-            }
+            ctx.symbols.intern(name)
         };
         syms.push(id);
     }
 
-    for mut rec in staged.unwind {
-        rec.isec += isec_base as u32;
-        if rec.lsda_isec != UNWIND_NONE {
-            rec.lsda_isec += isec_base as u32;
-        }
-        if rec.fde_idx != UNWIND_NONE {
-            rec.fde_idx += fde_base as u32;
-        }
-        // The personality was recorded as a local symbol index.
-        if rec.personality_sym != UNWIND_NONE {
-            rec.personality_sym = syms[rec.personality_sym as usize];
-        }
+    staged.rebase(obj_idx, isec_base, ctx.cies.len(), ctx.fdes.len(), &syms);
+    ctx.isecs.append(&mut staged.isecs);
+    for rec in std::mem::take(&mut staged.unwind) {
         // Extend or open the subsection's record range (grouped input).
         let isec = &mut ctx.isecs[rec.isec as usize];
         if isec.nunwind == 0 {
@@ -1274,43 +1261,9 @@ pub fn integrate_object_with<E: Target>(
         isec.nunwind += 1;
         ctx.unwind_records.push(rec);
     }
-    for mut cie in staged.cies {
-        cie.obj = obj_idx as u32;
-        if let Some(p) = &mut cie.personality {
-            *p = syms[*p as usize];
-        }
-        ctx.cies.push(cie);
-    }
-    for mut fde in staged.fdes {
-        fde.obj = obj_idx as u32;
-        fde.isec += isec_base as u32;
-        fde.cie += cie_base as u32;
-        if let Some((lsda, _)) = &mut fde.lsda {
-            *lsda += isec_base as u32;
-        }
-        ctx.fdes.push(fde);
-    }
-
-    ctx.objs.push(ObjectFile {
-        mf: staged.mf,
-        is_alive: staged.alive,
-        priority: staged.priority,
-        linker_options: staged.linker_options,
-        platform_versions: staged.platform_versions,
-        hidden: staged.hidden,
-        subsections_via_symbols: staged.subsections_via_symbols,
-        sect_hdrs: std::borrow::Cow::Borrowed(staged.sect_hdrs),
-        relocs: obj_relocs,
-        subsecs: staged.subsecs.into_iter().map(|i| i + isec_base as u32).collect(),
-        objc_image_info: staged.objc_image_info,
-        has_debug_info: staged.has_debug_info,
-        nlists: staged.nlists,
-        first_global: staged.first_global,
-        symbols: syms,
-        lto_module: None,
-        dice: staged.dice,
-        loh: staged.loh,
-    });
+    ctx.cies.append(&mut staged.cies);
+    ctx.fdes.append(&mut staged.fdes);
+    ctx.objs.push(staged.into_object_file(syms));
     obj_idx
 }
 
