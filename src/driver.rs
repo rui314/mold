@@ -175,6 +175,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     objc::merge_objc_categories(&mut ctx);
     // Synthetic stubs and unwind data can introduce library references
     // (notably dyld_stub_binder). Establish them before pruning dylibs.
+    passes::resolve_stub_binder(&mut ctx);
     timed!("dead_strip_dylibs", passes::dead_strip_dylibs(&mut ctx));
     passes::sort_stubs_and_got(&mut ctx);
 

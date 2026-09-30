@@ -7057,23 +7057,14 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.stub_helper.dyld_stub_binder.is_some() {
         return;
     }
-    let name = "dyld_stub_binder";
-    let Some(dylib) = ctx.dylibs.iter().position(|d| d.exports.contains(name)) else {
+    let Some(id) = bind_stub_binder(ctx) else {
         // An image that loads no dylib at all fails the libSystem
         // check that dead_strip_dylibs would make later, and ld-prime
         // says so first.
         check_libsystem_linked(ctx);
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
-    let id = ctx.symbols.intern(name);
-    let sym = &mut ctx.symbols[id];
-    if !sym.is_defined() {
-        sym.set_file(FileId::Dylib(dylib as u32));
-        sym.set_is_imported(true);
-        sym.set_is_extern(true);
-        sym.set_input_section(None);
-    }
-    sym.set_is_used(true);
+    ctx.symbols[id].set_is_used(true);
     add_got(ctx, id);
     ctx.stub_helper.dyld_stub_binder = Some(id);
 
@@ -7108,6 +7099,32 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     });
     ctx.stub_helper.dyld_private_isec = isec;
     ctx.extra_local_syms.push(("__dyld_private", isec));
+}
+
+/// Binds dyld_stub_binder to the first loaded dylib that exports it,
+/// unless something in the link defines it.
+fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
+    let name = "dyld_stub_binder";
+    let dylib = ctx.dylibs.iter().position(|d| d.exports.contains(name))?;
+    let id = ctx.symbols.intern(name);
+    let sym = &mut ctx.symbols[id];
+    if !sym.is_defined() {
+        sym.set_file(FileId::Dylib(dylib as u32));
+        sym.set_is_imported(true);
+        sym.set_is_extern(true);
+        sym.set_input_section(None);
+    }
+    Some(id)
+}
+
+/// ld-prime makes dyld_stub_binder an initial undefine of an image with
+/// lazy binding, stubs or not, which may stay undefined: the library
+/// exporting it (libSystem's libdyld) counts as used then, and -map
+/// lists it. Nothing refers to the symbol until a stub does.
+pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
+    if ctx.lazy_binding() {
+        bind_stub_binder(ctx);
+    }
 }
 
 /// Copies all chunks to the output buffer and applies relocations. The

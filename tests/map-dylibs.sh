@@ -30,3 +30,16 @@ cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
 EOF2
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/c.o -Wl,-map,$t/map2
 grep -A2 'Foundation.framework/Foundation.tbd$' $t/map2 | grep -q '/usr/lib/libobjc.tbd$'
+
+# With lazy binding (no chained fixups), ld-prime wants libSystem's
+# dyld_stub_binder whether or not a stub needs it, so the map lists the
+# library that exports it, libdyld; not so under -bind_at_load.
+cat <<EOF2 | $CC -o $t/d.o -c -xc - -mmacosx-version-min=11.0
+int main() { return 0; }
+EOF2
+$CC --ld-path=$mold -o $t/exe3 $t/d.o -mmacosx-version-min=11.0 -Wl,-map,$t/map3
+grep -Eq '^\[  3\] .*/system/libdyld.tbd$' $t/map3
+$CC --ld-path=$mold -o $t/exe4 $t/d.o -mmacosx-version-min=11.0 -Wl,-bind_at_load \
+  -Wl,-map,$t/map4
+not grep -q libdyld $t/map4
+not grep -q libdyld $t/map
