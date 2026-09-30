@@ -75,9 +75,8 @@ not grep -q 'SUB ' $t/eh_relocs
 not grep -q '_through_asm' $t/eh_relocs
 
 # The exception unwinds through the assembly frame after a final link
-# by either linker. Apple's is asked to sign because the CI runner
-# hangs running unsigned x86_64 binaries (see relocatable.sh).
+# by either linker.
 $CXX --ld-path=$mold -o $t/exe $t/merged.o
 $t/exe | grep 'caught 42'
-$CXX -Wl,-adhoc_codesign -o $t/exe2 $t/merged.o
+$CXX -o $t/exe2 $t/merged.o
 $t/exe2 | grep 'caught 42'

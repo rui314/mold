@@ -33,10 +33,8 @@ grep -q 'OSO.*/a.o' $t/stabs2
 grep -q 'OSO.*/b.o' $t/stabs2
 not grep -q 'OSO.*merged.o' $t/stabs2
 
-# Apple's linker accepts the merged object too. It is asked to sign
-# because the CI runner hangs running unsigned x86_64 binaries (see
-# relocatable.sh).
-$CC -g -Wl,-adhoc_codesign -o $t/exe2 $t/merged.o
+# Apple's linker accepts the merged object too.
+$CC -g -o $t/exe2 $t/merged.o
 $t/exe2 | grep '^42$'
 
 # lldb sets a source-level breakpoint in code that came through -r.

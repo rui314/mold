@@ -25,11 +25,8 @@ int main() { printf("%s %d\n", get_msg(), wrapped()); }
 EOF2
 
 # ...then use Apple's toolchain for the final link, proving the merged
-# object is a valid input for other linkers, and ours too. Apple's ld
-# does not ad-hoc sign x86_64 output, and the hosted CI runner hangs
-# in exec (unkillably) on an unsigned binary under Rosetta, so ask it
-# to sign, as it does for arm64 anyway.
-$CC -Wl,-adhoc_codesign -o $t/exe1 $t/main.o $t/merged.o
+# object is a valid input for other linkers, and ours too.
+$CC -o $t/exe1 $t/main.o $t/merged.o
 $t/exe1 | grep '^from a 8$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/merged.o
@@ -53,5 +50,5 @@ $mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/exc.o $t/e1.o $t/e2
 otool -l $t/exc.o | awk '$1 == "sectname" {print $2}' | tr '\n' ' ' | grep '__cstring __gcc_except_tab'
 $CXX --ld-path=$mold -o $t/exc1 $t/exc.o
 $t/exc1 | grep 'caught 42'
-$CXX -Wl,-adhoc_codesign -o $t/exc2 $t/exc.o
+$CXX -o $t/exc2 $t/exc.o
 $t/exc2 | grep 'caught 42'
