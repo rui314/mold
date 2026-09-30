@@ -1888,11 +1888,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
     }
-    // What is dead is known only once the final link sees every
-    // reference.
-    if args.relocatable && args.dead_strip {
-        fatal!("-r and -dead_strip cannot be used together");
-    }
     args.exported_symbols = exported_symbols.map(GlobBuilder::build);
     args.unexported_symbols = unexported_symbols.build();
     args.reexported_symbols = reexported_symbols.build();
@@ -1909,7 +1904,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if let Some((old, new)) = incompatible_platforms {
         fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
     }
-    warn_platform_options(target, &args, read_only_relocs.is_some());
+    if args.kernel && kind != OutputKind::StaticExecutable {
+        fatal!("-kernel must be used with -static");
+    }
+    // Only a bundle has a loader. ld-prime refuses the option before it
+    // checks any other one, let alone opens a file.
+    if kind != OutputKind::Bundle
+        && args.inputs.iter().any(|arg| matches!(arg, InputArg::BundleLoader(_)))
+    {
+        fatal!("-bundle_loader can only be used with -bundle");
+    }
 
     // dyld loads a lazy dylib when __dyld_lazy_load says so, which
     // ld-prime keeps as an import of any final image that names one,
@@ -1927,6 +1931,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             display(lib)
         );
     }
+    // What is dead is known only once the final link sees every
+    // reference.
+    if args.relocatable && args.dead_strip {
+        fatal!("-r and -dead_strip cannot be used together");
+    }
+    warn_platform_options(target, &args, read_only_relocs.is_some());
     args.segment_align = resolve_segment_align(target, &args, segalign);
     // An image dyld loads keeps 32 bytes for the command of a code
     // signature added later (see chunks::header_pad).
@@ -1941,9 +1951,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     for opt in obsolete {
         crate::warn!("{opt} is obsolete");
-    }
-    if args.kernel && kind != OutputKind::StaticExecutable {
-        fatal!("-kernel must be used with -static");
     }
     check_output_kind(&args, pie, data_const, explicit_entry);
 

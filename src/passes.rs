@@ -782,9 +782,6 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
 /// linked this way). It loads where the command line names it, which
 /// places it among the dylibs as ld-prime does.
 fn load_bundle_loader<E: Target>(ctx: &mut Context<E>, path: &Path) {
-    if ctx.args.output_type != MH_BUNDLE {
-        fatal!("-bundle_loader can only be used with -bundle");
-    }
     let Ok(mf) = MappedFile::try_open(path) else {
         fatal!("library '{}' not found", path.display());
     };
