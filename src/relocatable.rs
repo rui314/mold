@@ -180,20 +180,6 @@ fn whole_desc(desc: u16, whole: bool) -> u16 {
     if whole { (desc | N_NO_DEAD_STRIP) & !N_ALT_ENTRY } else { desc }
 }
 
-/// The deployment target (platform, minos, sdk) a -r output records:
-/// -platform_version's, else the first object's that has one (ld64
-/// warns about later inputs built for a newer OS).
-pub fn output_target<E: Target>(ctx: &Context<E>) -> (u32, u32, u32) {
-    if ctx.args.platform_minos != 0 {
-        return (ctx.args.platform, ctx.args.platform_minos, ctx.args.platform_sdk);
-    }
-    ctx.objs
-        .iter()
-        .filter(|o| o.is_alive)
-        .find_map(|o| o.platform_versions.first())
-        .map_or((ctx.args.platform, 0, 0), |v| (v.platform, v.minos, v.sdk))
-}
-
 /// The payload of the output's LC_LINKER_OPTIMIZATION_HINT, or None
 /// for no command. ld64 carries the arm64 hints through -r for the
 /// final link to apply: each hint it takes (see
@@ -672,9 +658,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // symtab, build version, data in code, linker option and hint
     // commands; then section contents, relocations, data in code,
     // hints, symbols and strings.
-    let (platform, minos, sdk) = output_target(ctx);
-    let version_cmd = if crate::chunks::has_version_cmd(&ctx.args, platform) {
-        crate::chunks::create_version_cmd::<E>(platform, minos, sdk)
+    let args = &ctx.args;
+    let version_cmd = if crate::chunks::has_version_cmd(args) {
+        crate::chunks::create_version_cmd::<E>(
+            args.platform,
+            args.platform_minos,
+            args.platform_sdk,
+        )
     } else {
         Vec::new()
     };

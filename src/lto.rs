@@ -33,6 +33,7 @@ pub struct Plugin {
     pub module_get_num_symbols: unsafe extern "C" fn(*mut c_void) -> u32,
     pub module_get_symbol_name: unsafe extern "C" fn(*mut c_void, u32) -> *const c_char,
     pub module_get_symbol_attribute: unsafe extern "C" fn(*mut c_void, u32) -> u32,
+    pub module_get_target_triple: unsafe extern "C" fn(*mut c_void) -> *const c_char,
     pub codegen_create: unsafe extern "C" fn() -> *mut c_void,
     pub codegen_add_module: unsafe extern "C" fn(*mut c_void, *mut c_void) -> bool,
     pub codegen_set_pic_model: unsafe extern "C" fn(*mut c_void, u32) -> bool,
@@ -103,6 +104,7 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             module_get_num_symbols: dlsym(handle, c"lto_module_get_num_symbols"),
             module_get_symbol_name: dlsym(handle, c"lto_module_get_symbol_name"),
             module_get_symbol_attribute: dlsym(handle, c"lto_module_get_symbol_attribute"),
+            module_get_target_triple: dlsym(handle, c"lto_module_get_target_triple"),
             codegen_create: dlsym(handle, c"lto_codegen_create"),
             codegen_add_module: dlsym(handle, c"lto_codegen_add_module"),
             codegen_set_pic_model: dlsym(handle, c"lto_codegen_set_pic_model"),
@@ -124,8 +126,8 @@ pub struct LtoSymbol {
     pub is_private_extern: bool,
 }
 
-/// Creates a module from a bitcode buffer and lists its symbols.
-pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<LtoSymbol>) {
+/// Creates a module from a bitcode buffer.
+fn create_module(plugin: &Plugin, data: &[u8], name: &Path) -> *mut c_void {
     let cname = CString::new(crate::util::path_bytes(name)).unwrap_or_default();
     // SAFETY: the buffer is valid for the call's duration; libLTO copies
     // what it needs.
@@ -139,7 +141,26 @@ pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<Lt
     if module.is_null() {
         fatal!("{}: lto_module_create failed: {}", name.display(), plugin.error_message());
     }
+    module
+}
 
+/// The target triple a bitcode file was compiled for, such as
+/// arm64-apple-macosx13.0.0.
+pub fn target_triple(plugin: &Plugin, data: &[u8], name: &Path) -> String {
+    let module = create_module(plugin, data, name);
+    // SAFETY: the module handle is valid until disposed of, and the
+    // triple is a NUL-terminated string it owns.
+    unsafe {
+        let triple = CStr::from_ptr((plugin.module_get_target_triple)(module));
+        let triple = triple.to_string_lossy().into_owned();
+        (plugin.module_dispose)(module);
+        triple
+    }
+}
+
+/// Creates a module from a bitcode buffer and lists its symbols.
+pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<LtoSymbol>) {
+    let module = create_module(plugin, data, name);
     let mut syms = Vec::new();
     // SAFETY: the module handle is valid; indices are in range.
     unsafe {

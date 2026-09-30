@@ -27,12 +27,27 @@ pub enum FileId {
 pub struct PlatformVersion {
     pub platform: u32,
     pub minos: u32,
-    /// The SDK the object was built against (a -r output without a
+    /// The SDK the object was built against (a link without a
     /// -platform_version takes the first object's).
     pub sdk: u32,
 }
 
 impl PlatformVersion {
+    /// The deployment target of an object file: the one its first
+    /// platform load command names, if it has one.
+    pub fn of_object(data: &[u8]) -> Option<Self> {
+        let hdr = MachHeader::read_from(data);
+        let mut off = size_of::<MachHeader>();
+        for _ in 0..hdr.ncmds {
+            let lc = LoadCommand::read_from(&data[off..]);
+            if is_platform_cmd(lc.cmd) {
+                return Some(Self::read(lc.cmd, &data[off..], hdr.cputype));
+            }
+            off += lc.cmdsize as usize;
+        }
+        None
+    }
+
     fn read(cmd: u32, data: &[u8], cputype: u32) -> Self {
         if cmd == LC_BUILD_VERSION {
             let cmd = BuildVersionCommand::read_from(data);
@@ -54,6 +69,19 @@ impl PlatformVersion {
         let vm = VersionMinCommand::read_from(data);
         Self { platform, minos: vm.version, sdk: vm.sdk }
     }
+}
+
+/// Whether a load command names a deployment target: LC_BUILD_VERSION,
+/// or one of the LC_VERSION_MIN_* commands that came before it.
+fn is_platform_cmd(cmd: u32) -> bool {
+    matches!(
+        cmd,
+        LC_BUILD_VERSION
+            | LC_VERSION_MIN_MACOSX
+            | LC_VERSION_MIN_IPHONEOS
+            | LC_VERSION_MIN_TVOS
+            | LC_VERSION_MIN_WATCHOS
+    )
 }
 
 /// A relocatable object file.
@@ -554,12 +582,8 @@ impl LoadCommands {
                 }
                 LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(&data[off..])),
                 LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::read_from(&data[off..])),
-                LC_BUILD_VERSION
-                | LC_VERSION_MIN_MACOSX
-                | LC_VERSION_MIN_IPHONEOS
-                | LC_VERSION_MIN_TVOS
-                | LC_VERSION_MIN_WATCHOS => {
-                    let version = PlatformVersion::read(lc.cmd, &data[off..], E::CPUTYPE);
+                cmd if is_platform_cmd(cmd) => {
+                    let version = PlatformVersion::read(cmd, &data[off..], E::CPUTYPE);
                     cmds.platform_versions.push(version);
                 }
                 LC_LINKER_OPTION => {
@@ -2800,14 +2824,7 @@ fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
     for _ in 0..hdr.ncmds {
         let data = &mf.data()[off..];
         let lc = LoadCommand::read_from(data);
-        if matches!(
-            lc.cmd,
-            LC_BUILD_VERSION
-                | LC_VERSION_MIN_MACOSX
-                | LC_VERSION_MIN_IPHONEOS
-                | LC_VERSION_MIN_TVOS
-                | LC_VERSION_MIN_WATCHOS
-        ) {
+        if is_platform_cmd(lc.cmd) {
             versions.push(PlatformVersion::read(lc.cmd, data, hdr.cputype));
         }
         off += lc.cmdsize as usize;

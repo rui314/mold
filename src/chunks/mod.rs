@@ -482,13 +482,15 @@ fn create_uuid_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
-/// Whether an output for `platform` records it in a load command.
-/// ld-prime leaves the command out of an image no dyld loads and out of
+/// Whether the output records its platform in a load command. ld-prime
+/// leaves the command out of an image no dyld loads and out of
 /// firmware of any kind, -r output included, unless
-/// -version_load_command asks for it.
-pub fn has_version_cmd(args: &crate::cmdline::Args, platform: u32) -> bool {
+/// -version_load_command asks for it, and out of a -r output for no
+/// platform.
+pub fn has_version_cmd(args: &crate::cmdline::Args) -> bool {
     let without_dyld = args.without_dyld() && !args.relocatable;
-    args.version_load_command || (!without_dyld && platform != PLATFORM_FIRMWARE)
+    args.platform != 0
+        && (args.version_load_command || (!without_dyld && args.platform != PLATFORM_FIRMWARE))
 }
 
 /// The load command naming the deployment target, for a final image
@@ -706,7 +708,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.args.uuid {
         vec.push(create_uuid_cmd(ctx));
     }
-    if has_version_cmd(&ctx.args, ctx.args.platform) {
+    if has_version_cmd(&ctx.args) {
         vec.push(create_version_cmd::<E>(
             ctx.args.platform,
             ctx.args.platform_minos,

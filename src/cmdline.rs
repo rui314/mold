@@ -10,6 +10,8 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use crate::fatal;
+use crate::filetype::{FileType, get_file_type};
+use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::{Glob, GlobBuilder};
@@ -75,6 +77,10 @@ pub struct Args {
     /// -e: the entry point, "_main" unless given ("start" for an image
     /// no dyld loads).
     pub entry: String,
+    /// The deployment target: -platform_version's platform (PLATFORM_*),
+    /// minimum OS and SDK versions, else those of the first object
+    /// file (see infer_platform). The platform is 0 (none) only in a
+    /// -r or -preload link that nothing names one for.
     pub platform: u32,
     pub platform_minos: u32,
     pub platform_sdk: u32,
@@ -338,7 +344,7 @@ impl Default for Args {
             keep_private_externs: false,
             arch: None,
             entry: "_main".to_string(),
-            platform: PLATFORM_MACOS,
+            platform: 0,
             platform_minos: encode_version(0, 0, 0),
             platform_sdk: encode_version(0, 0, 0),
             syslibroot: Vec::new(),
@@ -481,31 +487,40 @@ fn parse_platform(arg: &str) -> u32 {
 /// arm64-apple-firmware1.0.0). ld-prime lets the triple override both,
 /// before or after it, and records no SDK version.
 fn apply_target_triple(args: &mut Args, triple: &str) {
+    let (arch, platform, minos) = parse_triple(triple);
+    args.platform = platform;
+    args.platform_minos = minos;
+    args.platform_sdk = encode_version(0, 0, 0);
+    args.arch = Some(
+        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
+    );
+}
+
+/// Splits a target triple, <arch>-<vendor>-<os><version>, into its
+/// architecture, platform and OS version.
+fn parse_triple(triple: &str) -> (&str, u32, u32) {
     let mut parts = triple.splitn(3, '-');
     let (Some(arch), Some(_vendor), Some(os)) = (parts.next(), parts.next(), parts.next()) else {
         fatal!("missing dashes in target triple '{triple}'");
     };
     let (os_name, version) = os.split_at(os.find(|c: char| c.is_ascii_digit()).unwrap_or(os.len()));
-    args.platform = match os_name {
+    let platform = match os_name {
         "macos" | "macosx" => PLATFORM_MACOS,
         "firmware" => PLATFORM_FIRMWARE,
         _ => 0,
     };
     // An environment after the version (clang makes x86-64 firmware
     // x86_64-apple-firmware1.0.0-simulator) names no OS either.
-    if args.platform == 0 || version.contains('-') {
+    if platform == 0 || version.contains('-') {
         fatal!("unknown OS in target triple '{triple}'");
     }
     // Firmware tracks no OS versions; macOS must say which.
-    args.platform_minos = match version {
-        "" if args.platform == PLATFORM_FIRMWARE => encode_version(0, 0, 0),
+    let minos = match version {
+        "" if platform == PLATFORM_FIRMWARE => encode_version(0, 0, 0),
         "" => fatal!("missing OS version in target triple '{triple}'"),
         _ => parse_version(version),
     };
-    args.platform_sdk = encode_version(0, 0, 0);
-    args.arch = Some(
-        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
-    );
+    (arch, platform, minos)
 }
 
 /// Parses a symbol list file: one symbol per line, '#' starts a
@@ -1392,6 +1407,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if version_shown && args.inputs.is_empty() {
         std::process::exit(0);
     }
+    if args.inputs.is_empty() {
+        fatal!("no object files specified");
+    }
+
+    // Without -arch, the first Mach-O input names the target. A parse
+    // for another target than this one is redone by the driver, so
+    // what depends on the target is left to that parse.
+    if args.arch.is_none() {
+        args.arch = Some(detect_target(&args.inputs));
+    }
+    if args.arch != Some(target.name) {
+        return args;
+    }
+    if args.platform == 0 {
+        infer_platform(&mut args);
+    }
 
     check_segment_order(&args);
     check_section_order(&args);
@@ -1441,16 +1472,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.why_live = why_live.build();
     args.local_strip_list = local_strip_list.build();
     args.local_keep_list = local_keep_list.map(GlobBuilder::build);
-
-    // Without -arch, the first Mach-O input names the target. A parse
-    // for another target than this one is redone by the driver, so
-    // what depends on the target is left to that parse.
-    if args.arch.is_none() {
-        args.arch = Some(detect_target(&args.inputs));
-    }
-    if args.arch != Some(target.name) {
-        return args;
-    }
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks
@@ -1767,4 +1788,50 @@ fn detect_target(inputs: &[InputArg]) -> &'static str {
         }
     }
     if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" }
+}
+
+/// Without -platform_version (or -macos_version_min or -target),
+/// ld-prime links for what the first object file named on the command
+/// line that has a platform load command was built for: its platform,
+/// minimum OS and SDK versions, whatever later objects say (one built
+/// for a newer OS draws a warning, one for another platform an error).
+/// Archive members, universal files and dylibs don't count, nor does a
+/// bitcode file unless no Mach-O object does: then the first one's
+/// target triple names the platform and OS version, and no SDK. A final
+/// image must have a platform; a -r or -preload output may be for none.
+fn infer_platform(args: &mut Args) {
+    let mut bitcode = None;
+    for input in &args.inputs {
+        let InputArg::File(path) = input else { continue };
+        let Some(mf) = MappedFile::open(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                let Some(v) = PlatformVersion::of_object(mf.data()) else {
+                    continue;
+                };
+                if v.platform != PLATFORM_MACOS && v.platform != PLATFORM_FIRMWARE {
+                    fatal!(
+                        "{}: unsupported platform: {}",
+                        mf.name.display(),
+                        platform_name(v.platform)
+                    );
+                }
+                args.platform = v.platform;
+                args.platform_minos = v.minos;
+                args.platform_sdk = v.sdk;
+                return;
+            }
+            FileType::LlvmBitcode => {
+                bitcode.get_or_insert(mf);
+            }
+            _ => {}
+        }
+    }
+    if let Some(mf) = bitcode {
+        let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+        let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+        (_, args.platform, args.platform_minos) = parse_triple(&triple);
+    } else if !args.relocatable && !args.preload {
+        fatal!("Missing -platform_version option");
+    }
 }

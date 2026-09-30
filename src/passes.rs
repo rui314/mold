@@ -1496,20 +1496,26 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
 /// Validates only objects selected by resolution, including the LTO
 /// output. Unused archive members must not cause errors or warnings.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
-    // The deployment target the inputs are checked against: zero if none
-    // was specified, but a -r output takes its first object's, and
-    // ld-prime checks the later ones against that.
-    let (platform, minos) = if ctx.args.relocatable {
-        let (platform, minos, _) = crate::relocatable::output_target(ctx);
-        (platform, minos)
-    } else {
-        (ctx.args.platform, ctx.args.platform_minos)
-    };
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
-        // Old objects and the synthesized object may have no version
-        // command. An object may also declare more than one platform;
-        // use the deployment target for the platform being linked.
-        let Some(first) = obj.platform_versions.first() else { continue };
+    // A -r or -preload output for no platform takes any object.
+    let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
+    if platform == 0 {
+        return;
+    }
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+        // An object may declare more than one platform; use the
+        // deployment target for the platform being linked. ld-prime
+        // takes one with no version command (an old one, or one
+        // assembled for no OS) for macOS, with a warning in a macOS
+        // link. The object the linker synthesizes has none either.
+        let Some(first) = obj.platform_versions.first() else {
+            if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
+                crate::warn!(
+                    "no platform load command found in '{}', assuming: macOS",
+                    resolved_file_name(obj.mf)
+                );
+            }
+            continue;
+        };
         let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
             // Firmware takes code built for any platform.
             if platform == crate::macho::PLATFORM_FIRMWARE {
