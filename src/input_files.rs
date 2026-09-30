@@ -474,6 +474,42 @@ pub fn stage_object<E: Target>(
                 points.push(nlist.n_value);
             }
         }
+    } else {
+        // Without subsections a section is one atom, which ld64 names
+        // after the symbol at its start - and an atom is never weak:
+        // that symbol loses N_WEAK_DEF (later symbols in the section
+        // keep theirs, as aliases into the atom). Measured on
+        // ld-prime: a section holding only a weak _w exports _w as a
+        // plain definition, and a weak _w followed by a strong _pad2
+        // makes both plain.
+        let mut first: Vec<Option<u64>> = vec![None; sect_hdrs.len()];
+        for nlist in nlists.iter() {
+            if !nlist.is_stab()
+                && nlist.n_type() == N_SECT
+                && nlist.n_sect >= 1
+                && let Some(slot) = first.get_mut(nlist.n_sect as usize - 1)
+            {
+                *slot = Some(slot.map_or(nlist.n_value, |v| v.min(nlist.n_value)));
+            }
+        }
+        let strengthen: Vec<usize> = nlists
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| {
+                !n.is_stab()
+                    && n.n_type() == N_SECT
+                    && n.n_desc & N_WEAK_DEF != 0
+                    && n.n_sect >= 1
+                    && first.get(n.n_sect as usize - 1).copied().flatten() == Some(n.n_value)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if !strengthen.is_empty() {
+            let owned = nlists.to_mut();
+            for i in strengthen {
+                owned[i].n_desc &= !N_WEAK_DEF;
+            }
+        }
     }
 
     // Sections whose contents are fixed-shape records the linker
