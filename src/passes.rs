@@ -4668,7 +4668,7 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
                         },
                         || {
                             let _t = shared.timer("data_in_code");
-                            let dice = chunks::data_in_code::build(shared);
+                            let dice = chunks::data_in_code::build(shared, |hdr| hdr.fileoff);
                             let split = chunks::split_info::build(shared);
                             (dice, split)
                         },

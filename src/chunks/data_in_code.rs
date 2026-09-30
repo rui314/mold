@@ -31,8 +31,14 @@ impl Default for DataInCodeSection {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    write_entries(&ctx.data_in_code.entries, buf);
+}
+
+/// Writes data-in-code entries (offset, length, kind) at the start of
+/// `buf`, 8 bytes each.
+pub fn write_entries(entries: &[(u32, u16, u16)], buf: &mut [u8]) {
     let mut p = 0;
-    for &(off, len, kind) in &ctx.data_in_code.entries {
+    for &(off, len, kind) in entries {
         buf[p..p + 4].copy_from_slice(&off.to_le_bytes());
         buf[p + 4..p + 6].copy_from_slice(&len.to_le_bytes());
         buf[p + 6..p + 8].copy_from_slice(&kind.to_le_bytes());
@@ -47,7 +53,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// with their subsection: a dead-stripped one's vanish, and so do those
 /// of a coalesced-away weak copy or a folded function, since the copy
 /// that stays brings its own (ld64 writes each range once).
-pub fn live_entries<E: Target>(
+fn live_entries<E: Target>(
     ctx: &Context<E>,
 ) -> impl Iterator<Item = (&InputSection, u64, u16, u16)> {
     ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(move |obj| {
@@ -61,17 +67,22 @@ pub fn live_entries<E: Target>(
     })
 }
 
-/// Builds the LC_DATA_IN_CODE entries. Runs when layout reaches
-/// __LINKEDIT: the __text file offsets the entries record are final by
-/// then, so the table is built exactly once (sold builds its contents
-/// in compute_size the same way) and copied out verbatim.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u32, u16, u16)> {
+/// Builds the LC_DATA_IN_CODE entries, sorted: each where `pos` puts
+/// its output section - at its file offset in a final image, its
+/// address in an object (a -r output) - plus the entry's offset there.
+/// A final link runs it when layout reaches __LINKEDIT: the __text file
+/// offsets the entries record are final by then, so the table is built
+/// exactly once (sold builds its contents in compute_size the same way)
+/// and copied out verbatim.
+pub fn build<E: Target>(
+    ctx: &Context<E>,
+    pos: impl Fn(&ChunkHeader) -> u64,
+) -> Vec<(u32, u16, u16)> {
     let mut out: Vec<(u32, u16, u16)> = live_entries(ctx)
         .map(|(isec, off_in, len, kind)| {
-            let fileoff = ctx.chunk_header(isec.output_section().unwrap()).fileoff
-                + isec.offset as u64
-                + off_in;
-            (fileoff as u32, len, kind)
+            let off =
+                pos(ctx.chunk_header(isec.output_section().unwrap())) + isec.offset as u64 + off_in;
+            (off as u32, len, kind)
         })
         .collect();
     out.sort_unstable();

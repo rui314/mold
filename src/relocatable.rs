@@ -438,12 +438,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     for &osec in &merged {
         write_array(&mut buf, reloff[osec.index()] as usize, &relocs[osec.index()]);
     }
-    for (i, &(addr, len, kind)) in cmds.dice.iter().enumerate() {
-        let p = layout.diceoff as usize + i * 8;
-        buf[p..p + 4].copy_from_slice(&addr.to_le_bytes());
-        buf[p + 4..p + 6].copy_from_slice(&len.to_le_bytes());
-        buf[p + 6..p + 8].copy_from_slice(&kind.to_le_bytes());
-    }
+    crate::chunks::data_in_code::write_entries(&cmds.dice, &mut buf[layout.diceoff as usize..]);
     if let Some(loh) = &cmds.loh {
         let lohoff = layout.lohoff as usize;
         buf[lohoff..lohoff + loh.len()].copy_from_slice(loh);
@@ -541,7 +536,10 @@ struct LoadCommands {
     version: Vec<u8>,
     /// The LC_LINKER_OPTION commands.
     linker_options: Vec<Vec<u8>>,
-    /// LC_DATA_IN_CODE's entries: (address, length, kind).
+    /// LC_DATA_IN_CODE's entries, between the relocations and the
+    /// symbol table and present even with no entries (ld-prime): the
+    /// inputs' entries at their merged addresses, which is what an
+    /// object's entries hold rather than file offsets.
     dice: Vec<(u32, u16, u16)>,
     /// LC_LINKER_OPTIMIZATION_HINT's payload, if the command is present.
     loh: Option<Vec<u8>>,
@@ -566,7 +564,7 @@ impl LoadCommands {
                 .iter()
                 .map(|opt| linker_option_command(opt))
                 .collect(),
-            dice: data_in_code(ctx),
+            dice: crate::chunks::data_in_code::build(ctx, |hdr| hdr.addr),
             loh: optimization_hints(ctx),
         }
     }
@@ -613,22 +611,6 @@ fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
     let cmdsize = cmd.len() as u32;
     cmd[4..8].copy_from_slice(&cmdsize.to_le_bytes());
     cmd
-}
-
-/// LC_DATA_IN_CODE's entries, between the relocations and the symbol
-/// table and present even with no entries (ld-prime): the inputs'
-/// entries at their merged addresses, which is what an object's entries
-/// hold rather than file offsets.
-fn data_in_code<E: Target>(ctx: &Context<E>) -> Vec<(u32, u16, u16)> {
-    let mut dice: Vec<(u32, u16, u16)> = crate::chunks::data_in_code::live_entries(ctx)
-        .map(|(isec, off_in, len, kind)| {
-            let addr =
-                ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + off_in;
-            (addr as u32, len, kind)
-        })
-        .collect();
-    dice.sort_unstable();
-    dice
 }
 
 /// Places the sections' contents in the file from `start`, past the
