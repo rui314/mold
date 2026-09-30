@@ -1383,7 +1383,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         // there does; the others are its aliases.
         let alias = prev_at == Some(l.at) || externals.contains(&l.at);
         prev_at = Some(l.at);
-        let n_desc = if alias && in_init_term_list(ctx, l.syms[0]) {
+        // (A name ld64 makes for a literal record has no symbol.)
+        let n_desc = if alias && l.syms.first().is_some_and(|&s| in_init_term_list(ctx, s)) {
             l.n_desc & !N_NO_DEAD_STRIP
         } else {
             l.n_desc
