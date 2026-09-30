@@ -270,6 +270,13 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
     hdr.flags & S_ATTR_DEBUG != 0 || hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
 }
 
+/// Whether a section is one of the __LD segment's that ld-prime doesn't
+/// know. It reads only __LD,__compact_unwind and drops any other with a
+/// warning; a symbol defined in one is gone.
+pub fn is_unknown_ld_section(hdr: &MachSection) -> bool {
+    hdr.segname() == "__LD" && hdr.sectname() != "__compact_unwind"
+}
+
 /// An object file parsed in isolation: all cross-references are local
 /// indices, so staging runs in parallel across files with no shared
 /// state; `integrate_object` rebases them into the global arenas.
@@ -726,7 +733,8 @@ pub fn stage_object<E: Target>(
 
         for rel in &mut rels {
             // A section ld-prime ignores can't be a relocation's target,
-            // named by section or through a label on it (an ltmpN).
+            // named by section or through a label on it (an ltmpN), and
+            // neither can a symbol in an __LD section it drops.
             match rel.target() {
                 crate::input_sections::RelocTarget::Section(sect_pos)
                     if bare[sect_pos as usize] =>
@@ -741,8 +749,10 @@ pub fn stage_object<E: Target>(
                 }
                 crate::input_sections::RelocTarget::Sym(idx)
                     if nlists.get(idx as usize).is_some_and(|n| {
+                        let sect = (n.n_sect as usize).wrapping_sub(1);
                         n.n_type() == N_SECT
-                            && bare.get((n.n_sect as usize).wrapping_sub(1)) == Some(&true)
+                            && (bare.get(sect) == Some(&true)
+                                || sect_hdrs.get(sect).is_some_and(is_unknown_ld_section))
                     }) =>
                 {
                     crate::error!("invalid r_symbolnum={idx} in '{}'", mf.name.display());

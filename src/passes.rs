@@ -320,6 +320,22 @@ fn collect_file<E: Target>(
     }
 }
 
+/// ld-prime drops each __LD section it doesn't know with a warning,
+/// in every object it parses - archive members the link doesn't use
+/// included. Staging runs in parallel, so the warnings come here, in
+/// input order.
+fn warn_unknown_ld_sections(staged: &[input_files::StagedObject]) {
+    for obj in staged {
+        for hdr in obj.sect_hdrs.iter().filter(|h| input_files::is_unknown_ld_section(h)) {
+            crate::warn!(
+                "unknown section: __LD/{} in {}",
+                hdr.sectname(),
+                resolved_file_name(obj.mf)
+            );
+        }
+    }
+}
+
 /// Stages the queued object files in parallel and integrates them in
 /// input order - the parallel front end of the mold design.
 fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
@@ -340,6 +356,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         })
         .collect();
     drop(t);
+    warn_unknown_ld_sections(&staged);
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
