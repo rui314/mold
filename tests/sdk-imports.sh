@@ -23,3 +23,7 @@ imports = {x['installName']: set(x['symbols']) for x in d['inputs'][0]['sdkImpor
 assert '_puts' in imports['/usr/lib/libSystem.B.dylib']
 assert imports[sys.argv[4]] == {'_foo'}
 EOF
+
+# A -r link takes the option, and writes no report.
+$mold -arch $ARCH -r -o $t/r.o $t/a.o -sdk_imports $t/r.json
+[ ! -e $t/r.json ]

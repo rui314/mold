@@ -1888,9 +1888,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.entry = "start".to_string();
     }
 
-    if args.relocatable && args.sdk_imports.is_some() {
-        fatal!("-sdk_imports cannot be used with -r");
-    }
     args.exported_symbols = exported_symbols.map(GlobBuilder::build);
     args.unexported_symbols = unexported_symbols.build();
     args.reexported_symbols = reexported_symbols.build();
