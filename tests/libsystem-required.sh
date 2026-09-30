@@ -53,3 +53,14 @@ grep -q "$msg" $t/log7
 link -dylib -o $t/k.dylib $t/a.o -install_name /usr/lib/system/libsystem_kernel.dylib
 cp $t/a.o $t/exit-asm.o
 link -dylib -o $t/l.dylib $t/exit-asm.o
+
+# Before macOS 12, a stub binds lazily, entering dyld through
+# libSystem's dyld_stub_binder, but an image that loads no dylib is
+# refused for that first.
+cat <<EOF2 | $CC -o $t/m.o -c -xc - -mmacosx-version-min=11.0
+void foo(void);
+int main() { foo(); return 0; }
+EOF2
+not $mold -arch $ARCH -platform_version macos 11.0 11.0 -syslibroot "$sdk" -o $t/exe4 $t/m.o \
+  -undefined dynamic_lookup 2> $t/log8
+grep -q "$msg" $t/log8

@@ -5474,6 +5474,10 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     }
     let name = "dyld_stub_binder";
     let Some(dylib) = ctx.dylibs.iter().position(|d| d.exports.contains(name)) else {
+        // An image that loads no dylib at all fails the libSystem
+        // check that dead_strip_dylibs would make later, and ld-prime
+        // says so first.
+        check_libsystem_linked(ctx);
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     let id = ctx.symbols.intern(name);
