@@ -31,3 +31,13 @@ for opt in -exported_symbol -unexported_symbol; do
   not $CC --ld-path=$mold $t/a.o -Wl,-no_exported_symbols,$opt,_foo -o $t/exe 2> $t/log
   grep -q 'cannot be used' $t/log
 done
+
+# An export list and an unexport list exclude each other too; ld64's
+# message names the option that comes second.
+echo _foo > $t/list
+not $CC --ld-path=$mold $t/a.o -Wl,-exported_symbols_list,$t/list \
+  -Wl,-unexported_symbols_list,$t/list -o $t/exe 2> $t/log2
+grep -q -- '-unexported_symbols_list: -exported_symbol\*, -unexported_symbol\* and -no_exported_symbols cannot be used together' $t/log2
+not $CC --ld-path=$mold $t/a.o -Wl,-exported_symbol,_foo -Wl,-unexported_symbol,_bar \
+  -o $t/exe 2> $t/log3
+grep -q -- '-unexported_symbol cannot be used with -exported_symbol\*' $t/log3

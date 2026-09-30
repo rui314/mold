@@ -416,6 +416,37 @@ fn parse_platform(arg: &str) -> u32 {
 /// Reads a symbol-list file for an option, fatal on I/O error.
 /// Adds symbol-list patterns to a matcher. ld64's lists accept `*`, `?`
 /// and `[...]` wildcards.
+/// The three ways to choose the exports: an export list, an unexport
+/// list, or -no_exported_symbols.
+#[derive(Clone, Copy, PartialEq)]
+enum ExportChoice {
+    Exported,
+    Unexported,
+    None,
+}
+
+/// ld64 takes one way to choose the exports, and rejects an option of
+/// another with a message named after the option that comes second.
+fn check_export_choice(seen: &mut Option<ExportChoice>, choice: ExportChoice, opt: &str) {
+    if seen.is_some_and(|seen| seen != choice) {
+        match opt {
+            "-exported_symbol" => {
+                fatal!("-exported_symbol cannot be used with -unexported_symbol*")
+            }
+            "-unexported_symbol" => {
+                fatal!("-unexported_symbol cannot be used with -exported_symbol*")
+            }
+            "-no_exported_symbols" => {
+                fatal!("-no_exported_symbols cannot be used with -[un]exported_symbol*")
+            }
+            _ => fatal!(
+                "{opt}: -exported_symbol*, -unexported_symbol* and -no_exported_symbols cannot be used together"
+            ),
+        }
+    }
+    *seen = Some(choice);
+}
+
 /// Whether a symbol list entry is a wildcard pattern rather than a name.
 fn is_pattern(s: &str) -> bool {
     s.contains(['*', '?', '['])
@@ -620,6 +651,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut why_live = GlobBuilder::default();
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
+    let mut export_choice: Option<ExportChoice> = None;
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -787,12 +819,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-all_load" => args.all_load = true,
             b"-u" => args.forced_undefined.push(text(name, next_arg(&mut i)).to_string()),
             b"-exported_symbol" => {
+                check_export_choice(&mut export_choice, ExportChoice::Exported, name);
                 let pat = text(name, next_arg(&mut i));
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
                 add_patterns(exported_symbols.get_or_insert_default(), name, [pat]);
             }
-            b"-no_exported_symbols" => args.no_exported_symbols = true,
+            b"-no_exported_symbols" => {
+                check_export_choice(&mut export_choice, ExportChoice::None, name);
+                args.no_exported_symbols = true;
+            }
             b"-exported_symbols_list" => {
+                check_export_choice(&mut export_choice, ExportChoice::Exported, name);
                 let names = read_symbol_list(&path(next_arg(&mut i)));
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 add_patterns(
@@ -802,9 +839,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 );
             }
             b"-unexported_symbol" => {
+                check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
                 add_patterns(&mut unexported_symbols, name, [text(name, next_arg(&mut i))])
             }
             b"-unexported_symbols_list" => {
+                check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
                 let names = read_symbol_list(&path(next_arg(&mut i)));
                 add_patterns(&mut unexported_symbols, name, names.iter().map(String::as_str));
             }
@@ -1027,11 +1066,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.why_live = why_live.build();
     args.local_strip_list = local_strip_list.build();
     args.local_keep_list = local_keep_list.map(GlobBuilder::build);
-    if args.no_exported_symbols
-        && (args.exported_symbols.is_some() || !args.unexported_symbols.is_empty())
-    {
-        fatal!("-no_exported_symbols cannot be used with -exported_symbol* or -unexported_symbol*");
-    }
 
     // Without -arch, the first Mach-O input names the target. A parse
     // for another target than this one is redone by the driver, so
