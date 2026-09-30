@@ -341,10 +341,12 @@ fn collect_file<E: Target>(
             let Some(idx) = idx else { return };
             // The dylibs loaded during the parse beyond this one are the
             // public libraries it re-exports; a weak parent's are weak,
-            // and a lazy one's lazy.
+            // and a lazy one's lazy. (Those standing for libraries its
+            // exports moved to load weakly only as their imports say;
+            // see weaken_moved_imports.)
             let lazy = rc.lazy && ctx.args.lazy_load;
             for d in &mut ctx.dylibs[first..] {
-                d.is_weak |= rc.weak;
+                d.is_weak |= rc.weak && d.name_source != input_files::NameSource::Moved;
                 d.is_lazy |= lazy;
             }
             // One named before by another path keeps what that said.
@@ -1062,6 +1064,8 @@ fn merged_providers(dylibs: &[input_files::DylibFile]) -> Vec<Vec<usize>> {
 /// (libswiftDarwin's include libswift_Builtin_float's), but when the
 /// library that defines the symbol is in the link itself - named or
 /// auto-linked - ld-prime binds to it, whichever of the two comes first.
+/// An export that an $ld$previous directive moves to an older library
+/// for the target binds to that one.
 fn providing_dylib(
     dylibs: &[input_files::DylibFile],
     providers: &[Vec<usize>],
@@ -1074,7 +1078,7 @@ fn providing_dylib(
             None => break,
         }
     }
-    idx
+    dylibs[idx].moved_exports.get(name).copied().unwrap_or(idx)
 }
 
 /// Makes `sym`, found in `dylibs[idx]`'s exports, an import from the
@@ -2824,6 +2828,60 @@ fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// True if a dylib's exports bound here moved to older libraries
+/// ($ld$previous): ld-prime lists a library under the install names
+/// bound to it, so one all of whose bound exports moved loses its load
+/// command, named or not; libc++ does to libc++abi for macOS 13 if only
+/// char8_t's type_info binds. (It drops a -needed_* or -reexport_*
+/// library alike, not what the option asks for; those stay.)
+fn exports_moved_away<E: Target>(ctx: &Context<E>, dylib: &input_files::DylibFile) -> bool {
+    dylib.moved_exports.iter().any(|(&name, &target)| {
+        let file = ctx.symbols.get(name).and_then(|id| ctx.symbols[id].file());
+        file == Some(FileId::Dylib(target as u32))
+    })
+}
+
+/// Makes the exports that moved from a weakly loaded dylib to an older
+/// library weak imports, though the older one loads as its own imports
+/// say: ld-prime weak-imports the 39 symbols iTerm2 binds to
+/// libswiftNetwork, since Network loads weakly (its two direct imports
+/// are weak), yet loads libswiftNetwork strongly.
+fn weaken_moved_imports<E: Target>(ctx: &mut Context<E>) {
+    for dylib in ctx.dylibs.iter().filter(|d| d.is_weak) {
+        for (&name, &target) in &dylib.moved_exports {
+            if let Some(id) = ctx.symbols.get(name)
+                && ctx.symbols[id].file() == Some(FileId::Dylib(target as u32))
+            {
+                ctx.symbols[id].set_is_weak_ref(true);
+            }
+        }
+    }
+}
+
+/// For each dylib with a load command that stands for a library exports
+/// moved to (see add_moved_dylibs), the library of the link with its
+/// install name and a load command too, which then speaks for both:
+/// ld-prime binds AppKit's moved exports to libswiftAppKit 1.0.0 for
+/// macOS 13, but to 2775.10.103 if -lswiftAppKit names the SDK's stub
+/// as well, while an auto-link option's stub with nothing bound to it
+/// has no load command and changes nothing.
+fn moved_dylib_twins<E: Target>(ctx: &Context<E>, used: &[bool]) -> Vec<Option<usize>> {
+    use crate::input_files::NameSource;
+    let dylibs = &ctx.dylibs;
+    (0..dylibs.len())
+        .map(|i| {
+            if !used[i] || dylibs[i].name_source != NameSource::Moved {
+                return None;
+            }
+            (0..dylibs.len()).find(|&j| {
+                used[j]
+                    && dylibs[j].name_source != NameSource::Moved
+                    && dylibs[j].install_name == dylibs[i].install_name
+            })
+        })
+        .collect()
+}
+
 /// Drops load commands for dylibs no symbol binds to
 /// (-dead_strip_dylibs). Bind records name dylibs by their 1-based
 /// load-command ordinal, so surviving dylibs are renumbered and symbol
@@ -2847,7 +2905,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     for (i, dylib) in ctx.dylibs.iter().enumerate() {
         used[i] = dylib.is_needed
             || dylib.install_name == b"/usr/lib/libSystem.B.dylib"
-            || !strippable(dylib);
+            || !strippable(dylib) && (dylib.is_reexported || !exports_moved_away(ctx, dylib));
     }
     // A dylib every reference to which is a weak import loads weakly
     // (LC_LOAD_WEAK_DYLIB), as ld64 does: the Swift overlays a program
@@ -2866,11 +2924,20 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
+    let twins = moved_dylib_twins(ctx, &used);
+    for (i, &twin) in twins.iter().enumerate() {
+        if let Some(twin) = twin {
+            used[i] = false;
+            bound[twin] += bound[i];
+            weak[twin] += weak[i];
+        }
+    }
     for (i, dylib) in ctx.dylibs.iter_mut().enumerate() {
         if bound[i] > 0 && weak[i] == bound[i] {
             dylib.is_weak = true;
         }
     }
+    weaken_moved_imports(ctx);
 
     let mut remap = vec![usize::MAX; ctx.dylibs.len()];
     let old = std::mem::take(&mut ctx.dylibs);
@@ -2883,12 +2950,22 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             ctx.stripped_dylibs.push((priority, path));
         }
     }
+    for (i, &twin) in twins.iter().enumerate() {
+        if let Some(twin) = twin {
+            remap[i] = remap[twin];
+        }
+    }
 
     for sym in &mut ctx.symbols.syms {
         if let Some(FileId::Dylib(idx)) = sym.file()
             && idx != u32::MAX
         {
             sym.set_file(FileId::Dylib(remap[idx as usize] as u32));
+        }
+    }
+    for dylib in &mut ctx.dylibs {
+        for target in dylib.moved_exports.values_mut() {
+            *target = remap[*target];
         }
     }
 

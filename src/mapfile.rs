@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::fatal;
-use crate::input_files::{FileId, MergedFile};
+use crate::input_files::{DylibFile, FileId, MergedFile, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -205,9 +205,12 @@ impl<'a> MapFiles<'a> {
             }
         }
 
+        // A dylib that stands for a library exports moved to is no file:
+        // its symbols count as the file's that moved them.
+        let is_moved = |dylib: &DylibFile| dylib.name_source == NameSource::Moved;
         let mut implicit: Vec<(&[u8], File)> = Vec::new();
         for (i, dylib) in ctx.dylibs.iter().enumerate() {
-            if dylib.is_implicit && !dylib.is_autolinked {
+            if dylib.is_implicit && !dylib.is_autolinked && !is_moved(dylib) {
                 implicit.push((&dylib.install_name, File::Dylib(i)));
             }
         }
@@ -252,6 +255,10 @@ impl<'a> MapFiles<'a> {
             if let Some(&number) = merged_numbers.get(file.install_name.as_slice()) {
                 files.merged.insert(sym, number);
             }
+        }
+        for (i, dylib) in ctx.dylibs.iter().enumerate().filter(|(_, d)| is_moved(d)) {
+            let path = files.paths.iter().position(|&p| *p == dylib.path);
+            files.dylibs[i] = path.map_or(0, |p| p + 1);
         }
         files
     }

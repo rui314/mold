@@ -451,6 +451,28 @@ pub struct DylibFile {
     /// With -map, those libraries as the files ld-prime reads them from,
     /// to which it attributes the symbols they define.
     pub merged_files: Vec<MergedFile>,
+    /// Exports (its own or merged ones) that per-symbol $ld$previous
+    /// directives move to older libraries for the link's target, each
+    /// with the index of the dylib that stands for the library it binds
+    /// to instead (see add_moved_dylibs).
+    pub moved_exports: hashbrown::HashMap<&'static str, usize>,
+    /// Whose install name it has: its own or an older library's.
+    pub name_source: NameSource,
+}
+
+/// Whose install name a dylib has, which decides between the dylibs of
+/// the link that have the same one (see add_dylib).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NameSource {
+    /// Its own, as LC_ID_DYLIB or the stub spells it.
+    Own,
+    /// An older library's, which an $ld$previous or $ld$install_name
+    /// directive gives it for the link's target.
+    Directive,
+    /// None: the dylib stands for an older library that exports moved
+    /// by per-symbol $ld$previous directives bind to, and has no file
+    /// or exports of its own.
+    Moved,
 }
 
 /// A private library a dylib re-exports, merged into it: the file
@@ -3004,7 +3026,8 @@ pub fn trace_name(name: &[u8]) -> String {
 /// from its file when one exists, as ld-prime does, and from its
 /// document otherwise; a private one inlined is merged from its
 /// document. Returns the install names of the private libraries merged,
-/// and with -map or -why_live the files they are.
+/// with -map or -why_live the files they are, and the exports of theirs
+/// that $ld$previous directives move to older libraries.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -3013,9 +3036,15 @@ fn load_reexports<E: Target>(
     exports: &mut hashbrown::HashSet<&'static str>,
     tlv_exports: &mut hashbrown::HashSet<&'static str>,
     weak_exports: &mut hashbrown::HashSet<&'static str>,
-) -> (Vec<Vec<u8>>, Vec<MergedFile>) {
-    let mut walk =
-        ReexportWalk { queue: reexports, pool: documents, exports, tlv_exports, weak_exports };
+) -> (Vec<Vec<u8>>, Vec<MergedFile>, Vec<MovedExport>) {
+    let mut walk = ReexportWalk {
+        queue: reexports,
+        pool: documents,
+        exports,
+        tlv_exports,
+        weak_exports,
+        moved: Vec::new(),
+    };
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
     // Only -map and -why_live read the files, and gathering them costs.
@@ -3073,7 +3102,7 @@ fn load_reexports<E: Target>(
                 ctx.dylibs[idx].is_implicit = true;
                 continue;
             }
-            interpret_ld_symbols(ctx, &mut doc);
+            walk.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
             if map {
                 let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths);
                 let path = found.map_or(Path::new(crate::util::os_str(&name)), |mf| &mf.name);
@@ -3105,7 +3134,7 @@ fn load_reexports<E: Target>(
                     continue;
                 }
                 merged.push(dep_tbd.install_name.as_bytes().to_vec());
-                interpret_ld_symbols(ctx, &mut dep_tbd);
+                walk.moved.extend(interpret_ld_symbols(ctx, &mut dep_tbd).moved);
                 if map {
                     record(dep_tbd.install_name.as_bytes(), &dep.name, all_exports(&dep_tbd));
                 }
@@ -3145,20 +3174,22 @@ fn load_reexports<E: Target>(
             ),
         }
     }
-    (merged, merged_files)
+    (merged, merged_files, walk.moved)
 }
 
 /// A dylib's re-exported libraries as load_reexports walks them: those
 /// left to visit, each with the directory and rpaths its install name
 /// resolves from; the inlined documents a name may resolve to (the
 /// dylib's, and those of every stub merged along the way); and the
-/// dylib's export sets, which the private ones merge into.
+/// dylib's export sets, which the private ones merge into, with those
+/// of their exports that move to older libraries.
 struct ReexportWalk<'a> {
     queue: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
     pool: Vec<tapi::TbdFile>,
     exports: &'a mut hashbrown::HashSet<&'static str>,
     tlv_exports: &'a mut hashbrown::HashSet<&'static str>,
     weak_exports: &'a mut hashbrown::HashSet<&'static str>,
+    moved: Vec<MovedExport>,
 }
 
 impl ReexportWalk<'_> {
@@ -3465,7 +3496,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // relative to the referrer.
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> =
         reexports.into_iter().map(|name| (name, dir_of(&mf.name), rpaths.clone())).collect();
-    let (merged_reexports, merged_files) = load_reexports(
+    let (merged_reexports, merged_files, moved) = load_reexports(
         ctx,
         reexports,
         &mf.name,
@@ -3474,6 +3505,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
         &mut tlv_exports,
         &mut weak_exports,
     );
+    let moved_exports = add_moved_dylibs(ctx, &mf.name, moved, &exports);
 
     let priority = ctx.next_priority();
     add_dylib(
@@ -3500,6 +3532,8 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             tlv_exports,
             merged_reexports,
             merged_files,
+            moved_exports,
+            name_source: NameSource::Own,
         },
     )
 }
@@ -3706,6 +3740,8 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             tlv_exports,
             merged_reexports: Vec::new(),
             merged_files: Vec::new(),
+            moved_exports: hashbrown::HashMap::new(),
+            name_source: NameSource::Own,
         },
     )
 }
@@ -3911,6 +3947,25 @@ pub fn find_reexport_file<E: Target>(
     None
 }
 
+/// An export that a per-symbol $ld$previous directive moves to an older
+/// library for the link's target: it binds to the library with that
+/// install name, at the directive's version or else the defining
+/// library's.
+struct MovedExport {
+    name: &'static str,
+    install_name: &'static str,
+    current_version: u32,
+    compatibility_version: u32,
+}
+
+/// What a stub's "$ld$..." names say for the link's target beyond its
+/// exports: whether its install name is an older library's, and the
+/// exports that move to one.
+struct LdDirectives {
+    renamed: bool,
+    moved: Vec<MovedExport>,
+}
+
 /// Interprets a .tbd's "$ld$..." export names. These are not symbols
 /// but directives to the linker, invented so a stub library could
 /// change shape per deployment target without a file format change:
@@ -3918,27 +3973,38 @@ pub fn find_reexport_file<E: Target>(
 /// <ver>, $ld$hide$os<ver>$<sym> hides one, $ld$install_name$os<ver>$
 /// <name> substitutes the recorded install name, and
 /// $ld$previous$<name>$<compat>$<platform>$<lo>$<hi>$<sym>$ applies
-/// <name> when the target platform matches and lo <= minos < hi
-/// (the per-symbol form never worked in ld64 and is ignored, as sold
-/// found). Apple uses these when a symbol moves between libraries:
-/// old targets keep binding it where it used to live.
-fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
+/// <name> (at version <compat>, if given) when the target platform
+/// matches and lo <= minos < hi: to the whole library if <sym> is
+/// empty, else to that export alone. Apple uses these when symbols
+/// move between libraries: old targets keep binding them where they
+/// used to live (AppKit's Swift overlay functions in libswiftAppKit
+/// before macOS 14).
+fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) -> LdDirectives {
     let minos = ctx.args.platform_minos;
     let mut added: Vec<&'static str> = Vec::new();
     let mut hidden: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    let mut install_name: Option<String> = None;
+    let mut install_name: Option<(&str, Option<u32>)> = None;
+    let mut moved: Vec<(&'static str, &'static str, Option<u32>)> = Vec::new();
 
     for name in &tbd.exports {
         if let Some(rest) = name.strip_prefix("$ld$previous$") {
-            let f: Vec<&str> = rest.split('$').collect();
-            if f.len() < 6 {
+            // A symbol name may contain '$' (Swift's do): it is what
+            // follows the fifth separator, less the final '$'.
+            let f: Vec<&'static str> = rest.splitn(6, '$').collect();
+            let Some(sym) = f.get(5).and_then(|s| s.strip_suffix('$')) else {
                 crate::warn!("malformed linker directive: {name}");
-            } else if f[5].is_empty()
-                && f[2].parse::<u32>() == Ok(ctx.args.platform)
+                continue;
+            };
+            if f[2].parse::<u32>() == Ok(ctx.args.platform)
                 && tapi::parse_version(f[3]) <= minos
                 && minos < tapi::parse_version(f[4])
             {
-                install_name = Some(f[0].to_string());
+                let version = (!f[1].is_empty()).then(|| tapi::parse_version(f[1]));
+                if sym.is_empty() {
+                    install_name = Some((f[0], version));
+                } else {
+                    moved.push((sym, f[0], version));
+                }
             }
         } else if let Some(rest) = name.strip_prefix("$ld$add$os") {
             if let Some((ver, sym)) = rest.split_once('$')
@@ -3956,16 +4022,30 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
             && let Some((ver, new_name)) = rest.split_once('$')
             && tapi::parse_version(ver) == minos
         {
-            install_name = Some(new_name.to_string());
+            install_name = Some((new_name, None));
         }
     }
 
     tbd.exports.retain(|n| !n.starts_with("$ld$") && !hidden.contains(n));
     tbd.weak_exports.retain(|n| !hidden.contains(n));
     tbd.exports.extend(added);
-    if let Some(name) = install_name {
-        tbd.install_name = name;
+    if let Some((name, version)) = install_name {
+        tbd.install_name = name.to_string();
+        if let Some(version) = version {
+            tbd.current_version = version;
+            tbd.compatibility_version = version;
+        }
     }
+    let moved = moved
+        .into_iter()
+        .map(|(name, install_name, version)| MovedExport {
+            name,
+            install_name,
+            current_version: version.unwrap_or(tbd.current_version),
+            compatibility_version: version.unwrap_or(tbd.compatibility_version),
+        })
+        .collect();
+    LdDirectives { renamed: install_name.is_some(), moved }
 }
 
 /// A stub's library, read for the link's architecture and platform;
@@ -4014,7 +4094,7 @@ fn register_tbd<E: Target>(
     mut tbd: tapi::TbdFile,
     documents: Vec<tapi::TbdFile>,
 ) -> usize {
-    interpret_ld_symbols(ctx, &mut tbd);
+    let directives = interpret_ld_symbols(ctx, &mut tbd);
     let mut exports: hashbrown::HashSet<&'static str> = tbd.exports.into_iter().collect();
     let mut weak_exports: hashbrown::HashSet<&'static str> =
         tbd.weak_exports.iter().copied().collect();
@@ -4027,7 +4107,7 @@ fn register_tbd<E: Target>(
         .into_iter()
         .map(|name| (name.as_bytes().to_vec(), dir_of(path), Vec::new()))
         .collect();
-    let (merged_reexports, merged_files) = load_reexports(
+    let (merged_reexports, merged_files, mut moved) = load_reexports(
         ctx,
         reexports,
         path,
@@ -4036,6 +4116,9 @@ fn register_tbd<E: Target>(
         &mut tlv_exports,
         &mut weak_exports,
     );
+    moved.extend(directives.moved);
+    let moved_exports = add_moved_dylibs(ctx, path, moved, &exports);
+    let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
     let priority = ctx.next_priority();
     add_dylib(
@@ -4062,19 +4145,94 @@ fn register_tbd<E: Target>(
             tlv_exports,
             merged_reexports,
             merged_files,
+            moved_exports,
+            name_source,
         },
     )
 }
 
+/// Makes a dylib stand for each older library that exports of the
+/// dylib at `path` move to, and returns which one each export binds to.
+/// It has only the install name and the versions the directive gives:
+/// ld-prime binds 81 of iTerm2's AppKit imports to /usr/lib/swift/
+/// libswiftAppKit.dylib 1.0.0 for macOS 13, which has no stub for
+/// arm64. It is one with a library of the link that has the install
+/// name as its own only if both get a load command (see
+/// dead_strip_dylibs).
+fn add_moved_dylibs<E: Target>(
+    ctx: &mut Context<E>,
+    path: &Path,
+    moved: Vec<MovedExport>,
+    exports: &hashbrown::HashSet<&'static str>,
+) -> hashbrown::HashMap<&'static str, usize> {
+    let mut moved_exports = hashbrown::HashMap::new();
+    let mut targets: Vec<(&str, usize)> = Vec::new();
+    for export in moved.into_iter().filter(|e| exports.contains(e.name)) {
+        let idx = match targets.iter().find(|(name, _)| *name == export.install_name) {
+            Some(&(_, idx)) => idx,
+            None => {
+                let priority = ctx.next_priority();
+                let dylib = DylibFile {
+                    path: path.to_path_buf(),
+                    install_name: export.install_name.as_bytes().to_vec(),
+                    current_version: export.current_version,
+                    compatibility_version: export.compatibility_version,
+                    dylib_idx: next_dylib_ordinal(ctx),
+                    is_bundle_loader: false,
+                    priority,
+                    is_weak: false,
+                    is_reexported: false,
+                    is_needed: false,
+                    is_upward: false,
+                    is_lazy: false,
+                    named_at: None,
+                    is_autolinked: false,
+                    is_implicit: true,
+                    load_order: u32::MAX,
+                    exports: hashbrown::HashSet::new(),
+                    weak_exports: hashbrown::HashSet::new(),
+                    tlv_exports: hashbrown::HashSet::new(),
+                    merged_reexports: Vec::new(),
+                    merged_files: Vec::new(),
+                    moved_exports: hashbrown::HashMap::new(),
+                    name_source: NameSource::Moved,
+                };
+                let idx = add_dylib(ctx, dylib);
+                targets.push((export.install_name, idx));
+                idx
+            }
+        };
+        moved_exports.insert(export.name, idx);
+    }
+    moved_exports
+}
+
 /// Registers a dylib, deduplicating by install name: several libraries
 /// (libc, libm, ...) are stubs for the same /usr/lib/libSystem.B.dylib,
-/// and dyld refuses an image that lists one install name twice.
+/// and dyld refuses an image that lists one install name twice. The
+/// first one registered speaks for them, unless a later one has the
+/// install name as its own and the first by an $ld$previous directive
+/// only: CoreLocation's stub decides its load command, not that of
+/// _LocationEssentials, which it re-exports and which takes the name
+/// CoreLocation before macOS 16. A dylib standing for a library that
+/// exports moved to stays apart from the others (see add_moved_dylibs).
 fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
-    if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == dylib.install_name) {
+    let is_moved = |d: &DylibFile| d.name_source == NameSource::Moved;
+    if let Some(idx) = ctx
+        .dylibs
+        .iter()
+        .position(|d| d.install_name == dylib.install_name && is_moved(d) == is_moved(&dylib))
+    {
         let existing = &mut ctx.dylibs[idx];
+        if dylib.name_source < existing.name_source {
+            existing.current_version = dylib.current_version;
+            existing.compatibility_version = dylib.compatibility_version;
+            existing.name_source = dylib.name_source;
+        }
         existing.exports.extend(dylib.exports);
         existing.merged_reexports.extend(dylib.merged_reexports);
         existing.merged_files.extend(dylib.merged_files);
+        existing.moved_exports.extend(dylib.moved_exports);
         return idx;
     }
     ctx.dylibs.push(dylib);
