@@ -193,6 +193,29 @@ struct ReaderContext {
     autolinked: bool,
 }
 
+/// Reports a dylib that does not let this link name it directly (see
+/// input_files::is_allowed_client): an error on the command line, while
+/// the library an auto-link option names is left out with a warning.
+fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: ReaderContext) -> bool {
+    let id = input_files::dylib_identity::<E>(mf);
+    if input_files::is_allowed_client(ctx, &id) {
+        return false;
+    }
+    let leaf = id.install_name.rsplit(|&b| b == b'/').next().unwrap_or(&[]);
+    let msg = format!(
+        "cannot link directly with '{}' because product being built is not an allowed client of it",
+        crate::util::display(leaf)
+    );
+    if !rc.autolinked {
+        error!("{msg}");
+    } else if input_files::provides_undefined(ctx, mf) {
+        // ld-prime opens an auto-linked library only for a symbol still
+        // undefined, so it says nothing of one that would provide none.
+        crate::warn!("Could not parse or use implicit file '{}': {msg}", mf.name.display());
+    }
+    true
+}
+
 /// Classifies one input file. Dylib stubs and binaries are registered
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
@@ -226,6 +249,7 @@ fn collect_file<E: Target>(
         FileType::Dylib if ctx.args.relocatable => {
             crate::warn!("{}, ignoring unexpected dylib file", mf.name.display());
         }
+        FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
             let first = ctx.dylibs.len();
             let idx = if get_file_type(mf) == FileType::Tapi {

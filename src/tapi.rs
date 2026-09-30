@@ -33,6 +33,10 @@ pub struct TbdFile {
     pub tlv_exports: Vec<&'static str>,
     /// The library was built without -application_extension.
     pub not_app_extension_safe: bool,
+    /// The umbrella the library belongs to (parent-umbrella), and the
+    /// clients it lets link it directly (allowable-clients).
+    pub parent_umbrella: Option<&'static str>,
+    pub allowable_clients: Vec<&'static str>,
     /// Install names of the libraries this one re-exports: documents
     /// inlined in the same file and libraries in files of their own
     /// alike. (Every inlined document counts as re-exported, listed
@@ -341,6 +345,16 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
                 tbd.not_app_extension_safe = true;
             }
         }
+        for group in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
+            if applies(group, &target) {
+                tbd.parent_umbrella = group.get("umbrella").and_then(Json::str);
+            }
+        }
+        for group in lib.get("allowable_clients").map(Json::arr).unwrap_or(&[]) {
+            if applies(group, &target) {
+                tbd.allowable_clients.extend(group.strs("clients"));
+            }
+        }
         add_symbols(&mut tbd, lib);
         for group in lib
             .get("reexported_libraries")
@@ -498,6 +512,12 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
                     tbd.not_app_extension_safe =
                         field.items().any(|s| s == "not_app_extension_safe");
                 }
+                // Version 4 lists them per target group ("umbrella:",
+                // "clients:"), older versions directly.
+                "parent-umbrella" | "umbrella" if !field.value.is_empty() => {
+                    tbd.parent_umbrella = Some(unquote(field.value));
+                }
+                "allowable-clients" | "clients" => tbd.allowable_clients.extend(field.items()),
                 "symbols" => tbd.exports.extend(field.items()),
                 "weak-symbols" | "weak-def-symbols" => tbd.weak_exports.extend(field.items()),
                 "thread-local-symbols" => tbd.tlv_exports.extend(field.items()),

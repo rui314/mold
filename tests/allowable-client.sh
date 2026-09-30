@@ -35,3 +35,7 @@ $CC --ld-path=$mold -shared -o $t/libsib.dylib $t/a.o \
 
 # The derived client name comes from the output leaf, minus "lib".
 $CC --ld-path=$mold -o $t/friend $t/b.o $t/libsub.dylib
+
+# A subframework that names no clients restricts nothing (ld-prime).
+$CC --ld-path=$mold -shared -o $t/libsub2.dylib $t/a.o -Wl,-umbrella,Big
+$CC --ld-path=$mold -o $t/exe2 $t/b.o $t/libsub2.dylib

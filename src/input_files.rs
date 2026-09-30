@@ -248,11 +248,6 @@ pub struct DylibFile {
     /// MH_APP_EXTENSION_SAFE: built with -application_extension, so
     /// app-extension clients may link it.
     pub is_app_extension_safe: bool,
-    /// LC_SUB_FRAMEWORK: this dylib belongs to the named umbrella and
-    /// may only be linked by it or by an allowed client.
-    pub sub_framework: Option<Vec<u8>>,
-    /// LC_SUB_CLIENT: clients allowed to link this subframework.
-    pub sub_clients: Vec<Vec<u8>>,
     pub exports: hashbrown::HashSet<&'static str>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
@@ -1961,7 +1956,7 @@ fn load_reexports<E: Target>(
             && let Some(i) = inline
         {
             let mut doc = pool[i].clone();
-            if public {
+            if DylibIdentity::of_tbd(&doc).is_public(ctx) {
                 let idx = register_tbd(ctx, parent, doc, pool.clone());
                 ctx.dylibs[idx].is_implicit = true;
                 continue;
@@ -1994,11 +1989,10 @@ fn load_reexports<E: Target>(
         // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it
         // found as the SDK's /usr/lib/libz.1.dylib, and merges a
         // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
-        let is_public = |found: &[u8]| !ctx.args.no_implicit_dylibs && is_public_location(found);
         match crate::filetype::get_file_type(dep) {
             crate::filetype::FileType::Tapi => {
                 let mut dep_tbd = tapi::parse_cached(dep, E::NAME);
-                if is_public(dep_tbd.install_name.as_bytes()) {
+                if DylibIdentity::of_tbd(&dep_tbd).is_public(ctx) {
                     let idx = parse_dylib(ctx, dep);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
@@ -2016,13 +2010,13 @@ fn load_reexports<E: Target>(
                 }
             }
             crate::filetype::FileType::Dylib => {
-                let found = binary_install_name(dep);
-                if is_public(&found) {
+                let found = DylibIdentity::of_binary(dep);
+                if found.is_public(ctx) {
                     let idx = parse_dylib_binary(ctx, dep);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
-                merged.push(found);
+                merged.push(found.install_name);
                 check_dylib_versions(ctx, dep);
                 let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) = dylib_binary_exports(dep);
                 exports.extend(dep_exports);
@@ -2033,13 +2027,13 @@ fn load_reexports<E: Target>(
             }
             crate::filetype::FileType::Fat => {
                 let slice = get_fat_slice::<E>(dep);
-                let found = binary_install_name(slice);
-                if is_public(&found) {
+                let found = DylibIdentity::of_binary(slice);
+                if found.is_public(ctx) {
                     let idx = parse_dylib_binary(ctx, slice);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
-                merged.push(found);
+                merged.push(found.install_name);
                 check_dylib_versions(ctx, slice);
                 let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) =
                     dylib_binary_exports(slice);
@@ -2059,22 +2053,118 @@ fn load_reexports<E: Target>(
     merged
 }
 
-/// A dylib binary's install name, from LC_ID_DYLIB.
-fn binary_install_name(mf: &MappedFile) -> Vec<u8> {
-    let data = mf.data();
-    let hdr = MachHeader::read_from(data);
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_ID_DYLIB {
-            let cmd = DylibCommand::read_from(&data[off..]);
-            let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-            let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-            return name[..len].to_vec();
+/// A dylib's install name and who may link it directly: the umbrella it
+/// belongs to (LC_SUB_FRAMEWORK, a stub's parent-umbrella) and the
+/// clients it names (LC_SUB_CLIENT, allowable-clients).
+pub struct DylibIdentity {
+    pub install_name: Vec<u8>,
+    umbrella: Option<Vec<u8>>,
+    clients: Vec<Vec<u8>>,
+}
+
+impl DylibIdentity {
+    fn of_tbd(tbd: &tapi::TbdFile) -> Self {
+        Self {
+            install_name: tbd.install_name.as_bytes().to_vec(),
+            umbrella: tbd.parent_umbrella.map(|u| u.as_bytes().to_vec()),
+            clients: tbd.allowable_clients.iter().map(|c| c.as_bytes().to_vec()).collect(),
         }
-        off += lc.cmdsize as usize;
     }
-    Vec::new()
+
+    fn of_binary(mf: &MappedFile) -> Self {
+        let data = mf.data();
+        let hdr = MachHeader::read_from(data);
+        let mut id = Self { install_name: Vec::new(), umbrella: None, clients: Vec::new() };
+        let mut off = size_of::<MachHeader>();
+        for _ in 0..hdr.ncmds {
+            let lc = LoadCommand::read_from(&data[off..]);
+            let string = |nameoff: u32| {
+                let name = &data[off + nameoff as usize..off + lc.cmdsize as usize];
+                name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())].to_vec()
+            };
+            match lc.cmd {
+                LC_ID_DYLIB => {
+                    id.install_name = string(DylibCommand::read_from(&data[off..]).nameoff)
+                }
+                LC_SUB_FRAMEWORK => {
+                    id.umbrella = Some(string(DylinkerCommand::read_from(&data[off..]).nameoff));
+                }
+                LC_SUB_CLIENT => {
+                    id.clients.push(string(DylinkerCommand::read_from(&data[off..]).nameoff))
+                }
+                _ => {}
+            }
+            off += lc.cmdsize as usize;
+        }
+        id
+    }
+
+    /// Whether a re-export of this library binds to it rather than to
+    /// the re-exporter: ld64's public install name, which a library
+    /// that names its clients never has (rdar://20627554).
+    fn is_public<E: Target>(&self, ctx: &Context<E>) -> bool {
+        !ctx.args.no_implicit_dylibs
+            && is_public_location(&self.install_name)
+            && self.clients.is_empty()
+    }
+}
+
+/// The identity of the dylib in a stub or binary file.
+pub fn dylib_identity<E: Target>(mf: &'static MappedFile) -> DylibIdentity {
+    match crate::filetype::get_file_type(mf) {
+        crate::filetype::FileType::Tapi => DylibIdentity::of_tbd(&tapi::parse_cached(mf, E::NAME)),
+        _ => DylibIdentity::of_binary(mf),
+    }
+}
+
+/// Whether the dylib in a stub or binary file exports a symbol that the
+/// link uses and neither an object nor a dylib loaded so far defines
+/// (SwiftUI, auto-linked before SwiftUICore, re-exports all of it).
+pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
+    let names: Vec<&'static str> = match crate::filetype::get_file_type(mf) {
+        crate::filetype::FileType::Tapi => {
+            let tbd = tapi::parse_cached(mf, E::NAME);
+            [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
+        }
+        _ => dylib_binary_exports(mf).0,
+    };
+    names.iter().any(|name| {
+        ctx.symbols.get(name).is_some_and(|id| {
+            let sym = &ctx.symbols[id];
+            sym.is_used() && !sym.is_defined()
+        }) && !ctx.dylibs.iter().any(|d| d.exports.contains(name))
+    })
+}
+
+/// Whether this link may name a dylib directly. ld-prime restricts only
+/// a dylib that lists the clients it allows (SwiftUICore lists AppKit,
+/// SwiftUI, UIKit and a few more): the output may link it if its client
+/// name - -client_name, else the leaf of its install name (a dylib) or
+/// path, less a "lib" prefix and cut at the first '.' or '_' - is the
+/// dylib's umbrella or begins one of the clients (ld64's strncmp makes
+/// it a prefix match), or if it is a sibling under the same -umbrella.
+pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> bool {
+    if dylib.clients.is_empty() {
+        return true;
+    }
+    let umbrella = dylib.umbrella.as_deref();
+    if umbrella.is_some() && ctx.args.umbrella.as_deref() == umbrella {
+        return true;
+    }
+    let name = match &ctx.args.client_name {
+        Some(name) => name.clone(),
+        None => {
+            let path = match &ctx.args.install_name {
+                Some(name) if ctx.args.output_type == MH_DYLIB => name.as_slice(),
+                _ => crate::util::path_bytes(&ctx.args.output),
+            };
+            let leaf = path.rsplit(|&b| b == b'/').next().unwrap_or(path);
+            let leaf = leaf.strip_prefix(b"lib").unwrap_or(leaf);
+            let end = leaf.iter().position(|&b| b == b'.' || b == b'_').unwrap_or(leaf.len());
+            leaf[..end].to_vec()
+        }
+    };
+    umbrella == Some(name.as_slice()) || dylib.clients.iter().any(|c| c.starts_with(&name))
 }
 
 /// Check binary dependencies, including private reexports whose symbols
@@ -2132,8 +2222,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     let mut dysymtab_cmd = None;
     let mut reexports: Vec<Vec<u8>> = Vec::new();
     let mut rpaths: Vec<PathBuf> = Vec::new();
-    let mut sub_framework: Option<Vec<u8>> = None;
-    let mut sub_clients: Vec<Vec<u8>> = Vec::new();
 
     let mut off = size_of::<MachHeader>();
     for _ in 0..hdr.ncmds {
@@ -2160,17 +2248,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
                 let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
                 let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
                 rpaths.push(loader_rpath(&mf.name, &name[..len]));
-            }
-            LC_SUB_FRAMEWORK | LC_SUB_CLIENT => {
-                let cmd = DylinkerCommand::read_from(&data[off..]);
-                let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
-                let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-                let name = name[..len].to_vec();
-                if lc.cmd == LC_SUB_FRAMEWORK {
-                    sub_framework = Some(name);
-                } else {
-                    sub_clients.push(name);
-                }
             }
             _ => {}
         }
@@ -2254,8 +2331,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             load_order: u32::MAX,
             is_dead_strippable: hdr.flags & MH_DEAD_STRIPPABLE_DYLIB != 0,
             is_app_extension_safe: hdr.flags & MH_APP_EXTENSION_SAFE != 0,
-            sub_framework,
-            sub_clients,
             exports,
             weak_exports,
             tlv_exports,
@@ -2460,8 +2535,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             load_order: u32::MAX,
             is_dead_strippable: false,
             is_app_extension_safe: true,
-            sub_framework: None,
-            sub_clients: Vec::new(),
             exports,
             weak_exports: hashbrown::HashSet::new(),
             tlv_exports,
@@ -2791,8 +2864,6 @@ fn register_tbd<E: Target>(
             load_order: u32::MAX,
             is_dead_strippable: false,
             is_app_extension_safe: !tbd.not_app_extension_safe,
-            sub_framework: None,
-            sub_clients: Vec::new(),
             exports,
             weak_exports,
             tlv_exports,
@@ -2816,32 +2887,6 @@ fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
         );
     }
 
-    // A subframework may only be linked by its umbrella or by a client
-    // it names. The client's identity is -client_name, or the output's
-    // leaf name with any "lib" prefix and extension shed - the same
-    // derivation ld64 uses.
-    if let Some(umbrella) = &dylib.sub_framework {
-        let client: Vec<u8> = match &ctx.args.client_name {
-            Some(name) => name.clone(),
-            None => {
-                let leaf = ctx
-                    .args
-                    .output
-                    .file_name()
-                    .map_or(&[][..], |f| std::os::unix::ffi::OsStrExt::as_bytes(f));
-                let stem = leaf.split(|&b| b == b'.').next().unwrap_or(leaf);
-                stem.strip_prefix(b"lib").unwrap_or(stem).to_vec()
-            }
-        };
-        let ours = ctx.args.umbrella.as_deref() == Some(umbrella.as_slice());
-        if !ours && client != *umbrella && !dylib.sub_clients.contains(&client) {
-            crate::error!(
-                "cannot link directly with {}: not an allowed client of umbrella framework {}",
-                crate::util::display(&dylib.install_name),
-                crate::util::display(umbrella)
-            );
-        }
-    }
     if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == dylib.install_name) {
         let existing = &mut ctx.dylibs[idx];
         existing.exports.extend(dylib.exports);
