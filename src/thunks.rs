@@ -63,9 +63,10 @@ const ISLAND_CLUSTER_SPACING: u64 = 124 << 20;
 /// code spans no more than a branch reaches, Some(true) if it may span
 /// more, and None if only the placement can tell - the span then holds
 /// a chunk sized as it is placed (a shared-region image's __stubs come
-/// after __unwind_info) or crosses segments.
+/// after __unwind_info) or crosses segments. With -no_branch_islands it
+/// gets none: a branch out of reach is then a fixup error.
 pub fn need_thunks<E: Target>(ctx: &Context<E>) -> Option<bool> {
-    if E::THUNK_SIZE == 0 {
+    if E::THUNK_SIZE == 0 || ctx.args.no_branch_islands {
         return Some(false);
     }
     let Some((first, last)) = code_range(ctx) else {
@@ -110,12 +111,12 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Warns about each code atom as large as the code between two clusters
-/// of ld-prime's branch islands, as ld-prime does: its islands branch
-/// to one another by b, so no branch can cross such an atom, and it
-/// fails the link if one must. Our thunks jump anywhere within 4 GiB,
-/// so we link it all the same.
+/// of ld-prime's branch islands, as ld-prime does (but not under
+/// -no_branch_islands): its islands branch to one another by b, so no
+/// branch can cross such an atom, and it fails the link if one must.
+/// Our thunks jump anywhere within 4 GiB, so we link it all the same.
 pub fn warn_large_atoms<E: Target>(ctx: &Context<E>) {
-    if E::THUNK_SIZE == 0 {
+    if E::THUNK_SIZE == 0 || ctx.args.no_branch_islands {
         return;
     }
     for &id in &ctx.chunks {

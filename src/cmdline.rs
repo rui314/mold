@@ -360,6 +360,9 @@ pub struct Args {
     /// Code goes in its own __TEXT_EXEC segment, and __TEXT is
     /// read-only (ld64's -text_exec, implied by an arm64 -kext).
     pub text_exec: bool,
+    /// -no_branch_islands: make no range-extension thunks, so that a
+    /// branch out of reach is an error.
+    pub no_branch_islands: bool,
     /// Whether an executable is position independent (MH_PIE):
     /// -pie / -no_pie, resolved for the target at the end of parsing.
     pub pie: bool,
@@ -482,6 +485,7 @@ impl Default for Args {
             preload: false,
             kernel: false,
             text_exec: false,
+            no_branch_islands: false,
             pie: true,
             text_relocs: false,
         }
@@ -1692,6 +1696,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-deduplicate" => args.deduplicate = true,
             b"-text_exec" => args.text_exec = true,
+            b"-no_branch_islands" => args.no_branch_islands = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,

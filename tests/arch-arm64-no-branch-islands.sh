@@ -46,3 +46,17 @@ $t/exe | grep -q '^42 3$'
 
 nm $t/exe > $t/syms
 not grep -q island $t/syms
+
+# -no_branch_islands makes none at all, even for a branch out of reach,
+# which is then an error. Nor is a code atom too large for ld-prime's
+# island clusters worth a warning.
+cat <<'EOF' | $CC -o $t/pad2.o -c -xassembler -
+.subsections_via_symbols
+_pad2:
+  .space 0x8400000
+EOF
+
+not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/pad2.o $t/far.o -Wl,-no_branch_islands 2> $t/log
+grep -Eq "fixup error \(kind=arm64_b26\) at '_main'\+0x[0-9A-F]+ from main.o, B/BL out of range \(displacement=[0-9]+, max is \+/-128MB\), from 0x[0-9A-F]+ to 0x[0-9A-F]+ \('_far'\)" $t/log
+not grep -q 'branch island clusters' $t/log
+rm -f $t/pad.o $t/pad2.o $t/exe
