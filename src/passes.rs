@@ -5625,6 +5625,8 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         crate::thunks::gather_thunk_addresses(ctx, &thunked);
     }
 
+    // The fixup builders leave a text relocation's alignment alone.
+    ctx.text_reloc_ranges = text_reloc_ranges(ctx);
     build_linkedit_tables(ctx);
     ctx.output_size = layout_segment(ctx, linkedit, fileoff, 0);
     place_linkedit(ctx);
@@ -5641,7 +5643,6 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         .map(|hdr| hdr.addr)
         .min()
         .unwrap_or(0);
-    ctx.text_reloc_ranges = text_reloc_ranges(ctx);
 }
 
 /// The address ranges of the segments mapped without write permission,
@@ -5667,14 +5668,19 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
 
 /// Fails the link on the text relocations applying relocations found,
 /// listing every one as ld-prime does: output section by output
-/// section, each atom's from the last to the first (the order an
-/// assembler emits relocations in).
+/// section, each atom's in address order where it encodes rebase
+/// opcodes, else from the last to the first (the order an assembler
+/// emits relocations in). An unaligned pointer in a chain fails the
+/// link then instead.
 fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
-    if found.is_empty() {
-        return;
+    if !ctx.use_chained_fixups() && ctx.chunks.contains(&ChunkId::RebaseInfo) {
+        found.sort_unstable_by_key(|&(isec, i)| (ctx.isec_addr(isec as usize), i));
+    } else {
+        found.sort_unstable_by_key(|&(isec, i)| {
+            (ctx.isec_addr(isec as usize), std::cmp::Reverse(i))
+        });
     }
-    found.sort_unstable_by_key(|&(isec, i)| (ctx.isec_addr(isec as usize), std::cmp::Reverse(i)));
     let mut osec = None;
     for (id, i) in found {
         let isec = &ctx.isecs[id as usize];
@@ -5692,7 +5698,9 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
         };
         eprintln!("  text-relocation in {} to '{target}'", ctx.atom_ref(id as usize, rel.offset));
     }
-    error!("Found illegal text-relocations");
+    if !chunks::chained_fixups::report_unaligned_chain_pointer(ctx) && osec.is_some() {
+        error!("Found illegal text-relocations");
+    }
 }
 
 /// Lays out every segment but __LINKEDIT and gives each its address.
@@ -6464,6 +6472,7 @@ pub fn copy_chunks<E: Target>(
     // are written.
     report_text_relocs(ctx);
     crate::error::checkpoint();
+    chunks::chained_fixups::warn_unaligned_pointers(ctx);
 
     if ctx.use_chained_fixups() {
         let _t = ctx.timer("write_fixup_chains");

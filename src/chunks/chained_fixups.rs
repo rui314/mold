@@ -28,6 +28,10 @@ pub struct ChainedFixupsSection {
     /// Set when an x86-64 image laid out for chained fixups gets classic
     /// dyld info instead, for an unaligned pointer.
     pub disabled: bool,
+    /// The unaligned pointers check_pointer_alignment found, reported
+    /// once relocations are applied (report_unaligned_chain_pointer,
+    /// warn_unaligned_pointers).
+    pub unaligned: std::sync::Mutex<Vec<(u32, u64)>>,
 }
 
 /// Each import's index in the table, by (symbol, table addend).
@@ -42,6 +46,7 @@ impl ChainedFixupsSection {
             imports: Vec::new(),
             ordinals: std::collections::HashMap::new(),
             disabled: false,
+            unaligned: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
@@ -445,13 +450,15 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 
 /// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
 /// chain's links are words: it warns of every atom aligned less than a
-/// pointer that holds one, then of every unaligned pointer where the
-/// image has classic dyld info. With chained fixups, arm64 fails the link
-/// at the first unaligned pointer (of the atoms in address order, each
-/// one's from the last, the order of an assembler's relocations), and
-/// x86-64 gives chains up for classic dyld info instead, whose header
-/// the load commands fit in as laid out (see header_pad). `suspects` are
-/// the pointers collect_fixups gives. Returns false for that fallback.
+/// pointer that holds one, then, once relocations are applied, of every
+/// unaligned pointer where the image has classic dyld info. With chained
+/// fixups, arm64 fails the link at the first unaligned pointer of a
+/// chain (of the atoms in address order, each one's from the last, the
+/// order of an assembler's relocations), and x86-64 gives chains up for
+/// classic dyld info instead, whose header the load commands fit in as
+/// laid out (see header_pad). `suspects` are the pointers collect_fixups
+/// gives; the unaligned ones are left for report_unaligned_chain_pointer
+/// and warn_unaligned_pointers. Returns false for that fallback.
 fn check_pointer_alignment<E: Target>(
     ctx: &Context<E>,
     mut suspects: Vec<(u32, u64)>,
@@ -469,7 +476,7 @@ fn check_pointer_alignment<E: Target>(
         let p2align = ctx.isecs[id as usize].p2align;
         if p2align < 3 {
             crate::warn!(
-                "alignment ({}) of atom {} is too small and may result in unaligned pointers",
+                "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
                 1 << p2align,
                 atom_location(ctx, id, None)
             );
@@ -477,21 +484,50 @@ fn check_pointer_alignment<E: Target>(
     }
 
     suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
-    let Some(&(first, _)) = suspects.first() else {
-        return true;
-    };
     if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
-        let &(_, addr) = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
-        crate::error!("pointer not aligned in {}", atom_location(ctx, first, Some(addr)));
+        // A pointer in a read-only segment is a text relocation, which
+        // no chain holds.
+        suspects.retain(|&(_, addr)| !ctx.text_reloc_ranges.iter().any(|r| r.contains(&addr)));
+        if let Some(&(first, _)) = suspects.first() {
+            let &last = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
+            ctx.chained_fixups.unaligned.lock().unwrap().push(last);
+        }
+        return true;
+    }
+    if suspects.is_empty() {
         return true;
     }
     if chained {
         crate::warn!("disabling chained fixups because of unaligned pointers");
     }
-    for &(id, addr) in &suspects {
-        crate::warn!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
-    }
+    *ctx.chained_fixups.unaligned.lock().unwrap() = suspects;
     !chained
+}
+
+/// Fails the link on the unaligned pointer check_pointer_alignment found
+/// in an arm64 chain, as ld-prime does after applying relocations: once
+/// the text relocations are listed, before they would fail it. Returns
+/// whether there was one.
+pub fn report_unaligned_chain_pointer<E: Target>(ctx: &Context<E>) -> bool {
+    if !ctx.use_chained_fixups() {
+        return false;
+    }
+    let Some(&(id, addr)) = ctx.chained_fixups.unaligned.lock().unwrap().first() else {
+        return false;
+    };
+    crate::error!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+    true
+}
+
+/// Warns of each unaligned pointer check_pointer_alignment found in an
+/// image with classic dyld info, as ld-prime does when it encodes them:
+/// only once nothing has failed the link.
+pub fn warn_unaligned_pointers<E: Target>(ctx: &Context<E>) {
+    if !ctx.use_chained_fixups() {
+        for &(id, addr) in ctx.chained_fixups.unaligned.lock().unwrap().iter() {
+            crate::warn!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+        }
+    }
 }
 
 /// A place in an atom as ld-prime names it in a diagnostic: 'name' of
@@ -508,6 +544,6 @@ fn atom_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> S
         .max_by_key(|sym| (sym.is_extern() && !sym.is_private_extern(), sym.is_extern()))
         .map_or("", |sym| sym.name());
     let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
-    let off = if off == 0 { String::new() } else { format!("+0x{off:x}") };
+    let off = if off == 0 { String::new() } else { format!("+0x{off:X}") };
     format!("'{name}'{off} ({})", crate::passes::resolved_file_name(obj.mf))
 }
