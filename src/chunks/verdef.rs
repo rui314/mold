@@ -35,7 +35,10 @@ impl<E: Target> Default for VerdefSection<E> {
 
 pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("fill_verdef");
-    if ctx.args.version_definitions.is_empty() {
+
+    // Versions are given to dynamic symbols. An output without .dynsym, such
+    // as a static executable, has no version sections even with a version script.
+    if ctx.args.version_definitions.is_empty() || ctx.dynsym.symbols.is_empty() {
         return;
     }
 
