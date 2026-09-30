@@ -138,7 +138,8 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     search_library(ctx, name, passes)
 }
 
-/// Looks for a dylib only, as -upward-l does.
+/// Looks for a dylib only, as -upward-l and -reexport-l do: an archive
+/// can be neither an upward dependency nor a re-exported library.
 fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     search_library(ctx, name, &[&["tbd", "dylib"]])
 }
@@ -613,11 +614,10 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         | InputArg::UpwardFile(path)
         | InputArg::LazyFile(path) => Some(path.clone()).filter(|path| path.is_file()),
         InputArg::Lib(name, _)
-        | InputArg::ReexportLib(name)
         | InputArg::HiddenLib(name)
         | InputArg::NeededLib(name)
         | InputArg::LazyLib(name) => find_library(ctx, name),
-        InputArg::UpwardLib(name) => find_dylib(ctx, name),
+        InputArg::UpwardLib(name) | InputArg::ReexportLib(name) => find_dylib(ctx, name),
         InputArg::Framework(name, _)
         | InputArg::ReexportFramework(name)
         | InputArg::NeededFramework(name)

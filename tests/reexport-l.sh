@@ -36,3 +36,13 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/d.o -L$t -lbaz
+
+# -reexport-l looks for a dylib only, skipping an archive of the name
+# in an earlier directory: an archive cannot be re-exported.
+mkdir -p $t/ar
+rm -f $t/ar/libfoo.a
+ar rcs $t/ar/libfoo.a $t/a.o
+$CC --ld-path=$mold -shared -o $t/libqux.dylib $t/c.o -L$t/ar -L$t -Wl,-reexport-lfoo
+objdump --macho --dylibs-used $t/libqux.dylib | grep -q 'libfoo.*reexport'
+not $CC --ld-path=$mold -shared -o $t/libqux.dylib $t/c.o -L$t/ar -Wl,-reexport-lfoo 2> $t/log
+grep -q "library 'foo' not found" $t/log
