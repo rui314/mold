@@ -1111,6 +1111,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut exported_symbols: Option<GlobBuilder> = None;
     let mut unexported_symbols = GlobBuilder::default();
     let mut reexported_symbols = GlobBuilder::default();
+    let mut reexports_listed = false;
     let mut why_live = GlobBuilder::default();
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
@@ -1526,6 +1527,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 add_patterns(&mut unexported_symbols, name, names.iter().map(String::as_str));
             }
             b"-reexported_symbols_list" => {
+                reexports_listed = true;
                 let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 // Exact names force a reference even if no object
                 // mentions them. Patterns only match existing symbols.
@@ -1956,6 +1958,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     resolve_stack(target, &mut args, stack_size, stack_addr);
+    // Only a dylib has exports of others' symbols to publish.
+    if reexports_listed && args.output_type != MH_DYLIB {
+        fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
+    }
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
