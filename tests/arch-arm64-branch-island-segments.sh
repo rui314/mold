@@ -24,9 +24,11 @@ EOF
 .subsections_via_symbols
 .section $1,regular,pure_instructions
 _pad1:
-  .space $2
+  .long 1
+  .space $2 - 4
 _pad2:
-  .space $3
+  .long 2
+  .space $3 - 4
 EOF
 
   cat <<EOF | $CC -o $t/far.o -c -xassembler -

@@ -40,9 +40,12 @@ EOF
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .text
 .p2align 2
-t2: ret
+t2: nop
+ ret
 .private_extern _p2
-_p2: ret
+_p2: nop
+ nop
+ ret
 .data
 d2: .quad 2
 .subsections_via_symbols

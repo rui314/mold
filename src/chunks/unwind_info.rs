@@ -376,13 +376,19 @@ pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
 
 /// The personality routine of a record's function: the record's own,
 /// or for one in DWARF mode, its FDE's CIE's.
-fn function_personality<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> Option<SymbolId> {
+pub(crate) fn function_personality<E: Target>(
+    ctx: &Context<E>,
+    rec: &UnwindRecord,
+) -> Option<SymbolId> {
     rec.personality().or_else(|| ctx.cies[ctx.fdes[rec.fde()?].cie as usize].personality)
 }
 
 /// The LSDA of a record's function: the record's own, or for one in
 /// DWARF mode, its FDE's.
-fn function_lsda<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> Option<(usize, u32)> {
+pub(crate) fn function_lsda<E: Target>(
+    ctx: &Context<E>,
+    rec: &UnwindRecord,
+) -> Option<(usize, u32)> {
     rec.lsda().or_else(|| {
         let (isec, off) = ctx.fdes[rec.fde()?].lsda?;
         Some((isec as usize, off))

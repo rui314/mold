@@ -166,6 +166,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::check_duplicate_symbols(&ctx);
     crate::error::checkpoint();
     if ctx.args.deduplicate {
+        timed!("compute_address_significance", passes::compute_address_significance(&mut ctx));
         crate::icf::icf_sections(&mut ctx);
     }
     timed!("scan_relocations", passes::scan_relocations(&mut ctx));

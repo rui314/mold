@@ -213,6 +213,9 @@ const NO_MODULUS: u8 = 1 << 3;
 /// A literal record a symbol names: ld-prime keeps it an atom of its own,
 /// merged with no identical copy, and a -r output keeps its label.
 const IS_LABELED: u8 = 1 << 4;
+/// The image may observe the subsection's address (see
+/// compute_address_significance), so ICF must keep it apart.
+const IS_ADDRESS_TAKEN: u8 = 1 << 5;
 
 impl InputSection {
     /// The initial flag word of a live section.
@@ -325,6 +328,19 @@ impl InputSection {
     #[inline]
     pub fn is_labeled(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_LABELED != 0
+    }
+    #[inline]
+    pub fn is_address_taken(&self) -> bool {
+        self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_ADDRESS_TAKEN != 0
+    }
+    /// Sets the address-taken bit, writing only if it is clear: many
+    /// references reach the same few subsections from every thread.
+    #[inline]
+    pub fn set_address_taken(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if self.flags.load(Relaxed) & IS_ADDRESS_TAKEN == 0 {
+            self.flags.fetch_or(IS_ADDRESS_TAKEN, Relaxed);
+        }
     }
     /// Reads and clears the visited bit.
     #[inline]

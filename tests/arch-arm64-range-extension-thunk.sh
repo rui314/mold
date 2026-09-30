@@ -11,7 +11,8 @@ cat <<EOF2 | $CC -o $t/a.o -c -xassembler -
 .subsections_via_symbols
 .macro pad
 _pad\@:
-  .space 0x100000
+  .long \@
+  .space 0x100000 - 4
 .endm
 .rept 136
 pad

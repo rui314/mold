@@ -1,24 +1,31 @@
 //! Identical code folding.
 //!
-//! ld64 deduplicates identical functions by default (disabled with
-//! -no_deduplicate); mold's ICF does the same for ELF. Two subsections
-//! can share one copy when their bytes, relocations and unwind
-//! behavior are all identical, *and* folding cannot be observed:
-//! C++ explicitly permits identical instantiations to coalesce (that's
-//! what weak definitions are), so folding is restricted to
-//! subsections defined only by weak symbols.
+//! ld64 deduplicates identical functions (ld-prime at -O1 and up or
+//! with -deduplicate, this linker unless -no_deduplicate); mold's ICF
+//! does the same for ELF. Two subsections can share one copy when their
+//! bytes, relocations and exception handling are all identical, *and*
+//! folding cannot be observed. ld-prime folds the functions of
+//! __TEXT,__text that no one can compare the addresses of: those the
+//! compiler marked .weak_def_can_be_hidden (C++ inline functions with
+//! unnamed_addr) that the link hid, whether or not their address is
+//! taken, and any other unexported one whose address is never taken -
+//! mold's --icf=safe.
 //!
 //! The algorithm follows mold: every candidate gets a hash of its
 //! literal content, and a few refinement rounds rehash each candidate
 //! with the previous-round hashes of its relocation targets, so the
 //! hash comes to describe the whole reachable shape. Groups with equal
 //! final hashes are then verified structurally and folded onto their
-//! first member.
+//! first member. That folds functions that call each other in a cycle
+//! (two instances of a mutually recursive sort) as a group, which
+//! ld-prime, folding only callers of functions already found equal,
+//! leaves apart; either is correct, and ours is the cheaper to find.
 
 use std::hash::Hash;
 
 use rayon::prelude::*;
 
+use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{Reloc, RelocTarget};
@@ -264,54 +271,48 @@ impl DigestMap {
     }
 }
 
-/// Whether each subsection is defined exclusively by weak symbols, so no
-/// one may rely on its address being distinct. The per-subsection
-/// weak-only AND accumulates in parallel as a three-state atomic:
-/// unset, all-weak-so-far, or poisoned by a non-weak definition (which
-/// wins under any ordering).
-fn weak_only_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    let weak_state: Vec<AtomicU8> = (0..ctx.isecs.len()).map(|_| AtomicU8::new(0)).collect();
-    ctx.objs.par_iter().for_each(|obj| {
-        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.is_stab() || nlist.n_type() != N_SECT {
-                continue;
-            }
+/// Whether each subsection is a function the link auto-hid: a global,
+/// not private extern, whose definition carries N_WEAK_DEF | N_WEAK_REF
+/// (.weak_def_can_be_hidden), which clang gives an inline function
+/// with unnamed_addr - its address is insignificant by declaration, so
+/// ld64 folds it even where the address is taken. A private extern one
+/// is hidden anyway and is folded as any other hidden function.
+fn auto_hidden_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let auto_hidden: Vec<AtomicBool> =
+        (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
+    ctx.objs.par_iter().enumerate().for_each(|(i, obj)| {
+        if !obj.is_alive {
+            return;
+        }
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             let sym = &ctx.symbols[sym_id];
-            // Compiler-generated temporary labels don't make an atom's
-            // address observable.
-            if !nlist.is_extern() && (sym.name().starts_with('l') || sym.name().starts_with('L')) {
-                continue;
-            }
-            let Some(isec) = sym.input_section().map(|i| i as usize) else {
-                continue;
-            };
-            if nlist.n_desc & N_WEAK_DEF != 0 {
-                let _ =
-                    weak_state[isec].compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed);
-            } else {
-                weak_state[isec].store(2, Ordering::Relaxed);
+            if !nlist.is_stab()
+                && nlist.n_type & N_PEXT == 0
+                && nlist.n_desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
+                && sym.is_private_extern()
+                && sym.file() == Some(FileId::Obj(i as u32))
+                && let Some(isec) = sym.input_section()
+            {
+                auto_hidden[isec as usize].store(true, Ordering::Relaxed);
             }
         }
     });
-    weak_state.into_iter().map(|s| s.into_inner() == 1).collect()
+    auto_hidden.into_iter().map(AtomicBool::into_inner).collect()
 }
 
-/// Candidates: live, executable, and defined exclusively by weak
-/// symbols.
-fn is_candidate<E: Target>(ctx: &Context<E>, weak_only: &[bool], id: usize) -> bool {
+/// Candidates: the live, non-empty subsections of __TEXT,__text (ld64
+/// folds no other section) whose addresses no one can compare.
+fn is_candidate<E: Target>(ctx: &Context<E>, auto_hidden: &[bool], id: usize) -> bool {
     let isec = &ctx.isecs[id];
+    let hdr = ctx.hdr_of(isec);
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        && ctx.hdr_of(isec).segname() == "__TEXT"
-        && ctx.hdr_of(isec).flags & S_ATTR_PURE_INSTRUCTIONS != 0
-        && ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) == 0
-        && weak_only[id]
-        // Don't fold functions carrying debug info: it would leave
-        // their DWARF describing folded-away code. ld64 disables
-        // its deduplication pass for debug objects for the same
-        // reason (it folds freely on release links).
-        && !ctx.objs[isec.file as usize].has_debug_info
+        && isec.size != 0
+        && hdr.segname_is("__TEXT")
+        && hdr.sectname_is("__text")
+        && (auto_hidden[id] || !isec.is_address_taken())
 }
 
 /// What relocation `rel` of object `obj` points at, and its addend. A
@@ -353,11 +354,12 @@ const KEY: [u8; 16] = *b"mold-macho-icf!!";
 /// The base digest of a candidate: its bytes and the non-candidate
 /// parts of its edges, hashed with SipHash13-128 exactly as mold's
 /// compute_digest does (candidate edges are mixed in during the rounds
-/// instead).
+/// instead). Every candidate is in __TEXT,__text, so unlike mold's the
+/// section flags are left out: ld-prime folds functions whose sections
+/// differ only in attributes such as S_ATTR_NO_DEAD_STRIP.
 fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) -> Digest {
     let isec = &ctx.isecs[id];
     let mut h = SipHash13_128::new(&KEY);
-    h.update(&ctx.hdr_of(isec).flags.to_ne_bytes());
     h.update(&isec.size.to_ne_bytes());
     h.update(&isec.data().len().to_ne_bytes());
     h.update(isec.data());
@@ -382,16 +384,21 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
             }
         }
     }
-    // Unwinding is part of a function's identity; the subsection
-    // holds its record range.
+    // A function's exception handling - its personality routine and its
+    // LSDA - is part of its identity: ld64 compares them as references
+    // of the function. The rest of its unwind information describes the
+    // code itself, so ld-prime folds functions whose encodings differ,
+    // or of which only one has any, and the survivor keeps its own.
     let recs = isec.unwind_offset as usize..(isec.unwind_offset + isec.nunwind) as usize;
     for rec in &ctx.unwind_records[recs] {
+        let personality = function_personality(ctx, rec);
+        let lsda = function_lsda(ctx, rec);
+        if personality.is_none() && lsda.is_none() {
+            continue;
+        }
         h.update(&rec.input_offset.to_ne_bytes());
-        h.update(&rec.code_len.to_ne_bytes());
-        h.update(&rec.encoding.to_ne_bytes());
-        h.update(&rec.personality().map_or(u64::MAX, |p| p as u64).to_ne_bytes());
-        h.update(&rec.fde().map_or(u64::MAX, |f| f as u64).to_ne_bytes());
-        if let Some((lsda, off)) = rec.lsda() {
+        h.update(&personality.map_or(u64::MAX, |p| p as u64).to_ne_bytes());
+        if let Some((lsda, off)) = lsda {
             h.update(&ctx.resolve_isec(lsda).to_ne_bytes());
             h.update(&off.to_ne_bytes());
         }
@@ -512,7 +519,6 @@ fn verify_leaders<E: Target>(
         let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
         let (xr, yr) = (ctx.isec_relocs(a), ctx.isec_relocs(b));
         x.data() == y.data()
-            && ctx.hdr_of(x).flags == ctx.hdr_of(y).flags
             && xr.len() == yr.len()
             && xr.iter().zip(yr).all(|(r, s)| {
                 r.offset == s.offset
@@ -528,13 +534,12 @@ fn verify_leaders<E: Target>(
 }
 
 pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
-    let weak_only = weak_only_sections(ctx);
-
     let _t_all = ctx.timer("icf");
     let mut t = ctx.timer("icf-prep");
+    let auto_hidden = auto_hidden_sections(ctx);
     let candidates: Vec<usize> = (0..ctx.isecs.len())
         .into_par_iter()
-        .filter(|&i| is_candidate(ctx, &weak_only, i))
+        .filter(|&i| is_candidate(ctx, &auto_hidden, i))
         .collect();
     if candidates.len() < 2 {
         return;

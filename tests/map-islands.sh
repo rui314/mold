@@ -15,7 +15,8 @@ source "$(dirname "$0")"/common.inc
   echo '  b _far'
   for i in $(seq 70); do
     echo "_pad$i:"
-    echo '  .space 0x200000'
+    echo "  .long $i"
+    echo '  .space 0x200000 - 4'
   done
   echo '.globl _far'
   echo '_far:'

@@ -6,17 +6,22 @@ source "$(dirname "$0")"/common.inc
 # 140 MiB of code in 1 MiB atoms, twice: main, far and mid are each
 # beyond the +-128 MiB reach of a bl from the one before, and mid's
 # branch back to far can't reach the island main's bl goes through.
-cat <<'EOF' | $CC -o $t/pad.o -c -xassembler -
+# (The atoms differ, or they would be folded into one.)
+pad() {
+  cat <<EOF | $CC -o $t/$1 -c -xassembler -
 .subsections_via_symbols
 .macro pad
 _pad\@:
-  .space 0x100000
+  .long $2 + \@
+  .space 0x100000 - 4
 .endm
 .rept 140
 pad
 .endr
 EOF
-cp $t/pad.o $t/pad2.o
+}
+pad pad.o 0
+pad pad2.o 1000
 
 cat <<EOF | $CC -o $t/mid.o -c -xassembler -
 .subsections_via_symbols

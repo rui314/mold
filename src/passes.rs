@@ -3098,6 +3098,41 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
     fatal!("dynamic executables or dylibs must link with libSystem.dylib");
 }
 
+/// Sets the address-taken bit of every subsection whose address the
+/// image may observe, which identical code folding must then keep
+/// apart - mold's --icf=safe. Mach-O objects carry no address
+/// significance table, so, as mold infers it without one, anything but
+/// a branch takes the address of what it refers to: an adrp/add pair,
+/// a GOT load, a pointer or a difference in data. ld-prime counts only
+/// the references the output keeps, after dead stripping. An exported
+/// symbol's address is observable by any image that imports it.
+pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
+    let ctx_ref: &Context<E> = ctx;
+    ctx_ref
+        .isecs
+        .par_iter()
+        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
+        .for_each(|isec| {
+            for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
+                if E::classify_reloc(r.r_type) != RelocClass::Branch
+                    && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
+                {
+                    ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();
+                }
+            }
+        });
+
+    ctx_ref.symbols.syms.par_iter().for_each(|sym| {
+        if matches!(sym.file(), Some(FileId::Obj(_)))
+            && sym.is_extern()
+            && !sym.is_private_extern()
+            && let Some(isec) = sym.input_section()
+        {
+            ctx_ref.isecs[ctx_ref.resolve_isec(isec as usize)].set_address_taken();
+        }
+    });
+}
+
 /// Decides which symbols need a stub or a GOT slot, from how relocations
 /// refer to them. Only the relocations of subsections the output keeps
 /// count: not those of a copy merged into another, such as a losing
