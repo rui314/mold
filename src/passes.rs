@@ -5443,6 +5443,58 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         .map(|hdr| hdr.addr)
         .min()
         .unwrap_or(0);
+    ctx.text_reloc_ranges = text_reloc_ranges(ctx);
+}
+
+/// The address ranges of the segments mapped without write permission,
+/// where a pointer that needs a fixup (a rebase or a bind) is a text
+/// relocation: the loader would have to make the segment writable to
+/// apply it. None if the output may have text relocations
+/// (Args::text_relocs) or has no fixups at all: an image nothing
+/// slides has no rebases, and only a -static one has no binds either.
+fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
+    if ctx.args.text_relocs || (ctx.args.static_link && !ctx.args.pie) {
+        return Vec::new();
+    }
+    ctx.segments
+        .iter()
+        .filter(|seg| {
+            seg.name != "__PAGEZERO"
+                && seg.name != "__LINKEDIT"
+                && chunks::segment_prots(ctx, seg.name).1 & VM_PROT_WRITE == 0
+        })
+        .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize)
+        .collect()
+}
+
+/// Fails the link on the text relocations applying relocations found,
+/// listing every one as ld-prime does: output section by output
+/// section, each atom's from the last to the first (the order an
+/// assembler emits relocations in).
+fn report_text_relocs<E: Target>(ctx: &Context<E>) {
+    let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
+    if found.is_empty() {
+        return;
+    }
+    found.sort_unstable_by_key(|&(isec, i)| (ctx.isec_addr(isec as usize), std::cmp::Reverse(i)));
+    let mut osec = None;
+    for (id, i) in found {
+        let isec = &ctx.isecs[id as usize];
+        if osec != Some(isec.output_section) {
+            eprintln!("Illegal text-relocations:");
+            osec = Some(isec.output_section);
+        }
+        let rel = &ctx.isec_relocs(id as usize)[i as usize];
+        let target = match rel.target() {
+            RelocTarget::Sym(_) => {
+                let sym = ctx.reloc_target_sym(isec.file as usize, rel).unwrap();
+                ctx.symbols[sym].name().into()
+            }
+            RelocTarget::Section(target) => ctx.atom_name(target as usize),
+        };
+        eprintln!("  text-relocation in {} to '{target}'", ctx.atom_ref(id as usize, rel.offset));
+    }
+    error!("Found illegal text-relocations");
 }
 
 /// Lays out every segment but __LINKEDIT and gives each its address.
@@ -6180,6 +6232,10 @@ pub fn copy_chunks<E: Target>(
     let t = ctx.timer("copy_chunks");
     jobs.par_iter().zip(slices).for_each(|(&(id, _), slice)| chunks::copy_buf(ctx, id, slice));
     drop(t);
+    // Relocations that failed to apply fail the link before the fixups
+    // are written.
+    report_text_relocs(ctx);
+    crate::error::checkpoint();
 
     if ctx.use_chained_fixups() {
         let _t = ctx.timer("write_fixup_chains");

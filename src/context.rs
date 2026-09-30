@@ -171,6 +171,12 @@ pub struct Context<E: Target> {
     /// The address of the first thread-local data section. Thread
     /// pointers are encoded relative to it.
     pub tls_begin: u64,
+    /// The address ranges where a pointer that needs a fixup is a text
+    /// relocation the output can't have (passes::text_reloc_ranges).
+    pub text_reloc_ranges: Vec<std::ops::Range<u64>>,
+    /// The text relocations found applying relocations, as (subsection,
+    /// relocation index) pairs.
+    pub text_relocs: std::sync::Mutex<Vec<(u32, u32)>>,
     /// Deduplication map for literal elements: (section type, contents)
     /// to the surviving subsection.
     pub literals: std::collections::HashMap<(u32, &'static [u8]), usize>,
@@ -243,6 +249,8 @@ impl<E: Target> Context<E> {
             why_load: std::collections::HashMap::new(),
             traced_files: Vec::new(),
             tls_begin: 0,
+            text_reloc_ranges: Vec::new(),
+            text_relocs: std::sync::Mutex::new(Vec::new()),
             literals: std::collections::HashMap::new(),
             uuid: std::sync::Mutex::new([0; 16]),
             entry_addr: 0,
@@ -755,11 +763,13 @@ impl<E: Target> Context<E> {
 
     /// The name ld-prime gives the atom (subsection) `isec` in a
     /// diagnostic: that of a symbol at its start, ranked as
-    /// input_files::atom_name_rank ranks them, or none.
-    pub fn atom_name(&self, isec: usize) -> &'static str {
-        let isec = &self.isecs[isec];
+    /// input_files::atom_name_rank ranks them, or else "anon-N" for the
+    /// object's Nth atom in address order.
+    pub fn atom_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
+        let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
-        obj.nlists
+        let name = obj
+            .nlists
             .iter()
             .zip(&obj.symbols)
             .filter(|(n, _)| {
@@ -772,8 +782,14 @@ impl<E: Target> Context<E> {
                 let name = self.symbols[id].name();
                 (crate::input_files::atom_name_rank(n, name), name)
             })
-            .max()
-            .map_or("", |(_, name)| name)
+            .max();
+        match name {
+            Some((_, name)) => name.into(),
+            None => {
+                let n = obj.subsecs.iter().position(|&sub| sub as usize == id).unwrap_or(0);
+                format!("anon-{n}").into()
+            }
+        }
     }
 
     /// Reports a relocation that can't be applied where it is, `offset`
@@ -789,6 +805,34 @@ impl<E: Target> Context<E> {
             crate::error!("fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
         } else {
             crate::error!("fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}");
+        }
+    }
+
+    /// Notes relocation `i` of `rels`, subsection `isec`'s, whose
+    /// pointer is at `addr`, if it is a text relocation: in a range of
+    /// text_reloc_ranges, and needing a fixup.
+    #[inline]
+    pub fn check_text_reloc(&self, isec: usize, rels: &[Reloc], i: usize, addr: u64) {
+        if self.text_reloc_ranges.iter().any(|range| range.contains(&addr)) {
+            self.note_text_reloc(isec, rels, i);
+        }
+    }
+
+    /// Records a pointer in a read-only segment if dyld (or whatever
+    /// loads the image) has to bind or slide it, as the fixup builders
+    /// decide.
+    #[cold]
+    fn note_text_reloc(&self, isec: usize, rels: &[Reloc], i: usize) {
+        let file = self.isecs[isec].file as usize;
+        let rel = &rels[i];
+        let slides = self.args.pie || self.args.output_type != crate::macho::MH_EXECUTE;
+        let needs_fixup = match self.reloc_target_sym(file, rel) {
+            Some(id) if self.binds_at_runtime(id) || self.binds_to_self(id) => true,
+            Some(id) if self.is_absolute_symbol(id) || self.is_swift_force_load_ref(id) => false,
+            _ => slides && !self.reloc_target_is_tls(file, rel),
+        };
+        if needs_fixup {
+            self.text_relocs.lock().unwrap().push((isec as u32, i as u32));
         }
     }
 

@@ -332,6 +332,20 @@ fn append_string(buf: &mut Vec<u8>, s: &[u8]) {
     }
 }
 
+/// A segment's maxprot and initprot in the output.
+pub fn segment_prots<E: Target>(ctx: &Context<E>, name: &str) -> (u32, u32) {
+    // -segprot overrides the defaults.
+    if let Some(&(_, max, init)) = ctx.args.segprots.iter().find(|(seg, _, _)| seg == name) {
+        return (u32::from(max), u32::from(init));
+    }
+    // With __TEXT_EXEC, __TEXT holds no code.
+    if name == "__TEXT" && ctx.args.text_exec {
+        return (VM_PROT_READ, VM_PROT_READ);
+    }
+    let prot = segment_prot(name);
+    (prot, prot)
+}
+
 fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u8> {
     let mut cmd = seg.cmd;
     cmd.cmd = LC_SEGMENT_64;
@@ -342,17 +356,7 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
 
     cmd.nsects = sects.len() as u32;
     cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
-    cmd.maxprot = segment_prot(seg.name);
-    // With __TEXT_EXEC, __TEXT holds no code.
-    if seg.name == "__TEXT" && ctx.args.text_exec {
-        cmd.maxprot = VM_PROT_READ;
-    }
-    cmd.initprot = cmd.maxprot;
-    // -segprot overrides the defaults.
-    if let Some(&(_, max, init)) = ctx.args.segprots.iter().find(|(name, _, _)| name == seg.name) {
-        cmd.maxprot = u32::from(max);
-        cmd.initprot = u32::from(init);
-    }
+    (cmd.maxprot, cmd.initprot) = segment_prots(ctx, seg.name);
     // dyld makes __DATA_CONST read-only once binds are applied; not in
     // an image bound for the shared region, which ld-prime leaves to
     // the cache (or kernel collection) builder.

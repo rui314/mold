@@ -365,6 +365,7 @@ impl Target for X86_64 {
                     write32(loc, val as u32);
                 }
                 X86_64_RELOC_UNSIGNED => {
+                    ctx.check_text_reloc(isec_id, rels, i, p);
                     let imported = ctx
                         .reloc_target_sym(obj, r)
                         .is_some_and(|id| ctx.symbols[id].is_imported());

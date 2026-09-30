@@ -332,6 +332,10 @@ pub struct Args {
     /// Whether an executable is position independent (MH_PIE):
     /// -pie / -no_pie, resolved for the target at the end of parsing.
     pub pie: bool,
+    /// Whether a pointer may need a fixup in a segment mapped without
+    /// write permission (a text relocation): resolved from the kind of
+    /// output and -read_only_relocs at the end of parsing.
+    pub text_relocs: bool,
 }
 
 impl Default for Args {
@@ -444,6 +448,7 @@ impl Default for Args {
             kernel: false,
             text_exec: false,
             pie: true,
+            text_relocs: false,
         }
     }
 }
@@ -850,7 +855,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut explicit_entry = false;
-    let mut read_only_relocs = false;
+    // -read_only_relocs: whether its treatment allows text relocations.
+    let mut read_only_relocs: Option<bool> = None;
     let mut headerpad: Option<u64> = None;
     let mut target_triple: Option<&str> = None;
     let mut warnings = OptionWarnings::default();
@@ -1106,9 +1112,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-r" => args.relocatable = true,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
-            // How relocations in read-only segments are treated; only
-            // firmware and images no dyld loads may have them. mold
-            // refuses none, so the treatment changes nothing.
+            // How relocations in read-only segments are treated:
+            // warning and suppress allow them (ld-prime prints no
+            // warning either way), error refuses them. See
+            // resolve_text_relocs.
             b"-read_only_relocs" => {
                 let Some(treatment) = cmdline.get(i + 1) else {
                     fatal!("-read_only_relocs missing <option>");
@@ -1117,7 +1124,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-read_only_relocs invalid option (warning | error | suppress)");
                 }
                 i += 1;
-                read_only_relocs = true;
+                read_only_relocs = Some(treatment.as_bytes() != b"error");
             }
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates
@@ -1484,7 +1491,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         crate::error::hidden_warning();
     }
     crate::error::set_suppress_warnings(args.suppress_warnings);
-    warn_platform_options(&args, read_only_relocs);
+    warn_platform_options(target, &args, read_only_relocs.is_some());
 
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
@@ -1510,6 +1517,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.fixup_chains = None;
     }
     args.pie = resolve_pie(target, &args, pie);
+    args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);
@@ -1747,18 +1755,39 @@ fn check_section_order(args: &Args) {
 }
 
 /// ld-prime deprecates -flat_namespace on every platform but macOS, and
-/// allows relocations in read-only segments only in firmware and in
-/// images no dyld loads.
-fn warn_platform_options(args: &Args, read_only_relocs: bool) {
+/// takes -read_only_relocs only where it may allow text relocations.
+fn warn_platform_options(target: &TargetTraits, args: &Args, read_only_relocs: bool) {
     if args.flat_namespace && args.platform == PLATFORM_FIRMWARE {
         crate::warn!("-flat_namespace is deprecated on firmware");
     }
-    if read_only_relocs
-        && !args.without_dyld()
-        && !args.relocatable
-        && args.platform != PLATFORM_FIRMWARE
-    {
+    if read_only_relocs && !read_only_relocs_apply(target, args) {
         crate::warn!("-read_only_relocs relocs cannot be used in this configuration");
+    }
+}
+
+/// Whether -read_only_relocs decides on text relocations: in firmware,
+/// in an image no dyld loads but an arm64 kext, and in -r (which has
+/// none).
+fn read_only_relocs_apply(target: &TargetTraits, args: &Args) -> bool {
+    args.relocatable
+        || args.static_link
+        || args.platform == PLATFORM_FIRMWARE
+        || (args.is_kext() && target.name == "x86_64")
+}
+
+/// Whether a pointer may need a fixup in a segment mapped without write
+/// permission, which the loader would have to make writable (a text
+/// relocation). ld-prime allows one by default only in an x86-64 kext
+/// or non-PIE executable. -read_only_relocs warning or suppress allows
+/// one where the option applies, and error refuses it; elsewhere the
+/// option, ignored with a warning, leaves none allowed.
+fn resolve_text_relocs(target: &TargetTraits, args: &Args, read_only_relocs: Option<bool>) -> bool {
+    match read_only_relocs {
+        Some(allow) => allow && read_only_relocs_apply(target, args),
+        None => {
+            target.name == "x86_64"
+                && (args.is_kext() || (args.output_type == MH_EXECUTE && !args.pie))
+        }
     }
 }
 
