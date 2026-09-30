@@ -68,6 +68,7 @@ fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
 /// back first.
 pub fn fatal(msg: fmt::Arguments) -> ! {
     release_held();
+    release_layout_errors();
     emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
     exit_after_cleanup(1);
 }
@@ -111,13 +112,28 @@ pub fn error(msg: fmt::Arguments) {
     HAS_ERROR.store(true, Ordering::Relaxed);
 }
 
+/// The layout errors reported so far, not yet given.
+static LAYOUT_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// Reports an error in the output's layout, or in writing it: a
 /// thread-local section it can't place, or a fixup that doesn't fit.
 /// ld-prime lays the output out to the end all the same, and prints
 /// the layout as it fails the link (see passes::print_final_layout).
+/// The messages wait for release_layout_errors: the passes that find
+/// them run in parallel.
 pub fn layout_error(msg: fmt::Arguments) {
-    emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
+    LAYOUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()).push(msg.to_string());
     HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
+}
+
+/// Gives the layout errors reported so far, sorted so that they come
+/// out in the same order in every run.
+pub fn release_layout_errors() {
+    let mut msgs = std::mem::take(&mut *LAYOUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()));
+    msgs.sort_unstable();
+    for msg in msgs {
+        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{msg}"));
+    }
 }
 
 /// Whether a layout_error has been reported.
@@ -175,6 +191,7 @@ pub fn checkpoint_in_layout() {
 /// without running destructors. Input files are mapped for the process's
 /// lifetime, so there is nothing else to release.
 pub fn exit_after_cleanup(status: i32) -> ! {
+    release_layout_errors();
     crate::output_file::cleanup();
     let _ = io::stdout().flush();
     let _ = io::stderr().flush();
