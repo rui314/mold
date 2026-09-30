@@ -336,10 +336,8 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
     cmd.maxprot = segment_prot(seg.name);
     cmd.initprot = segment_prot(seg.name);
-    // -segprot overrides the defaults (the last one given wins).
-    if let Some(&(_, max, init)) =
-        ctx.args.segprots.iter().rev().find(|(name, _, _)| name == seg.name)
-    {
+    // -segprot overrides the defaults.
+    if let Some(&(_, max, init)) = ctx.args.segprots.iter().find(|(name, _, _)| name == seg.name) {
         cmd.maxprot = u32::from(max);
         cmd.initprot = u32::from(init);
     }

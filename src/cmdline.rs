@@ -1094,6 +1094,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
 
     args.pie = resolve_pie(target, &args, pie);
+    args.segprots = resolve_segprots(target, std::mem::take(&mut args.segprots));
 
     args
 }
@@ -1117,6 +1118,25 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
         Some(pie) => pie,
         None => !args.static_link,
     }
+}
+
+/// -segprot's (segment, max, init) protections, as ld-prime applies
+/// them: the first one given for a segment wins, arm64's maximum is its
+/// initial protection (nothing may raise it later there), and
+/// __LINKEDIT, which dyld reads, keeps its own.
+fn resolve_segprots(
+    target: &TargetTraits,
+    segprots: Vec<(String, u8, u8)>,
+) -> Vec<(String, u8, u8)> {
+    let mut out: Vec<(String, u8, u8)> = Vec::new();
+    for (name, max, init) in segprots {
+        if name == "__LINKEDIT" {
+            crate::warn!("-segprot cannot be used to modify __LINKEDIT protections");
+        } else if out.iter().all(|(seen, _, _)| *seen != name) {
+            out.push((name, if target.name == "arm64" { init } else { max }, init));
+        }
+    }
+    out
 }
 
 /// The target of the first Mach-O input file named on the command line;
