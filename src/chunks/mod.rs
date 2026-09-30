@@ -615,8 +615,12 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_load_dylib_cmd(dylib));
     }
 
-    // The umbrella commands follow the libraries, clients first, as
-    // ld-prime orders them.
+    for rpath in &ctx.args.rpaths {
+        vec.push(create_string_cmd(LC_RPATH, rpath));
+    }
+
+    // The umbrella commands follow the libraries and the rpaths,
+    // clients first, as ld-prime orders them.
     if ctx.args.output_type == MH_DYLIB {
         for client in &ctx.args.allowable_clients {
             vec.push(create_string_cmd(LC_SUB_CLIENT, client));
@@ -624,10 +628,6 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         if let Some(name) = &ctx.args.umbrella {
             vec.push(create_string_cmd(LC_SUB_FRAMEWORK, name));
         }
-    }
-
-    for rpath in &ctx.args.rpaths {
-        vec.push(create_string_cmd(LC_RPATH, rpath));
     }
 
     // Also present with no functions at all (an 8-byte empty table),

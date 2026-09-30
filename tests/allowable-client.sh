@@ -14,8 +14,12 @@ EOF
 $CC --ld-path=$mold -shared -o $t/libsub.dylib $t/a.o \
   -Wl,-umbrella,Big -Wl,-allowable_client,friend
 otool -l $t/libsub.dylib | grep 'client friend'
-# The umbrella commands follow the libraries, clients first (ld-prime).
+# The umbrella commands follow the libraries and the rpaths, clients
+# first (ld-prime).
 [ "$(otool -l $t/libsub.dylib | grep '^ *cmd ' | awk '{print $2}' | grep -E 'LC_LOAD_DYLIB|LC_SUB' | uniq | tr '\n' ' ')" = "LC_LOAD_DYLIB LC_SUB_CLIENT LC_SUB_FRAMEWORK " ]
+$CC --ld-path=$mold -shared -o $t/librp.dylib $t/a.o \
+  -Wl,-umbrella,Big -Wl,-allowable_client,friend -Wl,-rpath,@loader_path
+[ "$(otool -l $t/librp.dylib | grep '^ *cmd ' | awk '{print $2}' | grep -E 'LC_LOAD_DYLIB|LC_RPATH|LC_SUB' | uniq | tr '\n' ' ')" = "LC_LOAD_DYLIB LC_RPATH LC_SUB_CLIENT LC_SUB_FRAMEWORK " ]
 
 # A random client is rejected.
 not $CC --ld-path=$mold -o $t/exe $t/b.o $t/libsub.dylib 2> $t/log
