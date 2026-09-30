@@ -17,13 +17,17 @@ pub struct UnwindInfoSection {
     /// 28, 32, ... at copy time.
     pub contents: Vec<u8>,
     pub personalities: Vec<SymbolId>,
+    /// The room __TEXT keeps for the section when that is more than its
+    /// first encoding takes: what an encoding with every segment placed
+    /// took (see set_osec_offsets). The contents are padded with zeros.
+    pub min_size: u64,
 }
 
 impl UnwindInfoSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new("__TEXT", "__unwind_info");
         hdr.p2align = 2;
-        Self { hdr, contents: Vec::new(), personalities: Vec::new() }
+        Self { hdr, contents: Vec::new(), personalities: Vec::new(), min_size: 0 }
     }
 }
 
@@ -35,7 +39,7 @@ impl Default for UnwindInfoSection {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = &ctx.unwind_info;
-    debug_assert_eq!(sec.contents.len() as u64, sec.hdr.size);
+    debug_assert!(sec.contents.len() as u64 <= sec.hdr.size);
     buf[..sec.contents.len()].copy_from_slice(&sec.contents);
     // Patch the personality cells now the GOT has addresses; the header
     // says where the array is (after the common encodings).
@@ -55,15 +59,15 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// second-level pages holding 32-bit entries with the function's low
 /// address bits and an index into a per-page encoding table.
 ///
-/// This runs twice: once during layout for the section's size (function
-/// addresses are final by then, so the size is stable) and once when the
-/// output is written, with every referenced address final.
-/// Encodes __unwind_info. The personality entries are image-relative
-/// pointers to GOT slots, whose addresses are not final when __TEXT
-/// (and this section's size) is computed - so they are returned as a
-/// patch list instead of written, and the copy phase fills the cells
-/// at offsets 28, 32, ... once the GOT has its address. Everything
-/// else in the encoding is final at sizing time.
+/// It runs as __TEXT is laid out, for the section's size, when the
+/// addresses in __TEXT are final and those in other segments are not
+/// yet (they are taken as they are, wrapping around the image base);
+/// if the section covers any of those (covers_other_segments), it runs
+/// again once every segment is placed. The personality entries are
+/// image-relative pointers to GOT slots, whose addresses are not final
+/// either - so they are returned as a patch list instead of written,
+/// and the copy phase fills the cells at offsets 28, 32, ... once the
+/// GOT has its address.
 pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId>) {
     let mut records: Vec<crate::input_files::UnwindRecord> = ctx
         .unwind_records
@@ -257,8 +261,8 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             let mut lsda = Vec::new();
             for rec in span {
                 if let Some((isec, off)) = rec.lsda() {
-                    push32(&mut lsda, (func_addr(rec) - base) as u32);
-                    push32(&mut lsda, (ctx.isec_addr(isec) + off as u64 - base) as u32);
+                    push32(&mut lsda, func_addr(rec).wrapping_sub(base) as u32);
+                    push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
                 }
             }
 
@@ -289,11 +293,11 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
                 push16(&mut page2, REGULAR_HDR as u16);
                 push16(&mut page2, span.len() as u16);
                 for rec in span {
-                    push32(&mut page2, (func_addr(rec) - base) as u32);
+                    push32(&mut page2, func_addr(rec).wrapping_sub(base) as u32);
                     push32(&mut page2, rec.encoding);
                 }
             }
-            PageOut { page2, lsda, first: (func_addr(&span[0]) - base) as u32 }
+            PageOut { page2, lsda, first: func_addr(&span[0]).wrapping_sub(base) as u32 }
         })
         .collect();
 
@@ -312,7 +316,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
 
     // The terminating first-level entry.
-    push32(&mut page1, (end + 1 - base) as u32);
+    push32(&mut page1, (end + 1).wrapping_sub(base) as u32);
     push32(&mut page1, 0);
     push32(&mut page1, (lsda_off + lsda.len()) as u32);
     page1.resize(index_len, 0);
@@ -321,6 +325,26 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     buf.extend_from_slice(&lsda);
     buf.extend_from_slice(&page2);
     (buf, personalities)
+}
+
+/// Whether __unwind_info covers addresses outside __TEXT, its own
+/// segment: code in another segment (a -rename_section can move __text
+/// out), or an LSDA there. Those are not final when the section is
+/// first encoded, with __TEXT.
+pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
+    let segname = ctx.unwind_info.hdr.segname;
+    let code_elsewhere = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).any(|hdr| {
+        hdr.segname != segname
+            && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+    });
+    code_elsewhere
+        || ctx.unwind_records.par_iter().any(|rec| {
+            rec.lsda().is_some_and(|(isec, _)| {
+                ctx.isecs[isec]
+                    .output_section()
+                    .is_some_and(|id| ctx.chunk_header(id).segname != segname)
+            })
+        })
 }
 
 /// Records for the code that has no unwind information: ld-prime gives

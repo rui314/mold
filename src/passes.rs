@@ -5114,23 +5114,18 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
 /// depend on the size of any other one (place_segments), so a segment
 /// is laid out from address 0 first and moved once all are sized - all
 /// but the mach header's segment (__TEXT), whose address is known up
-/// front (mach_header_addr) and whose __unwind_info encodes its
-/// functions' final addresses. __LINKEDIT comes last: its tables read
-/// every other address.
+/// front (mach_header_addr) and whose __unwind_info encodes the final
+/// addresses of its functions (and of the others once they are placed:
+/// finish_unwind_info). __LINKEDIT comes last: its tables read every
+/// other address.
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     debug_assert_eq!(ctx.segments[linkedit].name, "__LINKEDIT");
 
-    let header_seg = header_segment(ctx);
-    let header_addr = mach_header_addr(ctx);
-    let mut fileoff = 0;
-    for seg_idx in 0..linkedit {
-        let vmaddr = if ctx.segments[seg_idx].name == header_seg { header_addr } else { 0 };
-        fileoff = layout_segment(ctx, seg_idx, fileoff, vmaddr);
+    let mut fileoff = lay_out_segments(ctx);
+    while !finish_unwind_info(ctx) {
+        fileoff = lay_out_segments(ctx);
     }
-    place_segments(ctx);
-    check_segment_addresses(ctx);
-    crate::error::checkpoint();
 
     // The output sections with range-extension thunks (executable
     // sections); their entries' addresses are recorded on the symbols
@@ -5163,6 +5158,47 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         .map(|hdr| hdr.addr)
         .min()
         .unwrap_or(0);
+}
+
+/// Lays out every segment but __LINKEDIT and gives each its address.
+/// Returns the file offset past them.
+fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
+    let header_seg = header_segment(ctx);
+    let header_addr = mach_header_addr(ctx);
+    let mut fileoff = 0;
+    for seg_idx in 0..ctx.segments.len() - 1 {
+        let vmaddr = if ctx.segments[seg_idx].name == header_seg { header_addr } else { 0 };
+        fileoff = layout_segment(ctx, seg_idx, fileoff, vmaddr);
+    }
+    place_segments(ctx);
+    check_segment_addresses(ctx);
+    crate::error::checkpoint();
+    fileoff
+}
+
+/// __unwind_info is encoded as __TEXT is laid out, when only __TEXT's
+/// addresses are final. If it covers code or LSDAs in other segments
+/// too, this encodes it again now every segment has its address.
+/// Returns false if that encoding needs more room than __TEXT left the
+/// section; the layout is then done again with that much room (a
+/// smaller one leaves zeros after it).
+fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
+    if !ctx.chunks.contains(&ChunkId::UnwindInfo)
+        || !chunks::unwind_info::covers_other_segments(ctx)
+    {
+        return true;
+    }
+    let (data, personalities) = {
+        let _t = ctx.timer("unwind_encode");
+        chunks::unwind_info::encode_unwind_info(ctx)
+    };
+    if data.len() as u64 > ctx.unwind_info.hdr.size {
+        ctx.unwind_info.min_size = data.len() as u64;
+        return false;
+    }
+    ctx.unwind_info.contents = data;
+    ctx.unwind_info.personalities = personalities;
+    true
 }
 
 /// Lays out a segment's chunks from file offset `fileoff` and address
@@ -5202,7 +5238,7 @@ fn layout_segment<E: Target>(
                     let _t = ctx.timer("unwind_encode");
                     chunks::unwind_info::encode_unwind_info(ctx)
                 };
-                let len = data.len() as u64;
+                let len = (data.len() as u64).max(ctx.unwind_info.min_size);
                 ctx.unwind_info.contents = data;
                 ctx.unwind_info.personalities = personalities;
                 len
