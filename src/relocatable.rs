@@ -734,7 +734,7 @@ fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
     if !ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
         return None;
     }
-    let (seg, sect) = crate::passes::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
+    let (seg, sect) = crate::output_sections::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
     Some(SyntheticSection::new(seg, sect, 0, 2, 8, SyntheticKind::ObjcImageInfo))
 }
 
@@ -1437,11 +1437,12 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
     let mut names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::new();
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let commons = crate::passes::common_stab_owners(ctx);
-        let plans: Vec<crate::passes::StabPlan> = (0..ctx.objs.len())
-            .map(|obj_idx| crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+        let commons = crate::chunks::symtab::common_stab_owners(ctx);
+        let plans: Vec<crate::chunks::symtab::StabPlan> = (0..ctx.objs.len())
+            .map(|obj_idx| crate::chunks::symtab::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
             .collect();
-        let stabs: Vec<crate::passes::Stab> = plans.iter().flat_map(|p| p.stabs(ctx)).collect();
+        let stabs: Vec<crate::chunks::symtab::Stab> =
+            plans.iter().flat_map(|p| p.stabs(ctx)).collect();
         if !stabs.is_empty() {
             names.push(b"");
             ents.push((NList { n_strx: 1, n_type: N_SO, n_sect: 1, ..Default::default() }, None));

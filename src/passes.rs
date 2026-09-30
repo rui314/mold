@@ -26,10 +26,6 @@ use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes};
 
-// relocatable.rs names these here.
-pub(crate) use crate::chunks::symtab::{Stab, StabPlan, common_stab_owners, plan_object_stabs};
-pub(crate) use crate::output_sections::renamed;
-
 /// Returns the directories to search for `-l` libraries, in order. An
 /// absolute library path that exists under a syslibroot is looked up
 /// there; the default search path is the syslibroot's /usr/lib.
