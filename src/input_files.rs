@@ -404,12 +404,43 @@ fn record_p2align(hdr: &MachSection) -> Option<u8> {
     }
 }
 
+/// The size of each record of a section ld-prime splits into fixed-size
+/// atoms. Its name decides for the __DATA segment's GOT and Objective-C
+/// lists, whatever their type, and for a CFString, pointer-auth or
+/// compact unwind section of the regular type; its type does for the
+/// others: literals, pointers to initializers, terminators or GOT
+/// slots, and thread-local variable descriptors (three pointers).
+fn record_size(hdr: &MachSection) -> Option<u64> {
+    let regular = hdr.section_type() == S_REGULAR;
+    match (hdr.segname(), hdr.sectname()) {
+        (
+            "__DATA",
+            "__got" | "__objc_classlist" | "__objc_catlist" | "__objc_catlist2"
+            | "__objc_clsrolist" | "__objc_nlclslist" | "__objc_nlcatlist" | "__objc_protolist"
+            | "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs",
+        ) => return Some(8),
+        ("__DATA", "__auth_ptr") if regular => return Some(8),
+        ("__DATA", "__cfstring") | ("__LD", "__compact_unwind") if regular => return Some(32),
+        _ => {}
+    }
+    match hdr.section_type() {
+        S_4BYTE_LITERALS => Some(4),
+        S_8BYTE_LITERALS => Some(8),
+        S_16BYTE_LITERALS => Some(16),
+        S_NON_LAZY_SYMBOL_POINTERS | S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => Some(8),
+        S_THREAD_LOCAL_VARIABLES => Some(24),
+        _ => None,
+    }
+}
+
 /// Reports the first section of an object ld-prime refuses to split
-/// into atoms, and returns false if there is one. A 64-bit object has no
-/// business with the classic lazy pointers only dyld's lazy binder fills:
-/// a non-empty __DATA,__la_symbol_ptr of that type is a section of
-/// fixed-size records whose size ld-prime doesn't know. `nindirect` is
-/// the number of the object's indirect symbol table entries.
+/// into atoms, and returns false if there is one: a section of
+/// fixed-size records that doesn't end on a record boundary. A 64-bit
+/// object has no business with the classic lazy pointers only dyld's
+/// lazy binder fills either: a non-empty __DATA,__la_symbol_ptr of that
+/// type is a section of fixed-size records whose size ld-prime doesn't
+/// know. `nindirect` is the number of the object's indirect symbol
+/// table entries.
 fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
     for hdr in hdrs {
         if hdr.size != 0
@@ -420,6 +451,18 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
             crate::error!(
                 "unknown fixed size section __DATA,__la_symbol_ptr with content type: \
                  lazy-pointer in '{}'",
+                file.display()
+            );
+            return false;
+        }
+        if let Some(size) = record_size(hdr)
+            && !hdr.size.is_multiple_of(size)
+        {
+            crate::error!(
+                "section {}/{} size {} is not a multiple of {size} in '{}'",
+                hdr.segname(),
+                hdr.sectname(),
+                hdr.size,
                 file.display()
             );
             return false;
