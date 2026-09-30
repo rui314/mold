@@ -250,4 +250,8 @@ EOF
   patch_reloc $t/g.o $t/g1.o __text 0 length=0 opcode=0xeb insn=0x90909000
   not $CC --ld-path=$mold -o $t/exe $t/g1.o $t/libext.dylib 2> $t/log
   grep -qF "fixup error (kind=x86_64_branch8) at '_main'+0x1 from g1.o, target '_ext' does not have address" $t/log
+  # It takes no stub, nor a GOT slot for one: the section layout
+  # printed with the error has neither.
+  grep -q '^final section layout:' $t/log
+  not grep -q '__stubs\|__got' $t/log
 fi

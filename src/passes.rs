@@ -2947,7 +2947,13 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
                 // A GOT load of a local symbol needs no slot at all:
                 // it relaxes, or ld-prime refuses the instruction.
-                let class = E::classify_reloc(rel.r_type);
+                let mut class = E::classify_reloc(rel.r_type);
+                // A one-byte branch (x86-64's jmp rel8) reaches only
+                // code near it, so it takes no stub: one to an import
+                // is a fixup error, as in ld-prime.
+                if class == RelocClass::Branch && rel.size == 1 {
+                    class = RelocClass::Plain;
+                }
                 // Plain references need no slot of any kind, and
                 // they are the overwhelming majority; dropping them
                 // here keeps the collected list (and the serial
