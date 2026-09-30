@@ -4938,13 +4938,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         // 8-byte aligned; category merging also retires some after
         // their first placement.
         let mut name_of: hashbrown::HashMap<u32, &'static str> = hashbrown::HashMap::new();
-        for sym in ctx.symbols.syms.iter() {
-            if let Some(isec) = sym.input_section() {
-                let r = ctx.resolve_isec(isec as usize) as u32;
-                let e = name_of.entry(r).or_insert(sym.name());
-                if sym.name() < *e {
-                    *e = sym.name();
-                }
+        let syms =
+            ctx.symbols.syms.iter().filter_map(|sym| Some((sym.name(), sym.input_section()?)));
+        // (The lists category merging builds are named as extra locals.)
+        for (name, isec) in syms.chain(ctx.extra_local_syms.iter().copied()) {
+            let r = ctx.resolve_isec(isec as usize) as u32;
+            let e = name_of.entry(r).or_insert(name);
+            if name < *e {
+                *e = name;
             }
         }
         let mut order: Vec<usize> = (0..ctx.objc_methlist.lists.len()).collect();
