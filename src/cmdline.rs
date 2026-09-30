@@ -166,10 +166,10 @@ pub struct Args {
     /// rewrite Objective-C method lists in the relative form. ld64's
     /// default is on from macOS 11.
     pub objc_relative_method_lists: Option<bool>,
-    /// -objc_category_merging / -no_objc_category_merging: merge
-    /// categories into the classes defined in the same image. ld64's
-    /// default is on.
-    pub objc_category_merging: Option<bool>,
+    /// Merge categories into the classes defined in the same image, as
+    /// ld64 does unless -no_objc_category_merging is given (there is no
+    /// option to turn it on).
+    pub objc_category_merging: bool,
     /// Compute a content-hash LC_UUID (on by default; -no_uuid leaves
     /// it zeroed - dyld refuses executables without the load command).
     pub uuid: bool,
@@ -353,7 +353,7 @@ impl Default for Args {
             data_const: true,
             no_implicit_dylibs: false,
             objc_relative_method_lists: None,
-            objc_category_merging: None,
+            objc_category_merging: true,
             uuid: true,
             suppress_warnings: false,
             fatal_warnings: false,
@@ -1019,8 +1019,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
             b"-objc_relative_method_lists" => args.objc_relative_method_lists = Some(true),
             b"-no_objc_relative_method_lists" => args.objc_relative_method_lists = Some(false),
-            b"-objc_category_merging" => args.objc_category_merging = Some(true),
-            b"-no_objc_category_merging" => args.objc_category_merging = Some(false),
+            b"-no_objc_category_merging" => args.objc_category_merging = false,
             b"-no_function_starts" => function_starts = Some(false),
             b"-data_in_code_info" => data_in_code_info = Some(true),
             b"-split_seg_info" => args.split_seg_info = true,

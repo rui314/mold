@@ -3334,7 +3334,7 @@ fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<St
 }
 
 /// Merges the categories of a class defined in the image into the
-/// class itself, as ld64 does by default (-objc_category_merging):
+/// class itself, as ld64 does unless -no_objc_category_merging:
 /// the runtime then has no categories to attach at load. The merged
 /// method list holds the categories' methods, last category first,
 /// then the class's own (a category's method precedes the class's,
@@ -3348,7 +3348,7 @@ fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<St
 /// have been rewritten in relative form, when it merges those; with
 /// classic lists the merged list is a classic one.
 pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable || !ctx.args.objc_category_merging.unwrap_or(true) {
+    if ctx.args.relocatable || !ctx.args.objc_category_merging {
         return;
     }
     let relative = objc_relative_method_lists(ctx);

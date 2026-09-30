@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # ld64 merges a category into its class when the class is defined in
-# the same image (-objc_category_merging, on by default): the runtime
-# then has no category to attach. The merged method list holds the
+# the same image, unless -no_objc_category_merging: the runtime then
+# has no category to attach. The merged method list holds the
 # categories' methods, last category first, then the class's own; the
 # protocol list likewise; the property lists take the categories in
 # order, then the class's. The class_ro_t records point at the merged
@@ -125,3 +125,7 @@ $t/exe_no > $t/out_no
 grep -q '^11 12 13 21 20 1 2 3 7 11 3$' $t/out_no
 otool -s __DATA_CONST __objc_catlist $t/exe_no | tail -n +3 > $t/catlist_no
 [ "$(wc -l < $t/catlist_no | tr -d ' ')" = 2 ]
+
+# Merging is on by default, so there is no -objc_category_merging.
+not $CC --ld-path=$mold -o $t/exe_on $t/a.o -framework Foundation \
+  -Wl,-objc_category_merging 2> /dev/null
