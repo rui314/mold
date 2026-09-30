@@ -782,7 +782,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     size: extra.data.len() as u64,
                     offset: extra.fileoff as u32,
                     p2align: extra.p2align as u32,
-                    reloff: extra.reloff as u32,
+                    reloff: if extra.relocs.is_empty() { 0 } else { extra.reloff as u32 },
                     nreloc: extra.relocs.len() as u32,
                     flags: extra.flags,
                     reserved1: 0,
