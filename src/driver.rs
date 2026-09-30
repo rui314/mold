@@ -58,8 +58,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     }
 
     let mut ctx: Context<E> = Context::new(args);
-    crate::error::set_suppress_warnings(ctx.args.suppress_warnings);
-    crate::error::set_fatal_warnings(ctx.args.fatal_warnings);
     crate::error::set_demangle(ctx.args.demangle);
     passes::resolve_image_base(&mut ctx);
     passes::check_shared_cache_options(&ctx);

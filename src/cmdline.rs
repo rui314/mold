@@ -1139,6 +1139,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         return args;
     }
 
+    // The option checks below warn too, and -w and -fatal_warnings
+    // apply to them wherever those appear on the command line.
+    crate::error::set_suppress_warnings(args.suppress_warnings);
+    crate::error::set_fatal_warnings(args.fatal_warnings);
+
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, std::mem::take(&mut args.segprots));
 
