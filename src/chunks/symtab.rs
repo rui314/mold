@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
+use crate::passes::StabPlan;
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
@@ -16,6 +17,9 @@ use crate::target::Target;
 #[derive(Debug)]
 pub struct SymtabSection {
     pub hdr: ChunkHeader,
+    /// The entries but the debug notes: those before the notes - the
+    /// plain locals, N_AST paths and the notes' opening N_SO - then the
+    /// externals and imports, which follow the notes in the table.
     pub entries: Vec<(NList, Option<SymbolId>)>,
     /// The string table's total size (bytes, padded to 8). The bytes
     /// themselves are not materialized here: copy_symtab writes each
@@ -24,6 +28,19 @@ pub struct SymtabSection {
     /// Each entry's name, empty for one that has no string of its own
     /// (it names nothing, or shares another entry's).
     pub names: Vec<&'static [u8]>,
+    /// The debug notes, one plan per object, which copy_symtab writes
+    /// straight into the output as mold-rust's populate_symtab writes a
+    /// file's symbols: entries [stabs_start, stabs_start + nstabs) of the
+    /// table, each object's run after the previous one's, and each run's
+    /// strings from its offset in `stab_strx`, whose last element is
+    /// where the notes' strings end.
+    pub stabs: Vec<StabPlan>,
+    pub stab_strx: Vec<u32>,
+    pub stabs_start: usize,
+    pub nstabs: usize,
+    /// Each symbol's string offset, for the notes naming it, or u32::MAX
+    /// if they need a copy of their own.
+    pub strx_of: Vec<u32>,
     pub nlocal: u32,
     pub nextdef: u32,
     pub nundef: u32,
@@ -43,11 +60,25 @@ impl SymtabSection {
             entries: Vec::new(),
             strtab_size: 0,
             names: Vec::new(),
+            stabs: Vec::new(),
+            stab_strx: Vec::new(),
+            stabs_start: 0,
+            nstabs: 0,
+            strx_of: Vec::new(),
             nlocal: 0,
             nextdef: 0,
             nundef: 0,
             output_sym_indices: Vec::new(),
         }
+    }
+
+    /// The number of entries in the table, the debug notes included.
+    pub fn len(&self) -> usize {
+        self.entries.len() + self.nstabs
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -61,13 +92,43 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let symtab = &ctx.symtab;
     let symoff = symtab.hdr.fileoff as usize;
     let stroff = ctx.strtab.hdr.fileoff as usize;
-    let symsize = symtab.entries.len() * size_of::<NList>();
+    let symsize = symtab.len() * size_of::<NList>();
     let (syms, strtab) = if symoff + symsize <= stroff {
         let (lo, hi) = buf.split_at_mut(stroff);
         (&mut lo[symoff..symoff + symsize], &mut hi[..symtab.strtab_size])
     } else {
         let (lo, hi) = buf.split_at_mut(symoff);
         (&mut hi[..symsize], &mut lo[stroff..stroff + symtab.strtab_size])
+    };
+
+    // The entries before the notes, the notes, and the externals; the
+    // entries' strings, then the notes'.
+    let start = symtab.stabs_start;
+    let (local_syms, rest) = syms.split_at_mut(start * size_of::<NList>());
+    let (mut stab_syms, extern_syms) = rest.split_at_mut(symtab.nstabs * size_of::<NList>());
+    let stab_strx = symtab.stab_strx.first().map_or(strtab.len(), |&strx| strx as usize);
+    let (strtab, mut stab_strtab) = strtab.split_at_mut(stab_strx);
+
+    // Each object's notes are a block of the table of its own, with its
+    // strings, carved off in order and written in parallel - mold-rust's
+    // symtab copy_buf and populate_symtab.
+    let mut blocks = Vec::with_capacity(symtab.stabs.len());
+    for (plan, strx) in symtab.stabs.iter().zip(symtab.stab_strx.windows(2)) {
+        let (syms, rest) = stab_syms.split_at_mut(plan.len() * size_of::<NList>());
+        let (strs, strs_rest) = stab_strtab.split_at_mut((strx[1] - strx[0]) as usize);
+        (stab_syms, stab_strtab) = (rest, strs_rest);
+        blocks.push(SymtabBlock {
+            syms,
+            len: 0,
+            strtab: strs,
+            strtab_base: strx[0],
+            strtab_len: 0,
+        });
+    }
+    let stabs = || {
+        symtab.stabs.par_iter().zip(blocks).for_each(|(plan, mut block)| {
+            plan.populate_symtab(ctx, &symtab.strx_of, &mut block);
+        });
     };
 
     // The string table opens with " \0" (offset 1 is the empty string);
@@ -82,24 +143,64 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Millions of entries, each wanting a sym_addr lookup for its
     // n_value: emit them in parallel blocks.
     const BLOCK: usize = 4096;
-    syms.par_chunks_mut(BLOCK * size_of::<NList>())
-        .zip(symtab.entries.par_chunks(BLOCK))
-        .zip(symtab.names.par_chunks(BLOCK))
-        .for_each(|((out, ents), names)| {
-            for (i, ((nlist, sym), name)) in ents.iter().zip(names).enumerate() {
-                let mut nlist = *nlist;
-                if let Some(id) = sym {
-                    nlist.n_value = ctx.sym_addr(*id);
+    let (locals, externs) = symtab.entries.split_at(start);
+    let (local_names, extern_names) = symtab.names.split_at(start);
+    let write = |syms: &mut [u8], ents: &[(NList, Option<SymbolId>)], names: &[&[u8]]| {
+        syms.par_chunks_mut(BLOCK * size_of::<NList>())
+            .zip(ents.par_chunks(BLOCK))
+            .zip(names.par_chunks(BLOCK))
+            .for_each(|((out, ents), names)| {
+                for (i, ((nlist, sym), name)) in ents.iter().zip(names).enumerate() {
+                    let mut nlist = *nlist;
+                    if let Some(id) = sym {
+                        nlist.n_value = ctx.sym_addr(*id);
+                    }
+                    nlist.write_to(&mut out[i * size_of::<NList>()..]);
+                    // SAFETY: layout_strings gave each name a range of
+                    // its own within the string table.
+                    unsafe {
+                        let dst = strtab.0.add(nlist.n_strx as usize);
+                        std::ptr::copy_nonoverlapping(name.as_ptr(), dst, name.len());
+                    }
                 }
-                nlist.write_to(&mut out[i * size_of::<NList>()..]);
-                // SAFETY: layout_strings gave each name a range of its
-                // own within the string table.
-                unsafe {
-                    let dst = strtab.0.add(nlist.n_strx as usize);
-                    std::ptr::copy_nonoverlapping(name.as_ptr(), dst, name.len());
-                }
-            }
-        });
+            });
+    };
+    let entries = || {
+        rayon::join(
+            || write(local_syms, locals, local_names),
+            || write(extern_syms, externs, extern_names),
+        )
+    };
+    rayon::join(entries, stabs);
+}
+
+/// An object's block of the symbol table and of the string table, which
+/// its debug notes are written into in place - mold-rust's SymtabBlock.
+/// Blocks don't overlap, so they are written in parallel.
+pub struct SymtabBlock<'a> {
+    syms: &'a mut [u8],
+    len: usize,
+    strtab: &'a mut [u8],
+    /// The offset of `strtab` within the string table.
+    strtab_base: u32,
+    strtab_len: usize,
+}
+
+impl SymtabBlock<'_> {
+    pub fn push(&mut self, nlist: NList) {
+        nlist.write_to(&mut self.syms[self.len * size_of::<NList>()..]);
+        self.len += 1;
+    }
+
+    /// Adds a string, returning its offset in the string table.
+    pub fn add_string(&mut self, name: &[u8]) -> u32 {
+        let strx = self.strtab_base + self.strtab_len as u32;
+        let strs = &mut self.strtab[self.strtab_len..];
+        strs[..name.len()].copy_from_slice(name);
+        strs[name.len()] = 0;
+        self.strtab_len += name.len() + 1;
+        strx
+    }
 }
 
 /// Each symbol's entry among a symbol table's plain locals, [0, nplain),
@@ -131,7 +232,7 @@ pub fn symbol_entries(
 /// entry (symbol_entries), and [nlocal, len) are the externals. A note
 /// that shares a string gets an empty name, so that afterwards an
 /// entry's name is exactly the string to write at its n_strx. Returns
-/// the table's size, padded to 8.
+/// where the strings end.
 pub fn layout_strings(
     entries: &mut [(NList, Option<SymbolId>)],
     names: &mut [&[u8]],
@@ -192,5 +293,5 @@ pub fn layout_strings(
             ent.n_strx = owner.0.n_strx;
         }
     });
-    total.next_multiple_of(8) as usize
+    total as usize
 }

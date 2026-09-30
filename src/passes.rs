@@ -3957,7 +3957,7 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
 /// One stab entry: its name and nlist, the symbol whose final address
 /// fills in n_value, and the symbol the name is, if any - ld-prime
 /// points the entry at that symbol's own string.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Stab {
     pub name: &'static [u8],
     pub ent: NList,
@@ -3969,6 +3969,12 @@ impl Stab {
     fn new(name: &'static [u8], ent: NList, value_of: Option<crate::symbol::SymbolId>) -> Self {
         Self { name, ent, value_of, name_of: None }
     }
+
+    /// The string of the symbol the entry names, if it shares it.
+    fn shared_strx(&self, strx_of: &[u32]) -> Option<u32> {
+        let strx = strx_of[self.name_of? as usize];
+        (strx != u32::MAX).then_some(strx)
+    }
 }
 
 /// An object's planned stab entries: those written as they are (the
@@ -3976,7 +3982,7 @@ impl Stab {
 /// input carries), then its symbols' notes and the N_SO closing its
 /// run. A symbol's notes are kept as the symbol until written: they
 /// are most of a large -g link's symbol table.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StabPlan {
     fixed: Vec<Stab>,
     syms: Vec<SymbolStabs>,
@@ -3994,12 +4000,46 @@ impl StabPlan {
         let close = self.closed.then_some(Stab::new(b"", STAB_END, None));
         self.fixed.iter().copied().chain(self.syms.iter().flat_map(|s| s.stabs(ctx))).chain(close)
     }
+
+    /// The bytes of string table the entries' own names take: each named
+    /// entry's but those that share the string of the symbol they name
+    /// (`strx_of`) - a symbol's notes name it once.
+    pub fn strtab_size<E: Target>(&self, ctx: &Context<E>, strx_of: &[u32]) -> usize {
+        let fixed =
+            self.fixed.iter().filter(|s| !s.name.is_empty() && s.shared_strx(strx_of).is_none());
+        let syms = self.syms.iter().filter(|s| strx_of[s.sym as usize] == u32::MAX);
+        fixed.map(|s| s.name.len() + 1).sum::<usize>()
+            + syms.map(|s| ctx.symbols[s.sym].name().len() + 1).sum::<usize>()
+    }
+
+    /// Writes the entries, with their final addresses and their own names,
+    /// into the object's block of the symbol table - mold-rust's
+    /// populate_symtab.
+    pub fn populate_symtab<E: Target>(
+        &self,
+        ctx: &Context<E>,
+        strx_of: &[u32],
+        block: &mut crate::chunks::symtab::SymtabBlock<'_>,
+    ) {
+        for stab in self.stabs(ctx) {
+            let mut ent = stab.ent;
+            if let Some(id) = stab.value_of {
+                ent.n_value = ctx.sym_addr(id);
+            }
+            ent.n_strx = match stab.shared_strx(strx_of) {
+                Some(strx) => strx,
+                None if stab.name.is_empty() => 1,
+                None => block.add_string(stab.name),
+            };
+            block.push(ent);
+        }
+    }
 }
 
 /// A symbol's debug notes: N_BNSYM, the N_FUN pair and N_ENSYM for a
 /// function (`size` bytes long), an N_GSYM for global data, an N_STSYM
 /// for a local's.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct SymbolStabs {
     sym: crate::symbol::SymbolId,
     size: u32,
@@ -4028,7 +4068,8 @@ impl SymbolStabs {
                 // on a -r output that had only the pair).
                 let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
                 out[1] = Stab { name_of: id, ..Stab::new(name, fun, id) };
-                out[2] = Stab::new(b"", NList { n_value: self.size as u64, ..stab(N_FUN, 0) }, None);
+                out[2] =
+                    Stab::new(b"", NList { n_value: self.size as u64, ..stab(N_FUN, 0) }, None);
                 out[3] = Stab::new(b"", stab(N_ENSYM, sect), id);
             }
             // An N_GSYM names the global only, with no section or
@@ -4464,6 +4505,7 @@ pub fn create_output_symtab<E: Target>(
     ctx: &Context<E>,
     sorted_globals: &[crate::symbol::SymbolId],
 ) -> SymtabSection {
+    use std::sync::atomic::{AtomicU32, Ordering};
     let mut data = SymtabSection::new();
 
     let t = ctx.timer("symtab-classify");
@@ -4603,12 +4645,12 @@ pub fn create_output_symtab<E: Target>(
 
     // Every range's size is known now: the entries and their names are
     // allocated once, and each range is filled in parallel. The names
-    // are the strings layout_strings lays out below.
+    // are the strings layout_strings lays out below. The debug notes
+    // are not among them: copy_symtab writes them from their plans.
     let nstabs: usize = planned.iter().map(|plan| plan.len()).sum();
     let total = locals.len()
         + ctx.args.add_ast_paths.len()
         + usize::from(nstabs != 0)
-        + nstabs
         + sorted_globals.len()
         + undefs.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
@@ -4630,48 +4672,9 @@ pub fn create_output_symtab<E: Target>(
         names.push(b"");
         data.entries.push((STAB_END, None));
     }
-    // Write the planned stabs into prefix-summed ranges in parallel,
-    // instead of appending object by object - mold's populate_symtab
-    // shape. Each object owns a disjoint range.
     let stabs_start = data.entries.len();
-    let mut stab_names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::with_capacity(nstabs);
-    let mut bases = Vec::with_capacity(planned.len());
-    let mut base = stabs_start;
-    for plan in &planned {
-        bases.push(base);
-        base += plan.len();
-    }
-    struct NamePtr(*mut &'static [u8]);
-    unsafe impl Sync for NamePtr {}
-    struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
-    unsafe impl Sync for EntPtr {}
-    struct NameOfPtr(*mut Option<crate::symbol::SymbolId>);
-    unsafe impl Sync for NameOfPtr {}
-    let np = NamePtr(names.as_mut_ptr());
-    let ep = EntPtr(data.entries.as_mut_ptr());
-    let op = NameOfPtr(stab_names_of.as_mut_ptr());
-    let (np, ep, op) = (&np, &ep, &op);
-    planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
-        for (k, stab) in plan.stabs(ctx).enumerate() {
-            // SAFETY: [base, base+plan.len()) ranges are disjoint across
-            // objects and lie within the reserved capacity (shifted by
-            // `stabs_start` for the notes' own array).
-            unsafe {
-                np.0.add(base + k).write(stab.name);
-                ep.0.add(base + k).write((stab.ent, stab.value_of));
-                op.0.add(base - stabs_start + k).write(stab.name_of);
-            }
-        }
-    });
-    // SAFETY: every slot in stabs_start..stabs_start + nstabs was
-    // written above.
-    unsafe {
-        names.set_len(stabs_start + nstabs);
-        data.entries.set_len(stabs_start + nstabs);
-        stab_names_of.set_len(nstabs);
-    }
-    drop(planned);
-    data.nlocal = data.entries.len() as u32;
+    let nlocal = stabs_start + nstabs;
+    data.nlocal = nlocal as u32;
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
@@ -4699,7 +4702,7 @@ pub fn create_output_symtab<E: Target>(
         }
         (NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 }, Some(i))
     }));
-    data.nextdef = data.entries.len() as u32 - data.nlocal;
+    data.nextdef = sorted_globals.len() as u32;
 
     // The imports. The library ordinal lives in the high byte of n_desc.
     names.par_extend(undefs.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
@@ -4719,41 +4722,75 @@ pub fn create_output_symtab<E: Target>(
     debug_assert_eq!(data.entries.len(), total);
     drop(t);
 
-    // The string table, in ld-prime's layout.
+    // The string table, in ld-prime's layout: the externals' names, the
+    // locals', then each object's notes' in a block of its own. No note
+    // is among the entries, so none shares a string there.
     let t = ctx.timer("symtab-strings");
-    let nlocal = data.nlocal as usize;
-    let entry_of =
-        crate::chunks::symtab::symbol_entries(&data.entries, nplain, nlocal, ctx.symbols.syms.len());
-    data.strtab_size = crate::chunks::symtab::layout_strings(
+    let strtab_end = crate::chunks::symtab::layout_strings(
         &mut data.entries,
         &mut names,
-        nlocal,
-        (stabs_start, &stab_names_of),
-        &entry_of,
+        stabs_start,
+        (0, &[]),
+        &[],
     );
     data.names = names;
 
-    // Each symbol's index, for the indirect symbol table: the imports'
-    // entries hold no symbol, so theirs are added here.
-    let undef_start = nlocal + data.nextdef as usize;
-    undefs.par_iter().enumerate().for_each(|(k, &id)| {
-        entry_of[id].store((undef_start + k) as u32, std::sync::atomic::Ordering::Relaxed);
+    // Each symbol's index, for the indirect symbol table, and its string,
+    // for the notes naming it - but for the first local's, whose notes
+    // ld-prime gives a copy of their own.
+    let nsyms = ctx.symbols.syms.len();
+    let entry_of: Vec<AtomicU32> =
+        (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
+    let strx_of: Vec<AtomicU32> =
+        (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
+    let nglobals = sorted_globals.len();
+    (0..nplain).into_par_iter().chain(stabs_start..stabs_start + nglobals).for_each(|i| {
+        if let (ent, Some(id)) = data.entries[i] {
+            let index = if i < stabs_start { i } else { i + nstabs };
+            entry_of[id as usize].store(index as u32, Ordering::Relaxed);
+            if index != 0 {
+                strx_of[id as usize].store(ent.n_strx, Ordering::Relaxed);
+            }
+        }
     });
-    data.output_sym_indices = entry_of.into_iter().map(|e| e.into_inner()).collect();
+    undefs.par_iter().enumerate().for_each(|(k, &id)| {
+        entry_of[id].store((nlocal + nglobals + k) as u32, Ordering::Relaxed);
+    });
+    data.output_sym_indices = entry_of.into_iter().map(AtomicU32::into_inner).collect();
+    data.strx_of = strx_of.into_iter().map(AtomicU32::into_inner).collect();
+
+    // The notes' strings, each object's after the previous one's.
+    let sizes: Vec<usize> =
+        planned.par_iter().map(|plan| plan.strtab_size(ctx, &data.strx_of)).collect();
+    let mut strx = strtab_end;
+    data.stab_strx = Vec::with_capacity(planned.len() + 1);
+    for size in sizes {
+        data.stab_strx.push(strx as u32);
+        strx += size;
+    }
+    data.stab_strx.push(strx as u32);
+    data.strtab_size = strx.next_multiple_of(8);
+    data.stabs = planned;
+    data.stabs_start = stabs_start;
+    data.nstabs = nstabs;
 
     // An alias of an imported symbol is an N_INDR entry whose n_value
     // is the string-table offset of the name it stands for; that
     // name is in the table already as the import's own entry. The
     // slot is detached from the symbol so copy_symtab leaves n_value
     // alone.
+    let entry = |index: u32| {
+        let index = index as usize;
+        if index < stabs_start { index } else { index - nstabs }
+    };
     for &(alias, target) in &ctx.indirect_aliases {
         let a = data.output_sym_indices[alias as usize];
         let t = data.output_sym_indices[target as usize];
         if a == u32::MAX || t == u32::MAX {
             continue;
         }
-        let strx = data.entries[t as usize].0.n_strx;
-        let ent = &mut data.entries[a as usize];
+        let strx = data.entries[entry(t)].0.n_strx;
+        let ent = &mut data.entries[entry(a)];
         ent.0.n_type = N_INDR | N_EXT;
         ent.0.n_sect = 0;
         ent.0.n_desc = 0;
@@ -4935,7 +4972,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             // loop below places them.
             let (dice, split) = dice;
             ctx.symtab = symtab;
-            ctx.symtab.hdr.size = (ctx.symtab.entries.len() * size_of::<NList>()) as u64;
+            ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<NList>()) as u64;
             ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
             ctx.data_in_code.hdr.size = (dice.len() * 8) as u64;
             ctx.data_in_code.entries = dice;

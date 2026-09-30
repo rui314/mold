@@ -434,7 +434,7 @@ fn create_symtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         cmd: LC_SYMTAB,
         cmdsize: size_of::<SymtabCommand>() as u32,
         symoff: ctx.symtab.hdr.fileoff as u32,
-        nsyms: ctx.symtab.entries.len() as u32,
+        nsyms: ctx.symtab.len() as u32,
         stroff: ctx.strtab.hdr.fileoff as u32,
         strsize: ctx.strtab.hdr.size as u32,
     };

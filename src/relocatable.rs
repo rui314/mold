@@ -1517,7 +1517,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         nlocal,
         (nplain, &names_of),
         &entry_of,
-    );
+    )
+    .next_multiple_of(8);
     let mut strtab = vec![0u8; size];
     strtab[0] = b' ';
     for ((ent, _), name) in ents.iter().zip(&names) {
