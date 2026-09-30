@@ -1629,23 +1629,26 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
 /// (the default since Xcode 14), the compiler calls these
 /// linker-provided symbols instead of setting up the selector argument
 /// itself; each stub loads the interned selector and tail-calls
-/// _objc_msgSend.
+/// _objc_msgSend. ld-prime lays the stubs out sorted by selector,
+/// bytewise, and their selector references in the same order.
 pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
+    let mut stubs: Vec<(u32, String)> = Vec::new();
     for i in 0..ctx.symbols.syms.len() {
         let sym = &ctx.symbols[i];
         if sym.is_defined() || !sym.is_used() {
             continue;
         }
-        let Some(sel) = sym.name().strip_prefix("_objc_msgSend$") else {
-            continue;
-        };
-        let sel = sel.to_string();
-        let idx = ctx.objc_stubs.symbols.len() as u32;
-        ctx.symbols[i].set_file(FileId::Obj(internal));
-        ctx.sym_aux_mut(i as u32).objc_stub_idx = idx;
-        ctx.objc_stubs.symbols.push((i as u32, sel));
+        if let Some(sel) = sym.name().strip_prefix("_objc_msgSend$") {
+            stubs.push((i as u32, sel.to_string()));
+        }
     }
+    stubs.sort_by(|a, b| a.1.cmp(&b.1));
+    for (idx, &(i, _)) in stubs.iter().enumerate() {
+        ctx.symbols[i].set_file(FileId::Obj(internal));
+        ctx.sym_aux_mut(i).objc_stub_idx = idx as u32;
+    }
+    ctx.objc_stubs.symbols = stubs;
 
     if !ctx.objc_stubs.symbols.is_empty() {
         let id = ctx.symbols.intern("_objc_msgSend");
@@ -2315,62 +2318,101 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         add_got(ctx, id);
     }
 
-    // A stub loads an input's selector reference when one names its
-    // selector, as ld64's does; only selectors no input refers to get
-    // a slot in the __objc_selrefs tail (NetNewsWire's debug dylib
-    // had 155 such duplicate slots). Such a slot points at an input's
-    // __objc_methname string of the selector's name when there is one,
-    // since ld-prime coalesces the two, and only names no input spells
-    // go in the __objc_methname tail.
-    let mut slot_of: hashbrown::HashMap<&'static [u8], u32> = hashbrown::HashMap::new();
+    // Stub i loads slot i of the __objc_selrefs tail, which points at
+    // its selector's name. ld-prime coalesces both with an input's of
+    // the same selector and keeps its own: the slot replaces every
+    // input selector reference to that selector (one slot per selector,
+    // as the runtime uniques one __objc_selrefs), and the name is an
+    // input's __objc_methname string where one spells it, only names
+    // no input has going in the __objc_methname tail.
     let mut name_of: hashbrown::HashMap<&'static [u8], u32> = hashbrown::HashMap::new();
-    for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive()
-            || ctx.is_internal(isec.file as usize)
-            || isec.replacement != crate::input_sections::NO_REPLACEMENT
-        {
-            continue;
-        }
-        let h = ctx.hdr_of(isec);
-        if h.sectname() == "__objc_methname" && h.section_type() == S_CSTRING_LITERALS {
-            name_of.entry(cstring_of(isec.data())).or_insert(i as u32);
-            continue;
-        }
-        if h.sectname() != "__objc_selrefs"
-            || h.section_type() != S_LITERAL_POINTERS
-            || isec.size != 8
-        {
-            continue;
-        }
-        let Some(target) = objc_pointer_at(ctx, i as u32, 0) else { continue };
-        let Some((name, 0)) = objc_ref_location(ctx, target) else { continue };
-        slot_of.entry(cstring_of(ctx.isecs[name as usize].data())).or_insert(i as u32);
-    }
-    let n = ctx.objc_stubs.symbols.len();
-    let stubs = &mut ctx.objc_stubs;
-    stubs.selref = Vec::with_capacity(n);
-    stubs.tail = Vec::with_capacity(n);
-    stubs.name_isec = Vec::with_capacity(n);
-    stubs.methname_offs = Vec::with_capacity(n);
-    let mut tail = 0u32;
-    for i in 0..n {
-        let sel = stubs.symbols[i].1.as_bytes();
-        let slot = slot_of.get(sel).copied();
-        stubs.selref.push(slot.unwrap_or(u32::MAX));
-        stubs.tail.push(if slot.is_some() { u32::MAX } else { tail });
-        let name = if slot.is_some() { None } else { name_of.get(sel).copied() };
-        stubs.name_isec.push(name.unwrap_or(u32::MAX));
-        stubs.methname_offs.push(stubs.methname_data.len() as u64);
-        if slot.is_none() {
-            tail += 1;
-            if name.is_none() {
-                stubs.methname_data.extend_from_slice(sel);
-                stubs.methname_data.push(0);
+    let mut absorbed: Vec<(u32, u32)> = Vec::new();
+    {
+        let stub_of: hashbrown::HashMap<&[u8], u32> = (ctx.objc_stubs.symbols.iter().enumerate())
+            .map(|(i, (_, sel))| (sel.as_bytes(), i as u32))
+            .collect();
+        for i in 0..ctx.isecs.len() {
+            let isec = &ctx.isecs[i];
+            if stub_of.is_empty()
+                || !isec.is_alive()
+                || ctx.is_internal(isec.file as usize)
+                || isec.replacement != crate::input_sections::NO_REPLACEMENT
+            {
+                continue;
+            }
+            let h = ctx.hdr_of(isec);
+            if h.sectname() == "__objc_methname" && h.section_type() == S_CSTRING_LITERALS {
+                name_of.entry(cstring_of(isec.data())).or_insert(i as u32);
+            } else if h.sectname() == "__objc_selrefs"
+                && h.section_type() == S_LITERAL_POINTERS
+                && isec.size == 8
+                && let Some(target) = objc_pointer_at(ctx, i as u32, 0)
+                && let Some((name, 0)) = objc_ref_location(ctx, target)
+                && let Some(&stub) = stub_of.get(cstring_of(ctx.isecs[name as usize].data()))
+            {
+                absorbed.push((i as u32, stub));
             }
         }
     }
-    stubs.tail_slots = tail as usize;
+    absorb_selrefs(ctx, absorbed);
+
+    let stubs = &mut ctx.objc_stubs;
+    for i in 0..stubs.symbols.len() {
+        let sel = stubs.symbols[i].1.as_bytes();
+        let name = name_of.get(sel).copied();
+        stubs.name_isec.push(name.unwrap_or(u32::MAX));
+        stubs.methname_offs.push(stubs.methname_data.len() as u64);
+        if name.is_none() {
+            stubs.methname_data.extend_from_slice(sel);
+            stubs.methname_data.push(0);
+        }
+    }
+}
+
+/// Replaces input selector references by the objc stub slots that take
+/// them over: each by a synthetic subsection standing for its stub's
+/// slot, placed once the __objc_selrefs tail is. `absorbed` pairs an
+/// input selector reference with its stub.
+fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
+    if absorbed.is_empty() {
+        return;
+    }
+    let (file, shndx) = ctx.add_synthetic_section(MachSection {
+        sectname: str_to_name("__objc_selrefs"),
+        segname: str_to_name("__DATA"),
+        p2align: 3,
+        flags: S_LITERAL_POINTERS,
+        ..Default::default()
+    });
+    let mut synth_of: hashbrown::HashMap<u32, u32> = hashbrown::HashMap::new();
+    for (input, stub) in absorbed {
+        let synth = match synth_of.get(&stub) {
+            Some(&synth) => synth,
+            None => {
+                ctx.isecs.push(InputSection {
+                    file,
+                    shndx,
+                    p2align: 3,
+                    input_addr: 0,
+                    size: 8,
+                    contents: 0,
+                    rel_offset: 0,
+                    nrels: 0,
+                    output_section: u32::MAX,
+                    offset: u32::MAX,
+                    flags: std::sync::atomic::AtomicU8::new(0),
+                    replacement: crate::input_sections::NO_REPLACEMENT,
+                    unwind_offset: 0,
+                    nunwind: 0,
+                });
+                let synth = (ctx.isecs.len() - 1) as u32;
+                synth_of.insert(stub, synth);
+                ctx.objc_stubs.absorbed.push((synth, stub));
+                synth
+            }
+        };
+        ctx.isecs[input as usize].replacement = synth;
+    }
 }
 
 /// A C string's bytes, up to its terminating NUL.
@@ -4451,7 +4493,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         };
         let methname_size = ctx.objc_stubs.methname_data.len() as u64;
         let selrefs_size =
-            (ctx.objc_stubs.tail_slots + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
+            (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
         if methname_size > 0 {
             let id = tail_section(
                 ctx,
@@ -4475,6 +4517,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 selrefs_size,
             );
             ctx.objc_stubs.selrefs = Some(id);
+            let tail_off = ctx.output_section(id).tail_off;
+            for i in 0..ctx.objc_stubs.absorbed.len() {
+                let (synth, slot) = ctx.objc_stubs.absorbed[i];
+                let isec = &mut ctx.isecs[synth as usize];
+                isec.set_output_section(ChunkId::Output(id));
+                isec.offset = (tail_off + slot as u64 * 8) as u32;
+            }
         }
         // Synthesized Objective-C records go in the tail of the section
         // they name; each blob's subsection is placed there.

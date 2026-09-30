@@ -71,11 +71,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
 
     // Synthesized selector reference slots hold pointers into
-    // __objc_methname (a reused input slot has its own relocation).
+    // __objc_methname.
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        if !ctx.objc_stub_reuses_selref(i) {
-            locs.push(ctx.objc_selref_addr(i));
-        }
+        locs.push(ctx.objc_selref_addr(i));
     }
     // Pointer fields of the synthesized Objective-C records.
     for (addr, _) in data_blob_pointers(ctx) {

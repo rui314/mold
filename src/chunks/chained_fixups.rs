@@ -363,9 +363,7 @@ pub fn collect_fixups<E: Target>(
         }
     }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        if !ctx.objc_stub_reuses_selref(i) {
-            fixups.push((ctx.objc_selref_addr(i), None, 0));
-        }
+        fixups.push((ctx.objc_selref_addr(i), None, 0));
     }
     for (addr, _) in super::rebase_info::data_blob_pointers(ctx) {
         fixups.push((addr, None, 0));

@@ -267,33 +267,12 @@ impl<E: Target> Context<E> {
         isec.output_section().map_or(0, |id| self.chunk_header(id).n_sect)
     }
 
-    /// Address of the selector reference slot for objc stub `i` (or,
-    /// past the stubs, extra selector reference `i - stubs`): an
-    /// input's slot the stub reuses, else its slot in the tail of the
-    /// __objc_selrefs output section.
+    /// Address of the selector reference slot `i` in the tail of the
+    /// __objc_selrefs output section: objc stub `i`'s, or past the
+    /// stubs, extra selector reference `i - stubs`.
     pub fn objc_selref_addr(&self, i: usize) -> u64 {
-        // (There is no tail chunk when every stub reuses a slot and no
-        // extra reference exists.)
-        let stubs = &self.objc_stubs;
-        let tail = |slot: usize| {
-            let osec = self.output_section(stubs.selrefs.unwrap());
-            osec.hdr.addr + osec.tail_off + slot as u64 * 8
-        };
-        if i < stubs.symbols.len() {
-            let reused = stubs.selref[i];
-            if reused != u32::MAX {
-                return self.isec_addr(reused as usize);
-            }
-            tail(stubs.tail[i] as usize)
-        } else {
-            tail(stubs.tail_slots + (i - stubs.symbols.len()))
-        }
-    }
-
-    /// True if selector stub `i` loads an input's selector reference
-    /// rather than a synthesized slot.
-    pub fn objc_stub_reuses_selref(&self, i: usize) -> bool {
-        self.objc_stubs.selref.get(i).is_some_and(|&s| s != u32::MAX)
+        let osec = self.output_section(self.objc_stubs.selrefs.unwrap());
+        osec.hdr.addr + osec.tail_off + i as u64 * 8
     }
 
     /// Address of the selector name string for objc stub `i`: an

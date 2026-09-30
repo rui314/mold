@@ -15,20 +15,17 @@ use crate::target::Target;
 pub struct ObjcStubsSection {
     pub hdr: ChunkHeader,
     /// _objc_msgSend$<selector> symbols, in entry order, with their
-    /// selector names.
+    /// selector names. Stub `i` loads slot `i` of the __objc_selrefs
+    /// tail.
     pub symbols: Vec<(SymbolId, String)>,
-    /// Per stub: an input __objc_selrefs slot for its selector that the
-    /// stub loads instead of a synthesized one (u32::MAX for none), and
-    /// its slot's index in the tail when it has one.
-    pub selref: Vec<u32>,
-    pub tail: Vec<u32>,
-    /// The number of stub slots in the __objc_selrefs tail; the extra
-    /// selector references follow them.
-    pub tail_slots: usize,
     /// Selector references synthesized for method lists whose selector
     /// no input references: the __objc_methname subsection each points
     /// at. They follow the stubs' slots in the __objc_selrefs tail.
     pub extra_selrefs: Vec<u32>,
+    /// Input selector references to a stub's selector, which its slot
+    /// takes over: a synthetic subsection standing for the slot, each
+    /// replacing such inputs, and the slot's index in the tail.
+    pub absorbed: Vec<(u32, u32)>,
     /// Contents of the synthesized __objc_methname tail, and each
     /// selector's offset in it.
     pub methname_data: Vec<u8>,
@@ -53,10 +50,8 @@ impl ObjcStubsSection {
         Self {
             hdr,
             symbols: Vec::new(),
-            selref: Vec::new(),
-            tail: Vec::new(),
-            tail_slots: 0,
             extra_selrefs: Vec::new(),
+            absorbed: Vec::new(),
             methname_data: Vec::new(),
             methname_offs: Vec::new(),
             name_isec: Vec::new(),
