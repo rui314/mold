@@ -1231,10 +1231,11 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         .collect();
     // Sections are added to the section lists in an arbitrary order
     // because they are created in parallel. Sort them to make the output
-    // deterministic. A relocatable link keeps every COMDAT group's members
-    // in output sections of their own, so several sections can share a
-    // name, type and flags; their first members, which are in input order,
-    // break the tie.
+    // deterministic. Several sections can share a name, type and flags: a
+    // relocatable link keeps every COMDAT group's members in output
+    // sections of their own, and mergeable sections with different entry
+    // sizes are merged separately. Their first members, which are in input
+    // order, break the tie.
     chunks.sort_by_cached_key(|&id| {
         let hdr = ctx.chunk_header(id);
         let first_member = match id {
@@ -1242,6 +1243,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                 .members
                 .first()
                 .map(|&m| (ctx.objs[m.file().index()].base.priority, m.index())),
+            ChunkId::Merged(msec) => ctx.merged_sections[msec.index()]
+                .members
+                .first()
+                .map(|m| (ctx.objs[m.file.index()].base.priority, m.shndx as usize)),
             _ => None,
         };
         (
