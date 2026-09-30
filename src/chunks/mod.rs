@@ -619,12 +619,14 @@ fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
 
 fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // The entry point is a file offset into __TEXT, whose file offset
-    // is zero.
+    // is zero. The layout sizes the command before the entry point has
+    // an address (0) - also when it lays the segments out again, with
+    // __TEXT placed by the first round.
     let text = ctx.segments.iter().find(|s| s.name == "__TEXT").unwrap();
     let cmd = EntryPointCommand {
         cmd: LC_MAIN,
         cmdsize: size_of::<EntryPointCommand>() as u32,
-        entryoff: ctx.entry_addr - text.cmd.vmaddr,
+        entryoff: ctx.entry_addr.saturating_sub(text.cmd.vmaddr),
         stacksize: ctx.args.stack_size,
     };
     to_vec(&cmd)
