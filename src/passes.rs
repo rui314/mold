@@ -5938,10 +5938,6 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     collect_relocations(ctx);
 }
 
-/// Builds the LC_FUNCTION_STARTS payload: the addresses of all
-/// functions in __TEXT,__text, ULEB128 delta-encoded starting from the
-/// image base. Debuggers and crash reporters use it to attribute
-/// addresses to functions even for stripped binaries.
 /// Reads the -order_file lists and ranks every subsection: the
 /// subsection defining the file's first symbol gets rank 0 and so on;
 /// unlisted subsections rank last. ld64's format is one
