@@ -404,6 +404,44 @@ fn record_p2align(hdr: &MachSection) -> Option<u8> {
     }
 }
 
+/// Reports the first section of an object ld-prime refuses to split
+/// into atoms, and returns false if there is one. A 64-bit object has no
+/// business with the classic lazy pointers only dyld's lazy binder fills:
+/// a non-empty __DATA,__la_symbol_ptr of that type is a section of
+/// fixed-size records whose size ld-prime doesn't know. `nindirect` is
+/// the number of the object's indirect symbol table entries.
+fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
+    for hdr in hdrs {
+        if hdr.size != 0
+            && hdr.section_type() == S_LAZY_SYMBOL_POINTERS
+            && hdr.segname() == "__DATA"
+            && hdr.sectname() == "__la_symbol_ptr"
+        {
+            crate::error!(
+                "unknown fixed size section __DATA,__la_symbol_ptr with content type: \
+                 lazy-pointer in '{}'",
+                file.display()
+            );
+            return false;
+        }
+    }
+
+    // A non-lazy pointer section asked the linker to fill each slot with
+    // the address of the symbol the indirect symbol table names for it,
+    // as a 32-bit object's GOT did, and mold would leave the slots null.
+    // ld-prime refuses every such section of an object with indirect
+    // symbols, an empty one or one the table names no slot of too; in
+    // an object without, one is data its relocations fill.
+    if nindirect != 0 && hdrs.iter().any(|h| h.section_type() == S_NON_LAZY_SYMBOL_POINTERS) {
+        crate::error!(
+            "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
+            file.display()
+        );
+        return false;
+    }
+    true
+}
+
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
 /// know. It reads only __LD,__compact_unwind and drops any other with a
 /// warning; a symbol defined in one is gone.
@@ -634,23 +672,6 @@ impl LoadCommands {
         }
         cmds
     }
-
-    /// Rejects pointer slots the object names in its indirect symbol
-    /// table (from the section's reserved1 on) rather than by
-    /// relocations, as 32-bit code did with .non_lazy_symbol_pointer:
-    /// ld-prime refuses them in a 64-bit link, and they would be left
-    /// null.
-    fn check_indirect_pointers(&self, mf: &MappedFile) {
-        let nindirect = self.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
-        if self.sect_hdrs.iter().any(|s| {
-            s.section_type() == S_NON_LAZY_SYMBOL_POINTERS && s.size > 0 && s.reserved1 < nindirect
-        }) {
-            fatal!(
-                "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
-                mf.name.display()
-            );
-        }
-    }
 }
 
 /// Reads an object's symbol table: its nlists and string table. The
@@ -697,7 +718,6 @@ pub fn stage_object<E: Target>(
     }
 
     let cmds = LoadCommands::read::<E>(data, &hdr);
-    cmds.check_indirect_pointers(mf);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
@@ -706,6 +726,7 @@ pub fn stage_object<E: Target>(
 
     let (nlists, strtab) = read_symtab(data, cmds.symtab.as_ref());
     let first_global = first_global_of(&nlists, cmds.dysymtab.as_ref());
+    let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
 
     let objc_image_info = sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo").map(|s| {
         let off = s.offset as usize + 4;
@@ -746,7 +767,8 @@ pub fn stage_object<E: Target>(
     }
     let sect_isecs = obj.initialize_sections(&bare);
     obj.read_symbol_names(strtab);
-    let mut relocs_ok = obj.read_relocations::<E>(&bare, &sect_isecs);
+    let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
+        && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
     // section's, each 32-byte record being an atom.
