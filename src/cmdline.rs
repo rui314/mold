@@ -2122,6 +2122,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         a.dynamic_linker.clear();
     }
 
+    // We don't garbage-collect sections when creating a relocatable output.
+    if a.relocatable {
+        a.gc_sections = false;
+    }
+
     a.undefined_glob = undefined_glob.build();
     a.unique = unique.build();
     ParsedArgs { args: a, jobs }
