@@ -812,7 +812,9 @@ pub(crate) fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
 /// The lists are found the way the runtime finds them: through
 /// __objc_classlist (class and metaclass ro data), __objc_catlist,
 /// __objc_protolist (all four lists of a protocol) and Swift's
-/// __objc_clsrolist. A selector with no reference in any input gets
+/// __objc_clsrolist and __objc_catlist2 (the categories of classes
+/// the runtime reaches through a Swift class stub, which Swift puts
+/// in __objc_data). A selector with no reference in any input gets
 /// one synthesized in the __objc_selrefs tail. A list is left alone
 /// when it is not the whole of its subsection or not in the classic
 /// 24-byte form.
@@ -867,7 +869,7 @@ fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
                     found.visit_class(ctx, cls);
                 }
             }
-            "__objc_catlist" | "__objc_nlcatlist" => {
+            "__objc_catlist" | "__objc_catlist2" | "__objc_nlcatlist" => {
                 // category_t: name, cls, instanceMethods, classMethods.
                 for cat in records() {
                     found.note(ctx, cat, 16);

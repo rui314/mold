@@ -59,24 +59,25 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
         ("__DATA", "__objc_classlist") => 3,
         ("__DATA", "__objc_nlclslist") => 4,
         ("__DATA", "__objc_catlist") => 5,
-        ("__DATA", "__objc_nlcatlist") => 6,
-        ("__DATA", "__objc_protolist") => 7,
-        ("__DATA", "__objc_imageinfo") => 8,
-        ("__DATA", "__objc_const") => 9,
-        ("__DATA", "__objc_selrefs") => 10,
-        ("__DATA", "__objc_protorefs") => 11,
-        ("__DATA", "__objc_classrefs") => 12,
-        ("__DATA", "__objc_superrefs") => 13,
-        ("__DATA", "__objc_ivar") => 14,
-        ("__DATA", "__objc_data") => 15,
-        ("__DATA", "__mod_init_func") => 16,
-        ("__DATA", "__mod_term_func") => 17,
-        ("__DATA", "__data") => 18,
+        ("__DATA", "__objc_catlist2") => 6,
+        ("__DATA", "__objc_nlcatlist") => 7,
+        ("__DATA", "__objc_protolist") => 8,
+        ("__DATA", "__objc_imageinfo") => 9,
+        ("__DATA", "__objc_const") => 10,
+        ("__DATA", "__objc_selrefs") => 11,
+        ("__DATA", "__objc_protorefs") => 12,
+        ("__DATA", "__objc_classrefs") => 13,
+        ("__DATA", "__objc_superrefs") => 14,
+        ("__DATA", "__objc_ivar") => 15,
+        ("__DATA", "__objc_data") => 16,
+        ("__DATA", "__mod_init_func") => 17,
+        ("__DATA", "__mod_term_func") => 18,
+        ("__DATA", "__data") => 19,
         _ => match flags & SECTION_TYPE {
-            S_THREAD_LOCAL_REGULAR => 20,
-            S_THREAD_LOCAL_ZEROFILL => 21,
-            S_ZEROFILL => 22,
-            _ => 19,
+            S_THREAD_LOCAL_REGULAR => 21,
+            S_THREAD_LOCAL_ZEROFILL => 22,
+            S_ZEROFILL => 23,
+            _ => 20,
         },
     };
     (seg, sect)
@@ -1240,7 +1241,11 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         h.segname() == "__DATA"
             && matches!(
                 h.sectname(),
-                "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
+                "__objc_classlist"
+                    | "__objc_nlclslist"
+                    | "__objc_catlist"
+                    | "__objc_catlist2"
+                    | "__objc_nlcatlist"
             )
     };
     // (subsection, record index) -> entry in `locals`; and the record
