@@ -73,27 +73,28 @@ fn hi20(val: u64, pc: u64) -> u64 {
 // pcalau12i $rN, %pc_hi20(sym)
 // addi.d    $rM, $zero, %lo12(sym)
 // lu32i.d   $rM, %pc64_lo20(sym)
-// lu52i.d   $rM, $r12, %pc64_hi12(sym)
+// lu52i.d   $rM, $rM, %pc64_hi12(sym)
 // add.d     $rN, $rN, $rM
 //
 // PCALAU12I computes (pc + imm << 12) to materialize a 64-bit value.
 // ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
-// LU52I.D simply set bits to [51:31] and to [63:53], respectively.
+// LU52I.D simply set bits to [51:32] and to [63:52], respectively.
 //
 // Compensating all the sign-extensions is a bit complicated. The
-// psABI gives the following formula.
+// psABI gives the following formula, in which `pc` is the address of
+// the PCALAU12I. LU32I.D and LU52I.D are 8 and 12 bytes after it.
 fn higher(val: u64, pc: u64) -> u64 {
     let compensation = if val & 0x800 != 0 { 0x1000u64.wrapping_sub(0x1_0000_0000) } else { 0 };
     let val = val.wrapping_add(0x8000_0000).wrapping_add(compensation);
-    page(val).wrapping_sub(page(pc.wrapping_sub(8)))
+    page(val).wrapping_sub(page(pc))
 }
 
 fn higher20(val: u64, pc: u64) -> u64 {
-    bits(higher(val, pc), 51, 32)
+    bits(higher(val, pc.wrapping_sub(8)), 51, 32)
 }
 
 fn highest12(val: u64, pc: u64) -> u64 {
-    bits(higher(val, pc), 63, 52)
+    bits(higher(val, pc.wrapping_sub(12)), 63, 52)
 }
 
 fn insn(loc: &[u8]) -> u32 {
