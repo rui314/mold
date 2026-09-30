@@ -60,6 +60,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const RELOC_GOTPC: u8;
     /// The explicit-addend relocation type, for targets that have one.
     const RELOC_ADDEND: u8;
+    /// The register state LC_UNIXTHREAD holds: its flavor, its size in
+    /// 32-bit words, and the byte offset of the program counter in it.
+    const THREAD_STATE_FLAVOR: u32;
+    const THREAD_STATE_COUNT: u32;
+    const THREAD_STATE_PC_OFFSET: usize;
 
     /// Whether re-emitting this relocation type in a relocatable output
     /// needs an explicit addend record when its addend is nonzero.

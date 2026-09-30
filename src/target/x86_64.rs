@@ -50,6 +50,10 @@ impl Target for X86_64 {
     const RELOC_GOTPC: u8 = X86_64_RELOC_GOT;
     // x86-64 embeds every addend in the relocated field.
     const RELOC_ADDEND: u8 = 0xff;
+    // x86_THREAD_STATE64: rax..r15, then rip.
+    const THREAD_STATE_FLAVOR: u32 = 4;
+    const THREAD_STATE_COUNT: u32 = 42;
+    const THREAD_STATE_PC_OFFSET: usize = 16 * 8;
 
     fn relocatable_needs_addend(_r_type: u8) -> bool {
         false

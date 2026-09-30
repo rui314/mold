@@ -94,6 +94,10 @@ impl Target for Arm64 {
     const RELOC_SUBTRACTOR: u8 = ARM64_RELOC_SUBTRACTOR;
     const RELOC_GOTPC: u8 = ARM64_RELOC_POINTER_TO_GOT;
     const RELOC_ADDEND: u8 = ARM64_RELOC_ADDEND;
+    // ARM_THREAD_STATE64: x0..x28, fp, lr, sp, then pc.
+    const THREAD_STATE_FLAVOR: u32 = 6;
+    const THREAD_STATE_COUNT: u32 = 68;
+    const THREAD_STATE_PC_OFFSET: usize = 32 * 8;
 
     fn relocatable_needs_addend(r_type: u8) -> bool {
         // Instruction-patching relocations can't embed an addend; data

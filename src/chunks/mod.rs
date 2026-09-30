@@ -583,6 +583,21 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
+/// A -static image has no dyld to read LC_MAIN; the kernel (or a boot
+/// loader) starts its thread from LC_UNIXTHREAD's register state, all
+/// zero but the program counter at the entry point.
+fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    let size = 16 + E::THREAD_STATE_COUNT as usize * 4;
+    let mut buf = Vec::with_capacity(size);
+    for word in [LC_UNIXTHREAD, size as u32, E::THREAD_STATE_FLAVOR, E::THREAD_STATE_COUNT] {
+        buf.extend_from_slice(&word.to_le_bytes());
+    }
+    buf.resize(size, 0);
+    let pc = 16 + E::THREAD_STATE_PC_OFFSET;
+    buf[pc..pc + 8].copy_from_slice(&ctx.entry_addr.to_le_bytes());
+    buf
+}
+
 fn create_code_signature_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     create_linkedit_data_cmd(LC_CODE_SIGNATURE, &ctx.code_signature.hdr)
 }
@@ -636,7 +651,11 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     ));
     vec.push(create_source_version_cmd(ctx));
     if ctx.args.output_type == MH_EXECUTE {
-        vec.push(create_main_cmd(ctx));
+        vec.push(if ctx.args.static_link {
+            create_unixthread_cmd(ctx)
+        } else {
+            create_main_cmd(ctx)
+        });
     }
 
     // Libraries in ordinal order (command-line order, then the
