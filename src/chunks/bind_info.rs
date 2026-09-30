@@ -3,7 +3,6 @@
 
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
-use crate::input_files::FileId;
 use crate::macho::*;
 use crate::target::{RelocClass, Target};
 use crate::util::encode_uleb;
@@ -42,7 +41,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // GOT slots for imported symbols.
     {
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if ctx.symbols[id].is_imported() {
+            if ctx.binds_as_import(id) {
                 binds.push((ctx.got.slot_addr(i), id, 0));
             }
         }
@@ -65,7 +64,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
                 continue;
             }
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
-                && ctx.symbols[id].is_imported()
+                && ctx.binds_as_import(id)
                 && !ctx.is_swift_force_load_ref(id)
             {
                 binds.push((base + rel.offset as u64, id, rel.addend));
@@ -78,10 +77,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
     // ld64 lists the binds by library, symbol, addend, then address, so
     // each library and symbol is set once.
-    let ordinal = |id: crate::symbol::SymbolId| {
-        let Some(FileId::Dylib(dylib)) = ctx.symbols[id].file() else { unreachable!() };
-        ctx.bind_ordinal(dylib)
-    };
+    let ordinal = |id| ctx.sym_bind_ordinal(id);
     binds.sort_by(|a, b| {
         (ordinal(a.1), ctx.symbols[a.1].name().as_bytes(), a.2, a.0).cmp(&(
             ordinal(b.1),

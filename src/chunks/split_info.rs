@@ -294,7 +294,7 @@ impl<'a, E: Target> Places<'a, E> {
             }
             RelocClass::Branch => {
                 let stub = ctx.sym_aux(id).stub_idx;
-                if ctx.is_weak_coalesced(id) && stub != NO_IDX {
+                if ctx.is_interposable(id) && stub != NO_IDX {
                     return Some(self.chunk(ChunkId::Stubs, stub as u64 * E::STUB_SIZE));
                 }
                 let (n, off) = self.sym(id)?;

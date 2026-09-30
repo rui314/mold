@@ -233,14 +233,19 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         // An import names its dylib; one of this image's own weak
         // definitions is bound by weak lookup (ordinal -3), which
         // makes dyld search every loaded image for the coalesced
-        // winner, and a class bound to the image itself names it (0).
+        // winner, a class bound to the image itself names it (0), and
+        // a -flat_namespace export is a flat lookup (-2).
         let ordinal_bits = |bits: u32| -> u64 {
+            let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
             match s.file() {
                 Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
                     ctx.chained_import_ordinal(dylib, bits)
                 }
                 _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
-                _ => (BIND_SPECIAL_DYLIB_WEAK_LOOKUP as i64 as u64) & ((1u64 << bits) - 1),
+                _ if ctx.is_flat_export(sym) && !ctx.binds_weak_lookup(sym) => {
+                    special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP)
+                }
+                _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
             }
         };
         let weak = s.is_weak_ref() as u32;

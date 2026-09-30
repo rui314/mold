@@ -630,10 +630,59 @@ impl<E: Target> Context<E> {
         sym.is_imported() && sym.is_weak_ref() && sym.name().starts_with("__swift_FORCE_LOAD_$_")
     }
 
+    /// True for a definition a -flat_namespace dylib or bundle exports.
+    /// dyld binds the image's own references to it by flat lookup, as
+    /// it binds imports, so that an image loaded before it can
+    /// interpose it: ld64 calls it through a stub, loads it from a GOT
+    /// slot and binds the pointers to it in data (initializer and
+    /// Objective-C metadata pointers too) instead of rebasing them.
+    /// ld-prime binds a weak definition so too, besides by weak lookup
+    /// (with chained fixups by weak lookup alone). An executable's
+    /// references to its own definitions stay direct - it comes first
+    /// in the flat search order anyway - as do dyld's (ld-prime crashes
+    /// linking one) and those to a sectionless symbol: an absolute one,
+    /// or one that marks the image's layout.
+    pub fn is_flat_export(&self, id: SymbolId) -> bool {
+        if !self.args.flat_namespace
+            || !matches!(self.args.output_type, crate::macho::MH_DYLIB | crate::macho::MH_BUNDLE)
+        {
+            return false;
+        }
+        let sym = &self.symbols[id];
+        matches!(sym.file(), Some(FileId::Obj(_)))
+            && sym.input_section().is_some()
+            && sym.is_extern()
+            && !sym.is_private_extern()
+    }
+
+    /// True if dyld binds the slots referring to this symbol as it
+    /// binds an import's, by name from the bind stream: an import, or a
+    /// -flat_namespace export.
+    pub fn binds_as_import(&self, id: SymbolId) -> bool {
+        self.symbols[id].is_imported() || self.is_flat_export(id)
+    }
+
+    /// The library ordinal a bind of this symbol names: its dylib's, or
+    /// the flat lookup of a -flat_namespace export.
+    pub fn sym_bind_ordinal(&self, id: SymbolId) -> i32 {
+        match self.symbols[id].file() {
+            Some(FileId::Dylib(dylib)) => self.bind_ordinal(dylib),
+            _ => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
+        }
+    }
+
+    /// True for a definition of this image that dyld may replace with
+    /// another image's at load time, so that its references go through
+    /// slots dyld binds and its calls through its stub: a weak
+    /// definition subject to coalescing, or a -flat_namespace export.
+    pub fn is_interposable(&self, id: SymbolId) -> bool {
+        self.is_weak_coalesced(id) || self.is_flat_export(id)
+    }
+
     /// True if dyld fills the references to this symbol: an import, or
-    /// a weak definition subject to coalescing.
+    /// a definition it may interpose.
     pub fn binds_at_runtime(&self, id: SymbolId) -> bool {
-        self.symbols[id].is_imported() || self.is_weak_coalesced(id)
+        self.symbols[id].is_imported() || self.is_interposable(id)
     }
 
     /// An input's N_ABS definition has no section and never slides.
@@ -646,14 +695,12 @@ impl<E: Target> Context<E> {
     }
 
     /// A GOT load relaxes to a PC-relative address computation unless
-    /// dyld fills the slot - an import, or a weak definition it binds
-    /// by weak lookup, which a -static image's code never is - or the
-    /// target is an absolute constant: the instruction slides but the
-    /// value does not.
+    /// dyld fills the slot - an import or a -flat_namespace export, or a
+    /// weak definition it binds by weak lookup, which a -static image's
+    /// code never is - or the target is an absolute constant: the
+    /// instruction slides but the value does not.
     pub fn can_relax_got(&self, id: SymbolId) -> bool {
-        !self.symbols[id].is_imported()
-            && !self.binds_weak_lookup(id)
-            && !self.is_absolute_symbol(id)
+        !self.binds_as_import(id) && !self.binds_weak_lookup(id) && !self.is_absolute_symbol(id)
     }
 
     /// True for a definition this image exports that some dylib in the
@@ -721,7 +768,7 @@ impl<E: Target> Context<E> {
     /// The address a branch to `id` targets: the symbol's stub when it
     /// has one and dyld may redirect it, else the symbol itself.
     pub fn branch_target_addr(&self, id: SymbolId) -> u64 {
-        if self.is_weak_coalesced(id) && self.sym_aux(id).stub_idx != crate::symbol::NO_IDX {
+        if self.is_interposable(id) && self.sym_aux(id).stub_idx != crate::symbol::NO_IDX {
             self.sym_stub_addr(id)
         } else {
             self.sym_addr(id)

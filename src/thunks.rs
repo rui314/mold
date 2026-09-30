@@ -358,7 +358,7 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
     let sym = &ctx.symbols[id];
     let aux = ctx.sym_aux(id);
     let side = match sym.file() {
-        _ if aux.stub_idx != NO_IDX && ctx.is_weak_coalesced(id) => reach.stubs,
+        _ if aux.stub_idx != NO_IDX && ctx.is_interposable(id) => reach.stubs,
         Some(FileId::Dylib(_)) if aux.stub_idx != NO_IDX => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {

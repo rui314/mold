@@ -66,7 +66,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, weak: bool, buf: &mut [u8]) {
     // Slots for imported symbols stay zero; dyld fills them via
     // the bind stream.
     for (i, &id) in syms.iter().enumerate() {
-        if !ctx.symbols[id].is_imported() {
+        if !ctx.binds_as_import(id) {
             buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
         }
     }

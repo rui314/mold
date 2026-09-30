@@ -3,7 +3,6 @@
 
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
-use crate::input_files::FileId;
 use crate::macho::*;
 use crate::target::Target;
 use crate::util::encode_uleb;
@@ -54,8 +53,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
         buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
         encode_uleb(&mut buf, off);
         let sym = &ctx.symbols[id];
-        let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
-        let ordinal = ctx.bind_ordinal(dylib);
+        let ordinal = ctx.sym_bind_ordinal(id);
         if ordinal <= 0 {
             buf.push(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (ordinal & 0xf) as u8);
         } else if ordinal < 16 {

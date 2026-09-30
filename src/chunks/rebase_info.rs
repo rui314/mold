@@ -61,7 +61,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
             // offsets, not addresses, so they are not rebased.
             let imported = ctx
                 .reloc_target_sym(isec.file as usize, rel)
-                .is_some_and(|id| ctx.symbols[id].is_imported());
+                .is_some_and(|id| ctx.binds_as_import(id));
             let absolute = ctx
                 .reloc_target_sym(isec.file as usize, rel)
                 .is_some_and(|id| ctx.is_absolute_symbol(id));
@@ -91,7 +91,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     // GOT slots that hold local addresses.
     {
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if !ctx.symbols[id].is_imported() && !ctx.is_absolute_symbol(id) {
+            if !ctx.binds_as_import(id) && !ctx.is_absolute_symbol(id) {
                 synthesized.push(ctx.got.slot_addr(i));
             }
         }

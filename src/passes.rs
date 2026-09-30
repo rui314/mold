@@ -2769,7 +2769,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             // An x86-64 kext calls an import directly; kmutil fills in
             // the call by an external relocation.
             RelocClass::Branch if ctx.args.is_kext() && E::CPUTYPE == CPU_TYPE_X86_64 => {}
-            RelocClass::Branch if sym.is_imported() => {
+            RelocClass::Branch if ctx.binds_as_import(id) => {
                 // A stub jumps through the symbol's lazy pointer, or,
                 // without lazy binding, its GOT slot.
                 add_stub(ctx, id);
