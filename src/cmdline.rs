@@ -930,6 +930,7 @@ fn missing_argument(opt: &str) -> String {
         "-sectcreate" => "missing arguments <segname> <sectname> <file>",
         "-add_empty_section" => "missing arguments <segname> <sectname>",
         "-segaddr" => "needs <segname> <addr>",
+        "-stack_addr" => "requires <address>",
         "-segment_order" => "needs <segment-list>",
         "-sectalign" => "needs <segname> <sectname> <align>",
         "-executable_path" => return format!("obsolete option {opt} requires 1 arguments"),
@@ -951,6 +952,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         Args { zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(), ..Default::default() };
     let mut kind = OutputKind::DynamicExecutable;
     let mut stack_size: Option<u64> = None;
+    let mut stack_addr: Option<u64> = None;
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
@@ -1215,6 +1217,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 stack_size = Some(
                     u64::from_str_radix(size.trim_start_matches("0x"), 16)
                         .unwrap_or_else(|_| fatal!("-stack_size must specify an integer size")),
+                );
+            }
+            b"-stack_addr" => {
+                let addr = text(name, next_arg(&mut i, name));
+                stack_addr = Some(
+                    u64::from_str_radix(addr.trim_start_matches("0x"), 16)
+                        .unwrap_or_else(|_| fatal!("-stack_addr must specify an integer address")),
                 );
             }
             b"-sectcreate" => {
@@ -1652,7 +1661,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.pie = resolve_pie(target, &args, pie);
     args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
-    resolve_stack_size(target, &mut args, stack_size);
+    resolve_stack(target, &mut args, stack_size, stack_addr);
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(target, &args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
@@ -1768,7 +1777,7 @@ impl Args {
 /// client name is what a bundle or an executable presents to the
 /// umbrella it links against. A relocatable object also leaves the
 /// __DATA_CONST split to the link that consumes it. (-stack_size is
-/// checked with its other limits: resolve_stack_size.)
+/// checked with its other limits: resolve_stack.)
 fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     let has_stack = main_executable && !args.preload;
@@ -1793,13 +1802,29 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     }
 }
 
-/// -stack_size, which ld-prime checks against the most a stack may take
-/// on the target, then for a main executable, then for a multiple of
-/// the page size. No dyld starts a static executable with LC_MAIN's
-/// stack size: its stack is a segment of its own, __UNIXSTACK, which
-/// ld64 pins below a fixed top of stack, as -segaddr would (unless one
-/// pins it elsewhere); LC_UNIXTHREAD's stack pointer starts at its end.
-fn resolve_stack_size(target: &TargetTraits, args: &mut Args, size: Option<u64>) {
+/// -stack_size and -stack_addr. No dyld starts a static executable with
+/// LC_MAIN's stack size: its stack is a segment of its own, __UNIXSTACK,
+/// which ld64 pins as -segaddr would (unless one pins it elsewhere)
+/// below a top of stack, -stack_addr's or a fixed one; LC_UNIXTHREAD's
+/// stack pointer starts at its end. ld-prime checks -stack_addr for a
+/// multiple of the page size (4 KiB in an object file) and a size to go
+/// with it, then the size against the most a stack may take on the
+/// target and for a main executable, a static one if it has an address,
+/// then for a multiple of the page size and smaller than the address.
+fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
+    if addr == Some(0) {
+        crate::warn!("-stack_addr 0x0 has no effect");
+    }
+    let addr = addr.filter(|&addr| addr != 0);
+    if let Some(addr) = addr {
+        let page = if args.relocatable || args.preload { 0x1000 } else { target.page_size };
+        if !addr.is_multiple_of(page) {
+            fatal!("-stack_addr (0x{addr:08X}) must be multiples of page size (0x{page:08X})");
+        }
+        if size.unwrap_or(0) == 0 {
+            fatal!("-stack_addr must be used with -stack_size");
+        }
+    }
     let Some(size) = size else { return };
     if size == 0 {
         crate::warn!("-stack_size 0x0 has no effect");
@@ -1815,14 +1840,21 @@ fn resolve_stack_size(target: &TargetTraits, args: &mut Args, size: Option<u64>)
     if args.output_type != MH_EXECUTE || args.relocatable || args.preload {
         fatal!("-stack_size option can only be used when linking a main executable");
     }
+    if addr.is_some() && !args.static_link {
+        fatal!("-stack_addr can't be used with modern executables");
+    }
     if !size.is_multiple_of(target.page_size) {
         fatal!(
             "-stack_size (0x{size:08X}) must be multiples of page size (0x{:08X})",
             target.page_size
         );
     }
+    let default_top = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
+    let top = addr.unwrap_or(default_top);
+    if size > top {
+        fatal!("-stack_size (0x{size:08X}) must be smaller than -stack_addr (0x{top:08X})");
+    }
     args.stack_size = size;
-    let top: u64 = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
     if args.static_link && args.segaddr("__UNIXSTACK").is_none() {
         args.segaddrs.push(("__UNIXSTACK".to_string(), top - size));
     }

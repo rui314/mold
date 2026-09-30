@@ -62,3 +62,24 @@ if [ $ARCH = arm64 ]; then
   not $mold -arch $ARCH -static -stack_size 0x20000000 $t/b.o -o $t/exe9 2> $t/log9
   grep -q 'custom segments overlap: __TEXT(0x100000000-0x100004000) __UNIXSTACK(0x100000000-0x120000000)' $t/log9
 fi
+
+# -stack_addr moves the top of a static executable's stack. It must be
+# a multiple of the page size, come with a size smaller than it, and is
+# for static executables only: a dyld-started one's stack is dyld's.
+$mold -arch $ARCH -static -stack_size 0x8000 -stack_addr 0x300000000 $t/b.o -o $t/exe10
+otool -l $t/exe10 > $t/lc10
+grep -A2 'segname __UNIXSTACK' $t/lc10 | grep -q 'vmaddr 0x00000002ffff8000'
+grep -Eq ' r?sp +0x0000000300000000 ' $t/lc10
+not $mold -arch $ARCH -static -stack_size 0x8000 -stack_addr 0x300000800 $t/b.o \
+  -o $t/exe11 2> $t/log11
+grep -q -- '-stack_addr (0x300000800) must be multiples of page size (0x0000[14]000)' $t/log11
+not $mold -arch $ARCH -static -stack_addr 0x300000000 $t/b.o -o $t/exe12 2> $t/log12
+grep -q -- '-stack_addr must be used with -stack_size' $t/log12
+not $mold -arch $ARCH -static -stack_size 0x10000 -stack_addr 0x8000 $t/b.o -o $t/exe13 \
+  2> $t/log13
+grep -q -- '-stack_size (0x00010000) must be smaller than -stack_addr (0x00008000)' $t/log13
+not $CC --ld-path=$mold -o $t/exe14 $t/a.o -Wl,-stack_size,0x8000 -Wl,-stack_addr,0x300000000 \
+  2> $t/log14
+grep -q -- "-stack_addr can't be used with modern executables" $t/log14
+$CC --ld-path=$mold -o $t/exe15 $t/a.o -Wl,-stack_addr,0 2> $t/log15
+grep -q -- '-stack_addr 0x0 has no effect' $t/log15
