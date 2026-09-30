@@ -357,8 +357,14 @@ impl<const LE: bool> Target for Arm32Target<LE> {
         arm32_rel_to_string(r_type)
     }
 
-    fn eflags(_ctx: &Context<Self>) -> u32 {
-        if Self::IS_LITTLE { EF_ARM_EABI_VER5 } else { EF_ARM_EABI_VER5 | EF_ARM_BE8 }
+    // Relocatable output keeps the input's big-endian code as is. Only a
+    // final link converts it to BE8.
+    fn eflags(ctx: &Context<Self>) -> u32 {
+        if Self::IS_LITTLE || ctx.args.relocatable {
+            EF_ARM_EABI_VER5
+        } else {
+            EF_ARM_EABI_VER5 | EF_ARM_BE8
+        }
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

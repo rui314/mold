@@ -2053,7 +2053,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     if a.image_base % a.page_size != 0 {
         fatal!("-image-base must be a multiple of -max-page-size");
     }
-    if a.emulation == "arm32be" && !be8 {
+    if a.emulation == "arm32be" && !be8 && !a.relocatable {
         fatal!("--be32 is not supported");
     }
 
