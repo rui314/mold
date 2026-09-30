@@ -272,7 +272,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             }
 
             match rel.r_type() {
-                R_AARCH64_MOVW_UABS_G3 => scan_absrel(ctx, isec, sym, rel),
+                R_AARCH64_ABS16 | R_AARCH64_ABS32 | R_AARCH64_MOVW_UABS_G3 => {
+                    scan_absrel(ctx, isec, sym, rel)
+                }
                 R_AARCH64_ADR_GOT_PAGE => {
                     // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
                     // symbol's address from GOT. If the GOT value is a link-time
@@ -302,9 +304,10 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                         sym.add_flags(NEEDS_GOT);
                     }
                 }
-                R_AARCH64_LD64_GOT_LO12_NC | R_AARCH64_LD64_GOTPAGE_LO15 | R_AARCH64_GOTPCREL32 => {
-                    sym.add_flags(NEEDS_GOT)
-                }
+                R_AARCH64_LD64_GOT_LO12_NC
+                | R_AARCH64_LD64_GOTPAGE_LO15
+                | R_AARCH64_GOTPCREL32
+                | R_AARCH64_GOT_LD_PREL19 => sym.add_flags(NEEDS_GOT),
                 R_AARCH64_CALL26 | R_AARCH64_JUMP26 | R_AARCH64_PLT32 => {
                     if sym.is_imported() {
                         sym.add_flags(NEEDS_PLT);
@@ -330,6 +333,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 | R_AARCH64_ADD_ABS_LO12_NC
                 | R_AARCH64_ADR_PREL_LO21
                 | R_AARCH64_CONDBR19
+                | R_AARCH64_TSTBR14
                 | R_AARCH64_LD_PREL_LO19
                 | R_AARCH64_LDST16_ABS_LO12_NC
                 | R_AARCH64_LDST32_ABS_LO12_NC
@@ -515,9 +519,26 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                     check(val as i64, -(1 << 31), 1 << 31);
                     Self::write_u32(loc, val as u32);
                 }
+                R_AARCH64_GOT_LD_PREL19 => {
+                    let val = g().wrapping_add(got).wrapping_add(a).wrapping_sub(p);
+                    check(val as i64, -(1 << 20), 1 << 20);
+                    or_insn(loc, (bits(val, 20, 2) << 5) as u32);
+                }
                 R_AARCH64_CONDBR19 | R_AARCH64_LD_PREL_LO19 => {
                     check(pcrel as i64, -(1 << 20), 1 << 20);
                     or_insn(loc, (bits(pcrel, 20, 2) << 5) as u32);
+                }
+                R_AARCH64_TSTBR14 => {
+                    check(pcrel as i64, -(1 << 15), 1 << 15);
+                    or_insn(loc, (bits(pcrel, 15, 2) << 5) as u32);
+                }
+                R_AARCH64_ABS16 => {
+                    check(sa as i64, -(1 << 15), 1 << 16);
+                    Self::write_u16(loc, sa as u16);
+                }
+                R_AARCH64_ABS32 => {
+                    check(sa as i64, -(1 << 31), 1 << 32);
+                    Self::write_u32(loc, sa as u32);
                 }
                 R_AARCH64_PREL16 => {
                     check(pcrel as i64, -(1 << 15), 1 << 16);
