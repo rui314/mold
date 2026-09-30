@@ -980,9 +980,10 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     // Local symbols, in ld64's form. ld64 -r names some atoms itself
     // with one shared counter: every string in a cstring-literal
     // section becomes LC<n> (N_PEXT set, so a later link can still
-    // coalesce it), and the records of __cfstring, __objc_selrefs and
-    // __objc_classrefs (N_PEXT) become l<nnn>; the entries of the
-    // __objc_*list sections get no symbol.
+    // coalesce it), and the records of __cfstring, __objc_selrefs,
+    // __objc_classrefs and, on arm64, the fixed-size literal sections
+    // (N_PEXT) become l<nnn>; the entries of the __objc_*list sections
+    // get no symbol.
     // Their original labels vanish, and relocations against them - by
     // label, or section-relative as x86-64 objects refer to literals -
     // are re-targeted at the new symbols. Other labels survive, those
@@ -1016,8 +1017,12 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     // externals: the record size; 0 for one record per subsection, as
     // cstring literals are split.
     let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<u64> {
-        if flags & SECTION_TYPE == S_CSTRING_LITERALS {
-            return Some(0);
+        match flags & SECTION_TYPE {
+            S_CSTRING_LITERALS => return Some(0),
+            S_4BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(4),
+            S_8BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(8),
+            S_16BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(16),
+            _ => {}
         }
         match (segname, sectname) {
             ("__DATA", "__cfstring") => Some(32),
