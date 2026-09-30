@@ -25,6 +25,18 @@ $t/exe
 otool -L $t/exe > $t/libs
 not grep -q libother $t/libs
 
+# So is a universal file a dylib re-exports, found by its leaf in the
+# library path.
+mkdir -p $t/fatdir
+cc -arch $other -shared $t/foo.c -o $t/fatdir/libfat.dylib \
+  -Wl,-install_name,/nonexistent/libfat.dylib
+lipo -create $t/fatdir/libfat.dylib -output $t/fatdir/libfat.dylib
+$CC -shared $t/foo.c -o $t/libstandin.dylib -Wl,-install_name,/nonexistent/libfat.dylib
+$CC -shared $t/foo.c -o $t/libre.dylib -Wl,-reexport_library,$t/libstandin.dylib
+$CC --ld-path=$mold -o $t/exe5 $t/a.o $t/libre.dylib -L$t/fatdir 2> $t/log5
+grep -qF "warning: ignoring file '$t/fatdir/libfat.dylib': fat file missing arch '$ARCH', file has '$other'" $t/log5
+not grep -q 'missing indirect library' $t/log5
+
 # A symbol only the ignored dylib defines stays undefined.
 echo 'int foo(); int main() { return foo(); }' | $CC -o $t/b.o -c -xc -
 not $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/libother.dylib 2> $t/log2

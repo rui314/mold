@@ -380,12 +380,7 @@ fn collect_file<E: Target>(
         }
         FileType::Fat => match input_files::fat_slice::<E>(mf) {
             Some(slice) => collect_file(ctx, slice, rc, out),
-            None => crate::warn!(
-                "ignoring file '{}': fat file missing arch '{}', file has '{}'",
-                mf.name.display(),
-                E::NAME,
-                input_files::fat_arch_names(mf).join(",")
-            ),
+            None => input_files::warn_fat_missing_arch::<E>(mf),
         },
         FileType::LlvmBitcode => {
             input_files::parse_bitcode(ctx, mf, true);

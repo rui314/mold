@@ -2808,7 +2808,7 @@ fn fat_arches(mf: &MappedFile) -> impl Iterator<Item = (u32, u32, usize, usize)>
 }
 
 /// The architectures a fat file has slices for.
-pub fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
+fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
     fat_arches(mf).map(|(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype)).collect()
 }
 
@@ -2831,12 +2831,15 @@ pub fn fat_slice<E: Target>(mf: &'static MappedFile) -> Option<&'static MappedFi
     Some(mf.slice(name.into(), off, size))
 }
 
-/// The slice of a fat file the link takes, which it must have.
-pub fn get_fat_slice<E: Target>(mf: &'static MappedFile) -> &'static MappedFile {
-    match fat_slice::<E>(mf) {
-        Some(slice) => slice,
-        None => fatal!("{}: fat file does not contain {}", mf.name.display(), E::NAME),
-    }
+/// ld-prime's warning as it ignores a fat file without a slice the link
+/// takes.
+pub fn warn_fat_missing_arch<E: Target>(mf: &MappedFile) {
+    crate::warn!(
+        "ignoring file '{}': fat file missing arch '{}', file has '{}'",
+        mf.name.display(),
+        E::NAME,
+        fat_arch_names(mf).join(",")
+    );
 }
 
 /// Parses a Mach-O dylib binary: its identity from LC_ID_DYLIB and its
@@ -3054,8 +3057,13 @@ fn load_reexports<E: Target>(
                     queue.push((dep_name, dir_of(&dep.name), dep_rpaths.clone()));
                 }
             }
+            // A universal binary (Xcode's XCTestCore, re-exported by
+            // XCTest): the target's slice, if it has one.
             crate::filetype::FileType::Fat => {
-                let slice = get_fat_slice::<E>(dep);
+                let Some(slice) = fat_slice::<E>(dep) else {
+                    warn_fat_missing_arch::<E>(dep);
+                    continue;
+                };
                 let found = DylibIdentity::of_binary(slice);
                 if found.is_public(ctx) {
                     let idx = parse_dylib_binary(ctx, slice);
@@ -3712,9 +3720,6 @@ fn resolve_dylib_ref<E: Target>(
     use crate::util::{os_str, path_bytes};
     let dylib_file = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
     if let Some(mf) = dylib_file.filter_map(|(_, file)| MappedFile::open(file)).next() {
-        if crate::filetype::get_file_type(mf) == crate::filetype::FileType::Fat {
-            return Some(get_fat_slice::<E>(mf));
-        }
         return Some(mf);
     }
     // A name relative to the re-exporter or its rpaths resolves as
@@ -3755,9 +3760,6 @@ fn find_reexport_by_leaf<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'s
             let mut file = stem.clone();
             file.push(ext);
             if let Some(mf) = MappedFile::open(dir.join(file)) {
-                if crate::filetype::get_file_type(mf) == crate::filetype::FileType::Fat {
-                    return Some(get_fat_slice::<E>(mf));
-                }
                 return Some(mf);
             }
         }
@@ -3791,11 +3793,6 @@ pub fn find_reexport_file<E: Target>(
         let candidates = [base.with_extension("tbd"), PathBuf::from(with_tbd), base];
         for path in candidates {
             if let Some(mf) = MappedFile::open(&path) {
-                // A universal binary (Xcode's XCTestCore, re-exported
-                // by XCTest): the target's slice.
-                if crate::filetype::get_file_type(mf) == crate::filetype::FileType::Fat {
-                    return Some(get_fat_slice::<E>(mf));
-                }
                 return Some(mf);
             }
         }
