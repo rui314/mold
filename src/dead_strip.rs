@@ -71,11 +71,15 @@ enum Pred {
 /// of an object without MH_SUBSECTIONS_VIA_SYMBOLS that ld64 cuts at
 /// symbols: it cannot tell where such an atom ends, so it models the
 /// object as one huge atom. Sections it cuts by content (literals,
-/// CFStrings, thread-local variable descriptors) are stripped as usual.
+/// CFStrings, class references, thread-local variable descriptors) are
+/// stripped as usual. ld-prime strips a class reference nothing uses
+/// although clang marks __objc_classrefs no-dead-strip (it keeps unused
+/// selector references).
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS)
-        || hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
+        || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
+            && !(hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classrefs"))
         || hdr.sectname() == "__objc_imageinfo"
         || (!ctx.objs[isec.file as usize].subsections_via_symbols
             && !is_literal_section(hdr)

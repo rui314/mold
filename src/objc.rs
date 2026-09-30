@@ -299,8 +299,9 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 /// a final link (NetNewsWire's RSCore prelink had 56 class references
 /// where ld-prime's has 30, its debug dylib 592 selector references
 /// too many); the first copy wins and the rest redirect to it, like
-/// merged literals. A final link leaves class references to
-/// fold_objc_classrefs, which turns them into GOT slots.
+/// merged literals. A final link from macOS 15 on leaves class
+/// references to fold_objc_classrefs, which turns them into GOT slots
+/// (and coalesces those nothing refers to).
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
     // What a pointer relocation refers to: a place in a subsection
     // (where identical content has already been merged), or a symbol
@@ -564,6 +565,12 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
 /// taken, or a pointer to it) keeps the slot: it is replaced by a
 /// synthetic subsection standing for the class's GOT entry.
 ///
+/// What folds is what is referenced, whatever the slot points at (a
+/// class or not): ld-prime rewrites the references to the slots it
+/// has coalesced, one per class. The slot of a class nothing refers
+/// to through one stays in __objc_classrefs, and its class gets no
+/// GOT entry.
+///
 /// On arm64 ld-prime relaxes a class's loads only if each adrp of its
 /// slot is followed, within the function, by one @PAGEOFF use before
 /// the next adrp of it (-O0 code can load twice through one adrp). If
@@ -579,6 +586,10 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     let mut unpaired = hashbrown::HashSet::new();
     let pairs: Vec<_> =
         (0..ctx.objs.len()).map(|i| pair_classref_uses(ctx, i, &uses[i], &mut unpaired)).collect();
+    let referenced: hashbrown::HashSet<_> = uses.iter().flatten().map(|u| u.class).collect();
+    let mut unreferenced: hashbrown::HashMap<crate::symbol::SymbolId, u32> =
+        hashbrown::HashMap::new();
+    let mut coalesced = false;
     let mut got_hdr: Option<(u32, u32)> = None;
     for obj_idx in 0..ctx.objs.len() {
         let slots = &slots[obj_idx];
@@ -618,6 +629,15 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             slots.iter().map(|(&slot, &(_, class))| (slot, class)).collect();
         ordered.sort_unstable_by_key(|&(slot, _)| slot);
         for (slot, class) in ordered {
+            if !referenced.contains(&class) {
+                // Coalesced, as below macOS 15: the first slot stays.
+                let first = *unreferenced.entry(class).or_insert(slot);
+                if first != slot {
+                    ctx.isecs[slot as usize].replacement = first;
+                    coalesced = true;
+                }
+                continue;
+            }
             if ctx.symbols[class].is_imported() || keep.contains(&slot) {
                 add_got(ctx, class);
             }
@@ -641,6 +661,9 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             ctx.isecs[slot as usize].replacement = synth;
             ctx.got.objc_classref_slots.push((synth, class));
         }
+    }
+    if coalesced {
+        redirect_symbols_to_replacements(ctx);
     }
 }
 
