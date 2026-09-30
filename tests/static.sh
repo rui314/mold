@@ -106,3 +106,17 @@ if [ $ARCH = x86_64 ]; then
   size() { otool -l $1 | grep -A4 'sectname __eh_frame' | awk '$1 == "size" { print $2 }'; }
   [ "$(size $t/exe5)" = "$(size $t/c.o)" ]
 fi
+
+# Nor __DATA_CONST, a segment dyld makes read-only once it has fixed it
+# up: constant data stays in __DATA. -data_const asks for the segment,
+# which then comes after __DATA.
+cat <<EOF | $CC -o $t/d.o -c -xassembler -
+.section __DATA,__const
+.p2align 3
+_cp: .quad __start
+EOF
+segs() { otool -l $1 | awk '$1 == "segname" && !seen[$2]++ { printf "%s ", $2 }'; }
+$mold -arch $ARCH -static -e __start $t/a.o $t/b.o $t/d.o -o $t/exe6
+[ "$(segs $t/exe6)" = '__PAGEZERO __TEXT __DATA __LINKEDIT ' ]
+$mold -arch $ARCH -static -e __start -data_const $t/a.o $t/b.o $t/d.o -o $t/exe7
+[ "$(segs $t/exe7)" = '__PAGEZERO __TEXT __DATA __DATA_CONST __LINKEDIT ' ]

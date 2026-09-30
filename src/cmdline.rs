@@ -155,7 +155,8 @@ pub struct Args {
     pub init_offsets: bool,
     /// -data_const / -no_data_const: whether read-only-after-fixup data
     /// sections (__const, __cfstring, the ObjC lists, __got ...) go in
-    /// a __DATA_CONST segment. ld64's default is on.
+    /// a __DATA_CONST segment. ld64's default is on but for a -static
+    /// image.
     pub data_const: bool,
     /// -no_implicit_dylibs: do not bind through a re-export to the
     /// defining dylib (and add a load command for it); bind to the
@@ -645,6 +646,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
+    let mut data_const: Option<bool> = None;
     let mut i = 1;
     let mut version_shown = false;
 
@@ -973,8 +975,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,
-            b"-data_const" => args.data_const = true,
-            b"-no_data_const" => args.data_const = false,
+            b"-data_const" => data_const = Some(true),
+            b"-no_data_const" => data_const = Some(false),
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
             b"-objc_relative_method_lists" => args.objc_relative_method_lists = Some(true),
             b"-no_objc_relative_method_lists" => args.objc_relative_method_lists = Some(false),
@@ -1063,9 +1065,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
 
     // A -static image (a kernel) carries the code tables only when
-    // asked to, as ld-prime writes it.
+    // asked to, as ld-prime writes it, and no __DATA_CONST: nothing
+    // makes that segment read-only after fixups.
     args.function_starts = function_starts.unwrap_or(!args.static_link);
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.static_link);
+    args.data_const = data_const.unwrap_or(!args.static_link);
 
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");

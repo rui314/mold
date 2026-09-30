@@ -4874,11 +4874,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let segment_order = &ctx.args.segment_order;
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
+        // A -static image's __DATA_CONST (only with -data_const) comes
+        // after __DATA, as ld-prime places it.
         let standard = match hdr.segname {
             "__TEXT" => 0,
-            "__DATA_CONST" => 1,
+            "__DATA_CONST" if !ctx.args.static_link => 1,
             "__DATA" => 2,
-            _ => 3,
+            "__DATA_CONST" => 3,
+            _ => 4,
         };
         let seg_rank = if hdr.segname == "__LINKEDIT" {
             usize::MAX
