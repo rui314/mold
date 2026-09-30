@@ -3062,11 +3062,13 @@ impl SectionMap {
 
 /// The flags an output section carries. In a final image ld64 keeps
 /// the section type (a coalesced input section becomes regular; a
-/// literal pool folded into __TEXT,__const is regular) and the
-/// instruction attributes, drops every other input attribute
-/// (no_dead_strip, live_support, strip_static_syms, no_toc: they
-/// direct the linker, not dyld), and marks just the ObjC list sections
-/// the runtime scans as no-dead-strip. A -r output is input to another
+/// literal pool folded into __TEXT,__const is regular), marks code
+/// (pure instructions) as having some instructions, drops every other
+/// input attribute - no_dead_strip, live_support, strip_static_syms
+/// and no_toc direct the linker, not dyld, and some_instructions
+/// alone is but the assembler's note that it emitted an instruction
+/// into the section - and marks just the ObjC list sections the
+/// runtime scans as no-dead-strip. A -r output is input to another
 /// link, so ld-prime copies the first input section's type and
 /// attributes verbatim - but for __objc_imageinfo and
 /// __objc_protolist, which lose no_dead_strip. __eh_frame carries the
@@ -3096,9 +3098,9 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     if ty == S_COALESCED || (segname == "__TEXT" && sectname == "__const") {
         ty = S_REGULAR;
     }
-    let mut attrs = input & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS);
-    if attrs & S_ATTR_PURE_INSTRUCTIONS != 0 {
-        attrs |= S_ATTR_SOME_INSTRUCTIONS;
+    let mut attrs = 0;
+    if input & S_ATTR_PURE_INSTRUCTIONS != 0 {
+        attrs = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     }
     if matches!(
         sectname,
