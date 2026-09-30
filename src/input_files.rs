@@ -567,57 +567,108 @@ pub fn stage_object<E: Target>(
         fatal!("{}: incompatible CPU type: expected {}", mf.name.display(), E::NAME);
     }
 
-    let mut isecs: Vec<InputSection> = Vec::new();
-    let LoadCommands {
-        sect_hdrs,
-        symtab: symtab_cmd,
-        dysymtab: dysymtab_cmd,
-        linker_options,
-        platform_versions,
-        dice,
-        loh,
-    } = LoadCommands::read::<E>(data, &hdr);
+    let cmds = LoadCommands::read::<E>(data, &hdr);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
     // the object's section count and lives for the whole link.
-    let sect_hdrs: &'static [MachSection] = Vec::leak(sect_hdrs);
+    let sect_hdrs: &'static [MachSection] = Vec::leak(cmds.sect_hdrs);
 
-    let (mut nlists, strtab) = read_symtab(data, symtab_cmd.as_ref());
-    let first_global = first_global_of(&nlists, dysymtab_cmd.as_ref());
+    let (nlists, strtab) = read_symtab(data, cmds.symtab.as_ref());
+    let first_global = first_global_of(&nlists, cmds.dysymtab.as_ref());
 
-    // Split each section into subsections at its symbols, the Mach-O
-    // linking granularity, so that unreferenced pieces can later be
-    // dead-stripped. Alternate entry points (N_ALT_ENTRY) don't start a
-    // new subsection, and literal sections are element-oriented rather
-    // than symbol-oriented, so they stay whole.
-    let split_ok = hdr.flags & MH_SUBSECTIONS_VIA_SYMBOLS != 0;
-    let bare = bare_sections(sect_hdrs, &nlists, strtab, split_ok);
-    let mut split_points: Vec<Vec<u64>> = vec![Vec::new(); sect_hdrs.len()];
-    if split_ok {
-        for nlist in nlists.iter() {
-            if !nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && nlist.n_desc & N_ALT_ENTRY == 0
-                && nlist.n_sect >= 1
-                && let Some(points) = split_points.get_mut(nlist.n_sect as usize - 1)
-            {
-                points.push(nlist.n_value);
-            }
-        }
-    } else {
-        // Without subsections a section is one atom, and ld64 takes the
-        // atom's attributes from one symbol at the section's start (the
-        // arm64 assembler's ltmpN labels don't count): a non-weak one
-        // if there is any, local or global, else the last weak one in
-        // symbol table order. An atom cannot be swapped for another
-        // copy, so a weak symbol that names it is no longer weak; the
-        // other symbols are labels into the atom and keep their flags.
-        // A .weak_def_can_be_hidden name becomes a hidden non-weak
-        // definition, except in a -r output, which keeps it as is.
+    let objc_image_info = sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo").map(|s| {
+        let off = s.offset as usize + 4;
+        u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
+    });
+    let has_debug_info =
+        sect_hdrs.iter().any(|s| s.segname() == "__DWARF" && s.sectname() == "__debug_info");
+
+    let mut obj = StagedObject {
+        mf,
+        alive,
+        hidden,
+        priority,
+        sect_hdrs,
+        linker_options: cmds.linker_options,
+        platform_versions: cmds.platform_versions,
+        subsections_via_symbols: hdr.flags & MH_SUBSECTIONS_VIA_SYMBOLS != 0,
+        isecs: Vec::new(),
+        relocs: Vec::new(),
+        subsecs: Vec::new(),
+        nlists,
+        first_global,
+        sym_names: Vec::new(),
+        sym_hashes: Vec::new(),
+        unwind: Vec::new(),
+        cies: Vec::new(),
+        fdes: Vec::new(),
+        objc_image_info,
+        has_debug_info,
+        dice: cmds.dice,
+        loh: cmds.loh,
+    };
+
+    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, obj.subsections_via_symbols);
+    if !obj.subsections_via_symbols {
+        obj.unweaken_section_atom_names(strtab, relocatable);
+    }
+    let sect_isecs = obj.initialize_sections(&bare);
+    obj.read_relocations::<E>(&bare, &sect_isecs);
+    obj.read_symbol_names(strtab);
+
+    if let Some(hdr) =
+        sect_hdrs.iter().find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+    {
+        parse_compact_unwind(
+            hdr,
+            &obj.isecs,
+            &obj.subsecs,
+            &obj.nlists,
+            data,
+            &mf.name,
+            &mut obj.unwind,
+        );
+    }
+
+    if let Some(hdr) =
+        sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
+    {
+        parse_eh_frame::<E>(
+            hdr,
+            &obj.isecs,
+            &obj.subsecs,
+            &obj.nlists,
+            data,
+            &mf.name,
+            &mut obj.unwind,
+            &mut obj.cies,
+            &mut obj.fdes,
+            keep_all_fdes,
+        );
+    }
+    // A DWARF-mode record whose FDE never turned up describes nothing.
+    obj.unwind.retain(|rec| {
+        rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
+    });
+    obj
+}
+
+impl StagedObject {
+    /// Without subsections a section is one atom, and ld64 takes the
+    /// atom's attributes from one symbol at the section's start (the
+    /// arm64 assembler's ltmpN labels don't count): a non-weak one if
+    /// there is any, local or global, else the last weak one in symbol
+    /// table order. An atom cannot be swapped for another copy, so a
+    /// weak symbol that names it is no longer weak; the other symbols
+    /// are labels into the atom and keep their flags. A
+    /// .weak_def_can_be_hidden name becomes a hidden non-weak
+    /// definition, except in a -r output, which keeps it as is.
+    fn unweaken_section_atom_names(&mut self, strtab: &'static [u8], relocatable: bool) {
+        let sect_hdrs = self.sect_hdrs;
         let mut named_by_strong = vec![false; sect_hdrs.len()];
         let mut last_weak: Vec<Option<usize>> = vec![None; sect_hdrs.len()];
-        for (i, nlist) in nlists.iter().enumerate() {
+        for (i, nlist) in self.nlists.iter().enumerate() {
             if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_sect == 0 {
                 continue;
             }
@@ -638,100 +689,56 @@ pub fn stage_object<E: Target>(
             .zip(&named_by_strong)
             .filter_map(|(&weak, &strong)| if strong { None } else { weak })
             .collect();
-        if !names.is_empty() {
-            let owned = nlists.to_mut();
-            for i in names {
-                let nlist = &mut owned[i];
-                if nlist.n_desc & N_WEAK_REF == 0 {
-                    nlist.n_desc &= !N_WEAK_DEF;
-                } else if !relocatable {
-                    nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
-                    nlist.n_type |= N_PEXT;
-                }
+        if names.is_empty() {
+            return;
+        }
+        let nlists = self.nlists.to_mut();
+        for i in names {
+            let nlist = &mut nlists[i];
+            if nlist.n_desc & N_WEAK_REF == 0 {
+                nlist.n_desc &= !N_WEAK_DEF;
+            } else if !relocatable {
+                nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
+                nlist.n_type |= N_PEXT;
             }
         }
     }
 
-    // Sections whose contents are fixed-shape records the linker
-    // coalesces by content, as ld64 does: literal pools, literal
-    // pointers, and __cfstring, whose 32-byte CFString constants
-    // x86-64 compilers emit without labels.
-    let is_literal = |sect: &MachSection| {
-        matches!(
-            sect.section_type(),
-            S_CSTRING_LITERALS
-                | S_4BYTE_LITERALS
-                | S_8BYTE_LITERALS
-                | S_16BYTE_LITERALS
-                | S_LITERAL_POINTERS
-        ) || (sect.segname() == "__DATA" && sect.sectname() == "__cfstring")
-    };
+    /// Splits each section into subsections, the Mach-O linking
+    /// granularity, so that unreferenced pieces can later be
+    /// dead-stripped: at its symbols (see symbol_split_points), or per
+    /// element for a literal section, whose elements are merged by
+    /// content across objects. A bare section's subsections start dead.
+    /// Fills `isecs` and `subsecs` and returns each section's subsections
+    /// as a range of `isecs`, by section ordinal; a section that is not
+    /// copied through has none.
+    fn initialize_sections(&mut self, bare: &[bool]) -> Vec<std::ops::Range<usize>> {
+        let data = self.mf.data();
+        let sect_hdrs = self.sect_hdrs;
+        let mut split_points = self.symbol_split_points();
+        let mut sect_isecs = vec![0..0; sect_hdrs.len()];
 
-    // Subsections of each section, by section ordinal.
-    let mut by_ordinal: Vec<Vec<usize>> = vec![Vec::new(); sect_hdrs.len()];
-    let mut subsecs: Vec<crate::input_sections::InputSectionId> = Vec::new();
-
-    for (i, sect) in sect_hdrs.iter().enumerate() {
-        // __eh_frame is re-synthesized from parsed CIE/FDE records, and
-        // __objc_imageinfo sections are merged into one synthesized
-        // record; neither is copied through.
-        if is_discarded_section(sect)
-            || (sect.segname() == "__TEXT" && sect.sectname() == "__eh_frame")
-            || sect.sectname() == "__objc_imageinfo"
-        {
-            continue;
-        }
-
-        // Literal sections are element-oriented: split them per element
-        // (per string, or per fixed-size literal) so identical elements
-        // can be merged across objects.
-        let mut points = std::mem::take(&mut split_points[i]);
-        if is_literal(sect) {
-            points.clear();
-            let contents = &data[sect.offset as usize..(sect.offset as u64 + sect.size) as usize];
-            match sect.section_type() {
-                S_CSTRING_LITERALS => {
-                    let mut start = 0;
-                    while start < contents.len() {
-                        points.push(sect.addr + start as u64);
-                        let rest = &contents[start..];
-                        let p = unsafe { libc::memchr(rest.as_ptr().cast(), 0, rest.len()) };
-                        if p.is_null() {
-                            fatal!("{}: malformed __cstring section", mf.name.display());
-                        }
-                        start += (p as usize - rest.as_ptr() as usize) + 1;
-                    }
-                }
-                S_4BYTE_LITERALS => points.extend((0..sect.size).step_by(4).map(|o| sect.addr + o)),
-                S_8BYTE_LITERALS => points.extend((0..sect.size).step_by(8).map(|o| sect.addr + o)),
-                S_16BYTE_LITERALS => {
-                    points.extend((0..sect.size).step_by(16).map(|o| sect.addr + o))
-                }
-                // A literal-pointer section (__objc_selrefs) is one
-                // atom per pointer, as in ld64, so references to the
-                // same selector can be coalesced across objects.
-                S_LITERAL_POINTERS => {
-                    points.extend((0..sect.size).step_by(8).map(|o| sect.addr + o))
-                }
-                // __cfstring: one 32-byte constant per record.
-                _ => points.extend((0..sect.size).step_by(32).map(|o| sect.addr + o)),
-            }
-        }
-        points.push(sect.addr);
-        points.retain(|&a| sect.addr <= a && a <= sect.addr + sect.size);
-        points.sort_unstable();
-        points.dedup();
-
-        for (j, &start) in points.iter().enumerate() {
-            let end = points.get(j + 1).copied().unwrap_or(sect.addr + sect.size);
-            let contents = if sect.section_type() == S_ZEROFILL
-                || sect.section_type() == S_THREAD_LOCAL_ZEROFILL
+        for (i, sect) in sect_hdrs.iter().enumerate() {
+            // __eh_frame is re-synthesized from parsed CIE/FDE records, and
+            // __objc_imageinfo sections are merged into one synthesized
+            // record; neither is copied through.
+            if is_discarded_section(sect)
+                || (sect.segname() == "__TEXT" && sect.sectname() == "__eh_frame")
+                || sect.sectname() == "__objc_imageinfo"
             {
-                &[]
+                continue;
+            }
+
+            let mut points = if is_literal_section(sect) {
+                literal_split_points(sect, data, &self.mf.name)
             } else {
-                let lo = sect.offset as u64 + (start - sect.addr);
-                &data[lo as usize..(lo + (end - start)) as usize]
+                std::mem::take(&mut split_points[i])
             };
+            points.push(sect.addr);
+            points.retain(|&a| sect.addr <= a && a <= sect.addr + sect.size);
+            points.sort_unstable();
+            points.dedup();
+
             // A fixed-size literal is aligned to its size, whatever the
             // section header says: ld64's Literal{4,8,16}Section gives
             // every atom Alignment(2/3/4) with no modulus. Compilers
@@ -744,170 +751,199 @@ pub fn stage_object<E: Target>(
                 S_16BYTE_LITERALS => Some(4),
                 _ => None,
             };
-            isecs.push(InputSection {
-                file: u32::MAX,
-                shndx: i as u32,
-                p2align: literal_p2align.unwrap_or(sect.p2align as u8),
-                input_addr: start as u32,
-                size: (end - start) as u32,
-                contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },
-                rel_offset: 0,
-                nrels: 0,
-                output_section: u32::MAX,
-                offset: 0,
-                flags: if bare[i] {
-                    InputSection::flags_dead()
-                } else if literal_p2align.is_some() {
-                    InputSection::flags_alive_no_modulus()
+            let is_zerofill = matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL);
+
+            let first = self.isecs.len();
+            for (j, &start) in points.iter().enumerate() {
+                let end = points.get(j + 1).copied().unwrap_or(sect.addr + sect.size);
+                let contents: &[u8] = if is_zerofill {
+                    &[]
                 } else {
-                    InputSection::flags_alive()
-                },
-                replacement: crate::input_sections::NO_REPLACEMENT,
-                unwind_offset: 0,
-                nunwind: 0,
-            });
-            by_ordinal[i].push(isecs.len() - 1);
-            subsecs.push((isecs.len() - 1) as u32);
-        }
-    }
-
-    subsecs.sort_by_key(|&id| isecs[id as usize].input_addr);
-
-    // Read each section's relocations and distribute them to its
-    // subsections, rebasing location offsets and section-relative
-    // targets to subsections. Sorted by offset, the relocations of
-    // one subsection are contiguous, so a single merge walk over the
-    // subsections hands each its run. The relocs go into one per-object
-    // arena and each subsection keeps a range into it (rel_offset/
-    // nrels) - sold's layout - so a debug link's millions of relocs
-    // are one allocation, not a Vec per subsection.
-    let mut obj_relocs: Vec<crate::input_sections::Reloc> = Vec::new();
-    for (i, sect) in sect_hdrs.iter().enumerate() {
-        if by_ordinal[i].is_empty() || sect.nreloc == 0 {
-            continue;
-        }
-        let raw: Vec<MachRel> = read_array(data, sect.reloff as usize, sect.nreloc as usize);
-        let mut rels = E::read_relocs(&mf.name, sect_hdrs, sect, data, &raw);
-        // The sort must be stable: a SUBTRACTOR and the UNSIGNED it
-        // pairs with share one offset and their order is the pairing
-        // (Swift's relative pointers are all such pairs). An unstable
-        // sort swapped some, leaving lone 4-byte UNSIGNED relocations
-        // that were then written as 8 bytes.
-        rels.sort_by_key(|rel| rel.offset);
-
-        for rel in &mut rels {
-            // A section ld-prime ignores can't be a relocation's target,
-            // named by section or through a label on it (an ltmpN), and
-            // neither can a symbol in an __LD section it drops.
-            match rel.target() {
-                crate::input_sections::RelocTarget::Section(sect_pos)
-                    if bare[sect_pos as usize] =>
-                {
-                    let addr = (sect_hdrs[sect_pos as usize].addr as i64 + rel.addend) as u64;
-                    crate::error!(
-                        "address=0x{addr:x} points to section({}) with no content in '{}'",
-                        sect_pos + 1,
-                        mf.name.display()
-                    );
-                    continue;
-                }
-                crate::input_sections::RelocTarget::Sym(idx)
-                    if nlists.get(idx as usize).is_some_and(|n| {
-                        let sect = (n.n_sect as usize).wrapping_sub(1);
-                        n.n_type() == N_SECT
-                            && (bare.get(sect) == Some(&true)
-                                || sect_hdrs.get(sect).is_some_and(is_unknown_ld_section))
-                    }) =>
-                {
-                    crate::error!("invalid r_symbolnum={idx} in '{}'", mf.name.display());
-                    continue;
-                }
-                _ => {}
-            }
-            if let crate::input_sections::RelocTarget::Section(sect_pos) = rel.target() {
-                let sect = &sect_hdrs[sect_pos as usize];
-                let taddr = (sect.addr as i64 + rel.addend) as u64;
-                let found = find_subsec(&isecs, &subsecs, taddr).or_else(|| {
-                    // One past the section's end (a DWARF range end):
-                    // one past its last subsection.
-                    if taddr != sect.addr + sect.size {
-                        return None;
-                    }
-                    let &last = by_ordinal[sect_pos as usize].last()?;
-                    Some((last, isecs[last].size as u64))
-                });
-                let Some((tsub, toff)) = found else {
-                    fatal!("{}: relocation against a discarded section", mf.name.display());
+                    let lo = sect.offset as u64 + (start - sect.addr);
+                    &data[lo as usize..(lo + (end - start)) as usize]
                 };
-                rel.set_target(crate::input_sections::RelocTarget::Section(tsub as u32));
-                rel.addend = toff as i64;
+                self.isecs.push(InputSection {
+                    file: u32::MAX,
+                    shndx: i as u32,
+                    p2align: literal_p2align.unwrap_or(sect.p2align as u8),
+                    input_addr: start as u32,
+                    size: (end - start) as u32,
+                    contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },
+                    rel_offset: 0,
+                    nrels: 0,
+                    output_section: u32::MAX,
+                    offset: 0,
+                    flags: if bare[i] {
+                        InputSection::flags_dead()
+                    } else if literal_p2align.is_some() {
+                        InputSection::flags_alive_no_modulus()
+                    } else {
+                        InputSection::flags_alive()
+                    },
+                    replacement: crate::input_sections::NO_REPLACEMENT,
+                    unwind_offset: 0,
+                    nunwind: 0,
+                });
+            }
+            sect_isecs[i] = first..self.isecs.len();
+        }
+
+        self.subsecs = (0..self.isecs.len() as u32).collect();
+        self.subsecs.sort_by_key(|&id| self.isecs[id as usize].input_addr);
+        sect_isecs
+    }
+
+    /// The addresses at which the object's symbols split each section
+    /// (by ordinal) into subsections: every symbol's except an alternate
+    /// entry point's (N_ALT_ENTRY), which labels a place inside another
+    /// symbol's subsection. Without MH_SUBSECTIONS_VIA_SYMBOLS there are
+    /// none, and each section stays whole.
+    fn symbol_split_points(&self) -> Vec<Vec<u64>> {
+        let mut points: Vec<Vec<u64>> = vec![Vec::new(); self.sect_hdrs.len()];
+        if !self.subsections_via_symbols {
+            return points;
+        }
+        for nlist in self.nlists.iter() {
+            if !nlist.is_stab()
+                && nlist.n_type() == N_SECT
+                && nlist.n_desc & N_ALT_ENTRY == 0
+                && nlist.n_sect >= 1
+                && let Some(points) = points.get_mut(nlist.n_sect as usize - 1)
+            {
+                points.push(nlist.n_value);
             }
         }
+        points
+    }
 
-        let mut pos = 0;
-        for &sub in &by_ordinal[i] {
-            let sub_off = (isecs[sub].input_addr as u64 - sect.addr) as u32;
-            let end = sub_off + isecs[sub].size;
-            let start = obj_relocs.len();
-            while pos < rels.len() && rels[pos].offset < end {
-                let mut rel = rels[pos];
-                rel.offset -= sub_off;
-                obj_relocs.push(rel);
-                pos += 1;
+    /// Reads each section's relocations and hands them to its
+    /// subsections, rebasing each location to its subsection and each
+    /// section-relative target to the subsection at that address.
+    /// Sorted by offset, the relocations of one subsection are
+    /// contiguous, so a single merge walk over the subsections hands
+    /// each its run. The relocs go into one per-object arena and each
+    /// subsection keeps a range into it (rel_offset/nrels) - sold's
+    /// layout - so a debug link's millions of relocs are one
+    /// allocation, not a Vec per subsection.
+    fn read_relocations<E: Target>(
+        &mut self,
+        bare: &[bool],
+        sect_isecs: &[std::ops::Range<usize>],
+    ) {
+        use crate::input_sections::RelocTarget;
+
+        let data = self.mf.data();
+        let sect_hdrs = self.sect_hdrs;
+        for (i, sect) in sect_hdrs.iter().enumerate() {
+            if sect_isecs[i].is_empty() || sect.nreloc == 0 {
+                continue;
             }
-            isecs[sub].rel_offset = start as u32;
-            isecs[sub].nrels = (obj_relocs.len() - start) as u32;
+            let raw: Vec<MachRel> = read_array(data, sect.reloff as usize, sect.nreloc as usize);
+            let mut rels = E::read_relocs(&self.mf.name, sect_hdrs, sect, data, &raw);
+            // The sort must be stable: a SUBTRACTOR and the UNSIGNED it
+            // pairs with share one offset and their order is the pairing
+            // (Swift's relative pointers are all such pairs). An unstable
+            // sort swapped some, leaving lone 4-byte UNSIGNED relocations
+            // that were then written as 8 bytes.
+            rels.sort_by_key(|rel| rel.offset);
+
+            for rel in &mut rels {
+                if !self.check_reloc_target(rel, bare) {
+                    continue;
+                }
+                if let RelocTarget::Section(sect_pos) = rel.target() {
+                    let (isec, offset) = self.section_target(sect_pos, rel.addend, sect_isecs);
+                    rel.set_target(RelocTarget::Section(isec as u32));
+                    rel.addend = offset as i64;
+                }
+            }
+
+            let mut pos = 0;
+            for sub in sect_isecs[i].clone() {
+                let sub_off = (self.isecs[sub].input_addr as u64 - sect.addr) as u32;
+                let end = sub_off + self.isecs[sub].size;
+                let start = self.relocs.len();
+                while pos < rels.len() && rels[pos].offset < end {
+                    let mut rel = rels[pos];
+                    rel.offset -= sub_off;
+                    self.relocs.push(rel);
+                    pos += 1;
+                }
+                self.isecs[sub].rel_offset = start as u32;
+                self.isecs[sub].nrels = (self.relocs.len() - start) as u32;
+            }
+            if pos < rels.len() {
+                fatal!("{}: relocation outside its section", self.mf.name.display());
+            }
         }
-        if pos < rels.len() {
-            fatal!("{}: relocation outside its section", mf.name.display());
+    }
+
+    /// Reports a relocation whose target ld-prime ignores, returning
+    /// false for it. A bare section can't be a relocation's target, named
+    /// by section or through a label on it (an ltmpN), and neither can a
+    /// symbol in an __LD section ld-prime drops.
+    fn check_reloc_target(&self, rel: &crate::input_sections::Reloc, bare: &[bool]) -> bool {
+        use crate::input_sections::RelocTarget;
+
+        match rel.target() {
+            RelocTarget::Section(sect_pos) if bare[sect_pos as usize] => {
+                let addr = (self.sect_hdrs[sect_pos as usize].addr as i64 + rel.addend) as u64;
+                crate::error!(
+                    "address=0x{addr:x} points to section({}) with no content in '{}'",
+                    sect_pos + 1,
+                    self.mf.name.display()
+                );
+                false
+            }
+            RelocTarget::Sym(idx)
+                if self.nlists.get(idx as usize).is_some_and(|n| {
+                    let sect = (n.n_sect as usize).wrapping_sub(1);
+                    n.n_type() == N_SECT
+                        && (bare.get(sect) == Some(&true)
+                            || self.sect_hdrs.get(sect).is_some_and(is_unknown_ld_section))
+                }) =>
+            {
+                crate::error!("invalid r_symbolnum={idx} in '{}'", self.mf.name.display());
+                false
+            }
+            _ => true,
         }
     }
 
-    // Record symbol names; interning happens at integration.
-    let sym_names: Vec<&'static str> =
-        nlists.iter().map(|nlist| symbol_name(strtab, nlist)).collect();
-
-    let mut unwind = Vec::new();
-    let mut cies = Vec::new();
-    let mut fdes = Vec::new();
-    if let Some(hdr) =
-        sect_hdrs.iter().find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
-    {
-        parse_compact_unwind(hdr, &isecs, &subsecs, &nlists, data, &mf.name, &mut unwind);
+    /// The subsection at a section-relative relocation target, section
+    /// `sect_pos` plus `addend`, and the target's offset within it.
+    fn section_target(
+        &self,
+        sect_pos: u32,
+        addend: i64,
+        sect_isecs: &[std::ops::Range<usize>],
+    ) -> (usize, u64) {
+        let sect = &self.sect_hdrs[sect_pos as usize];
+        let addr = (sect.addr as i64 + addend) as u64;
+        let found = find_subsec(&self.isecs, &self.subsecs, addr).or_else(|| {
+            // One past the section's end (a DWARF range end): one past
+            // its last subsection.
+            if addr != sect.addr + sect.size {
+                return None;
+            }
+            let last = sect_isecs[sect_pos as usize].clone().last()?;
+            Some((last, self.isecs[last].size as u64))
+        });
+        let Some(found) = found else {
+            fatal!("{}: relocation against a discarded section", self.mf.name.display());
+        };
+        found
     }
 
-    if let Some(hdr) =
-        sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
-    {
-        parse_eh_frame::<E>(
-            hdr,
-            &isecs,
-            &subsecs,
-            &nlists,
-            data,
-            &mf.name,
-            &mut unwind,
-            &mut cies,
-            &mut fdes,
-            keep_all_fdes,
-        );
-    }
-    // A DWARF-mode record whose FDE never turned up describes nothing.
-    unwind.retain(|rec| {
-        rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
-    });
-
-    let objc_image_info = sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo").map(|s| {
-        let off = s.offset as usize + 4;
-        u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
-    });
-    let has_debug_info =
-        sect_hdrs.iter().any(|s| s.segname() == "__DWARF" && s.sectname() == "__debug_info");
-
-    let sym_hashes: Vec<u64> =
-        nlists
+    /// Records each symbol's name, and for an external symbol the hash
+    /// its name is interned by; the interning itself happens at
+    /// integration, in one batch for all objects.
+    fn read_symbol_names(&mut self, strtab: &'static [u8]) {
+        self.sym_names = self.nlists.iter().map(|nlist| symbol_name(strtab, nlist)).collect();
+        self.sym_hashes = self
+            .nlists
             .iter()
-            .zip(&sym_names)
+            .zip(&self.sym_names)
             .map(|(nlist, name)| {
                 if !nlist.is_stab() && nlist.is_extern() {
                     crate::symbol::hash_key(name)
@@ -916,31 +952,52 @@ pub fn stage_object<E: Target>(
                 }
             })
             .collect();
-
-    StagedObject {
-        mf,
-        alive,
-        hidden,
-        priority,
-        sect_hdrs,
-        linker_options,
-        platform_versions,
-        subsections_via_symbols: split_ok,
-        isecs,
-        relocs: obj_relocs,
-        subsecs,
-        nlists,
-        first_global,
-        sym_names,
-        sym_hashes,
-        unwind,
-        cies,
-        dice,
-        loh,
-        fdes,
-        objc_image_info,
-        has_debug_info,
     }
+}
+
+/// Whether a section's contents are fixed-shape records the linker
+/// coalesces by content, as ld64 does: literal pools, literal pointers,
+/// and __cfstring, whose 32-byte CFString constants x86-64 compilers
+/// emit without labels.
+fn is_literal_section(sect: &MachSection) -> bool {
+    matches!(
+        sect.section_type(),
+        S_CSTRING_LITERALS
+            | S_4BYTE_LITERALS
+            | S_8BYTE_LITERALS
+            | S_16BYTE_LITERALS
+            | S_LITERAL_POINTERS
+    ) || (sect.segname() == "__DATA" && sect.sectname() == "__cfstring")
+}
+
+/// Where the elements of a literal section start: each NUL-terminated
+/// string of a __cstring section, each fixed-size record of the others.
+fn literal_split_points(sect: &MachSection, data: &[u8], file_name: &Path) -> Vec<u64> {
+    let elem_size = match sect.section_type() {
+        S_CSTRING_LITERALS => {
+            let contents = &data[sect.offset as usize..(sect.offset as u64 + sect.size) as usize];
+            let mut points = Vec::new();
+            let mut start = 0;
+            while start < contents.len() {
+                points.push(sect.addr + start as u64);
+                let Some(len) = memchr::memchr(0, &contents[start..]) else {
+                    fatal!("{}: malformed __cstring section", file_name.display());
+                };
+                start += len + 1;
+            }
+            return points;
+        }
+        S_4BYTE_LITERALS => 4,
+        S_8BYTE_LITERALS => 8,
+        S_16BYTE_LITERALS => 16,
+        // A literal-pointer section (__objc_selrefs) is one atom per
+        // pointer, as in ld64, so references to the same selector can be
+        // coalesced across objects.
+        S_LITERAL_POINTERS => 8,
+        // __cfstring: one 32-byte constant per record.
+        _ => 32,
+    };
+    (0..sect.size).step_by(elem_size).map(|o| sect.addr + o).collect()
 }
 
 /// Appends a staged object to the global arenas, rebasing its local
