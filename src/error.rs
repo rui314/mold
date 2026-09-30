@@ -28,6 +28,7 @@ static FATAL_WARNINGS: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 static HAS_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
+static HAS_EARLY_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
 static HAS_WARNING: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
@@ -126,6 +127,15 @@ pub fn layout_error(msg: fmt::Arguments) {
     HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
 }
 
+/// Reports an error in the output's layout that ld-prime finds before
+/// it lays out __LINKEDIT, which it then leaves unsized as it prints
+/// the layout (see passes::set_osec_offsets): a segment out of order,
+/// or a thread-local section of another type.
+pub fn early_layout_error(msg: fmt::Arguments) {
+    layout_error(msg);
+    HAS_EARLY_LAYOUT_ERROR.store(true, Ordering::Relaxed);
+}
+
 /// Gives the layout errors reported so far, sorted so that they come
 /// out in the same order in every run.
 pub fn release_layout_errors() {
@@ -139,6 +149,11 @@ pub fn release_layout_errors() {
 /// Whether a layout_error has been reported.
 pub fn has_layout_error() -> bool {
     HAS_LAYOUT_ERROR.load(Ordering::Relaxed)
+}
+
+/// Whether an early_layout_error has been reported.
+pub fn has_early_layout_error() -> bool {
+    HAS_EARLY_LAYOUT_ERROR.load(Ordering::Relaxed)
 }
 
 /// Reports a warning. -w hides it, but -fatal_warnings still counts it
@@ -217,6 +232,13 @@ macro_rules! error {
 macro_rules! layout_error {
     ($($arg:tt)*) => {
         $crate::error::layout_error(format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! early_layout_error {
+    ($($arg:tt)*) => {
+        $crate::error::early_layout_error(format_args!($($arg)*))
     };
 }
 

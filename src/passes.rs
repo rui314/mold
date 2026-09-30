@@ -3966,6 +3966,20 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         crate::thunks::gather_thunk_addresses(ctx, &thunked);
     }
 
+    // An error ld-prime finds before it lays out __LINKEDIT ends the
+    // link there: it prints the layout with __LINKEDIT unsized (see
+    // unsized_linkedit_addr) - twice for a segment out of order.
+    let out_of_order = check_segments_in_order(ctx);
+    if crate::error::has_early_layout_error() {
+        ctx.segments[linkedit].cmd.vmaddr = unsized_linkedit_addr(ctx);
+        ctx.segments[linkedit].cmd.fileoff = fileoff;
+        print_final_layout(ctx);
+        if out_of_order {
+            print_final_layout(ctx);
+        }
+        crate::error::checkpoint();
+    }
+
     // The fixup builders leave a text relocation's alignment alone.
     ctx.text_reloc_ranges = text_reloc_ranges(ctx);
     build_linkedit_tables(ctx);
@@ -4108,7 +4122,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
         addr = vmaddr + segment_span(ctx, &ctx.segments[seg_idx]);
     }
     place_segments(ctx);
-    check_segment_addresses(ctx);
+    check_segment_overlaps(ctx);
     crate::error::checkpoint_in_layout();
     fileoff
 }
@@ -4400,13 +4414,10 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
 }
 
 /// ld-prime refuses segments that overlap, which takes a -segaddr (or
-/// an -image_base inside __PAGEZERO), and in an image dyld slides, a
-/// segment below the one before it - an error in the layout, which it
-/// prints (see error::layout_error). It reports the first such segment.
-/// Left out of the overlap check are empty segments and __LINKEDIT,
-/// sized last.
-fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
-    let (linkedit, segs) = ctx.segments.split_last().unwrap();
+/// an -image_base inside __PAGEZERO). It reports the first such pair.
+/// Left out are empty segments and __LINKEDIT, sized last.
+fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
+    let segs = &ctx.segments[..ctx.segments.len() - 1];
     let end = |seg: &OutputSegment| seg.cmd.vmaddr + seg.cmd.vmsize;
     for (i, a) in segs.iter().enumerate() {
         for b in &segs[i + 1..] {
@@ -4428,21 +4439,51 @@ fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
             }
         }
     }
+}
 
+/// In an image dyld slides, ld-prime refuses a segment below the one
+/// before it - an error in the layout it finds before __LINKEDIT (see
+/// error::early_layout_error). It reports the first such segment.
+/// Returns whether it found one.
+fn check_segments_in_order<E: Target>(ctx: &Context<E>) -> bool {
     if !dyld_slides(ctx) {
-        return;
+        return false;
     }
+    let (linkedit, segs) = ctx.segments.split_last().unwrap();
     for pair in segs.windows(2) {
         if pair[1].cmd.vmaddr < pair[0].cmd.vmaddr {
-            crate::layout_error!("segment {} address is out of order", pair[1].name);
-            return;
+            crate::early_layout_error!("segment {} address is out of order", pair[1].name);
+            return true;
         }
     }
     if let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
         && addr < last.cmd.vmaddr
     {
-        crate::layout_error!("segment {} address is out of order", linkedit.name);
+        crate::early_layout_error!("segment {} address is out of order", linkedit.name);
+        return true;
     }
+    false
+}
+
+/// Where ld-prime has __LINKEDIT when an error in the layout stops it
+/// before sizing it: where -segaddr pins it, or else after the last
+/// segment as it places them first - each one neither in place nor
+/// pinned above all the ones before it, before place_segments moves it.
+fn unsized_linkedit_addr<E: Target>(ctx: &Context<E>) -> u64 {
+    let (linkedit, segs) = ctx.segments.split_last().unwrap();
+    if let Some(addr) = ctx.args.segaddr(linkedit.name) {
+        return addr;
+    }
+    let header_seg = in_place_segment(ctx);
+    let (mut top, mut end) = (0, 0);
+    for seg in segs {
+        let in_place = seg.name == "__PAGEZERO" || Some(seg.name) == header_seg;
+        let pinned = ctx.args.segaddr(seg.name).is_some();
+        let start = if in_place || pinned { seg.cmd.vmaddr } else { top };
+        end = start + segment_span(ctx, seg);
+        top = top.max(end);
+    }
+    end
 }
 
 /// __LINKEDIT goes where -segaddr pins it. Otherwise, in an image dyld

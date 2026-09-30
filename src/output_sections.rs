@@ -1893,7 +1893,8 @@ fn resolve_zerofill_conflict<E: Target>(
 /// template, whose offset wraps past 4GB; mold also data after it, of
 /// which ld-prime writes an image dyld refuses, and data with no
 /// template left, on which ld-prime crashes. Both are errors in the
-/// layout (see error::layout_error).
+/// layout, the first found before __LINKEDIT (see
+/// error::early_layout_error).
 fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId]) {
     let is_tlv = |hdr: &crate::chunks::ChunkHeader| {
         matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
@@ -1902,7 +1903,11 @@ fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId])
     for osec in &ctx.output_sections {
         let hdr = &osec.hdr;
         if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss") && !is_tlv(hdr) {
-            crate::layout_error!("Missing TLV section flags in {},{}", hdr.segname, hdr.sectname);
+            crate::early_layout_error!(
+                "Missing TLV section flags in {},{}",
+                hdr.segname,
+                hdr.sectname
+            );
             missing = true;
         }
     }

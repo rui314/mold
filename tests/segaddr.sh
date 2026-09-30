@@ -94,6 +94,12 @@ $CC --ld-path=$mold -o $t/exe9 $t/a.o -Wl,-segaddr,__CCC,0x200000000
 not $CC --ld-path=$mold -o $t/exe10 $t/a.o -Wl,-segaddr,__AAA,0x200000000 2> $t/log10
 grep -q 'segment __BBB address is out of order' $t/log10
 grep -q '^    __BBB  *addr=0x10000[0-9a-f]\{4\}, ' $t/log10
+# ld-prime finds it before it lays out __LINKEDIT, which the layout it
+# prints - twice - has unsized, after the last segment as it placed
+# them first: each one not pinned above all those before it.
+[ $(grep -c '^final section layout:$' $t/log10) = 2 ]
+linkedit=$(printf '0x%09x' $((0x200008000 + 2 * page)))
+grep -q "^    __LINKEDIT  *addr=$linkedit, size=0x000000000, .*, fileSize=0x00000000$" $t/log10
 
 # A PIE ignores -segaddr __TEXT as its image base: the other segments go
 # where they would have, below __TEXT.

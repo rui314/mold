@@ -44,6 +44,10 @@ sed -n '/^final section layout:$/,$p' $t/log > $t/layout
 grep -Eq '^    __TEXT +addr=0x[0-9a-f]{9}, size=0x[0-9a-f]{9}, fileOffset=0x0{8}, fileSize=0x[0-9a-f]{8}$' $t/layout
 grep -Eq '^        __init_offsets +addr=0x[0-9a-f]{9}, size=0x00000000c, fileOffset=0x[0-9a-f]{8} \(zerofill=0\)$' $t/layout
 grep -q '^    __LINKEDIT ' $t/layout
+# The symbol table lists the initializers' imports all the same, as the
+# size of __LINKEDIT shows.
+if [ $ARCH = arm64 ]; then size=0x00000210; else size=0x000000f8; fi
+grep -q "^    __LINKEDIT .*, fileSize=$size$" $t/layout
 
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-U,_undef 2> $t/log
 grep -q "at 'anon-5' from inits-file, target '_undef' does not have address" $t/log

@@ -977,6 +977,13 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
             }
         }
     }
+    // So does __init_offsets to an initializer dyld binds, which it
+    // can't hold: the link fails, printing the layout.
+    for &func in &ctx.init_offsets.init_funcs {
+        if let crate::chunks::init_offsets::InitFunc::Imported(id) = func {
+            live_ref[id as usize].store(true, Ordering::Relaxed);
+        }
+    }
     // -u names an import the program must keep whether or not
     // anything refers to it, and an -alias of an import re-exports
     // it by name (the N_INDR entry points at the import's).

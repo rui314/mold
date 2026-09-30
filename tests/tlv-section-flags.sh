@@ -57,6 +57,9 @@ $t/exe | grep -q '^5 0$'
 not $CC --ld-path=$mold -o $t/exe2 $t/data.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __DATA,__thread_data' $t/log
 grep -q '^final section layout:$' $t/log
+# ld-prime finds it before it lays out __LINKEDIT, which it prints
+# unsized.
+grep -q '^    __LINKEDIT .* size=0x000000000, .*, fileSize=0x00000000$' $t/log
 
 not $CC --ld-path=$mold -o $t/exe2 $t/bss.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __DATA,__thread_bss' $t/log
@@ -84,6 +87,7 @@ not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
 grep -q 'thread-locals too large.  Max 4GB for 64-bit architectures$' $t/log
 grep -q '^final section layout:$' $t/log
 grep -q '^        __bar ' $t/log
+not grep -q '^    __LINKEDIT .*fileSize=0x00000000$' $t/log
 
 not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
   -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log
