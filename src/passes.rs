@@ -5824,15 +5824,15 @@ pub fn copy_chunks<E: Target>(
     // The code signature is SHA256 hashes of every 4KiB page before it,
     // and the UUID that identifies this build is derived from that same
     // hash array rather than from a second pass over the contents: the
-    // pages are hashed while the LC_UUID field is still zero, the array
-    // is hashed once more and stamped as a version-4 UUID, the header
-    // is rewritten with it, and only the pages the header spans are
+    // pages are hashed while the LC_UUID field is still zero, the array is
+    // hashed once more and stamped as a version-4 UUID, which is written
+    // into the header's LC_UUID, and only the pages the header spans are
     // hashed again for the signature. The circularity - the signature
     // covers the header, the header holds the UUID - is broken by the
-    // zeroed field, the way ld64 hashes with the UUID zeroed. Like
-    // ld64's, the UUID depends on the contents before the signature
-    // only, not on the signature blob (whose identifier is the output's
-    // basename); unsigned output hashes its pages the same way.
+    // zeroed field, the way ld64 hashes with the UUID zeroed. Like ld64's,
+    // the UUID depends on the contents before the signature only, not on
+    // the signature blob (whose identifier is the output's basename);
+    // unsigned output hashes its pages the same way.
     let mut hashes: Vec<[u8; 32]> = Vec::new();
     if ctx.args.uuid || ctx.adhoc_codesign() {
         let _t = ctx.timer("page_hashes");
@@ -5848,7 +5848,7 @@ pub fn copy_chunks<E: Target>(
             uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
             uuid[8] = (uuid[8] & 0x3f) | 0x80; // RFC 4122 variant
             *ctx.uuid.lock().unwrap() = uuid;
-            chunks::copy_mach_header(ctx, buf);
+            chunks::write_uuid(ctx, buf);
             chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
         }
     }
