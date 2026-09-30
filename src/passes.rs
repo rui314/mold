@@ -695,6 +695,18 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option
                 // file found.
                 let key = (framework, if framework { name } else { path.as_os_str() });
                 let all = merged.entry(key).or_default();
+                // An archive has no imports to make weak; ld-prime warns
+                // of a -weak-l that finds one, once for the library.
+                if let InputArg::Lib(_, true) = arg
+                    && !all.weak
+                    && path.extension() == Some(OsStr::new("a"))
+                {
+                    crate::warn!(
+                        "-weak-l{0} resolved to a static library '{1}', but only dynamic libraries can be weak linked. Use -l{0} when linking static libraries, or make sure .dylib/.tbd library is located in -L search paths.",
+                        name.display(),
+                        path.display()
+                    );
+                }
                 *all = all.union(rc);
                 if all_found {
                     check_naming(*all, framework, name);
