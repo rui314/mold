@@ -1362,9 +1362,9 @@ impl StagedObject {
 /// Whether a section's contents are fixed-shape records the linker
 /// coalesces by content, as ld64 does: literal pools, literal pointers,
 /// __cfstring, whose 32-byte CFString constants x86-64 compilers emit
-/// without labels, and __objc_classrefs and __got, whose pointers ld64
-/// takes one by one whatever the labels (an x86-64 -r output has
-/// none).
+/// without labels, and __objc_classrefs, __objc_superrefs,
+/// __objc_protorefs and __got, whose pointers ld64 takes one by one
+/// whatever the labels (an x86-64 -r output has none).
 pub fn is_literal_section(sect: &MachSection) -> bool {
     matches!(
         sect.section_type(),
@@ -1373,8 +1373,16 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
             | S_8BYTE_LITERALS
             | S_16BYTE_LITERALS
             | S_LITERAL_POINTERS
-    ) || (sect.segname() == "__DATA"
-        && matches!(sect.sectname(), "__cfstring" | "__objc_classrefs" | "__got"))
+    ) || (sect.segname() == "__DATA" && (sect.sectname() == "__cfstring" || is_pointer_list(sect)))
+}
+
+/// Whether a __DATA section is one of pointers the linker takes one by
+/// one: class, superclass and protocol references, or GOT slots.
+fn is_pointer_list(sect: &MachSection) -> bool {
+    matches!(
+        sect.sectname(),
+        "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" | "__got"
+    )
 }
 
 /// Where the elements of a literal section start: each NUL-terminated
@@ -1400,9 +1408,9 @@ fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
         S_16BYTE_LITERALS => 16,
         // A literal-pointer section (__objc_selrefs) is one atom per
         // pointer, as in ld64, so references to the same selector can be
-        // coalesced across objects; so are __objc_classrefs and __got.
+        // coalesced across objects; so are the other pointer lists.
         S_LITERAL_POINTERS => 8,
-        _ if matches!(sect.sectname(), "__objc_classrefs" | "__got") => 8,
+        _ if is_pointer_list(sect) => 8,
         // __cfstring: one 32-byte constant per record.
         _ => 32,
     };

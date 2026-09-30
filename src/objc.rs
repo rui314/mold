@@ -304,7 +304,10 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 /// too many); the first copy wins and the rest redirect to it, like
 /// merged literals. A final link from macOS 15 on leaves class
 /// references to fold_objc_classrefs, which turns them into GOT slots
-/// (and coalesces those nothing refers to).
+/// (and coalesces those nothing refers to). __objc_superrefs and
+/// __objc_protorefs entries of one class or protocol coalesce too, but
+/// for those a symbol names (see mark_labeled_literals): the compiler
+/// labels each, but an x86-64 -r output drops the labels.
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
     // What a pointer relocation refers to: a place in a subsection
     // (where identical content has already been merged), or a symbol
@@ -318,6 +321,8 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
     enum Key {
         Sel(Target),
         Class(crate::symbol::SymbolId),
+        Super(Target),
+        Proto(Target),
         CfString(Vec<u8>, Vec<(u32, Target)>),
     }
     let place = |ctx: &Context<E>, obj: usize, rel: &crate::input_sections::Reloc| -> Target {
@@ -371,6 +376,17 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
                     Key::Class(ctx.objs[obj].symbols[idx as usize])
                 } else {
                     Key::Sel(place(ctx, obj, &rels[0]))
+                }
+            }
+            "__objc_superrefs" | "__objc_protorefs" => {
+                if isec.is_labeled() || isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
+                    continue;
+                }
+                let target = place(ctx, obj, &rels[0]);
+                if h.sectname() == "__objc_superrefs" {
+                    Key::Super(target)
+                } else {
+                    Key::Proto(target)
                 }
             }
             "__cfstring" => {

@@ -1855,18 +1855,27 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
 /// name) or linker-private (l-prefixed, the assembler's ltmpN labels
 /// included) one: ld-prime keeps each such record an atom of its own,
 /// merged with no identical copy, and a -r output keeps its label
-/// rather than naming it LC<n>/l<nnn>.
+/// rather than naming it LC<n>/l<nnn>. So it keeps an __objc_superrefs
+/// or __objc_protorefs entry any symbol names, even the ltmpN label of
+/// its section's start (see coalesce_objc_refs).
 fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| {
         if let Some(i) = sym.input_section()
             && !sym.name().is_empty()
-            && !sym.name().starts_with(['l', 'L'])
         {
             let isec = &ctx.isecs[i as usize];
-            if matches!(
-                ctx.hdr_of(isec).section_type(),
-                S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-            ) {
+            let hdr = ctx.hdr_of(isec);
+            let labeled = match hdr.section_type() {
+                S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
+                    !sym.name().starts_with(['l', 'L'])
+                }
+                _ => {
+                    hdr.segname_is("__DATA")
+                        && (hdr.sectname_is("__objc_superrefs")
+                            || hdr.sectname_is("__objc_protorefs"))
+                }
+            };
+            if labeled {
                 isec.mark_labeled();
             }
         }
