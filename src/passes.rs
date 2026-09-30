@@ -1339,13 +1339,12 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
         let size = sym.value;
         // An alignment the object gave (.comm's third operand) is kept;
         // without one, ld64 aligns the symbol to its size rounded up to
-        // a power of two, capped at the page on arm64 (a 100000-byte
-        // array lands 16KB-aligned) and at 16 bytes on x86-64.
+        // a power of two, at most 2^15 (a 100000-byte array asks for
+        // 32KB, which the page then caps with a warning).
         let p2align = if sym.common_p2align != 0 || size == 0 {
             sym.common_p2align
         } else {
-            let cap = if E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 { 14 } else { 4 };
-            (size.next_power_of_two().trailing_zeros() as u8).min(cap)
+            (size.next_power_of_two().trailing_zeros() as u8).min(15)
         };
 
         let (file, shndx) = ctx.add_synthetic_section(MachSection {
