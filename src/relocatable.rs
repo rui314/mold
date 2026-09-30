@@ -1378,30 +1378,61 @@ struct RSymtab {
     entsize_of: HashMap<OutputSectionId, u64>,
 }
 
+/// A local symbol of a -r output.
+struct Local {
+    name: String,
+    n_type: u8,
+    n_desc: u16,
+    n_sect: u8,
+    addr: u64,
+    rename: Rename,
+    /// The input symbols it stands for: a label's own, or the labels of
+    /// a literal atom ld64 names itself (none, often).
+    syms: Vec<crate::symbol::SymbolId>,
+    /// The object, the section there and the address, which order the
+    /// locals.
+    at: (u32, u8, u64),
+    rank: Rank,
+}
+
+/// The name a local takes: its own, or one ld64 makes for a literal
+/// atom.
+#[derive(Clone, Copy, PartialEq)]
+enum Rename {
+    None,
+    Cstring,
+    Anon,
+}
+
+/// How a local ranks among the names of a place: ld-prime orders them
+/// a private external, a local, a weak definition, an ltmpN label, each
+/// rank by descending name.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Rank {
+    PrivateExtern,
+    Local,
+    Weak,
+    Ltmp,
+}
+
+/// A symbol's address in the -r output.
+fn sym_addr<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> u64 {
+    let sym = &ctx.symbols[id];
+    match sym.input_section() {
+        Some(isec) => {
+            let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
+            ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64 + sym.value
+        }
+        None => sym.value,
+    }
+}
+
 /// Builds a -r output's symbol table as ld-prime lays it out: each
 /// object's local symbols in the order of its sections and of their
 /// addresses in each (a zerofill section comes by ordinal), then
 /// the stabs, opened by an N_SO of their own, then the defined
-/// externals and the undefined symbols, each by name. Names at one
-/// address go by rank - a private external, a local, a weak definition,
-/// an ltmpN label - each rank by descending name.
+/// externals and the undefined symbols, each by name.
 fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId]) -> RSymtab {
-    const PEXT: u8 = 0;
-    const LOCAL: u8 = 1;
-    const WEAK: u8 = 2;
-    const LTMP: u8 = 3;
-    let sym_addr = |ctx: &Context<E>, id: crate::symbol::SymbolId| -> u64 {
-        let sym = &ctx.symbols[id];
-        match sym.input_section() {
-            Some(isec) => {
-                let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-                ctx.chunk_header(isec.output_section().unwrap()).addr
-                    + isec.offset as u64
-                    + sym.value
-            }
-            None => sym.value,
-        }
-    };
     let mut index_of_sym: HashMap<crate::symbol::SymbolId, u32> = HashMap::new();
     let mut ents: Vec<(NList, Option<crate::symbol::SymbolId>)> = Vec::new();
     let mut names: Vec<&[u8]> = Vec::new();
@@ -1430,25 +1461,6 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     // only where no other symbol names the place, or where a relocation
     // refers to it. Private externals are demoted to non-external
     // symbols that keep N_PEXT (below).
-    #[derive(Clone, Copy, PartialEq)]
-    enum Rename {
-        None,
-        Cstring,
-        Anon,
-    }
-    struct Local {
-        name: String,
-        n_type: u8,
-        n_desc: u16,
-        n_sect: u8,
-        addr: u64,
-        rename: Rename,
-        syms: Vec<crate::symbol::SymbolId>,
-        /// The object, the section there and the address, which order
-        /// the locals.
-        at: (u32, u8, u64),
-        rank: u8,
-    }
     let mut locals: Vec<Local> = Vec::new();
 
     // The sections of literals: the record size; 0 for one record per
@@ -1529,7 +1541,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                     },
                     syms: Vec::new(),
                     at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
-                    rank: LOCAL,
+                    rank: Rank::Local,
                 });
             }
         }
@@ -1621,7 +1633,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 rename: Rename::None,
                 syms: vec![sym_id],
                 at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
-                rank: if sym.name().starts_with("ltmp") { LTMP } else { LOCAL },
+                rank: if sym.name().starts_with("ltmp") { Rank::Ltmp } else { Rank::Local },
             });
         }
     }
@@ -1664,7 +1676,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                     rename: Rename::None,
                     syms: vec![sym_id],
                     at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
-                    rank: if sym.is_weak_def() { WEAK } else { PEXT },
+                    rank: if sym.is_weak_def() { Rank::Weak } else { Rank::PrivateExtern },
                 });
             }
         }
