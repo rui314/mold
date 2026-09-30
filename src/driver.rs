@@ -105,9 +105,9 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
     drop(t);
-    passes::check_duplicate_symbols(&ctx);
-    crate::error::checkpoint();
     if ctx.args.relocatable {
+        passes::check_duplicate_symbols(&ctx);
+        crate::error::checkpoint();
         passes::hide_all_exports(&mut ctx);
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
@@ -162,6 +162,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         drop(t);
     }
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
+    crate::error::checkpoint();
+    passes::check_duplicate_symbols(&ctx);
     crate::error::checkpoint();
     if ctx.args.deduplicate {
         crate::icf::icf_sections(&mut ctx);

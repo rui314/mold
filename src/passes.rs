@@ -2410,7 +2410,9 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
 /// other live object that lost to it is an error (a weak or common one
 /// yields quietly). Reported after resolution settles, sorted by name,
 /// so the messages are deterministic: mold's
-/// check_duplicate_symbols.
+/// check_duplicate_symbols. As in ld-prime, a final link reports them
+/// only if no symbol is undefined, and only of the symbols -dead_strip
+/// leaves live.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
     let mut duplicates: Vec<(crate::symbol::SymbolId, usize)> = ctx
         .objs
@@ -2427,8 +2429,14 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
                 {
                     return None;
                 }
-                match ctx.symbols[sym_id].file() {
-                    Some(FileId::Obj(owner)) if owner as usize != obj_idx => {
+                let sym = &ctx.symbols[sym_id];
+                match sym.file() {
+                    Some(FileId::Obj(owner))
+                        if owner as usize != obj_idx
+                            && sym
+                                .input_section()
+                                .is_none_or(|i| ctx.isecs[i as usize].is_alive()) =>
+                    {
                         Some((sym_id, obj_idx))
                     }
                     _ => None,
