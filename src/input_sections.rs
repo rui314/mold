@@ -1053,7 +1053,14 @@ fn find_comdat_owner<E: Target>(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     None,
+    /// The code is not position-independent.
     Error,
+    /// The value is relative to a position-independent output, but the
+    /// symbol has a fixed address.
+    AbsError,
+    /// The value is relative to the output, but the symbol may be resolved
+    /// outside of it at runtime.
+    PreemptError,
     Canonical,
     Plt,
 }
@@ -1067,18 +1074,44 @@ fn do_action<E: Target>(
 ) {
     match action {
         Action::None => {}
-        Action::Error => error!(
-            "{}: {} relocation at offset 0x{:x} against symbol `{}' can not be used; recompile with -fPIC",
-            isec.display(&ctx.objs[isec.file.index()]),
-            rel.type_name::<E>(),
-            rel.r_offset(),
-            sym
-        ),
+        Action::Error | Action::AbsError | Action::PreemptError => {
+            report_error(ctx, action, isec, sym, rel)
+        }
         Action::Canonical => sym.add_flags(NEEDS_CANONICAL),
         Action::Plt => {
             // Create a PLT entry
             sym.add_flags(NEEDS_PLT)
         }
+    }
+}
+
+#[cold]
+fn report_error<E: Target>(
+    ctx: &Context<E>,
+    action: Action,
+    isec: &InputSection<E>,
+    sym: &Symbol,
+    rel: &ElfRel<E>,
+) {
+    let isec = isec.display(&ctx.objs[isec.file.index()]);
+    let ty = rel.type_name::<E>();
+    let offset = rel.r_offset();
+
+    if action == Action::AbsError {
+        let kind = if sym.is_undef() { "undefined" } else { "absolute" };
+        error!(
+            "{isec}: {ty} relocation at offset 0x{offset:x} against {kind} symbol `{sym}' can not be used when making a position-independent output"
+        );
+    } else if action == Action::PreemptError && sym.is_exported() {
+        // An exported symbol is defined in the shared object being created,
+        // but another definition may take precedence over it at runtime.
+        error!(
+            "{isec}: {ty} relocation at offset 0x{offset:x} against preemptible symbol `{sym}' can not be used; recompile with -fPIC, or make the symbol non-preemptible with -fvisibility=hidden or -Bsymbolic"
+        );
+    } else {
+        error!(
+            "{isec}: {ty} relocation at offset 0x{offset:x} against symbol `{sym}' can not be used; recompile with -fPIC"
+        );
     }
 }
 
@@ -1123,9 +1156,9 @@ pub fn scan_pcrel<E: Target>(
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
         // Absolute  Local  Imported data  Imported code
-        [Error, None, Error, Plt],           // Shared object
-        [Error, None, Canonical, Canonical], // Position-independent exec
-        [None, None, Canonical, Canonical],  // Position-dependent exec
+        [AbsError, None, PreemptError, Plt],    // Shared object
+        [AbsError, None, Canonical, Canonical], // Position-independent exec
+        [None, None, Canonical, Canonical],     // Position-dependent exec
     ];
     do_action(ctx, TABLE[output_type(ctx)][sym_type(sym)], isec, sym, rel);
 }
