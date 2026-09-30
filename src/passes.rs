@@ -2861,70 +2861,93 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
         && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
 }
 
-/// The output section an input section lands in, or None for one a
-/// final link consumes or drops. Like ld64: __StaticInit joins
-/// __text; the fixed-size literal pools (__literal4/8/16), already
-/// merged per element, join __TEXT,__const; the __LLVM segment
-/// (bitcode, __swift_modhash, __cmdline, __asm) is never copied into
-/// an image; __objc_clsrolist is a compiler-to-linker list of the
-/// class_ro_t records of generic Swift classes (nothing references
-/// it and ld-prime emits no such section); and the __DATA sections
-/// that need no writes after fixups move to __DATA_CONST, and in the
-/// shared region, where dyld fixes them up for good, the selector
-/// references and the Objective-C runtime's class data too; with
-/// -text_exec (an arm64 kext), __text moves to __TEXT_EXEC. A -r output
-/// keeps every input section as it came.
+/// An output section's name: (segment, section).
+type SectionName = (&'static str, &'static str);
+
+/// The output section an input section lands in, and the name its
+/// flags follow; None for one the link consumes or drops. `args`
+/// gives -rename_section and -rename_segment.
+///
+/// The __LLVM segment (bitcode, __swift_modhash, __cmdline, __asm) is
+/// copied into no output, and __objc_clsrolist, a compiler-to-linker
+/// list of the class_ro_t records of generic Swift classes (nothing
+/// references it), into no image. ld-prime names the rest in three
+/// steps. Its own moves come first (see SectionMap::builtin_name), so
+/// -rename_section matches __DATA_CONST,__const, not __DATA,__const;
+/// then -rename_section and -rename_segment rename that name; and a
+/// section still in __TEXT then merges as in ld64 - __StaticInit into
+/// __text, the fixed-size literal pools (__literal4/8/16, already
+/// merged per element) into __const - under that section's renamed
+/// name. The flags follow the name before the renames: a renamed
+/// __objc_classlist is still a list the runtime scans, a renamed
+/// __literal8 still a literal pool. A -r output keeps every section
+/// as it came, but for the renames.
 fn output_section_for(
+    args: &crate::cmdline::Args,
     map: SectionMap,
     segname: &str,
     sectname: &str,
-) -> Option<(&'static str, &'static str)> {
-    let SectionMap {
-        relocatable,
-        data_const,
-        objc_const_refs,
-        shared_region,
-        relative_methods,
-        text_exec,
-    } = map;
-    let intern_seg = |seg: &str| -> &'static str {
-        match seg {
-            "__TEXT" => "__TEXT",
-            "__DATA_CONST" => "__DATA_CONST",
-            "__DATA" => "__DATA",
-            other => String::leak(other.to_string()),
-        }
-    };
-    // The __LLVM segment (bitcode, Swift's module hash) is dropped from
-    // every output, -r included.
+) -> Option<(SectionName, SectionName)> {
     if segname == "__LLVM" {
         return None;
     }
-    if relocatable {
-        return Some((intern_seg(segname), String::leak(sectname.to_string())));
+    let name = (static_name(segname), static_name(sectname));
+    if map.relocatable {
+        return Some((renamed(args, name), name));
     }
-    match (segname, sectname) {
-        ("__DATA", "__objc_clsrolist") => None,
-        ("__TEXT", "__text" | "__StaticInit") if text_exec => Some(("__TEXT_EXEC", "__text")),
+    if name == ("__DATA", "__objc_clsrolist") {
+        return None;
+    }
+    let name = map.builtin_name(name);
+    let out = renamed(args, name);
+    Some(match merged_name(out) {
+        Some(merged) => (renamed(args, merged), merged),
+        None => (out, name),
+    })
+}
+
+/// The section a final link merges a __TEXT section into, like ld64:
+/// __StaticInit joins __text, and the literal pools join __const.
+fn merged_name(name: SectionName) -> Option<SectionName> {
+    match name {
         ("__TEXT", "__StaticInit") => Some(("__TEXT", "__text")),
         ("__TEXT", "__literal4" | "__literal8" | "__literal16") => Some(("__TEXT", "__const")),
-        ("__DATA", sect) if data_const && DATA_CONST_SECTIONS.contains(&sect) => {
-            Some(("__DATA_CONST", String::leak(sect.to_string())))
-        }
-        ("__DATA", sect @ ("__objc_protorefs" | "__objc_superrefs"))
-            if data_const && objc_const_refs =>
-        {
-            Some(("__DATA_CONST", String::leak(sect.to_string())))
-        }
-        ("__DATA", "__objc_selrefs") if data_const && shared_region => {
-            Some(("__DATA_CONST", "__objc_selrefs"))
-        }
-        // Unless it holds absolute method lists, which the runtime
-        // sorts in place.
-        ("__DATA", "__objc_const") if data_const && shared_region && relative_methods => {
-            Some(("__DATA_CONST", "__objc_const"))
-        }
-        _ => Some((intern_seg(segname), String::leak(sectname.to_string()))),
+        _ => None,
+    }
+}
+
+/// Applies -rename_section and then -rename_segment to a section's
+/// name, as ld-prime does: the first -rename_section naming the
+/// section renames it, and the first -rename_segment naming the
+/// resulting segment then moves it - after a -rename_section too, so
+/// a section renamed into a renamed segment moves on. Neither applies
+/// twice: -rename_section chains A to B and B to C take A to B.
+fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
+    let (seg, sect) = name;
+    let (seg, sect) = match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
+        Some((_, _, s, t)) => (static_name(s), static_name(t)),
+        None => name,
+    };
+    (renamed_segment(args, seg), sect)
+}
+
+/// The segment -rename_segment moves a segment's sections to.
+fn renamed_segment(args: &crate::cmdline::Args, seg: &'static str) -> &'static str {
+    match args.rename_segments.iter().find(|(old, _)| old == seg) {
+        Some((_, new)) => static_name(new),
+        None => seg,
+    }
+}
+
+/// A section or segment name that lives as long as the output's
+/// headers: the usual segment names are literals, and the rest are
+/// leaked (the callers name each distinct section once).
+fn static_name(name: &str) -> &'static str {
+    match name {
+        "__TEXT" => "__TEXT",
+        "__DATA_CONST" => "__DATA_CONST",
+        "__DATA" => "__DATA",
+        _ => String::leak(name.to_string()),
     }
 }
 
@@ -2940,6 +2963,37 @@ struct SectionMap {
 }
 
 impl SectionMap {
+    /// The name ld-prime gives an input section of a final image
+    /// before -rename_section and -rename_segment: with -text_exec (an
+    /// arm64 kext) __text and __StaticInit move to __TEXT_EXEC,__text,
+    /// and data that needs no writes after fixups to __DATA_CONST.
+    fn builtin_name(self, name: SectionName) -> SectionName {
+        match name {
+            ("__TEXT", "__text" | "__StaticInit") if self.text_exec => ("__TEXT_EXEC", "__text"),
+            _ => self.const_name(name),
+        }
+    }
+
+    /// A __DATA section's name in a final image when it needs no
+    /// writes after dyld's fixups: the same section in __DATA_CONST,
+    /// unless -no_data_const - in the shared region, where dyld fixes
+    /// them up for good, the selector references and the Objective-C
+    /// runtime's class data too. ld-prime treats this move as a
+    /// renaming, which boundary symbols follow as well (unlike
+    /// -text_exec's: section$start$__TEXT$__text stays in __TEXT).
+    fn const_name(self, name: SectionName) -> SectionName {
+        let (seg, sect) = name;
+        let is_const = match sect {
+            "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
+            "__objc_selrefs" => self.shared_region,
+            // Unless it holds absolute method lists, which the runtime
+            // sorts in place.
+            "__objc_const" => self.shared_region && self.relative_methods,
+            _ => DATA_CONST_SECTIONS.contains(&sect),
+        };
+        if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
+    }
+
     fn new<E: Target>(ctx: &Context<E>) -> Self {
         Self {
             relocatable: ctx.args.relocatable,
@@ -3011,32 +3065,6 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     ty | attrs
 }
 
-/// Applies ld64's -rename_section and -rename_segment to an input
-/// section. An exact -rename_section match names the output section
-/// outright (it wins over the built-in mapping, as in ld64); otherwise
-/// the built-in mapping decides and -rename_segment then renames the
-/// resulting segment. Neither applies to a -r output.
-fn renamed_output_section(
-    args: &crate::cmdline::Args,
-    relocatable: bool,
-    segname: &str,
-    sectname: &str,
-    builtin: impl FnOnce() -> Option<(&'static str, &'static str)>,
-) -> Option<(&'static str, &'static str)> {
-    if !relocatable
-        && let Some((_, _, seg, sect)) =
-            args.rename_sections.iter().find(|(seg, sect, _, _)| seg == segname && sect == sectname)
-    {
-        return Some((String::leak(seg.clone()), String::leak(sect.clone())));
-    }
-    let (seg, sect) = builtin()?;
-    if !relocatable && let Some((_, new)) = args.rename_segments.iter().find(|(old, _)| old == seg)
-    {
-        return Some((String::leak(new.clone()), sect));
-    }
-    Some((seg, sect))
-}
-
 /// Whether an input subsection is an __objc_methname string that the
 /// selector name synthesized for an objc_msgSend$ stub absorbs. ld-prime
 /// keeps the synthesized string of the two, so such an input string
@@ -3105,10 +3133,9 @@ fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
     // sits after the members the next, lower anchor is searched among.
     for (replaced, blob) in anchors.into_iter().rev() {
         let hdr = ctx.hdr_of(&ctx.isecs[replaced as usize]);
-        let out = renamed_output_section(&ctx.args, false, hdr.segname(), hdr.sectname(), || {
-            output_section_for(SectionMap::final_link(ctx), hdr.segname(), hdr.sectname())
-        });
-        let Some(pos) = out.and_then(|(seg, sect)| {
+        let map = SectionMap::final_link(ctx);
+        let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname());
+        let Some(pos) = out.and_then(|((seg, sect), _)| {
             ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
         }) else {
             continue;
@@ -3134,8 +3161,10 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     sects.sort();
     sects.dedup();
     for sect in sects {
-        let (seg, out) = output_section_for(SectionMap::final_link(ctx), "__DATA", sect).unwrap();
-        let flags = output_section_flags(seg, out, 0, false);
+        let map = SectionMap::final_link(ctx);
+        let ((seg, out), (flags_seg, flags_sect)) =
+            output_section_for(&ctx.args, map, "__DATA", sect).unwrap();
+        let flags = output_section_flags(flags_seg, flags_sect, 0, false);
         let mut size = 0u64;
         let mut offs = Vec::new();
         for b in ctx.data_blobs.iter().filter(|b| b.sect == sect && unplaced(ctx, b)) {
@@ -3163,7 +3192,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
     let map = SectionMap::new(ctx);
-    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16]), Option<OutputSectionId>> =
+    // Each input section name's output section, with the name its
+    // flags follow.
+    type Place = (OutputSectionId, SectionName);
+    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16]), Option<Place>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
@@ -3177,7 +3209,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // first subsection of each section; on a debug link this turns
     // millions of hash lookups into a handful of thousands.
     let mut last_hdr: *const crate::macho::MachSection = std::ptr::null();
-    let mut last_osec: Option<OutputSectionId> = None;
+    let mut last_osec: Option<Place> = None;
     // A -r output section's flags come from its first non-empty input
     // section (ld-prime skips empty ones); whether that one was seen.
     let mut flags_from_data: Vec<bool> = Vec::new();
@@ -3200,24 +3232,19 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             let id = match by_name.get(&key) {
                 Some(&id) => id,
                 None => {
-                    let id = renamed_output_section(
-                        &ctx.args,
-                        relocatable,
-                        hdr.segname(),
-                        hdr.sectname(),
-                        || output_section_for(map, hdr.segname(), hdr.sectname()),
-                    )
-                    .map(|out| match by_out.get(&out) {
-                        Some(&id) => id,
+                    let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname());
+                    let id = out.map(|(out, flags_name)| match by_out.get(&out) {
+                        Some(&id) => (id, flags_name),
                         None => {
                             let mut osec = OutputSection::new(out.0, out.1);
+                            let (seg, sect) = flags_name;
                             osec.hdr.flags =
-                                output_section_flags(out.0, out.1, hdr.flags, relocatable);
+                                output_section_flags(seg, sect, hdr.flags, relocatable);
                             let id = OutputSectionId::new(ctx.output_sections.len() as u32);
                             ctx.output_sections.push(osec);
                             ctx.chunks.push(ChunkId::Output(id));
                             by_out.insert(out, id);
-                            id
+                            (id, flags_name)
                         }
                     });
                     by_name.insert(key, id);
@@ -3228,7 +3255,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             last_osec = id;
             id
         };
-        let Some(osec_id) = osec_id else {
+        let Some((osec_id, (flags_seg, flags_sect))) = osec_id else {
             // Consumed by the link: no output section.
             ctx.isecs[i].set_alive(false);
             continue;
@@ -3246,16 +3273,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         // does.
         if !relocatable {
             osec.hdr.flags |=
-                output_section_flags(osec.hdr.segname, &osec.hdr.sectname, hdr.flags, false)
-                    & !SECTION_TYPE;
+                output_section_flags(flags_seg, flags_sect, hdr.flags, false) & !SECTION_TYPE;
         } else if hdr.size != 0 {
             let idx = osec_id.index();
             if flags_from_data.len() <= idx {
                 flags_from_data.resize(idx + 1, false);
             }
             if !flags_from_data[idx] {
-                osec.hdr.flags =
-                    output_section_flags(osec.hdr.segname, &osec.hdr.sectname, hdr.flags, true);
+                osec.hdr.flags = output_section_flags(flags_seg, flags_sect, hdr.flags, true);
                 flags_from_data[idx] = true;
             }
         }
@@ -3464,11 +3489,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         let methname_size = ctx.objc_stubs.methname_data.len() as u64;
         let selrefs_size =
             (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
+        let map = SectionMap::final_link(ctx);
         if methname_size > 0 {
+            let ((seg, sect), _) =
+                output_section_for(&ctx.args, map, "__TEXT", "__objc_methname").unwrap();
             let id = tail_section(
                 ctx,
-                "__TEXT",
-                "__objc_methname",
+                seg,
+                sect,
                 S_CSTRING_LITERALS,
                 0,
                 Tail::ObjcMethname,
@@ -3477,13 +3505,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             ctx.objc_stubs.methname = Some(id);
         }
         if selrefs_size > 0 {
-            let map = SectionMap::final_link(ctx);
-            let seg = output_section_for(map, "__DATA", "__objc_selrefs").unwrap().0;
+            let ((seg, sect), (flags_seg, flags_sect)) =
+                output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs").unwrap();
             let id = tail_section(
                 ctx,
                 seg,
-                "__objc_selrefs",
-                output_section_flags(seg, "__objc_selrefs", S_LITERAL_POINTERS, false),
+                sect,
+                output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, false),
                 3,
                 Tail::ObjcSelrefs,
                 selrefs_size,
@@ -3555,20 +3583,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], true));
     }
     ctx.args.add_empty_section = empties;
-
-    // Sections that exist only because a boundary symbol names them.
-    for i in 0..ctx.boundary_syms.len() {
-        let (_, _, seg, Some(sect)) = &ctx.boundary_syms[i] else {
-            continue;
-        };
-        if !ctx.chunks.iter().any(|&id| {
-            let hdr = ctx.chunk_header(id);
-            hdr.is_sect && hdr.segname == *seg && hdr.sectname == *sect
-        }) {
-            let segname: &'static str = String::leak(seg.clone());
-            add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], false));
-        }
-    }
 
     // Merge the objects' __objc_imageinfo records: the Swift version
     // must agree, the Swift language version is the newest, and the
@@ -3655,6 +3669,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     add_linkedit_chunks(ctx);
+    add_boundary_sections(ctx);
 
     // Sort the chunks into file order: the standard segment order, and
     // section ranks within a segment. Sections of one rank follow the
@@ -3756,6 +3771,35 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks = order;
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
+}
+
+/// Resolves each section$start$/section$end$ and segment$start$/
+/// segment$end$ symbol to the output section or segment it names, and
+/// creates the sections nothing else does. ld-prime renames the name
+/// as it does an input section's - __DATA,__const becomes
+/// __DATA_CONST,__const, and -rename_section and -rename_segment
+/// apply - but merges and drops nothing: section$start$__TEXT$__literal8
+/// names an empty __literal8 of its own.
+fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
+    let map = SectionMap::final_link(ctx);
+    for i in 0..ctx.boundary_syms.len() {
+        let (_, _, seg, sect) = &ctx.boundary_syms[i];
+        let Some(sect) = sect else {
+            let seg = renamed_segment(&ctx.args, static_name(seg));
+            ctx.boundary_syms[i].2 = seg.to_string();
+            continue;
+        };
+        let name = map.const_name((static_name(seg), static_name(sect)));
+        let (seg, sect) = renamed(&ctx.args, name);
+        ctx.boundary_syms[i].2 = seg.to_string();
+        ctx.boundary_syms[i].3 = Some(sect.to_string());
+        if !ctx.chunks.iter().any(|&id| {
+            let hdr = ctx.chunk_header(id);
+            hdr.is_sect && hdr.segname == seg && hdr.sectname == sect
+        }) {
+            add_sectcreate(ctx, SectCreateSection::new(seg, sect, &[], false));
+        }
+    }
 }
 
 /// Sizes the stubs, the lazy-binding helper and pointers, and the GOT

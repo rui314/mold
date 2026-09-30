@@ -560,6 +560,14 @@ fn parse_prot(val: &str) -> u8 {
     prot
 }
 
+/// A section or segment name -rename_section or -rename_segment
+/// gives, cut to the 16 bytes of a Mach-O header's name field as
+/// ld-prime silently does. (The names they rename from are matched as
+/// given, so a longer one matches nothing.)
+fn section_name(name: &str) -> String {
+    name[..name.floor_char_boundary(16)].to_string()
+}
+
 fn is_space(c: u8) -> bool {
     // Same as isspace() in the C locale, without the function call that the
     // tokenizer below would otherwise make for every byte of a response file.
@@ -724,6 +732,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             None => fatal!("option {}: argument missing", display(cmdline[*i - 1].as_bytes())),
         }
     };
+    // An operand of -rename_section or -rename_segment: ld-prime
+    // reports a missing or empty one with the option's usage.
+    let rename_operand = |i: &mut usize, opt: &str, usage: &str| -> &str {
+        *i += 1;
+        match cmdline.get(*i) {
+            Some(arg) if !arg.is_empty() => text(opt, arg),
+            _ => fatal!("{opt} missing {usage}"),
+        }
+    };
     // An argument that is text by nature.
     fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
         arg.to_str().unwrap_or_else(|| {
@@ -840,15 +857,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     .collect();
             }
             b"-rename_section" => {
-                let old_seg = text(name, next_arg(&mut i)).to_string();
-                let old_sect = text(name, next_arg(&mut i)).to_string();
-                let new_seg = text(name, next_arg(&mut i)).to_string();
-                let new_sect = text(name, next_arg(&mut i)).to_string();
+                let usage = "<from-segment> <from-section> <to-segment> <to-section>";
+                let old_seg = rename_operand(&mut i, name, usage).to_string();
+                let old_sect = rename_operand(&mut i, name, usage).to_string();
+                let new_seg = section_name(rename_operand(&mut i, name, usage));
+                let new_sect = section_name(rename_operand(&mut i, name, usage));
                 args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
             }
             b"-rename_segment" => {
-                let old = text(name, next_arg(&mut i)).to_string();
-                let new = text(name, next_arg(&mut i)).to_string();
+                let usage = "<from-segment> <to-segment>";
+                let old = rename_operand(&mut i, name, usage).to_string();
+                let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
             }
             b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i))),

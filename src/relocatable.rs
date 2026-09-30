@@ -35,8 +35,10 @@ use crate::util::{align_to, encode_uleb};
 /// seen, and __gcc_except_tab and __eh_frame close the segment. __DATA
 /// has fixed ranks for the sections ld64 knows (__const, the
 /// Objective-C sections, the initializer lists, __data), unknown ones
-/// in first-seen order after them, then the thread-local template and
-/// the zero-fill sections. The first element ranks the segment.
+/// in first-seen order after them. The thread-local template and the
+/// zero-fill sections close every segment but __TEXT: an object's
+/// file image mirrors its address space. The first element ranks the
+/// segment.
 fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     let seg = match segname {
         "__TEXT" => 0,
@@ -69,13 +71,12 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
         ("__DATA", "__mod_init_func") => 16,
         ("__DATA", "__mod_term_func") => 17,
         ("__DATA", "__data") => 18,
-        ("__DATA", _) => match flags & SECTION_TYPE {
+        _ => match flags & SECTION_TYPE {
             S_THREAD_LOCAL_REGULAR => 20,
             S_THREAD_LOCAL_ZEROFILL => 21,
             S_ZEROFILL => 22,
             _ => 19,
         },
-        _ => 0,
     };
     (seg, sect)
 }
