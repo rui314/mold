@@ -107,8 +107,9 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
 
     // An empty atom shares its address with the function after it, and
-    // comes first, as in the input.
-    records.par_sort_by_key(|r| (func_addr(r), r.isec));
+    // comes first, as in the input - the one at the end of a section
+    // too.
+    records.par_sort_by_key(|r| (func_addr(r), r.code_len != 0, r.isec));
 
     // Assign personality indices, encoded in bits 28-29 of the
     // encoding, in order of first use by address.
@@ -420,11 +421,16 @@ fn bare_code_records<E: Target>(
 }
 
 /// Whether an atom is one of a code section, which ld-prime gives an
-/// entry whatever its unwind info (see bare_code_records).
+/// entry whatever its unwind info (see bare_code_records): an input's,
+/// or the empty one it keeps __dyld_lazy_load alive from.
 fn is_code_atom<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        && !ctx.is_internal(isec.file as usize)
+        && (!ctx.is_internal(isec.file as usize)
+            || ctx
+                .isecs
+                .get(ctx.lazy_helpers.keep_alive as usize)
+                .is_some_and(|k| std::ptr::eq(k, isec)))
         && isec
             .output_section()
             .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)

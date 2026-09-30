@@ -60,8 +60,9 @@ pub enum InputArg {
     UpwardLib(OsString),
     UpwardFramework(OsString),
     UpwardFile(PathBuf),
-    /// -lazy-lfoo / -lazy_framework Foo / -lazy_library path: a library
-    /// as ld-prime links it for an OS before macOS 27.
+    /// -lazy-lfoo / -lazy_framework Foo / -lazy_library path: a dylib
+    /// dyld loads at the first use of one of its symbols, from macOS 27
+    /// on (see Args::lazy_load); before, a library like any other.
     LazyLib(OsString),
     LazyFramework(OsString),
     LazyFile(PathBuf),
@@ -213,6 +214,9 @@ pub struct Args {
     /// -dead_strip_dylibs: drop load commands for dylibs nothing binds
     /// to.
     pub dead_strip_dylibs: bool,
+    /// Whether the dylibs -lazy-l, -lazy_library and -lazy_framework
+    /// name load lazily: when the output is for macOS 27 or later.
+    pub lazy_load: bool,
     /// -warn_unused_dylibs / -no_warn_unused_dylibs: warn about linked
     /// dylibs nothing binds to (by default only for a dylib bound for
     /// the dyld shared cache).
@@ -435,6 +439,7 @@ impl Default for Args {
             undefined_dynamic_lookup: false,
             allowed_undefined: Vec::new(),
             dead_strip_dylibs: false,
+            lazy_load: false,
             warn_unused_dylibs: None,
             not_for_dyld_shared_cache: false,
             debug_variant: false,
@@ -1906,18 +1911,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     warn_platform_options(target, &args, read_only_relocs.is_some());
 
-    for lib in lazy_libraries {
-        if args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0) {
-            crate::warn!(
-                "lazy-load is not supported, '{}' will be loaded at launch",
-                display(&lib)
-            );
-        } else {
-            crate::warn!(
-                "lazy-load will be ignored for '{}' because deployment target version is too low",
-                display(&lib)
-            );
+    // dyld loads a lazy dylib when __dyld_lazy_load says so, which
+    // ld-prime keeps as an import of any final image that names one,
+    // used or not.
+    if !lazy_libraries.is_empty() {
+        args.lazy_load =
+            args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0);
+        if args.lazy_load && !args.relocatable {
+            args.forced_undefined.push("__dyld_lazy_load".to_string());
         }
+    }
+    for lib in lazy_libraries.iter().filter(|_| !args.lazy_load) {
+        crate::warn!(
+            "lazy-load will be ignored for '{}' because deployment target version is too low",
+            display(lib)
+        );
     }
     args.segment_align = resolve_segment_align(target, &args, segalign);
     // An image dyld loads keeps 32 bytes for the command of a code

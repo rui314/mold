@@ -192,11 +192,14 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
     if ctx.dylibs[idx].is_implicit {
         ctx.dylibs[idx].named_at = Some((ctx.next_priority(), mf.name.clone()));
     }
+    let lazy = rc.lazy && ctx.args.lazy_load;
     let dylib = &mut ctx.dylibs[idx];
     if dylib.is_implicit && !rc.autolinked {
         dylib.is_weak = rc.weak;
+        dylib.is_lazy = lazy;
     } else {
         dylib.is_weak |= rc.weak;
+        dylib.is_lazy |= lazy;
     }
     dylib.is_reexported |= rc.reexport;
     dylib.is_needed |= rc.needed;
@@ -220,8 +223,8 @@ struct ReaderContext {
     needed: bool,
     /// -upward_library, -upward-l, -upward_framework.
     upward: bool,
-    /// -lazy_library, -lazy-l, -lazy_framework, which load a dylib as
-    /// any other before macOS 27.
+    /// -lazy_library, -lazy-l, -lazy_framework: dyld loads the dylib
+    /// at its first use (from macOS 27 on; as any other before).
     lazy: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
@@ -341,9 +344,12 @@ fn collect_file<E: Target>(
             };
             let Some(idx) = idx else { return };
             // The dylibs loaded during the parse beyond this one are the
-            // public libraries it re-exports; a weak parent's are weak.
+            // public libraries it re-exports; a weak parent's are weak,
+            // and a lazy one's lazy.
+            let lazy = rc.lazy && ctx.args.lazy_load;
             for d in &mut ctx.dylibs[first..] {
                 d.is_weak |= rc.weak;
+                d.is_lazy |= lazy;
             }
             // One named before by another path keeps what that said.
             if idx >= first || ctx.dylibs[idx].is_implicit {
@@ -2684,7 +2690,8 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
     if let Some(dylib) = ctx
         .dylibs
         .iter()
-        .filter(|d| !d.is_bundle_loader && !crate::cmdline::in_shared_cache_path(&d.install_name))
+        .filter(|d| !d.is_bundle_loader && !d.is_lazy)
+        .filter(|d| !crate::cmdline::in_shared_cache_path(&d.install_name))
         .min_by_key(|d| d.dylib_idx)
     {
         error!(
@@ -2815,9 +2822,15 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
 
     // Ordinals (and so the load commands) in ld64's order: the
     // libraries named on the command line or by auto-link options in
-    // naming order, then the implicitly loaded ones by install name.
-    let mut order: Vec<usize> =
-        (0..ctx.dylibs.len()).filter(|&i| !ctx.dylibs[i].is_bundle_loader).collect();
+    // naming order, then the implicitly loaded ones by install name. A
+    // lazy dylib has neither: its imports' n_desc names the image
+    // itself (ordinal 0), as ld-prime writes it.
+    for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
+        dylib.dylib_idx = 0;
+    }
+    let mut order: Vec<usize> = (0..ctx.dylibs.len())
+        .filter(|&i| !ctx.dylibs[i].is_bundle_loader && !ctx.dylibs[i].is_lazy)
+        .collect();
     order.sort_by(|&a, &b| {
         let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
         da.load_order.cmp(&db.load_order).then_with(|| da.install_name.cmp(&db.install_name))
@@ -2906,7 +2919,13 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         })
         .collect();
 
+    // A lazily loaded dylib's symbols take no stub or GOT slot; the
+    // image reaches them through create_lazy_loads's helpers.
+    let has_lazy = ctx.dylibs.iter().any(|d| d.is_lazy);
     for (id, class) in classes {
+        if has_lazy && ctx.is_lazy_import(id) {
+            continue;
+        }
         let sym = &ctx.symbols[id];
 
         // Thread-locals live behind __thread_vars descriptors, so the
@@ -3076,6 +3095,276 @@ pub(crate) fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u3
         && !rel.is_subtracted
         && rel.addend == 0;
     plain.then_some(idx)
+}
+
+/// Makes what the image reaches the symbols of the dylibs dyld loads
+/// lazily through (-lazy-l and the like, from macOS 27 on), as
+/// ld-prime does. Such a dylib has no LC_LOAD_DYLIB: it has an
+/// LC_LAZY_LOAD_DYLIB_INFO record (see chunks::lazy_load_info) naming
+/// it, a flag word and the symbols the image uses from it, each with a
+/// __lazy_load_got slot. Calls go to a helper per symbol that jumps
+/// through the slot once the flag says the dylib is loaded, and first
+/// has __dyld_lazy_load (libdyld's, called through a stub as any
+/// import) load it and bind the slots; a GOT load calls a helper that
+/// goes through the slot likewise (see LazyUse). ld-prime refuses any
+/// other reference, such as a pointer in data, which dyld would have
+/// to bind at launch; the error names the fixup as it does.
+pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.lazy_load {
+        ctx.lazy_helpers.keep_alive = add_keep_alive_atom(ctx);
+    }
+    if !ctx.dylibs.iter().any(|d| d.is_lazy) {
+        return;
+    }
+    // (The keep-alive atom's reference, as ld-prime names it.)
+    if let Some(id) = ctx.symbols.get("__dyld_lazy_load")
+        && ctx.is_lazy_import(id)
+    {
+        error!("keepAlive use of '__dyld_lazy_load' in 'anon' cannot be lazy loaded.");
+    }
+    let uses = lazy_uses(ctx);
+    let (flags, slots) = create_lazy_load_slots(ctx, &uses);
+    create_lazy_helpers(ctx, &uses, &flags, &slots);
+
+    // The helpers call __dyld_lazy_load through its stub.
+    if !ctx.lazy_helpers.helpers.is_empty()
+        && let Some(id) = ctx.symbols.get("__dyld_lazy_load")
+    {
+        add_stub(ctx, id);
+        if ctx.lazy_binding() {
+            ensure_stub_binder(ctx);
+        } else {
+            add_got(ctx, id);
+        }
+        ctx.lazy_helpers.dyld_lazy_load = Some(id);
+    }
+}
+
+/// ld-prime keeps __dyld_lazy_load alive, in any link that names a
+/// lazy dylib, by a reference from an empty atom it appends to __text:
+/// it has an entry of its own in __unwind_info (encoding 0), and in
+/// -map. Returns its subsection.
+fn add_keep_alive_atom<E: Target>(ctx: &mut Context<E>) -> u32 {
+    let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+    let (file, shndx) = ctx.add_synthetic_section(MachSection {
+        sectname: str_to_name("__text"),
+        segname: str_to_name("__TEXT"),
+        flags,
+        ..Default::default()
+    });
+    ctx.isecs.push(InputSection {
+        file,
+        shndx,
+        p2align: 0,
+        input_addr: 0,
+        size: 0,
+        contents: 0,
+        rel_offset: 0,
+        nrels: 0,
+        output_section: u32::MAX,
+        offset: 0,
+        flags: InputSection::flags_alive_no_modulus(),
+        replacement: crate::input_sections::NO_REPLACEMENT,
+        unwind_offset: 0,
+        nunwind: 0,
+    });
+    (ctx.isecs.len() - 1) as u32
+}
+
+/// A reference to a lazy dylib's symbol: the subsection, the
+/// relocation's offset in it, the symbol, and how it refers to it.
+type LazyUseSite = (u32, u32, crate::symbol::SymbolId, crate::target::LazyRef);
+
+/// A __lazy_load_got slot: its symbol, and whether it is the one the
+/// symbol's call helper has to itself (see Target::LAZY_CALL_OWN_SLOT).
+type LazySlot = (crate::symbol::SymbolId, bool);
+
+/// The references to lazy dylibs' symbols from live subsections, in
+/// input order, once the ones ld-prime refuses are reported.
+fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
+    let uses: Vec<LazyUseSite> = (0..ctx.isecs.len())
+        .into_par_iter()
+        .filter(|&i| {
+            let isec = &ctx.isecs[i];
+            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        })
+        .flat_map_iter(|i| {
+            let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());
+            ctx.isec_relocs(i).iter().filter_map(move |r| {
+                let id = ctx.reloc_target_sym(file, r)?;
+                ctx.is_lazy_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
+            })
+        })
+        .collect();
+    for &(isec, _, id, how) in &uses {
+        if let crate::target::LazyRef::Unsupported(kind) = how {
+            let sym = &ctx.symbols[id];
+            let atom = if input_files::is_record_list(ctx.hdr_of(&ctx.isecs[isec as usize])) {
+                "anon".into()
+            } else {
+                ctx.atom_name(isec as usize)
+            };
+            error!("{kind} use of '{sym}' in '{atom}' cannot be lazy loaded.");
+        }
+    }
+    // A stub or GOT slot another pass made for one (an unwind
+    // personality's, an input __got's) would be a pointer dyld binds at
+    // launch, and is refused alike. (ld-prime leaves a personality's
+    // slot zero.)
+    for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
+        if ctx.is_lazy_import(id) {
+            error!("ptr64 use of '{}' in 'anon' cannot be lazy loaded.", ctx.symbols[id]);
+        }
+    }
+    crate::error::checkpoint();
+    uses
+}
+
+/// The slot a use of a symbol goes through.
+fn lazy_slot<E: Target>(id: crate::symbol::SymbolId, how: crate::target::LazyRef) -> LazySlot {
+    (id, E::LAZY_CALL_OWN_SLOT && how == crate::target::LazyRef::Call)
+}
+
+/// Gives each lazy dylib the image uses its flag word, its symbols
+/// their __lazy_load_got slots and it its record. Returns each dylib's
+/// flag word's subsection, and each slot's index.
+fn create_lazy_load_slots<E: Target>(
+    ctx: &mut Context<E>,
+    uses: &[LazyUseSite],
+) -> (Vec<u32>, hashbrown::HashMap<LazySlot, u32>) {
+    use crate::chunks::lazy_load_info::{LazyDylib, record_size};
+
+    // Each dylib's slots by name, the dylibs in load order: the order of
+    // the slots.
+    let mut by_dylib: Vec<Vec<LazySlot>> = vec![Vec::new(); ctx.dylibs.len()];
+    for &(_, _, id, how) in uses {
+        if let Some(FileId::Dylib(d)) = ctx.symbols[id].file() {
+            by_dylib[d as usize].push(lazy_slot::<E>(id, how));
+        }
+    }
+    for list in &mut by_dylib {
+        list.sort_unstable_by_key(|&(id, own)| (ctx.symbols[id].name(), own));
+        list.dedup();
+    }
+    let mut used: Vec<usize> = (0..ctx.dylibs.len()).filter(|&d| !by_dylib[d].is_empty()).collect();
+    used.sort_by(|&a, &b| {
+        let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
+        da.load_order.cmp(&db.load_order).then_with(|| da.install_name.cmp(&db.install_name))
+    });
+
+    // The flag words, by install name, ahead of __dyld_private.
+    let mut flags = vec![u32::MAX; ctx.dylibs.len()];
+    let mut by_name = used.clone();
+    by_name.sort_by(|&a, &b| ctx.dylibs[a].install_name.cmp(&ctx.dylibs[b].install_name));
+    for d in by_name {
+        let isec = add_data_word(ctx, 4);
+        let install_name = &ctx.dylibs[d].install_name;
+        let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(install_name);
+        let name = format!("_lazyLoadFlag${}", String::from_utf8_lossy(leaf));
+        ctx.extra_local_syms.push((String::leak(name), isec));
+        flags[d] = isec;
+    }
+    let private = ctx.stub_helper.dyld_private_isec;
+    if let Some(i) = ctx.data_blobs.iter().position(|b| b.isec == private) {
+        let blob = ctx.data_blobs.remove(i);
+        ctx.data_blobs.push(blob);
+    }
+
+    let mut index = hashbrown::HashMap::new();
+    let mut slots = Vec::new();
+    for &d in &used {
+        let got_start = slots.len() as u32;
+        let list = std::mem::take(&mut by_dylib[d]);
+        for &(id, own) in &list {
+            index.insert((id, own), slots.len() as u32);
+            // The slot an arm64 ldr loads (see LazyRef::Slot).
+            if !own {
+                ctx.sym_aux_mut(id).lazy_got_idx = slots.len() as u32;
+            }
+            let name: &str = String::leak(format!("{}$lazyGOT", ctx.symbols[id].name()));
+            slots.push((id, name));
+        }
+        let syms: Vec<_> = list.into_iter().map(|(id, _)| id).collect();
+        let (flag, size) = (flags[d], record_size(ctx, &ctx.dylibs[d].install_name, &syms));
+        let dylib = d as u32;
+        ctx.lazy_load_info.dylibs.push(LazyDylib { dylib, flag, syms, got_start, offset: 0, size });
+    }
+    ctx.lazy_load_got.slots = slots;
+    // The records go in the reverse order.
+    let mut offset = 0;
+    for d in ctx.lazy_load_info.dylibs.iter_mut().rev() {
+        d.offset = offset;
+        offset += d.size;
+    }
+    ctx.lazy_load_info.hdr.size = offset as u64;
+    (flags, index)
+}
+
+/// Makes the helpers, laid out by name: one per symbol for calls, and
+/// one per symbol and register for GOT loads, or per load in arm64
+/// frameless code.
+fn create_lazy_helpers<E: Target>(
+    ctx: &mut Context<E>,
+    uses: &[LazyUseSite],
+    flags: &[u32],
+    slots: &hashbrown::HashMap<LazySlot, u32>,
+) {
+    use crate::chunks::lazy_helpers::{LazyHelper, LazyUse};
+    use crate::target::LazyRef;
+
+    let mut helpers: Vec<LazyHelper> = Vec::new();
+    let mut index: hashbrown::HashMap<(crate::symbol::SymbolId, LazyUse), usize> =
+        hashbrown::HashMap::new();
+    let mut sites = Vec::new();
+    for &(isec, offset, id, how) in uses {
+        let kind = match how {
+            LazyRef::Call => LazyUse::Call,
+            LazyRef::Cmp => LazyUse::Cmp,
+            LazyRef::Load => {
+                let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].data(), offset);
+                LazyUse::Load { reg, site: own.then_some((isec, offset)) }
+            }
+            LazyRef::Slot | LazyRef::Unsupported(_) => continue,
+        };
+        let i = *index.entry((id, kind)).or_insert_with(|| {
+            let sym = ctx.symbols[id].name();
+            let name = match kind {
+                LazyUse::Call => format!("{sym}$lazyLoadStub"),
+                LazyUse::Cmp => format!("{sym}$lazyGOT$cmpHelper"),
+                LazyUse::Load { reg, site: None } => {
+                    format!("{sym}$lazyGOT$loadHelper_{}", E::lazy_register_name(reg))
+                }
+                LazyUse::Load { reg, site: Some(_) } => format!(
+                    "{sym}$lazyGOT$loadHelper_{}$for${}+{offset}",
+                    E::lazy_register_name(reg),
+                    ctx.atom_name(isec as usize)
+                ),
+            };
+            let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { unreachable!() };
+            let (flag, slot) = (flags[d as usize], slots[&lazy_slot::<E>(id, how)]);
+            let name = String::leak(name);
+            helpers.push(LazyHelper { sym: id, kind, name, flag, slot, offset: 0 });
+            helpers.len() - 1
+        });
+        if how != LazyRef::Call {
+            sites.push(((isec, offset), i));
+        }
+    }
+
+    let mut sorted: Vec<(usize, LazyHelper)> = helpers.into_iter().enumerate().collect();
+    sorted.sort_by_key(|(_, h)| h.name);
+    let mut rank = vec![0; sorted.len()];
+    let mut offset = 0;
+    for (r, (i, h)) in sorted.iter_mut().enumerate() {
+        rank[*i] = r as u32;
+        h.offset = offset;
+        offset += E::lazy_helper_size(h.kind);
+        if h.kind == LazyUse::Call {
+            ctx.sym_aux_mut(h.sym).lazy_stub_idx = r as u32;
+        }
+    }
+    ctx.lazy_helpers.sites = sites.into_iter().map(|(site, i)| (site, rank[i])).collect();
+    ctx.lazy_helpers.helpers = sorted.into_iter().map(|(_, h)| h).collect();
 }
 
 /// Lays out __stubs and __got in ld-prime's order rather than in the
@@ -3356,9 +3645,10 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__TEXT", "__text") => 0,
         ("__TEXT", "__stubs") => 2,
         ("__TEXT", "__stub_helper") => 3,
-        ("__TEXT", "__objc_stubs") => 4,
-        ("__TEXT", "__init_offsets") => 5,
-        ("__TEXT", "__objc_methlist") => 6,
+        ("__TEXT", "__lazy_helpers") => 4,
+        ("__TEXT", "__objc_stubs") => 5,
+        ("__TEXT", "__init_offsets") => 6,
+        ("__TEXT", "__objc_methlist") => 7,
         ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
         ("__TEXT", _) => 10,
         ("__DATA_CONST", "__mod_init_func") => 1,
@@ -3377,9 +3667,10 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         // The GOT closes __DATA_CONST, after every input-derived
         // section (ld-prime: __cfstring, __objc_classlist,
         // __objc_imageinfo, then __got). In the shared region the lazy
-        // pointers lead it, and the class data, __weak_got and the
-        // selector references come before __got.
-        ("__DATA_CONST", "__la_symbol_ptr") => 0,
+        // pointers lead it (the lazy-load slots after them), and the
+        // class data, __weak_got and the selector references come
+        // before __got.
+        ("__DATA_CONST", "__la_symbol_ptr" | "__lazy_load_got") => 0,
         ("__DATA_CONST", "__objc_const") => 21,
         ("__DATA_CONST", "__weak_got") => 22,
         ("__DATA_CONST", "__objc_selrefs") => 23,
@@ -3399,6 +3690,7 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", "__objc_superrefs") => 6,
         ("__DATA", "__objc_ivar") => 7,
         ("__DATA", "__objc_data") => 8,
+        ("__DATA", "__lazy_load_got") => 9,
         // The thread-local initialization image must be contiguous:
         // __thread_data last among file-backed __DATA sections, and
         // __thread_bss first among zero-fill ones (zero-fill sections
@@ -3916,18 +4208,33 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
         let ((seg, out), (flags_seg, flags_sect)) =
             output_section_for(&ctx.args, map, "__DATA", sect, 0).unwrap();
         let flags = output_section_flags(flags_seg, flags_sect, 0, true, false);
-        let mut size = 0u64;
+        // Each record at its own alignment (a pointer's, but for the
+        // lazy-load flag words), the tail at the first one's; laid out
+        // from where the tail will start, so that the offsets within
+        // the section are aligned.
+        let blobs: Vec<(u32, u64, u32)> = (ctx.data_blobs.iter())
+            .filter(|b| b.sect == sect && unplaced(ctx, b))
+            .map(|b| (b.isec, b.size(), ctx.isecs[b.isec as usize].p2align as u32))
+            .collect();
+        let first = blobs[0].2;
+        let start = ctx
+            .output_sections
+            .iter()
+            .find(|o| o.hdr.segname == seg && o.hdr.sectname == out)
+            .map_or(0, |o| align_to(o.hdr.size, 1 << first));
+        let mut end = start;
         let mut offs = Vec::new();
-        for b in ctx.data_blobs.iter().filter(|b| b.sect == sect && unplaced(ctx, b)) {
-            size = align_to(size, 8);
-            offs.push((b.isec, size));
-            size += b.size();
+        for &(isec, size, p2align) in &blobs {
+            end = align_to(end, 1 << p2align);
+            offs.push((isec, end));
+            end += size;
         }
-        let id = tail_section(ctx, seg, out, flags, 3, Tail::DataBlobs, size);
-        let tail_off = ctx.output_section(id).tail_off;
+        let id = tail_section(ctx, seg, out, flags, first, Tail::DataBlobs, end - start);
+        let osec = ctx.output_section_mut(id);
+        osec.hdr.p2align = blobs.iter().map(|b| b.2).fold(osec.hdr.p2align, u32::max);
         for (isec, off) in offs {
             ctx.isecs[isec as usize].set_output_section(ChunkId::Output(id));
-            ctx.isecs[isec as usize].offset = (tail_off + off) as u32;
+            ctx.isecs[isec as usize].offset = off as u32;
         }
     }
 }
@@ -4895,9 +5202,9 @@ fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
     Some(flags)
 }
 
-/// Sizes the stubs, the lazy-binding helper and pointers, and the GOT
-/// (with __weak_got split off, see GotSection), and adds the ones in
-/// use to the output.
+/// Sizes the stubs, the lazy-binding helper and pointers, the
+/// lazy-load helpers and slots, and the GOT (with __weak_got split off,
+/// see GotSection), and adds the ones in use to the output.
 fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
         if ctx.args.text_exec {
@@ -4931,6 +5238,25 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
         ctx.chunks.push(ChunkId::LazyPtrs);
+    }
+
+    // The lazy-load helpers, and their slots: read-only data in the
+    // shared region, as its lazy pointers are.
+    if !ctx.lazy_helpers.helpers.is_empty() {
+        let last = ctx.lazy_helpers.helpers.last().unwrap();
+        let size = last.offset + E::lazy_helper_size(last.kind);
+        let hdr = &mut ctx.lazy_helpers.hdr;
+        hdr.segname = ctx.stubs.hdr.segname;
+        hdr.p2align = E::LAZY_HELPERS_P2ALIGN;
+        hdr.size = size as u64;
+        ctx.chunks.push(ChunkId::LazyHelpers);
+    }
+    if !ctx.lazy_load_got.slots.is_empty() {
+        if ctx.args.shared_region {
+            ctx.lazy_load_got.hdr.segname = data_seg(ctx);
+        }
+        ctx.lazy_load_got.hdr.size = ctx.lazy_load_got.slots.len() as u64 * 8;
+        ctx.chunks.push(ChunkId::LazyLoadGot);
     }
 
     let got = &mut ctx.got;
@@ -4986,6 +5312,9 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     }
     if ctx.args.shared_region {
         ctx.chunks.push(ChunkId::SplitInfo);
+    }
+    if !ctx.lazy_load_info.dylibs.is_empty() {
+        ctx.chunks.push(ChunkId::LazyLoadInfo);
     }
     ctx.chunks.push(ChunkId::FunctionStarts);
     if ctx.args.data_in_code_info {
@@ -5756,6 +6085,23 @@ fn plan_local_symbols<E: Target>(
             let addr = hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
             let ent = NList { n_type: N_PEXT | N_SECT, ..local(hdr.n_sect, addr) };
             ents.push((addr, PEXT, ctx.symbols[sym].name().as_bytes(), ent, None));
+        }
+        // The lazy-load helpers - a call helper, like a selector stub,
+        // with N_PEXT set - and slots.
+        let hdr = &ctx.lazy_helpers.hdr;
+        for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
+            let addr = ctx.lazy_helper_addr(i);
+            let (rank, n_type) = match h.kind {
+                crate::chunks::lazy_helpers::LazyUse::Call => (PEXT, N_PEXT | N_SECT),
+                _ => (LOCAL, N_SECT),
+            };
+            let ent = NList { n_type, ..local(hdr.n_sect, addr) };
+            ents.push((addr, rank, h.name.as_bytes(), ent, None));
+        }
+        let hdr = &ctx.lazy_load_got.hdr;
+        for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
+            let addr = hdr.addr + i as u64 * 8;
+            ents.push((addr, LOCAL, name.as_bytes(), local(hdr.n_sect, addr), None));
         }
         // The range-extension thunks' entries, named as ld-prime names
         // its branch islands.
@@ -7100,20 +7446,28 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols[id].set_is_used(true);
     add_got(ctx, id);
     ctx.stub_helper.dyld_stub_binder = Some(id);
+    let isec = add_data_word(ctx, 8);
+    ctx.stub_helper.dyld_private_isec = isec;
+    ctx.extra_local_syms.push(("__dyld_private", isec));
+}
 
+/// Synthesizes a zero word of `size` bytes, aligned to its size, in
+/// __DATA,__data (after the inputs'), and returns its subsection.
+fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
+    let p2align = size.trailing_zeros() as u8;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
         sectname: str_to_name("__data"),
         segname: str_to_name("__DATA"),
-        p2align: 3,
+        p2align: p2align as u32,
         flags: 0,
         ..Default::default()
     });
     ctx.isecs.push(InputSection {
         file,
         shndx,
-        p2align: 3,
+        p2align,
         input_addr: 0,
-        size: 8,
+        size,
         contents: 0,
         rel_offset: 0,
         nrels: 0,
@@ -7125,13 +7479,9 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         nunwind: 0,
     });
     let isec = (ctx.isecs.len() - 1) as u32;
-    ctx.data_blobs.push(DataBlob {
-        sect: "__data",
-        isec,
-        fields: vec![DataField::Bytes(vec![0; 8])],
-    });
-    ctx.stub_helper.dyld_private_isec = isec;
-    ctx.extra_local_syms.push(("__dyld_private", isec));
+    let fields = vec![DataField::Bytes(vec![0; size as usize])];
+    ctx.data_blobs.push(DataBlob { sect: "__data", isec, fields });
+    isec
 }
 
 /// Binds dyld_stub_binder to the first loaded dylib that exports it,

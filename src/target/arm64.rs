@@ -4,6 +4,7 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
+use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::fatal;
 use crate::input_files::ObjectFile;
@@ -872,6 +873,8 @@ impl Target for Arm64 {
     const STUB_HELPER_ENTRY_PADDING: u64 = 0;
     const UNWIND_MODE_DWARF: u32 = UNWIND_ARM64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 32;
+    const LAZY_HELPERS_P2ALIGN: u32 = 2;
+    const LAZY_CALL_OWN_SLOT: bool = false;
     const BRANCH_RANGE: u64 = 1 << 28;
     const THUNK_SIZE: u64 = 12;
     const RELOC_UNSIGNED: u8 = ARM64_RELOC_UNSIGNED;
@@ -1026,6 +1029,177 @@ impl Target for Arm64 {
             write32(&mut ent[24..], 0xd420_0020);
             write32(&mut ent[28..], 0xd420_0020);
         }
+    }
+
+    fn write_lazy_helpers(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let lazy_load = ctx.sym_stub_addr(ctx.lazy_helpers.dyld_lazy_load.unwrap());
+        let header = ctx.mach_header.hdr.addr;
+        for h in &ctx.lazy_helpers.helpers {
+            let base = addr + h.offset as u64;
+            let flag = ctx.isec_addr(h.flag as usize);
+            let slot = ctx.lazy_load_got.slot_addr(h.slot);
+            // Instruction k is at base + 4k.
+            let pc = |k: usize| base + k as u64 * 4;
+            let adrp = |k: usize, rd: u32, t: u64| 0x9000_0000 | rd | page_offset(t, pc(k));
+            let add = |rd: u32, t: u64| 0x9100_0000 | rd << 5 | rd | (t as u32 & 0xfff) << 10;
+            let branch =
+                |k: usize, op: u32, t: u64| op | (t.wrapping_sub(pc(k)) >> 2) as u32 & B_IMM;
+            let ldr_flag = |rt: u32| 0xb940_0000 | rt << 5 | rt | (bits(flag, 11, 2) as u32) << 10;
+            // From instruction k: __dyld_lazy_load(&flag, mach header),
+            // by which dyld finds the dylib's record.
+            let call = |k: usize| {
+                [
+                    adrp(k, 0, flag),
+                    add(0, flag),
+                    adrp(k + 2, 1, header),
+                    add(1, header),
+                    branch(k + 4, 0x9400_0000, lazy_load),
+                ]
+            };
+            let code: [u32; 16] = match h.kind {
+                //    adrp x16, flag@PAGE; ldr w16, [x16, flag@PAGEOFF]
+                //    cbz w16, 1f
+                // 2: adrp x16, slot@PAGE; ldr x16, [x16, slot@PAGEOFF]
+                //    br x16
+                // 1: stp x1, x0, [sp, #-16]!; stp x29, x30, [sp, #-16]!
+                //    (the call); ldp x29, x30, [sp], #16
+                //    ldp x1, x0, [sp], #16; b 2b
+                LazyUse::Call => {
+                    let [c0, c1, c2, c3, c4] = call(8);
+                    let ldr_slot = 0xf940_0210 | (bits(slot, 11, 3) as u32) << 10;
+                    [
+                        adrp(0, 16, flag),
+                        ldr_flag(16),
+                        0x3400_0090,
+                        adrp(3, 16, slot),
+                        ldr_slot,
+                        0xd61f_0200,
+                        0xa9bf_03e1,
+                        0xa9bf_7bfd,
+                        c0,
+                        c1,
+                        c2,
+                        c3,
+                        c4,
+                        0xa8c1_7bfd,
+                        0xa8c1_03e1,
+                        branch(15, 0x1400_0000, pc(3)),
+                    ]
+                }
+                //    adrp xN, flag@PAGE; ldr wN, [xN, flag@PAGEOFF]
+                //    cbnz wN, 1f
+                //    stp x1, x0, [sp, #-16]!; stp x16, x17, [sp, #-16]!
+                //    stp x29, x30, [sp, #-16]!; (the call)
+                //    ldp x29, x30, [sp], #16; ldp x16, x17, [sp], #16
+                //    ldp x1, x0, [sp], #16
+                // 1: adrp xN, slot@PAGE; ret (or b back past the adrp)
+                LazyUse::Load { reg, site } => {
+                    let [c0, c1, c2, c3, c4] = call(6);
+                    let rd = reg as u32;
+                    let back = match site {
+                        None => 0xd65f_03c0,
+                        Some((isec, off)) => {
+                            let next = ctx.isec_addr(isec as usize) + off as u64 + 4;
+                            branch(15, 0x1400_0000, next)
+                        }
+                    };
+                    [
+                        adrp(0, rd, flag),
+                        ldr_flag(rd),
+                        0x3500_0180 | rd,
+                        0xa9bf_03e1,
+                        0xa9bf_47f0,
+                        0xa9bf_7bfd,
+                        c0,
+                        c1,
+                        c2,
+                        c3,
+                        c4,
+                        0xa8c1_7bfd,
+                        0xa8c1_47f0,
+                        0xa8c1_03e1,
+                        adrp(14, rd, slot),
+                        back,
+                    ]
+                }
+                LazyUse::Cmp => unreachable!(),
+            };
+            for (k, insn) in code.into_iter().enumerate() {
+                write32(&mut buf[h.offset as usize + k * 4..], insn);
+            }
+        }
+    }
+
+    fn lazy_helper_size(_kind: LazyUse) -> u32 {
+        64
+    }
+
+    fn lazy_helper_refs(kind: LazyUse) -> Vec<(u32, u8, LazyTarget)> {
+        use LazyTarget::*;
+        let (adrp, off12, br26) = (
+            DYLD_CACHE_ADJ_V2_ARM64_ADRP,
+            DYLD_CACHE_ADJ_V2_ARM64_OFF12,
+            DYLD_CACHE_ADJ_V2_ARM64_BR26,
+        );
+        let mut refs = vec![(0, adrp, Flag), (4, off12, Flag)];
+        let call = |k: u32| {
+            let k = k * 4;
+            [(k, adrp, Flag), (k + 4, off12, Flag), (k + 8, adrp, Header), (k + 12, off12, Header)]
+                .into_iter()
+                .chain([(k + 16, br26, LazyLoad)])
+        };
+        match kind {
+            LazyUse::Call => {
+                refs.extend([(12, adrp, Slot), (16, off12, Slot)]);
+                refs.extend(call(8));
+            }
+            LazyUse::Load { site, .. } => {
+                refs.extend(call(6));
+                refs.push((56, adrp, Slot));
+                if site.is_some() {
+                    refs.push((60, br26, Site));
+                }
+            }
+            LazyUse::Cmp => unreachable!(),
+        }
+        refs
+    }
+
+    fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::target::LazyRef {
+        use crate::target::LazyRef;
+        let diff = if r.size == 8 { "diff64" } else { "diff32" };
+        match r.r_type {
+            ARM64_RELOC_BRANCH26 => LazyRef::Call,
+            ARM64_RELOC_GOT_LOAD_PAGE21 => LazyRef::Load,
+            ARM64_RELOC_GOT_LOAD_PAGEOFF12 => LazyRef::Slot,
+            ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR if r.is_subtracted => {
+                LazyRef::Unsupported(diff)
+            }
+            ARM64_RELOC_SUBTRACTOR => LazyRef::Unsupported(diff),
+            ARM64_RELOC_UNSIGNED if r.size == 8 => LazyRef::Unsupported("ptr64"),
+            ARM64_RELOC_UNSIGNED => LazyRef::Unsupported("ptr32"),
+            ARM64_RELOC_POINTER_TO_GOT => LazyRef::Unsupported("pcrel32_to_got"),
+            ARM64_RELOC_TLVP_LOAD_PAGE21 => LazyRef::Unsupported("arm64_adrp_tlv"),
+            ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => LazyRef::Unsupported("arm64_ld12_tlv"),
+            ARM64_RELOC_PAGE21 => LazyRef::Unsupported("arm64_adrp"),
+            _ => LazyRef::Unsupported("arm64_lo12"),
+        }
+    }
+
+    // The adrp's register. ld-prime takes code whose link register is
+    // saved - a frame record stored (stp x29, x30, [sp...], of any
+    // addressing form) before the adrp in its atom - to be free to
+    // call the helper; other code branches to a helper of its own.
+    fn lazy_load_site(data: &[u8], offset: u32) -> (u8, bool) {
+        let reg = read32(&data[offset as usize..]) & 0x1f;
+        let (insns, _) = data[..offset as usize].as_chunks::<4>();
+        let framed =
+            insns.iter().any(|&insn| u32::from_le_bytes(insn) & 0x3c40_7fff == 0x2800_7bfd);
+        (reg as u8, !framed)
+    }
+
+    fn lazy_register_name(reg: u8) -> String {
+        format!("x{reg}")
     }
 
     fn write_thunk(
@@ -1249,6 +1423,22 @@ impl Target for Arm64 {
                         let target = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].name();
                         report_ldst_alignment(ctx, isec_id, r, "arm64_lo12", target, size);
                     }
+                }
+                // A GOT load of a lazy dylib's symbol calls its load
+                // helper in place of the adrp, or in frameless code
+                // branches to one of its own (see LazyUse::Load); the
+                // ldr then loads from the helper's slot.
+                ARM64_RELOC_GOT_LOAD_PAGE21
+                    if !ctx.lazy_helpers.sites.is_empty()
+                        && ctx.is_lazy_import(ctx.reloc_target_sym(obj, r).unwrap()) =>
+                {
+                    let helper = ctx.lazy_helpers.site_helper(isec_id, r.offset);
+                    let op = match ctx.lazy_helpers.helpers[helper].kind {
+                        LazyUse::Load { site: Some(_), .. } => 0x1400_0000,
+                        _ => 0x9400_0000,
+                    };
+                    let val = ctx.lazy_helper_addr(helper).wrapping_sub(p);
+                    write32(loc, op | bits(val, 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing
                 // the address directly: the adrp retargets from the

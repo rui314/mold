@@ -21,6 +21,9 @@ pub mod got;
 pub mod indirect_symtab;
 pub mod init_offsets;
 pub mod lazy_bind_info;
+pub mod lazy_helpers;
+pub mod lazy_load_got;
+pub mod lazy_load_info;
 pub mod lazy_ptrs;
 pub mod local_relocs;
 pub mod objc_imageinfo;
@@ -132,6 +135,8 @@ pub enum ChunkId {
     LazyPtrs,
     Got,
     WeakGot,
+    LazyHelpers,
+    LazyLoadGot,
     ObjcStubs,
     ObjcMethlist,
     ObjcImageInfo,
@@ -152,6 +157,7 @@ pub enum ChunkId {
     FunctionStarts,
     DataInCode,
     SplitInfo,
+    LazyLoadInfo,
     IndirectSymtab,
     Symtab,
     Strtab,
@@ -162,13 +168,15 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 27] = [
+    const UNITS: [Self; 30] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
         Self::LazyPtrs,
         Self::Got,
         Self::WeakGot,
+        Self::LazyHelpers,
+        Self::LazyLoadGot,
         Self::ObjcStubs,
         Self::ObjcMethlist,
         Self::ObjcImageInfo,
@@ -186,6 +194,7 @@ impl ChunkId {
         Self::FunctionStarts,
         Self::DataInCode,
         Self::SplitInfo,
+        Self::LazyLoadInfo,
         Self::IndirectSymtab,
         Self::Symtab,
         Self::Strtab,
@@ -300,6 +309,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::LazyPtrs => lazy_ptrs::copy_buf(ctx, buf),
         ChunkId::Got => got::copy_buf(ctx, false, buf),
         ChunkId::WeakGot => got::copy_buf(ctx, true, buf),
+        ChunkId::LazyHelpers => lazy_helpers::copy_buf(ctx, buf),
+        ChunkId::LazyLoadGot => lazy_load_got::copy_buf(ctx, buf),
         ChunkId::ObjcStubs => objc_stubs::copy_buf(ctx, buf),
         ChunkId::ObjcMethlist => objc_methlist::copy_buf(ctx, buf),
         ChunkId::ObjcImageInfo => objc_imageinfo::copy_buf(ctx, buf),
@@ -316,6 +327,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::FunctionStarts => function_starts::copy_buf(ctx, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
         ChunkId::SplitInfo => split_info::copy_buf(ctx, buf),
+        ChunkId::LazyLoadInfo => lazy_load_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
     }
 }
@@ -781,12 +793,22 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     }
 
     // Libraries in ordinal order (command-line order, then the
-    // auto-linked ones).
+    // auto-linked ones), then those dyld loads lazily, by their records
+    // (see lazy_load_info).
     let mut dylibs: Vec<&crate::input_files::DylibFile> =
-        ctx.dylibs.iter().filter(|d| !d.is_bundle_loader).collect();
+        ctx.dylibs.iter().filter(|d| !d.is_bundle_loader && !d.is_lazy).collect();
     dylibs.sort_by_key(|d| d.dylib_idx);
     for dylib in dylibs {
         vec.push(create_load_dylib_cmd(dylib));
+    }
+    let info = &ctx.lazy_load_info;
+    for d in info.dylibs.iter().rev() {
+        vec.push(to_vec(&LinkEditDataCommand {
+            cmd: LC_LAZY_LOAD_DYLIB_INFO,
+            cmdsize: size_of::<LinkEditDataCommand>() as u32,
+            dataoff: (info.hdr.fileoff + d.offset as u64) as u32,
+            datasize: d.size,
+        }));
     }
 
     for rpath in &ctx.args.rpaths {

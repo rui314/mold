@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
@@ -155,6 +156,8 @@ impl Target for X86_64 {
     const STUB_HELPER_ENTRY_PADDING: u64 = 2;
     const UNWIND_MODE_DWARF: u32 = UNWIND_X86_64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 16;
+    const LAZY_HELPERS_P2ALIGN: u32 = 0;
+    const LAZY_CALL_OWN_SLOT: bool = true;
     // A 32-bit pcrel branch covers 4 GiB; x86-64 outputs never need
     // thunks.
     const BRANCH_RANGE: u64 = 1 << 32;
@@ -289,6 +292,133 @@ impl Target for X86_64 {
         }
     }
 
+    fn write_lazy_helpers(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let lazy_load = ctx.sym_stub_addr(ctx.lazy_helpers.dyld_lazy_load.unwrap());
+        let header = ctx.mach_header.hdr.addr;
+        for h in &ctx.lazy_helpers.helpers {
+            let size = Self::lazy_helper_size(h.kind) as usize;
+            let ent = &mut buf[h.offset as usize..h.offset as usize + size];
+            let base = addr + h.offset as u64;
+            let flag = ctx.isec_addr(h.flag as usize);
+            let slot = ctx.lazy_load_got.slot_addr(h.slot);
+            // The call of __dyld_lazy_load(&flag, mach header), by which
+            // dyld finds the dylib's record, with the argument registers
+            // saved: push %rbp; mov %rsp, %rbp; push %rsi; push %rdi;
+            // lea flag(%rip), %rdi; lea header(%rip), %rsi; call; pop
+            // %rdi; pop %rsi; pop %rbp.
+            let call: [u8; 28] = [
+                0x55, 0x48, 0x89, 0xe5, 0x56, 0x57, 0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0x48, 0x8d, 0x35,
+                0, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0x5f, 0x5e, 0x5d,
+            ];
+            // cmpl $0, flag(%rip)
+            ent[..7].copy_from_slice(&[0x83, 0x3d, 0, 0, 0, 0, 0]);
+            write32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
+            let start = match h.kind {
+                // je 1f; 2: jmp *slot(%rip); 1: (the call); jmp 2b
+                LazyUse::Call => {
+                    ent[7..15].copy_from_slice(&[0x74, 0x06, 0xff, 0x25, 0, 0, 0, 0]);
+                    write32(&mut ent[11..], slot.wrapping_sub(base + 15) as u32);
+                    ent[43..45].copy_from_slice(&[0xeb, 0xdc]);
+                    15
+                }
+                // jne 1f; (the call); 1: movq slot(%rip), %reg; ret
+                LazyUse::Load { reg, .. } => {
+                    ent[7..9].copy_from_slice(&[0x75, 0x1c]);
+                    let rex = 0x48 | (reg >> 3) << 2;
+                    ent[37..44].copy_from_slice(&[rex, 0x8b, 0x05 | (reg & 7) << 3, 0, 0, 0, 0]);
+                    write32(&mut ent[40..], slot.wrapping_sub(base + 44) as u32);
+                    ent[44] = 0xc3;
+                    9
+                }
+                // jne 1f; (the call); 1: cmpq $0, slot(%rip); ret
+                LazyUse::Cmp => {
+                    ent[7..9].copy_from_slice(&[0x75, 0x1c]);
+                    ent[37..45].copy_from_slice(&[0x48, 0x83, 0x3d, 0, 0, 0, 0, 0]);
+                    write32(&mut ent[40..], slot.wrapping_sub(base + 45) as u32);
+                    ent[45] = 0xc3;
+                    9
+                }
+            };
+            let at = base + start as u64;
+            ent[start..start + call.len()].copy_from_slice(&call);
+            write32(&mut ent[start + 9..], flag.wrapping_sub(at + 13) as u32);
+            write32(&mut ent[start + 16..], header.wrapping_sub(at + 20) as u32);
+            write32(&mut ent[start + 21..], lazy_load.wrapping_sub(at + 25) as u32);
+        }
+    }
+
+    fn lazy_helper_size(kind: LazyUse) -> u32 {
+        if kind == LazyUse::Cmp { 46 } else { 45 }
+    }
+
+    // Each a 32-bit displacement: the flag's in the cmpl, the lea's of
+    // the call's arguments and the call's; and the jmp's or the final
+    // movq's or cmpq's of the slot.
+    fn lazy_helper_refs(kind: LazyUse) -> Vec<(u32, u8, LazyTarget)> {
+        use LazyTarget::*;
+        let call = |k: u32| [(k + 9, Flag), (k + 16, Header), (k + 21, LazyLoad)];
+        let mut refs = vec![(2, Flag)];
+        match kind {
+            LazyUse::Call => {
+                refs.push((11, Slot));
+                refs.extend(call(15));
+            }
+            _ => {
+                refs.extend(call(9));
+                refs.push((40, Slot));
+            }
+        }
+        refs.into_iter().map(|(off, to)| (off, DYLD_CACHE_ADJ_V2_DELTA_32, to)).collect()
+    }
+
+    fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::target::LazyRef {
+        use crate::target::LazyRef;
+        let diff = if r.size == 8 { "diff64" } else { "diff32" };
+        let off = r.offset as usize;
+        match r.r_type {
+            X86_64_RELOC_BRANCH if r.size == 4 => LazyRef::Call,
+            X86_64_RELOC_BRANCH => LazyRef::Unsupported("x86_64_branch8"),
+            X86_64_RELOC_GOT_LOAD => LazyRef::Load,
+            // cmpq $0, sym@GOTPCREL(%rip)
+            X86_64_RELOC_GOT
+                if off >= 3
+                    && data[off - 3..off] == [0x48, 0x83, 0x3d]
+                    && data.get(off + 4) == Some(&0) =>
+            {
+                LazyRef::Cmp
+            }
+            X86_64_RELOC_GOT => LazyRef::Unsupported("x86_64_rip_got"),
+            X86_64_RELOC_UNSIGNED | X86_64_RELOC_SUBTRACTOR if r.is_subtracted => {
+                LazyRef::Unsupported(diff)
+            }
+            X86_64_RELOC_SUBTRACTOR => LazyRef::Unsupported(diff),
+            X86_64_RELOC_UNSIGNED if r.size == 8 => LazyRef::Unsupported("ptr64"),
+            X86_64_RELOC_UNSIGNED => LazyRef::Unsupported("ptr32"),
+            X86_64_RELOC_TLV => LazyRef::Unsupported("x86_64_rip_tlv_load"),
+            X86_64_RELOC_SIGNED_1 => LazyRef::Unsupported("x86_64_rip1"),
+            X86_64_RELOC_SIGNED_2 => LazyRef::Unsupported("x86_64_rip2"),
+            X86_64_RELOC_SIGNED_4 => LazyRef::Unsupported("x86_64_rip4"),
+            _ => LazyRef::Unsupported("x86_64_rip"),
+        }
+    }
+
+    // The movq's destination: ModRM's reg field, extended by REX.R.
+    // The helper returns (by ret), so any code may call it.
+    fn lazy_load_site(data: &[u8], offset: u32) -> (u8, bool) {
+        let off = offset as usize;
+        let reg = (data[off - 3] >> 2 & 1) << 3 | (data[off - 1] >> 3 & 7);
+        (reg, false)
+    }
+
+    // (ld-prime names both %rsp and %rbp "xxx".)
+    fn lazy_register_name(reg: u8) -> String {
+        const NAMES: [&str; 16] = [
+            "rax", "rcx", "rdx", "rbx", "xxx", "xxx", "rsi", "rdi", "r8", "r9", "r10", "r11",
+            "r12", "r13", "r14", "r15",
+        ];
+        NAMES[reg as usize & 15].to_string()
+    }
+
     fn write_thunk(
         _ctx: &Context<Self>,
         _addr: u64,
@@ -390,6 +520,23 @@ impl Target for X86_64 {
                     }
                 }
             }
+            // A GOT load or compare of a lazy dylib's symbol becomes a
+            // call of its helper, nops filling the rest of the movq or
+            // cmpq (see LazyUse).
+            if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
+                && !ctx.lazy_helpers.sites.is_empty()
+                && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.is_lazy_import(id))
+            {
+                let helper = ctx.lazy_helpers.site_helper(isec_id, r.offset);
+                let at = r.offset as usize - 3;
+                let disp = ctx.lazy_helper_addr(helper).wrapping_sub(base + at as u64 + 5);
+                buf[at] = 0xe8;
+                write32(&mut buf[at + 1..], disp as u32);
+                let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };
+                buf[at + 5..end].fill(0x90);
+                i += 1;
+                continue;
+            }
             let loc = &mut buf[r.offset as usize..];
             let s = ctx.reloc_target_addr(obj, r);
             let a = r.addend;
@@ -444,8 +591,10 @@ impl Target for X86_64 {
                 // its addend for kmutil's external relocation.
                 X86_64_RELOC_BRANCH
                     if ctx.reloc_target_sym(obj, r).is_some_and(|id| {
+                        let aux = ctx.sym_aux(id);
                         ctx.symbols[id].is_imported()
-                            && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX
+                            && aux.stub_idx == crate::symbol::NO_IDX
+                            && aux.lazy_stub_idx == crate::symbol::NO_IDX
                     }) =>
                 {
                     write32(loc, a as u32);

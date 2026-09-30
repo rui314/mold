@@ -92,6 +92,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         })
         .collect();
     places.stub_entries(&mut entries);
+    places.lazy_entries(&mut entries);
     places.objc_entries(&mut entries);
     places.table_entries(&mut entries);
     places.unwind_entries(&mut entries);
@@ -213,6 +214,9 @@ impl<'a, E: Target> Places<'a, E> {
         let sym = &ctx.symbols[id];
         let aux = ctx.sym_aux(id);
         match sym.file()? {
+            FileId::Dylib(_) if aux.lazy_stub_idx != NO_IDX => {
+                Some(self.lazy_helper(aux.lazy_stub_idx))
+            }
             FileId::Dylib(_) => (aux.stub_idx != NO_IDX)
                 .then(|| self.chunk(ChunkId::Stubs, aux.stub_idx as u64 * E::STUB_SIZE)),
             FileId::Obj(obj) => {
@@ -241,8 +245,20 @@ impl<'a, E: Target> Places<'a, E> {
         if self.ctx.symbols[id].is_imported() { None } else { self.sym(id) }
     }
 
+    /// A symbol's GOT slot, or a lazy dylib's symbol's __lazy_load_got
+    /// slot.
     fn got_slot(&self, id: SymbolId) -> Place {
-        self.got_index(self.ctx.sym_aux(id).got_idx as usize)
+        let aux = self.ctx.sym_aux(id);
+        if aux.got_idx == NO_IDX && aux.lazy_got_idx != NO_IDX {
+            return self.chunk(ChunkId::LazyLoadGot, aux.lazy_got_idx as u64 * 8);
+        }
+        self.got_index(aux.got_idx as usize)
+    }
+
+    /// Where __lazy_helpers entry `i` lies.
+    fn lazy_helper(&self, i: u32) -> Place {
+        let offset = self.ctx.lazy_helpers.helpers[i as usize].offset;
+        self.chunk(ChunkId::LazyHelpers, offset as u64)
     }
 
     fn got_index(&self, i: usize) -> Place {
@@ -342,7 +358,20 @@ impl<'a, E: Target> Places<'a, E> {
                 SplitRef::Pointer if ctx.reloc_target_is_tls(isec.file as usize, r) => {}
                 SplitRef::Pointer => push(out, from, pointer, self.reloc_target(isec, r, true)),
                 split => {
-                    let to = self.reloc_target(isec, r, true);
+                    // A GOT load of a lazy dylib's symbol that calls a
+                    // helper instead: an arm64 site is a branch now,
+                    // and ld-prime keeps an x86-64 one at its old
+                    // displacement's place.
+                    let helper = (!ctx.lazy_helpers.sites.is_empty())
+                        .then(|| ctx.lazy_helpers.sites.get(&(id as u32, r.offset)))
+                        .flatten();
+                    let (split, to) = match helper {
+                        Some(&i) if split == SplitRef::Page => {
+                            (SplitRef::Branch26, Some(self.lazy_helper(i)))
+                        }
+                        Some(&i) => (split, Some(self.lazy_helper(i))),
+                        None => (split, self.reloc_target(isec, r, true)),
+                    };
                     let kind = match split {
                         SplitRef::Page => DYLD_CACHE_ADJ_V2_ARM64_ADRP,
                         SplitRef::PageOff => DYLD_CACHE_ADJ_V2_ARM64_OFF12,
@@ -415,6 +444,37 @@ impl<'a, E: Target> Places<'a, E> {
                     let from = (osec.hdr.n_sect, thunk.offset + i as u64 * E::THUNK_SIZE);
                     self.pcrel(out, from, self.sym(id));
                 }
+            }
+        }
+    }
+
+    /// The lazy-load helpers' references: to the flag word and slot
+    /// they check and load, to the arguments and the stub of the call
+    /// of __dyld_lazy_load, and to the code after the site they return
+    /// to (see LazyTarget).
+    fn lazy_entries(&self, out: &mut Vec<Entry>) {
+        use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
+        let ctx = self.ctx;
+        let lazy = &ctx.lazy_helpers;
+        let Some(lazy_load) = lazy.dyld_lazy_load else { return };
+        let stub =
+            self.chunk(ChunkId::Stubs, ctx.sym_aux(lazy_load).stub_idx as u64 * E::STUB_SIZE);
+        for (i, h) in lazy.helpers.iter().enumerate() {
+            let (n, at) = self.lazy_helper(i as u32);
+            for (off, kind, to) in E::lazy_helper_refs(h.kind) {
+                let to = match to {
+                    LazyTarget::Flag => self.isec(h.flag as usize),
+                    LazyTarget::Slot => Some(self.chunk(ChunkId::LazyLoadGot, h.slot as u64 * 8)),
+                    LazyTarget::Header => Some((0, 0)),
+                    LazyTarget::LazyLoad => Some(stub),
+                    LazyTarget::Site => match h.kind {
+                        LazyUse::Load { site: Some((isec, off)), .. } => {
+                            self.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
+                        }
+                        _ => None,
+                    },
+                };
+                push(out, (n, at + off as u64), kind, to);
             }
         }
     }

@@ -15,6 +15,9 @@ use crate::chunks::got::GotSection;
 use crate::chunks::indirect_symtab::IndirectSymtabSection;
 use crate::chunks::init_offsets::InitOffsetsSection;
 use crate::chunks::lazy_bind_info::LazyBindInfoSection;
+use crate::chunks::lazy_helpers::LazyHelpersSection;
+use crate::chunks::lazy_load_got::LazyLoadGotSection;
+use crate::chunks::lazy_load_info::LazyLoadInfoSection;
 use crate::chunks::lazy_ptrs::LazyPtrsSection;
 use crate::chunks::local_relocs::LocalRelocsSection;
 use crate::chunks::objc_imageinfo::ObjcImageInfoSection;
@@ -52,6 +55,8 @@ macro_rules! chunk_header {
             ChunkId::LazyPtrs => &$($mutable)? $ctx.lazy_ptrs.hdr,
             ChunkId::Got => &$($mutable)? $ctx.got.hdr,
             ChunkId::WeakGot => &$($mutable)? $ctx.got.weak_hdr,
+            ChunkId::LazyHelpers => &$($mutable)? $ctx.lazy_helpers.hdr,
+            ChunkId::LazyLoadGot => &$($mutable)? $ctx.lazy_load_got.hdr,
             ChunkId::ObjcStubs => &$($mutable)? $ctx.objc_stubs.hdr,
             ChunkId::ObjcMethlist => &$($mutable)? $ctx.objc_methlist.hdr,
             ChunkId::ObjcImageInfo => &$($mutable)? $ctx.objc_imageinfo.hdr,
@@ -68,6 +73,7 @@ macro_rules! chunk_header {
             ChunkId::FunctionStarts => &$($mutable)? $ctx.function_starts.hdr,
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
             ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
+            ChunkId::LazyLoadInfo => &$($mutable)? $ctx.lazy_load_info.hdr,
             ChunkId::LocalRelocs => &$($mutable)? $ctx.local_relocs.hdr,
             ChunkId::ExternRelocs => &$($mutable)? $ctx.extern_relocs.hdr,
             ChunkId::IndirectSymtab => &$($mutable)? $ctx.indirect_symtab.hdr,
@@ -126,6 +132,8 @@ pub struct Context<E: Target> {
     pub stub_helper: StubHelperSection,
     pub lazy_ptrs: LazyPtrsSection,
     pub got: GotSection,
+    pub lazy_helpers: LazyHelpersSection,
+    pub lazy_load_got: LazyLoadGotSection,
     pub objc_stubs: ObjcStubsSection,
     pub objc_methlist: ObjcMethlistSection,
     pub objc_imageinfo: ObjcImageInfoSection,
@@ -142,6 +150,7 @@ pub struct Context<E: Target> {
     pub function_starts: FunctionStartsSection,
     pub data_in_code: DataInCodeSection,
     pub split_info: SplitInfoSection,
+    pub lazy_load_info: LazyLoadInfoSection,
     pub local_relocs: LocalRelocsSection,
     pub extern_relocs: ExternRelocsSection,
     pub indirect_symtab: IndirectSymtabSection,
@@ -230,6 +239,8 @@ impl<E: Target> Context<E> {
             stub_helper: StubHelperSection::new(),
             lazy_ptrs: LazyPtrsSection::new(),
             got: GotSection::new(),
+            lazy_helpers: LazyHelpersSection::new(),
+            lazy_load_got: LazyLoadGotSection::new(),
             objc_stubs: ObjcStubsSection::new(),
             objc_methlist: ObjcMethlistSection::new(),
             objc_imageinfo: ObjcImageInfoSection::new(),
@@ -246,6 +257,7 @@ impl<E: Target> Context<E> {
             function_starts: FunctionStartsSection::new(),
             data_in_code: DataInCodeSection::new(),
             split_info: SplitInfoSection::new(),
+            lazy_load_info: LazyLoadInfoSection::new(),
             local_relocs: LocalRelocsSection::new(),
             extern_relocs: ExternRelocsSection::new(),
             indirect_symtab: IndirectSymtabSection::new(),
@@ -557,12 +569,16 @@ impl<E: Target> Context<E> {
                     sym.value
                 }
             }
-            // A branch to a dylib symbol goes through its stub. Other
+            // A branch to a dylib symbol goes through its stub, or for
+            // a lazily loaded dylib's, its call helper. Other
             // references to dylib symbols are filled in by dyld; the
             // relocation scan has already validated them.
             Some(FileId::Dylib(_)) => {
-                if self.sym_aux(id).stub_idx != crate::symbol::NO_IDX {
+                let aux = self.sym_aux(id);
+                if aux.stub_idx != crate::symbol::NO_IDX {
                     self.sym_stub_addr(id)
+                } else if aux.lazy_stub_idx != crate::symbol::NO_IDX {
+                    self.lazy_helper_addr(aux.lazy_stub_idx as usize)
                 } else {
                     0
                 }
@@ -573,6 +589,20 @@ impl<E: Target> Context<E> {
     /// Returns the address of a symbol's __stubs entry.
     pub fn sym_stub_addr(&self, id: SymbolId) -> u64 {
         self.stubs.hdr.addr + self.sym_aux(id).stub_idx as u64 * E::STUB_SIZE
+    }
+
+    /// Returns the address of __lazy_helpers entry `i`.
+    pub fn lazy_helper_addr(&self, i: usize) -> u64 {
+        self.lazy_helpers.hdr.addr + self.lazy_helpers.helpers[i].offset as u64
+    }
+
+    /// True for a symbol of a dylib dyld loads lazily (see
+    /// passes::create_lazy_loads).
+    pub fn is_lazy_import(&self, id: SymbolId) -> bool {
+        match self.symbols[id].file() {
+            Some(FileId::Dylib(d)) => d != u32::MAX && self.dylibs[d as usize].is_lazy,
+            _ => false,
+        }
     }
 
     /// Whether imported functions are called through lazy pointers
@@ -777,9 +807,14 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// Returns the address of a symbol's __got slot.
+    /// Returns the address of a symbol's __got slot, or for a lazily
+    /// loaded dylib's symbol, its __lazy_load_got slot.
     pub fn sym_got_addr(&self, id: SymbolId) -> u64 {
-        self.got.slot_addr(self.sym_aux(id).got_idx as usize)
+        let aux = self.sym_aux(id);
+        if aux.got_idx == crate::symbol::NO_IDX && aux.lazy_got_idx != crate::symbol::NO_IDX {
+            return self.lazy_load_got.slot_addr(aux.lazy_got_idx);
+        }
+        self.got.slot_addr(aux.got_idx as usize)
     }
 
     /// Returns the address of the __got slot the objc stubs load

@@ -657,7 +657,10 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 }
                 continue;
             }
-            if ctx.symbols[class].is_imported() || keep.contains(&slot) {
+            // (A lazy dylib's class is loaded through a lazy-load
+            // helper instead: see passes::create_lazy_loads.)
+            let imported = ctx.symbols[class].is_imported() && !ctx.is_lazy_import(class);
+            if imported || keep.contains(&slot) {
                 add_got(ctx, class);
             }
             if !keep.contains(&slot) {

@@ -379,18 +379,7 @@ fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
     if sym.is_extern() {
         return true;
     }
-    let records = hdr.section_type() == S_LITERAL_POINTERS
-        || matches!(
-            hdr.sectname(),
-            "__cfstring"
-                | "__ustring"
-                | "__objc_classrefs"
-                | "__objc_classlist"
-                | "__objc_nlclslist"
-                | "__objc_catlist"
-                | "__objc_nlcatlist"
-        );
-    !records && !name.starts_with('L')
+    !crate::input_files::is_record_list(hdr) && !name.starts_with('L')
 }
 
 /// Drops from the map's named symbols each ltmpN label another of them
@@ -679,6 +668,19 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         }
     }
 
+    // The lazy-load helpers are file 0's, as is the empty atom that
+    // keeps __dyld_lazy_load alive, and each slot its symbol's file's.
+    if ctx.lazy_helpers.keep_alive != u32::MAX {
+        entries.push(anon(ctx.isec_addr(ctx.lazy_helpers.keep_alive as usize), 0));
+    }
+    for (i, helper) in ctx.lazy_helpers.helpers.iter().enumerate() {
+        let (addr, size) = (ctx.lazy_helper_addr(i), E::lazy_helper_size(helper.kind) as u64);
+        entries.push(MapEntry { addr, size, file: 0, name: name(helper.name) });
+    }
+    for (i, &(sym, slot)) in ctx.lazy_load_got.slots.iter().enumerate() {
+        let (addr, file) = (ctx.lazy_load_got.slot_addr(i as u32), files.of_symbol(ctx, sym));
+        entries.push(MapEntry { addr, size: 8, file, name: name(slot) });
+    }
     for &(sym, isec) in &ctx.extra_local_syms {
         let size = ctx.isecs[isec as usize].size as u64;
         let addr = ctx.isec_addr(isec as usize);

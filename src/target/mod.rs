@@ -53,6 +53,26 @@ pub enum SplitRef {
     PcRel32,
 }
 
+/// How a relocation reaches a symbol of a dylib dyld loads lazily
+/// (see passes::create_lazy_loads).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LazyRef {
+    /// A branch: to the symbol's call helper.
+    Call,
+    /// The instruction that computes a GOT slot's address for a load
+    /// (arm64's adrp, x86-64's movq): it calls a load helper instead.
+    Load,
+    /// The instruction that loads from the slot the adrp above found
+    /// (arm64's ldr): from the symbol's __lazy_load_got slot.
+    Slot,
+    /// x86-64's cmpq $0 of the GOT slot: it calls a compare helper
+    /// instead.
+    Cmp,
+    /// A reference ld-prime cannot make lazy, by the name its error
+    /// gives the fixup.
+    Unsupported(&'static str),
+}
+
 /// Why an input relocation record is rejected. ld-prime checks each
 /// record as it reads the object and gives up on the object at the
 /// first bad one; the variants follow its diagnostics.
@@ -150,6 +170,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const UNWIND_MODE_DWARF: u32;
     /// The size of one __objc_stubs entry.
     const OBJC_STUB_SIZE: u64;
+    /// The alignment of __lazy_helpers, and whether a symbol's call
+    /// helper goes through a __lazy_load_got slot of its own, apart
+    /// from the one its GOT loads read (ld-prime's x86-64 ones do).
+    const LAZY_HELPERS_P2ALIGN: u32;
+    const LAZY_CALL_OWN_SLOT: bool;
     /// The span a branch instruction can cover (both directions
     /// together), and the size of one range-extension thunk entry.
     const BRANCH_RANGE: u64;
@@ -245,6 +270,34 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// symbol, code that loads the selector from its __objc_selrefs
     /// slot and tail-calls _objc_msgSend through the GOT.
     fn write_objc_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]);
+
+    /// Writes the __lazy_helpers section: each helper of
+    /// `ctx.lazy_helpers.helpers` (see chunks::lazy_helpers).
+    fn write_lazy_helpers(ctx: &Context<Self>, addr: u64, buf: &mut [u8]);
+
+    /// The size of a __lazy_helpers entry of a kind.
+    fn lazy_helper_size(kind: crate::chunks::lazy_helpers::LazyUse) -> u32;
+
+    /// Where a __lazy_helpers entry of a kind refers to what, for
+    /// LC_SEGMENT_SPLIT_INFO: offsets in the entry, with the split-info
+    /// kind of each reference.
+    fn lazy_helper_refs(
+        kind: crate::chunks::lazy_helpers::LazyUse,
+    ) -> Vec<(u32, u8, crate::chunks::lazy_helpers::LazyTarget)>;
+
+    /// How relocation `r`, of a subsection whose contents are `data`,
+    /// reaches a symbol of a dylib dyld loads lazily.
+    fn lazy_ref(r: &Reloc, data: &[u8]) -> LazyRef;
+
+    /// For a GOT load of such a symbol, the instruction at `offset` of
+    /// the subsection whose contents are `data` (see LazyRef::Load):
+    /// the register it loads, and whether the helper it calls must be
+    /// its own (arm64's frameless code: see LazyUse::Load).
+    fn lazy_load_site(data: &[u8], offset: u32) -> (u8, bool);
+
+    /// The name of a register a load helper fills, as ld-prime puts it
+    /// in the helper's symbol.
+    fn lazy_register_name(reg: u8) -> String;
 
     /// Writes one range-extension thunk's entries. `addr` is the
     /// thunk's address and `buf` its bytes.

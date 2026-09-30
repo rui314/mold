@@ -85,6 +85,7 @@ pub const LC_VERSION_MIN_WATCHOS: u32 = 0x30;
 pub const LC_BUILD_VERSION: u32 = 0x32;
 pub const LC_DYLD_EXPORTS_TRIE: u32 = 0x33 | LC_REQ_DYLD;
 pub const LC_DYLD_CHAINED_FIXUPS: u32 = 0x34 | LC_REQ_DYLD;
+pub const LC_LAZY_LOAD_DYLIB_INFO: u32 = 0x3a;
 
 // Platform identifiers for LC_BUILD_VERSION
 pub const PLATFORM_MACOS: u32 = 1;

@@ -236,6 +236,24 @@ pub fn is_private_label(name: &str) -> bool {
     name.starts_with('L') || name.starts_with('l')
 }
 
+/// Whether a section is one ld-prime reads as a list of records -
+/// CFStrings, UTF-16 strings, selector and class references, Objective-C
+/// class and category lists - whose atoms no local symbol names: they
+/// are "anon" in its diagnostics and -map.
+pub fn is_record_list(hdr: &MachSection) -> bool {
+    hdr.section_type() == S_LITERAL_POINTERS
+        || matches!(
+            hdr.sectname(),
+            "__cfstring"
+                | "__ustring"
+                | "__objc_classrefs"
+                | "__objc_classlist"
+                | "__objc_nlclslist"
+                | "__objc_catlist"
+                | "__objc_nlcatlist"
+        )
+}
+
 /// How ld-prime prefers a symbol at an atom's start to name the atom in
 /// a diagnostic: an exported one before a private extern, a local, a
 /// weak definition and an ltmpN label; among equals, the greatest name.
@@ -396,6 +414,11 @@ pub struct DylibFile {
     /// depends on this image in turn, so dyld need not initialize it
     /// first.
     pub is_upward: bool,
+    /// -lazy-l, -lazy_library, -lazy_framework from macOS 27 on, or a
+    /// public library such a dylib re-exports: dyld loads it at the
+    /// first use of one of its symbols (LC_LAZY_LOAD_DYLIB_INFO), so it
+    /// has no LC_LOAD_DYLIB and no ordinal.
+    pub is_lazy: bool,
     /// For a library loaded as a public re-export that the command line
     /// or an auto-link option names later, where it is named: its
     /// position among the inputs and the path given, by which ld-prime's
@@ -3445,6 +3468,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_reexported: false,
             is_needed: false,
             is_upward: false,
+            is_lazy: false,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
@@ -3650,6 +3674,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_reexported: false,
             is_needed: false,
             is_upward: false,
+            is_lazy: false,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
@@ -3998,6 +4023,7 @@ fn register_tbd<E: Target>(
             is_reexported: false,
             is_needed: false,
             is_upward: false,
+            is_lazy: false,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
