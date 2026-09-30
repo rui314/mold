@@ -354,6 +354,32 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
     nlists[first..].iter().all(|nl| !is_local(nl)).then_some(first as u32)
 }
 
+/// Which of an object's sections ld-prime ignores: those with no bytes
+/// that define no symbol naming an atom there. Such a section makes no
+/// output section and takes no part in ordering, in a final link and
+/// in -r alike. An arm64 assembler's ltmpN label names an atom only in
+/// an object without subsections, so it keeps an empty section there
+/// and nowhere else.
+fn bare_sections(
+    sect_hdrs: &[MachSection],
+    nlists: &[NList],
+    strtab: &'static [u8],
+    split_ok: bool,
+) -> Vec<bool> {
+    let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size == 0).collect();
+    for nlist in nlists {
+        if !nlist.is_stab()
+            && nlist.n_type() == N_SECT
+            && let Some(b) = bare.get_mut((nlist.n_sect as usize).wrapping_sub(1))
+            && *b
+            && !(split_ok && symbol_name(strtab, nlist).starts_with("ltmp"))
+        {
+            *b = false;
+        }
+    }
+    bare
+}
+
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
@@ -473,6 +499,7 @@ pub fn stage_object<E: Target>(
     // new subsection, and literal sections are element-oriented rather
     // than symbol-oriented, so they stay whole.
     let split_ok = hdr.flags & MH_SUBSECTIONS_VIA_SYMBOLS != 0;
+    let bare = bare_sections(sect_hdrs, &nlists, strtab, split_ok);
     let mut split_points: Vec<Vec<u64>> = vec![Vec::new(); sect_hdrs.len()];
     if split_ok {
         for nlist in nlists.iter() {
@@ -635,7 +662,9 @@ pub fn stage_object<E: Target>(
                 nrels: 0,
                 output_section: u32::MAX,
                 offset: 0,
-                flags: if literal_p2align.is_some() {
+                flags: if bare[i] {
+                    InputSection::flags_dead()
+                } else if literal_p2align.is_some() {
                     InputSection::flags_alive_no_modulus()
                 } else {
                     InputSection::flags_alive()
@@ -674,6 +703,31 @@ pub fn stage_object<E: Target>(
         rels.sort_by_key(|rel| rel.offset);
 
         for rel in &mut rels {
+            // A section ld-prime ignores can't be a relocation's target,
+            // named by section or through a label on it (an ltmpN).
+            match rel.target() {
+                crate::input_sections::RelocTarget::Section(sect_pos)
+                    if bare[sect_pos as usize] =>
+                {
+                    let addr = (sect_hdrs[sect_pos as usize].addr as i64 + rel.addend) as u64;
+                    crate::error!(
+                        "address=0x{addr:x} points to section({}) with no content in '{}'",
+                        sect_pos + 1,
+                        mf.name.display()
+                    );
+                    continue;
+                }
+                crate::input_sections::RelocTarget::Sym(idx)
+                    if nlists.get(idx as usize).is_some_and(|n| {
+                        n.n_type() == N_SECT
+                            && bare.get((n.n_sect as usize).wrapping_sub(1)) == Some(&true)
+                    }) =>
+                {
+                    crate::error!("invalid r_symbolnum={idx} in '{}'", mf.name.display());
+                    continue;
+                }
+                _ => {}
+            }
             if let crate::input_sections::RelocTarget::Section(sect_pos) = rel.target() {
                 let sect = &sect_hdrs[sect_pos as usize];
                 let taddr = (sect.addr as i64 + rel.addend) as u64;
