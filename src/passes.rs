@@ -5618,11 +5618,16 @@ fn layout_segment<E: Target>(
         vm_end += hdr.size;
     }
 
+    // A segment of zero-fill sections alone has nothing in the file,
+    // and ld-prime gives it file offset 0, as it does those sections.
+    let zerofill_only =
+        !chunk_ids.is_empty() && chunk_ids.iter().all(|&id| ctx.chunk_header(id).is_zerofill());
+
     // __LINKEDIT's file contents end exactly at the code signature;
     // other segments are padded to a page boundary in the file.
     let seg = &mut ctx.segments[seg_idx];
     seg.cmd.vmaddr = vmaddr;
-    seg.cmd.fileoff = seg_fileoff;
+    seg.cmd.fileoff = if zerofill_only { 0 } else { seg_fileoff };
     if seg.name == "__LINKEDIT" {
         seg.cmd.filesize = filesize;
     } else {
