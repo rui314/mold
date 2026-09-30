@@ -553,7 +553,6 @@ impl Target for Ppc64V2 {
         let file = &ctx.objs[isec.file.index()];
         let isec_addr = isec.addr(ctx);
         let toc = toc(ctx);
-        let got = ctx.got.hdr.shdr.sh_addr.get();
 
         for rel in rels {
             if rel.r_type() == R_NONE || Self::is_absrel(rel) {
@@ -568,7 +567,6 @@ impl Target for Ppc64V2 {
             let s = sym.addr(ctx);
             let a = rel.r_addend() as u64;
             let p = isec_addr + rel.r_offset();
-            let g = || sym.got_addr(ctx).wrapping_sub(got);
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
             let loc = &mut buf[off..];
@@ -624,10 +622,10 @@ impl Target for Ppc64V2 {
                 R_PPC64_REL64 => write_ul64(loc, pcrel),
                 R_PPC64_REL16_HA => write_ul16(loc, ha(pcrel) as u16),
                 R_PPC64_REL16_LO => write_ul16(loc, lo(pcrel) as u16),
-                R_PPC64_GOT16 => write_ul16(loc, g().wrapping_sub(toc) as u16),
-                R_PPC64_GOT16_LO => write_ul16(loc, lo(g().wrapping_sub(toc)) as u16),
-                R_PPC64_GOT16_HI => write_ul16(loc, hi(g().wrapping_sub(toc)) as u16),
-                R_PPC64_GOT16_HA => write_ul16(loc, ha(g().wrapping_sub(toc)) as u16),
+                R_PPC64_GOT16 => write_ul16(loc, sym.got_addr(ctx).wrapping_sub(toc) as u16),
+                R_PPC64_GOT16_LO => write_ul16(loc, lo(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
+                R_PPC64_GOT16_HI => write_ul16(loc, hi(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
+                R_PPC64_GOT16_HA => write_ul16(loc, ha(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
                 R_PPC64_PLT16_HA => write_ul16(loc, ha(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
                 R_PPC64_PLT16_HI => write_ul16(loc, hi(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
                 R_PPC64_PLT16_LO => write_ul16(loc, lo(sym.got_addr(ctx).wrapping_sub(toc)) as u16),
