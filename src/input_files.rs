@@ -2716,7 +2716,7 @@ fn load_reexports<E: Target>(
         // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
         match crate::filetype::get_file_type(dep) {
             crate::filetype::FileType::Tapi => {
-                let mut dep_tbd = tapi::parse_cached(dep, E::NAME);
+                let mut dep_tbd = read_tbd(ctx, dep);
                 if DylibIdentity::of_tbd(&dep_tbd).is_public(ctx) {
                     let idx = parse_dylib(ctx, dep);
                     ctx.dylibs[idx].is_implicit = true;
@@ -2835,9 +2835,9 @@ impl DylibIdentity {
 }
 
 /// The identity of the dylib in a stub or binary file.
-pub fn dylib_identity<E: Target>(mf: &'static MappedFile) -> DylibIdentity {
+pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> DylibIdentity {
     match crate::filetype::get_file_type(mf) {
-        crate::filetype::FileType::Tapi => DylibIdentity::of_tbd(&tapi::parse_cached(mf, E::NAME)),
+        crate::filetype::FileType::Tapi => DylibIdentity::of_tbd(&read_tbd(ctx, mf)),
         _ => DylibIdentity::of_binary(mf),
     }
 }
@@ -2848,7 +2848,7 @@ pub fn dylib_identity<E: Target>(mf: &'static MappedFile) -> DylibIdentity {
 pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
     let names: Vec<&'static str> = match crate::filetype::get_file_type(mf) {
         crate::filetype::FileType::Tapi => {
-            let tbd = tapi::parse_cached(mf, E::NAME);
+            let tbd = read_tbd(ctx, mf);
             [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
         }
         _ => dylib_binary_exports(mf).0,
@@ -2906,31 +2906,51 @@ fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
         }
         off += lc.cmdsize as usize;
     }
-    if let Some(first) = versions.first() {
-        if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
-            if ctx.args.platform_minos != 0 && version.minos > ctx.args.platform_minos {
-                crate::warn!(
-                    "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
-                    platform_name(ctx.args.platform),
-                    format_version(ctx.args.platform_minos),
-                    mf.name.display(),
-                    format_version(version.minos)
-                );
-            }
-        } else {
-            let msg = format!(
-                "building for '{}', but linking in dylib ({}) built for '{}'",
+    if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
+        if ctx.args.platform_minos != 0 && version.minos > ctx.args.platform_minos {
+            crate::warn!(
+                "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
                 platform_name(ctx.args.platform),
-                crate::passes::resolved_file_name(mf),
-                platform_name(first.platform)
+                format_version(ctx.args.platform_minos),
+                mf.name.display(),
+                format_version(version.minos)
             );
-            // Firmware links against any platform's dylibs.
-            if ctx.args.platform == PLATFORM_FIRMWARE {
-                crate::warn!("{msg}");
-            } else {
-                fatal!("{msg}");
-            }
         }
+    } else if let Some(first) = versions.first() {
+        // A zippered dylib has a build version for macOS and one for
+        // Mac Catalyst.
+        let platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
+        let name =
+            if platforms.contains(&PLATFORM_MACOS) && platforms.contains(&PLATFORM_MACCATALYST) {
+                "zippered(macOS/Catalyst)".to_string()
+            } else {
+                platform_name(first.platform)
+            };
+        check_dylib_platforms(ctx, mf, &platforms, &name);
+    }
+}
+
+/// Reports a dylib built for none of the link's platform - for
+/// `platforms`, which `name` names - as ld-prime does: a firmware link
+/// takes any platform's library with a warning.
+fn check_dylib_platforms<E: Target>(
+    ctx: &Context<E>,
+    mf: &MappedFile,
+    platforms: &[u32],
+    name: &str,
+) {
+    if platforms.is_empty() || platforms.contains(&ctx.args.platform) {
+        return;
+    }
+    let msg = format!(
+        "building for '{}', but linking in dylib ({}) built for '{name}'",
+        platform_name(ctx.args.platform),
+        crate::passes::resolved_file_name(mf),
+    );
+    if ctx.args.platform == PLATFORM_FIRMWARE {
+        crate::warn!("{msg}");
+    } else {
+        fatal!("{msg}");
     }
 }
 
@@ -3529,8 +3549,14 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) {
     }
 }
 
+/// A stub's library, read for the link's architecture and platform.
+fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> tapi::TbdFile {
+    tapi::parse_cached(mf, E::NAME, ctx.args.platform)
+}
+
 pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
-    let mut tbd = tapi::parse_cached(mf, E::NAME);
+    let mut tbd = read_tbd(ctx, mf);
+    check_dylib_platforms(ctx, mf, &tbd.platforms, &platforms_name(&tbd.platforms));
     let documents = std::mem::take(&mut tbd.documents);
     register_tbd(ctx, &mf.name, tbd, documents)
 }

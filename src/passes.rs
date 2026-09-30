@@ -202,7 +202,7 @@ struct ReaderContext {
 /// input_files::is_allowed_client): an error on the command line, while
 /// the library an auto-link option names is left out with a warning.
 fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: ReaderContext) -> bool {
-    let id = input_files::dylib_identity::<E>(mf);
+    let id = input_files::dylib_identity(ctx, mf);
     if input_files::is_allowed_client(ctx, &id) {
         return false;
     }
@@ -475,7 +475,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 _ => {}
             }
         }
-        let wave1 = tapi::prefetch(&stubs, E::NAME);
+        let wave1 = tapi::prefetch(&stubs, E::NAME, ctx.args.platform);
         let mut deps: Vec<&'static MappedFile> = Vec::new();
         for tbd in &wave1 {
             for name in &tbd.reexports {
@@ -489,7 +489,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 }
             }
         }
-        tapi::prefetch(&deps, E::NAME);
+        tapi::prefetch(&deps, E::NAME, ctx.args.platform);
     }
 
     let lib = |ctx: &Context<E>, name: &OsStr| {

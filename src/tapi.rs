@@ -16,6 +16,7 @@ use std::path::Path;
 use rayon::prelude::*;
 
 use crate::fatal;
+use crate::macho::*;
 use crate::mapped_file::MappedFile;
 
 #[derive(Debug, Default, Clone)]
@@ -45,6 +46,10 @@ pub struct TbdFile {
     /// library whether it loads as a dylib in its own right (a public
     /// location, which ld64 binds to directly) or merges into this one.
     pub documents: Vec<Self>,
+    /// The platforms the library has a target for on the architecture,
+    /// in platform order. The one read is the link's, or else the
+    /// first (which a firmware link takes).
+    pub platforms: Vec<u32>,
 }
 
 impl TbdFile {
@@ -246,38 +251,31 @@ impl JsonParser<'_> {
 /// Parses a TBD v5 file: JSON with a "main_library" object and, for
 /// reexported libraries inlined in the same file, a "libraries" array
 /// of objects of the same shape. Each group applies only to its targets.
-fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
+fn parse_json(file: &Path, text: &'static str, arch: &'static str, platform: u32) -> TbdFile {
     let mut p = JsonParser { file, text, pos: 0 };
     let root = p.value();
 
-    let target_of = |lib: &Json| {
-        let available = lib
-            .get("target_info")
-            .map(Json::arr)
-            .unwrap_or(&[])
-            .iter()
-            .filter_map(|t| t.get("target").and_then(Json::str))
-            .filter_map(|t| t.strip_suffix("-macos"));
-        format!("{}-macos", select_arch(arch, available))
+    let targets_of = |lib: &Json| -> Vec<Target> {
+        let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
+        info.iter().filter_map(|t| t.get("target").and_then(Json::str)).filter_map(target).collect()
     };
-    let applies = |group: &Json, target: &str| {
-        group.get("targets").is_none() || group.strs("targets").any(|t| t == target)
+    let target_of = |lib: &Json| select_target(arch, platform, &targets_of(lib)).0;
+    let applies = |group: &Json, want: Target| {
+        group.get("targets").is_none() || group.strs("targets").any(|t| target(t) == Some(want))
     };
-    let library_applies = |lib: &Json, target: &str| {
-        lib.get("target_info").is_none_or(|info| {
-            info.arr().iter().any(|t| t.get("target").and_then(Json::str) == Some(target))
-        })
+    let library_applies = |lib: &Json, want: Target| {
+        lib.get("target_info").is_none() || targets_of(lib).contains(&want)
     };
 
     // Adds one library object's symbols for the requested target.
     let add_symbols = |tbd: &mut TbdFile, lib: &Json| {
         let target = target_of(lib);
-        if !library_applies(lib, &target) {
+        if !library_applies(lib, target) {
             return;
         }
         for key in ["exported_symbols", "reexported_symbols"] {
             for group in
-                lib.get(key).map(Json::arr).unwrap_or(&[]).iter().filter(|g| applies(g, &target))
+                lib.get(key).map(Json::arr).unwrap_or(&[]).iter().filter(|g| applies(g, target))
             {
                 for section in ["data", "text"] {
                     let Some(kinds) = group.get(section) else { continue };
@@ -304,7 +302,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
     // names it re-exports, for the requested target.
     let parse_library = |lib: &Json| -> Option<TbdFile> {
         let target = target_of(lib);
-        if !library_applies(lib, &target) {
+        if !library_applies(lib, target) {
             return None;
         }
         let mut tbd = TbdFile {
@@ -315,7 +313,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         if let Some(name) = lib
             .get("install_names")
             .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            .and_then(|a| a.iter().find(|g| applies(g, target)))
             && let Some(s) = name.get("name").and_then(Json::str)
         {
             tbd.install_name = s.to_string();
@@ -323,7 +321,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         if let Some(v) = lib
             .get("current_versions")
             .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            .and_then(|a| a.iter().find(|g| applies(g, target)))
             && let Some(s) = v.get("version").and_then(Json::str)
         {
             tbd.current_version = parse_version(s);
@@ -331,18 +329,18 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         if let Some(v) = lib
             .get("compatibility_versions")
             .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, &target)))
+            .and_then(|a| a.iter().find(|g| applies(g, target)))
             && let Some(s) = v.get("version").and_then(Json::str)
         {
             tbd.compatibility_version = parse_version(s);
         }
         for group in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
-            if applies(group, &target) {
+            if applies(group, target) {
                 tbd.parent_umbrella = group.get("umbrella").and_then(Json::str);
             }
         }
         for group in lib.get("allowable_clients").map(Json::arr).unwrap_or(&[]) {
-            if applies(group, &target) {
+            if applies(group, target) {
                 tbd.allowable_clients.extend(group.strs("clients"));
             }
         }
@@ -352,7 +350,7 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
             .map(Json::arr)
             .unwrap_or(&[])
             .iter()
-            .filter(|g| applies(g, &target))
+            .filter(|g| applies(g, target))
         {
             for name in group.strs("names") {
                 if !tbd.reexports.contains(&name) {
@@ -367,8 +365,9 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         fatal!("{}: no main_library in .tbd file", file.display());
     };
     let Some(mut tbd) = parse_library(main) else {
-        fatal!("{}: .tbd file does not support {}", file.display(), target_of(main));
+        fatal!("{}: .tbd file does not support {}", file.display(), target_name(target_of(main)));
     };
+    tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
     // The re-exported libraries inlined in "libraries" are documents
     // of their own; every one counts as re-exported.
     for lib in root.get("libraries").map(Json::arr).unwrap_or(&[]) {
@@ -416,28 +415,30 @@ pub fn parse_version(val: &str) -> u32 {
 
 /// Parses a .tbd file, keeping each of its documents apart.
 /// A memoized parse. Stub parsing is pure string work over the mapped
-/// file, so results are cached by the file's address and target architecture.
-/// The linker currently supports only the macOS platform. The big SDK
-/// stubs (libSystem's tree, framework umbrellas) can be parsed once,
-/// in parallel, by prefetch() before the serial input loop needs them.
-pub fn parse_cached(mf: &'static MappedFile, arch: &'static str) -> TbdFile {
-    static CACHE: std::sync::Mutex<Option<hashbrown::HashMap<(usize, &'static str), TbdFile>>> =
-        std::sync::Mutex::new(None);
-    let key = (mf.data().as_ptr() as usize, arch);
-    if let Some(tbd) = CACHE.lock().unwrap().get_or_insert_with(hashbrown::HashMap::new).get(&key) {
+/// file, so results are cached by the file's address and the link's
+/// architecture and platform. The big SDK stubs (libSystem's tree,
+/// framework umbrellas) can be parsed once, in parallel, by prefetch()
+/// before the serial input loop needs them.
+pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> TbdFile {
+    type Cache = hashbrown::HashMap<(usize, &'static str, u32), TbdFile>;
+    static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
+    let key = (mf.data().as_ptr() as usize, arch, platform);
+    if let Some(tbd) = CACHE.lock().unwrap().get_or_insert_with(Cache::new).get(&key) {
         return tbd.clone();
     }
-    let tbd = parse(mf, arch);
-    CACHE.lock().unwrap().get_or_insert_with(hashbrown::HashMap::new).insert(key, tbd.clone());
+    let tbd = parse(mf, arch, platform);
+    CACHE.lock().unwrap().get_or_insert_with(Cache::new).insert(key, tbd.clone());
     tbd
 }
 
 /// Warms the parse cache on all cores.
-pub fn prefetch(mfs: &[&'static MappedFile], arch: &'static str) -> Vec<TbdFile> {
-    mfs.par_iter().map(|mf| parse_cached(mf, arch)).collect()
+pub fn prefetch(mfs: &[&'static MappedFile], arch: &'static str, platform: u32) -> Vec<TbdFile> {
+    mfs.par_iter().map(|mf| parse_cached(mf, arch, platform)).collect()
 }
 
-pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
+/// Parses a .tbd file for the architecture `arch` of a link for
+/// `platform`.
+pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> TbdFile {
     let Ok(text): Result<&'static str, _> = std::str::from_utf8(mf.data()) else {
         fatal!("{}: invalid UTF-8 in .tbd file", mf.name.display());
     };
@@ -446,7 +447,7 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
     // writes for the "eager linking" stubs of frameworks built in the
     // same workspace); versions 1-4 are YAML.
     if text.trim_start().starts_with('{') {
-        return parse_json(&mf.name, text, arch);
+        return parse_json(&mf.name, text, arch, platform);
     }
 
     // The first document is the library itself; the others are the
@@ -456,17 +457,11 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
     let mut documents: Vec<TbdFile> = Vec::new();
 
     for (doc, fields) in yaml_documents(text).iter().enumerate() {
-        let available = fields.iter().filter(|f| f.indent == 0 && !f.item).flat_map(|f| {
-            f.items().filter_map(move |s| match f.key {
-                "targets" => s.strip_suffix("-macos"),
-                "archs" => Some(s),
-                _ => None,
-            })
-        });
-        let arch = select_arch(arch, available);
-        let doc_active = yaml_matches(fields.iter().filter(|f| f.indent == 0 && !f.item), arch);
+        let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
+        let (target, platforms) = select_target(arch, platform, &yaml_targets(top()));
+        let doc_active = yaml_matches(top(), target);
         if doc == 0 && !doc_active {
-            fatal!("{}: .tbd file does not support {arch}-macos", mf.name.display());
+            fatal!("{}: .tbd file does not support {}", mf.name.display(), target_name(target));
         }
         if !doc_active {
             continue;
@@ -486,7 +481,7 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
                     .iter()
                     .position(|f| f.indent <= field.indent)
                     .map_or(fields.len(), |n| i + 1 + n);
-                active = doc_active && yaml_matches(fields[i..end].iter(), arch);
+                active = doc_active && yaml_matches(fields[i..end].iter(), target);
             }
             if field.key == "install-name" {
                 tbd.install_name = unquote(field.value).to_string();
@@ -535,6 +530,7 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
             }
         }
         if doc == 0 {
+            tbd.platforms = platforms;
             main = Some(tbd);
         } else {
             documents.push(tbd);
@@ -577,12 +573,27 @@ impl YamlField {
     }
 }
 
-fn yaml_matches<'a>(fields: impl Iterator<Item = &'a YamlField>, arch: &str) -> bool {
-    let target = format!("{arch}-macos");
+/// The targets of a document's top-level fields: a version 4 file's, or
+/// a version 1-3 file's architectures on its platform.
+fn yaml_targets<'a>(fields: impl Iterator<Item = &'a YamlField> + Clone) -> Vec<Target> {
+    let platforms = fields
+        .clone()
+        .find(|f| f.key == "platform")
+        .map_or(&[PLATFORM_MACOS][..], |f| legacy_platforms(unquote(f.value)));
+    fields
+        .flat_map(|f| match f.key {
+            "targets" => f.items().filter_map(target).collect(),
+            "archs" => f.items().flat_map(|a| platforms.iter().map(move |&p| (a, p))).collect(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+fn yaml_matches<'a>(fields: impl Iterator<Item = &'a YamlField>, want: Target) -> bool {
     fields.into_iter().all(|field| match field.key {
-        "targets" => field.items().any(|s| s == target),
-        "archs" => field.items().any(|s| s == arch),
-        "platform" => matches!(unquote(field.value), "macosx" | "macos"),
+        "targets" => field.items().any(|s| target(s) == Some(want)),
+        "archs" => field.items().any(|s| s == want.0),
+        "platform" => legacy_platforms(unquote(field.value)).contains(&want.1),
         _ => true,
     })
 }
@@ -622,6 +633,70 @@ fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
         pos = next;
     }
     docs
+}
+
+/// A .tbd target: an architecture and a platform.
+type Target = (&'static str, u32);
+
+/// The platforms of .tbd targets by the names they go by after the
+/// architecture, as in "arm64-macos" or "x86_64-ios-simulator".
+const TARGET_PLATFORMS: [(&str, u32); 14] = [
+    ("macos", PLATFORM_MACOS),
+    ("ios", PLATFORM_IOS),
+    ("tvos", PLATFORM_TVOS),
+    ("watchos", PLATFORM_WATCHOS),
+    ("bridgeos", PLATFORM_BRIDGEOS),
+    ("maccatalyst", PLATFORM_MACCATALYST),
+    ("ios-simulator", PLATFORM_IOSSIMULATOR),
+    ("tvos-simulator", PLATFORM_TVOSSIMULATOR),
+    ("watchos-simulator", PLATFORM_WATCHOSSIMULATOR),
+    ("driverkit", PLATFORM_DRIVERKIT),
+    ("xros", PLATFORM_VISIONOS),
+    ("xros-simulator", PLATFORM_VISIONOSSIMULATOR),
+    ("firmware", PLATFORM_FIRMWARE),
+    ("sepos", PLATFORM_SEPOS),
+];
+
+/// Parses a target such as "arm64-macos"; None for a platform unknown.
+fn target(s: &'static str) -> Option<Target> {
+    let (arch, name) = s.split_once('-')?;
+    TARGET_PLATFORMS.iter().find(|&&(n, _)| n == name).map(|&(_, p)| (arch, p))
+}
+
+fn target_name((arch, platform): Target) -> String {
+    let name = TARGET_PLATFORMS.iter().find(|&&(_, p)| p == platform).map_or("", |&(n, _)| n);
+    format!("{arch}-{name}")
+}
+
+/// The platforms a version 1-3 file's "platform" names; "zippered" is
+/// macOS and Mac Catalyst both.
+fn legacy_platforms(name: &str) -> &'static [u32] {
+    match name {
+        "macosx" | "macos" => &[PLATFORM_MACOS],
+        "ios" => &[PLATFORM_IOS],
+        "tvos" => &[PLATFORM_TVOS],
+        "watchos" => &[PLATFORM_WATCHOS],
+        "bridgeos" => &[PLATFORM_BRIDGEOS],
+        "iosmac" | "maccatalyst" => &[PLATFORM_MACCATALYST],
+        "zippered" => &[PLATFORM_MACOS, PLATFORM_MACCATALYST],
+        "driverkit" => &[PLATFORM_DRIVERKIT],
+        _ => &[],
+    }
+}
+
+/// The target a library is read for, of `targets` its own: the
+/// architecture (see select_arch) on the link's platform if the library
+/// has that, else on its first. Also returns the platforms it has for
+/// the architecture, in platform order.
+fn select_target(arch: &'static str, platform: u32, targets: &[Target]) -> (Target, Vec<u32>) {
+    let arch = select_arch(arch, targets.iter().map(|&(a, _)| a));
+    let mut platforms: Vec<u32> =
+        targets.iter().filter(|&&(a, _)| a == arch).map(|&(_, p)| p).collect();
+    platforms.sort_unstable();
+    platforms.dedup();
+    let chosen =
+        if platforms.is_empty() || platforms.contains(&platform) { platform } else { platforms[0] };
+    ((arch, chosen), platforms)
 }
 
 // Apple's macOS SDK describes many system libraries only as arm64e.
@@ -672,12 +747,12 @@ reexported-libraries:
     libraries: [ /ios ]
 "#,
         );
-        let arm = parse_cached(mf, "arm64");
+        let arm = parse_cached(mf, "arm64", PLATFORM_MACOS);
         assert_eq!(arm.exports, ["_arm", "_OBJC_CLASS_$_Arm", "_OBJC_METACLASS_$_Arm"]);
         assert_eq!(arm.weak_exports, ["_weak_arm"]);
         assert_eq!(arm.tlv_exports, ["_tls_arm"]);
         assert_eq!(arm.reexports, ["/arm"]);
-        let x86 = parse_cached(mf, "x86_64");
+        let x86 = parse_cached(mf, "x86_64", PLATFORM_MACOS);
         assert_eq!(x86.exports, ["_x86"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
@@ -703,7 +778,7 @@ exports:
     symbols: [ _fallback ]
 "#,
         );
-        let tbd = parse(mf, "arm64");
+        let tbd = parse(mf, "arm64", PLATFORM_MACOS);
         assert_eq!(tbd.exports, ["_arm"]);
         assert_eq!(tbd.reexports, ["/inline"]);
         assert_eq!(tbd.document("/inline").unwrap().exports, ["_fallback"]);
@@ -723,8 +798,8 @@ exports:
     symbols: [ _x86 ]
 "#,
         );
-        assert_eq!(parse(mf, "arm64").exports, ["_arm"]);
-        assert_eq!(parse(mf, "x86_64").exports, ["_x86"]);
+        assert_eq!(parse(mf, "arm64", PLATFORM_MACOS).exports, ["_arm"]);
+        assert_eq!(parse(mf, "x86_64", PLATFORM_MACOS).exports, ["_x86"]);
     }
 
     #[test]
@@ -744,13 +819,13 @@ exports:
             "install_names":[{"name":"/inline"}],
             "exported_symbols":[{"text":{"global":["_inline"]}}]}]}"#,
         );
-        let arm = parse(mf, "arm64");
+        let arm = parse(mf, "arm64", PLATFORM_MACOS);
         assert_eq!(arm.exports, ["_both"]);
         assert_eq!(arm.weak_exports, ["_weak"]);
         assert_eq!(arm.tlv_exports, ["_tls"]);
         assert_eq!(arm.reexports, ["/arm", "/inline"]);
         assert_eq!(arm.document("/inline").unwrap().exports, ["_inline"]);
-        let x86 = parse(mf, "x86_64");
+        let x86 = parse(mf, "x86_64", PLATFORM_MACOS);
         assert_eq!(x86.exports, ["_both"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());

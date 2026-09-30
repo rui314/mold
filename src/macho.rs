@@ -436,11 +436,11 @@ pub fn platform_name(platform: u32) -> String {
         PLATFORM_TVOS => "tvOS",
         PLATFORM_WATCHOS => "watchOS",
         PLATFORM_BRIDGEOS => "bridgeOS",
-        PLATFORM_MACCATALYST => "Mac Catalyst",
+        PLATFORM_MACCATALYST => "macCatalyst",
         PLATFORM_IOSSIMULATOR => "iOS-simulator",
         PLATFORM_TVOSSIMULATOR => "tvOS-simulator",
         PLATFORM_WATCHOSSIMULATOR => "watchOS-simulator",
-        PLATFORM_DRIVERKIT => "DriverKit",
+        PLATFORM_DRIVERKIT => "driverKit",
         PLATFORM_VISIONOS => "visionOS",
         PLATFORM_VISIONOSSIMULATOR => "visionOS-simulator",
         PLATFORM_FIRMWARE => "firmware",
@@ -448,4 +448,15 @@ pub fn platform_name(platform: u32) -> String {
         _ => return format!("unknown platform ({platform})"),
     }
     .to_string()
+}
+
+/// The platforms a .tbd file has targets for, as ld-prime names them:
+/// in platform order, with a zippered library's pair named once more,
+/// as in "macOS macCatalyst zippered(macOS/Catalyst)".
+pub fn platforms_name(platforms: &[u32]) -> String {
+    let mut names: Vec<String> = platforms.iter().map(|&p| platform_name(p)).collect();
+    if platforms.contains(&PLATFORM_MACOS) && platforms.contains(&PLATFORM_MACCATALYST) {
+        names.push("zippered(macOS/Catalyst)".to_string());
+    }
+    names.join(" ")
 }
