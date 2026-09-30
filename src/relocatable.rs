@@ -1195,7 +1195,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                     name: sym.name().to_string(),
                     n_type: N_PEXT | N_SECT,
                     n_desc: whole_desc(
-                        nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
+                        nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
                         !obj.subsections_via_symbols,
                     ) | section_desc(ctx, input),
                     n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
