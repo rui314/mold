@@ -2892,6 +2892,16 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
         && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
 }
 
+/// dyld reads an image's interposing tuples (__DATA,__interpose) but
+/// never writes them, so from macOS 15 on ld-prime makes them read-only
+/// after fixups in any image dyld loads: they go to __DATA_CONST, even
+/// with -no_data_const.
+fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.platform == crate::macho::PLATFORM_MACOS
+        && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
+        && !ctx.args.without_dyld()
+}
+
 /// An output section's name: (segment, section).
 type SectionName = (&'static str, &'static str);
 
@@ -2989,6 +2999,7 @@ struct SectionMap {
     relocatable: bool,
     data_const: bool,
     objc_const_refs: bool,
+    const_interpose: bool,
     shared_region: bool,
     relative_methods: bool,
     text_exec: bool,
@@ -3010,13 +3021,17 @@ impl SectionMap {
 
     /// A __DATA section's name in a final image when it needs no
     /// writes after dyld's fixups: the same section in __DATA_CONST,
-    /// unless -no_data_const - in the shared region, where dyld fixes
+    /// unless -no_data_const (but for the interposing tuples, see
+    /// interpose_is_const) - in the shared region, where dyld fixes
     /// them up for good, the selector references and the Objective-C
     /// runtime's class data too. ld-prime treats this move as a
     /// renaming, which boundary symbols follow as well (unlike
     /// -text_exec's: section$start$__TEXT$__text stays in __TEXT).
     fn const_name(self, name: SectionName) -> SectionName {
         let (seg, sect) = name;
+        if name == ("__DATA", "__interpose") && self.const_interpose {
+            return ("__DATA_CONST", sect);
+        }
         let is_const = match sect {
             "__objc_classrefs" | "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
             "__objc_selrefs" => self.shared_region,
@@ -3048,6 +3063,7 @@ impl SectionMap {
             relocatable: ctx.args.relocatable,
             data_const: ctx.args.data_const,
             objc_const_refs: objc_refs_are_const(ctx),
+            const_interpose: interpose_is_const(ctx),
             shared_region: ctx.args.shared_region,
             relative_methods: objc_relative_method_lists(ctx),
             text_exec: ctx.args.text_exec,
