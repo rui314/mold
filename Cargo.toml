@@ -30,7 +30,7 @@ libc.workspace = true
 memchr = "2.8.3"
 memmap2 = "0.9"
 rayon = "1.12.0"
-sha2 = "0.10"
+sha2 = "0.11"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 [profile.release]
