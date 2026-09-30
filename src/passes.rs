@@ -4995,6 +4995,29 @@ pub fn create_output_symtab<E: Target>(
     data
 }
 
+/// -pagezero_size, as ld-prime takes it: rounded up to a page, and no
+/// more than 4 GiB in an executable with chained fixups.
+pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.relocatable {
+        return;
+    }
+    let size = ctx.args.pagezero_size;
+    if !size.is_multiple_of(E::PAGE_SIZE) {
+        let aligned = align_to(size, E::PAGE_SIZE);
+        crate::warn!(
+            "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
+        );
+        ctx.args.pagezero_size = aligned;
+    }
+    if ctx.args.output_type == MH_EXECUTE
+        && ctx.use_chained_fixups()
+        && ctx.args.pagezero_size > 0x1_0000_0000
+    {
+        crate::warn!("-pagezero_size is too large, setting it to 4GB");
+        ctx.args.pagezero_size = 0x1_0000_0000;
+    }
+}
+
 /// -image_base (or -seg1addr) sets the address of the first segment
 /// after __PAGEZERO, for an image that stays where it was linked. dyld
 /// slides a PIE executable wherever it likes, and ld-prime ignores the
