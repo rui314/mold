@@ -212,7 +212,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             })
             .sum();
         eh_slot = Some(extras.len());
-        extras.push(new_extra("__TEXT", "__eh_frame", 0, 3, size));
+        extras.push(new_extra(
+            "__TEXT",
+            "__eh_frame",
+            S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
+            3,
+            size,
+        ));
     }
 
     // Every output section, merged or synthetic, in ld64's order:
@@ -523,28 +529,6 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
-    // ld64 names the __eh_frame atoms too: every CIE is EH_Frame1 and
-    // every FDE func.eh, plain local symbols the FDEs' relocations
-    // (below) are expressed against.
-    let mut eh_local: Vec<usize> = Vec::with_capacity(eh_records.len());
-    if let Some(slot) = eh_slot {
-        for &(r, off) in &eh_records {
-            eh_local.push(locals.len());
-            locals.push(Local {
-                name: match r {
-                    EhRec::Cie(_) => "EH_Frame1".to_string(),
-                    EhRec::Fde(_) => "func.eh".to_string(),
-                },
-                n_type: N_SECT,
-                n_desc: 0,
-                n_sect: extra_ordinals[slot],
-                addr: extras[slot].addr + off as u64,
-                rename: Rename::None,
-                syms: Vec::new(),
-            });
-        }
-    }
-
     // Atom order, the linker-named atoms numbered in it.
     let mut order: Vec<usize> = (0..locals.len()).collect();
     order.sort_by_key(|&i| locals[i].addr);
@@ -764,34 +748,25 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         extras[slot].relocs = cu_relocs;
     }
 
-    // __TEXT,__eh_frame, in ld64's form. A CIE's personality cell is a
-    // 4-byte pcrel GOT reference (the shape compilers emit). An FDE's
-    // self-relative fields become SUBTRACTOR pairs against the atoms'
-    // symbols, the field holding the addend: the CIE pointer is
-    // func.eh + 4 - EH_Frame1, pc_begin is the function's symbol - 8 -
-    // func.eh, and the LSDA pointer its symbol - offset - func.eh. A
-    // function or LSDA without a symbol keeps a self-relative value.
+    // __TEXT,__eh_frame, in ld-prime's form: the input CIEs and FDEs
+    // copied through with their self-relative fields recomputed for
+    // the merged layout - the CIE pointer, pc_begin and the LSDA
+    // pointer - and no symbols or relocations of their own but the
+    // CIE's personality cell, a 4-byte pcrel GOT reference (the shape
+    // compilers emit). ld64 classic named every CIE EH_Frame1 and
+    // every FDE func.eh and wrote the fields as SUBTRACTOR pairs
+    // against them; ld-prime does not.
     let mut eh_data: Vec<u8> = Vec::new();
     let mut eh_relocs: Vec<MachRel> = Vec::new();
     let mut eh_patches: Vec<(u32, u64, u8)> = Vec::new();
     {
-        let mut cie_local: HashMap<usize, usize> = HashMap::new();
-        for (i, &(r, _)) in eh_records.iter().enumerate() {
+        let mut cie_off: HashMap<usize, u32> = HashMap::new();
+        for &(r, off) in &eh_records {
             if let EhRec::Cie(c) = r {
-                cie_local.insert(c, eh_local[i]);
+                cie_off.insert(c, off);
             }
         }
-        let pair = |rels: &mut Vec<MachRel>, at: u32, length: u32, from: u32, to: u32| {
-            rels.push(MachRel {
-                r_address: at,
-                bits: from | (length << 25) | (1 << 27) | ((E::RELOC_SUBTRACTOR as u32) << 28),
-            });
-            rels.push(MachRel {
-                r_address: at,
-                bits: to | (length << 25) | (1 << 27) | ((E::RELOC_UNSIGNED as u32) << 28),
-            });
-        };
-        for (i, &(r, off)) in eh_records.iter().enumerate() {
+        for &(r, off) in &eh_records {
             debug_assert_eq!(off as usize, eh_data.len());
             match r {
                 EhRec::Cie(c) => {
@@ -816,29 +791,20 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 }
                 EhRec::Fde(f) => {
                     let fde = &ctx.fdes[f];
-                    let me = entry_symnum[eh_local[i]];
                     eh_data.extend_from_slice(fde.data);
                     let o = off as usize;
-                    // CIE pointer.
-                    let cie_sym = entry_symnum[cie_local[&(fde.cie as usize)]];
-                    eh_data[o + 4..o + 8].copy_from_slice(&4u32.to_le_bytes());
-                    pair(&mut eh_relocs, off + 4, 2, cie_sym, me);
-                    // pc_begin.
+                    // The CIE pointer: how far back the CIE is from
+                    // this field.
+                    let cie_delta = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
+                    eh_data[o + 4..o + 8].copy_from_slice(&cie_delta.to_le_bytes());
+                    // pc_begin: the function, relative to the field.
                     let func_isec = ctx.resolve_isec(fde.isec as usize);
-                    match sym_at.get(&(func_isec, fde.func_offset as u64)) {
-                        Some(&func_sym) => {
-                            eh_data[o + 8..o + 16].copy_from_slice(&(-8i64).to_le_bytes());
-                            pair(&mut eh_relocs, off + 8, 3, me, func_sym);
-                        }
-                        None => {
-                            let isec = &ctx.isecs[func_isec];
-                            let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
-                                + isec.offset as u64
-                                + fde.func_offset as u64;
-                            eh_patches.push((off + 8, func_addr, 8));
-                        }
-                    }
-                    // LSDA.
+                    let isec = &ctx.isecs[func_isec];
+                    let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
+                        + isec.offset as u64
+                        + fde.func_offset as u64;
+                    eh_patches.push((off + 8, func_addr, 8));
+                    // The LSDA pointer, past the augmentation length.
                     if let Some((lsda, lsda_off)) = fde.lsda {
                         let mut pos = 24;
                         while eh_data[o + pos] & 0x80 != 0 {
@@ -847,31 +813,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                         pos += 1;
                         let size = ctx.cies[fde.cie as usize].lsda_size;
                         let lsda = ctx.resolve_isec(lsda as usize);
-                        match sym_at.get(&(lsda, lsda_off as u64)) {
-                            Some(&lsda_sym) => {
-                                let a = -(pos as i64);
-                                match size {
-                                    8 => eh_data[o + pos..o + pos + 8]
-                                        .copy_from_slice(&a.to_le_bytes()),
-                                    _ => eh_data[o + pos..o + pos + 4]
-                                        .copy_from_slice(&(a as i32).to_le_bytes()),
-                                }
-                                pair(
-                                    &mut eh_relocs,
-                                    off + pos as u32,
-                                    if size == 8 { 3 } else { 2 },
-                                    me,
-                                    lsda_sym,
-                                );
-                            }
-                            None => {
-                                let l = &ctx.isecs[lsda];
-                                let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
-                                    + l.offset as u64
-                                    + lsda_off as u64;
-                                eh_patches.push((off + pos as u32, lsda_addr, size));
-                            }
-                        }
+                        let l = &ctx.isecs[lsda];
+                        let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
+                            + l.offset as u64
+                            + lsda_off as u64;
+                        eh_patches.push((off + pos as u32, lsda_addr, size));
                     }
                 }
             }

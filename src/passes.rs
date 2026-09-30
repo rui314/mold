@@ -3796,17 +3796,10 @@ fn output_section_for(
 /// marks just the ObjC list sections the runtime scans as
 /// no-dead-strip. A -r output gets the same treatment (ld-prime's
 /// prelinks show the coalesced Swift and protocol sections as plain
-/// regular), except that __eh_frame is bare there and carries the
-/// compiler's fixed flags in a final image.
+/// regular). __eh_frame carries the compiler's fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
-        // Plain regular in a -r output (ld-prime), the compiler's
-        // fixed flags in a final image.
-        return if relocatable {
-            0
-        } else {
-            S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT
-        };
+        return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
