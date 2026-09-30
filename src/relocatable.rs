@@ -353,25 +353,18 @@ fn narrow_unwind_fields<E: Target>(ctx: &Context<E>) -> HashMap<(u32, u32), u8> 
 }
 
 pub fn link<E: Target>(ctx: &mut Context<E>) {
-    // Synthetic sections: the merged __objc_imageinfo, the
-    // re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
-    let mut extras: Vec<SyntheticSection> = Vec::new();
-    extras.extend(objc_imageinfo_section(ctx));
-    let cu_kept = compact_unwind_records(ctx);
-    let cu_slot = (!cu_kept.is_empty()).then(|| {
-        extras.push(compact_unwind_section(ctx, &cu_kept));
-        extras.len() - 1
-    });
-    let eh_records = eh_frame_records(ctx);
-    let eh_slot = (!eh_records.is_empty()).then(|| {
-        extras.push(eh_frame_section(ctx, &eh_records));
-        extras.len() - 1
-    });
+    // The sections the output synthesizes: the merged __objc_imageinfo,
+    // the re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
+    let mut synthetic: Vec<SyntheticSection> =
+        [objc_imageinfo_section(ctx), compact_unwind_section(ctx), eh_frame_section(ctx)]
+            .into_iter()
+            .flatten()
+            .collect();
 
     // Every section in ld64's order, laid out from address zero, and
     // placed in the file after the load commands.
-    let sects = sort_sections(ctx, &extras);
-    let vmsize = assign_addresses(ctx, &mut extras, &sects);
+    let sects = sort_sections(ctx, &synthetic);
+    let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
 
     let linker_options = relocatable_linker_options(ctx);
     // cmd, cmdsize, count, then the NUL-terminated strings, padded to 8.
@@ -411,7 +404,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
     let seg_fileoff = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
 
-    let content_end = assign_file_offsets(ctx, &mut extras, &sects, seg_fileoff);
+    let content_end = assign_file_offsets(ctx, &mut synthetic, &sects, seg_fileoff);
     let ctx = &*ctx;
     let section_chunks: Vec<OutputSectionId> = sects
         .iter()
@@ -422,154 +415,23 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         .collect();
     let symtab = build_symtab(ctx, &section_chunks);
     let targets = RelocTargets::new(ctx, &symtab);
-
-    // Re-synthesize __LD,__compact_unwind so unwind info survives the
-    // merge: one 32-byte entry per record, its pointer fields set by
-    // UNSIGNED relocations.
-    let narrow_fields = narrow_unwind_fields(ctx);
-    let mut cu_data: Vec<u8> = Vec::new();
-    let mut cu_relocs: Vec<MachRel> = Vec::new();
-    for &r in &cu_kept {
-        let rec = &ctx.unwind_records[r];
-        let entry = cu_data.len() as u32;
-        // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
-        let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
-        let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
-        let (func, bits) = targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
-        cu_data.extend_from_slice(&func.to_le_bytes());
-        cu_relocs.push(MachRel { r_address: entry, bits });
-        cu_data.extend_from_slice(&rec.code_len.to_le_bytes());
-        cu_data.extend_from_slice(&rec.encoding.to_le_bytes());
-
-        match rec.personality() {
-            Some(p) => {
-                let symnum = targets.personality(p);
-                cu_data.extend_from_slice(&0u64.to_le_bytes());
-                cu_relocs
-                    .push(MachRel { r_address: entry + 16, bits: symnum | len(16) | (1 << 27) });
-            }
-            None => cu_data.extend_from_slice(&0u64.to_le_bytes()),
-        }
-
-        match rec.lsda() {
-            Some((lsda, off)) => {
-                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
-                cu_data.extend_from_slice(&lsda.to_le_bytes());
-                cu_relocs.push(MachRel { r_address: entry + 24, bits });
-            }
-            None => cu_data.extend_from_slice(&0u64.to_le_bytes()),
-        }
-    }
-    if let Some(slot) = cu_slot {
-        debug_assert_eq!(cu_data.len() as u64, extras[slot].hdr.size);
-        extras[slot].data = cu_data;
-        extras[slot].relocs = cu_relocs;
-    }
-
-    // __TEXT,__eh_frame, in ld-prime's form: the input CIEs and FDEs
-    // copied through with their self-relative fields recomputed for
-    // the merged layout - the CIE pointer, pc_begin and the LSDA
-    // pointer - and no symbols or relocations of their own but the
-    // CIE's personality cell, a 4-byte pcrel GOT reference (the shape
-    // compilers emit). ld64 classic named every CIE EH_Frame1 and
-    // every FDE func.eh and wrote the fields as SUBTRACTOR pairs
-    // against them; ld-prime does not.
-    let mut eh_data: Vec<u8> = Vec::new();
-    let mut eh_relocs: Vec<MachRel> = Vec::new();
-    let mut eh_patches: Vec<(u32, u64, u8)> = Vec::new();
-    {
-        let mut cie_off: HashMap<usize, u32> = HashMap::new();
-        for &(r, off) in &eh_records {
-            if let EhRec::Cie(c) = r {
-                cie_off.insert(c, off);
-            }
-        }
-        for &(r, off) in &eh_records {
-            debug_assert_eq!(off as usize, eh_data.len());
-            match r {
-                EhRec::Cie(c) => {
-                    let cie = &ctx.cies[c];
-                    eh_data.extend_from_slice(cie.data);
-                    if let Some(p) = cie.personality {
-                        // ld-prime writes 4 into the cell on either
-                        // target, whatever the object held there (a
-                        // compiler's x86-64 CIE holds 4 too).
-                        let at = (off + cie.personality_offset) as usize;
-                        eh_data[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
-                        let symnum = targets.personality(p);
-                        eh_relocs.push(MachRel {
-                            r_address: off + cie.personality_offset,
-                            bits: symnum
-                                | (1 << 24)
-                                | (2 << 25)
-                                | (1 << 27)
-                                | ((E::RELOC_GOTPC as u32) << 28),
-                        });
-                    }
-                }
-                EhRec::Fde(f) => {
-                    let fde = &ctx.fdes[f];
-                    eh_data.extend_from_slice(fde.data);
-                    let o = off as usize;
-                    // The CIE pointer: how far back the CIE is from
-                    // this field.
-                    let cie_delta = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
-                    eh_data[o + 4..o + 8].copy_from_slice(&cie_delta.to_le_bytes());
-                    // pc_begin: the function, relative to the field.
-                    let cie = &ctx.cies[fde.cie as usize];
-                    let func_isec = ctx.resolve_isec(fde.isec as usize);
-                    let isec = &ctx.isecs[func_isec];
-                    let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
-                        + isec.offset as u64
-                        + fde.func_offset as u64;
-                    eh_patches.push((off + 8, func_addr, cie.pc_size() as u8));
-                    // The LSDA pointer, past the augmentation length.
-                    if let Some((lsda, lsda_off)) = fde.lsda {
-                        let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size());
-                        let size = cie.lsda_size() as u8;
-                        let lsda = ctx.resolve_isec(lsda as usize);
-                        let l = &ctx.isecs[lsda];
-                        let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
-                            + l.offset as u64
-                            + lsda_off as u64;
-                        eh_patches.push((off + pos as u32, lsda_addr, size));
-                    }
-                }
-            }
-        }
-    }
-    if let Some(slot) = eh_slot {
-        debug_assert_eq!(eh_data.len() as u64, extras[slot].hdr.size);
-        extras[slot].data = eh_data;
-        extras[slot].relocs = eh_relocs;
-        extras[slot].patches = eh_patches;
+    for sec in &mut synthetic {
+        sec.build_contents(&targets);
     }
 
     // Regenerate each section's relocations against the merged tables.
     let sect_relocs: Vec<Vec<MachRel>> =
         section_chunks.iter().map(|&chunk_idx| section_relocs(&targets, chunk_idx)).collect();
 
-    for extra in &mut extras {
-        // Self-relative cells can be resolved now the address is set.
-        for &(cell, target, size) in &extra.patches {
-            let val = target.wrapping_sub(extra.hdr.addr + cell as u64);
-            let cell = cell as usize;
-            match size {
-                4 => extra.data[cell..cell + 4].copy_from_slice(&(val as u32).to_le_bytes()),
-                8 => extra.data[cell..cell + 8].copy_from_slice(&val.to_le_bytes()),
-                _ => unreachable!(),
-            }
-        }
-    }
     let mut off = align_to(content_end, 8);
     let mut reloff = Vec::new();
     for rels in &sect_relocs {
         reloff.push(off);
         off += (rels.len() * size_of::<MachRel>()) as u64;
     }
-    for extra in &mut extras {
-        extra.reloff = off;
-        off += (extra.relocs.len() * size_of::<MachRel>()) as u64;
+    for sec in &mut synthetic {
+        sec.reloff = off;
+        off += (sec.relocs.len() * size_of::<MachRel>()) as u64;
     }
     // LC_DATA_IN_CODE, between the relocations and the symbol table
     // and present even with no entries (ld-prime): the inputs' entries
@@ -639,13 +501,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     let mut ci = 0;
     for &s in &sects {
-        let hdr = sect_hdr(ctx, &extras, s);
+        let hdr = sect_hdr(ctx, &synthetic, s);
         let (relocs, reloff) = match s {
             Sect::Merged(_) => {
                 ci += 1;
                 (&sect_relocs[ci - 1], reloff[ci - 1])
             }
-            Sect::Synthetic(i) => (&extras[i].relocs, extras[i].reloff),
+            Sect::Synthetic(i) => (&synthetic[i].relocs, synthetic[i].reloff),
         };
         let sect = MachSection {
             sectname: str_to_name(&hdr.sectname),
@@ -797,11 +659,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    for extra in &extras {
-        let fo = extra.hdr.fileoff as usize;
-        buf[fo..fo + extra.data.len()].copy_from_slice(&extra.data);
-        let mut p = extra.reloff as usize;
-        for rel in &extra.relocs {
+    for sec in &synthetic {
+        let fo = sec.hdr.fileoff as usize;
+        buf[fo..fo + sec.data.len()].copy_from_slice(&sec.data);
+        let mut p = sec.reloff as usize;
+        for rel in &sec.relocs {
             rel.write_to(&mut buf[p..]);
             p += size_of::<MachRel>();
         }
@@ -931,28 +793,59 @@ fn assign_file_offsets<E: Target>(
 }
 
 /// A section the -r output synthesizes rather than merges from input
-/// subsections: the merged __objc_imageinfo, the re-synthesized
-/// __LD,__compact_unwind and __TEXT,__eh_frame. Its size is known
-/// before layout, so it takes its place among the merged sections in
-/// ld64's order; its contents are built once addresses are assigned.
-/// `patches` are self-relative pointer cells filled then: value =
-/// target_addr - (section_addr + offset).
+/// subsections. Its size is known before layout, so it takes its place
+/// among the merged sections in ld64's order; its contents are built
+/// once addresses and symbols are assigned.
 struct SyntheticSection {
     hdr: ChunkHeader,
+    kind: SyntheticKind,
     data: Vec<u8>,
     relocs: Vec<MachRel>,
-    patches: Vec<(u32, u64, u8)>,
     /// Where the relocations start in the file.
     reloff: u64,
 }
 
+/// What a synthetic section holds.
+enum SyntheticKind {
+    /// The merged __objc_imageinfo record.
+    ObjcImageInfo,
+    /// __LD,__compact_unwind's entries: these unwind records'.
+    CompactUnwind(Vec<usize>),
+    /// __TEXT,__eh_frame's records, each at its offset there.
+    EhFrame(Vec<(EhRec, u32)>),
+}
+
 impl SyntheticSection {
-    fn new(segname: &'static str, sectname: &str, flags: u32, p2align: u32, size: u64) -> Self {
+    fn new(
+        segname: &'static str,
+        sectname: &str,
+        flags: u32,
+        p2align: u32,
+        size: u64,
+        kind: SyntheticKind,
+    ) -> Self {
         let mut hdr = ChunkHeader::new(segname, sectname);
         hdr.flags = flags;
         hdr.p2align = p2align;
         hdr.size = size;
-        Self { hdr, data: Vec::new(), relocs: Vec::new(), patches: Vec::new(), reloff: 0 }
+        Self { hdr, kind, data: Vec::new(), relocs: Vec::new(), reloff: 0 }
+    }
+
+    /// Builds the contents and relocations, which fill the size the
+    /// section was laid out with.
+    fn build_contents<E: Target>(&mut self, targets: &RelocTargets<E>) {
+        let (data, relocs) = match &self.kind {
+            SyntheticKind::ObjcImageInfo => {
+                let mut data = vec![0u8; 8];
+                data[4..8].copy_from_slice(&targets.ctx.objc_imageinfo.flags.to_le_bytes());
+                (data, Vec::new())
+            }
+            SyntheticKind::CompactUnwind(records) => compact_unwind_contents(targets, records),
+            SyntheticKind::EhFrame(records) => eh_frame_contents(targets, records, self.hdr.addr),
+        };
+        debug_assert_eq!(data.len() as u64, self.hdr.size);
+        self.data = data;
+        self.relocs = relocs;
     }
 }
 
@@ -972,10 +865,7 @@ fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
         return None;
     }
     let (seg, sect) = crate::passes::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
-    let mut sec = SyntheticSection::new(seg, sect, 0, 2, 8);
-    sec.data = vec![0u8; 8];
-    sec.data[4..8].copy_from_slice(&ctx.objc_imageinfo.flags.to_le_bytes());
-    Some(sec)
+    Some(SyntheticSection::new(seg, sect, 0, 2, 8, SyntheticKind::ObjcImageInfo))
 }
 
 /// The unwind records __LD,__compact_unwind carries: every surviving
@@ -996,8 +886,13 @@ fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
         .collect()
 }
 
-/// __LD,__compact_unwind: one 32-byte entry per record.
-fn compact_unwind_section<E: Target>(ctx: &Context<E>, records: &[usize]) -> SyntheticSection {
+/// __LD,__compact_unwind, if any unwind record survives: one 32-byte
+/// entry per record.
+fn compact_unwind_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
+    let records = compact_unwind_records(ctx);
+    if records.is_empty() {
+        return None;
+    }
     // Each record keeps the alignment of the section it came from, as
     // an ld-prime atom does, so the section takes the largest.
     let p2align = records
@@ -1011,13 +906,9 @@ fn compact_unwind_section<E: Target>(ctx: &Context<E>, records: &[usize]) -> Syn
         .map(|s| s.p2align)
         .max()
         .unwrap_or(3);
-    SyntheticSection::new(
-        "__LD",
-        "__compact_unwind",
-        S_ATTR_DEBUG,
-        p2align,
-        32 * records.len() as u64,
-    )
+    let size = 32 * records.len() as u64;
+    let kind = SyntheticKind::CompactUnwind(records);
+    Some(SyntheticSection::new("__LD", "__compact_unwind", S_ATTR_DEBUG, p2align, size, kind))
 }
 
 /// A record of __TEXT,__eh_frame: an input CIE or FDE.
@@ -1074,16 +965,153 @@ fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
     records
 }
 
-/// __TEXT,__eh_frame, sized for `records`.
-fn eh_frame_section<E: Target>(ctx: &Context<E>, records: &[(EhRec, u32)]) -> SyntheticSection {
+/// __TEXT,__eh_frame, if any CIE or FDE survives.
+fn eh_frame_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
+    let records = eh_frame_records(ctx);
+    if records.is_empty() {
+        return None;
+    }
     let size = records.iter().map(|&(r, _)| r.data(ctx).len() as u64).sum();
-    SyntheticSection::new(
+    Some(SyntheticSection::new(
         "__TEXT",
         "__eh_frame",
         S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
         3,
         size,
-    )
+        SyntheticKind::EhFrame(records),
+    ))
+}
+
+/// __LD,__compact_unwind's contents, re-synthesized so unwind info
+/// survives the merge: one 32-byte entry per record, its pointer fields
+/// set by UNSIGNED relocations.
+fn compact_unwind_contents<E: Target>(
+    targets: &RelocTargets<E>,
+    records: &[usize],
+) -> (Vec<u8>, Vec<MachRel>) {
+    let ctx = targets.ctx;
+    let narrow_fields = narrow_unwind_fields(ctx);
+    let mut data: Vec<u8> = Vec::new();
+    let mut relocs: Vec<MachRel> = Vec::new();
+    for &r in records {
+        let rec = &ctx.unwind_records[r];
+        let entry = data.len() as u32;
+        // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
+        let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
+        let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
+        let (func, bits) = targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
+        data.extend_from_slice(&func.to_le_bytes());
+        relocs.push(MachRel { r_address: entry, bits });
+        data.extend_from_slice(&rec.code_len.to_le_bytes());
+        data.extend_from_slice(&rec.encoding.to_le_bytes());
+
+        match rec.personality() {
+            Some(p) => {
+                let symnum = targets.personality(p);
+                data.extend_from_slice(&0u64.to_le_bytes());
+                relocs.push(MachRel { r_address: entry + 16, bits: symnum | len(16) | (1 << 27) });
+            }
+            None => data.extend_from_slice(&0u64.to_le_bytes()),
+        }
+
+        match rec.lsda() {
+            Some((lsda, off)) => {
+                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
+                data.extend_from_slice(&lsda.to_le_bytes());
+                relocs.push(MachRel { r_address: entry + 24, bits });
+            }
+            None => data.extend_from_slice(&0u64.to_le_bytes()),
+        }
+    }
+    (data, relocs)
+}
+
+/// __TEXT,__eh_frame's contents at address `addr`, in ld-prime's form:
+/// the input CIEs and FDEs copied through with their self-relative
+/// fields recomputed for the merged layout - the CIE pointer, pc_begin
+/// and the LSDA pointer - and no symbols or relocations of their own
+/// but the CIE's personality cell, a 4-byte pcrel GOT reference (the
+/// shape compilers emit). ld64 classic named every CIE EH_Frame1 and
+/// every FDE func.eh and wrote the fields as SUBTRACTOR pairs against
+/// them; ld-prime does not.
+fn eh_frame_contents<E: Target>(
+    targets: &RelocTargets<E>,
+    records: &[(EhRec, u32)],
+    addr: u64,
+) -> (Vec<u8>, Vec<MachRel>) {
+    let ctx = targets.ctx;
+    let cie_off: HashMap<usize, u32> = records
+        .iter()
+        .filter_map(|&(r, off)| match r {
+            EhRec::Cie(c) => Some((c, off)),
+            EhRec::Fde(_) => None,
+        })
+        .collect();
+    // A self-relative field at `cell`, of `size` bytes, pointing to
+    // `target`.
+    let write_pcrel = |data: &mut [u8], cell: u32, target: u64, size: usize| {
+        let val = target.wrapping_sub(addr + cell as u64);
+        let cell = cell as usize;
+        match size {
+            4 => data[cell..cell + 4].copy_from_slice(&(val as u32).to_le_bytes()),
+            8 => data[cell..cell + 8].copy_from_slice(&val.to_le_bytes()),
+            _ => unreachable!(),
+        }
+    };
+
+    let mut data: Vec<u8> = Vec::new();
+    let mut relocs: Vec<MachRel> = Vec::new();
+    for &(r, off) in records {
+        debug_assert_eq!(off as usize, data.len());
+        data.extend_from_slice(r.data(ctx));
+        match r {
+            EhRec::Cie(c) => {
+                let cie = &ctx.cies[c];
+                if let Some(p) = cie.personality {
+                    // ld-prime writes 4 into the cell on either target,
+                    // whatever the object held there (a compiler's
+                    // x86-64 CIE holds 4 too).
+                    let at = (off + cie.personality_offset) as usize;
+                    data[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+                    relocs.push(MachRel {
+                        r_address: off + cie.personality_offset,
+                        bits: targets.personality(p)
+                            | (1 << 24)
+                            | (2 << 25)
+                            | (1 << 27)
+                            | ((E::RELOC_GOTPC as u32) << 28),
+                    });
+                }
+            }
+            EhRec::Fde(f) => {
+                let fde = &ctx.fdes[f];
+                let o = off as usize;
+                // The CIE pointer: how far back the CIE is from this
+                // field.
+                let cie_delta = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
+                data[o + 4..o + 8].copy_from_slice(&cie_delta.to_le_bytes());
+                // pc_begin: the function, relative to the field.
+                let cie = &ctx.cies[fde.cie as usize];
+                let func_isec = ctx.resolve_isec(fde.isec as usize);
+                let isec = &ctx.isecs[func_isec];
+                let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
+                    + isec.offset as u64
+                    + fde.func_offset as u64;
+                write_pcrel(&mut data, off + 8, func_addr, cie.pc_size());
+                // The LSDA pointer, past the augmentation length.
+                if let Some((lsda, lsda_off)) = fde.lsda {
+                    let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size());
+                    let lsda = ctx.resolve_isec(lsda as usize);
+                    let l = &ctx.isecs[lsda];
+                    let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
+                        + l.offset as u64
+                        + lsda_off as u64;
+                    write_pcrel(&mut data, off + pos as u32, lsda_addr, cie.lsda_size());
+                }
+            }
+        }
+    }
+    (data, relocs)
 }
 
 /// A -r output section's relocations, regenerated against the merged
