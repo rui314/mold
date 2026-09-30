@@ -4796,12 +4796,15 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::EhFrame);
     }
 
-    ctx.chunks.push(ChunkId::ChainedFixups);
-    ctx.chunks.push(ChunkId::RebaseInfo);
-    ctx.chunks.push(ChunkId::BindInfo);
-    ctx.chunks.push(ChunkId::WeakBindInfo);
-    ctx.chunks.push(ChunkId::LazyBindInfo);
-    ctx.chunks.push(ChunkId::ExportTrie);
+    // What dyld reads: a -static image goes without.
+    if !ctx.args.static_link {
+        ctx.chunks.push(ChunkId::ChainedFixups);
+        ctx.chunks.push(ChunkId::RebaseInfo);
+        ctx.chunks.push(ChunkId::BindInfo);
+        ctx.chunks.push(ChunkId::WeakBindInfo);
+        ctx.chunks.push(ChunkId::LazyBindInfo);
+        ctx.chunks.push(ChunkId::ExportTrie);
+    }
     ctx.chunks.push(ChunkId::FunctionStarts);
     if ctx.args.data_in_code_info {
         ctx.chunks.push(ChunkId::DataInCode);
@@ -5496,9 +5499,14 @@ pub fn create_output_symtab<E: Target>(
                 (N_SECT | N_EXT, ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]), 0)
             }
             // A synthesized symbol with no section (__mh_execute_header)
-            // sits in the first section: the mach header.
+            // sits in the first section: the mach header. Nothing slides
+            // a -static image without -pie, and there it is absolute.
             (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => {
-                (N_SECT | N_EXT, 1, REFERENCED_DYNAMICALLY)
+                if ctx.args.static_link && !ctx.args.pie {
+                    (N_ABS | N_EXT, 0, REFERENCED_DYNAMICALLY)
+                } else {
+                    (N_SECT | N_EXT, 1, REFERENCED_DYNAMICALLY)
+                }
             }
             (_, None) => (N_ABS | N_EXT, 0, 0),
         };

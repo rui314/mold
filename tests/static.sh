@@ -27,7 +27,14 @@ __start:
 EOF
 fi
 
-$mold -arch $ARCH -static -e __start $t/a.o -o $t/exe
+cat <<EOF | $CC -o $t/b.o -c -xassembler -
+.data
+.globl _p
+.p2align 3
+_p: .quad __start
+EOF
+
+$mold -arch $ARCH -static -e __start $t/a.o $t/b.o -o $t/exe
 otool -l $t/exe > $t/lc
 grep -q 'cmd LC_UNIXTHREAD' $t/lc
 not grep -q 'cmd LC_MAIN' $t/lc
@@ -41,3 +48,19 @@ else
   $t/exe || rc=$?
   [ $rc = 42 ]
 fi
+
+# No dyld reads the image either: it has no fixups, binds or exports,
+# and a pointer holds its final address. Only -pie keeps a dynamic
+# symbol table, for the local relocations that slide the image; without
+# it nothing slides the image, and __mh_execute_header is absolute.
+for cmd in LC_DYLD_INFO LC_DYLD_INFO_ONLY LC_DYLD_CHAINED_FIXUPS LC_DYLD_EXPORTS_TRIE LC_DYSYMTAB; do
+  not grep -q "cmd $cmd\$" $t/lc
+done
+nm -m $t/exe > $t/nm
+grep -q '(absolute) .*__mh_execute_header' $t/nm
+
+$mold -arch $ARCH -static -pie -e __start $t/a.o $t/b.o -o $t/exe2
+otool -l $t/exe2 > $t/lc2
+grep -q 'cmd LC_DYSYMTAB$' $t/lc2
+nm -m $t/exe2 > $t/nm2
+grep -q '(__TEXT,__text) .*__mh_execute_header' $t/nm2
