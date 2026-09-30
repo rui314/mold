@@ -1638,36 +1638,38 @@ struct Locals<'a, E: Target> {
     subtracted: HashSet<SymbolId>,
 }
 
+/// The size of the records of a literal subsection whose atoms ld-prime
+/// makes by content, 0 for one record per subsection (as C string
+/// literals are split), or None for any other subsection: that of a
+/// section of another kind, or of a __ustring section without
+/// subsections, which is one atom (see has_unnamed_atoms).
+fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
+    let h = ctx.hdr_of(&ctx.isecs[isec]);
+    match h.section_type() {
+        S_CSTRING_LITERALS => return Some(0),
+        S_4BYTE_LITERALS => return Some(4),
+        S_8BYTE_LITERALS => return Some(8),
+        S_16BYTE_LITERALS => return Some(16),
+        _ => {}
+    }
+    let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
+    if !crate::passes::has_unnamed_atoms(h, split) {
+        // Superclass and protocol references are cut one per pointer
+        // too; on arm64 ld-prime names those no label names (a labeled
+        // one keeps its label).
+        return (E::CPUTYPE == CPU_TYPE_ARM64 && crate::passes::is_class_or_protocol_ref(h))
+            .then_some(8);
+    }
+    match h.sectname() {
+        "__cfstring" => Some(32),
+        "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" => Some(8),
+        _ => Some(0),
+    }
+}
+
 impl<'a, E: Target> Locals<'a, E> {
     /// Starts the locals with the literal atoms ld64 names itself.
     fn new(ctx: &'a Context<E>, merged: &[OutputSectionId]) -> Self {
-        // The sections of literals: the record size; 0 for one record per
-        // subsection, as cstring literals are split.
-        let literal_size = |isec: usize, flags: u32| -> Option<u64> {
-            match flags & SECTION_TYPE {
-                S_CSTRING_LITERALS => return Some(0),
-                S_4BYTE_LITERALS => return Some(4),
-                S_8BYTE_LITERALS => return Some(8),
-                S_16BYTE_LITERALS => return Some(16),
-                _ => {}
-            }
-            let h = ctx.hdr_of(&ctx.isecs[isec]);
-            if !crate::passes::has_unnamed_atoms(h) {
-                // Superclass and protocol references are cut one per
-                // pointer too; on arm64 ld-prime names those no label
-                // names (a labeled one keeps its label).
-                return (E::CPUTYPE == CPU_TYPE_ARM64
-                    && crate::passes::is_class_or_protocol_ref(h))
-                .then_some(8);
-            }
-            match h.sectname() {
-                "__cfstring" => Some(32),
-                "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" => {
-                    Some(8)
-                }
-                _ => Some(0),
-            }
-        };
         let names_literals = |segname: &str, sectname: &str| {
             E::CPUTYPE == CPU_TYPE_ARM64 || (segname == "__TEXT" && sectname == "__cstring")
         };
@@ -1677,8 +1679,10 @@ impl<'a, E: Target> Locals<'a, E> {
         let mut unnamed = HashSet::new();
         for &chunk_idx in merged {
             let chunk = ctx.output_section(chunk_idx);
-            let Some(&first) = chunk.members.first() else { continue };
-            let Some(entsize) = literal_size(first as usize, chunk.hdr.flags) else { continue };
+            let Some(entsize) = chunk.members.iter().find_map(|&id| literal_size(ctx, id as usize))
+            else {
+                continue;
+            };
             if !names_literals(chunk.hdr.segname, &chunk.hdr.sectname) {
                 unnamed.insert(chunk_idx);
                 continue;
@@ -1687,8 +1691,13 @@ impl<'a, E: Target> Locals<'a, E> {
             for &id in &chunk.members {
                 let id = id as usize;
                 let isec = &ctx.isecs[id];
-                // A literal a label names keeps that label instead.
-                if !isec.is_alive() || isec.replacement != NO_REPLACEMENT || isec.is_labeled() {
+                // A literal a label names keeps that label instead, as
+                // does a whole section that is one atom.
+                if !isec.is_alive()
+                    || isec.replacement != NO_REPLACEMENT
+                    || isec.is_labeled()
+                    || literal_size(ctx, id).is_none()
+                {
                     continue;
                 }
                 let size = isec.data().len() as u64;
@@ -1735,6 +1744,7 @@ impl<'a, E: Target> Locals<'a, E> {
         let t = &ctx.isecs[isec];
         if let Some(ChunkId::Output(osec)) = t.output_section()
             && self.unnamed.contains(&osec)
+            && literal_size(ctx, isec).is_some()
         {
             return !t.is_labeled();
         }

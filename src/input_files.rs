@@ -239,19 +239,21 @@ pub fn is_private_label(name: &str) -> bool {
 /// Whether a section is one ld-prime reads as a list of records -
 /// CFStrings, UTF-16 strings, selector and class references, Objective-C
 /// class and category lists - whose atoms no local symbol names: they
-/// are "anon" in its diagnostics and -map.
-pub fn is_record_list(hdr: &MachSection) -> bool {
+/// are "anon" in its diagnostics and -map. The UTF-16 strings of an
+/// object without subsections (`split` false) are one atom, named by
+/// its labels.
+pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
     hdr.section_type() == S_LITERAL_POINTERS
         || matches!(
             hdr.sectname(),
             "__cfstring"
-                | "__ustring"
                 | "__objc_classrefs"
                 | "__objc_classlist"
                 | "__objc_nlclslist"
                 | "__objc_catlist"
                 | "__objc_nlcatlist"
         )
+        || split && hdr.sectname_is("__ustring")
 }
 
 /// How ld-prime prefers a symbol at an atom's start to name the atom in
@@ -1121,18 +1123,14 @@ impl StagedObject {
     /// ld -r does: such a symbol defines nothing, so another object's
     /// reference to its name is undefined, another definition is no
     /// duplicate and no output lists it, while its own object's
-    /// relocations still reach the atom. (A __ustring section without
-    /// subsections is one atom, whose names ld-prime keeps.)
+    /// relocations still reach the atom.
     fn demote_unnamed_atom_names(&mut self) {
         use crate::passes::{has_unnamed_atoms, is_unnamed_objc_list};
         let split = self.subsections_via_symbols;
         let unnamed: Vec<bool> = self
             .sect_hdrs
             .iter()
-            .map(|h| {
-                is_unnamed_objc_list(h)
-                    || has_unnamed_atoms(h) && (split || !h.sectname_is("__ustring"))
-            })
+            .map(|h| is_unnamed_objc_list(h) || has_unnamed_atoms(h, split))
             .collect();
         for nlist in self.demote_externals_in(&unnamed) {
             nlist.n_type = nlist.n_type & !N_EXT | N_PEXT;

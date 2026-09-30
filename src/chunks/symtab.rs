@@ -133,7 +133,7 @@ fn keep_local_symbol_in<E: Target>(
     if is_unnamed_objc_list(hdr) {
         return list_alias;
     }
-    if has_unnamed_atoms(hdr) {
+    if has_unnamed_atoms(hdr, ctx.objs[isec.file as usize].subsections_via_symbols) {
         return false;
     }
     demoted
@@ -600,7 +600,8 @@ fn symbol_stabs<E: Target>(
 /// Whether ld-prime notes the symbols of an input section. It notes
 /// none in those whose contents it takes apart into atoms of its own:
 /// literals (C strings by the section type, as the 4-, 8- and 16-byte
-/// ones, and UTF-16 strings in __TEXT,__ustring), the initializer and
+/// ones, and UTF-16 strings in __TEXT,__ustring, even in an object
+/// without subsections, where they are one atom), the initializer and
 /// terminator pointers, exception tables, and the Objective-C metadata
 /// it parses - the lists, the class, superclass, protocol and selector
 /// references, CFStrings and literal objects, ivar offsets, and the
@@ -615,12 +616,19 @@ fn has_stabs(hdr: &MachSection) -> bool {
     let init_term =
         matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
     let text = hdr.segname_is("__TEXT")
-        && (hdr.sectname_is("__gcc_except_tab") || hdr.sectname_is("__objc_methlist"));
+        && ["__gcc_except_tab", "__objc_methlist", "__ustring"]
+            .iter()
+            .any(|name| hdr.sectname_is(name));
     let objc = hdr.segname_is("__DATA")
         && ["__objc_ivar", "__objc_protolist", "__objc_protorefs", "__objc_superrefs"]
             .iter()
             .any(|name| hdr.sectname_is(name));
-    !(literals || init_term || text || objc || has_unnamed_atoms(hdr) || is_unnamed_objc_list(hdr))
+    !(literals
+        || init_term
+        || text
+        || objc
+        || has_unnamed_atoms(hdr, false)
+        || is_unnamed_objc_list(hdr))
 }
 
 /// The object whose stabs note each tentative definition that no real

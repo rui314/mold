@@ -3456,7 +3456,9 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     for &(isec, _, id, how) in &uses {
         if let crate::target::LazyRef::Unsupported(kind) = how {
             let sym = &ctx.symbols[id];
-            let atom = if input_files::is_record_list(ctx.hdr_of(&ctx.isecs[isec as usize])) {
+            let sec = &ctx.isecs[isec as usize];
+            let split = ctx.objs[sec.file as usize].subsections_via_symbols;
+            let atom = if input_files::is_record_list(ctx.hdr_of(sec), split) {
                 "anon".into()
             } else {
                 ctx.atom_name(isec as usize)
@@ -3982,10 +3984,12 @@ pub(crate) fn objc_list_aliases<E: Target>(
 /// atoms itself on arm64 (see relocatable.rs). Superclass and protocol
 /// references of the literal-pointer type are taken for class
 /// references too, which merge whatever labels them (see
-/// is_class_or_protocol_ref).
-pub(crate) fn has_unnamed_atoms(hdr: &MachSection) -> bool {
+/// is_class_or_protocol_ref). In an object without subsections
+/// (`split` false) the UTF-16 literals' section is one atom, whose
+/// labels ld-prime keeps as any other's.
+pub(crate) fn has_unnamed_atoms(hdr: &MachSection, split: bool) -> bool {
     if hdr.segname_is("__TEXT") {
-        return hdr.sectname_is("__ustring");
+        return split && hdr.sectname_is("__ustring");
     }
     hdr.segname_is("__DATA")
         && ([

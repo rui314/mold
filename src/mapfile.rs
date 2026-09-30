@@ -386,7 +386,8 @@ fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
     if sym.is_extern() {
         return true;
     }
-    !crate::input_files::is_record_list(hdr) && !name.starts_with('L')
+    let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
+    !crate::input_files::is_record_list(hdr, split) && !name.starts_with('L')
 }
 
 /// Drops from the map's named symbols each ltmpN label another of them
