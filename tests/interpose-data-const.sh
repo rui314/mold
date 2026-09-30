@@ -41,3 +41,29 @@ sects $t/libfoo3.dylib > $t/sects3
 grep -qx '__DATA,__interpose' $t/sects3
 DYLD_INSERT_LIBRARIES=$t/libfoo3.dylib $t/exe > $t/out3
 grep -qx 'interposed hello' $t/out3
+
+# The move takes the place of a -rename_section: one naming
+# __DATA,__interpose keeps the tuples out of __DATA_CONST, one naming
+# __DATA_CONST,__interpose never applies, and -rename_segment moves them
+# on from there. A -sectcreate section of that name moves too.
+$CC --ld-path=$mold -o $t/libfoo4.dylib -shared $t/a.o -mmacosx-version-min=15.0 \
+  -Wl,-rename_section,__DATA,__interpose,__DATA,__bar
+sects $t/libfoo4.dylib > $t/sects4
+grep -qx '__DATA,__bar' $t/sects4
+not grep -q __interpose $t/sects4
+
+$CC --ld-path=$mold -o $t/libfoo5.dylib -shared $t/a.o -mmacosx-version-min=15.0 \
+  -Wl,-rename_section,__DATA_CONST,__interpose,__DATA,__bar
+sects $t/libfoo5.dylib > $t/sects5
+grep -qx '__DATA_CONST,__interpose' $t/sects5
+
+$CC --ld-path=$mold -o $t/libfoo6.dylib -shared $t/a.o -mmacosx-version-min=15.0 \
+  -Wl,-rename_segment,__DATA_CONST,__FOO
+sects $t/libfoo6.dylib > $t/sects6
+grep -qx '__FOO,__interpose' $t/sects6
+
+printf '%016d' 0 > $t/tuples
+$CC --ld-path=$mold -o $t/libfoo7.dylib -shared $t/b.o -mmacosx-version-min=15.0 \
+  -Wl,-sectcreate,__DATA,__interpose,$t/tuples
+sects $t/libfoo7.dylib > $t/sects7
+grep -qx '__DATA_CONST,__interpose' $t/sects7

@@ -2926,7 +2926,8 @@ type SectionName = (&'static str, &'static str);
 /// references it), into no image. ld-prime names the rest in three
 /// steps. Its own moves come first (see SectionMap::builtin_name), so
 /// -rename_section matches __DATA_CONST,__const, not __DATA,__const;
-/// then -rename_section and -rename_segment rename that name; and a
+/// then -rename_section and -rename_segment rename that name (see
+/// SectionMap::renamed for __interpose's move, which comes last); and a
 /// section still in __TEXT then merges as in ld64 - __StaticInit into
 /// __text, the fixed-size literal pools (__literal4/8/16, already
 /// merged per element) into __const - under that section's renamed
@@ -2952,7 +2953,7 @@ fn output_section_for(
         return None;
     }
     let name = map.builtin_name(name, flags);
-    let out = renamed(args, name);
+    let out = map.renamed(args, name);
     Some(match merged_name(out) {
         Some(merged) => (renamed(args, merged), merged),
         None => (out, name),
@@ -3032,17 +3033,13 @@ impl SectionMap {
 
     /// A __DATA section's name in a final image when it needs no
     /// writes after dyld's fixups: the same section in __DATA_CONST,
-    /// unless -no_data_const (but for the interposing tuples, see
-    /// interpose_is_const) - in the shared region, where dyld fixes
+    /// unless -no_data_const - in the shared region, where dyld fixes
     /// them up for good, the selector references and the Objective-C
     /// runtime's class data too. ld-prime treats this move as a
     /// renaming, which boundary symbols follow as well (unlike
     /// -text_exec's: section$start$__TEXT$__text stays in __TEXT).
     fn const_name(self, name: SectionName) -> SectionName {
         let (seg, sect) = name;
-        if name == ("__DATA", "__interpose") && self.const_interpose {
-            return ("__DATA_CONST", sect);
-        }
         let is_const = match sect {
             "__objc_classrefs" | "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
             "__objc_selrefs" => self.shared_region,
@@ -3067,6 +3064,22 @@ impl SectionMap {
             _ => false,
         };
         if self.data_const && is_const { ("__DATA_CONST", name.1) } else { self.const_name(name) }
+    }
+
+    /// A final image's section name after -rename_section and
+    /// -rename_segment (see renamed). ld-prime moves the interposing
+    /// tuples to __DATA_CONST (see interpose_is_const) in place of a
+    /// -rename_section: one naming __DATA,__interpose keeps the section
+    /// out of __DATA_CONST, one naming __DATA_CONST,__interpose never
+    /// applies, and -rename_segment moves the section on from there.
+    /// The move takes any section of that name, -sectcreate's too, but
+    /// not one a -rename_section gives the name.
+    fn renamed(self, args: &crate::cmdline::Args, name: SectionName) -> SectionName {
+        let is_renamed = args.rename_sections.iter().any(|(s, t, _, _)| s == name.0 && t == name.1);
+        if name == ("__DATA", "__interpose") && self.const_interpose && !is_renamed {
+            return (renamed_segment(args, "__DATA_CONST"), name.1);
+        }
+        renamed(args, name)
     }
 
     fn new<E: Target>(ctx: &Context<E>) -> Self {
@@ -3966,9 +3979,14 @@ fn text_section_name<E: Target>(ctx: &Context<E>) -> SectionName {
 /// __eh_frame, the Objective-C ones and -sectcreate's - but
 /// __unwind_info, which stays in __TEXT; and moves the mach header to
 /// its segment. (The output sections of input sections got their
-/// renamed names when created.)
+/// renamed names when created.) A -sectcreate __DATA,__interpose moves
+/// to __DATA_CONST like an input section (see SectionMap::renamed).
 fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.rename_sections.is_empty() && ctx.args.rename_segments.is_empty() {
+    let map = SectionMap::final_link(ctx);
+    if ctx.args.rename_sections.is_empty()
+        && ctx.args.rename_segments.is_empty()
+        && !map.const_interpose
+    {
         return;
     }
     ctx.mach_header.hdr.segname = header_segment(ctx);
@@ -3978,7 +3996,7 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         if !hdr.is_sect || matches!(id, ChunkId::Output(_) | ChunkId::UnwindInfo) {
             continue;
         }
-        let (seg, sect) = renamed(&ctx.args, (hdr.segname, static_name(&hdr.sectname)));
+        let (seg, sect) = map.renamed(&ctx.args, (hdr.segname, static_name(&hdr.sectname)));
         let hdr = ctx.chunk_header_mut(id);
         hdr.segname = seg;
         hdr.sectname = sect.to_string();
@@ -4004,7 +4022,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
         };
         let flags = boundary_section_flags(seg, sect);
         let name = map.boundary_name((static_name(seg), static_name(sect)));
-        let (seg, sect) = renamed(&ctx.args, name);
+        let (seg, sect) = map.renamed(&ctx.args, name);
         ctx.boundary_syms[i].2 = seg.to_string();
         ctx.boundary_syms[i].3 = Some(sect.to_string());
         if !ctx.chunks.iter().any(|&id| {
