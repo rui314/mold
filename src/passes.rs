@@ -2853,22 +2853,28 @@ pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static str {
 }
 
 /// Sections a final link places in __DATA_CONST: data that needs no
-/// writes after dyld's fixups. ld64's list, as seen in ld-prime's
-/// output across the app corpus.
+/// writes after dyld's fixups. ld-prime's list - signed pointers
+/// (__auth_ptr), CF and ObjC constant objects, the ObjC lists and the
+/// initializer lists - but for the ones only a condition moves (see
+/// SectionMap::const_name). A section not on it, such as
+/// __objc_boolobj, stays in __DATA.
 const DATA_CONST_SECTIONS: &[&str] = &[
+    "__auth_ptr",
     "__cfstring",
     "__const",
+    "__const_cfobj2",
     "__got",
     "__mod_init_func",
     "__mod_term_func",
     "__objc_arraydata",
     "__objc_arrayobj",
-    "__objc_boolobj",
+    "__objc_dateobj",
     "__objc_dictobj",
     "__objc_doubleobj",
     "__objc_floatobj",
     "__objc_intobj",
     "__objc_catlist",
+    "__objc_catlist2",
     "__objc_classlist",
     "__objc_imageinfo",
     "__objc_nlcatlist",
@@ -3082,6 +3088,7 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
         sectname,
         "__objc_classlist"
             | "__objc_catlist"
+            | "__objc_catlist2"
             | "__objc_nlclslist"
             | "__objc_nlcatlist"
             | "__objc_selrefs"
@@ -4009,8 +4016,8 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__la_symbol_ptr") => S_LAZY_SYMBOL_POINTERS,
         (
             "__DATA",
-            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
-            | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
+            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
+            | "__objc_nlcatlist" | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
         ) => S_ATTR_NO_DEAD_STRIP,
         ("__DATA", "__objc_protolist") => S_COALESCED,
         ("__DATA", "__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
