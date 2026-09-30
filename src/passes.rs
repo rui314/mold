@@ -4900,7 +4900,7 @@ pub fn create_output_symtab<E: Target>(
     par_push_entries(&mut names, &mut data.entries, &undefs, |&i| {
         let sym = &ctx.symbols[i];
         let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
-        // A flat-namespace import records the DYNAMIC_LOOKUP ordinal, a
+        // A dynamic-lookup import records the DYNAMIC_LOOKUP ordinal, a
         // -bundle_loader import the EXECUTABLE ordinal.
         let ordinal = ctx.nlist_library_ordinal(dylib) as u16;
         let mut n_desc = ordinal << 8;

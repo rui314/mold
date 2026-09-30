@@ -314,10 +314,16 @@ impl<E: Target> Context<E> {
         (ordinal as u64) & ((1u64 << bits) - 1)
     }
 
-    /// The library ordinal in an undefined symbol's n_desc:
-    /// EXECUTABLE_ORDINAL (0xff) for the -bundle_loader executable,
-    /// DYNAMIC_LOOKUP_ORDINAL (0xfe) for flat lookup, else the dylib's.
+    /// The library ordinal in an undefined symbol's n_desc, which only
+    /// a two-level namespace image has: EXECUTABLE_ORDINAL (0xff) for
+    /// the -bundle_loader executable, DYNAMIC_LOOKUP_ORDINAL (0xfe) for
+    /// a symbol left to dynamic lookup, else the dylib's. ld-prime
+    /// writes 0 in a -flat_namespace image, where every import is a
+    /// flat lookup.
     pub fn nlist_library_ordinal(&self, dylib: u32) -> u8 {
+        if self.args.flat_namespace {
+            return 0;
+        }
         match self.bind_ordinal(dylib) {
             crate::macho::BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => 0xff,
             n => n as u8,
