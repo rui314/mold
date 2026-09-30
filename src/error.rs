@@ -27,6 +27,7 @@ static COLOR: AtomicBool = AtomicBool::new(false);
 static FATAL_WARNINGS: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
+static HAS_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
 static HAS_WARNING: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
@@ -110,6 +111,20 @@ pub fn error(msg: fmt::Arguments) {
     HAS_ERROR.store(true, Ordering::Relaxed);
 }
 
+/// Reports an error in the output's layout, or in writing it: a
+/// thread-local section it can't place, or a fixup that doesn't fit.
+/// ld-prime lays the output out to the end all the same, and prints
+/// the layout as it fails the link (see passes::print_final_layout).
+pub fn layout_error(msg: fmt::Arguments) {
+    emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
+    HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
+}
+
+/// Whether a layout_error has been reported.
+pub fn has_layout_error() -> bool {
+    HAS_LAYOUT_ERROR.load(Ordering::Relaxed)
+}
+
 /// Reports a warning. -w hides it, but -fatal_warnings still counts it
 /// (see check_fatal_warnings).
 pub fn warn(msg: fmt::Arguments) {
@@ -143,6 +158,14 @@ pub fn check_fatal_warnings() {
 
 /// Exits with a failure status if any error has been reported.
 pub fn checkpoint() {
+    if HAS_ERROR.load(Ordering::Relaxed) || HAS_LAYOUT_ERROR.load(Ordering::Relaxed) {
+        exit_after_cleanup(1);
+    }
+}
+
+/// Exits with a failure status if an error has been reported that
+/// stops the layout: any but a layout_error.
+pub fn checkpoint_in_layout() {
     if HAS_ERROR.load(Ordering::Relaxed) {
         exit_after_cleanup(1);
     }
@@ -170,6 +193,13 @@ macro_rules! fatal {
 macro_rules! error {
     ($($arg:tt)*) => {
         $crate::error::error(format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! layout_error {
+    ($($arg:tt)*) => {
+        $crate::error::layout_error(format_args!($($arg)*))
     };
 }
 

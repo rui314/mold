@@ -883,8 +883,10 @@ impl<E: Target> Context<E> {
         msg: std::fmt::Arguments,
     ) {
         match off {
-            0 => crate::error!("fixup error (kind={kind}) at 'anon-{atom}' from {file}, {msg}"),
-            _ => crate::error!(
+            0 => crate::layout_error!(
+                "fixup error (kind={kind}) at 'anon-{atom}' from {file}, {msg}"
+            ),
+            _ => crate::layout_error!(
                 "fixup error (kind={kind}) at 'anon-{atom}'+0x{off:X} from {file}, {msg}"
             ),
         }
@@ -910,9 +912,11 @@ impl<E: Target> Context<E> {
         let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
         let atom = self.atom_name(isec);
         if offset == 0 {
-            crate::error!("fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
+            crate::layout_error!("fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
         } else {
-            crate::error!("fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}");
+            crate::layout_error!(
+                "fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}"
+            );
         }
     }
 

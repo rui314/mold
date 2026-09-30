@@ -4,7 +4,8 @@ source "$(dirname "$0")"/common.inc
 # ld-prime takes a final image's __thread_data and __thread_bss, in any
 # segment and under the names renames give, for the thread-local
 # template dyld copies for each thread, and refuses one that its first
-# member doesn't type as thread-local data. A -r output takes it.
+# member doesn't type as thread-local data, printing the layout it made
+# as it does after such errors in it. A -r output takes it.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 __thread int x = 5;
@@ -55,6 +56,7 @@ $t/exe | grep -q '^5 0$'
 
 not $CC --ld-path=$mold -o $t/exe2 $t/data.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __DATA,__thread_data' $t/log
+grep -q '^final section layout:$' $t/log
 
 not $CC --ld-path=$mold -o $t/exe2 $t/bss.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __DATA,__thread_bss' $t/log
@@ -80,6 +82,8 @@ EOF
 not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
   -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar 2> $t/log
 grep -q 'thread-locals too large.  Max 4GB for 64-bit architectures$' $t/log
+grep -q '^final section layout:$' $t/log
+grep -q '^        __bar ' $t/log
 
 not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
   -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log

@@ -186,6 +186,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));
     passes::fix_synthetic_symbols(&mut ctx);
     passes::resolve_entry(&mut ctx);
+    passes::print_final_layout(&ctx);
     crate::error::checkpoint();
     crate::mapfile::print_map(&ctx);
     crate::mapfile::write_dependency_info(&ctx);

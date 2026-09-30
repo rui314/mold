@@ -5100,7 +5100,8 @@ fn resolve_zerofill_conflict<E: Target>(
 /// descriptors hold falls outside it. ld-prime reports data before the
 /// template, whose offset wraps past 4GB; mold also data after it, of
 /// which ld-prime writes an image dyld refuses, and data with no
-/// template left, on which ld-prime crashes.
+/// template left, on which ld-prime crashes. Both are errors in the
+/// layout (see error::layout_error).
 fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId]) {
     let is_tlv = |hdr: &crate::chunks::ChunkHeader| {
         matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
@@ -5109,12 +5110,12 @@ fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId])
     for osec in &ctx.output_sections {
         let hdr = &osec.hdr;
         if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss") && !is_tlv(hdr) {
-            error!("Missing TLV section flags in {},{}", hdr.segname, hdr.sectname);
+            crate::layout_error!("Missing TLV section flags in {},{}", hdr.segname, hdr.sectname);
             missing = true;
         }
     }
     if !missing && tlv_data.iter().any(|&id| !is_tlv(&ctx.output_section(id).hdr)) {
-        error!("thread-locals too large.  Max 4GB for 64-bit architectures");
+        crate::layout_error!("thread-locals too large.  Max 4GB for 64-bit architectures");
     }
 }
 
@@ -6405,6 +6406,36 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// Prints the image's segments and sections, in load command order, if
+/// an error in its layout ends the link (see error::layout_error), as
+/// ld-prime does - with its own layout's addresses, sizes and file
+/// offsets.
+pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
+    use std::fmt::Write;
+    if !crate::error::has_layout_error() {
+        return;
+    }
+    let mut out = String::from("final section layout:\n");
+    for seg in &ctx.segments {
+        let cmd = &seg.cmd;
+        let _ = writeln!(
+            out,
+            "    {:<20} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x}, fileSize=0x{:08x}",
+            seg.name, cmd.vmaddr, cmd.vmsize, cmd.fileoff, cmd.filesize
+        );
+        for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
+            let zerofill = hdr.is_zerofill();
+            let fileoff = if zerofill { 0 } else { hdr.fileoff };
+            let _ = writeln!(
+                out,
+                "        {:<16} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x} (zerofill={})",
+                hdr.sectname, hdr.addr, hdr.size, fileoff, zerofill as u8
+            );
+        }
+    }
+    eprint!("{out}");
+}
+
 /// Lays out every segment but __LINKEDIT and gives each its address.
 /// Returns the file offset past them.
 fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
@@ -6445,7 +6476,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     }
     place_segments(ctx);
     check_segment_addresses(ctx);
-    crate::error::checkpoint();
+    crate::error::checkpoint_in_layout();
     fileoff
 }
 
@@ -6737,7 +6768,8 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
 
 /// ld-prime refuses segments that overlap, which takes a -segaddr (or
 /// an -image_base inside __PAGEZERO), and in an image dyld slides, a
-/// segment below the one before it. It reports the first such segment.
+/// segment below the one before it - an error in the layout, which it
+/// prints (see error::layout_error). It reports the first such segment.
 /// Left out of the overlap check are empty segments and __LINKEDIT,
 /// sized last.
 fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
@@ -6769,14 +6801,14 @@ fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
     }
     for pair in segs.windows(2) {
         if pair[1].cmd.vmaddr < pair[0].cmd.vmaddr {
-            error!("segment {} address is out of order", pair[1].name);
+            crate::layout_error!("segment {} address is out of order", pair[1].name);
             return;
         }
     }
     if let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
         && addr < last.cmd.vmaddr
     {
-        error!("segment {} address is out of order", linkedit.name);
+        crate::layout_error!("segment {} address is out of order", linkedit.name);
     }
 }
 
@@ -7189,6 +7221,7 @@ pub fn copy_chunks<E: Target>(
     drop(t);
     // Relocations that failed to apply fail the link before the fixups
     // are written.
+    print_final_layout(ctx);
     report_text_relocs(ctx);
     crate::error::checkpoint();
     chunks::chained_fixups::warn_unaligned_pointers(ctx);

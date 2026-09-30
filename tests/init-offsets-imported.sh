@@ -5,8 +5,9 @@ source "$(dirname "$0")"/common.inc
 # to dynamic lookup - has no offset in the image, so __init_offsets
 # can't hold it: ld-prime fails the link as it writes the offsets, with
 # a fixup error of the first such in its "inits-file", whose atoms name
-# the k-th initializer's offset anon-(2k+1). __mod_init_func's
-# absolute pointers (-no_fixup_chains) bind such an initializer.
+# the k-th initializer's offset anon-(2k+1), and prints the layout.
+# __mod_init_func's absolute pointers (-no_fixup_chains) bind such an
+# initializer.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA,__mod_init_func,mod_init_funcs
 .p2align 3
@@ -36,6 +37,13 @@ EOF
 not $CC --ld-path=$mold -o $t/exe $t/b.o 2> $t/log
 grep -q "fixup error (kind=imageOffset32) at 'anon-3' from inits-file, target '_puts' does not have address" $t/log
 not grep -q _printf $t/log
+
+# A fixup error ends the link after the layout, which ld-prime prints:
+# each segment in load command order, and its sections.
+sed -n '/^final section layout:$/,$p' $t/log > $t/layout
+grep -Eq '^    __TEXT +addr=0x[0-9a-f]{9}, size=0x[0-9a-f]{9}, fileOffset=0x0{8}, fileSize=0x[0-9a-f]{8}$' $t/layout
+grep -Eq '^        __init_offsets +addr=0x[0-9a-f]{9}, size=0x00000000c, fileOffset=0x[0-9a-f]{8} \(zerofill=0\)$' $t/layout
+grep -q '^    __LINKEDIT ' $t/layout
 
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-U,_undef 2> $t/log
 grep -q "at 'anon-5' from inits-file, target '_undef' does not have address" $t/log
