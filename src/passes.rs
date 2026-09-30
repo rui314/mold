@@ -2287,19 +2287,41 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // such a name without a word: no error, and no import under
     // -undefined dynamic_lookup. Most links have no undefined symbol at
     // all, so the relocations are looked at only when there is one.
-    let undef: Vec<usize> = (0..ctx.symbols.syms.len())
+    let mut undef: Vec<usize> = (0..ctx.symbols.syms.len())
         .into_par_iter()
         .filter(|&i| ctx.symbols.syms[i].is_used() && !ctx.symbols.syms[i].is_defined())
         .collect();
     if undef.is_empty() {
         return;
     }
+    // ld-prime reports them by name.
+    undef.par_sort_unstable_by_key(|&i| ctx.symbols.syms[i].name().as_bytes());
     let referenced = referenced_symbols(ctx);
-    // An initial undefine (-u, or a name an export list gives without
-    // wildcards) must resolve: ld-prime reports one even under
-    // -undefined dynamic_lookup or -U.
-    let initial: hashbrown::HashSet<crate::symbol::SymbolId> =
-        ctx.args.forced_undefined.iter().filter_map(|name| ctx.symbols.get(name)).collect();
+    // A name the command line insists on must resolve: ld-prime reports
+    // one even under -undefined dynamic_lookup or -U, as wanted by its
+    // "<initial-undefines>" (-u, the entry point, a name an export list
+    // gives without wildcards) or by the alias in its
+    // "command-line-aliases-file" (an -alias base) - unless -dead_strip
+    // strips the alias, which only an export root survives. The alias
+    // itself counts as defined.
+    let mut initial: hashbrown::HashMap<crate::symbol::SymbolId, &str> = hashbrown::HashMap::new();
+    let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
+    for name in ctx.args.forced_undefined.iter().chain(entry) {
+        if let Some(id) = ctx.symbols.get(name) {
+            initial.insert(id, "<initial-undefines>");
+        }
+    }
+    let mut aliases = hashbrown::HashSet::new();
+    for (base, alias) in &ctx.args.aliases {
+        let live = !ctx.args.dead_strip
+            || (crate::dead_strip::keeps_export(ctx, alias)
+                && ctx.args.unexported_symbols.find(alias.as_bytes()) == -1);
+        if let Some(id) = ctx.symbols.get(base) {
+            let place = if live { "command-line-aliases-file" } else { "<initial-undefines>" };
+            initial.entry(id).or_insert(place);
+        }
+        aliases.extend(ctx.symbols.get(alias));
+    }
 
     // Errors name a file that wants the symbol; the map from symbol to
     // referencing object is built only once an error is certain.
@@ -2322,21 +2344,22 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         });
         match map.get(&id) {
             Some(&obj_idx) => file_display(&ctx.objs[obj_idx]).to_string(),
-            None if initial.contains(&id) => "<initial-undefines>".to_string(),
-            None => "<synthesized>".to_string(),
+            None => initial.get(&id).copied().unwrap_or("<synthesized>").to_string(),
         }
     };
 
     for i in undef {
         let sym = &ctx.symbols[i];
-        if referenced[i].load(Ordering::Relaxed) {
+        if referenced[i].load(Ordering::Relaxed)
+            && !aliases.contains(&(i as crate::symbol::SymbolId))
+        {
             // A -static image has no dyld to look a symbol up at run
             // time, so ld-prime lets none stay undefined, whatever
             // -undefined or -U say.
             let allowed = !ctx.args.static_link
                 && (ctx.args.undefined_dynamic_lookup
                     || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
-                && !initial.contains(&(i as crate::symbol::SymbolId));
+                && !initial.contains_key(&(i as crate::symbol::SymbolId));
             if allowed {
                 let sym = &mut ctx.symbols[i];
                 sym.set_file(FileId::Dylib((usize::MAX) as u32));
@@ -3048,20 +3071,13 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // symbol shares the original's subsection and offset, so it lands
     // at the same address and is exported alongside it. Apple uses
     // aliases to publish compatibility names (e.g. libSystem's dozens
-    // of $VARIANT names) without touching the source.
+    // of $VARIANT names) without touching the source. An undefined
+    // base is reported with the other undefined symbols.
     let aliases = std::mem::take(&mut ctx.args.aliases);
     for (existing, new) in &aliases {
-        let Some(src) = ctx.symbols.get(existing) else {
-            error!(
-                "-alias: undefined base symbol: {}",
-                crate::util::demangle::display_name(existing)
-            );
+        let Some(src) = ctx.symbols.get(existing).filter(|&id| ctx.symbols[id].is_defined()) else {
             continue;
         };
-        if !ctx.symbols[src].is_defined() {
-            error!("-alias: undefined base symbol: {}", ctx.symbols[src]);
-            continue;
-        }
         let dst = ctx.symbols.intern(String::leak(new.clone()));
         if ctx.symbols[src].is_imported() {
             // An alias of a dylib symbol is an indirect symbol

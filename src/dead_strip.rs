@@ -129,20 +129,11 @@ fn collect_root_set<E: Target>(
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
-    // -export_dynamic exports all of an executable's globals, but not
-    // a -preload image's, which ld-prime still strips.
-    let exports_all =
-        ctx.args.output_type != MH_EXECUTE || (ctx.args.export_dynamic && !ctx.args.preload);
     let is_exported = |sym: &Symbol| {
         sym.is_extern()
             && !sym.is_private_extern()
             && sym.is_defined()
-            && (exports_all
-                || ctx
-                    .args
-                    .exported_symbols
-                    .as_ref()
-                    .is_some_and(|exported| exported.find(sym.name().as_bytes()) != -1))
+            && keeps_export(ctx, sym.name())
     };
     let syms: Vec<(usize, Pred)> = ctx
         .symbols
@@ -180,6 +171,17 @@ fn collect_root_set<E: Target>(
         enqueue(isec as usize, Pred::InitialUndef);
     }
     roots
+}
+
+/// Whether dead stripping keeps an export named `name`: every one of a
+/// dylib or bundle, and of an executable those an export list names, or
+/// all its globals with -export_dynamic (but not a -preload image's,
+/// which ld-prime still strips).
+pub fn keeps_export<E: Target>(ctx: &Context<E>, name: &str) -> bool {
+    ctx.args.output_type != MH_EXECUTE
+        || (ctx.args.export_dynamic && !ctx.args.preload)
+        || (ctx.args.exported_symbols.as_ref())
+            .is_some_and(|exported| exported.find(name.as_bytes()) != -1)
 }
 
 /// Calls `f` with each subsection that subsection `id` references:

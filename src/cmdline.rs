@@ -1922,6 +1922,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
     resolve_kext(target, &mut args);
     complete_segment_order(&mut args);
+    // The entry point is an initial undefine, which must resolve in the
+    // link: ld-prime refuses to leave it to dynamic lookup.
+    if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
+        fatal!("{} is an entry point and can't be used with -U for dynamic lookup", args.entry);
+    }
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
     }
