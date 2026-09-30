@@ -97,6 +97,7 @@ pub const S_NON_LAZY_SYMBOL_POINTERS: u32 = 0x6;
 pub const S_LAZY_SYMBOL_POINTERS: u32 = 0x7;
 pub const S_SYMBOL_STUBS: u32 = 0x8;
 pub const S_MOD_INIT_FUNC_POINTERS: u32 = 0x9;
+pub const S_MOD_TERM_FUNC_POINTERS: u32 = 0xa;
 pub const S_COALESCED: u32 = 0xb;
 pub const S_16BYTE_LITERALS: u32 = 0xe;
 pub const S_THREAD_LOCAL_REGULAR: u32 = 0x11;

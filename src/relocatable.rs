@@ -83,11 +83,15 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
 /// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
 /// marks every symbol of a no_dead_strip section, local or global, so
 /// the next link keeps it even when the output section takes another
-/// member's attributes - but none of __objc_classrefs.
+/// member's attributes - but none of __objc_classrefs - and those of
+/// the initializer and terminator pointer lists, which dead stripping
+/// keeps whatever their attributes.
 fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     let h = ctx.hdr_of(&ctx.isecs[isec]);
-    if h.flags & S_ATTR_NO_DEAD_STRIP != 0
-        && !(h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
+    let roots = matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
+    if roots
+        || h.flags & S_ATTR_NO_DEAD_STRIP != 0
+            && !(h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
     {
         N_NO_DEAD_STRIP
     } else {
