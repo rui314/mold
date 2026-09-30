@@ -2964,16 +2964,6 @@ fn is_public_location(install_name: &[u8]) -> bool {
     false
 }
 
-/// Loads the libraries a dylib re-exports. A public one becomes an
-/// implicit dylib of its own (its symbols bind to it), recursively
-/// loading what it re-exports in turn; a private one's exports are
-/// merged into `exports`/`tlv_exports` as the re-exporting dylib's,
-/// and its own re-exports are walked the same way. A library may be a
-/// file of its own or a document inlined in a stub (`documents`: the
-/// re-exporting stub's). A public one is loaded from its file when one
-/// exists, as ld-prime does, and from its document otherwise; a private
-/// one inlined is merged from its document. Returns the install names
-/// of the private libraries merged.
 /// Notes an input file for -t as it is loaded. ld-prime names a fat
 /// file's slice, and its members, by the file's own path.
 pub fn trace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
@@ -3004,10 +2994,17 @@ pub fn trace_name(name: &[u8]) -> String {
     crate::util::display(&name).to_string()
 }
 
-/// Loads the libraries a dylib re-exports: a public one as a dylib of
-/// its own, a private one merged into the dylib's exports. Returns the
-/// install names of the merged ones, and with -map or -why_live the
-/// files they are.
+/// Loads the libraries a dylib re-exports. A public one becomes an
+/// implicit dylib of its own (its symbols bind to it), recursively
+/// loading what it re-exports in turn; a private one's exports are
+/// merged into `exports`, `tlv_exports` and `weak_exports` as the
+/// re-exporting dylib's, and its own re-exports are walked the same
+/// way. A library may be a file of its own or a document inlined in a
+/// stub (`documents`: the re-exporting stub's). A public one is loaded
+/// from its file when one exists, as ld-prime does, and from its
+/// document otherwise; a private one inlined is merged from its
+/// document. Returns the install names of the private libraries merged,
+/// and with -map or -why_live the files they are.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -3017,7 +3014,8 @@ fn load_reexports<E: Target>(
     tlv_exports: &mut hashbrown::HashSet<&'static str>,
     weak_exports: &mut hashbrown::HashSet<&'static str>,
 ) -> (Vec<Vec<u8>>, Vec<MergedFile>) {
-    let mut queue = reexports;
+    let mut walk =
+        ReexportWalk { queue: reexports, pool: documents, exports, tlv_exports, weak_exports };
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
     // Only -map and -why_live read the files, and gathering them costs.
@@ -3027,10 +3025,11 @@ fn load_reexports<E: Target>(
         let (install_name, path) = (install_name.to_vec(), path.to_path_buf());
         merged_files.push(MergedFile { install_name, path, exports });
     };
-    // The inlined documents a name may resolve to: the parent's, and
-    // those of every stub merged along the way.
-    let mut pool = documents;
-    while let Some((name, loader_dir, loader_rpaths)) = queue.pop() {
+    let all_exports = |tbd: &tapi::TbdFile| -> Vec<&'static str> {
+        let all = [&tbd.exports, &tbd.weak_exports, &tbd.tlv_exports];
+        all.into_iter().flatten().copied().collect()
+    };
+    while let Some((name, loader_dir, loader_rpaths)) = walk.queue.pop() {
         if !visited.insert(name.clone()) {
             continue;
         }
@@ -3042,9 +3041,9 @@ fn load_reexports<E: Target>(
         // as this dylib's.
         if let Some(loaded) = ctx.dylibs.iter().find(|d| d.install_name == name) {
             if !public {
-                exports.extend(loaded.exports.iter().copied());
-                tlv_exports.extend(loaded.tlv_exports.iter().copied());
-                weak_exports.extend(loaded.weak_exports.iter().copied());
+                walk.exports.extend(loaded.exports.iter().copied());
+                walk.tlv_exports.extend(loaded.tlv_exports.iter().copied());
+                walk.weak_exports.extend(loaded.weak_exports.iter().copied());
                 if map {
                     record(&name, &loaded.path, loaded.exports.iter().copied().collect());
                 }
@@ -3052,7 +3051,7 @@ fn load_reexports<E: Target>(
             }
             continue;
         }
-        let inline = pool.iter().position(|d| d.install_name.as_bytes() == name);
+        let inline = walk.pool.iter().position(|d| d.install_name.as_bytes() == name);
         let on_disk = if inline.is_some() && !public {
             None
         } else {
@@ -3068,9 +3067,9 @@ fn load_reexports<E: Target>(
                     .map(|mf| crate::util::path_bytes(&mf.name).to_vec());
                 trace_file(ctx, found.as_deref().unwrap_or(&name));
             }
-            let mut doc = pool[i].clone();
+            let mut doc = walk.pool[i].clone();
             if DylibIdentity::of_tbd(&doc).is_public(ctx) {
-                let idx = register_tbd(ctx, parent, doc, pool.clone());
+                let idx = register_tbd(ctx, parent, doc, walk.pool.clone());
                 ctx.dylibs[idx].is_implicit = true;
                 continue;
             }
@@ -3078,21 +3077,9 @@ fn load_reexports<E: Target>(
             if map {
                 let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths);
                 let path = found.map_or(Path::new(crate::util::os_str(&name)), |mf| &mf.name);
-                let all = [&doc.exports, &doc.weak_exports, &doc.tlv_exports];
-                record(&name, path, all.into_iter().flatten().copied().collect());
+                record(&name, path, all_exports(&doc));
             }
-            tlv_exports.extend(doc.tlv_exports.iter().copied());
-            exports.extend(doc.tlv_exports);
-            exports.extend(doc.exports);
-            weak_exports.extend(doc.weak_exports.iter().copied());
-            exports.extend(doc.weak_exports);
-            for dep_name in doc.reexports {
-                queue.push((
-                    dep_name.as_bytes().to_vec(),
-                    loader_dir.clone(),
-                    loader_rpaths.clone(),
-                ));
-            }
+            walk.merge_tbd(doc, &loader_dir, &loader_rpaths);
             merged.push(name);
             continue;
         }
@@ -3120,64 +3107,36 @@ fn load_reexports<E: Target>(
                 merged.push(dep_tbd.install_name.as_bytes().to_vec());
                 interpret_ld_symbols(ctx, &mut dep_tbd);
                 if map {
-                    let all = [&dep_tbd.exports, &dep_tbd.weak_exports, &dep_tbd.tlv_exports];
-                    let all = all.into_iter().flatten().copied().collect();
-                    record(dep_tbd.install_name.as_bytes(), &dep.name, all);
+                    record(dep_tbd.install_name.as_bytes(), &dep.name, all_exports(&dep_tbd));
                 }
-                tlv_exports.extend(dep_tbd.tlv_exports.iter().copied());
-                exports.extend(dep_tbd.tlv_exports);
-                exports.extend(dep_tbd.exports);
-                weak_exports.extend(dep_tbd.weak_exports.iter().copied());
-                exports.extend(dep_tbd.weak_exports);
-                pool.extend(dep_tbd.documents);
-                for dep_name in dep_tbd.reexports {
-                    queue.push((dep_name.as_bytes().to_vec(), dir_of(&dep.name), Vec::new()));
-                }
+                walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[]);
             }
-            crate::filetype::FileType::Dylib => {
-                let found = DylibIdentity::of_binary(dep);
-                if found.is_public(ctx) {
-                    let idx = parse_dylib_binary(ctx, dep);
-                    ctx.dylibs[idx].is_implicit = true;
-                    continue;
-                }
-                check_dylib_versions(ctx, dep);
-                let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) = dylib_binary_exports(dep);
-                if map {
-                    record(&found.install_name, &dep.name, dep_exports.clone());
-                }
-                merged.push(found.install_name);
-                exports.extend(dep_exports);
-                tlv_exports.extend(dep_tlvs);
-                for dep_name in dep_reexports {
-                    queue.push((dep_name, dir_of(&dep.name), dep_rpaths.clone()));
-                }
-            }
-            // A universal binary (Xcode's XCTestCore, re-exported by
-            // XCTest): the target's slice, if it has one.
-            crate::filetype::FileType::Fat => {
-                let Some(slice) = fat_slice::<E>(dep) else {
-                    warn_fat_missing_arch::<E>(dep);
-                    continue;
+            ty @ (crate::filetype::FileType::Dylib | crate::filetype::FileType::Fat) => {
+                // A universal binary (Xcode's XCTestCore, re-exported by
+                // XCTest) is read for the target's slice, if it has one.
+                let binary = match ty {
+                    crate::filetype::FileType::Dylib => dep,
+                    _ => match fat_slice::<E>(dep) {
+                        Some(slice) => slice,
+                        None => {
+                            warn_fat_missing_arch::<E>(dep);
+                            continue;
+                        }
+                    },
                 };
-                let found = DylibIdentity::of_binary(slice);
+                let found = DylibIdentity::of_binary(binary);
                 if found.is_public(ctx) {
-                    let idx = parse_dylib_binary(ctx, slice);
+                    let idx = parse_dylib_binary(ctx, binary);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
-                check_dylib_versions(ctx, slice);
-                let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) =
-                    dylib_binary_exports(slice);
+                check_dylib_versions(ctx, binary);
+                let binary_exports = dylib_binary_exports(binary);
                 if map {
-                    record(&found.install_name, &dep.name, dep_exports.clone());
+                    record(&found.install_name, &dep.name, binary_exports.0.clone());
                 }
                 merged.push(found.install_name);
-                exports.extend(dep_exports);
-                tlv_exports.extend(dep_tlvs);
-                for dep_name in dep_reexports {
-                    queue.push((dep_name, dir_of(&dep.name), dep_rpaths.clone()));
-                }
+                walk.merge_binary(binary_exports, &dir_of(&dep.name));
             }
             _ => crate::warn!(
                 "{}: unsupported reexported library: {}",
@@ -3187,6 +3146,53 @@ fn load_reexports<E: Target>(
         }
     }
     (merged, merged_files)
+}
+
+/// A dylib's re-exported libraries as load_reexports walks them: those
+/// left to visit, each with the directory and rpaths its install name
+/// resolves from; the inlined documents a name may resolve to (the
+/// dylib's, and those of every stub merged along the way); and the
+/// dylib's export sets, which the private ones merge into.
+struct ReexportWalk<'a> {
+    queue: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
+    pool: Vec<tapi::TbdFile>,
+    exports: &'a mut hashbrown::HashSet<&'static str>,
+    tlv_exports: &'a mut hashbrown::HashSet<&'static str>,
+    weak_exports: &'a mut hashbrown::HashSet<&'static str>,
+}
+
+impl ReexportWalk<'_> {
+    /// Merges a private library's stub into the dylib: its exports join
+    /// the dylib's, by kind, its inlined documents the pool, and the
+    /// libraries it re-exports in turn the queue, to resolve from
+    /// `loader_dir` and `loader_rpaths`.
+    fn merge_tbd(&mut self, tbd: tapi::TbdFile, loader_dir: &Path, loader_rpaths: &[PathBuf]) {
+        self.tlv_exports.extend(tbd.tlv_exports.iter().copied());
+        self.exports.extend(tbd.tlv_exports);
+        self.exports.extend(tbd.exports);
+        self.weak_exports.extend(tbd.weak_exports.iter().copied());
+        self.exports.extend(tbd.weak_exports);
+        self.pool.extend(tbd.documents);
+        for name in tbd.reexports {
+            self.queue.push((
+                name.as_bytes().to_vec(),
+                loader_dir.to_path_buf(),
+                loader_rpaths.to_vec(),
+            ));
+        }
+    }
+
+    /// Merges what a private library's binary contributes (see
+    /// dylib_binary_exports) into the dylib likewise: the libraries it
+    /// re-exports resolve from `loader_dir` and the binary's rpaths.
+    fn merge_binary(&mut self, binary_exports: DylibExports, loader_dir: &Path) {
+        let (exports, tlv_exports, reexports, rpaths) = binary_exports;
+        self.exports.extend(exports);
+        self.tlv_exports.extend(tlv_exports);
+        for name in reexports {
+            self.queue.push((name, loader_dir.to_path_buf(), rpaths.clone()));
+        }
+    }
 }
 
 /// A dylib's install name and who may link it directly: the umbrella it
