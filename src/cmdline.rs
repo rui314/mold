@@ -1221,8 +1221,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     resolve_shared_region(target, &mut args);
     // An image dyld doesn't load has no __DATA_CONST unless bound for
     // the shared region: nothing else makes that segment read-only
-    // after fixups.
-    args.data_const = data_const.unwrap_or(!args.without_dyld() || args.shared_region);
+    // after fixups. Nor does ld-prime give one to a non-PIE executable,
+    // which keeps its classic layout.
+    args.data_const = data_const.unwrap_or(if args.without_dyld() {
+        args.shared_region
+    } else {
+        args.pie || args.output_type != MH_EXECUTE
+    });
     resolve_kext(target, &mut args);
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
