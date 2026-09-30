@@ -3726,8 +3726,18 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
     }
 }
 
+// R_IRELATIVE relocations come from the GOT slots of IFUNC symbols and
+// from word-size data references to IFUNC symbols that don't resolve to
+// a canonical PLT address.
 fn num_irelative_relocs<E: Target>(ctx: &Context<E>) -> u64 {
-    ctx.got.got_syms.iter().filter(|&&id| ctx.symbols[id].is_ifunc()).count() as u64
+    let got = ctx.got.got_syms.iter().filter(|&&id| ctx.symbols[id].is_ifunc()).count();
+    let data = ctx
+        .output_sections
+        .iter()
+        .flat_map(|osec| &osec.abs_rels)
+        .filter(|r| r.kind == chunks::output_section::AbsRelKind::IFunc)
+        .count();
+    (got + data) as u64
 }
 
 fn to_paddr<E: Target>(ctx: &Context<E>, vaddr: u64) -> u64 {
