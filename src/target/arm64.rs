@@ -78,6 +78,464 @@ fn write_add_ldst(loc: &mut [u8], val: u64) {
     write32(loc, (insn & !IMM12) | imm);
 }
 
+// Linker optimization hints (LC_LINKER_OPTIMIZATION_HINT). A compiler
+// can't know how far a symbol will land, so it materializes addresses
+// with adrp and leaves hints naming the instructions of each sequence,
+// for the linker to shorten once addresses are final. ld-prime ignores
+// them; they are applied here as ld64 does, under its conditions, with
+// the target address read back from the relocated instructions.
+
+const NOP: u32 = 0xd503_201f;
+
+/// ld64's withinOneMeg: whether `to` is in reach of an adr or a
+/// literal load at `from`.
+fn within_1mb(from: u64, to: u64) -> bool {
+    let delta = to.wrapping_sub(from) as i64;
+    -(1 << 20) < delta && delta < 1 << 20
+}
+
+fn is_adrp(insn: u32) -> bool {
+    insn & 0x9f00_0000 == 0x9000_0000
+}
+
+/// The page an adrp at `pc` puts in its register.
+fn adrp_page(insn: u32, pc: u64) -> u64 {
+    let imm = bits(insn as u64, 30, 29) | (bits(insn as u64, 23, 5) << 2);
+    page(pc).wrapping_add_signed(sign_extend(imm, 21) << 12)
+}
+
+fn adr(rd: u32, target: u64, pc: u64) -> u32 {
+    let delta = target.wrapping_sub(pc) as u32;
+    0x1000_0000 | ((delta & 3) << 29) | ((delta & 0x1f_fffc) << 3) | rd
+}
+
+/// "add Xd, Xn, #imm".
+struct Add {
+    rd: u32,
+    rn: u32,
+    imm: u64,
+}
+
+fn parse_add(insn: u32) -> Option<Add> {
+    (insn & 0xffc0_0000 == 0x9100_0000).then(|| Add {
+        rd: insn & 0x1f,
+        rn: (insn >> 5) & 0x1f,
+        imm: bits(insn as u64, 21, 10),
+    })
+}
+
+/// A load or store with a scaled unsigned offset, as ld64's
+/// parseLoadOrStore takes it apart.
+struct LoadStore {
+    insn: u32,
+    reg: u32,
+    base: u32,
+    /// In bytes: the 12-bit immediate times `size`.
+    offset: u64,
+    size: u64,
+    is_store: bool,
+    is_float: bool,
+    is_ldrsw: bool,
+}
+
+fn parse_ldst(insn: u32) -> Option<LoadStore> {
+    if insn & 0x3b00_0000 != 0x3900_0000 {
+        return None;
+    }
+    // The size and opc fields. A vector register's 16-byte access
+    // takes the encodings of the sign-extending byte loads.
+    let is_float = insn & 0x0400_0000 != 0;
+    let (size, is_store) = match insn & 0xc0c0_0000 {
+        0x0000_0000 => (1, true),
+        0x0040_0000 => (1, false),
+        0x0080_0000 if is_float => (16, true),
+        0x00c0_0000 if is_float => (16, false),
+        0x0080_0000 | 0x00c0_0000 => (1, false),
+        0x4000_0000 => (2, true),
+        0x4040_0000 | 0x4080_0000 | 0x40c0_0000 => (2, false),
+        0x8000_0000 => (4, true),
+        0x8040_0000 | 0x8080_0000 => (4, false),
+        0xc000_0000 => (8, true),
+        0xc040_0000 => (8, false),
+        _ => return None,
+    };
+    Some(LoadStore {
+        insn,
+        reg: insn & 0x1f,
+        base: (insn >> 5) & 0x1f,
+        offset: bits(insn as u64, 21, 10) * size,
+        size,
+        is_store,
+        is_float,
+        is_ldrsw: insn & 0xc0c0_0000 == 0x8080_0000,
+    })
+}
+
+impl LoadStore {
+    /// ld64's literalableSize: loads of 4, 8 and 16 bytes have a
+    /// pc-relative literal form.
+    fn has_literal_form(&self) -> bool {
+        self.size >= 4 && !self.is_store
+    }
+
+    /// This load as a literal load of `target`.
+    fn to_literal(&self, target: u64, pc: u64) -> u32 {
+        let op = match (self.size, self.is_float) {
+            (4, true) => 0x1c00_0000,
+            (4, false) if self.is_ldrsw => 0x9800_0000,
+            (4, false) => 0x1800_0000,
+            (8, true) => 0x5c00_0000,
+            (8, false) => 0x5800_0000,
+            _ => 0x9c00_0000,
+        };
+        let delta = target.wrapping_sub(pc) as u32;
+        op | ((delta << 3) & 0x00ff_ffe0) | self.reg
+    }
+
+    /// This access through another base register and byte offset.
+    fn with_base(&self, base: u32, offset: u64) -> u32 {
+        (self.insn & 0xffc0_001f) | (base << 5) | (((offset / self.size) as u32) << 10)
+    }
+}
+
+/// Whether a relocation is the page half of a reference: of a GOT
+/// slot's, or one relaxed from it, if `got`.
+fn is_page_rel(rel: Option<&Reloc>, got: bool) -> bool {
+    match rel.map(|r| r.r_type) {
+        Some(ARM64_RELOC_PAGE21) => !got,
+        Some(ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21) => true,
+        _ => false,
+    }
+}
+
+fn is_pageoff_rel(rel: Option<&Reloc>, got: bool) -> bool {
+    match rel.map(|r| r.r_type) {
+        Some(ARM64_RELOC_PAGEOFF12) => !got,
+        Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12) => true,
+        _ => false,
+    }
+}
+
+/// An instruction a hint names: its offset in its subsection, its
+/// output address and the relocation the object put on it.
+#[derive(Clone, Copy, Default)]
+struct HintInsn<'a> {
+    off: usize,
+    addr: u64,
+    rel: Option<&'a Reloc>,
+}
+
+/// A hint's instructions, in their subsection's output bytes.
+struct Hint<'a> {
+    buf: &'a mut [u8],
+    insns: [HintInsn<'a>; 3],
+    n: usize,
+}
+
+impl Hint<'_> {
+    fn get(&self, i: usize) -> u32 {
+        read32(&self.buf[self.insns[i].off..])
+    }
+
+    fn set(&mut self, i: usize, insn: u32) {
+        write32(&mut self.buf[self.insns[i].off..], insn);
+    }
+
+    fn addr(&self, i: usize) -> u64 {
+        self.insns[i].addr
+    }
+
+    /// ld64's checks on the relocations: the first two instructions
+    /// carry the page and page-offset halves of one reference, and a
+    /// third carries none - its offset is the compiler's own.
+    fn has_page_pair(&self, got: bool) -> bool {
+        let (a, b) = (self.insns[0].rel, self.insns[1].rel);
+        is_page_rel(a, got)
+            && is_pageoff_rel(b, got)
+            && a.map(|r| (r.target, r.addend)) == b.map(|r| (r.target, r.addend))
+            && (self.n < 3 || self.insns[2].rel.is_none())
+    }
+}
+
+/// AdrpAdrp: two adrp of one page into one register; the second is
+/// redundant. It runs after the other kinds, which may have rewritten
+/// either adrp.
+fn loh_adrp_adrp(h: &mut Hint) {
+    let (a, b) = (h.get(0), h.get(1));
+    if is_page_rel(h.insns[0].rel, false)
+        && is_page_rel(h.insns[1].rel, false)
+        && is_adrp(a)
+        && is_adrp(b)
+        && a & 0x1f == b & 0x1f
+        && adrp_page(a, h.addr(0)) == adrp_page(b, h.addr(1))
+    {
+        h.set(1, NOP);
+    }
+}
+
+/// AdrpLdr: a load from within 1 MiB of the ldr becomes a literal load.
+fn loh_adrp_ldr(h: &mut Hint) {
+    let a = h.get(0);
+    let Some(ld) = parse_ldst(h.get(1)) else { return };
+    if !h.has_page_pair(false) || !is_adrp(a) || ld.base != a & 0x1f {
+        return;
+    }
+    let target = adrp_page(a, h.addr(0)) + ld.offset;
+    if ld.has_literal_form() && target.is_multiple_of(4) && within_1mb(h.addr(1), target) {
+        h.set(0, NOP);
+        h.set(1, ld.to_literal(target, h.addr(1)));
+    }
+}
+
+/// AdrpAdd: an address within 1 MiB of the adrp becomes an adr.
+fn loh_adrp_add(h: &mut Hint) {
+    let a = h.get(0);
+    let Some(add) = parse_add(h.get(1)) else { return };
+    if !h.has_page_pair(false) || !is_adrp(a) || add.rn != a & 0x1f {
+        return;
+    }
+    let target = adrp_page(a, h.addr(0)) + add.imm;
+    if within_1mb(h.addr(0), target) {
+        h.set(0, adr(add.rd, target, h.addr(0)));
+        h.set(1, NOP);
+    }
+}
+
+/// The adrp+add of AdrpAddLdr and AdrpAddStr, with the access through
+/// it: the address the pair computes, the add, and the access.
+fn adrp_add_ldst(h: &Hint) -> Option<(u64, Add, LoadStore)> {
+    let a = h.get(0);
+    let add = parse_add(h.get(1))?;
+    let ls = parse_ldst(h.get(2))?;
+    (h.has_page_pair(false) && is_adrp(a) && add.rn == a & 0x1f && ls.base == add.rd)
+        .then(|| (adrp_page(a, h.addr(0)) + add.imm, add, ls))
+}
+
+/// AdrpAddLdr: a load through adrp+add. From within 1 MiB of the
+/// load, it becomes a literal load (ld64's T1); within 1 MiB of the
+/// adrp, the address an adr (T4); else, if the load has no offset of
+/// its own, the add folds into it (T2).
+fn loh_adrp_add_ldr(h: &mut Hint) {
+    let Some((addr, add, ld)) = adrp_add_ldst(h) else { return };
+    let target = addr + ld.offset;
+    if ld.has_literal_form() && target.is_multiple_of(4) && within_1mb(h.addr(2), target) {
+        h.set(0, NOP);
+        h.set(1, NOP);
+        h.set(2, ld.to_literal(target, h.addr(2)));
+    } else if within_1mb(h.addr(0), target) {
+        h.set(0, adr(ld.base, target, h.addr(0)));
+        h.set(1, NOP);
+        h.set(2, ld.with_base(ld.base, 0));
+    } else if addr.is_multiple_of(ld.size) && ld.offset == 0 {
+        h.set(1, NOP);
+        h.set(2, ld.with_base(add.rn, add.imm));
+    }
+}
+
+/// AdrpAddStr: a store through adrp+add, as AdrpAddLdr but for the
+/// literal form stores lack. (ld64's T2 keeps the add's destination
+/// as the base; it is the adrp's register in compiled code.)
+fn loh_adrp_add_str(h: &mut Hint) {
+    let Some((addr, add, st)) = adrp_add_ldst(h) else { return };
+    if !st.is_store {
+        return;
+    }
+    let target = addr + st.offset;
+    if within_1mb(h.addr(0), target) {
+        h.set(0, adr(st.base, target, h.addr(0)));
+        h.set(1, NOP);
+        h.set(2, st.with_base(st.base, 0));
+    } else if addr.is_multiple_of(st.size) && st.offset == 0 {
+        h.set(1, NOP);
+        h.set(2, st.with_base(add.rn, add.imm));
+    }
+}
+
+/// The GOT load of the AdrpLdrGot kinds as it now stands: a load of
+/// the slot at the address given, or an add computing the target
+/// itself if the load was relaxed.
+enum GotLoad {
+    Slot(u64, LoadStore),
+    Relaxed(u64, Add),
+}
+
+fn got_load(h: &Hint) -> Option<GotLoad> {
+    let a = h.get(0);
+    if !h.has_page_pair(true) || !is_adrp(a) {
+        return None;
+    }
+    let page = adrp_page(a, h.addr(0));
+    let b = h.get(1);
+    if let Some(ld) = parse_ldst(b) {
+        let ok = ld.size == 8 && !ld.is_float && !ld.is_store && ld.base == a & 0x1f;
+        return ok.then(|| GotLoad::Slot(page + ld.offset, ld));
+    }
+    let add = parse_add(b)?;
+    (add.rn == a & 0x1f).then(|| GotLoad::Relaxed(page + add.imm, add))
+}
+
+/// AdrpLdrGot: a GOT load. A slot within 1 MiB of the load is loaded
+/// by a literal load (ld64's T5); relaxed, a target within 1 MiB of
+/// the adrp is computed by an adr (T4).
+fn loh_adrp_ldr_got(h: &mut Hint) {
+    match got_load(h) {
+        Some(GotLoad::Slot(slot, got)) if within_1mb(h.addr(1), slot) => {
+            h.set(0, NOP);
+            h.set(1, got.to_literal(slot, h.addr(1)));
+        }
+        Some(GotLoad::Relaxed(target, add)) if within_1mb(h.addr(0), target) => {
+            h.set(0, adr(add.rd, target, h.addr(0)));
+            h.set(1, NOP);
+        }
+        _ => {}
+    }
+}
+
+/// T5 of AdrpLdrGotLdr and AdrpLdrGotStr: the GOT slot a load or store
+/// goes through is loaded by a literal load. ld64 measures the reach
+/// and the alignment to the slot plus the access's offset.
+fn got_literal(h: &mut Hint, slot: u64, got: &LoadStore, ls: &LoadStore) {
+    let end = slot + ls.offset;
+    if ls.base == got.reg
+        && end.is_multiple_of(4)
+        && within_1mb(h.addr(1), end)
+        && within_1mb(h.addr(1), slot)
+    {
+        h.set(0, NOP);
+        h.set(1, got.to_literal(slot, h.addr(1)));
+    }
+}
+
+/// AdrpLdrGotLdr: a load through a GOT load. Relaxed, the target
+/// plus the load's offset within 1 MiB of the load becomes one literal
+/// load (T1), a target within 1 MiB of the adrp an adr (T4), and the
+/// add folds into the load otherwise (T2).
+fn loh_adrp_ldr_got_ldr(h: &mut Hint) {
+    let Some(ld) = parse_ldst(h.get(2)) else { return };
+    match got_load(h) {
+        Some(GotLoad::Slot(slot, got)) => got_literal(h, slot, &got, &ld),
+        Some(GotLoad::Relaxed(target, add)) if add.rd == ld.base => {
+            if ld.has_literal_form()
+                && target.is_multiple_of(4)
+                && within_1mb(h.addr(2), target + ld.offset)
+            {
+                h.set(0, NOP);
+                h.set(1, NOP);
+                h.set(2, ld.to_literal(target + ld.offset, h.addr(2)));
+            } else if within_1mb(h.addr(0), target) {
+                h.set(0, adr(ld.base, target, h.addr(0)));
+                h.set(1, NOP);
+            } else if target.is_multiple_of(ld.size) && add.imm + ld.offset < 4096 {
+                h.set(1, NOP);
+                h.set(2, ld.with_base(add.rn, add.imm + ld.offset));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// AdrpLdrGotStr: a store through a GOT load, as AdrpLdrGotLdr but
+/// for the literal form stores lack, and T2 only for a store with no
+/// offset of its own.
+fn loh_adrp_ldr_got_str(h: &mut Hint) {
+    let Some(st) = parse_ldst(h.get(2)).filter(|st| st.is_store) else { return };
+    match got_load(h) {
+        Some(GotLoad::Slot(slot, got)) => got_literal(h, slot, &got, &st),
+        Some(GotLoad::Relaxed(target, add)) if add.rd == st.base => {
+            if within_1mb(h.addr(0), target) {
+                h.set(0, adr(st.base, target, h.addr(0)));
+                h.set(1, NOP);
+            } else if target.is_multiple_of(st.size) && st.offset == 0 {
+                h.set(1, NOP);
+                h.set(2, st.with_base(add.rn, add.imm));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Finds a hint's instructions where ld64 takes them: in one
+/// subsection of code - ld64's atom - 4-byte aligned and within 64 KiB
+/// of each other. Returns the subsection's range in the output file
+/// with the instructions. A copy folded into another subsection has
+/// its hints dropped with it.
+fn hint_insns<'a>(
+    ctx: &'a Context<Arm64>,
+    subsecs: &[crate::input_sections::InputSectionId],
+    addrs: &[u64],
+) -> Option<(std::ops::Range<usize>, [HintInsn<'a>; 3])> {
+    let lo = *addrs.iter().min()?;
+    let hi = *addrs.iter().max()?;
+    let (id, _) = crate::input_files::find_subsec(&ctx.isecs, subsecs, lo)?;
+    let isec = &ctx.isecs[id];
+    if !isec.is_alive()
+        || isec.offset == u32::MAX
+        || isec.replacement != crate::input_sections::NO_REPLACEMENT
+        || ctx.hdr_of(isec).flags & S_ATTR_PURE_INSTRUCTIONS == 0
+        || hi - lo > 0xffff
+        || hi + 4 > isec.input_addr as u64 + isec.size as u64
+        || addrs.iter().any(|a| !a.is_multiple_of(4))
+    {
+        return None;
+    }
+
+    let hdr = ctx.chunk_header(isec.output_section()?);
+    let rels = ctx.isec_relocs(id);
+    let mut insns = [HintInsn::default(); 3];
+    for (insn, &addr) in insns.iter_mut().zip(addrs) {
+        let off = addr - isec.input_addr as u64;
+        let i = rels.partition_point(|r| (r.offset as u64) < off);
+        *insn = HintInsn {
+            off: off as usize,
+            addr: hdr.addr + isec.offset as u64 + off,
+            rel: rels.get(i).filter(|r| r.offset as u64 == off),
+        };
+    }
+    let start = (hdr.fileoff + isec.offset as u64) as usize;
+    Some((start..start + isec.size as usize, insns))
+}
+
+fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
+    struct BufPtr(*mut u8);
+    unsafe impl Sync for BufPtr {}
+    let bufp = BufPtr(buf.as_mut_ptr());
+    let bufp = &bufp;
+
+    ctx.objs.par_iter().filter(|obj| obj.is_alive).for_each(|obj| {
+        // AdrpAdrp goes last, as ld64's second pass.
+        for last in [false, true] {
+            for (kind, addrs) in &obj.loh {
+                if (*kind == LOH_ARM64_ADRP_ADRP) != last {
+                    continue;
+                }
+                let (n, apply): (usize, fn(&mut Hint)) = match *kind {
+                    LOH_ARM64_ADRP_ADRP => (2, loh_adrp_adrp),
+                    LOH_ARM64_ADRP_LDR => (2, loh_adrp_ldr),
+                    LOH_ARM64_ADRP_ADD_LDR => (3, loh_adrp_add_ldr),
+                    LOH_ARM64_ADRP_LDR_GOT_LDR => (3, loh_adrp_ldr_got_ldr),
+                    LOH_ARM64_ADRP_ADD_STR => (3, loh_adrp_add_str),
+                    LOH_ARM64_ADRP_LDR_GOT_STR => (3, loh_adrp_ldr_got_str),
+                    LOH_ARM64_ADRP_ADD => (2, loh_adrp_add),
+                    LOH_ARM64_ADRP_LDR_GOT => (2, loh_adrp_ldr_got),
+                    _ => continue,
+                };
+                if addrs.len() != n {
+                    continue;
+                }
+                let Some((range, insns)) = hint_insns(ctx, &obj.subsecs, addrs) else {
+                    continue;
+                };
+
+                // SAFETY: a hint rewrites only its own subsection, one
+                // no other object's hints name.
+                let buf =
+                    unsafe { std::slice::from_raw_parts_mut(bufp.0.add(range.start), range.len()) };
+                apply(&mut Hint { buf, insns, n });
+            }
+        }
+    });
+}
+
 impl Target for Arm64 {
     const NAME: &'static str = "arm64";
     const CPUTYPE: u32 = CPU_TYPE_ARM64;
@@ -132,168 +590,14 @@ impl Target for Arm64 {
         }
     }
 
-    // LC_LINKER_OPTIMIZATION_HINT: compilers can't know how far a
-    // symbol will land, so they emit the conservative two-instruction
-    // materializations and leave hints naming the instructions, for
-    // the linker to shorten once addresses are final. Everything here
-    // is a peephole guarded by instruction-shape checks, so hints
-    // invalidated by other rewrites (or by unexpected code) are
-    // silently skipped - hints are advisory by design.
+    // ld64 applies no hints to a dylib eligible for the dyld shared
+    // cache: on arm64 it records split-seg info v2 for one, which lets
+    // the cache builder move segments apart, out of the 1 MiB reach a
+    // rewrite relies on.
     fn apply_optimization_hints(ctx: &Context<Self>, buf: &mut [u8]) {
-        if ctx.args.ignore_optimization_hints {
-            return;
+        if !ctx.args.ignore_optimization_hints && !crate::passes::shared_region_eligible(ctx) {
+            apply_hints(ctx, buf);
         }
-
-        const NOP: u32 = 0xd503_201f;
-        let is_adrp = |i: u32| i & 0x9f00_0000 == 0x9000_0000;
-        let is_add = |i: u32| i & 0xffc0_0000 == 0x9100_0000;
-        // LDR (immediate, unsigned offset), 32- or 64-bit integer.
-        let ldr_size = |i: u32| match i & 0xffc0_0000 {
-            0xb940_0000 => Some(4u64),
-            0xf940_0000 => Some(8u64),
-            _ => None,
-        };
-        let adrp_target = |i: u32, pc: u64| -> u64 {
-            let imm = ((i >> 29) & 3) as u64 | (((i >> 5) & 0x7_ffff) as u64) << 2;
-            let imm = (imm << 43) as i64 >> 31; // sign-extend 21 bits, <<12
-            (pc & !0xfff).wrapping_add_signed(imm)
-        };
-        let in_adr_range = |target: u64, pc: u64| -> bool {
-            (target.wrapping_sub(pc) as i64).unsigned_abs() < (1 << 20)
-        };
-        let make_adr = |target: u64, pc: u64, rd: u32| -> u32 {
-            let d = target.wrapping_sub(pc);
-            0x1000_0000 | ((d as u32 & 3) << 29) | (((d >> 2) as u32 & 0x7_ffff) << 5) | rd
-        };
-        let make_ldr_lit = |target: u64, pc: u64, rt: u32, size: u64| -> u32 {
-            let opc = if size == 8 { 0x5800_0000 } else { 0x1800_0000 };
-            opc | ((target.wrapping_sub(pc) as u32 >> 2) & 0x7_ffff) << 5 | rt
-        };
-
-        struct BufPtr(*mut u8);
-        unsafe impl Sync for BufPtr {}
-        let bufp = BufPtr(buf.as_mut_ptr());
-        let bufp = &bufp;
-        let buf_len = buf.len();
-        // Objects rewrite their own instructions only, so their hint
-        // lists process in parallel.
-        ctx.objs.par_iter().for_each(|obj| {
-            // SAFETY: every hint writes within its object's own
-            // subsections; different objects' subsections are
-            // disjoint ranges of the output.
-            let buf = unsafe { std::slice::from_raw_parts_mut(bufp.0, buf_len) };
-            if !obj.is_alive {
-                return;
-            }
-            'hint: for (kind, addrs) in &obj.loh {
-                // Map input addresses to (file offset, address).
-                let mut locs: Vec<(usize, u64)> = Vec::with_capacity(addrs.len());
-                for &addr in addrs {
-                    let Some((isec, off)) =
-                        crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, addr)
-                    else {
-                        continue 'hint;
-                    };
-                    let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-                    if !isec.is_alive() || isec.offset == u32::MAX {
-                        continue 'hint;
-                    }
-                    let hdr = ctx.chunk_header(isec.output_section().unwrap());
-                    locs.push((
-                        (hdr.fileoff + isec.offset as u64 + off) as usize,
-                        hdr.addr + isec.offset as u64 + off,
-                    ));
-                }
-                let insn = |buf: &[u8], i: usize| read32(&buf[locs[i].0..]);
-                let put = |buf: &mut [u8], i: usize, v: u32| {
-                    write32(&mut buf[locs[i].0..locs[i].0 + 4], v)
-                };
-
-                match (kind, locs.len()) {
-                    // Two adrp of the same page into the same register:
-                    // the second is redundant.
-                    (1, 2) => {
-                        let (a, b) = (insn(buf, 0), insn(buf, 1));
-                        if is_adrp(a)
-                            && is_adrp(b)
-                            && a & 0x1f == b & 0x1f
-                            && adrp_target(a, locs[0].1) == adrp_target(b, locs[1].1)
-                        {
-                            put(buf, 1, NOP);
-                        }
-                    }
-                    // adrp+ldr loading a nearby location: a single
-                    // pc-relative literal load. Kind 8 is the same
-                    // pair when the ldr reads a GOT slot; if the GOT
-                    // relaxation already turned that ldr into an add,
-                    // fall through to the adr rewrite below.
-                    (2 | 8, 2) => {
-                        let (a, l) = (insn(buf, 0), insn(buf, 1));
-                        if is_adrp(a) && (l >> 5) & 0x1f == a & 0x1f {
-                            if let Some(size) = ldr_size(l) {
-                                let target =
-                                    adrp_target(a, locs[0].1) + (((l >> 10) & 0xfff) as u64) * size;
-                                if size == 8
-                                    && target.is_multiple_of(4)
-                                    && in_adr_range(target, locs[1].1)
-                                {
-                                    put(buf, 0, NOP);
-                                    put(buf, 1, make_ldr_lit(target, locs[1].1, l & 0x1f, size));
-                                }
-                            } else if *kind == 8 && is_add(l) {
-                                let target = adrp_target(a, locs[0].1) + ((l >> 10) & 0xfff) as u64;
-                                if in_adr_range(target, locs[1].1) {
-                                    put(buf, 0, NOP);
-                                    put(buf, 1, make_adr(target, locs[1].1, l & 0x1f));
-                                }
-                            }
-                        }
-                    }
-                    // adrp+add materializing a nearby address: one adr.
-                    (7, 2) => {
-                        let (a, d) = (insn(buf, 0), insn(buf, 1));
-                        if is_adrp(a) && is_add(d) && (d >> 5) & 0x1f == a & 0x1f {
-                            let target = adrp_target(a, locs[0].1) + ((d >> 10) & 0xfff) as u64;
-                            if in_adr_range(target, locs[1].1) {
-                                put(buf, 0, NOP);
-                                put(buf, 1, make_adr(target, locs[1].1, d & 0x1f));
-                            }
-                        }
-                    }
-                    // adrp+add+ldr: load through a computed address.
-                    // Nearby: fold everything into one literal load;
-                    // else shorten the address computation to adr.
-                    (3, 3) => {
-                        let (a, d, l) = (insn(buf, 0), insn(buf, 1), insn(buf, 2));
-                        if !is_adrp(a) || !is_add(d) || (d >> 5) & 0x1f != a & 0x1f {
-                            continue;
-                        }
-                        let base = adrp_target(a, locs[0].1) + ((d >> 10) & 0xfff) as u64;
-                        if let Some(size) = ldr_size(l)
-                            && (l >> 5) & 0x1f == d & 0x1f
-                        {
-                            let target = base + (((l >> 10) & 0xfff) as u64) * size;
-                            if size == 8
-                                && target.is_multiple_of(4)
-                                && in_adr_range(target, locs[2].1)
-                            {
-                                put(buf, 0, NOP);
-                                put(buf, 1, NOP);
-                                put(buf, 2, make_ldr_lit(target, locs[2].1, l & 0x1f, size));
-                                continue;
-                            }
-                        }
-                        if in_adr_range(base, locs[1].1) {
-                            put(buf, 0, NOP);
-                            put(buf, 1, make_adr(base, locs[1].1, d & 0x1f));
-                        }
-                    }
-                    // Other kinds (GOT-load triples, stores) are left
-                    // as compiled; hints are advisory.
-                    _ => {}
-                }
-            }
-        });
     }
 
     fn classify_reloc(r_type: u8) -> crate::target::RelocClass {

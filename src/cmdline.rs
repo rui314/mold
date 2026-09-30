@@ -199,6 +199,10 @@ pub struct Args {
     /// -not_for_dyld_shared_cache: a dylib installed in /usr/lib or
     /// /System/Library that won't go into the dyld shared cache.
     pub not_for_dyld_shared_cache: bool,
+    /// -debug_variant: a debug build, which ld64 keeps out of the dyld
+    /// shared cache (and spares warnings that only matter for binaries
+    /// shipped to customers; there are none here).
+    pub debug_variant: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// -application_extension: mark the image safe for app extensions.
@@ -365,6 +369,7 @@ impl Default for Args {
             dead_strip_dylibs: false,
             warn_unused_dylibs: None,
             not_for_dyld_shared_cache: false,
+            debug_variant: false,
             bind_at_load: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
@@ -849,6 +854,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-warn_unused_dylibs" => args.warn_unused_dylibs = Some(true),
             b"-no_warn_unused_dylibs" => args.warn_unused_dylibs = Some(false),
             b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
+            b"-debug_variant" => args.debug_variant = true,
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,
@@ -1039,11 +1045,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.platform_sdk = args.platform_minos;
             }
 
-            // Ignored options. This linker's output is always
-            // deterministic, so -reproducible has nothing to switch on.
-            // -debug_variant silences ld64's warnings that only matter
-            // for binaries shipped to customers; there are none here.
-            b"-reproducible" | b"-debug_variant" => {}
+            // This linker's output is always deterministic, so
+            // -reproducible has nothing to switch on.
+            b"-reproducible" => {}
 
             b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i))),
 

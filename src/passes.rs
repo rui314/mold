@@ -2262,6 +2262,20 @@ fn for_shared_cache<E: Target>(ctx: &Context<E>) -> bool {
         && in_shared_cache_path(crate::chunks::output_install_name(ctx))
 }
 
+/// Whether ld64 deems the output eligible for the dyld shared cache: a
+/// dylib installed in /usr/lib, /System/Library or their counterparts
+/// under /Library/Apple, unless -not_for_dyld_shared_cache or
+/// -debug_variant says otherwise.
+pub fn shared_region_eligible<E: Target>(ctx: &Context<E>) -> bool {
+    let path = crate::chunks::output_install_name(ctx);
+    ctx.args.output_type == MH_DYLIB
+        && !ctx.args.not_for_dyld_shared_cache
+        && !ctx.args.debug_variant
+        && (in_shared_cache_path(path)
+            || path.starts_with(b"/Library/Apple/usr/lib/")
+            || path.starts_with(b"/Library/Apple/System/Library/"))
+}
+
 /// A dylib bound for the dyld shared cache may link only libraries that
 /// are in it too, since the cache builder binds every dependency inside
 /// the cache. ld-prime rejects the first dylib in load-command order

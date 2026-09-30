@@ -166,6 +166,16 @@ pub const ARM64_RELOC_TLVP_LOAD_PAGE21: u8 = 8;
 pub const ARM64_RELOC_TLVP_LOAD_PAGEOFF12: u8 = 9;
 pub const ARM64_RELOC_ADDEND: u8 = 10;
 
+// ARM64 linker optimization hint kinds
+pub const LOH_ARM64_ADRP_ADRP: u8 = 1;
+pub const LOH_ARM64_ADRP_LDR: u8 = 2;
+pub const LOH_ARM64_ADRP_ADD_LDR: u8 = 3;
+pub const LOH_ARM64_ADRP_LDR_GOT_LDR: u8 = 4;
+pub const LOH_ARM64_ADRP_ADD_STR: u8 = 5;
+pub const LOH_ARM64_ADRP_LDR_GOT_STR: u8 = 6;
+pub const LOH_ARM64_ADRP_ADD: u8 = 7;
+pub const LOH_ARM64_ADRP_LDR_GOT: u8 = 8;
+
 // x86-64 relocation types
 pub const X86_64_RELOC_UNSIGNED: u8 = 0;
 pub const X86_64_RELOC_SIGNED: u8 = 1;
