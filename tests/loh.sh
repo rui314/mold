@@ -202,3 +202,29 @@ $CC --ld-path=$mold -o $t/libloh.dylib -shared $t/a.o $t/b.o $t/ext.o \
   -Wl,-install_name,/usr/lib/libloh.dylib,-not_for_dyld_shared_cache
 objdump -d --no-show-raw-insn $t/libloh.dylib > $t/dis
 [ "$(insns add)" = 'adr nop ret ' ]
+
+# Without .subsections_via_symbols a section is still cut into atoms at
+# every symbol, and a hint whose instructions lie in two of them is
+# dropped: the adrp in main stays, the one within second goes.
+cat <<EOF | $CC -o $t/c.o -c -xassembler -
+.text
+.globl _main
+.p2align 2
+_main:
+Lc1: adrp x8, _cvar@PAGE
+  b _second
+_second:
+Lc2: ldr w0, [x8, _cvar@PAGEOFF]
+Lc3: adrp x9, _cvar@PAGE
+Lc4: ldr w1, [x9, _cvar@PAGEOFF]
+  ret
+.loh AdrpLdr Lc1, Lc2
+.loh AdrpLdr Lc3, Lc4
+.data
+_cvar: .long 7
+EOF
+$CC --ld-path=$mold -o $t/exe4 $t/c.o
+objdump --no-show-raw-insn -d $t/exe4 | grep -A6 '<_main>:' > $t/c.dis
+grep -q 'adrp.*x8' $t/c.dis
+not grep -q 'adrp.*x9' $t/c.dis
+$t/exe4 > /dev/null || [ $? = 7 ]
