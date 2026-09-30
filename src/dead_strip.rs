@@ -410,7 +410,11 @@ fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[usize]) {
         if ctx.is_internal(sec.file as usize) {
             return name;
         }
-        format!("{} from {}", name, crate::passes::file_display(&ctx.objs[sec.file as usize]))
+        format!(
+            "{} from {}",
+            name,
+            crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf)
+        )
     };
 
     for sym in &ctx.symbols.syms {
@@ -424,15 +428,16 @@ fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[usize]) {
         if !ctx.isecs[isec].is_alive() {
             continue;
         }
-        println!(
+        // On stderr, as ld-prime prints it.
+        eprintln!(
             "{} from {}",
             sym.name(),
-            crate::passes::file_display(&ctx.objs[ctx.isecs[isec].file as usize])
+            crate::passes::resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf)
         );
         let mut indent = 1;
         while pred[isec] != usize::MAX {
             isec = pred[isec];
-            println!("{:indent$}{}", "", describe(isec), indent = indent * 2);
+            eprintln!("{:indent$}{}", "", describe(isec), indent = indent * 2);
             indent += 1;
         }
     }

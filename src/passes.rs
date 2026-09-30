@@ -1385,7 +1385,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
         if minos != 0 && version.minos > minos {
             crate::warn!(
                 "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
-                obj.mf.name.display(),
+                resolved_file_name(obj.mf),
                 platform_name(version.platform),
                 format_version(version.minos),
                 format_version(minos)
@@ -2132,13 +2132,38 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     if !ctx.args.why_load {
         return;
     }
-    for (idx, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive || obj.mf.parent.is_none() {
-            continue;
+    // ld-prime reports, on stderr, the members an option loads as it
+    // parses the archives - an archive's last member first; archives
+    // parsed in parallel interleave - before resolution names the ones
+    // a symbol pulled in. -all_load counts as -force_load; -ObjC names
+    // itself.
+    let force_loaded: std::collections::HashSet<&Path> = ctx
+        .args
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            InputArg::ForceLoad(path) => Some(path.as_path()),
+            _ => None,
+        })
+        .collect();
+    let members =
+        || ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive && obj.mf.parent.is_some());
+    let forced: Vec<&input_files::ObjectFile> =
+        members().filter(|(idx, _)| !ctx.why_load.contains_key(idx)).map(|(_, obj)| obj).collect();
+    for run in forced.chunk_by(|a, b| std::ptr::eq(a.mf.parent.unwrap(), b.mf.parent.unwrap())) {
+        let archive = run[0].mf.parent.unwrap();
+        let option = if ctx.args.all_load || force_loaded.contains(archive.name.as_path()) {
+            "-force_load"
+        } else {
+            "-ObjC"
+        };
+        for obj in run.iter().rev() {
+            eprintln!("{option} caused load of {}", resolved_file_name(obj.mf));
         }
-        match ctx.why_load.get(&idx) {
-            Some(name) => println!("{} forced load of {}", name, file_display(obj)),
-            None => println!("-all_load or -force_load forced load of {}", file_display(obj)),
+    }
+    for (idx, obj) in members() {
+        if let Some(name) = ctx.why_load.get(&idx) {
+            eprintln!("'{name}' caused load of {}", resolved_file_name(obj.mf));
         }
     }
 }
@@ -2148,6 +2173,26 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
 /// name.
 pub(crate) fn file_display(obj: &crate::input_files::ObjectFile) -> std::borrow::Cow<'_, str> {
     obj.mf.name.to_string_lossy()
+}
+
+/// A file name as ld-prime spells it where it says where an input is:
+/// its real path (symlinks and relative steps resolved), or for an
+/// archive member the archive's real path, the member's position among
+/// the archive's entries and its name: "/abs/libfoo.a[2](foo.o)".
+pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    if let Some(ar) = mf.parent
+        && let Some(index) = crate::archive_file::member_index(mf)
+    {
+        let full = path_bytes(&mf.name);
+        let member = full
+            .strip_prefix(path_bytes(&ar.name))
+            .and_then(|rest| rest.strip_prefix(b"("))
+            .and_then(|rest| rest.strip_suffix(b")"))
+            .unwrap_or(full);
+        return format!("{}[{index}]({})", real(&ar.name).display(), crate::util::display(member));
+    }
+    real(&mf.name).display().to_string()
 }
 
 /// Drops load commands for dylibs no symbol binds to

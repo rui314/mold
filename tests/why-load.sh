@@ -18,14 +18,16 @@ int main() { foo(); }
 EOF
 
 # Only a.o loads, and _foo is named as the reason.
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/lib.a -Wl,-why_load > $t/log
-grep -q '_foo forced load of .*lib.a(a.o)' $t/log
-! grep -q 'b.o' $t/log || false
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/lib.a -Wl,-why_load 2> $t/log
+grep -q "'_foo' caused load of /.*/lib.a\[2\](a.o)" $t/log
+not grep -q '(b\.o)' $t/log
 
 # -u pulls b.o with the forced symbol as the reason.
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/lib.a -Wl,-why_load -Wl,-u,_bar > $t/log2
-grep -q '_bar forced load of .*lib.a(b.o)' $t/log2
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/lib.a -Wl,-why_load -Wl,-u,_bar 2> $t/log2
+grep -q "'_bar' caused load of /.*/lib.a\[3\](b.o)" $t/log2
 
-# -all_load loads both, reported as option-forced.
-$CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-all_load $t/lib.a -Wl,-why_load > $t/log3
-grep -q 'forced load of .*lib.a(b.o)' $t/log3
+# -all_load loads both, reported as -force_load does. ld-prime names a
+# member by the archive's real path and the member's position among
+# the archive's entries (the symbol table is [1]), on stderr.
+$CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-all_load $t/lib.a -Wl,-why_load 2> $t/log3
+grep -q -- '-force_load caused load of /.*/lib.a\[3\](b.o)' $t/log3
