@@ -3281,10 +3281,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
     let map = SectionMap::new(ctx);
-    // Each input section name's output section, with the name its
-    // flags follow - by whether it is code too, which -text_exec moves.
-    type Place = (OutputSectionId, SectionName);
-    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], bool), Option<Place>> =
+    // Each input section name's output section - by whether it is code
+    // too, which -text_exec moves.
+    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], bool), Option<OutputSectionId>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
@@ -3298,10 +3297,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // first subsection of each section; on a debug link this turns
     // millions of hash lookups into a handful of thousands.
     let mut last_hdr: *const crate::macho::MachSection = std::ptr::null();
-    let mut last_osec: Option<Place> = None;
-    // A -r output section's flags come from its first non-empty input
-    // section (ld-prime skips empty ones); whether that one was seen.
-    let mut flags_from_data: Vec<bool> = Vec::new();
+    let mut last_osec: Option<OutputSectionId> = None;
     // Whether each output section has zero-fill (bit 0) and
     // file-backed (bit 1) input sections; renames can mix them.
     let mut fill_kinds: Vec<u8> = Vec::new();
@@ -3327,8 +3323,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                     let (seg, sect) = (hdr.segname(), hdr.sectname());
                     let out = output_section_for(&ctx.args, map, seg, sect, hdr.flags);
                     let id = out.map(|(out, flags_name)| match by_out.get(&out) {
-                        Some(&id) => (id, flags_name),
+                        Some(&id) => id,
                         None => {
+                            // The first member decides the flags, as in
+                            // ld-prime: code after data in a section
+                            // doesn't make it code. An empty member
+                            // counts if it names an atom (see
+                            // bare_sections), in -r too.
                             let mut osec = OutputSection::new(out.0, out.1);
                             osec.hdr.flags = if !relocatable && out == ("__TEXT", "__text") {
                                 // ld-prime makes a final image's __text
@@ -3342,14 +3343,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                             ctx.output_sections.push(osec);
                             ctx.chunks.push(ChunkId::Output(id));
                             by_out.insert(out, id);
-                            (id, flags_name)
+                            id
                         }
                     });
                     by_name.insert(key, id);
                     id
                 }
             };
-            if let Some((id, _)) = id {
+            if let Some(id) = id {
                 if fill_kinds.len() <= id.index() {
                     fill_kinds.resize(id.index() + 1, 0);
                 }
@@ -3359,7 +3360,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             last_osec = id;
             id
         };
-        let Some((osec_id, (flags_seg, flags_sect))) = osec_id else {
+        let Some(osec_id) = osec_id else {
             // Consumed by the link: no output section.
             ctx.isecs[i].set_alive(false);
             continue;
@@ -3367,20 +3368,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
         let osec = &mut ctx.output_sections[osec_id.index()];
         osec.hdr.p2align = osec.hdr.p2align.max(ctx.isecs[i].p2align as u32);
-        // The first member decides the flags, as in ld-prime: code
-        // following data in a section doesn't make it code. In a -r
-        // output, the first non-empty member does.
-        if relocatable && hdr.size != 0 {
-            let idx = osec_id.index();
-            if flags_from_data.len() <= idx {
-                flags_from_data.resize(idx + 1, false);
-            }
-            if !flags_from_data[idx] {
-                let input = input_section_flags(hdr.segname(), hdr.sectname(), hdr.flags);
-                osec.hdr.flags = output_section_flags(flags_seg, flags_sect, input, true);
-                flags_from_data[idx] = true;
-            }
-        }
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
     }

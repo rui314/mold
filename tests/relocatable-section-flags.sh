@@ -35,7 +35,9 @@ $CC --ld-path=$mold -o $t/exe $t/r.o -Wl,-dead_strip
 otool -l $t/exe > $t/lc
 grep -q 'sectname __keep' $t/lc
 
-# The first member decides, but an empty one doesn't count.
+# The first member decides. An empty one counts if a symbol names an
+# atom there - a label, or an arm64 assembler's ltmpN in an object
+# without subsections - and ld-prime ignores it otherwise.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .section __DATA,__keep,regular
 .quad 5
@@ -47,10 +49,27 @@ cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .quad 6
 .subsections_via_symbols
 EOF
+cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.section __DATA,__empty,regular,no_dead_strip
+.globl _label
+_label:
+.subsections_via_symbols
+EOF
+cat <<EOF | $CC -o $t/f.o -c -xassembler -
+.section __DATA,__empty,regular,no_dead_strip
+EOF
 $mold -arch $ARCH -r $t/b.o $t/a.o -o $t/ba.o
 [ "$(attrs $t/ba.o __keep)" = 'S_REGULAR (none)' ]
 $mold -arch $ARCH -r $t/b.o $t/c.o -o $t/bc.o
 [ "$(attrs $t/bc.o __empty)" = 'S_REGULAR (none)' ]
+$mold -arch $ARCH -r $t/e.o $t/c.o -o $t/ec.o
+[ "$(attrs $t/ec.o __empty)" = 'S_REGULAR NO_DEAD_STRIP' ]
+$mold -arch $ARCH -r $t/f.o $t/c.o -o $t/fc.o
+if [ $ARCH = arm64 ]; then
+  [ "$(attrs $t/fc.o __empty)" = 'S_REGULAR NO_DEAD_STRIP' ]
+else
+  [ "$(attrs $t/fc.o __empty)" = 'S_REGULAR (none)' ]
+fi
 
 # Each symbol of a no_dead_strip section is itself marked no-dead-strip,
 # so it survives where the output section took another member's
