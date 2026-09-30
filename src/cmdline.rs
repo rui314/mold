@@ -2205,22 +2205,16 @@ fn custom_layout(args: &Args) -> bool {
 }
 
 fn check_segment_order(args: &Args) {
-    if args.segment_order.is_empty() {
-        return;
-    }
-    if args.segment_order.len() < 2 {
+    if !args.segment_order.is_empty() && args.segment_order.len() < 2 {
         fatal!("-segment_order should specifify at least two segments");
-    }
-    if !custom_layout(args) {
-        fatal!(
-            "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
-        );
     }
 }
 
-/// In an image dyld loads (firmware), __DATA_CONST is one of the
-/// standard segments, and ld-prime puts it right before __DATA where
-/// -segment_order names that alone.
+/// In an image dyld loads, __DATA_CONST is one of the standard
+/// segments, and ld-prime puts it right before __DATA where
+/// -segment_order names that alone - with a warning, which comes even
+/// before it refuses the option for an image that may not order its
+/// segments (only firmware may).
 fn complete_segment_order(args: &mut Args) {
     let has = |name: &str| args.segment_order.iter().position(|s| s == name);
     if !args.without_dyld()
@@ -2232,6 +2226,11 @@ fn complete_segment_order(args: &mut Args) {
             "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
         );
         args.segment_order.insert(i, "__DATA_CONST".to_string());
+    }
+    if !args.segment_order.is_empty() && !custom_layout(args) {
+        fatal!(
+            "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
+        );
     }
 }
 

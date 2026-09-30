@@ -38,6 +38,13 @@ grep -q -- '-segment_order of __TEXT is ignored, the segment must be ordered fir
 not $mold -arch $ARCH -static -e __start $t/a.o -segment_order __OTHER -o $t/exe4 2> $t/log4
 grep -q -- '-segment_order should specifify at least two segments' $t/log4
 
+# An image dyld loads may not order its segments; ld-prime still warns
+# first that the list leaves out __DATA_CONST, which such an image has.
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 not $CC --ld-path=$mold -o $t/exe5 $t/main.o -Wl,-segment_order,__TEXT:__DATA 2> $t/log5
-grep -q -- '-segment_order can only be used with -preload, -static' $t/log5
+grep -A1 -- '-segment_order lists __DATA, but not __DATA_CONST, assuming standard order' $t/log5 |
+  grep -q -- '-segment_order can only be used with -preload, -static'
+not $CC --ld-path=$mold -o $t/exe6 $t/main.o -Wl,-segment_order,__TEXT:__DATA_CONST:__DATA \
+  2> $t/log6
+grep -q -- '-segment_order can only be used with -preload, -static' $t/log6
+not grep -q -- 'not __DATA_CONST' $t/log6
