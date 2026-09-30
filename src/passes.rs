@@ -26,26 +26,43 @@ use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes};
 
-/// Returns the directories to search for `-l` libraries, in order. An
-/// absolute library path that exists under a syslibroot is looked up
-/// there; the default search path is the syslibroot's /usr/lib.
+/// The default library search path: ld64's /usr/lib and /usr/local/lib,
+/// and between them ld-prime's /usr/lib/swift, which it searches for
+/// any library, not only Swift's.
+const STANDARD_LIBRARY_DIRS: &[&str] = &["/usr/lib", "/usr/lib/swift", "/usr/local/lib"];
+
+/// The default framework search path, as ld64's.
+const STANDARD_FRAMEWORK_DIRS: &[&str] = &["/Library/Frameworks", "/System/Library/Frameworks"];
+
+/// Returns the directories to search for `-l` libraries, in order: the
+/// -L directories, then, unless -Z, the default ones (see search_dirs).
 pub(crate) fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+    search_dirs(ctx, &ctx.args.library_paths, STANDARD_LIBRARY_DIRS)
+}
 
-    for dir in &ctx.args.library_paths {
-        push_search_dir(&ctx.args.syslibroot, &mut dirs, dir);
+/// The directories `dirs` given on the command line, then, unless -Z,
+/// the default ones, each looked up under the syslibroots as ld64 does
+/// (see push_search_dir) - but a default directory missing from the
+/// only SDK is not searched at all, not even outside it.
+fn search_dirs<E: Target>(ctx: &Context<E>, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
+    let syslibroot = &ctx.args.syslibroot;
+    let mut out = Vec::new();
+    for dir in dirs {
+        push_search_dir(syslibroot, &mut out, dir);
     }
-
     if !ctx.args.no_standard_dirs {
-        if ctx.args.syslibroot.is_empty() {
-            dirs.push(PathBuf::from("/usr/lib"));
-        } else {
-            for root in &ctx.args.syslibroot {
-                dirs.push(root.join("usr/lib"));
+        for dir in standard {
+            if let [root] = syslibroot.as_slice() {
+                let dir = under_root(root, Path::new(dir));
+                if dir.is_dir() {
+                    out.push(dir);
+                }
+            } else {
+                push_search_dir(syslibroot, &mut out, Path::new(dir));
             }
         }
     }
-    dirs
+    out
 }
 
 /// Adds a -L or -F directory to a search path. ld64 looks an absolute
@@ -78,24 +95,7 @@ fn under_root(root: &Path, dir: &Path) -> PathBuf {
 /// Returns the directories to search for `-framework`, in order,
 /// mirroring the library search rules.
 fn framework_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for dir in &ctx.args.framework_paths {
-        push_search_dir(&ctx.args.syslibroot, &mut dirs, dir);
-    }
-
-    if !ctx.args.no_standard_dirs {
-        if ctx.args.syslibroot.is_empty() {
-            dirs.push(PathBuf::from("/System/Library/Frameworks"));
-            dirs.push(PathBuf::from("/Library/Frameworks"));
-        } else {
-            for root in &ctx.args.syslibroot {
-                dirs.push(root.join("System/Library/Frameworks"));
-                dirs.push(root.join("Library/Frameworks"));
-            }
-        }
-    }
-    dirs
+    search_dirs(ctx, &ctx.args.framework_paths, STANDARD_FRAMEWORK_DIRS)
 }
 
 fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
