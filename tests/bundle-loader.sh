@@ -49,3 +49,23 @@ grep -q 'lazy-bind *<main-executable>/_host_func' $t/fixups2
 grep -q 'bind *<main-executable>/_host_value' $t/fixups2
 not grep -q 'this-image' $t/fixups2
 $t/host $t/plugin2.bundle | grep '^461$'
+
+# ld-prime warns about a loader nothing binds to only under
+# -warn_unused_dylibs (a bundle is never bound for the shared cache),
+# naming its real path, in its command-line place among the unused
+# dylibs; -t lists it as given.
+echo 'int unused_func(void) { return 1; }' | $CC -o $t/unused.o -c -xc -
+echo 'int z(void) { return 1; }' | $CC -o $t/z.o -c -xc -
+$CC --ld-path=$mold -o $t/libz1.dylib -shared $t/z.o -Wl,-install_name,@rpath/libz1.dylib
+mkdir -p $t/sub
+ln -sf ../host $t/sub/hostlink
+$CC --ld-path=$mold -bundle -o $t/u1.bundle $t/unused.o -Wl,-bundle_loader,$t/host 2> $t/log1
+not grep -q 'bundle loader' $t/log1
+$CC --ld-path=$mold -bundle -o $t/u2.bundle $t/unused.o $t/libz1.dylib \
+  -Wl,-bundle_loader,$t/sub/hostlink -Wl,-warn_unused_dylibs 2> $t/log2
+grep -n 'but not using any symbols' $t/log2 | cut -d: -f1 | tr '\n' ' ' > $t/lines
+[ "$(cat $t/lines)" = '1 2 ' ]
+sed -n 2p $t/log2 | grep -q "linking with bundle loader (/.*/host) but not using any symbols from it"
+$CC --ld-path=$mold -bundle -o $t/u3.bundle $t/unused.o -Wl,-bundle_loader,$t/sub/hostlink \
+  -Wl,-t > $t/trace
+grep -q 'sub/hostlink$' $t/trace

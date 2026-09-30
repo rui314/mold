@@ -51,6 +51,9 @@ pub enum InputArg {
     NeededLib(OsString),
     NeededFramework(OsString),
     NeededFile(PathBuf),
+    /// `-bundle_loader path`: the executable a bundle's undefined
+    /// symbols may resolve to, bound at run time as the main executable.
+    BundleLoader(PathBuf),
 }
 
 /// Parsed command line arguments.
@@ -67,9 +70,6 @@ pub struct Args {
     /// -keep_private_externs: a -r output keeps private externals as
     /// such instead of making them non-external.
     pub keep_private_externs: bool,
-    /// -bundle_loader: the executable a bundle's undefined symbols may
-    /// resolve to, bound at run time as the main executable.
-    pub bundle_loader: Option<PathBuf>,
     /// -arch, canonicalized to the target's own spelling of its name.
     pub arch: Option<&'static str>,
     pub entry: String,
@@ -307,7 +307,6 @@ impl Default for Args {
             install_name: None,
             final_output: None,
             keep_private_externs: false,
-            bundle_loader: None,
             arch: None,
             entry: "_main".to_string(),
             platform: PLATFORM_MACOS,
@@ -749,7 +748,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-F" => args.framework_paths.push(path(next_arg(&mut i))),
             b"-dylib" => args.output_type = MH_DYLIB,
             b"-bundle" => args.output_type = MH_BUNDLE,
-            b"-bundle_loader" => args.bundle_loader = Some(path(next_arg(&mut i))),
+            b"-bundle_loader" => args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i)))),
             b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i))),
             b"-keep_private_externs" => args.keep_private_externs = true,
             b"-rpath" => args.rpaths.push(bytes(next_arg(&mut i))),

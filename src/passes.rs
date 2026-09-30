@@ -499,6 +499,10 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             InputArg::NeededFramework(name) => {
                 (framework(ctx, name), ReaderContext { needed: true, ..rc })
             }
+            InputArg::BundleLoader(path) => {
+                load_bundle_loader(ctx, path);
+                continue;
+            }
         };
         let Some(path) = path else { continue };
         match MappedFile::try_open(&path) {
@@ -513,21 +517,23 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.args.inputs = inputs;
-
-    // -bundle_loader: the executable that will load this bundle. Its
-    // exports resolve the bundle's remaining undefined symbols, bound
-    // at run time to the main executable (XCTest bundles hosted by an
-    // app are linked this way).
-    if let Some(path) = ctx.args.bundle_loader.clone() {
-        if ctx.args.output_type != MH_BUNDLE {
-            fatal!("-bundle_loader can only be used with -bundle");
-        }
-        let Ok(mf) = MappedFile::try_open(&path) else {
-            fatal!("library '{}' not found", path.display());
-        };
-        crate::input_files::parse_bundle_loader(ctx, mf);
-    }
     load_pending(ctx, queue);
+}
+
+/// -bundle_loader: the executable that will load this bundle. Its
+/// exports resolve the bundle's remaining undefined symbols, bound at
+/// run time to the main executable (XCTest bundles hosted by an app are
+/// linked this way). It loads where the command line names it, which
+/// places it among the dylibs as ld-prime does.
+fn load_bundle_loader<E: Target>(ctx: &mut Context<E>, path: &Path) {
+    if ctx.args.output_type != MH_BUNDLE {
+        fatal!("-bundle_loader can only be used with -bundle");
+    }
+    let Ok(mf) = MappedFile::try_open(path) else {
+        fatal!("library '{}' not found", path.display());
+    };
+    input_files::trace_file(ctx, path_bytes(&mf.name));
+    input_files::parse_bundle_loader(ctx, mf);
 }
 
 /// Acts on auto-link options (LC_LINKER_OPTION) of live objects: each
@@ -2261,7 +2267,13 @@ fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
         }
     }
     for (i, dylib) in ctx.dylibs.iter().enumerate() {
-        if !bound[i]
+        if !bound[i] && dylib.is_bundle_loader {
+            let real = std::fs::canonicalize(&dylib.path).unwrap_or_else(|_| dylib.path.clone());
+            crate::warn!(
+                "linking with bundle loader ({}) but not using any symbols from it",
+                real.display()
+            );
+        } else if !bound[i]
             && !dylib.is_implicit
             && !dylib.is_autolinked
             && !dylib.is_needed
