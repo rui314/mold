@@ -38,7 +38,10 @@ impl Target for X86_64 {
     const PAGE_SIZE: u64 = 4096;
     const STUB_SIZE: u64 = 6;
     const STUB_HELPER_HEADER_SIZE: u64 = 16;
-    const STUB_HELPER_ENTRY_SIZE: u64 = 10;
+    // ld64 keeps the entries 4-byte aligned: 10 bytes of push and jmp,
+    // then 2 zero bytes.
+    const STUB_HELPER_ENTRY_SIZE: u64 = 12;
+    const STUB_HELPER_ENTRY_PADDING: u64 = 2;
     const UNWIND_MODE_DWARF: u32 = UNWIND_X86_64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 16;
     // A 32-bit pcrel branch covers 4 GiB; x86-64 outputs never need
@@ -116,15 +119,19 @@ impl Target for X86_64 {
         buf[9..11].copy_from_slice(&[0xff, 0x25]);
         write32(&mut buf[11..], binder.wrapping_sub(addr + 15) as u32);
         buf[15] = 0x90;
-        // Each entry: push $offset; jmp header.
+        // Each entry: push $offset; jmp header; the zero padding.
         let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.symbols.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
-            let off = 16 + i * 10;
+            let off =
+                (Self::STUB_HELPER_HEADER_SIZE + i as u64 * Self::STUB_HELPER_ENTRY_SIZE) as usize;
             let ent_addr = addr + off as u64;
             buf[off] = 0x68;
             write32(&mut buf[off + 1..], lazy_off);
             buf[off + 5] = 0xe9;
             write32(&mut buf[off + 6..], addr.wrapping_sub(ent_addr + 10) as u32);
+            if i + 1 < lazy_offsets.len() {
+                buf[off + 10..off + 12].fill(0);
+            }
         }
     }
 

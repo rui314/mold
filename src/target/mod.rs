@@ -41,10 +41,13 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const PAGE_SIZE: u64;
     /// The size of one __stubs entry.
     const STUB_SIZE: u64;
-    /// The sizes of the __stub_helper header (the common code that
-    /// enters dyld_stub_binder) and of each stub's entry in it.
+    /// The size of the __stub_helper header (the common code that
+    /// enters dyld_stub_binder), the distance from one stub's entry to
+    /// the next, and the zero padding that distance includes after an
+    /// entry's code, which the last entry goes without.
     const STUB_HELPER_HEADER_SIZE: u64;
     const STUB_HELPER_ENTRY_SIZE: u64;
+    const STUB_HELPER_ENTRY_PADDING: u64;
     /// The compact unwind encoding mode meaning "use DWARF instead".
     const UNWIND_MODE_DWARF: u32;
     /// The size of one __objc_stubs entry.

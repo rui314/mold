@@ -4523,8 +4523,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // (A stub bound by weak lookup goes through the GOT; only lazily
     // bound stubs need the helper and lazy pointers.)
     if ctx.lazy_binding() && ctx.stubs.symbols.iter().any(|&id| !ctx.binds_weak_lookup(id)) {
-        ctx.stub_helper.hdr.size =
-            E::STUB_HELPER_HEADER_SIZE + ctx.stubs.symbols.len() as u64 * E::STUB_HELPER_ENTRY_SIZE;
+        ctx.stub_helper.hdr.size = E::STUB_HELPER_HEADER_SIZE
+            + ctx.stubs.symbols.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
+            - E::STUB_HELPER_ENTRY_PADDING;
         ctx.chunks.push(ChunkId::StubHelper);
         // Indirect symbol table entries: stubs, the GOT's, then these.
         ctx.lazy_ptrs.hdr.reserved1 = (ctx.stubs.symbols.len() + ctx.got.got_syms.len()) as u32;
