@@ -60,6 +60,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::error::set_suppress_warnings(ctx.args.suppress_warnings);
     crate::error::set_fatal_warnings(ctx.args.fatal_warnings);
     crate::error::set_demangle(ctx.args.demangle);
+    passes::resolve_image_base(&mut ctx);
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();

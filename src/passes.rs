@@ -5723,6 +5723,43 @@ pub fn create_output_symtab<E: Target>(
     data
 }
 
+/// -image_base (or -seg1addr) sets the address of the first segment
+/// after __PAGEZERO, for an image that stays where it was linked. dyld
+/// slides a PIE executable, and a dylib or bundle with chained fixups,
+/// wherever it likes; ld-prime ignores the option for those with a
+/// warning, and rounds a base up to a page.
+pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
+    let Some(base) = ctx.args.image_base else { return };
+    if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
+        crate::warn!("Linking with PIE, -image_base will be ignored");
+        ctx.args.image_base = None;
+    } else if matches!(ctx.args.output_type, MH_DYLIB | MH_BUNDLE) && ctx.use_chained_fixups() {
+        crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
+        ctx.args.image_base = None;
+    } else if base % E::PAGE_SIZE != 0 {
+        let aligned = align_to(base, E::PAGE_SIZE);
+        crate::warn!("base address {base:#x} is not properly aligned. Changing it to {aligned:#x}");
+        ctx.args.image_base = Some(aligned);
+    }
+}
+
+/// An -image_base below __PAGEZERO's end would map the image into the
+/// zero page.
+fn check_image_base<E: Target>(ctx: &Context<E>) {
+    let Some(base) = ctx.args.image_base else { return };
+    if base < ctx.args.pagezero_size
+        && let Some(seg) = ctx.segments.iter().find(|s| s.name != "__PAGEZERO")
+    {
+        error!(
+            "custom segments overlap: __PAGEZERO(0x0-{:#x}) {}({:#x}-{:#x})",
+            ctx.args.pagezero_size,
+            seg.name,
+            seg.cmd.vmaddr,
+            seg.cmd.vmaddr + seg.cmd.vmsize
+        );
+    }
+}
+
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let page = E::PAGE_SIZE;
     let mut addr = ctx.args.image_base.unwrap_or(0);
@@ -5735,7 +5772,10 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         // Everything the bind stream describes (the GOT, data sections)
         // is laid out by the time we reach __LINKEDIT.
         if ctx.segments[seg_idx].name == "__LINKEDIT" {
-            // Every code and data address is final by now.
+            // Every code and data address is final by now; the tables
+            // below would read ones inside __PAGEZERO as negative.
+            check_image_base(ctx);
+            crate::error::checkpoint();
             // The LINKEDIT tables are independent of one another and
             // every address they read is final (the symbol table needs
             // none at all), so they build as one parallel task group;
@@ -5879,7 +5919,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             let seg = &mut ctx.segments[seg_idx];
             seg.cmd.vmaddr = 0;
             seg.cmd.vmsize = ctx.args.pagezero_size;
-            addr = ctx.args.pagezero_size;
+            addr = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
             continue;
         }
 

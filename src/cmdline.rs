@@ -749,7 +749,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i)));
                 args.explicit_pagezero = true;
             }
-            b"-image_base" => args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i)))),
+            b"-image_base" | b"-seg1addr" => {
+                args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i))));
+            }
             b"-segaddr" => {
                 let seg = text(name, next_arg(&mut i)).to_string();
                 let addr = parse_hex(name, text(name, next_arg(&mut i)));
