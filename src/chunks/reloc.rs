@@ -7,7 +7,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{FragmentLookup, InputSection, r_delta};
 use crate::symbol::{OriginValue, Symbol};
-use crate::target::Target;
+use crate::target::{Family, Target};
 
 // RelocSection represents a relocation table for an output file.
 // These tables are emitted for `-r` and for final links with `--emit-relocs`.
@@ -133,10 +133,11 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: O
             // than in r_addend, and the relocation records we emit here are
             // meant to be consumed as if they were in an object file, so we
             // follow that convention.
-            let out_addend = if E::FAMILY == crate::target::Family::Sh4 { 0 } else { addend };
+            let out_addend = if E::FAMILY == Family::Sh4 { 0 } else { addend };
             out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
 
             if ctx.args.relocatable
+                && (!E::IS_RELA || E::FAMILY == Family::Sh4)
                 && let Some(osec_buf) = osec_buf.as_deref_mut()
             {
                 let loc = (isec.offset() + rel.r_offset()) as usize;
