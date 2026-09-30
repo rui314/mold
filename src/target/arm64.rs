@@ -349,7 +349,7 @@ impl Target for Arm64 {
     }
 
     fn write_objc_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let msgsend_got = ctx.sym_got_addr(ctx.objc_stubs.msgsend_sym.unwrap());
+        let msgsend_got = ctx.objc_msgsend_got_addr();
 
         for i in 0..ctx.objc_stubs.symbols.len() {
             let ent = &mut buf[i * 32..];

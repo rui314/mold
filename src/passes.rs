@@ -2329,10 +2329,13 @@ pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: crate::symbol::Symbo
     }
 }
 
-/// The synthesized objc stubs call _objc_msgSend through the GOT.
+/// The synthesized objc stubs call _objc_msgSend through a GOT slot of
+/// their own: ld-prime binds _objc_msgSend twice when a stub or a GOT
+/// load elsewhere needs a slot for it as well.
 pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
-        add_got(ctx, id);
+        ctx.objc_stubs.msgsend_got_idx = ctx.got.got_syms.len() as u32;
+        ctx.got.got_syms.push(id);
     }
 
     // Stub i loads slot i of the __objc_selrefs tail, which points at
@@ -2483,14 +2486,23 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.stubs.symbols = stubs;
 
-    let mut got = std::mem::take(&mut ctx.got.got_syms);
-    got.par_sort_by_key(|&id| {
-        (got_rank(ctx, id), crate::util::name_sort_key(ctx.symbols[id].name()))
+    // The objc stubs' own _objc_msgSend slot goes before the one other
+    // references share.
+    let got = std::mem::take(&mut ctx.got.got_syms);
+    let objc = ctx.objc_stubs.msgsend_got_idx as usize;
+    let mut order: Vec<usize> = (0..got.len()).collect();
+    order.par_sort_by_key(|&i| {
+        let id = got[i];
+        (got_rank(ctx, id), crate::util::name_sort_key(ctx.symbols[id].name()), i != objc)
     });
-    for (i, &id) in got.iter().enumerate() {
-        ctx.sym_aux_mut(id).got_idx = i as u32;
+    for (slot, &i) in order.iter().enumerate() {
+        if i == objc {
+            ctx.objc_stubs.msgsend_got_idx = slot as u32;
+        } else {
+            ctx.sym_aux_mut(got[i]).got_idx = slot as u32;
+        }
     }
-    ctx.got.got_syms = got;
+    ctx.got.got_syms = order.iter().map(|&i| got[i]).collect();
 }
 
 /// A GOT slot's group in ld-prime's order (see sort_stubs_and_got).

@@ -635,6 +635,12 @@ impl<E: Target> Context<E> {
         self.got.hdr.addr + self.sym_aux(id).got_idx as u64 * 8
     }
 
+    /// Returns the address of the __got slot the objc stubs load
+    /// _objc_msgSend from.
+    pub fn objc_msgsend_got_addr(&self) -> u64 {
+        self.got.hdr.addr + self.objc_stubs.msgsend_got_idx as u64 * 8
+    }
+
     /// Returns the symbol a relocation refers to, if it refers to one.
     pub fn reloc_target_sym(&self, obj: usize, rel: &Reloc) -> Option<SymbolId> {
         match rel.target() {
