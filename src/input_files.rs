@@ -3814,7 +3814,9 @@ fn dir_of(path: &Path) -> PathBuf {
 /// names the dependency, and @rpath tries that dylib's own LC_RPATH
 /// entries. ld-prime expands no @executable_path (ld64 took the output
 /// executable's directory, or -executable_path's), so such a name
-/// resolves only by its leaf. A -dylib_file for the name comes first.
+/// resolves only by its leaf. A -dylib_file for the name comes first,
+/// unless its file isn't there; one that is ld-prime reads as any input
+/// (see passes::unreadable_input).
 fn resolve_dylib_ref<E: Target>(
     ctx: &Context<E>,
     name: &[u8],
@@ -3822,9 +3824,14 @@ fn resolve_dylib_ref<E: Target>(
     loader_rpaths: &[PathBuf],
 ) -> Option<&'static MappedFile> {
     use crate::util::{os_str, path_bytes};
-    let dylib_file = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
-    if let Some(mf) = dylib_file.filter_map(|(_, file)| MappedFile::open(file)).next() {
-        return Some(mf);
+    let dylib_files = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
+    for (_, file) in dylib_files {
+        match MappedFile::try_open(file) {
+            Ok(mf) if mf.size() > 0 => return Some(mf),
+            Ok(_) => fatal!("file is empty in '{}'", file.display()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
+            Err(e) => fatal!("{}", crate::passes::unreadable_input(file, &e)),
+        }
     }
     // A name relative to the re-exporter or its rpaths resolves as
     // such first, and failing that like an absolute one.

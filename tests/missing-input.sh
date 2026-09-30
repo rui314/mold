@@ -22,6 +22,12 @@ try -Wl,-weak_framework,NoSuch
 grep -q "framework 'NoSuch' not found" $t/log
 try -Wl,$t/nosuch.o
 grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.o in '$t/nosuch.o'" $t/log
+mkdir -p $t/dir
+try -Wl,$t/dir
+grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/dir in '$t/dir'" $t/log
+: > $t/empty.o
+try -Wl,$t/empty.o
+grep -qF "file is empty in '$t/empty.o'" $t/log
 try -Wl,-force_load,$t/nosuch.a
 grep -q "library '$t/nosuch.a' not found" $t/log
 try -Wl,-weak_library,$t/nosuch.dylib

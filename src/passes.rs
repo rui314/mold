@@ -619,18 +619,34 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
         let (Some(path), Some(rc)) = (path, rc) else { continue };
         match MappedFile::try_open(&path) {
+            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
             Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
             // A bare path names a file; the other forms name a library.
-            Err(e) if matches!(arg, InputArg::File(_)) => error!(
-                "file cannot be open()ed, {} path={p} in '{p}'",
-                crate::error::errno_text(&e),
-                p = path.display()
-            ),
+            Err(e) if matches!(arg, InputArg::File(_)) => error!("{}", unreadable_input(&path, &e)),
             Err(_) => error!("library '{}' not found", path.display()),
         }
     }
     ctx.args.inputs = inputs;
     load_pending(ctx, queue);
+}
+
+/// ld-prime's words for an input file MappedFile::try_open failed on
+/// with `e`. ld-prime maps every input whole, and refuses an empty one,
+/// so a file that is there but no regular one (which MappedFile takes
+/// for none) is one it can't map - a directory - or an empty one.
+pub fn unreadable_input(path: &Path, e: &std::io::Error) -> String {
+    let p = path.display();
+    let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
+    match found {
+        Some(md) if md.len() == 0 => format!("file is empty in '{p}'"),
+        Some(_) => {
+            let e = std::io::Error::from_raw_os_error(libc::EINVAL);
+            format!("file cannot be mmap()ed, {} path={p} in '{p}'", crate::error::errno_text(&e))
+        }
+        None => {
+            format!("file cannot be open()ed, {} path={p} in '{p}'", crate::error::errno_text(e))
+        }
+    }
 }
 
 /// Finds the file each input names: None for a library or framework

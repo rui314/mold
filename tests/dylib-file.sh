@@ -31,3 +31,14 @@ grep -q "$t/lib/libfoo.dylib" $t/log
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib 2> $t/log
 grep -q -- '-dylib_file malformed <path:path>' $t/log
+
+# But ld-prime reads a file that is there as any input, whole: it can't
+# map a directory, and refuses an empty file.
+mkdir -p $t/dir
+not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
+  -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/dir 2> $t/log
+grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/dir in '$t/dir'" $t/log
+: > $t/empty.dylib
+not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
+  -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/empty.dylib 2> $t/log
+grep -qF "file is empty in '$t/empty.dylib'" $t/log
