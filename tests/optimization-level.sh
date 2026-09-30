@@ -12,13 +12,10 @@ template <int N> __attribute__((noinline)) int f(int x) { return x * 3 + 7; }
 int main(int argc, char **) { return f<1>(argc) + f<2>(argc) != argc * 6 + 14; }
 EOF
 
-for opt in none -O0 -O1 -O2 -O3 -Os -Oz -O -O4 -Ofast -Og -Ofoo; do
-  flag=
-  [ $opt = none ] || flag=-Wl,$opt
-  $CXX --ld-path=$mold -o $t/exe $t/a.o $flag
-  $t/exe
-  cp $t/exe $t/exe$opt
-done
+$CXX --ld-path=$mold -o $t/exe $t/a.o
+$t/exe
+cp $t/exe $t/exe.none
 for opt in -O0 -O1 -O2 -O3 -Os -Oz -O -O4 -Ofast -Og -Ofoo; do
-  cmp $t/exenone $t/exe$opt
+  $CXX --ld-path=$mold -o $t/exe $t/a.o -Wl,$opt
+  cmp $t/exe.none $t/exe
 done
