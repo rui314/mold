@@ -70,7 +70,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     addrs.dedup();
 
     let mut buf = Vec::new();
-    let mut last = ctx.args.pagezero_size;
+    // Offsets count from the image's start, the mach header, which
+    // -image_base (a kernel's) moves.
+    let mut last = ctx.mach_header.hdr.addr;
     for addr in addrs {
         encode_uleb(&mut buf, addr - last);
         last = addr;

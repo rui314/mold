@@ -256,7 +256,7 @@ impl OutputSegment {
 pub fn segment_prot(name: &str) -> u32 {
     match name {
         "__PAGEZERO" => 0,
-        "__TEXT" => VM_PROT_READ | VM_PROT_EXECUTE,
+        "__TEXT" | "__TEXT_EXEC" => VM_PROT_READ | VM_PROT_EXECUTE,
         "__LINKEDIT" => VM_PROT_READ,
         _ => VM_PROT_READ | VM_PROT_WRITE,
     }

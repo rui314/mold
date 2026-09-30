@@ -3216,8 +3216,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
     // A final image always has a __TEXT,__text section, empty if no
     // code reached it (a dylib of only data; ld-prime writes one of
-    // size 0, byte-aligned).
-    if !relocatable && !by_out.contains_key(&("__TEXT", "__text")) {
+    // size 0, byte-aligned) - but for code in another segment's
+    // __text (-rename_section to __TEXT_EXEC, as a kernel or kext has).
+    if !relocatable && !by_out.keys().any(|&(_, sect)| sect == "__text") {
         let mut osec = OutputSection::new("__TEXT", "__text");
         osec.hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         let id = OutputSectionId::new(ctx.output_sections.len() as u32);

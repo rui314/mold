@@ -308,6 +308,10 @@ pub struct Args {
     /// -static: an image no dyld loads (the XNU kernel), with no LC_MAIN,
     /// imports or dyld info, and fixups only if -fixup_chains asks.
     pub static_link: bool,
+    /// -kernel: the -static image is a kernel (XNU), which kmutil slides
+    /// into a kernel collection: position independent and, like a
+    /// shared-cache dylib, with split info.
+    pub kernel: bool,
     /// Whether an executable is position independent (MH_PIE):
     /// -pie / -no_pie, resolved for the target at the end of parsing.
     pub pie: bool,
@@ -420,6 +424,7 @@ impl Default for Args {
             rename_segments: Vec::new(),
             zero_ar_date: false,
             static_link: false,
+            kernel: false,
             pie: true,
         }
     }
@@ -785,6 +790,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
             b"-static" => args.static_link = true,
+            b"-kernel" => args.kernel = true,
             b"-version_load_command" => args.version_load_command = true,
             b"-pie" => pie = Some(true),
             b"-no_pie" => pie = Some(false),
@@ -1175,6 +1181,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
         );
     }
+    if args.kernel && !args.static_link {
+        fatal!("-kernel must be used with -static");
+    }
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(&mut args);
@@ -1186,7 +1195,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 }
 
 /// Whether an install name lies where the dyld shared cache takes
-/// libraries from: /usr/lib or /System/Library.
+/// libraries from: /usr/lib, /System/Library or their counterparts
+/// under /Library/Apple.
 pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
     [
         &b"/usr/lib/"[..],
@@ -1198,20 +1208,22 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
     .any(|dir| install_name.starts_with(dir))
 }
 
-/// Decides whether the image is bound for the dyld shared cache (ld64's
-/// fSharedRegionEligible): with -add_split_seg_info, or a dylib
-/// installed where the cache takes libraries from, unless
-/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
-/// image records its references between sections
-/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
-/// optimization hints); it may not look symbols up dynamically, since
-/// the cache builder binds every one to the dylib that exports it; and
-/// ld-prime warns about run paths, which an OS library must not need.
+/// Decides whether the image is bound for the dyld shared cache or a
+/// kernel collection (ld64's fSharedRegionEligible): with
+/// -add_split_seg_info or -kernel, or a dylib installed where the cache
+/// takes libraries from, unless -not_for_dyld_shared_cache, or
+/// -debug_variant for a dylib. Such an image records its references
+/// between sections (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as
+/// compiled (no optimization hints); it may not look symbols up
+/// dynamically, since the cache builder binds every one to the dylib
+/// that exports it; and ld-prime warns about run paths, which an OS
+/// library must not need.
 fn resolve_shared_region(args: &mut Args) {
     let is_dylib = args.output_type == MH_DYLIB;
     args.shared_region = !args.not_for_dyld_shared_cache
         && !(is_dylib && args.debug_variant)
         && (args.add_split_seg_info
+            || args.kernel
             || (is_dylib && in_shared_cache_path(args.output_install_name())));
     if !args.shared_region {
         return;
@@ -1257,8 +1269,8 @@ impl Args {
 /// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
 /// PIE executables only) and which ld-prime deprecates from the OS
 /// versions that default to chained fixups. A -static image (a kernel)
-/// is PIE only with -pie, or with -fixup_chains, whose chains exist to
-/// slide it.
+/// is PIE only with -pie or -kernel, or with -fixup_chains, whose
+/// chains exist to slide it.
 fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     match pie {
         Some(false) if args.output_type == MH_EXECUTE && !args.static_link => {
@@ -1271,7 +1283,7 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
             target.name == "arm64"
         }
         Some(pie) => pie,
-        None => !args.static_link || args.fixup_chains == Some(true),
+        None => !args.static_link || args.kernel || args.fixup_chains == Some(true),
     }
 }
 
