@@ -722,6 +722,13 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
     let mf = MappedFile::must_open(path);
     mf.set_dependency(false);
     let data = mf.data();
+
+    // Arguments are passed on as C strings, e.g. to the LTO plugin, so they
+    // must not contain a NUL byte. Arguments given by the OS never do.
+    if data.contains(&0) {
+        fatal!("{}: response file contains a NUL byte", path.display());
+    }
+
     let mut expanded = Vec::new();
     let mut i = 0;
 
