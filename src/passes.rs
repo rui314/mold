@@ -2917,11 +2917,17 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // dyld may find its own mach header by __mh_dylinker_header, which
-    // ld-prime defines as it does ___dso_handle below, out of the
-    // symbol table.
-    if ctx.args.is_dylinker() {
-        define_header_alias(ctx, "__mh_dylinker_header", internal, header_addr);
+    // A dylib, a bundle or dyld may find its own mach header by a name
+    // for its kind, which ld-prime defines as it does ___dso_handle
+    // below, out of the symbol table.
+    let header_name = match ctx.args.output_type {
+        MH_DYLIB => Some("__mh_dylib_header"),
+        MH_BUNDLE => Some("__mh_bundle_header"),
+        MH_DYLINKER => Some("__mh_dylinker_header"),
+        _ => None,
+    };
+    if let Some(name) = header_name {
+        define_header_alias(ctx, name, internal, header_addr);
     }
 
     // ___dso_handle identifies the image; C++ static destructors pass it
