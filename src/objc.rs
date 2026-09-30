@@ -1259,6 +1259,9 @@ struct ListRefs {
     protocols: Option<ObjcRef>,
     iprops: Option<ObjcRef>,
     cprops: Option<ObjcRef>,
+    /// A class's metaclass's protocol list: the class's own in clang's
+    /// metadata, a copy of it in Swift's.
+    meta_protocols: Option<ObjcRef>,
 }
 
 impl ListRefs {
@@ -1274,6 +1277,7 @@ impl ListRefs {
             protocols: field(32),
             iprops: field(40),
             cprops: if has_class_props { field(48) } else { None },
+            meta_protocols: None,
         }
     }
 
@@ -1288,6 +1292,7 @@ impl ListRefs {
             protocols: objc_pointer_at(ctx, ro.0, ro.1 + 40),
             iprops: objc_pointer_at(ctx, ro.0, ro.1 + 64),
             cprops: objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 64),
+            meta_protocols: objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 40),
         }
     }
 }
@@ -1573,8 +1578,10 @@ fn drop_superseded_lists<E: Target>(
     if merged.cmethods.is_some() {
         drop_method_list(ctx, own.cmethods);
     }
+    // The metaclass points at the merged protocol list too.
     if merged.protocols.is_some() {
         drop_list(ctx, own.protocols);
+        drop_list(ctx, own.meta_protocols);
     }
     if merged.iprops.is_some() {
         drop_list(ctx, own.iprops);
