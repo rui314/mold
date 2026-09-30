@@ -148,8 +148,10 @@ pub struct Args {
     pub data_in_code_info: bool,
     /// -version_load_command: give a -static image LC_BUILD_VERSION.
     pub version_load_command: bool,
-    /// -split_seg_info: emit LC_SEGMENT_SPLIT_INFO
-    pub split_seg_info: bool,
+    /// -add_split_seg_info: emit LC_SEGMENT_SPLIT_INFO, which lets a
+    /// dyld shared cache or kernel collection builder slide the
+    /// segments apart. ld64 and ld-prime have no negative form.
+    pub add_split_seg_info: bool,
     /// -init_offsets: emit initializers as 32-bit image offsets
     /// (__init_offsets) instead of absolute pointers (__mod_init_func).
     pub init_offsets: bool,
@@ -353,7 +355,7 @@ impl Default for Args {
             function_starts: true,
             data_in_code_info: true,
             version_load_command: false,
-            split_seg_info: false,
+            add_split_seg_info: false,
             init_offsets: false,
             data_const: true,
             no_implicit_dylibs: false,
@@ -1039,8 +1041,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_objc_category_merging" => args.objc_category_merging = false,
             b"-no_function_starts" => function_starts = Some(false),
             b"-data_in_code_info" => data_in_code_info = Some(true),
-            b"-split_seg_info" => args.split_seg_info = true,
-            b"-no_split_seg_info" => args.split_seg_info = false,
+            b"-add_split_seg_info" => args.add_split_seg_info = true,
             b"-no_data_in_code_info" => data_in_code_info = Some(false),
 
             b"-no_uuid" => args.uuid = false,

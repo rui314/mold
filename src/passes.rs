@@ -3604,7 +3604,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.data_in_code_info {
         ctx.chunks.push(ChunkId::DataInCode);
     }
-    if ctx.args.split_seg_info {
+    if ctx.args.add_split_seg_info {
         ctx.chunks.push(ChunkId::SplitInfo);
     }
     ctx.chunks.push(ChunkId::Symtab);

@@ -47,7 +47,7 @@ pub struct SplitEntry {
 type Grouped = BTreeMap<(u8, u8), BTreeMap<u64, BTreeMap<u8, Vec<u64>>>>;
 
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    if !ctx.args.split_seg_info {
+    if !ctx.args.add_split_seg_info {
         return Vec::new();
     }
 
