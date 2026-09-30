@@ -369,10 +369,7 @@ impl<E: Target> Context<E> {
         // lazy binding), and never under -undefined dynamic_lookup or
         // suppress - only an explicit -fixup_chains overrides that.
         self.args.fixup_chains.unwrap_or_else(|| {
-            if self.args.undefined_dynamic_lookup && !self.args.undefined_is_warning {
-                return false;
-            }
-            self.chained_fixups_by_default()
+            !self.args.undefined_dynamic_lookup && self.chained_fixups_by_default()
         })
     }
 

@@ -16,6 +16,7 @@ not $CC --ld-path=$mold -o $t/exe $t/a.o 2>/dev/null
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-U,_mystery
 nm -m $t/exe | grep '_mystery (dynamically looked up)'
 
-# -undefined warning reports but links
-$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-undefined,warning 2> $t/log
-grep -q 'warning.*_mystery' $t/log
+# -undefined suppress links as dynamic_lookup does, silently
+$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-undefined,suppress 2> $t/log
+nm -m $t/exe2 | grep '_mystery (dynamically looked up)'
+not grep -q _mystery $t/log

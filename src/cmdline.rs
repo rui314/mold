@@ -179,16 +179,9 @@ pub struct Args {
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
     pub demangle: bool,
-    /// -undefined dynamic_lookup: leave unresolved symbols to be looked
-    /// up in any loaded image at run time.
+    /// -undefined dynamic_lookup (or suppress): leave unresolved symbols
+    /// to be looked up in any loaded image at run time.
     pub undefined_dynamic_lookup: bool,
-    /// -undefined warning/suppress: report unresolved symbols without
-    /// failing (they resolve like dynamic_lookup).
-    pub undefined_warning: bool,
-    /// -undefined warning specifically (as opposed to suppress or
-    /// dynamic_lookup): the one treatment under which ld64 still
-    /// defaults to chained fixups.
-    pub undefined_is_warning: bool,
     /// -U: individual symbols allowed to stay undefined.
     pub allowed_undefined: Vec<String>,
     /// -dead_strip_dylibs: drop load commands for dylibs nothing binds
@@ -381,8 +374,6 @@ impl Default for Args {
             fatal_warnings: false,
             demangle: false,
             undefined_dynamic_lookup: false,
-            undefined_warning: false,
-            undefined_is_warning: false,
             allowed_undefined: Vec::new(),
             dead_strip_dylibs: false,
             warn_unused_dylibs: None,
@@ -723,6 +714,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
+    let mut deprecated_undefined: Vec<&str> = Vec::new();
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -888,16 +880,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-r" => args.relocatable = true,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
-            b"-undefined" => match text(name, next_arg(&mut i)) {
-                "error" => args.undefined_dynamic_lookup = false,
-                "dynamic_lookup" => args.undefined_dynamic_lookup = true,
-                t @ ("warning" | "suppress") => {
+            // ld-prime knows one treatment besides the default error:
+            // dynamic_lookup, which suppress selects too. It deprecates
+            // every other one (error, warning or anything else) and
+            // ignores it, so none undoes an earlier dynamic_lookup.
+            b"-undefined" => {
+                let treatment = text(name, next_arg(&mut i));
+                if matches!(treatment, "dynamic_lookup" | "suppress") {
                     args.undefined_dynamic_lookup = true;
-                    args.undefined_warning = true;
-                    args.undefined_is_warning = t == "warning";
                 }
-                treatment => fatal!("-undefined: unsupported treatment: {treatment}"),
-            },
+                if treatment != "dynamic_lookup" {
+                    deprecated_undefined.push(treatment);
+                }
+            }
             b"-U" => args.allowed_undefined.push(text(name, next_arg(&mut i)).to_string()),
             b"-w" => args.suppress_warnings = true,
             b"-fatal_warnings" => args.fatal_warnings = true,
@@ -1196,6 +1191,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_suppress_warnings(args.suppress_warnings);
     crate::error::set_fatal_warnings(args.fatal_warnings);
 
+    for treatment in deprecated_undefined {
+        crate::warn!("-undefined {treatment} is deprecated");
+    }
     if no_dead_strip_inits_and_terms {
         crate::warn!(
             "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
@@ -1226,6 +1224,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // after fixups.
     args.data_const = data_const.unwrap_or(!args.without_dyld() || args.shared_region);
     resolve_kext(target, &mut args);
+    if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
+        crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
+    }
 
     args
 }
@@ -1273,12 +1274,8 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
              (or linker flag '-not_for_dyld_shared_cache')"
         );
     }
-    // (-undefined warning passes, but not suppress; a kext looks up
-    // every import.)
-    if ((args.undefined_dynamic_lookup && !args.undefined_is_warning)
-        || !args.allowed_undefined.is_empty())
-        && !args.is_kext()
-    {
+    // (A kext looks up every import.)
+    if (args.undefined_dynamic_lookup || !args.allowed_undefined.is_empty()) && !args.is_kext() {
         fatal!(
             "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
              symbols. Remove these options or opt out of the shared cache using the build \

@@ -5,7 +5,8 @@ source "$(dirname "$0")"/common.inc
 # from macOS 12, except for an x86_64 executable, from macOS 13;
 # classic dyld info below that; -undefined dynamic_lookup (and
 # suppress) turn the default back to classic dyld info, -undefined
-# warning does not; an explicit -fixup_chains always wins. Hammerspoon (deployment target
+# warning (a deprecated no-op) does not; an explicit -fixup_chains
+# always wins. Hammerspoon (deployment target
 # 13, -undefined dynamic_lookup) came out chained from us and classic
 # from ld-prime.
 cat <<EOF2 | $CC -o $t/a.o -c -xc -

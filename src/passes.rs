@@ -2019,9 +2019,6 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
                     || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
                 && !initial.contains(&(i as crate::symbol::SymbolId));
             if allowed {
-                if ctx.args.undefined_warning {
-                    crate::warn!("undefined symbol: {}", ctx.symbols[i]);
-                }
                 let sym = &mut ctx.symbols[i];
                 sym.set_file(FileId::Dylib((usize::MAX) as u32));
                 sym.set_is_imported(true);
