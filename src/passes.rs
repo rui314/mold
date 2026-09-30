@@ -5524,6 +5524,7 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         fields: vec![DataField::Bytes(vec![0; 8])],
     });
     ctx.stub_helper.dyld_private_isec = isec;
+    ctx.extra_local_syms.push(("__dyld_private", isec));
 }
 
 /// Copies all chunks to the output buffer and applies relocations. The

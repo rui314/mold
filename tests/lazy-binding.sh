@@ -27,7 +27,10 @@ grep -q '__got .* bind .*dyld_stub_binder' $t/fixups
 grep -q '__la_symbol_ptr .* lazy-bind .*_printf' $t/fixups
 grep -q '__la_symbol_ptr .* lazy-bind .*_getpid' $t/fixups
 [ "$(grep -c '__la_symbol_ptr .* rebase' $t/fixups)" = 2 ]
-nm -m $t/exe | grep 'undefined.*dyld_stub_binder'
+nm -m $t/exe > $t/nm
+grep -q 'undefined.*dyld_stub_binder' $t/nm
+# The word the stub helper hands dyld_stub_binder has its ld64 name.
+grep -q '(__DATA,__data) non-external __dyld_private' $t/nm
 # The indirect symbol table lists the stubs, the GOT, then the lazy
 # pointers (the stubs' symbols again).
 otool -I $t/exe > $t/isyms
