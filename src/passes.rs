@@ -4378,24 +4378,32 @@ fn plan_local_symbols<E: Target>(
     ents.par_sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(a.2)));
 
     // Put each atom's own name after its aliases, unless a strong
-    // external names the atom.
-    let mut strong: Vec<u64> = sorted_globals
-        .par_iter()
-        .filter(|&&i| {
-            let sym = &ctx.symbols[i];
-            !sym.is_weak_def() && sym.input_section().is_some()
-        })
-        .map(|&i| ctx.sym_addr(i))
+    // external names the atom. Few atoms have aliases, so those are
+    // found first, and only their addresses are looked for among the
+    // externals.
+    let aliased: Vec<usize> = (0..ents.len().saturating_sub(1))
+        .into_par_iter()
+        .filter(|&i| ents[i].0 == ents[i + 1].0 && (i == 0 || ents[i - 1].0 != ents[i].0))
         .collect();
-    strong.par_sort_unstable();
-    let mut i = 0;
-    while i < ents.len() {
-        let addr = ents[i].0;
-        let n = ents[i..].iter().take_while(|e| e.0 == addr).count();
-        if n > 1 && strong.binary_search(&addr).is_err() {
-            ents[i..i + n].rotate_left(1);
+    if !aliased.is_empty() {
+        let addrs: Vec<u64> = aliased.iter().map(|&i| ents[i].0).collect();
+        let named: Vec<std::sync::atomic::AtomicBool> =
+            addrs.iter().map(|_| std::sync::atomic::AtomicBool::new(false)).collect();
+        sorted_globals.par_iter().for_each(|&i| {
+            let sym = &ctx.symbols[i];
+            if !sym.is_weak_def()
+                && sym.input_section().is_some()
+                && let Ok(k) = addrs.binary_search(&ctx.sym_addr(i))
+            {
+                named[k].store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        for (&i, named) in aliased.iter().zip(named) {
+            let n = ents[i..].iter().take_while(|e| e.0 == ents[i].0).count();
+            if !named.into_inner() {
+                ents[i..i + n].rotate_left(1);
+            }
         }
-        i += n;
     }
     ents.into_iter().map(|(_, _, name, ent, sym)| (name, ent, sym)).collect()
 }
