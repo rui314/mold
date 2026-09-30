@@ -2698,24 +2698,94 @@ pub fn has_objc_sections(mf: &MappedFile) -> bool {
     false
 }
 
-/// Returns the slice of a fat (universal) file matching the target's CPU
-/// type. Fat headers are big-endian.
-pub fn get_fat_slice<E: Target>(mf: &'static MappedFile) -> &'static MappedFile {
+/// An architecture's name as ld-prime spells it, from a Mach-O CPU type
+/// and subtype.
+fn arch_name(cputype: u32, cpusubtype: u32) -> &'static str {
+    match (cputype, cpusubtype & !CPU_SUBTYPE_MASK) {
+        (CPU_TYPE_X86_64, CPU_SUBTYPE_X86_64_H) => "x86_64h",
+        (CPU_TYPE_X86_64, _) => "x86_64",
+        (CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64E) => "arm64e",
+        (CPU_TYPE_ARM64, _) => "arm64",
+        (CPU_TYPE_ARM64_32, _) => "arm64_32",
+        (CPU_TYPE_I386, _) => "i386",
+        (CPU_TYPE_ARM, 6) => "armv6",
+        (CPU_TYPE_ARM, 9) => "armv7",
+        (CPU_TYPE_ARM, 11) => "armv7s",
+        (CPU_TYPE_ARM, 12) => "armv7k",
+        (CPU_TYPE_ARM, 14) => "armv6m",
+        (CPU_TYPE_ARM, 15) => "armv7m",
+        (CPU_TYPE_ARM, 16) => "armv7em",
+        (CPU_TYPE_ARM, _) => "arm",
+        (CPU_TYPE_POWERPC, _) => "ppc",
+        _ => "unknown",
+    }
+}
+
+/// Whether a Mach-O file of `filetype` built for `cputype` and
+/// `cpusubtype` is one the link takes: an object must be for exactly its
+/// architecture, while a dylib serves every link of its CPU type (an
+/// arm64e one an arm64 link too).
+fn takes_arch<E: Target>(filetype: u32, cputype: u32, cpusubtype: u32) -> bool {
+    match filetype {
+        MH_DYLIB => cputype == E::CPUTYPE,
+        _ => arch_name(cputype, cpusubtype) == E::NAME,
+    }
+}
+
+/// The architecture of a thin object or dylib the link doesn't take
+/// (see takes_arch), which ld-prime ignores with a warning.
+pub fn foreign_arch<E: Target>(mf: &MappedFile) -> Option<&'static str> {
+    let hdr = MachHeader::read_from(mf.data());
+    (!takes_arch::<E>(hdr.filetype, hdr.cputype, hdr.cpusubtype))
+        .then(|| arch_name(hdr.cputype, hdr.cpusubtype))
+}
+
+/// A fat (universal) file's slices: each one's CPU type, subtype, file
+/// offset and size. Fat headers are big-endian.
+fn fat_arches(mf: &MappedFile) -> impl Iterator<Item = (u32, u32, usize, usize)> + '_ {
     let data = mf.data();
     let read_be32 = |off: usize| u32::from_be_bytes(data[off..off + 4].try_into().unwrap());
-
-    let nfat_arch = read_be32(4) as usize;
-    for i in 0..nfat_arch {
+    (0..read_be32(4) as usize).map(move |i| {
         let off = 8 + i * 20;
-        if read_be32(off) == E::CPUTYPE {
-            let obj_off = read_be32(off + 8) as usize;
-            let obj_size = read_be32(off + 12) as usize;
-            let mut name = std::ffi::OsString::from(&mf.name);
-            name.push(format!("(for architecture {})", E::NAME));
-            return mf.slice(name.into(), obj_off, obj_size);
-        }
+        (
+            read_be32(off),
+            read_be32(off + 4),
+            read_be32(off + 8) as usize,
+            read_be32(off + 12) as usize,
+        )
+    })
+}
+
+/// The architectures a fat file has slices for.
+pub fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
+    fat_arches(mf).map(|(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype)).collect()
+}
+
+/// The slice of a fat file the link takes (see takes_arch), if any: the
+/// one for exactly its architecture first.
+pub fn fat_slice<E: Target>(mf: &'static MappedFile) -> Option<&'static MappedFile> {
+    let slices: Vec<_> = fat_arches(mf).collect();
+    let (_, _, off, size) = slices
+        .iter()
+        .find(|&&(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype) == E::NAME)
+        .or_else(|| {
+            slices.iter().find(|&&(cputype, cpusubtype, off, _)| {
+                let filetype = MachHeader::read_from(&mf.data()[off..]).filetype;
+                takes_arch::<E>(filetype, cputype, cpusubtype)
+            })
+        })
+        .copied()?;
+    let mut name = std::ffi::OsString::from(&mf.name);
+    name.push(format!("(for architecture {})", E::NAME));
+    Some(mf.slice(name.into(), off, size))
+}
+
+/// The slice of a fat file the link takes, which it must have.
+pub fn get_fat_slice<E: Target>(mf: &'static MappedFile) -> &'static MappedFile {
+    match fat_slice::<E>(mf) {
+        Some(slice) => slice,
+        None => fatal!("{}: fat file does not contain {}", mf.name.display(), E::NAME),
     }
-    fatal!("{}: fat file does not contain {}", mf.name.display(), E::NAME);
 }
 
 /// Parses a Mach-O dylib binary: its identity from LC_ID_DYLIB and its

@@ -5,12 +5,19 @@ pub const MH_MAGIC_64: u32 = 0xfeed_facf;
 pub const FAT_MAGIC: u32 = 0xcafe_babe;
 
 // CPU types
+pub const CPU_TYPE_I386: u32 = 7;
 pub const CPU_TYPE_X86_64: u32 = 0x0100_0007;
+pub const CPU_TYPE_ARM: u32 = 12;
 pub const CPU_TYPE_ARM64: u32 = 0x0100_000c;
+pub const CPU_TYPE_ARM64_32: u32 = 0x0200_000c;
+pub const CPU_TYPE_POWERPC: u32 = 18;
 
 // CPU subtypes
+pub const CPU_SUBTYPE_MASK: u32 = 0xff00_0000;
 pub const CPU_SUBTYPE_X86_64_ALL: u32 = 3;
+pub const CPU_SUBTYPE_X86_64_H: u32 = 8;
 pub const CPU_SUBTYPE_ARM64_ALL: u32 = 0;
+pub const CPU_SUBTYPE_ARM64E: u32 = 2;
 
 // File types
 pub const MH_OBJECT: u32 = 1;

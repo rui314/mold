@@ -223,6 +223,19 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
     true
 }
 
+/// Whether an object or dylib is for an architecture the link doesn't
+/// take (see input_files::takes_arch), which ld-prime ignores with a
+/// warning - an archive member too, whether the link needs it or not.
+fn is_foreign<E: Target>(mf: &MappedFile) -> bool {
+    let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
+    crate::warn!(
+        "ignoring file '{}': found architecture '{arch}', required architecture '{}'",
+        mf.name.display(),
+        E::NAME
+    );
+    true
+}
+
 /// Classifies one input file. Dylib stubs and binaries are registered
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
@@ -244,6 +257,9 @@ fn collect_file<E: Target>(
     }
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
         input_files::trace_file(ctx, path_bytes(&mf.name));
+    }
+    if matches!(get_file_type(mf), FileType::Object | FileType::Dylib) && is_foreign::<E>(mf) {
+        return;
     }
     match get_file_type(mf) {
         FileType::Object => {
@@ -303,6 +319,7 @@ fn collect_file<E: Target>(
                     FileType::LlvmBitcode => {
                         input_files::parse_bitcode(ctx, member, alive);
                     }
+                    FileType::Object if is_foreign::<E>(member) => {}
                     _ => {
                         let priority = ctx.next_priority();
                         out.push(PendingObject { mf: member, alive, hidden: rc.hidden, priority });
@@ -310,10 +327,15 @@ fn collect_file<E: Target>(
                 }
             }
         }
-        FileType::Fat => {
-            let slice = input_files::get_fat_slice::<E>(mf);
-            collect_file(ctx, slice, rc, out);
-        }
+        FileType::Fat => match input_files::fat_slice::<E>(mf) {
+            Some(slice) => collect_file(ctx, slice, rc, out),
+            None => crate::warn!(
+                "ignoring file '{}': fat file missing arch '{}', file has '{}'",
+                mf.name.display(),
+                E::NAME,
+                input_files::fat_arch_names(mf).join(",")
+            ),
+        },
         FileType::LlvmBitcode => {
             input_files::parse_bitcode(ctx, mf, true);
         }
