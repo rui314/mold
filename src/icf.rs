@@ -21,7 +21,7 @@ use rayon::prelude::*;
 
 use crate::context::Context;
 use crate::input_files::FileId;
-use crate::input_sections::RelocTarget;
+use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::target::Target;
 
@@ -264,12 +264,12 @@ impl DigestMap {
     }
 }
 
-pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
-    // Candidates: live, executable, and defined exclusively by weak
-    // symbols, so no one may rely on their addresses being distinct.
-    // The per-subsection weak-only AND accumulates in parallel as a
-    // three-state atomic: unset, all-weak-so-far, or poisoned by a
-    // non-weak definition (which wins under any ordering).
+/// Whether each subsection is defined exclusively by weak symbols, so no
+/// one may rely on its address being distinct. The per-subsection
+/// weak-only AND accumulates in parallel as a three-state atomic:
+/// unset, all-weak-so-far, or poisoned by a non-weak definition (which
+/// wins under any ordering).
+fn weak_only_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
     use std::sync::atomic::{AtomicU8, Ordering};
     let weak_state: Vec<AtomicU8> = (0..ctx.isecs.len()).map(|_| AtomicU8::new(0)).collect();
     ctx.objs.par_iter().for_each(|obj| {
@@ -294,34 +294,243 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
             }
         }
     });
-    let weak_only: Vec<Option<bool>> = weak_state
-        .into_iter()
-        .map(|s| match s.into_inner() {
-            0 => None,
-            1 => Some(true),
-            _ => Some(false),
-        })
-        .collect();
+    weak_state.into_iter().map(|s| s.into_inner() == 1).collect()
+}
 
-    let is_candidate = |ctx: &Context<E>, id: usize| -> bool {
-        let isec = &ctx.isecs[id];
-        isec.is_alive()
-            && isec.replacement == crate::input_sections::NO_REPLACEMENT
-            && ctx.hdr_of(isec).segname() == "__TEXT"
-            && ctx.hdr_of(isec).flags & S_ATTR_PURE_INSTRUCTIONS != 0
-            && ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) == 0
-            && weak_only[id] == Some(true)
-            // Don't fold functions carrying debug info: it would leave
-            // their DWARF describing folded-away code. ld64 disables
-            // its deduplication pass for debug objects for the same
-            // reason (it folds freely on release links).
-            && !ctx.objs[isec.file as usize].has_debug_info
+/// Candidates: live, executable, and defined exclusively by weak
+/// symbols.
+fn is_candidate<E: Target>(ctx: &Context<E>, weak_only: &[bool], id: usize) -> bool {
+    let isec = &ctx.isecs[id];
+    isec.is_alive()
+        && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        && ctx.hdr_of(isec).segname() == "__TEXT"
+        && ctx.hdr_of(isec).flags & S_ATTR_PURE_INSTRUCTIONS != 0
+        && ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) == 0
+        && weak_only[id]
+        // Don't fold functions carrying debug info: it would leave
+        // their DWARF describing folded-away code. ld64 disables
+        // its deduplication pass for debug objects for the same
+        // reason (it folds freely on release links).
+        && !ctx.objs[isec.file as usize].has_debug_info
+}
+
+/// What relocation `rel` of object `obj` points at, and its addend. A
+/// symbol's offset into a candidate moves into the addend, so that
+/// references to the same place in equal candidates compare equal.
+fn edge_of<E: Target>(
+    ctx: &Context<E>,
+    cand_index: &[usize],
+    obj: usize,
+    rel: &Reloc,
+) -> (Edge, i64) {
+    match rel.target() {
+        RelocTarget::Sym(idx) => {
+            let sym_id = ctx.objs[obj].symbols[idx as usize];
+            let sym = &ctx.symbols[sym_id];
+            if let (Some(FileId::Obj(_)), Some(isec)) = (sym.file(), sym.input_section()) {
+                let isec = ctx.resolve_isec(isec as usize);
+                if cand_index[isec] != usize::MAX {
+                    return (Edge::Candidate(cand_index[isec]), rel.addend + sym.value as i64);
+                }
+                return (Edge::Isec(isec, sym.value), rel.addend);
+            }
+            (Edge::Sym(sym_id as usize), rel.addend)
+        }
+        RelocTarget::Section(isec) => {
+            let isec = ctx.resolve_isec(isec as usize);
+            if cand_index[isec] != usize::MAX {
+                return (Edge::Candidate(cand_index[isec]), rel.addend);
+            }
+            (Edge::Isec(isec, 0), rel.addend)
+        }
+    }
+}
+
+// A fixed key keeps the link reproducible; the digest is used only to
+// group, never emitted.
+const KEY: [u8; 16] = *b"mold-macho-icf!!";
+
+/// The base digest of a candidate: its bytes and the non-candidate
+/// parts of its edges, hashed with SipHash13-128 exactly as mold's
+/// compute_digest does (candidate edges are mixed in during the rounds
+/// instead).
+fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) -> Digest {
+    let isec = &ctx.isecs[id];
+    let mut h = SipHash13_128::new(&KEY);
+    h.update(&ctx.hdr_of(isec).flags.to_ne_bytes());
+    h.update(&isec.size.to_ne_bytes());
+    h.update(&isec.data().len().to_ne_bytes());
+    h.update(isec.data());
+    for rel in ctx.isec_relocs(id) {
+        h.update(&rel.offset.to_ne_bytes());
+        h.update(&rel.r_type.to_ne_bytes());
+        h.update(&[rel.size, rel.is_pcrel as u8, rel.is_subtracted as u8]);
+        let (edge, addend) = edge_of(ctx, cand_index, isec.file as usize, rel);
+        h.update(&addend.to_ne_bytes());
+        // A candidate edge contributes nothing to the base; the
+        // rounds fold in the target's evolving digest.
+        match edge {
+            Edge::Candidate(_) => h.update(b"c"),
+            Edge::Isec(i, v) => {
+                h.update(b"i");
+                h.update(&i.to_ne_bytes());
+                h.update(&v.to_ne_bytes());
+            }
+            Edge::Sym(s) => {
+                h.update(b"s");
+                h.update(&s.to_ne_bytes());
+            }
+        }
+    }
+    // Unwinding is part of a function's identity; the subsection
+    // holds its record range.
+    let recs = isec.unwind_offset as usize..(isec.unwind_offset + isec.nunwind) as usize;
+    for rec in &ctx.unwind_records[recs] {
+        h.update(&rec.input_offset.to_ne_bytes());
+        h.update(&rec.code_len.to_ne_bytes());
+        h.update(&rec.encoding.to_ne_bytes());
+        h.update(&rec.personality().map_or(u64::MAX, |p| p as u64).to_ne_bytes());
+        h.update(&rec.fde().map_or(u64::MAX, |f| f as u64).to_ne_bytes());
+        if let Some((lsda, off)) = rec.lsda() {
+            h.update(&ctx.resolve_isec(lsda).to_ne_bytes());
+            h.update(&off.to_ne_bytes());
+        }
+    }
+    h.finish()
+}
+
+/// Calls `f` with the candidate index of each candidate that candidate
+/// `id` references.
+fn for_each_edge<E: Target>(
+    ctx: &Context<E>,
+    cand_index: &[usize],
+    id: usize,
+    mut f: impl FnMut(u32),
+) {
+    let obj = ctx.isecs[id].file as usize;
+    for rel in ctx.isec_relocs(id) {
+        if let Edge::Candidate(c) = edge_of(ctx, cand_index, obj, rel).0 {
+            f(c as u32);
+        }
+    }
+}
+
+/// The candidate edges in CSR form: candidate i's edges are
+/// values[indices[i]..indices[i + 1]]. The propagation loop is the hot
+/// path; a single contiguous array keeps it cache-friendly, where a
+/// Vec<Vec<u32>> would chase one heap allocation per candidate.
+struct Edges {
+    values: Vec<u32>,
+    indices: Vec<u32>,
+}
+
+/// Builds the graph whose vertices are the candidates and whose edges
+/// are their references to other candidates, as mold's gather_edges.
+fn gather_edges<E: Target>(ctx: &Context<E>, cand_index: &[usize], candidates: &[usize]) -> Edges {
+    // Count the outgoing edges of each vertex and turn the counts into
+    // starting indices with a prefix sum. The extra entry at the end
+    // makes indices[i + 1] valid for every vertex.
+    let mut indices = vec![0u32; candidates.len() + 1];
+    indices[..candidates.len()]
+        .par_iter_mut()
+        .zip(candidates)
+        .for_each(|(count, &id)| for_each_edge(ctx, cand_index, id, |_| *count += 1));
+    let mut sum = 0u32;
+    for count in &mut indices {
+        let next = sum.checked_add(*count).expect("too many ICF edges");
+        *count = sum;
+        sum = next;
+    }
+
+    let mut values = vec![0; *indices.last().unwrap() as usize];
+    // Split at vertex boundaries so each task owns a disjoint slice of
+    // the edge array.
+    rayon::iter::split((0..candidates.len(), values.as_mut_slice()), |(range, out)| {
+        if range.len() <= 1 {
+            return ((range, out), None);
+        }
+        let mid = range.start + range.len() / 2;
+        let (left, right) = out.split_at_mut((indices[mid] - indices[range.start]) as usize);
+        ((range.start..mid, left), Some((mid..range.end, right)))
+    })
+    .for_each(|(range, out)| {
+        let mut i = 0;
+        for vertex in range {
+            for_each_edge(ctx, cand_index, candidates[vertex], |edge| {
+                out[i] = edge;
+                i += 1;
+            });
+        }
+    });
+
+    Edges { values, indices }
+}
+
+/// Computes the next-round digest of each vertex by hashing its current
+/// digest and the current digests of the vertices it refers to, so its
+/// nth-round digest is a hash of its unfolding into a tree of depth n.
+/// Content is hashed exactly once, in compute_digest; a round mixes
+/// only fixed-size digests via update_digest, mold's aligned 16-byte
+/// fast path, so a round is cheap however many rounds are needed.
+fn propagate(cur: &mut Vec<Digest>, next: &mut Vec<Digest>, edges: &Edges) {
+    next.par_iter_mut().enumerate().for_each(|(i, out)| {
+        let mut h = SipHash13_128::new(&KEY);
+        h.update_digest(cur[i]);
+        let begin = edges.indices[i] as usize;
+        let end = edges.indices[i + 1] as usize;
+        for &j in &edges.values[begin..end] {
+            h.update_digest(cur[j as usize]);
+        }
+        *out = h.finish();
+    });
+    std::mem::swap(cur, next);
+}
+
+/// Counts the distinct digests, electing each one's leader (its lowest
+/// candidate index) as a side effect.
+fn count_num_classes(digests: &[Digest], map: &mut DigestMap) -> usize {
+    map.next_round();
+    (0..digests.len()).into_par_iter().map(|i| map.insert(digests[i], i as u32) as usize).sum()
+}
+
+/// Debug builds re-verify that each candidate is byte-for-byte equal to
+/// its leader.
+#[cfg(debug_assertions)]
+fn verify_leaders<E: Target>(
+    ctx: &Context<E>,
+    cand_index: &[usize],
+    candidates: &[usize],
+    leaders: &[u32],
+) {
+    let equal = |a: usize, b: usize| -> bool {
+        let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
+        let (xr, yr) = (ctx.isec_relocs(a), ctx.isec_relocs(b));
+        x.data() == y.data()
+            && ctx.hdr_of(x).flags == ctx.hdr_of(y).flags
+            && xr.len() == yr.len()
+            && xr.iter().zip(yr).all(|(r, s)| {
+                r.offset == s.offset
+                    && r.r_type == s.r_type
+                    && r.size == s.size
+                    && r.is_pcrel == s.is_pcrel
+                    && edge_of(ctx, cand_index, x.file as usize, r)
+                        == edge_of(ctx, cand_index, y.file as usize, s)
+            })
     };
+    for (i, &l) in leaders.iter().enumerate() {
+        debug_assert!(equal(candidates[i], candidates[l as usize]));
+    }
+}
+
+pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
+    let weak_only = weak_only_sections(ctx);
 
     let _t_all = ctx.timer("icf");
     let mut t = ctx.timer("icf-prep");
-    let candidates: Vec<usize> =
-        (0..ctx.isecs.len()).into_par_iter().filter(|&i| is_candidate(ctx, i)).collect();
+    let candidates: Vec<usize> = (0..ctx.isecs.len())
+        .into_par_iter()
+        .filter(|&i| is_candidate(ctx, &weak_only, i))
+        .collect();
     if candidates.len() < 2 {
         return;
     }
@@ -329,213 +538,45 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     for (i, &id) in candidates.iter().enumerate() {
         cand_index[id] = i;
     }
-
-    let edge_of = |ctx: &Context<E>, obj: usize, target: RelocTarget, addend: i64| -> (Edge, i64) {
-        match target {
-            RelocTarget::Sym(idx) => {
-                let sym_id = ctx.objs[obj].symbols[idx as usize];
-                let sym = &ctx.symbols[sym_id];
-                if let (Some(FileId::Obj(_)), Some(isec)) = (sym.file(), sym.input_section()) {
-                    let isec = ctx.resolve_isec(isec as usize);
-                    if cand_index[isec] != usize::MAX {
-                        return (Edge::Candidate(cand_index[isec]), addend + sym.value as i64);
-                    }
-                    return (Edge::Isec(isec, sym.value), addend);
-                }
-                (Edge::Sym(sym_id as usize), addend)
-            }
-            RelocTarget::Section(isec) => {
-                let isec = ctx.resolve_isec(isec as usize);
-                if cand_index[isec] != usize::MAX {
-                    return (Edge::Candidate(cand_index[isec]), addend);
-                }
-                (Edge::Isec(isec, 0), addend)
-            }
-        }
-    };
-
-    // The base digest of a candidate: its bytes and the non-candidate
-    // parts of its edges, hashed with SipHash13-128 exactly as
-    // mold's compute_digest does (candidate edges are mixed in
-    // during the rounds instead). A fixed key keeps the link
-    // reproducible; the digest is used only to group, never emitted.
-    const KEY: [u8; 16] = *b"mold-macho-icf!!";
-    let base_hash = |ctx: &Context<E>, id: usize| -> Digest {
-        let isec = &ctx.isecs[id];
-        let mut h = SipHash13_128::new(&KEY);
-        h.update(&ctx.hdr_of(isec).flags.to_ne_bytes());
-        h.update(&isec.size.to_ne_bytes());
-        h.update(&isec.data().len().to_ne_bytes());
-        h.update(isec.data());
-        for rel in ctx.isec_relocs(id) {
-            h.update(&rel.offset.to_ne_bytes());
-            h.update(&rel.r_type.to_ne_bytes());
-            h.update(&[rel.size, rel.is_pcrel as u8, rel.is_subtracted as u8]);
-            let (edge, addend) = edge_of(ctx, isec.file as usize, rel.target(), rel.addend);
-            h.update(&addend.to_ne_bytes());
-            // A candidate edge contributes nothing to the base; the
-            // rounds fold in the target's evolving digest.
-            match edge {
-                Edge::Candidate(_) => h.update(b"c"),
-                Edge::Isec(i, v) => {
-                    h.update(b"i");
-                    h.update(&i.to_ne_bytes());
-                    h.update(&v.to_ne_bytes());
-                }
-                Edge::Sym(s) => {
-                    h.update(b"s");
-                    h.update(&s.to_ne_bytes());
-                }
-            }
-        }
-        // Unwinding is part of a function's identity; the subsection
-        // holds its record range.
-        let recs = isec.unwind_offset as usize..(isec.unwind_offset + isec.nunwind) as usize;
-        for rec in &ctx.unwind_records[recs] {
-            h.update(&rec.input_offset.to_ne_bytes());
-            h.update(&rec.code_len.to_ne_bytes());
-            h.update(&rec.encoding.to_ne_bytes());
-            h.update(&rec.personality().map_or(u64::MAX, |p| p as u64).to_ne_bytes());
-            h.update(&rec.fde().map_or(u64::MAX, |f| f as u64).to_ne_bytes());
-            if let Some((lsda, off)) = rec.lsda() {
-                h.update(&ctx.resolve_isec(lsda).to_ne_bytes());
-                h.update(&off.to_ne_bytes());
-            }
-        }
-        h.finish()
-    };
-
-    // Refinement rounds propagate hashes along edges; log2(n) rounds
-    // reach across any chain of distinct shapes.
     t.stop();
+
     let mut t = ctx.timer("icf-rounds");
-
-    // Content is hashed exactly once; the refinement rounds mix only
-    // fixed-size digests - each candidate's base digest plus its
-    // candidate-edge targets' previous-round digests - via
-    // update_digest, mold's aligned 16-byte fast path, so a round
-    // is cheap however many rounds log2(n) requires.
-    let base: Vec<Digest> = candidates.par_iter().map(|&id| base_hash(ctx, id)).collect();
-
-    // Candidate edges in CSR form - one flat values array indexed by a
-    // per-candidate prefix-summed offset, exactly mold's Edges
-    // (gather_edges). The propagation loop is the hot path; a single
-    // contiguous array keeps it cache-friendly, where a Vec<Vec<u32>>
-    // would chase one heap allocation per candidate.
-    let counts: Vec<u32> = candidates
-        .par_iter()
-        .map(|&id| {
-            let obj = ctx.isecs[id].file as usize;
-            ctx.isec_relocs(id)
-                .iter()
-                .filter(|rel| {
-                    matches!(edge_of(ctx, obj, rel.target(), rel.addend).0, Edge::Candidate(_))
-                })
-                .count() as u32
-        })
-        .collect();
-    let mut edge_indices: Vec<u32> = Vec::with_capacity(candidates.len() + 1);
-    edge_indices.push(0);
-    for c in &counts {
-        edge_indices.push(edge_indices.last().unwrap() + c);
-    }
-    let mut edge_values: Vec<u32> = vec![0; *edge_indices.last().unwrap() as usize];
-    {
-        struct EdgeBuf(*mut u32);
-        unsafe impl Sync for EdgeBuf {}
-        let out = EdgeBuf(edge_values.as_mut_ptr());
-        let out = &out;
-        let edge_indices = &edge_indices;
-        candidates.par_iter().enumerate().for_each(|(vertex, &id)| {
-            let isec = &ctx.isecs[id];
-            let mut i = edge_indices[vertex] as usize;
-            for rel in ctx.isec_relocs(id) {
-                if let Edge::Candidate(c) =
-                    edge_of(ctx, isec.file as usize, rel.target(), rel.addend).0
-                {
-                    // SAFETY: this vertex alone owns its prefix-sum range.
-                    unsafe { *out.0.add(i) = c as u32 };
-                    i += 1;
-                }
-            }
-        });
-    }
+    let mut digests: Vec<Digest> =
+        candidates.par_iter().map(|&id| compute_digest(ctx, &cand_index, id)).collect();
+    let edges = gather_edges(ctx, &cand_index, &candidates);
 
     // Refine until the number of equivalence classes stops growing, as
     // mold does. Counting the classes costs about as much as a
-    // propagation, so propagate three times per count (mold's ratio),
-    // ping-ponging between two buffers. count_classes inserts every
-    // digest into the reused DigestMap - which counts distinct digests
-    // and elects each class's leader in one pass - so no sort is needed
-    // here or afterward. Classes only ever split, so the count is
-    // monotone and the loop terminates.
-    let mut hashes = base;
-    let mut scratch = vec![Digest::default(); hashes.len()];
+    // propagation, so propagate three times per count (mold's ratio).
+    // count_num_classes inserts every digest into the reused DigestMap,
+    // which counts distinct digests and elects each class's leader in
+    // one pass, so no sort is needed here or afterward. Classes only
+    // ever split, so the count is monotone and the loop terminates.
     let mut map = DigestMap::new(candidates.len());
-    let mut prev_classes = usize::MAX;
+    let mut scratch = vec![Digest::default(); digests.len()];
+    let mut num_classes = usize::MAX;
     loop {
-        for _ in 0..3 {
-            let cur = &hashes;
-            (0..candidates.len())
-                .into_par_iter()
-                .map(|i| {
-                    // next[i] = H(cur[i], cur[neighbors]) - mold's
-                    // propagate hashes the vertex's own current digest,
-                    // so its nth-round digest is a hash of its unfolding
-                    // into a tree of depth n.
-                    let mut h = SipHash13_128::new(&KEY);
-                    h.update_digest(cur[i]);
-                    for &c in &edge_values[edge_indices[i] as usize..edge_indices[i + 1] as usize] {
-                        h.update_digest(cur[c as usize]);
-                    }
-                    h.finish()
-                })
-                .collect_into_vec(&mut scratch);
-            std::mem::swap(&mut hashes, &mut scratch);
-        }
-        map.next_round();
-        let n: usize = (0..candidates.len())
-            .into_par_iter()
-            .map(|i| map.insert(hashes[i], i as u32) as usize)
-            .sum();
-        if n == prev_classes {
+        propagate(&mut digests, &mut scratch, &edges);
+        propagate(&mut digests, &mut scratch, &edges);
+        propagate(&mut digests, &mut scratch, &edges);
+
+        let n = count_num_classes(&digests, &mut map);
+        if n == num_classes {
             break;
         }
-        prev_classes = n;
+        num_classes = n;
     }
-
     t.stop();
+
     let _t = ctx.timer("icf-fold");
 
-    // The final counting round elected a leader (lowest candidate index)
-    // for every digest; look each candidate's leader up and fold the
-    // non-leaders onto it. The converged 128-bit digests are the
-    // equivalence classes, folded directly, as mold does; debug builds
-    // re-verify byte equality as an assertion.
-    let leaders: Vec<u32> =
-        (0..candidates.len()).into_par_iter().map(|i| map.find(hashes[i])).collect();
+    // The final counting round elected a leader for every digest; look
+    // each candidate's leader up. The converged 128-bit digests are the
+    // equivalence classes, folded directly, as mold does.
+    let leaders: Vec<u32> = digests.par_iter().map(|&digest| map.find(digest)).collect();
 
     #[cfg(debug_assertions)]
-    {
-        let equal = |a: usize, b: usize| -> bool {
-            let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
-            let (xr, yr) = (ctx.isec_relocs(a), ctx.isec_relocs(b));
-            x.data() == y.data()
-                && ctx.hdr_of(x).flags == ctx.hdr_of(y).flags
-                && xr.len() == yr.len()
-                && xr.iter().zip(yr).all(|(r, s)| {
-                    r.offset == s.offset
-                        && r.r_type == s.r_type
-                        && r.size == s.size
-                        && r.is_pcrel == s.is_pcrel
-                        && edge_of(ctx, x.file as usize, r.target(), r.addend)
-                            == edge_of(ctx, y.file as usize, s.target(), s.addend)
-                })
-        };
-        for (i, &l) in leaders.iter().enumerate() {
-            debug_assert!(equal(candidates[i], candidates[l as usize]));
-        }
-    }
+    verify_leaders(ctx, &cand_index, &candidates, &leaders);
 
     // Fold members onto leaders and give each leader the strongest
     // alignment among its members (mold's update_alignment): the leader
