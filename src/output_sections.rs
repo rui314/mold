@@ -640,22 +640,78 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Creates output section chunks and appends each input section to its
-/// chunk, and groups chunks into segments.
+/// Creates the output sections: assigns each input section to its
+/// output section, adds the sections the linker synthesizes, sorts them
+/// all into file order and groups them into segments.
 pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.push(ChunkId::MachHeader);
-
-    // Assign each input section to an output section, creating output
-    // sections as needed. Keyed by the raw 16-byte name pairs, so the
-    // hot loop does no allocation and no linear scans; chunks are
-    // still created in first-encounter order.
-    let relocatable = ctx.args.relocatable;
-    let kext = ctx.args.is_kext();
-    let map = SectionMap::new(ctx);
     let text = text_section_name(ctx);
-    // Each input section name's output section - by its flags too,
-    // which say whether -text_exec moves it and whether it is the
-    // standard section of its name (see is_standard_section).
+    assign_input_sections(ctx, text);
+    place_replacing_blobs(ctx);
+
+    // A final image always has a __text section, empty if no code
+    // reached it (a dylib of only data; ld-prime writes one of size 0,
+    // byte-aligned).
+    if !ctx.args.relocatable && find_output_section(ctx, text).is_none() {
+        let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+        add_output_section(ctx, text.0, text.1, flags);
+    }
+
+    set_section_alignments(ctx, text);
+    sort_section_members(ctx);
+    compute_section_sizes(ctx);
+
+    // The sections the linker synthesizes.
+    add_stub_and_got_chunks(ctx);
+    if !ctx.init_offsets.init_funcs.is_empty() {
+        ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
+        ctx.chunks.push(ChunkId::InitOffsets);
+    }
+    add_objc_stubs(ctx);
+    place_tail_blobs(ctx);
+    lay_out_objc_method_lists(ctx);
+    add_sectcreate_sections(ctx);
+    merge_objc_image_info(ctx);
+    if ctx.args.unwind_info() && chunks::unwind_info::is_needed(ctx) {
+        ctx.chunks.push(ChunkId::UnwindInfo);
+    }
+    lay_out_eh_frame(ctx);
+    add_linkedit_chunks(ctx);
+    rename_synthetic_sections(ctx);
+    add_boundary_sections(ctx);
+
+    sort_chunks(ctx);
+    create_segments(ctx);
+    add_boundary_segments(ctx);
+    add_stack_segment(ctx);
+    crate::chunks::indirect_symtab::assign_indices(ctx);
+    check_segment_order(ctx);
+    check_section_order(ctx);
+    check_interposing(ctx);
+    // The mach header's segment must come first after __PAGEZERO. A
+    // -static image's header moves with -rename_segment __TEXT, and
+    // only -segment_order can then put its segment there.
+    if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
+        fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
+    }
+    if ctx.args.no_zero_fill_sections && !ctx.args.relocatable {
+        fill_zero_fill_sections(ctx);
+    }
+}
+
+/// Appends each live input section to its output section (see
+/// output_section_for), creating the output sections in the order their
+/// first members come, and drops the sections the link consumes. A
+/// final image's sections that renames made of zero-fill and
+/// file-backed members alike are then settled, and its thread-local
+/// ones checked.
+fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+    let map = SectionMap::new(ctx);
+    // Each input section name's output section, keyed by the raw
+    // 16-byte names, so that the hot loop does no allocation and no
+    // linear scans - and by its flags too, which say whether -text_exec
+    // moves it and whether it is the standard section of its name (see
+    // is_standard_section).
     let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], u32), Option<OutputSectionId>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
@@ -700,35 +756,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                     let id = out.map(|(out, flags_name)| match by_out.get(&out) {
                         Some(&id) => id,
                         None => {
-                            // The first member decides the flags, as in
-                            // ld-prime: code after data in a section
-                            // doesn't make it code. An empty member
-                            // counts if it names an atom (see
-                            // bare_sections), in -r too.
-                            let mut osec = OutputSection::new(out.0, out.1);
-                            osec.hdr.flags = if !relocatable && out == text {
-                                // ld-prime makes a final image's __text
-                                // itself, as code, whatever its members
-                                // (and under its -rename_section name).
-                                S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
-                            } else if merged_name((seg, sect)) == Some(flags_name) {
-                                // A literal pool folded into __const is
-                                // constants there, whatever its type.
-                                S_REGULAR
-                            } else {
-                                let mut input = input_section_flags(seg, sect, hdr.flags);
-                                // A kext's pointers are plain data to
-                                // ld-prime, its GOT's too.
-                                if kext && input & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS {
-                                    input &= !SECTION_TYPE;
-                                }
-                                let standard = is_standard_section(seg, sect, hdr.flags);
-                                let (seg, sect) = flags_name;
-                                output_section_flags(seg, sect, input, standard, relocatable)
-                            };
-                            let id = OutputSectionId::new(ctx.output_sections.len() as u32);
-                            ctx.output_sections.push(osec);
-                            ctx.chunks.push(ChunkId::Output(id));
+                            let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
+                            let id = add_output_section(ctx, out.0, out.1, flags);
                             by_out.insert(out, id);
                             id
                         }
@@ -761,30 +790,81 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
     }
-    if !relocatable {
+    if !ctx.args.relocatable {
         resolve_zerofill_conflicts(ctx, &fill_kinds);
         check_tlv_sections(ctx, &tlv_data);
     }
-    place_replacing_blobs(ctx);
+}
 
-    // A final image always has a __text section, empty if no code
-    // reached it (a dylib of only data; ld-prime writes one of size 0,
-    // byte-aligned).
-    if !relocatable && !by_out.contains_key(&text) {
-        let mut osec = OutputSection::new(text.0, text.1);
-        osec.hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-        let id = OutputSectionId::new(ctx.output_sections.len() as u32);
-        ctx.output_sections.push(osec);
-        ctx.chunks.push(ChunkId::Output(id));
-        by_out.insert(text, id);
+/// The flags of a new output section, `out`, from those of its first
+/// member, an input section with header `hdr` whose flags follow the
+/// name `flags_name` (see output_section_for). The first member
+/// decides, as in ld-prime: code after data in a section doesn't make
+/// it code. An empty member counts if it names an atom (see
+/// bare_sections), in -r too.
+fn first_member_flags<E: Target>(
+    ctx: &Context<E>,
+    hdr: &MachSection,
+    text: SectionName,
+    out: SectionName,
+    flags_name: SectionName,
+) -> u32 {
+    let relocatable = ctx.args.relocatable;
+    let (seg, sect) = (hdr.segname(), hdr.sectname());
+    if !relocatable && out == text {
+        // ld-prime makes a final image's __text itself, as code,
+        // whatever its members (and under its -rename_section name).
+        return S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     }
+    if merged_name((seg, sect)) == Some(flags_name) {
+        // A literal pool folded into __const is constants there,
+        // whatever its type.
+        return S_REGULAR;
+    }
+    let mut input = input_section_flags(seg, sect, hdr.flags);
+    // A kext's pointers are plain data to ld-prime, its GOT's too.
+    if ctx.args.is_kext() && input & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS {
+        input &= !SECTION_TYPE;
+    }
+    let standard = is_standard_section(seg, sect, hdr.flags);
+    let (seg, sect) = flags_name;
+    output_section_flags(seg, sect, input, standard, relocatable)
+}
 
+/// Adds an empty output section named `seg`,`sect` with `flags`.
+fn add_output_section<E: Target>(
+    ctx: &mut Context<E>,
+    seg: &'static str,
+    sect: &str,
+    flags: u32,
+) -> OutputSectionId {
+    let mut osec = OutputSection::new(seg, sect);
+    osec.hdr.flags = flags;
+    let id = OutputSectionId::new(ctx.output_sections.len() as u32);
+    ctx.output_sections.push(osec);
+    ctx.chunks.push(ChunkId::Output(id));
+    id
+}
+
+/// The output section named `name`, if there is one.
+fn find_output_section<E: Target>(ctx: &Context<E>, name: SectionName) -> Option<OutputSectionId> {
+    let (seg, sect) = name;
+    let i = ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect);
+    i.map(|i| OutputSectionId::new(i as u32))
+}
+
+/// Settles the output sections' alignments, which their members raised
+/// to the largest of theirs: the thread-local template's two sections
+/// share the stricter one, -sectalign sets a section's, a section's may
+/// not exceed its segment's, and dyld's own __text is page-aligned.
+fn set_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     // The thread-local template (__thread_data followed by
     // __thread_bss) is one image dyld copies per thread, so ld64 gives
     // both sections the stricter of their alignments.
-    if let (Some(&data), Some(&bss)) =
-        (by_out.get(&("__DATA", "__thread_data")), by_out.get(&("__DATA", "__thread_bss")))
-    {
+    if let (Some(data), Some(bss)) = (
+        find_output_section(ctx, ("__DATA", "__thread_data")),
+        find_output_section(ctx, ("__DATA", "__thread_bss")),
+    ) {
         let p2align = ctx.output_sections[data.index()]
             .hdr
             .p2align
@@ -816,10 +896,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
     // A section cannot be aligned beyond its segment's (the page, unless
     // -segalign says otherwise): ld64 reduces the alignment with a
-    // warning (an x86-64 .align 16 asks for 64KB). Not in a -static or -preload image, which no dyld
-    // maps: ld-prime starts the section's segment on the alignment
-    // there (see lay_out_segments).
-    if !relocatable && !ctx.args.static_link {
+    // warning (an x86-64 .align 16 asks for 64KB). Not in a -static or
+    // -preload image, which no dyld maps: ld-prime starts the section's
+    // segment on the alignment there (see lay_out_segments).
+    if !ctx.args.relocatable && !ctx.args.static_link {
         let max = ctx.segment_align().trailing_zeros();
         for osec in &mut ctx.output_sections {
             if osec.hdr.p2align > max {
@@ -840,10 +920,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // whatever the inputs or -sectalign ask, and leaves no room between
     // the load commands and it (see chunks::header_pad).
     if ctx.args.is_dylinker() {
-        let id = by_out[&text];
+        let id = find_output_section(ctx, text).unwrap();
         ctx.output_sections[id.index()].hdr.p2align = 12;
     }
+}
 
+/// Orders each output section's members: the atoms -order_file names
+/// first, cold code last, and the rest in input order.
+fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
     // -order_file moves the atoms it names to the front of their
     // output sections, in the file's order; everything else keeps its
     // input order behind them. A stable sort by rank does both.
@@ -858,72 +942,69 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // and ld64 lays those atoms out after every other atom of their
     // section - in final images and -r outputs alike - so hot code
     // stays dense.
-    {
-        let mut cold = vec![false; ctx.isecs.len()];
-        let mut any = false;
-        for obj in &ctx.objs {
-            if !obj.is_alive {
+    let mut cold = vec![false; ctx.isecs.len()];
+    let mut any = false;
+    for obj in &ctx.objs {
+        if !obj.is_alive {
+            continue;
+        }
+        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+            if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_desc & N_COLD_FUNC == 0 {
                 continue;
             }
-            for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-                if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_desc & N_COLD_FUNC == 0 {
-                    continue;
-                }
-                if let Some(isec) = ctx.symbols[sym_id].input_section() {
-                    cold[isec as usize] = true;
-                    any = true;
-                }
-            }
-        }
-        if any {
-            for osec in &mut ctx.output_sections {
-                {
-                    let isecs = &mut osec.members;
-                    isecs.sort_by_key(|&id| cold[id as usize]);
-                }
+            if let Some(isec) = ctx.symbols[sym_id].input_section() {
+                cold[isec as usize] = true;
+                any = true;
             }
         }
     }
-
-    // Compute each input section's offset within its output section.
-    // Following mold's design, sections lay out in parallel: each
-    // output section's offsets depend only on its own members, so the
-    // per-section prefix sums run on all cores and the results are
-    // written back serially. Code gets range-extension thunks later,
-    // if a branch can be out of reach at all, once the order of the
-    // sections is known (see thunks.rs).
-    {
-        let offsets: Vec<(usize, Vec<u64>, u64)> = ctx
-            .output_sections
-            .par_iter()
-            .enumerate()
-            .map(|(i, osec)| {
-                let mut offs = Vec::with_capacity(osec.members.len());
-                let mut off = 0;
-                for &id in &osec.members {
-                    let isec = &ctx.isecs[id];
-                    off = isec.align_offset(off);
-                    offs.push(off);
-                    off += isec.size as u64;
-                }
-                (i, offs, off)
-            })
-            .collect();
-        for (i, offs, size) in offsets {
-            for (&id, off) in ctx.output_sections[i].members.iter().zip(offs) {
-                ctx.isecs[id].offset = off as u32;
-            }
-            ctx.output_sections[i].hdr.size = size;
+    if any {
+        for osec in &mut ctx.output_sections {
+            osec.members.sort_by_key(|&id| cold[id as usize]);
         }
     }
+}
 
-    add_stub_and_got_chunks(ctx);
-
-    if !ctx.init_offsets.init_funcs.is_empty() {
-        ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
-        ctx.chunks.push(ChunkId::InitOffsets);
+/// Computes each input section's offset within its output section, and
+/// the output sections' sizes. Following mold's design, sections lay
+/// out in parallel: each output section's offsets depend only on its
+/// own members, so the per-section prefix sums run on all cores and the
+/// results are written back serially. Code gets range-extension thunks
+/// later, if a branch can be out of reach at all, once the order of the
+/// sections is known (see thunks.rs).
+fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
+    let offsets: Vec<(usize, Vec<u64>, u64)> = ctx
+        .output_sections
+        .par_iter()
+        .enumerate()
+        .map(|(i, osec)| {
+            let mut offs = Vec::with_capacity(osec.members.len());
+            let mut off = 0;
+            for &id in &osec.members {
+                let isec = &ctx.isecs[id];
+                off = isec.align_offset(off);
+                offs.push(off);
+                off += isec.size as u64;
+            }
+            (i, offs, off)
+        })
+        .collect();
+    for (i, offs, size) in offsets {
+        for (&id, off) in ctx.output_sections[i].members.iter().zip(offs) {
+            ctx.isecs[id].offset = off as u32;
+        }
+        ctx.output_sections[i].hdr.size = size;
     }
+}
 
+/// Sizes the objc_msgSend$ stubs, and appends their selector strings and
+/// reference slots to the sections of those names (as their tail): the
+/// Objective-C runtime uniques the selectors of one __objc_selrefs
+/// section per image, and a second one would leave every compiler-
+/// emitted @selector() unregistered. The input subsections are placed
+/// already, so the tail's offset and the section's final size are
+/// known here.
+fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if !ctx.objc_stubs.symbols.is_empty() {
         ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * E::OBJC_STUB_SIZE;
         // 32-byte stubs on arm64; ld-prime leaves x86-64's byte-aligned.
@@ -932,97 +1013,88 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.chunks.push(ChunkId::ObjcStubs);
     }
-    {
-        // The stubs' selector strings and reference slots join the
-        // sections of those names (as their tail): the Objective-C
-        // runtime uniques the selectors of one __objc_selrefs section
-        // per image, and a second one would leave every compiler-
-        // emitted @selector() unregistered.
-        // The input subsections are placed already, so the tail's
-        // offset and the section's final size are known here.
-        let methname_size = ctx.objc_stubs.methname_data.len() as u64;
-        let selrefs_size =
-            (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
-        let map = SectionMap::final_link(ctx);
-        if methname_size > 0 {
-            let ((seg, sect), _) =
-                output_section_for(&ctx.args, map, "__TEXT", "__objc_methname", S_CSTRING_LITERALS)
-                    .unwrap();
-            let id = tail_section(
-                ctx,
-                seg,
-                sect,
-                S_CSTRING_LITERALS,
-                0,
-                Tail::ObjcMethname,
-                methname_size,
-            );
-            ctx.objc_stubs.methname = Some(id);
-        }
-        if selrefs_size > 0 {
-            let ((seg, sect), (flags_seg, flags_sect)) =
-                output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
-                    .unwrap();
-            // A slot keeps the alignment of the inputs it took over.
-            let p2align = (ctx.objc_stubs.absorbed.iter())
-                .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
-                .fold(3, u32::max);
-            let id = tail_section(
-                ctx,
-                seg,
-                sect,
-                output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, true, false),
-                p2align,
-                Tail::ObjcSelrefs,
-                selrefs_size,
-            );
-            ctx.objc_stubs.selrefs = Some(id);
-            let tail_off = ctx.output_section(id).tail_off;
-            for i in 0..ctx.objc_stubs.absorbed.len() {
-                let (synth, slot) = ctx.objc_stubs.absorbed[i];
-                let isec = &mut ctx.isecs[synth as usize];
-                isec.set_output_section(ChunkId::Output(id));
-                isec.offset = (tail_off + slot as u64 * 8) as u32;
-            }
-        }
-        place_tail_blobs(ctx);
-    }
 
-    if !ctx.objc_methlist.lists.is_empty() {
-        // ld64 lays the lists out sorted by their symbol's name, each
-        // 8-byte aligned; category merging also retires some after
-        // their first placement.
-        let mut name_of: hashbrown::HashMap<u32, &'static str> = hashbrown::HashMap::new();
-        let syms =
-            ctx.symbols.syms.iter().filter_map(|sym| Some((sym.name(), sym.input_section()?)));
-        // (The lists category merging builds are named as extra locals.)
-        for (name, isec) in syms.chain(ctx.extra_local_syms.iter().copied()) {
-            let r = ctx.resolve_isec(isec as usize) as u32;
-            let e = name_of.entry(r).or_insert(name);
-            if name < *e {
-                *e = name;
-            }
-        }
-        let mut order: Vec<usize> = (0..ctx.objc_methlist.lists.len()).collect();
-        order.sort_by_key(|&i| {
-            (name_of.get(&ctx.objc_methlist.lists[i].isec).copied().unwrap_or(""), i)
-        });
-        let mut off = 0u64;
-        for i in order {
-            let isec = ctx.objc_methlist.lists[i].isec as usize;
-            off = align_to(off, 8);
-            ctx.isecs[isec].offset = off as u32;
-            off += ctx.isecs[isec].size as u64;
-        }
-        ctx.objc_methlist.hdr.size = off;
-        ctx.chunks.push(ChunkId::ObjcMethlist);
-        for i in 0..ctx.objc_methlist.lists.len() {
-            let isec = ctx.objc_methlist.lists[i].isec as usize;
-            ctx.isecs[isec].set_output_section(ChunkId::ObjcMethlist);
+    let methname_size = ctx.objc_stubs.methname_data.len() as u64;
+    let selrefs_size =
+        (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
+    let map = SectionMap::final_link(ctx);
+    if methname_size > 0 {
+        let ((seg, sect), _) =
+            output_section_for(&ctx.args, map, "__TEXT", "__objc_methname", S_CSTRING_LITERALS)
+                .unwrap();
+        let id =
+            tail_section(ctx, seg, sect, S_CSTRING_LITERALS, 0, Tail::ObjcMethname, methname_size);
+        ctx.objc_stubs.methname = Some(id);
+    }
+    if selrefs_size > 0 {
+        let ((seg, sect), (flags_seg, flags_sect)) =
+            output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
+                .unwrap();
+        // A slot keeps the alignment of the inputs it took over.
+        let p2align = (ctx.objc_stubs.absorbed.iter())
+            .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
+            .fold(3, u32::max);
+        let id = tail_section(
+            ctx,
+            seg,
+            sect,
+            output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, true, false),
+            p2align,
+            Tail::ObjcSelrefs,
+            selrefs_size,
+        );
+        ctx.objc_stubs.selrefs = Some(id);
+        let tail_off = ctx.output_section(id).tail_off;
+        for i in 0..ctx.objc_stubs.absorbed.len() {
+            let (synth, slot) = ctx.objc_stubs.absorbed[i];
+            let isec = &mut ctx.isecs[synth as usize];
+            isec.set_output_section(ChunkId::Output(id));
+            isec.offset = (tail_off + slot as u64 * 8) as u32;
         }
     }
+}
 
-    // Sections synthesized from files by -sectcreate.
+/// Lays out __objc_methlist, the method lists rewritten in the relative
+/// form (see convert_objc_method_lists). ld64 lays the lists out sorted
+/// by their symbol's name, each 8-byte aligned; category merging also
+/// retires some after their first placement.
+fn lay_out_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
+    if ctx.objc_methlist.lists.is_empty() {
+        return;
+    }
+    let mut name_of: hashbrown::HashMap<u32, &'static str> = hashbrown::HashMap::new();
+    let syms = ctx.symbols.syms.iter().filter_map(|sym| Some((sym.name(), sym.input_section()?)));
+    // (The lists category merging builds are named as extra locals.)
+    for (name, isec) in syms.chain(ctx.extra_local_syms.iter().copied()) {
+        let r = ctx.resolve_isec(isec as usize) as u32;
+        let e = name_of.entry(r).or_insert(name);
+        if name < *e {
+            *e = name;
+        }
+    }
+    let mut order: Vec<usize> = (0..ctx.objc_methlist.lists.len()).collect();
+    order.sort_by_key(|&i| {
+        (name_of.get(&ctx.objc_methlist.lists[i].isec).copied().unwrap_or(""), i)
+    });
+    let mut off = 0u64;
+    for i in order {
+        let isec = ctx.objc_methlist.lists[i].isec as usize;
+        off = align_to(off, 8);
+        ctx.isecs[isec].offset = off as u32;
+        off += ctx.isecs[isec].size as u64;
+    }
+    ctx.objc_methlist.hdr.size = off;
+    ctx.chunks.push(ChunkId::ObjcMethlist);
+    for i in 0..ctx.objc_methlist.lists.len() {
+        let isec = ctx.objc_methlist.lists[i].isec as usize;
+        ctx.isecs[isec].set_output_section(ChunkId::ObjcMethlist);
+    }
+}
+
+/// Adds the sections -sectcreate makes from files, and the empty ones
+/// -add_empty_section asks for, which give tools a named anchor (their
+/// section$start/end addresses) without any content.
+fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
     let sectcreate = std::mem::take(&mut ctx.args.sectcreate);
     for (seg, sect, path) in &sectcreate {
         let data = std::fs::read(path).unwrap_or_else(|e| {
@@ -1034,139 +1106,106 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.args.sectcreate = sectcreate;
 
-    // -add_empty_section synthesizes a zero-length section, giving
-    // tools a named anchor (its section$start/end addresses) without
-    // any content.
     let empties = std::mem::take(&mut ctx.args.add_empty_section);
     for (seg, sect) in &empties {
         let segname: &'static str = String::leak(seg.clone());
         add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], true));
     }
     ctx.args.add_empty_section = empties;
+}
 
-    // Merge the objects' __objc_imageinfo records: the Swift version
-    // must agree, the Swift language version is the newest, and the
-    // category-class-properties bit holds only if every Objective-C
-    // object has it.
+/// Merges the objects' __objc_imageinfo records into the image's: the
+/// Swift version must agree, the Swift language version is the newest,
+/// and the category-class-properties bit holds only if every
+/// Objective-C object has it.
+fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     let infos: Vec<u32> =
         ctx.objs.iter().filter(|o| o.is_alive).filter_map(|o| o.objc_image_info).collect();
-    if !infos.is_empty() {
-        let mut swift_version = 0;
-        for &flags in &infos {
-            let v = (flags >> 8) & 0xff;
-            if swift_version == 0 {
-                swift_version = v;
-            } else if v != 0 && v != swift_version {
-                error!("incompatible __objc_imageinfo swift versions");
-            }
+    if infos.is_empty() {
+        return;
+    }
+    let mut swift_version = 0;
+    for &flags in &infos {
+        let v = (flags >> 8) & 0xff;
+        if swift_version == 0 {
+            swift_version = v;
+        } else if v != 0 && v != swift_version {
+            error!("incompatible __objc_imageinfo swift versions");
         }
-        let lang = infos.iter().map(|f| f >> 16).max().unwrap();
-        let cat = infos.iter().all(|f| f & 0x40 != 0);
-        let flags = (lang << 16) | (swift_version << 8) | if cat { 0x40 } else { 0 };
-
-        ctx.objc_imageinfo.flags = flags;
-        ctx.objc_imageinfo.hdr.segname = data_seg(ctx);
-        ctx.objc_imageinfo.hdr.size = 8;
-        ctx.chunks.push(ChunkId::ObjcImageInfo);
     }
+    let lang = infos.iter().map(|f| f >> 16).max().unwrap();
+    let cat = infos.iter().all(|f| f & 0x40 != 0);
+    let flags = (lang << 16) | (swift_version << 8) | if cat { 0x40 } else { 0 };
 
-    if ctx.args.unwind_info() && chunks::unwind_info::is_needed(ctx) {
-        ctx.chunks.push(ChunkId::UnwindInfo);
-    }
+    ctx.objc_imageinfo.flags = flags;
+    ctx.objc_imageinfo.hdr.segname = data_seg(ctx);
+    ctx.objc_imageinfo.hdr.size = 8;
+    ctx.chunks.push(ChunkId::ObjcImageInfo);
+}
 
-    // Lay out the surviving DWARF records: live CIEs first, then FDEs.
-    // Their offsets are needed before layout, because the __unwind_info
-    // encoding embeds each FDE's offset.
+/// Lays out __eh_frame, the surviving DWARF unwind records: live CIEs
+/// first, then FDEs. Their offsets are needed before layout, because
+/// the __unwind_info encoding embeds each FDE's offset.
+fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     // FDEs of folded copies duplicate their leader's; drop them, and
     // remap the unwind records' FDE indices around the removals as
     // the dead-strip pass does (a record left pointing past the
     // shortened table crashed the encoder).
-    {
-        let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
-        let mut kept_fdes = Vec::new();
-        let fdes = std::mem::take(&mut ctx.fdes);
-        for (i, fde) in fdes.into_iter().enumerate() {
-            if ctx.isecs[fde.isec].replacement == crate::input_sections::NO_REPLACEMENT {
-                fde_map[i] = kept_fdes.len();
-                kept_fdes.push(fde);
-            }
+    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
+    let mut kept_fdes = Vec::new();
+    let fdes = std::mem::take(&mut ctx.fdes);
+    for (i, fde) in fdes.into_iter().enumerate() {
+        if ctx.isecs[fde.isec].replacement == crate::input_sections::NO_REPLACEMENT {
+            fde_map[i] = kept_fdes.len();
+            kept_fdes.push(fde);
         }
-        ctx.fdes = kept_fdes;
-        let map = &fde_map;
-        ctx.unwind_records.retain_mut(|rec| {
-            if rec.fde_idx == crate::input_files::UNWIND_NONE {
-                return true;
-            }
-            let mapped = map[rec.fde_idx as usize];
-            if mapped == usize::MAX {
-                // A folded copy's record; its leader has its own.
-                return false;
-            }
-            rec.fde_idx = mapped as u32;
-            true
-        });
     }
-    if !ctx.fdes.is_empty() {
-        for fde in &ctx.fdes {
-            ctx.cies[fde.cie as usize].is_alive = true;
+    ctx.fdes = kept_fdes;
+    let map = &fde_map;
+    ctx.unwind_records.retain_mut(|rec| {
+        if rec.fde_idx == crate::input_files::UNWIND_NONE {
+            return true;
         }
-        let mut off = 0;
-        for cie in &mut ctx.cies {
-            if cie.is_alive {
-                cie.output_offset = off;
-                off += cie.data.len() as u32;
-            }
+        let mapped = map[rec.fde_idx as usize];
+        if mapped == usize::MAX {
+            // A folded copy's record; its leader has its own.
+            return false;
         }
-        for fde in &mut ctx.fdes {
-            fde.output_offset = off;
-            off += fde.data.len() as u32;
-        }
+        rec.fde_idx = mapped as u32;
+        true
+    });
 
-        ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
-        ctx.eh_frame.hdr.size = off as u64;
-        ctx.chunks.push(ChunkId::EhFrame);
+    if ctx.fdes.is_empty() {
+        return;
+    }
+    for fde in &ctx.fdes {
+        ctx.cies[fde.cie as usize].is_alive = true;
+    }
+    let mut off = 0;
+    for cie in &mut ctx.cies {
+        if cie.is_alive {
+            cie.output_offset = off;
+            off += cie.data.len() as u32;
+        }
+    }
+    for fde in &mut ctx.fdes {
+        fde.output_offset = off;
+        off += fde.data.len() as u32;
     }
 
-    add_linkedit_chunks(ctx);
-    rename_synthetic_sections(ctx);
-    add_boundary_sections(ctx);
+    ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
+    ctx.eh_frame.hdr.size = off as u64;
+    ctx.chunks.push(ChunkId::EhFrame);
+}
 
-    // Sort the chunks into file order: the standard segment order, and
-    // section ranks within a segment. Sections of one rank follow the
-    // order their first input section was seen in - object, then
-    // section ordinal - as ld-prime lays them out. Segment ranks honor
-    // -segment_order, then the standard order; segments stay together,
-    // and __LINKEDIT is always last.
-    let mut section_first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
-    let stub_sels: hashbrown::HashSet<&[u8]> =
-        ctx.objc_stubs.symbols.iter().map(|(_, sel)| sel.as_bytes()).collect();
-    for (i, isec) in ctx.isecs.iter().enumerate() {
-        if ctx.is_internal(isec.file as usize) || is_stub_selector_name(ctx, isec, &stub_sels) {
-            continue;
-        }
-        // A copy merged into another input's (a literal, the losing
-        // copy of a weak definition) places nothing: ld-prime places a
-        // section by the atoms it keeps. One a synthesized record took
-        // over counts where it was.
-        let kept = ctx.resolve_isec(i);
-        if kept != i && !ctx.is_internal(ctx.isecs[kept].file as usize) {
-            continue;
-        }
-        let Some(ChunkId::Output(id)) = ctx.isecs[kept].output_section() else {
-            continue;
-        };
-        let key = ((isec.file as u64) << 32) | isec.shndx as u64;
-        let slot = &mut section_first_seen[id.index()];
-        *slot = (*slot).min(key);
-    }
-    drop(stub_sels);
-    if let Some(obj) = ctx.common_first_obj {
-        for (i, osec) in ctx.output_sections.iter().enumerate() {
-            if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
-                section_first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
-            }
-        }
-    }
+/// Sorts the chunks into file order: the standard segment order, and
+/// section ranks within a segment. Sections of one rank follow the
+/// order their first input section was seen in (see
+/// section_first_seen), as ld-prime lays them out. Segment ranks honor
+/// -segment_order, then the standard order; segments stay together,
+/// and __LINKEDIT is always last.
+fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
+    let section_first_seen = section_first_seen(ctx);
     let mut order = ctx.chunks.clone();
     let mut first_seen: hashbrown::HashMap<&'static str, usize> = hashbrown::HashMap::new();
     for &id in &order {
@@ -1217,16 +1256,58 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         // occupy file space in the middle of it.
         (seg_rank, hdr.is_zerofill(), listed_section_rank(ctx, hdr), sect_rank, seen)
     });
+    ctx.chunks = order;
+}
 
-    // Group them into segments, and number the sections: an nlist's
-    // n_sect is the 1-based ordinal of its section in the load
-    // commands.
+/// When ld-prime first sees each output section, by output section: at
+/// the object and section ordinal of its first input section - or, for
+/// the synthesized __common, at the first object with a common symbol.
+/// mold's own subsections don't count, nor the input selector names
+/// the objc_msgSend$ stubs absorb (see is_stub_selector_name).
+fn section_first_seen<E: Target>(ctx: &Context<E>) -> Vec<u64> {
+    let mut first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
+    let stub_sels: hashbrown::HashSet<&[u8]> =
+        ctx.objc_stubs.symbols.iter().map(|(_, sel)| sel.as_bytes()).collect();
+    for (i, isec) in ctx.isecs.iter().enumerate() {
+        if ctx.is_internal(isec.file as usize) || is_stub_selector_name(ctx, isec, &stub_sels) {
+            continue;
+        }
+        // A copy merged into another input's (a literal, the losing
+        // copy of a weak definition) places nothing: ld-prime places a
+        // section by the atoms it keeps. One a synthesized record took
+        // over counts where it was.
+        let kept = ctx.resolve_isec(i);
+        if kept != i && !ctx.is_internal(ctx.isecs[kept].file as usize) {
+            continue;
+        }
+        let Some(ChunkId::Output(id)) = ctx.isecs[kept].output_section() else {
+            continue;
+        };
+        let key = ((isec.file as u64) << 32) | isec.shndx as u64;
+        let slot = &mut first_seen[id.index()];
+        *slot = (*slot).min(key);
+    }
+    if let Some(obj) = ctx.common_first_obj {
+        for (i, osec) in ctx.output_sections.iter().enumerate() {
+            if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
+                first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
+            }
+        }
+    }
+    first_seen
+}
+
+/// Groups the chunks, in file order, into segments, and numbers the
+/// sections: an nlist's n_sect is the 1-based ordinal of its section in
+/// the load commands.
+fn create_segments<E: Target>(ctx: &mut Context<E>) {
     let mut segments = Vec::new();
     if ctx.args.pagezero_size > 0 {
         segments.push(OutputSegment::new("__PAGEZERO"));
     }
     let mut n_sect = 1u8;
-    for &id in &order {
+    for i in 0..ctx.chunks.len() {
+        let id = ctx.chunks[i];
         if id == ChunkId::MachHeader && ctx.args.preload {
             continue;
         }
@@ -1242,22 +1323,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.segments = segments;
-    ctx.chunks = order;
-    add_boundary_segments(ctx);
-    add_stack_segment(ctx);
-    crate::chunks::indirect_symtab::assign_indices(ctx);
-    check_segment_order(ctx);
-    check_section_order(ctx);
-    check_interposing(ctx);
-    // The mach header's segment must come first after __PAGEZERO. A
-    // -static image's header moves with -rename_segment __TEXT, and
-    // only -segment_order can then put its segment there.
-    if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
-        fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
-    }
-    if ctx.args.no_zero_fill_sections && !ctx.args.relocatable {
-        fill_zero_fill_sections(ctx);
-    }
 }
 
 /// -no_zero_fill_sections gives every zero-fill section its bytes in
