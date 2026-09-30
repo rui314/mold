@@ -26,14 +26,16 @@ const HEADER_SIZE: usize = 60;
 /// A parsed archive member header.
 struct ArHeader<'a> {
     name: &'a [u8],
+    date: u64,
     size: usize,
 }
 
 impl<'a> ArHeader<'a> {
     fn parse(bytes: &'a [u8]) -> Option<Self> {
         let bytes = bytes.get(..HEADER_SIZE)?;
+        let date = parse_decimal(&bytes[16..28]) as u64;
         let size = parse_decimal(&bytes[48..58]);
-        Some(ArHeader { name: &bytes[..16], size })
+        Some(ArHeader { name: &bytes[..16], date, size })
     }
 
     fn is_strtab(&self) -> bool {
@@ -78,11 +80,11 @@ fn parse_decimal(bytes: &[u8]) -> usize {
         .fold(0, |acc, &b| acc * 10 + (b - b'0') as usize)
 }
 
-/// Iterates over the members of an archive as (name, body) pairs, skipping
+/// Iterates over the members of an archive as (name, body, date) triples, skipping
 /// the symbol table and string table.
 fn archive_members(
     mf: &'static MappedFile,
-) -> impl Iterator<Item = (&'static [u8], &'static [u8])> {
+) -> impl Iterator<Item = (&'static [u8], &'static [u8], u64)> {
     let data = mf.data();
     let mut pos = 8;
     let mut strtab: &'static [u8] = &[];
@@ -123,7 +125,7 @@ fn archive_members(
                 continue;
             }
 
-            return Some((name, body));
+            return Some((name, body, hdr.date));
         }
     })
 }
@@ -161,11 +163,11 @@ pub fn member_index(member: &MappedFile) -> Option<usize> {
 pub fn read_archive_members(mf: &'static MappedFile) -> impl Iterator<Item = &'static MappedFile> {
     debug_assert!(mf.data().starts_with(b"!<arch>\n"));
     let base = mf.data().as_ptr() as usize;
-    archive_members(mf).map(move |(name, body)| {
+    archive_members(mf).map(move |(name, body, date)| {
         let mut full_name = OsString::from(&mf.name);
         full_name.push("(");
         full_name.push(os_str(name));
         full_name.push(")");
-        mf.slice(PathBuf::from(full_name), body.as_ptr() as usize - base, body.len())
+        mf.member(PathBuf::from(full_name), body.as_ptr() as usize - base, body.len(), date)
     })
 }

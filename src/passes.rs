@@ -1223,6 +1223,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         name: PathBuf::from("<LTO>"),
         data: Vec::leak(data),
         parent: None,
+        ar_date: None,
     }));
     input_files::parse_object(ctx, mf, true);
     true
@@ -5293,12 +5294,20 @@ pub fn plan_object_stabs<E: Target>(
         }
     }
     // n_value is the object's modification time, which dsymutil and
-    // lldb compare against the file they find (0 disables the check).
-    let mtime = std::fs::metadata(&obj.mf.name)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs());
+    // lldb compare against the file they find (0 disables the check):
+    // an archive member's is its header's. ZERO_AR_DATE, set to
+    // anything, zeroes them all for reproducible builds.
+    let mtime = if ctx.args.zero_ar_date {
+        0
+    } else if let Some(date) = obj.mf.ar_date {
+        date
+    } else {
+        std::fs::metadata(&obj.mf.name)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs())
+    };
     out.push((
         leak_bytes(std::mem::take(&mut oso_name)),
         NList { n_strx: 0, n_type: N_OSO, n_sect: E::CPUSUBTYPE as u8, n_desc: 1, n_value: mtime },

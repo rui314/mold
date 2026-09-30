@@ -290,6 +290,8 @@ pub struct Args {
     pub rename_sections: Vec<(String, String, String, String)>,
     /// -rename_segment: (old, new).
     pub rename_segments: Vec<(String, String)>,
+    /// ZERO_AR_DATE is set: the stabs record no modification times.
+    pub zero_ar_date: bool,
     /// -static: no dyld rebase/bind or chained fixups (the XNU kernel).
     pub static_link: bool,
     /// Whether an executable is position independent (MH_PIE):
@@ -399,6 +401,7 @@ impl Default for Args {
             segment_order: Vec::new(),
             rename_sections: Vec::new(),
             rename_segments: Vec::new(),
+            zero_ar_date: false,
             static_link: false,
             pie: true,
         }
@@ -662,7 +665,8 @@ pub struct TargetTraits {
 /// by nature (symbol and section names, versions, the -undefined
 /// treatment) must be UTF-8.
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
-    let mut args = Args::default();
+    let mut args =
+        Args { zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(), ..Default::default() };
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
