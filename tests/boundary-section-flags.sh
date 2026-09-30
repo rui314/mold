@@ -3,8 +3,8 @@ source "$(dirname "$0")"/common.inc
 
 # A section only a section$start$ or section$end$ symbol makes gets the
 # flags a compiler marks a section of the name the symbol gives with,
-# as in ld-prime - also when the section moves to __DATA_CONST - and
-# none for another name.
+# or ld-prime its own section of that name, as in ld-prime - also when
+# the section moves to __DATA_CONST - and none for another name.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -15,6 +15,9 @@ _main:
 .quad section\$start\$__TEXT\$__literal8
 .quad section\$start\$__TEXT\$__StaticInit
 .quad section\$start\$__TEXT\$__cstring
+.quad section\$start\$__TEXT\$__oslogstring
+.quad section\$start\$__TEXT\$__objc_clsstubs
+.quad section\$start\$__DATA\$__la_resolver
 .quad section\$start\$__DATA\$__got
 .quad section\$start\$__DATA\$__objc_selrefs
 .quad section\$start\$__DATA\$__objc_classlist
@@ -31,6 +34,9 @@ flags() {
 [ "$(flags __TEXT __literal8)" = 0x00000004 ]
 [ "$(flags __TEXT __StaticInit)" = 0x80000400 ]
 [ "$(flags __TEXT __cstring)" = 0x00000002 ]
+[ "$(flags __TEXT __oslogstring)" = 0x00000002 ]
+[ "$(flags __TEXT __objc_clsstubs)" = 0x80000400 ]
+[ "$(flags __DATA __la_resolver)" = 0x00000007 ]
 [ "$(flags __DATA_CONST __got)" = 0x00000006 ]
 [ "$(flags __DATA __objc_selrefs)" = 0x10000005 ]
 [ "$(flags __DATA_CONST __objc_classlist)" = 0x10000000 ]

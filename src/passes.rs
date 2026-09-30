@@ -4016,17 +4016,22 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
 /// The flags ld-prime gives a section only a section$start$ or
 /// section$end$ symbol makes, by the name the symbol gives (before any
 /// move or rename): those a compiler marks a section of that name
-/// with - code, literals, pointer lists, the thread-local and
-/// zero-fill types, no-dead-strip for the lists the Objective-C
-/// runtime scans - and none for another name, or in another segment.
+/// with, or ld-prime its own sections - code (the stubs and helpers
+/// too), literals, pointer lists, the thread-local and zero-fill
+/// types, no-dead-strip for the lists the Objective-C runtime scans -
+/// and none for another name, or in another segment.
 fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     match (segname, sectname) {
-        ("__TEXT", "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs") => {
-            S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
-        }
-        ("__TEXT", "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype") => {
-            S_CSTRING_LITERALS
-        }
+        (
+            "__TEXT",
+            "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs" | "__objc_clsstubs"
+            | "__delay_stubs" | "__delay_helper" | "__lazy_helpers" | "__resolver_help",
+        ) => S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+        (
+            "__TEXT",
+            "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype"
+            | "__oslogstring",
+        ) => S_CSTRING_LITERALS,
         ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
         ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
         ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
@@ -4034,7 +4039,7 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
         ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
             S_NON_LAZY_SYMBOL_POINTERS
         }
-        ("__DATA", "__la_symbol_ptr") => S_LAZY_SYMBOL_POINTERS,
+        ("__DATA", "__la_symbol_ptr" | "__la_resolver") => S_LAZY_SYMBOL_POINTERS,
         (
             "__DATA",
             "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
