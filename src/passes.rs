@@ -4523,10 +4523,9 @@ pub fn create_output_symtab<E: Target>(
     let pexts: Vec<usize> =
         classes.iter().enumerate().filter(|&(_, &c)| c == Class::Pext).map(|(i, _)| i).collect();
     let t = ctx.timer("symtab-locals");
-    for (name, ent, sym) in plan_local_symbols(ctx, &pexts, sorted_globals) {
-        names.push(name);
-        data.entries.push((ent, sym));
-    }
+    let locals = plan_local_symbols(ctx, &pexts, sorted_globals);
+    names.par_extend(locals.par_iter().map(|l| l.0));
+    data.entries.par_extend(locals.par_iter().map(|l| (l.1, l.2)));
     let nplain = data.entries.len();
     drop(t);
 
@@ -4615,10 +4614,9 @@ pub fn create_output_symtab<E: Target>(
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
-    for &i in sorted_globals {
+    names.par_extend(sorted_globals.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
+    data.entries.par_extend(sorted_globals.par_iter().map(|&i| {
         let sym = &ctx.symbols[i];
-        let n_strx = 0;
-        names.push(sym.name().as_bytes());
         let (n_type, n_sect, mut n_desc) = match (sym.file(), sym.input_section()) {
             (_, Some(isec)) => {
                 (N_SECT | N_EXT, ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]), 0)
@@ -4638,9 +4636,8 @@ pub fn create_output_symtab<E: Target>(
         if sym.is_weak_def() {
             n_desc |= N_WEAK_DEF;
         }
-        let ent = NList { n_strx, n_type, n_sect, n_desc, n_value: 0 };
-        data.entries.push((ent, Some(i)));
-    }
+        (NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 }, Some(i))
+    }));
     data.nextdef = data.entries.len() as u32 - data.nlocal;
 
     // Undefined (imported) symbols, sorted by name. The library ordinal
@@ -4653,11 +4650,10 @@ pub fn create_output_symtab<E: Target>(
         .collect();
     undefs.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(ctx.symbols[i].name()));
 
-    for &i in &undefs {
+    names.par_extend(undefs.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
+    data.entries.par_extend(undefs.par_iter().map(|&i| {
         let sym = &ctx.symbols[i];
         let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
-        let n_strx = 0;
-        names.push(sym.name().as_bytes());
         // A flat-namespace import records the DYNAMIC_LOOKUP ordinal, a
         // -bundle_loader import the EXECUTABLE ordinal.
         let ordinal = ctx.nlist_library_ordinal(dylib) as u16;
@@ -4665,9 +4661,8 @@ pub fn create_output_symtab<E: Target>(
         if sym.is_weak_ref() {
             n_desc |= N_WEAK_REF;
         }
-        let ent = NList { n_strx, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 };
-        data.entries.push((ent, None));
-    }
+        (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 }, None)
+    }));
     data.nundef = undefs.len() as u32;
     // The string table, in ld-prime's layout.
     debug_assert_eq!(names.len(), data.entries.len());
@@ -4683,19 +4678,13 @@ pub fn create_output_symtab<E: Target>(
     );
     data.names = names;
 
-    // Record each global symbol's index for the indirect symbol table.
-    data.output_sym_indices = vec![u32::MAX; ctx.symbols.syms.len()];
-    for (i, (_, sym)) in data.entries.iter().enumerate() {
-        if let Some(id) = sym
-            && ctx.symbols[*id].is_extern()
-        {
-            data.output_sym_indices[*id as usize] = i as u32;
-        }
-    }
-
-    for (i, &id) in undefs.iter().enumerate() {
-        data.output_sym_indices[id] = data.nlocal + data.nextdef + i as u32;
-    }
+    // Each symbol's index, for the indirect symbol table: the imports'
+    // entries hold no symbol, so theirs are added here.
+    let undef_start = nlocal + data.nextdef as usize;
+    undefs.par_iter().enumerate().for_each(|(k, &id)| {
+        entry_of[id].store((undef_start + k) as u32, std::sync::atomic::Ordering::Relaxed);
+    });
+    data.output_sym_indices = entry_of.into_iter().map(|e| e.into_inner()).collect();
 
     // An alias of an imported symbol is an N_INDR entry whose n_value
     // is the string-table offset of the name it stands for; that

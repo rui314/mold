@@ -27,8 +27,9 @@ pub struct SymtabSection {
     pub nlocal: u32,
     pub nextdef: u32,
     pub nundef: u32,
-    /// Each symbol's index in the output symbol table (u32::MAX if
-    /// absent), for the indirect symbol table. mold keeps output
+    /// Each symbol's index in the output symbol table - its local's,
+    /// external's or import's entry, never a debug note's - or u32::MAX
+    /// if it has none, for the indirect symbol table. mold keeps output
     /// symtab indices as direct per-symbol data too, not in a map;
     /// one flat array serves here because Mach-O name-sorts its
     /// globals across all files, which rules out per-file bases.
