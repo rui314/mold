@@ -4000,13 +4000,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // A section cannot be aligned beyond the segment's page: ld64
-    // reduces the alignment with a warning (an x86-64 .align 16 asks
-    // for 64KB). Not in a -static or -preload image, which no dyld
+    // A section cannot be aligned beyond its segment's (the page, unless
+    // -segalign says otherwise): ld64 reduces the alignment with a
+    // warning (an x86-64 .align 16 asks for 64KB). Not in a -static or -preload image, which no dyld
     // maps: ld-prime starts the section's segment on the alignment
     // there (see lay_out_segments).
     if !relocatable && !ctx.args.static_link {
-        let max = E::PAGE_SIZE.trailing_zeros();
+        let max = ctx.segment_align().trailing_zeros();
         for osec in &mut ctx.output_sections {
             if osec.hdr.p2align > max {
                 crate::warn!(
@@ -6060,8 +6060,9 @@ pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let size = ctx.args.pagezero_size;
-    if !size.is_multiple_of(E::PAGE_SIZE) {
-        let aligned = size.wrapping_add(E::PAGE_SIZE - 1) & !(E::PAGE_SIZE - 1);
+    let page = ctx.segment_align();
+    if !size.is_multiple_of(page) {
+        let aligned = size.wrapping_add(page - 1) & !(page - 1);
         // (As printf's %#llx spells it.)
         let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
         crate::warn!(

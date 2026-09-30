@@ -191,7 +191,10 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
-        let page_size = ctx.segment_align();
+        let page_size = chain_page_size(ctx);
+        if !matches!(page_size, 0x1000 | 0x4000) {
+            fatal!("chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}");
+        }
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
         // size counts just those, without padding.
@@ -208,7 +211,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
                 j += 1;
             }
             if j < fx.len() && fx[j].0 < page_addr + page_size {
-                push16(&mut buf, (fx[j].0 & (page_size - 1)) as u16);
+                push16(&mut buf, (fx[j].0 - page_addr) as u16);
             } else {
                 push16(&mut buf, DYLD_CHAINED_PTR_START_NONE);
             }
@@ -280,11 +283,20 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     Some((buf, fixups, dynsyms, ordinals))
 }
 
+/// The pages the fixup chains of a segment are cut into, from its start:
+/// a chain stays in one page, which dyld takes to be 4 KiB or 16 KiB
+/// long. ld-prime cuts an arm64 image's in its segment alignment (and
+/// refuses any other with fixups), an x86-64 image's in 4 KiB pages
+/// whatever its segment alignment.
+fn chain_page_size<E: Target>(ctx: &Context<E>) -> u64 {
+    if E::CPUTYPE == CPU_TYPE_X86_64 { 0x1000 } else { ctx.segment_align() }
+}
+
 /// Writes the fixup chains into the copied output: every fixup word is
 /// rewritten to encode its payload plus the 4-byte-stride distance to
 /// the next fixup in the same page.
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let page_mask = !(ctx.segment_align() - 1);
+    let page_shift = chain_page_size(ctx).trailing_zeros();
     // What a rebase target counts from: zero for a VM address, the
     // image's own address for an offset.
     let target_base = match pointer_format(ctx) {
@@ -299,12 +311,12 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             .fixups
             .partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
         let fx = &ctx.chained_fixups.fixups[lo..hi];
+        // Pages count from the segment's start.
+        let page = |addr: u64| (addr - seg.cmd.vmaddr) >> page_shift;
 
         for (i, &(addr, sym, addend)) in fx.iter().enumerate() {
             let next = match fx.get(i + 1) {
-                Some(&(next_addr, _, _)) if next_addr & page_mask == addr & page_mask => {
-                    (next_addr - addr) / 4
-                }
+                Some(&(next_addr, _, _)) if page(next_addr) == page(addr) => (next_addr - addr) / 4,
                 _ => 0,
             };
             if addr % 4 != 0 {

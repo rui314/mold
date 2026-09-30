@@ -318,6 +318,12 @@ pub struct Args {
     /// -seg_page_size: (segment, size), the boundary the segment after
     /// the named one starts on, in memory and in the file.
     pub seg_page_sizes: Vec<(String, u64)>,
+    /// -segalign: the boundary segments start and end on, in memory and
+    /// in the file, and the most a section may be aligned to. The
+    /// target's page size unless given, but 4 KiB for a -preload image
+    /// on any target (ld64's default segment alignment, which it raises
+    /// to the 16 KiB arm64 page for every other kind of image).
+    pub segment_align: u64,
     /// -no_zero_fill_sections: zero-fill sections take their space in
     /// the file, as regular sections.
     pub no_zero_fill_sections: bool,
@@ -456,6 +462,7 @@ impl Default for Args {
             segprots: Vec::new(),
             segment_order: Vec::new(),
             seg_page_sizes: Vec::new(),
+            segment_align: 0,
             no_zero_fill_sections: false,
             section_order: Vec::new(),
             rename_sections: Vec::new(),
@@ -1036,7 +1043,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-allowable_client"
         | "-client_name"
         | "-why_live" => "missing <name>",
-        "-headerpad" | "-pagezero_size" | "-stack_size" => "missing <size>",
+        "-headerpad" | "-pagezero_size" | "-stack_size" | "-segalign" => "missing <size>",
         "-image_base" | "-seg1addr" => "missing <address>",
         "-current_version"
         | "-dylib_current_version"
@@ -1081,6 +1088,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
+    let mut segalign: Option<u64> = None;
     let mut explicit_entry = false;
     // -read_only_relocs: whether its treatment allows text relocations.
     let mut read_only_relocs: Option<bool> = None;
@@ -1355,6 +1363,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-seg_page_size {size}: size too big");
                 }
                 seg_page_sizes.push((text(name, seg).to_string(), size));
+            }
+            b"-segalign" => {
+                let align = parse_hex(name, text(name, next_arg(&mut i, name)));
+                if align > u32::MAX as u64 {
+                    fatal!("-segalign {align}: alignemnt too big");
+                }
+                segalign = Some(align);
             }
             b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
             b"-section_order" => {
@@ -1881,6 +1896,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             );
         }
     }
+    args.segment_align = resolve_segment_align(target, &args, segalign);
     // An image dyld loads keeps 32 bytes for the command of a code
     // signature added later (see chunks::header_pad).
     if let Some(size) = headerpad
@@ -1920,7 +1936,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     resolve_stack(target, &mut args, stack_size, stack_addr);
     args.segprots = resolve_segprots(target, segprots);
-    args.seg_page_sizes = resolve_seg_page_sizes(target, &args, seg_page_sizes);
+    args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
     resolve_kext(target, &mut args);
@@ -2105,17 +2121,18 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
 /// which ld64 pins as -segaddr would (unless one pins it elsewhere)
 /// below a top of stack, -stack_addr's or a fixed one; LC_UNIXTHREAD's
 /// stack pointer starts at its end. ld-prime checks -stack_addr for a
-/// multiple of the page size (4 KiB in an object file) and a size to go
-/// with it, then the size against the most a stack may take on the
-/// target and for a main executable, a static one if it has an address,
-/// then for a multiple of the page size and smaller than the address.
+/// multiple of the page size (the segment alignment, but 4 KiB in an
+/// object file) and a size to go with it, then the size against the
+/// most a stack may take on the target and for a main executable, a
+/// static one if it has an address, then for a multiple of the page
+/// size and smaller than the address.
 fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
     if addr == Some(0) {
         crate::warn!("-stack_addr 0x0 has no effect");
     }
     let addr = addr.filter(|&addr| addr != 0);
     if let Some(addr) = addr {
-        let page = if args.relocatable || args.preload { 0x1000 } else { target.page_size };
+        let page = if args.relocatable { 0x1000 } else { args.segment_align };
         if !addr.is_multiple_of(page) {
             fatal!("-stack_addr (0x{addr:08X}) must be multiples of page size (0x{page:08X})");
         }
@@ -2141,11 +2158,9 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
     if addr.is_some() && !args.static_link {
         fatal!("-stack_addr can't be used with modern executables");
     }
-    if !size.is_multiple_of(target.page_size) {
-        fatal!(
-            "-stack_size (0x{size:08X}) must be multiples of page size (0x{:08X})",
-            target.page_size
-        );
+    let page = args.segment_align;
+    if !size.is_multiple_of(page) {
+        fatal!("-stack_size (0x{size:08X}) must be multiples of page size (0x{page:08X})");
     }
     let default_top = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
     let top = addr.unwrap_or(default_top);
@@ -2321,16 +2336,32 @@ fn resolve_segprots(
     out
 }
 
+/// The segment alignment: -segalign's, rounded down to a power of two
+/// with a warning as ld-prime does (the last one given wins), else the
+/// page size (4 KiB for a -preload image). ld-prime lays out nothing
+/// with 0, as no power of two lies below it.
+fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
+    match segalign {
+        None if args.preload => 0x1000,
+        None => target.page_size,
+        Some(0) => fatal!("alignment for -segalign 0x0 is not a power of two"),
+        Some(align) if align.is_power_of_two() => align,
+        Some(align) => {
+            let p2 = 1 << align.ilog2();
+            crate::warn!(
+                "alignment for -segalign 0x{align:X} is not a power of two, using 0x{p2:X}"
+            );
+            p2
+        }
+    }
+}
+
 /// -seg_page_size's (segment, size) pairs, as ld-prime takes them: a
 /// size rounds down to a power of two, with a warning; one below the
-/// page size is an error but in an object file, where it means nothing;
-/// and the first size given for a segment wins.
-fn resolve_seg_page_sizes(
-    target: &TargetTraits,
-    args: &Args,
-    sizes: Vec<(String, u64)>,
-) -> Vec<(String, u64)> {
-    let page = if args.preload { 0x1000 } else { target.page_size };
+/// page size (the segment alignment) is an error but in an object file,
+/// where it means nothing; and the first size given for a segment wins.
+fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(String, u64)>) -> Vec<(String, u64)> {
+    let page = args.segment_align;
     let mut out: Vec<(String, u64)> = Vec::new();
     for (name, mut size) in sizes {
         if size != 0 && !size.is_power_of_two() {
