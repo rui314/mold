@@ -2980,14 +2980,32 @@ fn merged_name(name: SectionName) -> Option<SectionName> {
 /// section renames it, and the first -rename_segment naming the
 /// resulting segment then moves it - after a -rename_section too, so
 /// a section renamed into a renamed segment moves on. Neither applies
-/// twice: -rename_section chains A to B and B to C take A to B.
+/// twice: -rename_section chains A to B and B to C take A to B. A
+/// section of a legacy name no -rename_section names takes its modern
+/// name in its place (see modern_name).
 pub(crate) fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
     let (seg, sect) = name;
     let (seg, sect) = match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
         Some((_, _, s, t)) => (static_name(s), static_name(t)),
-        None => name,
+        None => modern_name(name),
     };
     (renamed_segment(args, seg), sect)
+}
+
+/// The name ld-prime gives a section of a name old compilers used for
+/// coalesced (weak) code and data, which lives in the usual sections
+/// now: __textcoal_nt is __text, __const_coal __const and
+/// __datacoal_nt __data, in the segments ld-prime knows the old names
+/// in. It renames them in a final image and a -r output alike, and a
+/// boundary symbol's section too, but the flags and the __DATA_CONST
+/// move follow the old name: a __DATA,__const_coal stays in __DATA.
+fn modern_name(name: SectionName) -> SectionName {
+    match name {
+        ("__TEXT", "__textcoal_nt") => ("__TEXT", "__text"),
+        ("__TEXT" | "__DATA" | "__DATA_CONST", "__const_coal") => (name.0, "__const"),
+        ("__DATA" | "__DATA_DIRTY", "__datacoal_nt") => (name.0, "__data"),
+        _ => name,
+    }
 }
 
 /// The segment -rename_segment moves a segment's sections to.
@@ -3289,6 +3307,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
     let map = SectionMap::new(ctx);
+    let text = text_section_name(ctx);
     // Each input section name's output section - by its flags too,
     // which say whether -text_exec moves it and whether it is the
     // standard section of its name (see is_standard_section).
@@ -3340,9 +3359,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                             // counts if it names an atom (see
                             // bare_sections), in -r too.
                             let mut osec = OutputSection::new(out.0, out.1);
-                            osec.hdr.flags = if !relocatable && out == ("__TEXT", "__text") {
+                            osec.hdr.flags = if !relocatable && out == text {
                                 // ld-prime makes a final image's __text
-                                // itself, as code, whatever its members.
+                                // itself, as code, whatever its members
+                                // (and under its -rename_section name).
                                 S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
                             } else {
                                 let input = input_section_flags(seg, sect, hdr.flags);
@@ -3388,7 +3408,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // A final image always has a __text section, empty if no code
     // reached it (a dylib of only data; ld-prime writes one of size 0,
     // byte-aligned).
-    let text = text_section_name(ctx);
     if !relocatable && !by_out.contains_key(&text) {
         let mut osec = OutputSection::new(text.0, text.1);
         osec.hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
