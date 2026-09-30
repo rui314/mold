@@ -892,12 +892,16 @@ impl MethodListFinder {
         if !self.classes_seen.insert(cls) {
             return;
         }
-        // class_t: isa, superclass, cache, vtable, data (the ro).
+        // class_t: isa, superclass, cache, vtable, data (the ro). A
+        // Swift class's class_t starts past its metadata's prefix, not
+        // at the start of its subsection.
         if let Some(ro) = objc_class_ro(ctx, cls) {
             // class_ro_t: baseMethods at 32.
             self.note(ctx, ro, 32);
         }
-        if let Some(meta) = objc_pointer_at(ctx, cls.0, 0).and_then(|r| objc_ref_location(ctx, r)) {
+        if let Some(meta) =
+            objc_pointer_at(ctx, cls.0, cls.1).and_then(|r| objc_ref_location(ctx, r))
+        {
             self.visit_class(ctx, meta);
         }
     }
