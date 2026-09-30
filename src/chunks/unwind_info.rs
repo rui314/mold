@@ -77,6 +77,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     if records.is_empty() {
         return (Vec::new(), Vec::new());
     }
+    records.extend(bare_code_records(ctx, &records));
 
     let base = ctx.args.pagezero_size;
     let func_addr = |r: &crate::input_files::UnwindRecord| {
@@ -315,4 +316,40 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     buf.extend_from_slice(&lsda);
     buf.extend_from_slice(&page2);
     (buf, personalities)
+}
+
+/// Records for the code that has no unwind information: ld-prime gives
+/// every atom of an instruction section an entry, encoding 0 ("none")
+/// for one without a record of its own, so that it does not fall under
+/// the unwind rules of the function before it.
+fn bare_code_records<E: Target>(
+    ctx: &Context<E>,
+    records: &[crate::input_files::UnwindRecord],
+) -> Vec<crate::input_files::UnwindRecord> {
+    use crate::input_files::{UNWIND_NONE, UnwindRecord};
+    let covered: std::collections::HashSet<u32> =
+        records.iter().filter(|r| r.input_offset == 0).map(|r| r.isec).collect();
+    ctx.isecs
+        .par_iter()
+        .enumerate()
+        .filter(|&(i, isec)| {
+            isec.is_alive()
+                && isec.replacement == crate::input_sections::NO_REPLACEMENT
+                && isec.size > 0
+                && !ctx.is_internal(isec.file as usize)
+                && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)
+                    != 0
+                && !covered.contains(&(i as u32))
+        })
+        .map(|(i, isec)| UnwindRecord {
+            isec: i as u32,
+            input_offset: 0,
+            code_len: isec.size,
+            encoding: 0,
+            personality_sym: UNWIND_NONE,
+            lsda_isec: UNWIND_NONE,
+            lsda_off: 0,
+            fde_idx: UNWIND_NONE,
+        })
+        .collect()
 }
