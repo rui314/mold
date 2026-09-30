@@ -2,7 +2,6 @@
 . $(dirname $0)/common.inc
 
 [ $MACHINE = m68k ] && skip
-[ $MACHINE = sh4 ] && skip
 [ $MACHINE = sh4aeb ] && skip
 
 # OneTBB isn't tsan-clean

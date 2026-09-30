@@ -6,7 +6,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
-use crate::target::Target;
+use crate::target::{Family, Target};
 
 // EhFrameRelocSection contains relocation records for .eh_frame. It is used
 // only for relocatable outputs (an .o file rather than an executable or .so).
@@ -38,8 +38,8 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     sec.shdr.sh_info.set(ctx.eh_frame.shndx);
 }
 
-/// Writes the relocations; with REL and `-r`, addends are written into
-/// `.eh_frame` itself, which is passed as `eh_frame_buf`.
+/// Writes the relocations; with REL or SH4 and `-r`, addends are written
+/// into `.eh_frame` itself, which is passed as `eh_frame_buf`.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
     let out = rels_from_bytes_mut::<E>(buf);
     let mut eh_frame_buf = eh_frame_buf;
@@ -65,7 +65,10 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Optio
         })
         .expect("relocation refers to a section without output");
         rel.set_r_sym(r_sym);
-        if E::IS_RELA {
+
+        // SH4 is RELA, but its object files keep addends in the relocated
+        // places as REL ones do.
+        if E::IS_RELA && E::FAMILY != Family::Sh4 {
             rel.set_r_addend(addend);
         } else if ctx.args.relocatable
             && is_section

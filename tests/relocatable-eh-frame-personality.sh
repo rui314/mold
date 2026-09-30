@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = sh4 ] && skip
 [ $MACHINE = sh4aeb ] && skip
 
 # ARM uses .ARM.exidx instead of .eh_frame.
