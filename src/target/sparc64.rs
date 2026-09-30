@@ -66,8 +66,8 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::target::{Family, Target};
-use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
-use crate::util::{bit, bits};
+use crate::util::bits;
+use crate::util::endian::{read_ub32, write_ub16, write_ub32, write_ub64};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -458,10 +458,10 @@ impl Target for Sparc64 {
                 }
                 R_SPARC_DISP64 => write_ub64(loc, pcrel),
                 R_SPARC_WDISP16 => {
-                    check(pcrel as i64, -(1 << 16), 1 << 16);
-                    let field = (bit(pcrel, 16) << 21) | bits(pcrel, 15, 2);
-                    let cur = read_ub16(loc);
-                    write_ub16(loc, (cur as u64 | field) as u16);
+                    // The displacement is split into d16hi at bits 21:20 and
+                    // d16lo at bits 13:0.
+                    check(pcrel as i64, -(1 << 17), 1 << 17);
+                    or32(loc, (bits(pcrel, 17, 16) << 20) | bits(pcrel, 15, 2));
                 }
                 R_SPARC_WDISP19 => {
                     check(pcrel as i64, -(1 << 20), 1 << 20);
