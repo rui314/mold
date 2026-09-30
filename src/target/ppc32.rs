@@ -274,6 +274,11 @@ impl Target for Ppc32 {
             let plt = || sym.got_addr(ctx).wrapping_sub(a).wrapping_sub(got2);
             let loc = &mut buf[rel.r_offset() as usize..];
 
+            let write16s = |loc: &mut [u8], val: u64| {
+                isec.check_range(ctx, rel, val as i64, -(1 << 15), 1 << 15);
+                write_ub16(loc, val as u16);
+            };
+
             match rel.r_type() {
                 R_PPC_ADDR14 => or32(loc, bits(sa, 15, 2) << 2),
                 R_PPC_ADDR16 | R_PPC_UADDR16 | R_PPC_ADDR16_LO => write_ub16(loc, lo(sa) as u16),
@@ -304,7 +309,8 @@ impl Target for Ppc32 {
                     or32(loc, bits(val as u64, 25, 2) << 2);
                 }
                 R_PPC_REL32 | R_PPC_PLTREL32 => write_ub32(loc, pcrel as u32),
-                R_PPC_GOT16 | R_PPC_GOT16_LO => write_ub16(loc, lo(g().wrapping_add(a)) as u16),
+                R_PPC_GOT16 => write16s(loc, g().wrapping_add(a)),
+                R_PPC_GOT16_LO => write_ub16(loc, lo(g().wrapping_add(a)) as u16),
                 R_PPC_GOT16_HI => write_ub16(loc, hi(g().wrapping_add(a)) as u16),
                 R_PPC_GOT16_HA => write_ub16(loc, ha(g().wrapping_add(a)) as u16),
                 R_PPC_TPREL16_LO => write_ub16(loc, lo(sa.wrapping_sub(ctx.tp_addr)) as u16),
@@ -313,9 +319,9 @@ impl Target for Ppc32 {
                 R_PPC_DTPREL16_LO => write_ub16(loc, lo(sa.wrapping_sub(ctx.dtp_addr)) as u16),
                 R_PPC_DTPREL16_HI => write_ub16(loc, hi(sa.wrapping_sub(ctx.dtp_addr)) as u16),
                 R_PPC_DTPREL16_HA => write_ub16(loc, ha(sa.wrapping_sub(ctx.dtp_addr)) as u16),
-                R_PPC_GOT_TLSGD16 => write_ub16(loc, sym.tlsgd_addr(ctx).wrapping_sub(got) as u16),
-                R_PPC_GOT_TLSLD16 => write_ub16(loc, ctx.got.tlsld_addr().wrapping_sub(got) as u16),
-                R_PPC_GOT_TPREL16 => write_ub16(loc, sym.gottp_addr(ctx).wrapping_sub(got) as u16),
+                R_PPC_GOT_TLSGD16 => write16s(loc, sym.tlsgd_addr(ctx).wrapping_sub(got)),
+                R_PPC_GOT_TLSLD16 => write16s(loc, ctx.got.tlsld_addr().wrapping_sub(got)),
+                R_PPC_GOT_TPREL16 => write16s(loc, sym.gottp_addr(ctx).wrapping_sub(got)),
                 R_PPC_UADDR32 | R_PPC_TLS | R_PPC_TLSGD | R_PPC_TLSLD | R_PPC_PLTSEQ
                 | R_PPC_PLTCALL => {}
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
