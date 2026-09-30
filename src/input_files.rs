@@ -751,6 +751,7 @@ pub fn stage_object<E: Target>(
     obj.unwind.retain(|rec| {
         rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
     });
+    obj.group_unwind_records();
     obj
 }
 
@@ -1735,6 +1736,38 @@ impl StagedObject {
         // A record no relocation gave a function describes nothing.
         records.retain(|rec| rec.isec != u32::MAX);
         self.unwind.extend(records);
+    }
+
+    /// Gathers each subsection's unwind records into one run, the range
+    /// its unwind_offset and nunwind name. The records come in the order
+    /// of __compact_unwind, then the FDE-only functions', so those of a
+    /// subsection may lie apart: a section without subsections holds
+    /// many functions, and a subsection's function may have a record
+    /// and one of its alt entries an FDE alone. The runs keep the order
+    /// of their first records, so records already in runs, as every
+    /// compiler writes them, keep the input order a -r output copies.
+    fn group_unwind_records(&mut self) {
+        if self.unwind.is_empty() {
+            return;
+        }
+        let mut rank = vec![u32::MAX; self.isecs.len()];
+        let mut runs = 0;
+        let mut grouped = true;
+        for (i, rec) in self.unwind.iter().enumerate() {
+            if i > 0 && self.unwind[i - 1].isec == rec.isec {
+                continue;
+            }
+            let r = &mut rank[rec.isec as usize];
+            if *r == u32::MAX {
+                *r = runs;
+                runs += 1;
+            } else {
+                grouped = false;
+            }
+        }
+        if !grouped {
+            self.unwind.sort_by_key(|rec| rank[rec.isec as usize]);
+        }
     }
 }
 
