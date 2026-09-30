@@ -373,14 +373,18 @@ impl<E: Target> Context<E> {
         })
     }
 
-    /// Returns true if the deployment target defaults to chained fixups.
+    /// Returns true if the output defaults to chained fixups: its
+    /// deployment target is new enough, and it is not a non-PIE
+    /// executable, which ld-prime gives classic dyld info whatever the
+    /// target.
     pub fn chained_fixups_by_default(&self) -> bool {
-        crate::macho::is_new_os(
-            E::NAME,
-            self.args.output_type,
-            self.args.platform,
-            self.args.platform_minos,
-        )
+        (self.args.pie || self.args.output_type != crate::macho::MH_EXECUTE)
+            && crate::macho::is_new_os(
+                E::NAME,
+                self.args.output_type,
+                self.args.platform,
+                self.args.platform_minos,
+            )
     }
 
     /// Whether the file is the internal object holding synthesized
