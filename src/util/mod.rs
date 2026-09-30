@@ -108,3 +108,9 @@ pub fn sha256(data: &[u8], out: &mut [u8; 32]) {
     use sha2::Digest;
     out.copy_from_slice(&sha2::Sha256::digest(data));
 }
+
+/// Computes the SHA-1 hash of `data` into `out`.
+pub fn sha1(data: &[u8], out: &mut [u8; 20]) {
+    use sha1::Digest;
+    out.copy_from_slice(&sha1::Sha1::digest(data));
+}

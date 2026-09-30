@@ -204,11 +204,14 @@ pub const X86_64_RELOC_TLV: u8 = 9;
 pub const CSMAGIC_EMBEDDED_SIGNATURE: u32 = 0xfade_0cc0;
 pub const CSMAGIC_CODEDIRECTORY: u32 = 0xfade_0c02;
 pub const CSSLOT_CODEDIRECTORY: u32 = 0;
+pub const CSSLOT_ALTERNATE_CODEDIRECTORIES: u32 = 0x1000;
 pub const CS_ADHOC: u32 = 0x2;
 pub const CS_LINKER_SIGNED: u32 = 0x2_0000;
 pub const CS_SUPPORTSEXECSEG: u32 = 0x2_0400;
+pub const CS_HASHTYPE_SHA1: u8 = 1;
 pub const CS_HASHTYPE_SHA256: u8 = 2;
 pub const CS_EXECSEG_MAIN_BINARY: u64 = 0x1;
+pub const SHA1_SIZE: usize = 20;
 pub const SHA256_SIZE: usize = 32;
 
 // The page size used for code signature hashing. This is independent of

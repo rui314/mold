@@ -5578,7 +5578,7 @@ fn layout_segment<E: Target>(
             }
             ChunkId::CodeSignature => {
                 cursor = align_to(cursor, 16);
-                chunks::code_signature::size(&ctx.args.output, cursor)
+                chunks::code_signature::size(ctx, cursor)
             }
             _ => ctx.chunk_header(id).size,
         };
