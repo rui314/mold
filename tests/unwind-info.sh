@@ -73,6 +73,43 @@ if [ $ARCH = arm64 ]; then
   [ "$(sed -n 2p $t/entries5 | cut -d' ' -f1)" = "$(addr $t/exe5 _main)" ]
 fi
 
+# Entries of encoding 0, code without unwind info, are never merged,
+# whether a record or no record says so; code in a section that is not
+# of pure instructions, which the assembler marks as holding some, is
+# no function and gets none. The common encodings table ranks the
+# encodings of the merged entries by use, ties in increasing order.
+rec() { printf '.quad _%s\n.long 1\n.long %s\n.quad 0\n.quad 0\n' $1 $2; }
+{
+  echo .text
+  for f in main z1 z2 bare a1 a2 a3 b1 c1 b2 c2; do
+    printf '.globl _%s\n_%s:\n  ret\n' $f $f
+  done
+  printf '.section __TEXT,__bar,regular\n_in_bar:\n  ret\n'
+  echo '.section __LD,__compact_unwind,regular,debug'
+  echo '.p2align 3'
+  rec main 0x02000000; rec z1 0; rec z2 0
+  rec a1 0x02010000; rec a2 0x02010000; rec a3 0x02010000
+  rec b1 0x02030000; rec c1 0x02020000; rec b2 0x02030000; rec c2 0x02020000
+  echo .subsections_via_symbols
+} | $CC -o $t/g.o -c -xassembler -
+$CC --ld-path=$mold -o $t/exe6 $t/g.o
+unwind_entries $t/exe6 > $t/entries6
+grep -q "^$(addr $t/exe6 _z2) 0x0$" $t/entries6
+grep -q "^$(addr $t/exe6 _bare) 0x0$" $t/entries6
+not grep -q "^$(addr $t/exe6 _a2) " $t/entries6
+not grep -q "^$(addr $t/exe6 _in_bar) " $t/entries6
+python3 - $t/exe6 > $t/common6 <<'EOF2'
+import struct, subprocess, sys
+out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
+for i, l in enumerate(out):
+    if l.strip() == 'sectname __unwind_info':
+        off = int(out[i + 4].split()[1])
+d = open(sys.argv[1], 'rb').read()[off:]
+_, ceo, cec = struct.unpack_from('<3I', d, 0)
+print(*[hex(e) for e in struct.unpack_from(f'<{cec}I', d, ceo)])
+EOF2
+[ "$(cat $t/common6)" = "0x0 0x2020000 0x2030000" ]
+
 # With more entries than a page holds, ld-prime fills the 4096-byte
 # second-level pages from the first function on, starts each page at
 # an 8-byte boundary of the section, and sizes the first-level index

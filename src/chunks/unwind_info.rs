@@ -136,31 +136,31 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     // Merge consecutive records with identical contents. An entry has no
     // length - it covers the code up to the next one - so the padding
-    // between two functions does not keep them apart.
+    // between two functions does not keep them apart. ld-prime keeps
+    // each entry of encoding 0, code without unwind info, though.
     records.dedup_by(|rec, last| {
-        last.encoding == rec.encoding
+        rec.encoding != 0
+            && last.encoding == rec.encoding
             && last.personality() == rec.personality()
             && last.lsda().is_none()
             && rec.lsda().is_none()
     });
 
-    // The common encodings table: the encodings the image uses more
-    // than once, most frequent first, up to 127 of them (a compressed
-    // entry's 8-bit index names a common encoding below the table's
-    // count and a page-local one above it). ld64 fills it the same
-    // way; a one-off encoding - every DWARF-mode one, with its FDE
-    // offset - stays page-local.
+    // The common encodings table: the encodings the merged entries use
+    // more than once, most frequent first and equally frequent ones in
+    // increasing order, up to 127 of them (a compressed entry's 8-bit
+    // index names a common encoding below the table's count and a
+    // page-local one above it). ld64 fills it the same way; a one-off
+    // encoding - every DWARF-mode one, with its FDE offset - stays
+    // page-local.
     let common: Vec<(u32, usize)> = {
-        let mut freq: std::collections::HashMap<u32, (usize, usize)> =
-            std::collections::HashMap::new();
-        for (i, rec) in records.iter().enumerate() {
-            let e = freq.entry(rec.encoding).or_insert((0, i));
-            e.0 += 1;
+        let mut freq: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for rec in &records {
+            *freq.entry(rec.encoding).or_default() += 1;
         }
-        let mut all: Vec<(u32, usize, usize)> =
-            freq.into_iter().map(|(e, (n, first))| (e, n, first)).collect();
-        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
-        all.into_iter().filter(|&(_, n, _)| n > 1).take(127).map(|(e, n, _)| (e, n)).collect()
+        let mut all: Vec<(u32, usize)> = freq.into_iter().collect();
+        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        all.into_iter().filter(|&(_, n)| n > 1).take(127).collect()
     };
     let common_idx: std::collections::HashMap<u32, u32> =
         common.iter().enumerate().map(|(i, &(e, _))| (e, i as u32)).collect();
@@ -376,10 +376,12 @@ fn function_lsda<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> Option<(usi
 }
 
 /// Records for the code that has no unwind information: ld-prime gives
-/// every atom of an instruction section an entry, encoding 0 ("none")
-/// for one without a record of its own, so that it does not fall under
-/// the unwind rules of the function before it - an empty atom too,
-/// such as the empty __text of an object with only data.
+/// every atom of a code section - an output section of pure
+/// instructions, not one the assembler marked as holding some - an
+/// entry, encoding 0 ("none") for one without a record of its own, so
+/// that it does not fall under the unwind rules of the function before
+/// it - an empty atom too, such as the empty __text of an object with
+/// only data.
 fn bare_code_records<E: Target>(
     ctx: &Context<E>,
     records: &[crate::input_files::UnwindRecord],
@@ -394,8 +396,9 @@ fn bare_code_records<E: Target>(
             isec.is_alive()
                 && isec.replacement == crate::input_sections::NO_REPLACEMENT
                 && !ctx.is_internal(isec.file as usize)
-                && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)
-                    != 0
+                && isec
+                    .output_section()
+                    .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)
                 && !covered.contains(&(i as u32))
         })
         .map(|(i, isec)| UnwindRecord {
