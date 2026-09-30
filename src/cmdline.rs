@@ -462,30 +462,100 @@ impl Args {
     }
 }
 
-/// Parses an X.Y.Z version string.
-fn parse_version(arg: &str) -> u32 {
-    let mut it = arg.split('.');
-    let mut next = |what| match it.next() {
-        None => 0,
-        Some(s) => match s.parse() {
-            Ok(num) => num,
-            Err(_) => fatal!("malformed version number: {what}: {arg}"),
-        },
+/// The numbers of an X.Y.Z version, however many there are (an empty
+/// one is 0). ld-prime's complaint about anything else names the
+/// option, if there is one to name (a -target triple has none).
+fn version_numbers(opt: &str, arg: &str) -> Vec<u64> {
+    let nums = if arg.is_empty() || arg.ends_with('.') {
+        None
+    } else {
+        arg.split('.')
+            .map(|s| match s {
+                "" => Some(0),
+                _ if s.bytes().all(|c| c.is_ascii_digit()) => s.parse().ok(),
+                _ => None,
+            })
+            .collect()
     };
-    let major = next("major");
-    let minor = next("minor");
-    let patch = next("patch");
-    encode_version(major, minor, patch)
+    nums.unwrap_or_else(|| {
+        fatal!("{}malformed 32-bit xxxx.yy.zz version number: '{arg}'", option_prefix(opt))
+    })
+}
+
+fn option_prefix(opt: &str) -> String {
+    if opt.is_empty() { String::new() } else { format!("{opt}: ") }
+}
+
+/// The most each number of a version may be: LC_BUILD_VERSION and
+/// LC_ID_DYLIB pack X.Y.Z into 16, 8 and 8 bits.
+const VERSION_LIMITS: [u64; 3] = [0xffff, 0xff, 0xff];
+
+fn fits_version(nums: &[u64]) -> bool {
+    nums.len() <= 3 && nums.iter().zip(VERSION_LIMITS).all(|(&num, max)| num <= max)
+}
+
+/// Parses an OS version, which ld-prime refuses if it doesn't fit.
+fn parse_version(opt: &str, arg: &str) -> u32 {
+    let nums = version_numbers(opt, arg);
+    if !fits_version(&nums) {
+        fatal!(
+            "{}malformed version number '{arg}' cannot fit in 32-bit xxxx.yy.zz",
+            option_prefix(opt)
+        );
+    }
+    let num = |i: usize| nums.get(i).map_or(0, |&num| num as u32);
+    encode_version(num(0), num(1), num(2))
+}
+
+/// Parses a dylib's current or compatibility version, which ld-prime
+/// truncates to fit, with a warning: each number to its most, and the
+/// numbers past the third dropped (ld64 took five for the current
+/// version).
+fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u32 {
+    let nums = version_numbers(opt, arg);
+    if !fits_version(&nums) {
+        warnings.warn(format!("truncating {opt} to fit in 32-bit space used by old mach-o format"));
+    }
+    let num = |i: usize| nums.get(i).map_or(0, |&num| num.min(VERSION_LIMITS[i]) as u32);
+    encode_version(num(0), num(1), num(2))
 }
 
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
 /// number; Xcode passes the number for some prelink steps
-/// (`-platform_version 1 11.0`).
+/// (`-platform_version 1 11.0`). A platform ld-prime knows but mold
+/// does not link for is unsupported, and any other name unknown.
 fn parse_platform(arg: &str) -> u32 {
-    match arg.to_ascii_lowercase().as_str() {
-        "macos" | "macosx" | "1" => PLATFORM_MACOS,
-        "firmware" | "13" => PLATFORM_FIRMWARE,
-        _ => fatal!("unsupported platform: {arg}"),
+    let name = arg.to_ascii_lowercase();
+    let number = match name.bytes().all(|c| c.is_ascii_digit()) {
+        true => name.parse::<u32>().ok(),
+        false => None,
+    };
+    match (name.as_str(), number) {
+        ("macos" | "macosx", _) | (_, Some(PLATFORM_MACOS)) => PLATFORM_MACOS,
+        ("firmware", _) | (_, Some(PLATFORM_FIRMWARE)) => PLATFORM_FIRMWARE,
+        // ld-prime numbers its platforms up to 30.
+        (_, Some(1..=30)) => fatal!("unsupported platform: {arg}"),
+        (name, _) if is_other_platform(name) => fatal!("unsupported platform: {arg}"),
+        _ => fatal!("-platform_version unknown platform: {arg}"),
+    }
+}
+
+/// Whether ld-prime knows a platform name (in lower case) mold does not
+/// link for: Apple's other OSes, their simulators, exclaves and kernel
+/// kits.
+fn is_other_platform(name: &str) -> bool {
+    let (os, variant) = name.split_once('-').unwrap_or((name, ""));
+    let apple_os = matches!(os, "macos" | "ios" | "tvos" | "watchos" | "visionos" | "xros");
+    match variant {
+        "" => {
+            apple_os && os != "macos"
+                || matches!(os, "bridgeos" | "driverkit" | "sepos" | "maccatalyst")
+        }
+        "simulator" => apple_os && os != "macos",
+        "exclavecore" | "exclavekit" => apple_os,
+        "kernelkit" => apple_os || os == "bridgeos",
+        "catalyst" => os == "mac",
+        _ => false,
     }
 }
 
@@ -511,9 +581,10 @@ fn parse_triple(triple: &str) -> (&str, u32, u32) {
         fatal!("missing dashes in target triple '{triple}'");
     };
     let (os_name, version) = os.split_at(os.find(|c: char| c.is_ascii_digit()).unwrap_or(os.len()));
-    let platform = match os_name {
+    let platform = match os_name.to_ascii_lowercase().as_str() {
         "macos" | "macosx" => PLATFORM_MACOS,
         "firmware" => PLATFORM_FIRMWARE,
+        name if is_other_platform(name) => fatal!("unsupported platform: {os_name}"),
         _ => 0,
     };
     // An environment after the version (clang makes x86-64 firmware
@@ -525,7 +596,7 @@ fn parse_triple(triple: &str) -> (&str, u32, u32) {
     let minos = match version {
         "" if platform == PLATFORM_FIRMWARE => encode_version(0, 0, 0),
         "" => fatal!("missing OS version in target triple '{triple}'"),
-        _ => parse_version(version),
+        _ => parse_version("", version),
     };
     (arch, platform, minos)
 }
@@ -954,8 +1025,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let minos = text(name, next_arg(&mut i, name));
                 let sdk = text(name, next_arg(&mut i, name));
                 args.platform = parse_platform(platform);
-                args.platform_minos = parse_version(minos);
-                args.platform_sdk = parse_version(sdk);
+                args.platform_minos = parse_version(name, minos);
+                args.platform_sdk = parse_version(name, sdk);
             }
             b"-syslibroot" => args.syslibroot.push(path(next_arg(&mut i, name))),
             b"-L" => args.library_paths.push(path(next_arg(&mut i, name))),
@@ -1231,10 +1302,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The -dylib_ spellings are the older names ld64 still
             // accepts; Xcode passes -dylib_compatibility_version.
             b"-current_version" | b"-dylib_current_version" => {
-                args.current_version = parse_version(text(name, next_arg(&mut i, name)))
+                let version = text(name, next_arg(&mut i, name));
+                args.current_version = parse_dylib_version(name, version, &mut warnings);
             }
             b"-compatibility_version" | b"-dylib_compatibility_version" => {
-                args.compatibility_version = parse_version(text(name, next_arg(&mut i, name)))
+                let version = text(name, next_arg(&mut i, name));
+                args.compatibility_version = parse_dylib_version(name, version, &mut warnings);
             }
             // ld64 prints its version banner to stdout and continues
             // with the link.
@@ -1373,7 +1446,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // flag carries no separate SDK).
             b"-macos_version_min" | b"-macosx_version_min" => {
                 args.platform = PLATFORM_MACOS;
-                args.platform_minos = parse_version(text(name, next_arg(&mut i, name)));
+                args.platform_minos = parse_version(name, text(name, next_arg(&mut i, name)));
                 args.platform_sdk = args.platform_minos;
             }
 
