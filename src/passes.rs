@@ -3683,6 +3683,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     if !relocatable {
         resolve_zerofill_conflicts(ctx, &fill_kinds);
+        check_tlv_sections(ctx);
     }
     place_replacing_blobs(ctx);
 
@@ -4729,6 +4730,22 @@ fn resolve_zerofill_conflict<E: Target>(
         msg += &format!("\n  {}", name(file));
     }
     crate::warn!("{msg}");
+}
+
+/// Reports each section of a final image named __thread_data or
+/// __thread_bss, in any segment, that its first member doesn't type as
+/// thread-local data, as ld-prime does: it takes those names for the
+/// template dyld copies for each thread, which the variables' offsets
+/// count from.
+fn check_tlv_sections<E: Target>(ctx: &Context<E>) {
+    for osec in &ctx.output_sections {
+        let hdr = &osec.hdr;
+        if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss")
+            && !matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
+        {
+            error!("Missing TLV section flags in {},{}", hdr.segname, hdr.sectname);
+        }
+    }
 }
 
 /// The object each common symbol's subsection stands for the tentative
