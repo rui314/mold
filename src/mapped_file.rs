@@ -11,6 +11,8 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read};
 use std::ops::Range;
+#[cfg(not(windows))]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,6 +29,11 @@ static FILE_POOL: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
 
 /// The files that are memory-mapped, for [`drop_mappings`].
 static MMAPPED_FILES: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
+
+/// The device and inode numbers of the memory-mapped files, for
+/// [`is_mmapped`].
+#[cfg(not(windows))]
+static MMAPPED_INODES: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
 
 /// Returns all files opened during this link, sorted by name. Input
 /// files are opened in parallel, so the order in which they were opened
@@ -59,6 +66,21 @@ pub fn drop_mappings() {
             )
         };
     });
+}
+
+/// Returns true if the file at `path` is memory-mapped as an input. Such a
+/// file must not be written in place, because a private mapping reflects
+/// changes to the file in the pages it has not copied yet.
+#[cfg(not(windows))]
+pub fn is_mmapped(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .is_ok_and(|m| MMAPPED_INODES.lock().unwrap().contains(&(m.dev(), m.ino())))
+}
+
+/// Output files are never written in place on Windows.
+#[cfg(windows)]
+pub fn is_mmapped(_path: &Path) -> bool {
+    false
 }
 
 // Files up to this size are read into malloc'ed memory rather than
@@ -148,6 +170,8 @@ impl MappedFile {
         FILE_POOL.lock().unwrap().push(mf);
         if is_mmapped {
             MMAPPED_FILES.lock().unwrap().push(mf);
+            #[cfg(not(windows))]
+            MMAPPED_INODES.lock().unwrap().push((metadata.dev(), metadata.ino()));
         }
         Ok(mf)
     }

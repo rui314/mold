@@ -238,9 +238,13 @@ impl OutputFile {
 
         // Reuse an existing file if exists and writable because on Linux,
         // writing to an existing file is much faster than creating a fresh
-        // file and writing to it.
+        // file and writing to it. A file mapped as an input is not reused, as
+        // the linker is still reading it.
         let reuse_existing = || -> Option<File> {
-            if !overwrite_in_place || std::fs::rename(path, &tmp).is_err() {
+            if !overwrite_in_place
+                || crate::mapped_file::is_mmapped(path)
+                || std::fs::rename(path, &tmp).is_err()
+            {
                 return None;
             }
             match open_options(perm).read(true).write(true).create(true).open(&tmp) {
