@@ -13,7 +13,6 @@ use crate::symbol::SymbolId;
 use crate::tapi;
 use crate::target::Target;
 
-/// A relocatable object file.
 /// A file a symbol is owned by: an object or a dylib, by index in
 /// ctx.objs or ctx.dylibs. Dylib(u32::MAX) is an import resolved by
 /// dynamic lookup, which no dylib in the link provides. mold's
@@ -57,6 +56,7 @@ impl PlatformVersion {
     }
 }
 
+/// A relocatable object file.
 #[derive(Debug)]
 pub struct ObjectFile {
     pub mf: &'static MappedFile,
@@ -345,7 +345,6 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
 }
 
-/// Parses one object file without touching any linker state.
 /// The object's nlist_64 array as a slice of the mapped file, or None
 /// if it is unaligned or truncated (then the caller copies it).
 fn nlists_slice(data: &'static [u8], off: usize, n: usize) -> Option<&'static [NList]> {
@@ -436,9 +435,123 @@ fn bare_sections(
     bare
 }
 
-/// Parses an object. `keep_all_fdes` keeps the FDEs of functions a
-/// compact unwind record already covers, for an output that has no
-/// __unwind_info to hold that record (-r, -static).
+/// The load commands of an object that staging reads: its section
+/// headers (every segment's sections in load command order, the ordinal
+/// order nlists and relocations number them by), where its symbol table
+/// is, and the per-object records the link carries along.
+#[derive(Default)]
+struct LoadCommands {
+    sect_hdrs: Vec<MachSection>,
+    symtab: Option<SymtabCommand>,
+    dysymtab: Option<DysymtabCommand>,
+    linker_options: Vec<Vec<Vec<u8>>>,
+    platform_versions: Vec<PlatformVersion>,
+    dice: Vec<(u32, u16, u16)>,
+    loh: Vec<(u8, Vec<u64>)>,
+}
+
+impl LoadCommands {
+    fn read<E: Target>(data: &[u8], hdr: &MachHeader) -> Self {
+        let mut cmds = Self::default();
+        let mut off = size_of::<MachHeader>();
+        for _ in 0..hdr.ncmds {
+            let lc = LoadCommand::read_from(&data[off..]);
+            match lc.cmd {
+                LC_SEGMENT_64 => {
+                    let seg = SegmentCommand::read_from(&data[off..]);
+                    for i in 0..seg.nsects as usize {
+                        let sect_off =
+                            off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
+                        cmds.sect_hdrs.push(MachSection::read_from(&data[sect_off..]));
+                    }
+                }
+                LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(&data[off..])),
+                LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::read_from(&data[off..])),
+                LC_BUILD_VERSION
+                | LC_VERSION_MIN_MACOSX
+                | LC_VERSION_MIN_IPHONEOS
+                | LC_VERSION_MIN_TVOS
+                | LC_VERSION_MIN_WATCHOS => {
+                    let version = PlatformVersion::read(lc.cmd, &data[off..], E::CPUTYPE);
+                    cmds.platform_versions.push(version);
+                }
+                LC_LINKER_OPTION => {
+                    // Auto-link requests: the object names libraries it
+                    // needs, as NUL-terminated strings after a count.
+                    let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
+                    let mut strs = Vec::with_capacity(count as usize);
+                    let mut p = off + 12;
+                    for _ in 0..count {
+                        let rest = &data[p..off + lc.cmdsize as usize];
+                        let len = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
+                        strs.push(rest[..len].to_vec());
+                        p += len + 1;
+                    }
+                    cmds.linker_options.push(strs);
+                }
+                LC_DATA_IN_CODE => {
+                    let cmd = LinkEditDataCommand::read_from(&data[off..]);
+                    for i in 0..cmd.datasize as usize / 8 {
+                        let p = cmd.dataoff as usize + i * 8;
+                        cmds.dice.push((
+                            u32::from_le_bytes(data[p..p + 4].try_into().unwrap()),
+                            u16::from_le_bytes(data[p + 4..p + 6].try_into().unwrap()),
+                            u16::from_le_bytes(data[p + 6..p + 8].try_into().unwrap()),
+                        ));
+                    }
+                }
+                LC_LINKER_OPTIMIZATION_HINT => {
+                    // A stream of ULEB128 triples-and-more: kind, argument
+                    // count, then that many instruction addresses.
+                    let cmd = LinkEditDataCommand::read_from(&data[off..]);
+                    let payload =
+                        &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
+                    let mut pos = 0;
+                    while pos < payload.len() {
+                        let kind = read_uleb_at(payload, &mut pos);
+                        if kind == 0 {
+                            break;
+                        }
+                        let count = read_uleb_at(payload, &mut pos);
+                        let addrs = (0..count).map(|_| read_uleb_at(payload, &mut pos)).collect();
+                        cmds.loh.push((kind as u8, addrs));
+                    }
+                }
+                _ => {}
+            }
+            off += lc.cmdsize as usize;
+        }
+        cmds
+    }
+}
+
+/// Reads an object's symbol table: its nlists and string table. The
+/// nlist_64 array is used straight from the mmap when it is 8-aligned
+/// (ld64 aligns it; NList is #[repr(C)] nlist_64, all integer fields,
+/// so any bytes are a valid value) - no copy of 16 bytes per symbol.
+/// mold borrows its ElfSym array the same way (Cow, Owned only for
+/// synthesized symbols).
+fn read_symtab(
+    data: &'static [u8],
+    cmd: Option<&SymtabCommand>,
+) -> (std::borrow::Cow<'static, [NList]>, &'static [u8]) {
+    let Some(cmd) = cmd else {
+        return (std::borrow::Cow::Borrowed(&[]), &[]);
+    };
+    let (off, n) = (cmd.symoff as usize, cmd.nsyms as usize);
+    let nlists = match nlists_slice(data, off, n) {
+        Some(s) => std::borrow::Cow::Borrowed(s),
+        None => std::borrow::Cow::Owned(read_array(data, off, n)),
+    };
+    let strtab = validate_strtab(&data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize]);
+    (nlists, strtab)
+}
+
+/// Parses one object file without touching any linker state.
+/// `relocatable` is set for a -r link, which keeps a weak symbol's
+/// flags where a final link rewrites them. `keep_all_fdes` keeps the
+/// FDEs of functions a compact unwind record already covers, for an
+/// output that has no __unwind_info to hold that record (-r, -static).
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
@@ -455,102 +568,22 @@ pub fn stage_object<E: Target>(
     }
 
     let mut isecs: Vec<InputSection> = Vec::new();
-    let mut sect_hdrs = Vec::new();
-    let mut symtab_cmd = None;
-    let mut dysymtab_cmd: Option<DysymtabCommand> = None;
-    let mut linker_options = Vec::new();
-    let mut platform_versions = Vec::new();
-    let mut dice = Vec::new();
-    let mut loh = Vec::new();
-
-    // Read load commands
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        match lc.cmd {
-            LC_SEGMENT_64 => {
-                let seg = SegmentCommand::read_from(&data[off..]);
-                for i in 0..seg.nsects as usize {
-                    let sect_off = off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
-                    sect_hdrs.push(MachSection::read_from(&data[sect_off..]));
-                }
-            }
-            LC_SYMTAB => symtab_cmd = Some(SymtabCommand::read_from(&data[off..])),
-            LC_DYSYMTAB => dysymtab_cmd = Some(DysymtabCommand::read_from(&data[off..])),
-            LC_BUILD_VERSION
-            | LC_VERSION_MIN_MACOSX
-            | LC_VERSION_MIN_IPHONEOS
-            | LC_VERSION_MIN_TVOS
-            | LC_VERSION_MIN_WATCHOS => {
-                platform_versions.push(PlatformVersion::read(lc.cmd, &data[off..], E::CPUTYPE));
-            }
-            LC_LINKER_OPTION => {
-                // Auto-link requests: the object names libraries it
-                // needs, as NUL-terminated strings after a count.
-                let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
-                let mut strs = Vec::with_capacity(count as usize);
-                let mut p = off + 12;
-                for _ in 0..count {
-                    let rest = &data[p..off + lc.cmdsize as usize];
-                    let len = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
-                    strs.push(rest[..len].to_vec());
-                    p += len + 1;
-                }
-                linker_options.push(strs);
-            }
-            LC_DATA_IN_CODE => {
-                let cmd = LinkEditDataCommand::read_from(&data[off..]);
-                for i in 0..cmd.datasize as usize / 8 {
-                    let p = cmd.dataoff as usize + i * 8;
-                    dice.push((
-                        u32::from_le_bytes(data[p..p + 4].try_into().unwrap()),
-                        u16::from_le_bytes(data[p + 4..p + 6].try_into().unwrap()),
-                        u16::from_le_bytes(data[p + 6..p + 8].try_into().unwrap()),
-                    ));
-                }
-            }
-            LC_LINKER_OPTIMIZATION_HINT => {
-                // A stream of ULEB128 triples-and-more: kind, argument
-                // count, then that many instruction addresses.
-                let cmd = LinkEditDataCommand::read_from(&data[off..]);
-                let payload = &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
-                let mut pos = 0;
-                while pos < payload.len() {
-                    let kind = read_uleb_at(payload, &mut pos);
-                    if kind == 0 {
-                        break;
-                    }
-                    let count = read_uleb_at(payload, &mut pos);
-                    let addrs = (0..count).map(|_| read_uleb_at(payload, &mut pos)).collect();
-                    loh.push((kind as u8, addrs));
-                }
-            }
-            _ => {}
-        }
-        off += lc.cmdsize as usize;
-    }
+    let LoadCommands {
+        sect_hdrs,
+        symtab: symtab_cmd,
+        dysymtab: dysymtab_cmd,
+        linker_options,
+        platform_versions,
+        dice,
+        loh,
+    } = LoadCommands::read::<E>(data, &hdr);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
     // the object's section count and lives for the whole link.
     let sect_hdrs: &'static [MachSection] = Vec::leak(sect_hdrs);
 
-    // Read the symbol table. The nlist_64 array is used straight from
-    // the mmap when it is 8-aligned (ld64 aligns it; NList is #[repr(C)]
-    // nlist_64, all integer fields, so any bytes are a valid value) -
-    // no copy of 16 bytes per symbol. mold borrows its ElfSym
-    // array the same way (Cow, Owned only for synthesized symbols).
-    let mut nlists: std::borrow::Cow<'static, [NList]> = std::borrow::Cow::Borrowed(&[]);
-    let mut strtab: &'static [u8] = &[];
-    if let Some(cmd) = symtab_cmd {
-        nlists = match nlists_slice(data, cmd.symoff as usize, cmd.nsyms as usize) {
-            Some(s) => std::borrow::Cow::Borrowed(s),
-            None => {
-                std::borrow::Cow::Owned(read_array(data, cmd.symoff as usize, cmd.nsyms as usize))
-            }
-        };
-        strtab = validate_strtab(&data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize]);
-    }
+    let (mut nlists, strtab) = read_symtab(data, symtab_cmd.as_ref());
     let first_global = first_global_of(&nlists, dysymtab_cmd.as_ref());
 
     // Split each section into subsections at its symbols, the Mach-O
