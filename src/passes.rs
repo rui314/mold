@@ -313,10 +313,20 @@ fn collect_file<E: Target>(
 /// input order - the parallel front end of the mold design.
 fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let relocatable = ctx.args.relocatable;
+    let keep_all_fdes = relocatable || ctx.args.static_link;
     let t = ctx.timer("stage");
     let staged: Vec<input_files::StagedObject> = pending
         .par_iter()
-        .map(|p| input_files::stage_object::<E>(p.mf, p.alive, p.hidden, p.priority, relocatable))
+        .map(|p| {
+            input_files::stage_object::<E>(
+                p.mf,
+                p.alive,
+                p.hidden,
+                p.priority,
+                relocatable,
+                keep_all_fdes,
+            )
+        })
         .collect();
     drop(t);
 
@@ -4739,7 +4749,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::ObjcImageInfo);
     }
 
-    if !ctx.unwind_records.is_empty() {
+    // A -static image unwinds by its __eh_frame alone.
+    if !ctx.unwind_records.is_empty() && !ctx.args.static_link {
         ctx.chunks.push(ChunkId::UnwindInfo);
     }
 

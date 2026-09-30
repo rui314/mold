@@ -91,3 +91,18 @@ grep -q 'LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_UNIXTHREAD LC_FUNCTION_ST
 not grep -q 'cmd LC_CODE_SIGNATURE$' $t/lc
 $mold -arch $ARCH -static -e __start -adhoc_codesign $t/a.o $t/b.o -o $t/exe4
 otool -l $t/exe4 | grep -q 'cmd LC_CODE_SIGNATURE$'
+
+# It has no __unwind_info either: its compact unwind records go, and an
+# x86-64 image keeps every FDE of its objects' __eh_frame instead.
+cat <<EOF | $CC -o $t/c.o -c -xc -O1 -
+int g(int);
+int f(int x) { return g(x) + 1; }
+int g(int x) { return x * 2; }
+EOF
+$mold -arch $ARCH -static -e __start $t/a.o $t/b.o $t/c.o -o $t/exe5
+otool -l $t/exe5 > $t/lc5
+not grep -q 'sectname __unwind_info' $t/lc5
+if [ $ARCH = x86_64 ]; then
+  size() { otool -l $1 | grep -A4 'sectname __eh_frame' | awk '$1 == "size" { print $2 }'; }
+  [ "$(size $t/exe5)" = "$(size $t/c.o)" ]
+fi

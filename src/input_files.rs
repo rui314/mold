@@ -397,12 +397,16 @@ fn bare_sections(
     bare
 }
 
+/// Parses an object. `keep_all_fdes` keeps the FDEs of functions a
+/// compact unwind record already covers, for an output that has no
+/// __unwind_info to hold that record (-r, -static).
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
     hidden: bool,
     priority: u32,
     relocatable: bool,
+    keep_all_fdes: bool,
 ) -> StagedObject {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);
@@ -810,7 +814,7 @@ pub fn stage_object<E: Target>(
             &mut unwind,
             &mut cies,
             &mut fdes,
-            relocatable,
+            keep_all_fdes,
         );
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
@@ -1205,7 +1209,8 @@ pub fn parse_object<E: Target>(
     alive: bool,
 ) -> usize {
     let priority = ctx.next_priority();
-    let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable);
+    let keep_all_fdes = ctx.args.relocatable || ctx.args.static_link;
+    let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
     integrate_object(ctx, staged)
 }
 
@@ -1562,7 +1567,8 @@ fn parse_eh_frame<E: Target>(
     out_fdes: &mut Vec<Fde>,
     // Keep the FDEs of functions a compact record already covers: a
     // -r output carries every input CIE and FDE through, as ld64's
-    // does; a final image has no use for them.
+    // does, and a -static image has no __unwind_info for the compact
+    // record; any other final image has no use for them.
     keep_all_fdes: bool,
 ) {
     // Diagnostics spell the path lossily.
