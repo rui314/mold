@@ -37,6 +37,11 @@ otool -l $t/r.o > $t/lc
 [ "$(grep -c LC_LINKER_OPTION $t/lc)" = 2 ]
 grep -q -- '-lz' $t/lc
 grep -q Foundation $t/lc
+# The load commands come in ld64's order, and without -platform_version
+# the build version is the first object's.
+[ "$(grep '^ *cmd ' $t/lc | awk '{print $2}' | uniq | tr '\n' ' ')" = "LC_SEGMENT_64 LC_SYMTAB LC_BUILD_VERSION LC_DATA_IN_CODE LC_LINKER_OPTION " ]
+grep -A5 LC_BUILD_VERSION $t/lc | grep "minos $(otool -l $t/a.o | grep minos | awk '{print $2}')"
+grep -A5 LC_BUILD_VERSION $t/lc | grep "sdk $(otool -l $t/a.o | grep ' sdk ' | awk '{print $2}')"
 
 # The final link auto-links libz from the carried option.
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o

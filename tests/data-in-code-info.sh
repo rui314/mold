@@ -31,3 +31,13 @@ $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/b.o
 otool -G $t/exe4 > $t/log4
 grep -q '(1 entries)' $t/log4
 grep -Eq '^0x[0-9a-f]+ +8 +0x0004' $t/log4
+
+# A -r output carries them at their merged addresses, which is what an
+# object's entries hold (ld-prime): the jump table sits one instruction
+# past _start2.
+$mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
+otool -G $t/r.o > $t/log5
+grep -q '(1 entries)' $t/log5
+start2=0x$(nm $t/r.o | awk '$3 == "_start2" {print $1}')
+insn=$([ $ARCH = arm64 ] && echo 4 || echo 1)
+grep -Eq "^$(printf '0x%08x' $((start2 + insn))) +8 +0x0004" $t/log5

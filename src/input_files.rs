@@ -28,13 +28,16 @@ pub enum FileId {
 pub struct PlatformVersion {
     pub platform: u32,
     pub minos: u32,
+    /// The SDK the object was built against (a -r output without a
+    /// -platform_version takes the first object's).
+    pub sdk: u32,
 }
 
 impl PlatformVersion {
     fn read(cmd: u32, data: &[u8], cputype: u32) -> Self {
         if cmd == LC_BUILD_VERSION {
             let cmd = BuildVersionCommand::read_from(data);
-            return Self { platform: cmd.platform, minos: cmd.minos };
+            return Self { platform: cmd.platform, minos: cmd.minos, sdk: cmd.sdk };
         }
         // Legacy Intel mobile objects target the simulator. Arm64
         // simulators always use LC_BUILD_VERSION.
@@ -49,7 +52,8 @@ impl PlatformVersion {
             LC_VERSION_MIN_WATCHOS => PLATFORM_WATCHOS,
             _ => unreachable!(),
         };
-        Self { platform, minos: VersionMinCommand::read_from(data).version }
+        let vm = VersionMinCommand::read_from(data);
+        Self { platform, minos: vm.version, sdk: vm.sdk }
     }
 }
 
