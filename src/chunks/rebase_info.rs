@@ -33,13 +33,14 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
-/// Builds the rebase opcode stream: it tells dyld which pointers in the
-/// image it must slide when the image is loaded at a non-default address.
-/// Every absolute address the linker writes into a data section gets a
-/// record. Runs during layout, once every segment before __LINKEDIT has
-/// an address.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    let mut locs: Vec<u64> = Vec::new();
+/// Every pointer a loader must slide when the image lands at another
+/// address than its own, with the start of the atom that holds it: the
+/// pointers written for absolute relocations to local targets, then the
+/// synthesized ones (each its own atom). Unsorted. The rebase stream
+/// describes them to dyld, a -static -pie image's local relocations to
+/// whatever loads it.
+pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
+    let mut locs: Vec<(u64, u64)> = Vec::new();
 
     // Pointers written for UNSIGNED relocations to local targets.
     for isec in ctx.isecs.iter() {
@@ -65,26 +66,27 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
                 .reloc_target_sym(isec.file as usize, rel)
                 .is_some_and(|id| ctx.is_absolute_symbol(id));
             if !imported && !absolute && !ctx.reloc_target_is_tls(isec.file as usize, rel) {
-                locs.push(base + rel.offset as u64);
+                locs.push((base, base + rel.offset as u64));
             }
         }
     }
 
+    let mut synthesized: Vec<u64> = Vec::new();
     // Synthesized selector reference slots hold pointers into
     // __objc_methname.
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        locs.push(ctx.objc_selref_addr(i));
+        synthesized.push(ctx.objc_selref_addr(i));
     }
     // Pointer fields of the synthesized Objective-C records.
     for (addr, _) in data_blob_pointers(ctx) {
-        locs.push(addr);
+        synthesized.push(addr);
     }
     // Lazy pointers start out pointing at their stub helper entries (a
     // weak-lookup stub's GOT slot is rebased with the GOT).
     if ctx.lazy_binding() {
         for i in 0..ctx.stubs.symbols.len() {
             if !ctx.binds_weak_lookup(ctx.stubs.symbols[i]) {
-                locs.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
+                synthesized.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
             }
         }
     }
@@ -94,11 +96,21 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         let got_addr = ctx.got.hdr.addr;
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if !ctx.symbols[id].is_imported() && !ctx.is_absolute_symbol(id) {
-                locs.push(got_addr + i as u64 * 8);
+                synthesized.push(got_addr + i as u64 * 8);
             }
         }
     }
+    locs.extend(synthesized.into_iter().map(|addr| (addr, addr)));
+    locs
+}
 
+/// Builds the rebase opcode stream: it tells dyld which pointers in the
+/// image it must slide when the image is loaded at a non-default address.
+/// Every absolute address the linker writes into a data section gets a
+/// record. Runs during layout, once every segment before __LINKEDIT has
+/// an address.
+pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    let mut locs: Vec<u64> = rebase_locations(ctx).into_iter().map(|(_, addr)| addr).collect();
     if locs.is_empty() {
         return Vec::new();
     }

@@ -4804,6 +4804,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::WeakBindInfo);
         ctx.chunks.push(ChunkId::LazyBindInfo);
         ctx.chunks.push(ChunkId::ExportTrie);
+    } else if ctx.args.pie {
+        ctx.chunks.push(ChunkId::LocalRelocs);
     }
     ctx.chunks.push(ChunkId::FunctionStarts);
     if ctx.args.data_in_code_info {
@@ -5845,6 +5847,11 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             ctx.function_starts.contents = starts;
             ctx.export_trie.hdr.size = trie.len() as u64;
             ctx.export_trie.contents = trie;
+            if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+                ctx.local_relocs.locs = chunks::local_relocs::build(ctx);
+                ctx.local_relocs.hdr.size =
+                    (ctx.local_relocs.locs.len() * size_of::<MachRel>()) as u64;
+            }
         }
 
         if ctx.segments[seg_idx].name == "__PAGEZERO" {
@@ -5920,7 +5927,8 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
                 | ChunkId::ExportTrie
                 | ChunkId::FunctionStarts
                 | ChunkId::DataInCode
-                | ChunkId::SplitInfo => 3,
+                | ChunkId::SplitInfo
+                | ChunkId::LocalRelocs => 3,
                 ChunkId::IndirectSymtab => 2,
                 ChunkId::CodeSignature => 4,
                 _ => ctx.chunk_header(id).p2align,
@@ -6207,6 +6215,9 @@ pub fn copy_chunks<E: Target>(
     if ctx.use_chained_fixups() {
         let _t = ctx.timer("write_fixup_chains");
         chunks::chained_fixups::write_fixup_chains(ctx, buf);
+    }
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+        chunks::local_relocs::write(ctx, buf);
     }
     let t = ctx.timer("apply_optimization_hints");
     E::apply_optimization_hints(ctx, buf);

@@ -21,6 +21,7 @@ pub mod indirect_symtab;
 pub mod init_offsets;
 pub mod lazy_bind_info;
 pub mod lazy_ptrs;
+pub mod local_relocs;
 pub mod objc_imageinfo;
 pub mod objc_methlist;
 pub mod objc_stubs;
@@ -143,6 +144,7 @@ pub enum ChunkId {
     LazyBindInfo,
     ChainedFixups,
     ExportTrie,
+    LocalRelocs,
     FunctionStarts,
     DataInCode,
     SplitInfo,
@@ -156,7 +158,7 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 24] = [
+    const UNITS: [Self; 25] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
@@ -174,6 +176,7 @@ impl ChunkId {
         Self::LazyBindInfo,
         Self::ChainedFixups,
         Self::ExportTrie,
+        Self::LocalRelocs,
         Self::FunctionStarts,
         Self::DataInCode,
         Self::SplitInfo,
@@ -272,12 +275,17 @@ pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64
 }
 
 /// Writes a chunk's bytes into its own slice of the output. The mach
-/// header, the symbol and string tables and the code signature are
-/// written serially after the parallel copy (see copy_chunks), so they
-/// have nothing to do here.
+/// header, the symbol and string tables, the local relocations (which
+/// read the pointers they describe) and the code signature are written
+/// serially after the parallel copy (see copy_chunks), so they have
+/// nothing to do here.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
     match id {
-        ChunkId::MachHeader | ChunkId::Symtab | ChunkId::Strtab | ChunkId::CodeSignature => {}
+        ChunkId::MachHeader
+        | ChunkId::Symtab
+        | ChunkId::Strtab
+        | ChunkId::LocalRelocs
+        | ChunkId::CodeSignature => {}
         ChunkId::Output(id) => output_section::copy_buf(ctx, id, buf),
         ChunkId::Stubs => stubs::copy_buf(ctx, buf),
         ChunkId::StubHelper => stub_helper::copy_buf(ctx, buf),
@@ -437,6 +445,10 @@ fn create_dysymtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if ctx.chunks.contains(&ChunkId::IndirectSymtab) {
         cmd.indirectsymoff = ctx.indirect_symtab.hdr.fileoff as u32;
         cmd.nindirectsyms = (ctx.indirect_symtab.hdr.size / 4) as u32;
+    }
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+        cmd.locreloff = ctx.local_relocs.hdr.fileoff as u32;
+        cmd.nlocrel = ctx.local_relocs.locs.len() as u32;
     }
     to_vec(&cmd)
 }

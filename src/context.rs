@@ -15,6 +15,7 @@ use crate::chunks::indirect_symtab::IndirectSymtabSection;
 use crate::chunks::init_offsets::InitOffsetsSection;
 use crate::chunks::lazy_bind_info::LazyBindInfoSection;
 use crate::chunks::lazy_ptrs::LazyPtrsSection;
+use crate::chunks::local_relocs::LocalRelocsSection;
 use crate::chunks::objc_imageinfo::ObjcImageInfoSection;
 use crate::chunks::objc_methlist::ObjcMethlistSection;
 use crate::chunks::objc_stubs::ObjcStubsSection;
@@ -65,6 +66,7 @@ macro_rules! chunk_header {
             ChunkId::FunctionStarts => &$($mutable)? $ctx.function_starts.hdr,
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
             ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
+            ChunkId::LocalRelocs => &$($mutable)? $ctx.local_relocs.hdr,
             ChunkId::IndirectSymtab => &$($mutable)? $ctx.indirect_symtab.hdr,
             ChunkId::Symtab => &$($mutable)? $ctx.symtab.hdr,
             ChunkId::Strtab => &$($mutable)? $ctx.strtab.hdr,
@@ -130,6 +132,7 @@ pub struct Context<E: Target> {
     pub function_starts: FunctionStartsSection,
     pub data_in_code: DataInCodeSection,
     pub split_info: SplitInfoSection,
+    pub local_relocs: LocalRelocsSection,
     pub indirect_symtab: IndirectSymtabSection,
     pub symtab: SymtabSection,
     pub strtab: StrtabSection,
@@ -218,6 +221,7 @@ impl<E: Target> Context<E> {
             function_starts: FunctionStartsSection::new(),
             data_in_code: DataInCodeSection::new(),
             split_info: SplitInfoSection::new(),
+            local_relocs: LocalRelocsSection::new(),
             indirect_symtab: IndirectSymtabSection::new(),
             symtab: SymtabSection::new(),
             strtab: StrtabSection::new(),

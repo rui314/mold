@@ -64,3 +64,15 @@ otool -l $t/exe2 > $t/lc2
 grep -q 'cmd LC_DYSYMTAB$' $t/lc2
 nm -m $t/exe2 > $t/nm2
 grep -q '(__TEXT,__text) .*__mh_execute_header' $t/nm2
+
+# Its local relocations stand in for dyld's rebase info: one non-extern
+# 8-byte UNSIGNED relocation per pointer, r_symbolnum naming the section
+# it points into (__text), its address counted from the first segment
+# (on x86-64 the first writable one).
+otool -r $t/exe2 > $t/rel2
+grep -q 'Local relocation information 1 entries' $t/rel2
+if [ $ARCH = arm64 ]; then seg=__TEXT; else seg=__DATA; fi
+base=$(otool -l $t/exe2 | awk -v s=$seg '$1 == "segname" && $2 == s { getline; print $2; exit }')
+p=$(nm $t/exe2 | awk '$3 == "_p" { print $1 }')
+rel=$(printf '%08x 0 3 0 0 0 1' $((0x$p - base)))
+[ "$(awk '$1 ~ /^[0-9a-f]+$/ { print $1, $2, $3, $4, $5, $6, $7 }' $t/rel2)" = "$rel" ]
