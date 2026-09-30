@@ -123,51 +123,125 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
     locs.sort_unstable();
 
-    // Rebase locations cluster (pointer arrays, vtables), and the
-    // opcodes have run-length forms for exactly that: a run of
-    // adjacent pointers becomes one DO_REBASE_*_TIMES, and since the
-    // state machine's address advances past each rebased slot, a gap
-    // within a segment costs only an ADD_ADDR_ULEB. ld64 compresses
-    // the same way; one SET_SEGMENT per pointer made this stream
-    // over 20x larger.
-    let mut buf = Vec::new();
-    buf.push(REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER);
-    let mut cur: Option<(u8, u64)> = None;
-    let mut i = 0;
-    while i < locs.len() {
-        let (seg, off) = segment_and_offset(ctx, locs[i]);
-        match cur {
-            Some((cseg, coff)) if cseg == seg as u8 && off >= coff => {
-                if off > coff {
-                    buf.push(REBASE_OPCODE_ADD_ADDR_ULEB);
-                    encode_uleb(&mut buf, off - coff);
-                }
-            }
-            _ => {
+    let mut buf = vec![REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER];
+    for op in compress(rebase_ops(ctx, &locs)) {
+        match op {
+            Op::SegOffset(seg, off) => {
                 buf.push(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
                 encode_uleb(&mut buf, off);
             }
+            Op::AddAddr(delta) if delta < 15 * 8 && delta % 8 == 0 => {
+                buf.push(REBASE_OPCODE_ADD_ADDR_IMM_SCALED | (delta / 8) as u8)
+            }
+            Op::AddAddr(delta) => {
+                buf.push(REBASE_OPCODE_ADD_ADDR_ULEB);
+                encode_uleb(&mut buf, delta);
+            }
+            Op::Rebase(count) if count < 15 => {
+                buf.push(REBASE_OPCODE_DO_REBASE_IMM_TIMES | count as u8)
+            }
+            Op::Rebase(count) => {
+                buf.push(REBASE_OPCODE_DO_REBASE_ULEB_TIMES);
+                encode_uleb(&mut buf, count);
+            }
+            Op::RebaseAddAddr(delta) => {
+                buf.push(REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB);
+                encode_uleb(&mut buf, delta);
+            }
+            Op::RebaseTimesSkipping(count, skip) => {
+                buf.push(REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB);
+                encode_uleb(&mut buf, count);
+                encode_uleb(&mut buf, skip);
+            }
         }
-
-        // Extend the run over adjacent 8-byte slots.
-        let mut n = 1u64;
-        while i + (n as usize) < locs.len() && locs[i + n as usize] == locs[i] + n * 8 {
-            n += 1;
-        }
-        if n <= 15 {
-            buf.push(REBASE_OPCODE_DO_REBASE_IMM_TIMES | n as u8);
-        } else {
-            buf.push(REBASE_OPCODE_DO_REBASE_ULEB_TIMES);
-            encode_uleb(&mut buf, n);
-        }
-        cur = Some((seg as u8, off + n * 8));
-        i += n as usize;
     }
-    buf.push(REBASE_OPCODE_DONE);
+    // ld64 writes no DONE: the zeros padding the stream to 8 bytes
+    // read as one, and a stream that fills its last 8 bytes simply
+    // ends there.
     while buf.len() % 8 != 0 {
-        buf.push(0);
+        buf.push(REBASE_OPCODE_DONE);
     }
     buf
+}
+
+/// A rebase opcode before encoding.
+#[derive(Clone, Copy)]
+enum Op {
+    SegOffset(usize, u64),
+    AddAddr(u64),
+    Rebase(u64),
+    RebaseAddAddr(u64),
+    RebaseTimesSkipping(u64, u64),
+}
+
+/// The opcodes rebasing the sorted `locs`: the address moves by
+/// ADD_ADDR_ULEB within a segment and by SET_SEGMENT_AND_OFFSET_ULEB
+/// into another one, and a run of adjacent pointers is one
+/// DO_REBASE_ULEB_TIMES, since each rebase advances the address past
+/// its slot. A run ends at its segment's end, where dyld's bounds
+/// check would reject a rebase past it.
+fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
+    let mut ops = Vec::new();
+    let mut seg_start = 0;
+    let mut seg_end = 0;
+    let mut cur_addr = 0;
+    let mut i = 0;
+    while i < locs.len() {
+        let addr = locs[i];
+        if addr < seg_start || seg_end <= addr {
+            let (seg, off) = segment_and_offset(ctx, addr);
+            seg_start = addr - off;
+            seg_end = seg_start + ctx.segments[seg].cmd.vmsize;
+            ops.push(Op::SegOffset(seg, off));
+        } else if addr != cur_addr {
+            ops.push(Op::AddAddr(addr.wrapping_sub(cur_addr)));
+        }
+        let mut n = 1;
+        while i + n < locs.len() && locs[i + n] == addr + n as u64 * 8 && locs[i + n] < seg_end {
+            n += 1;
+        }
+        ops.push(Op::Rebase(n as u64));
+        cur_addr = addr + n as u64 * 8;
+        i += n;
+    }
+    ops
+}
+
+/// ld64's compression of a rebase opcode list: a single rebase followed
+/// by an address step becomes one DO_REBASE_ADD_ADDR_ULEB, and three or
+/// more of those with one step become DO_REBASE_ULEB_TIMES_SKIPPING_ULEB.
+/// (Encoding then writes a small, pointer-aligned step as
+/// ADD_ADDR_IMM_SCALED and a short run as DO_REBASE_IMM_TIMES.)
+fn compress(ops: Vec<Op>) -> Vec<Op> {
+    let mut paired = Vec::with_capacity(ops.len());
+    let mut it = ops.into_iter().peekable();
+    while let Some(op) = it.next() {
+        match (op, it.peek()) {
+            (Op::Rebase(1), Some(&Op::AddAddr(delta))) => {
+                it.next();
+                paired.push(Op::RebaseAddAddr(delta));
+            }
+            (op, _) => paired.push(op),
+        }
+    }
+    let mut out = Vec::with_capacity(paired.len());
+    let mut i = 0;
+    while i < paired.len() {
+        if let Op::RebaseAddAddr(delta) = paired[i] {
+            let count = paired[i..]
+                .iter()
+                .take_while(|op| matches!(op, Op::RebaseAddAddr(d) if *d == delta))
+                .count();
+            if count >= 3 {
+                out.push(Op::RebaseTimesSkipping(count as u64, delta));
+                i += count;
+                continue;
+            }
+        }
+        out.push(paired[i]);
+        i += 1;
+    }
+    out
 }
 
 /// The (address, target) of every non-null pointer field of the
