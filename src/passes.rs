@@ -1650,11 +1650,13 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
             {
                 return None;
             }
-            let ty = ctx.hdr_of(isec).section_type();
+            let hdr = ctx.hdr_of(isec);
+            let ty = hdr.section_type();
             if !matches!(
                 ty,
                 S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-            ) {
+            ) || is_unterminated_string(hdr, isec)
+            {
                 return None;
             }
             Some((xxhash_rust::xxh3::xxh3_64(isec.data()), ty, i as u32))
@@ -1695,6 +1697,14 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     }
 
     redirect_symbols_to_replacements(ctx);
+}
+
+/// Whether a C-string literal is the unterminated string that ended its
+/// input section, which the NUL it lacks completes past the section's
+/// end (see initialize_sections). ld-prime merges it with no other
+/// string, not even an identical one.
+fn is_unterminated_string(hdr: &crate::macho::MachSection, isec: &InputSection) -> bool {
+    isec.input_addr as u64 + isec.size as u64 > hdr.addr + hdr.size
 }
 
 /// Points every symbol defined in a merged-away subsection at the

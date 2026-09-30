@@ -952,7 +952,7 @@ impl StagedObject {
             }
 
             let mut points = if is_literal_section(sect) {
-                literal_split_points(sect, data, &self.mf.name)
+                literal_split_points(sect, data)
             } else {
                 std::mem::take(&mut split_points[i])
             };
@@ -967,18 +967,28 @@ impl StagedObject {
             let first = self.isecs.len();
             for (j, &start) in points.iter().enumerate() {
                 let end = points.get(j + 1).copied().unwrap_or(sect.addr + sect.size);
-                let contents: &[u8] = if is_zerofill {
+                let mut contents: &[u8] = if is_zerofill {
                     &[]
                 } else {
                     let lo = sect.offset as u64 + (start - sect.addr);
                     &data[lo as usize..(lo + (end - start)) as usize]
                 };
+                let mut size = end - start;
+                // ld-prime takes the unterminated string that may end a
+                // C-string section for a string too, and completes it
+                // with a NUL (see is_unterminated_string).
+                if sect.section_type() == S_CSTRING_LITERALS
+                    && contents.last().is_some_and(|&b| b != 0)
+                {
+                    contents = Vec::leak([contents, &[0]].concat());
+                    size += 1;
+                }
                 self.isecs.push(InputSection {
                     file: u32::MAX,
                     shndx: i as u32,
                     p2align: record_p2align.unwrap_or(sect.p2align as u8),
                     input_addr: start as u32,
-                    size: (end - start) as u32,
+                    size: size as u32,
                     contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },
                     rel_offset: 0,
                     nrels: 0,
@@ -1258,8 +1268,9 @@ fn is_literal_section(sect: &MachSection) -> bool {
 }
 
 /// Where the elements of a literal section start: each NUL-terminated
-/// string of a __cstring section, each fixed-size record of the others.
-fn literal_split_points(sect: &MachSection, data: &[u8], file_name: &Path) -> Vec<u64> {
+/// string of a __cstring section (and the unterminated one that may end
+/// it, see initialize_sections), each fixed-size record of the others.
+fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
     let elem_size = match sect.section_type() {
         S_CSTRING_LITERALS => {
             let contents = &data[sect.offset as usize..(sect.offset as u64 + sect.size) as usize];
@@ -1267,10 +1278,10 @@ fn literal_split_points(sect: &MachSection, data: &[u8], file_name: &Path) -> Ve
             let mut start = 0;
             while start < contents.len() {
                 points.push(sect.addr + start as u64);
-                let Some(len) = memchr::memchr(0, &contents[start..]) else {
-                    fatal!("{}: malformed __cstring section", file_name.display());
-                };
-                start += len + 1;
+                match memchr::memchr(0, &contents[start..]) {
+                    Some(len) => start += len + 1,
+                    None => break,
+                }
             }
             return points;
         }
