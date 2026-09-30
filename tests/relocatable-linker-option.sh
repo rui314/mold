@@ -46,3 +46,36 @@ grep -A5 LC_BUILD_VERSION $t/lc | grep "sdk $(otool -l $t/a.o | grep ' sdk ' | a
 # The final link auto-links libz from the carried option.
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
 $t/exe | grep '^1\.'
+
+# ld-prime rewrites the options it carries: one per library, the
+# libraries first, each kind sorted by name. The first naming says
+# whether one loads lazily and any whether it is needed; -hidden-l and
+# -force_load say nothing, and a file goes by its path. A framework
+# goes by its name less any ",suffix".
+cat <<EOF2 | $CC -o $t/d.o -c -x assembler -
+.linker_option "-lzzz"
+.linker_option "-needed-lfoo"
+.linker_option "-lfoo"
+.linker_option "-hidden-lbar"
+.linker_option "-lazy-lqux"
+.linker_option "-needed-lqux"
+.linker_option "-framework", "Foo"
+.linker_option "-needed_framework", "Foo"
+.linker_option "-framework", "Bar,_debug"
+.linker_option "-force_load", "/p/libx.a"
+.linker_option "-needed_library", "/p/liby.dylib"
+EOF2
+$mold -r -arch $ARCH -o $t/r2.o $t/d.o
+otool -l $t/r2.o | awk '$2 == "LC_LINKER_OPTION" { n++ } /^ *string/ { s[n] = s[n] $3 " " }
+  END { for (i = 1; i <= n; i++) print s[i] }' > $t/lc2
+cat > $t/lc2.expected <<EOF2
+-l/p/libx.a 
+-needed-l/p/liby.dylib 
+-lbar 
+-needed-lfoo 
+-lazy-lqux 
+-lzzz 
+-framework Bar 
+-needed_framework Foo 
+EOF2
+diff $t/lc2.expected $t/lc2

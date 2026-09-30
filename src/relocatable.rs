@@ -282,6 +282,57 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// The auto-link options (LC_LINKER_OPTION) a -r output carries for the
+/// final link to act on, as ld-prime rewrites those of its inputs (read
+/// by passes::read_linker_options): one per library or framework, the
+/// libraries first, each kind sorted by name. A framework goes by its
+/// name less any ",suffix", and a library a -force_load, -needed_library
+/// or -lazy_library names goes by its path, as -l<path>. The first
+/// naming says whether the library loads lazily, and any whether it is
+/// needed; -hidden-l and -force_load say nothing of it.
+fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<Vec<Vec<u8>>> {
+    // (framework, name) -> (lazy, needed)
+    let mut libs: BTreeMap<(bool, &[u8]), (bool, bool)> = BTreeMap::new();
+    for opt in ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(|obj| &obj.linker_options) {
+        let (framework, name, kind) = match &opt[..] {
+            [flag, name] if flag.ends_with(b"framework") => {
+                let base = name.split(|&c| c == b',').next().unwrap();
+                (true, base, flag.strip_suffix(b"framework").unwrap())
+            }
+            [flag, path] => (false, &path[..], flag.strip_suffix(b"library").unwrap_or(b"")),
+            [lib] => {
+                let (kind, name) = [&b"-needed-l"[..], b"-lazy-l", b"-hidden-l", b"-l"]
+                    .into_iter()
+                    .find_map(|kind| Some((kind, lib.strip_prefix(kind)?)))
+                    .unwrap();
+                (false, name, kind)
+            }
+            _ => unreachable!(),
+        };
+        let (lazy, needed) = (kind.starts_with(b"-lazy"), kind.starts_with(b"-needed"));
+        libs.entry((framework, name))
+            .and_modify(|(_, all_needed)| *all_needed |= needed)
+            .or_insert((lazy, needed));
+    }
+    libs.into_iter()
+        .map(|((framework, name), (lazy, needed))| {
+            let kind = if lazy {
+                "lazy"
+            } else if needed {
+                "needed"
+            } else {
+                ""
+            };
+            match (framework, kind) {
+                (true, "") => vec![b"-framework".to_vec(), name.to_vec()],
+                (true, _) => vec![format!("-{kind}_framework").into_bytes(), name.to_vec()],
+                (false, "") => vec![[b"-l", name].concat()],
+                (false, _) => vec![[format!("-{kind}-l").as_bytes(), name].concat()],
+            }
+        })
+        .collect()
+}
+
 /// The __compact_unwind pointer fields an input set by a 4-byte
 /// relocation, as a bit per field (1 << offset / 8) by record
 /// (subsection and function offset): each keeps a 4-byte relocation,
@@ -696,20 +747,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         .map(|&chunk_idx| section_relocs(ctx, chunk_idx, &index_of_sym, &atom_target))
         .collect();
 
-    // Auto-link requests are not acted on in a -r link; each distinct
-    // one is carried into the output as an LC_LINKER_OPTION command,
-    // in first-seen order, for the final link to resolve.
-    let mut linker_options: Vec<&Vec<Vec<u8>>> = Vec::new();
-    for obj in &ctx.objs {
-        if !obj.is_alive {
-            continue;
-        }
-        for opt in &obj.linker_options {
-            if !linker_options.contains(&opt) {
-                linker_options.push(opt);
-            }
-        }
-    }
+    let linker_options = relocatable_linker_options(ctx);
     // cmd, cmdsize, count, then the NUL-terminated strings, padded to 8.
     let linker_option_cmdsize = |opt: &Vec<Vec<u8>>| -> usize {
         align_to(12 + opt.iter().map(|s| s.len() + 1).sum::<usize>() as u64, 8) as usize
@@ -739,7 +777,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         + size_of::<SymtabCommand>()
         + version_cmd.len()
         + size_of::<LinkEditDataCommand>()
-        + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>()
+        + linker_options.iter().map(linker_option_cmdsize).sum::<usize>()
         + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
     // ld-prime leaves -headerpad (32 unless given) free after the load
     // commands, and more when LC_VERSION_MIN_MACOSX, or no command at
