@@ -3,6 +3,7 @@
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
+use crate::input_files::Fde;
 use crate::target::Target;
 
 #[derive(Debug)]
@@ -49,31 +50,44 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     for fde in &ctx.fdes {
         let off = base_off + fde.output_offset as usize;
-        let fde_addr = base_addr + fde.output_offset as u64;
         let cie = &ctx.cies[fde.cie as usize];
         buf[off..off + fde.data.len()].copy_from_slice(fde.data);
-
         // The CIE pointer is the distance back to the owning CIE.
         let cie_ptr = fde.output_offset + 4 - cie.output_offset;
-        buf[off + 4..off + 8].copy_from_slice(&cie_ptr.to_le_bytes());
+        let fde_addr = base_addr + fde.output_offset as u64;
+        relocate_fde(ctx, fde, &mut buf[off..], fde_addr, cie_ptr);
+    }
+}
 
-        // pc_begin: self-relative pointer to the function, of the size
-        // the CIE's encoding gives.
-        let func_addr = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
-        let pc_begin = func_addr.wrapping_sub(fde_addr + 8);
-        match cie.pc_size() {
-            4 => buf[off + 8..off + 12].copy_from_slice(&(pc_begin as u32).to_le_bytes()),
-            _ => buf[off + 8..off + 16].copy_from_slice(&pc_begin.to_le_bytes()),
-        }
+/// Rewrites the self-relative fields of an FDE copied to the start of
+/// `buf` for its address in the output: the CIE pointer, to `cie_ptr`,
+/// then pc_begin and the LSDA pointer, each of the size the CIE's
+/// encoding gives. A final image and a -r output both write their FDEs
+/// so.
+pub fn relocate_fde<E: Target>(
+    ctx: &Context<E>,
+    fde: &Fde,
+    buf: &mut [u8],
+    fde_addr: u64,
+    cie_ptr: u32,
+) {
+    let cie = &ctx.cies[fde.cie as usize];
+    buf[4..8].copy_from_slice(&cie_ptr.to_le_bytes());
 
-        if let Some((lsda_isec, lsda_off)) = fde.lsda {
-            let pos = lsda_pos(fde.data, cie.pc_size());
-            let cell_addr = fde_addr + pos as u64;
-            let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
-            match cie.lsda_size() {
-                4 => buf[off + pos..off + pos + 4].copy_from_slice(&(val as u32).to_le_bytes()),
-                _ => buf[off + pos..off + pos + 8].copy_from_slice(&val.to_le_bytes()),
-            }
+    let func_addr = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
+    let pc_begin = func_addr.wrapping_sub(fde_addr + 8);
+    match cie.pc_size() {
+        4 => buf[8..12].copy_from_slice(&(pc_begin as u32).to_le_bytes()),
+        _ => buf[8..16].copy_from_slice(&pc_begin.to_le_bytes()),
+    }
+
+    if let Some((lsda_isec, lsda_off)) = fde.lsda {
+        let pos = lsda_pos(fde.data, cie.pc_size());
+        let cell_addr = fde_addr + pos as u64;
+        let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
+        match cie.lsda_size() {
+            4 => buf[pos..pos + 4].copy_from_slice(&(val as u32).to_le_bytes()),
+            _ => buf[pos..pos + 8].copy_from_slice(&val.to_le_bytes()),
         }
     }
 }

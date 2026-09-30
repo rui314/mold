@@ -917,18 +917,6 @@ fn eh_frame_contents<E: Target>(
             EhRec::Fde(_) => None,
         })
         .collect();
-    // A self-relative field at `cell`, of `size` bytes, pointing to
-    // `target`.
-    let write_pcrel = |data: &mut [u8], cell: u32, target: u64, size: usize| {
-        let val = target.wrapping_sub(addr + cell as u64);
-        let cell = cell as usize;
-        match size {
-            4 => data[cell..cell + 4].copy_from_slice(&(val as u32).to_le_bytes()),
-            8 => data[cell..cell + 8].copy_from_slice(&val.to_le_bytes()),
-            _ => unreachable!(),
-        }
-    };
-
     let mut data: Vec<u8> = Vec::new();
     let mut relocs: Vec<MachRel> = Vec::new();
     for &(r, off) in records {
@@ -955,29 +943,17 @@ fn eh_frame_contents<E: Target>(
             }
             EhRec::Fde(f) => {
                 let fde = &ctx.fdes[f];
-                let o = off as usize;
                 // The CIE pointer: how far back the CIE is from this
                 // field.
-                let cie_delta = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
-                data[o + 4..o + 8].copy_from_slice(&cie_delta.to_le_bytes());
-                // pc_begin: the function, relative to the field.
-                let cie = &ctx.cies[fde.cie as usize];
-                let func_isec = ctx.resolve_isec(fde.isec as usize);
-                let isec = &ctx.isecs[func_isec];
-                let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
-                    + isec.offset as u64
-                    + fde.func_offset as u64;
-                write_pcrel(&mut data, off + 8, func_addr, cie.pc_size());
-                // The LSDA pointer, past the augmentation length.
-                if let Some((lsda, lsda_off)) = fde.lsda {
-                    let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size());
-                    let lsda = ctx.resolve_isec(lsda as usize);
-                    let l = &ctx.isecs[lsda];
-                    let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
-                        + l.offset as u64
-                        + lsda_off as u64;
-                    write_pcrel(&mut data, off + pos as u32, lsda_addr, cie.lsda_size());
-                }
+                let cie_ptr = (off + 4).wrapping_sub(cie_off[&(fde.cie as usize)]);
+                let fde_addr = addr + off as u64;
+                crate::chunks::eh_frame::relocate_fde(
+                    ctx,
+                    fde,
+                    &mut data[off as usize..],
+                    fde_addr,
+                    cie_ptr,
+                );
             }
         }
     }
