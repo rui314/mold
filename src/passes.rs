@@ -2793,9 +2793,12 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
 
     // Next, assign versions to symbols specified by exact name.
     // In other words, exact matches have higher precedence over
-    // wildcard or `extern "C++"` patterns.
-    for v in &patterns {
-        if !v.is_cpp && !has_wildcard(v.pattern) {
+    // wildcard or `extern "C++"` patterns. Unlike wildcards, if the same
+    // name appears more than once, the first one takes precedence, as in
+    // GNU ld and lld.
+    let mut seen = HashSet::new();
+    for v in &ctx.version_patterns {
+        if !v.is_cpp && !has_wildcard(v.pattern) && seen.insert(v.pattern) {
             let id = ctx.symbols.get_or_intern(v.pattern);
             let sym = &ctx.symbols[id];
             if sym.file().is_none() && !ctx.args.undefined_version {
