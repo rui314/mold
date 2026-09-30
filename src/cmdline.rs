@@ -679,6 +679,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_in_code_info: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, String, String)> = Vec::new();
+    let mut no_dead_strip_inits_and_terms = false;
     let mut i = 1;
     let mut version_shown = false;
 
@@ -775,7 +776,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-version_load_command" => args.version_load_command = true,
             b"-pie" => pie = Some(true),
             b"-no_pie" => pie = Some(false),
-            b"-no_dead_strip_inits_and_terms" => {}
+            // Given with -dead_strip, this once kept initializers and
+            // terminators nothing referenced. -dead_strip always keeps
+            // them now, and ld64 takes this for -dead_strip alone.
+            b"-no_dead_strip_inits_and_terms" => {
+                args.dead_strip = true;
+                no_dead_strip_inits_and_terms = true;
+            }
             b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i)));
@@ -1147,6 +1154,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_suppress_warnings(args.suppress_warnings);
     crate::error::set_fatal_warnings(args.fatal_warnings);
 
+    if no_dead_strip_inits_and_terms {
+        crate::warn!(
+            "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
+        );
+    }
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
 
