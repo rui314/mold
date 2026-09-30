@@ -66,6 +66,20 @@ pub type ChainedFixups = (
     std::collections::HashMap<crate::symbol::SymbolId, usize>,
 );
 
+/// The pointer format of the chains. A rebase target is a VM address
+/// under DYLD_CHAINED_PTR_64 and an offset from the image's load
+/// address under DYLD_CHAINED_PTR_64_OFFSET, which dyld reads from
+/// macOS 12 on. ld-prime writes the latter for a macOS 12 target on
+/// every architecture and output kind, and the former only when
+/// -fixup_chains forces chains on an older one.
+fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
+    if ctx.args.platform_minos >= crate::macho::encode_version(12, 0, 0) {
+        DYLD_CHAINED_PTR_64_OFFSET
+    } else {
+        DYLD_CHAINED_PTR_64
+    }
+}
+
 pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     // An image with nothing to fix up still gets the payload (a
     // header and a starts table with no pages), as ld64 writes it:
@@ -152,7 +166,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
 
         push32(&mut buf, size);
         push16(&mut buf, page_size as u16);
-        push16(&mut buf, DYLD_CHAINED_PTR_64);
+        push16(&mut buf, pointer_format(ctx));
         push64(&mut buf, seg.cmd.vmaddr - image_base);
         push32(&mut buf, 0); // max_valid_pointer
         push16(&mut buf, npages as u16);
@@ -234,6 +248,12 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
 /// the next fixup in the same page.
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let page_mask = !(E::PAGE_SIZE - 1);
+    // What a rebase target counts from: zero for a VM address, the
+    // image's own address for an offset.
+    let target_base = match pointer_format(ctx) {
+        DYLD_CHAINED_PTR_64_OFFSET => ctx.mach_header.hdr.addr,
+        _ => 0,
+    };
 
     for seg in &ctx.segments {
         let lo = ctx.chained_fixups.fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
@@ -273,9 +293,12 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 }
                 None => {
                     // dyld_chained_ptr_64_rebase; the word currently
-                    // holds the absolute target address.
+                    // holds the absolute target address, its top byte
+                    // (high8) carried separately.
                     let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
-                    if val & 0x00ff_fff0_0000_0000 != 0 {
+                    let high8 = val >> 56;
+                    let target = (val & 0x00ff_ffff_ffff_ffff).wrapping_sub(target_base);
+                    if target >> 36 != 0 {
                         let sect = ctx
                             .chunks
                             .iter()
@@ -287,8 +310,6 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                             "rebase target unencodable at {addr:#x} in {sect} (value {val:#x}); re-link with -no_fixup_chains"
                         );
                     }
-                    let target = val & 0xf_ffff_ffff;
-                    let high8 = val >> 56;
                     target | (high8 << 36) | (next << 51)
                 }
             };

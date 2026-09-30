@@ -254,6 +254,7 @@ pub const DYLD_CACHE_ADJ_V2_ARM64_BR26: u8 = 0x07;
 
 // Chained fixups (LC_DYLD_CHAINED_FIXUPS)
 pub const DYLD_CHAINED_PTR_64: u16 = 2;
+pub const DYLD_CHAINED_PTR_64_OFFSET: u16 = 6;
 pub const DYLD_CHAINED_PTR_START_NONE: u16 = 0xffff;
 pub const DYLD_CHAINED_IMPORT: u32 = 1;
 pub const DYLD_CHAINED_IMPORT_ADDEND: u32 = 2;

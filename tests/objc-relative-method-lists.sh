@@ -72,8 +72,14 @@ grep -A1 'sectname __objc_methlist' $t/lc | grep 'segname __TEXT'
 # Every list is relative: none left in the classic 24-byte form.
 [ "$(grep -c 'entsize 12 (relative)' $t/ov)" -ge 8 ]
 not grep -q 'entsize 24' $t/ov
-grep -q 'imp .*other:' $t/ov
-grep -q 'imp .*cextra' $t/ov
+# otool names an imp only in an image with DYLD_CHAINED_PTR_64 chains
+# (it adds the image base to the address as if it were a format 6
+# rebase), so the imps' addresses are named through nm.
+nm $t/exe | awk '{ a = $1; sub(/^0+/, "", a); print a, $NF }' > $t/names
+awk '/imp / { a = ($3 ~ /^\(/) ? $3 : $2; gsub(/[()]/, "", a); sub(/^0x/, "", a); print a }' $t/ov > $t/imps
+awk 'NR == FNR { n[$1] = $2; next } { print n[$1] }' $t/names $t/imps > $t/impnames
+grep -q 'other:' $t/impnames
+grep -q 'cextra' $t/impnames
 nm -m $t/exe | grep '__objc_methlist)' | awk '{print $NF}' > $t/syms
 # Category merging (on by default) names the list after Foo and Extra.
 grep -q 'INSTANCE_METHODS_Foo(Extra)$' $t/syms

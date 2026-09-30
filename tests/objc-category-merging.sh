@@ -79,7 +79,13 @@ otool -s __DATA_CONST __objc_catlist $t/exe | tail -n +3 > $t/catlist
 grep -q 'sectname __objc_nlclslist' $t/lc
 otool -ov $t/exe > $t/ov
 # Merged order: B's methods, A's, then Foo's own.
-awk '/baseMethods.*INSTANCE_METHODS_Foo/{f=1} f&&/imp /{print $NF} /baseProtocols/{f=0}' $t/ov | head -11 | tr '\n' ' ' > $t/order
+# otool names an imp only in an image with DYLD_CHAINED_PTR_64 chains
+# (it adds the image base to the address as if it were a format 6
+# rebase), so the imps' addresses are named through nm.
+nm $t/exe | awk '{ a = $1; sub(/^0+/, "", a); print a, $NF }' > $t/names
+awk '/baseMethods.*INSTANCE_METHODS_Foo/{f=1} f&&/imp /{print ($3 ~ /^\(/) ? $3 : $2} /baseProtocols/{f=0}' $t/ov |
+  head -11 | tr -d '()' | sed 's/^0x//' > $t/imps
+awk 'NR == FNR { n[$1] = $2; next } { print n[$1] }' $t/names $t/imps | tr '\n' ' ' > $t/order
 grep -q '^pb\] b\] m\] p3\] pa\] a\] p2\] p1\] m\] base\] setBase:\] $' $t/order
 grep -E 'list\[' $t/ov | head -3 | awk '{print $NF}' | tr '\n' ' ' > $t/protos
 grep -q '^__OBJC_PROTOCOL_\$_P3 __OBJC_PROTOCOL_\$_P2 __OBJC_PROTOCOL_\$_P1 $' $t/protos
