@@ -1039,14 +1039,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.platform_sdk = args.platform_minos;
             }
 
-            // Ignored options. ld64 takes -O<n> as a linker
-            // optimization level hint (Xcode passes -O0 for debug and
-            // -Os for release builds). This linker's output is always
+            // Ignored options. This linker's output is always
             // deterministic, so -reproducible has nothing to switch on.
             // -debug_variant silences ld64's warnings that only matter
             // for binaries shipped to customers; there are none here.
-            b"-reproducible" | b"-debug_variant" | b"-O0" | b"-O1" | b"-O2" | b"-O3" | b"-Os"
-            | b"-Oz" => {}
+            b"-reproducible" | b"-debug_variant" => {}
 
             b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i))),
 
@@ -1076,6 +1073,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.library_paths.push(PathBuf::from(os_str(dir)));
                 } else if let Some(dir) = raw.strip_prefix(b"-F") {
                     args.framework_paths.push(PathBuf::from(os_str(dir)));
+                } else if raw.starts_with(b"-O") {
+                    // An optimization level, which clang passes on from
+                    // its own command line (-O2, -Ofast, -Og, ...).
+                    // ld-prime takes -O followed by anything; it only
+                    // switches function deduplication, which here is
+                    // on unless -no_deduplicate, whatever the level.
                 } else if raw.starts_with(b"-") {
                     fatal!("unknown command line option: {name}");
                 } else {
