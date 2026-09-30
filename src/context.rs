@@ -576,10 +576,15 @@ impl<E: Target> Context<E> {
             && matches!(sym.file(), Some(FileId::Obj(obj)) if !self.is_internal(obj as usize))
     }
 
-    /// A PC-relative address computation cannot replace a GOT load of
-    /// an absolute constant: the instruction slides but the value does not.
+    /// A GOT load relaxes to a PC-relative address computation unless
+    /// dyld fills the slot - an import, or a weak definition it binds
+    /// by weak lookup, which a -static image's code never is - or the
+    /// target is an absolute constant: the instruction slides but the
+    /// value does not.
     pub fn can_relax_got(&self, id: SymbolId) -> bool {
-        !self.binds_at_runtime(id) && !self.is_absolute_symbol(id)
+        !self.symbols[id].is_imported()
+            && !self.binds_weak_lookup(id)
+            && !self.is_absolute_symbol(id)
     }
 
     /// True for a definition this image exports that some dylib in the
