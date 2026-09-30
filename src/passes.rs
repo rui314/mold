@@ -1653,14 +1653,13 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         {
             continue;
         }
-        let mut relocs = ctx.isec_relocs(i).to_vec();
+        let relocs = initializer_relocs(ctx, i);
         // Imported or unresolved initializers cannot be represented as
         // local offsets. Keep their pointer section and its references.
         if relocs.iter().any(|rel| ctx.reloc_target_isec(ctx.isecs[i].file as usize, rel).is_none())
         {
             continue;
         }
-        relocs.sort_by_key(|r| r.offset);
         for rel in relocs {
             let obj = ctx.isecs[i].file as usize;
             let target = match ctx.reloc_target_sym(obj, &rel) {
@@ -1682,6 +1681,17 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.isecs[i].set_alive(false);
     }
+}
+
+/// The relocations naming the functions of the initializer pointers
+/// subsection `i` holds, in slot order. A pointer the difference of two
+/// symbols makes (a SUBTRACTOR and an UNSIGNED relocation) names the
+/// function it adds, as in ld-prime, not the one it subtracts too.
+fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input_sections::Reloc> {
+    let mut relocs: Vec<_> =
+        ctx.isec_relocs(i).iter().filter(|r| r.r_type != E::RELOC_SUBTRACTOR).copied().collect();
+    relocs.sort_by_key(|r| r.offset);
+    relocs
 }
 
 /// ld-prime's diagnostics for static initializers: a warning for each
@@ -1720,9 +1730,7 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
             continue;
         }
         let obj = &ctx.objs[isec.file as usize];
-        let mut relocs = ctx.isec_relocs(i).to_vec();
-        relocs.sort_by_key(|r| r.offset);
-        for rel in relocs {
+        for rel in initializer_relocs(ctx, i) {
             let name = match rel.target() {
                 RelocTarget::Sym(idx) => ctx.symbols[obj.symbols[idx as usize]].name(),
                 RelocTarget::Section(target) => {
