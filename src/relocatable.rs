@@ -14,7 +14,8 @@
 //! carry no relocations); like ld64, the output gets debug-note stabs
 //! naming the input objects, which a later link carries through.
 
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
@@ -135,6 +136,45 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
         }
     }
     places
+}
+
+/// The places the -r output's symbols name, keyed by (subsection,
+/// offset): the symbol indices of the first and the last of their
+/// names, and their address. ld-prime ranks the names of a place
+/// non-weak before weak, then global, private external and local, each
+/// by descending name, an assembler's ltmpN label last. A reference to
+/// the place names the first, and so does one past it, into the atom's
+/// bytes: the names are aliases of one atom. But in an object without
+/// subsections only those at the start of a section are; elsewhere
+/// each name is an atom of its own, all empty but the last, which
+/// holds the bytes and is the one a reference into them names.
+fn symbol_places<E: Target>(
+    ctx: &Context<E>,
+    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
+) -> BTreeMap<(usize, u64), (u32, u32, u64)> {
+    let mut names: Vec<_> = index_of_sym
+        .iter()
+        .filter_map(|(&id, &symnum)| {
+            let sym = &ctx.symbols[id];
+            let isec = ctx.resolve_isec(sym.input_section()? as usize);
+            let scope = match (sym.is_extern(), sym.is_private_extern()) {
+                (true, false) => 0,
+                (true, true) => 1,
+                (false, _) => 2,
+            };
+            let is_ltmp = !sym.is_extern() && sym.name().starts_with("ltmp");
+            let rank = (is_ltmp, sym.is_weak_def(), scope, Reverse(sym.name()));
+            Some(((isec, sym.value), rank, symnum))
+        })
+        .collect();
+    names.sort_unstable();
+    names
+        .chunk_by(|a, b| a.0 == b.0)
+        .map(|names| {
+            let (isec, at) = names[0].0;
+            (names[0].0, (names[0].2, names[names.len() - 1].2, ctx.isec_addr(isec) + at))
+        })
+        .collect()
 }
 
 /// The symbols a live input section's relocations refer to by name.
@@ -467,55 +507,58 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
     let RSymtab { nlists: nlists_out, strtab, index_of_sym, atoms, entsize_of } =
         build_symtab(ctx, &section_chunks);
-    // The atom a relocation into a section whose atoms ld64 names lands
-    // in: its symbol's index and address.
-    let atom_target = |t: usize, addend: i64| -> Option<(u32, u64)> {
-        let ChunkId::Output(osec) = ctx.isecs[t].output_section()? else {
+    // The symbol a reference to offset `off` of subsection `t` names
+    // where ld-prime re-derives it from the address, and the symbol's
+    // address: the nearest named place's first name, or in an object
+    // without subsections, past a place that does not start the
+    // section, its last (see symbol_places).
+    let places = symbol_places(ctx, &index_of_sym);
+    let name_at = |t: usize, off: u64| -> Option<(u32, u64)> {
+        let (&(isec, at), &(first, last, addr)) = places.range(..=(t, off)).next_back()?;
+        if isec != t {
             return None;
-        };
-        let entsize = *entsize_of.get(&osec)?;
-        let k = (addend as u64).checked_div(entsize).unwrap_or(0);
-        atoms.get(&(t, k)).copied()
+        }
+        let whole = !ctx.objs[ctx.isecs[t].file as usize].subsections_via_symbols;
+        Some((if whole && at != 0 && at != off { last } else { first }, addr))
+    };
+    // The symbol a section-relative relocation becomes an extern one
+    // against, and its address: the atom's in a section whose atoms
+    // ld64 names itself, else the name of the place.
+    let atom_target = |t: usize, addend: i64| -> Option<(u32, u64)> {
+        if let Some(ChunkId::Output(osec)) = ctx.isecs[t].output_section()
+            && let Some(&entsize) = entsize_of.get(&osec)
+            && let Some(&atom) = atoms.get(&(t, (addend as u64).checked_div(entsize).unwrap_or(0)))
+        {
+            return Some(atom);
+        }
+        name_at(t, u64::try_from(addend).ok()?)
     };
 
     // Re-synthesize __LD,__compact_unwind so unwind info survives the
     // merge: one 32-byte entry per record, its pointer fields set by
     // UNSIGNED relocations. ld64 names the function and the LSDA by
-    // symbol when they have one (an extern relocation with a zero
-    // field); a nameless one is referred to section-relatively.
-    let mut sym_at: HashMap<(usize, u64), u32> = HashMap::new();
-    for (&sym_id, &symnum) in &index_of_sym {
-        let sym = &ctx.symbols[sym_id];
-        if let Some(isec) = sym.input_section() {
-            sym_at.entry((ctx.resolve_isec(isec as usize), sym.value)).or_insert(symnum);
+    // symbol where one names the place (an extern relocation, the
+    // offset from the symbol in the field); a nameless one is referred
+    // to section-relatively.
+    let pointer_to = |t: usize, off: u64, len: u32| -> (u64, u32) {
+        let target = ctx.isec_addr(t) + off;
+        match name_at(t, off) {
+            Some((symnum, addr)) => (target - addr, symnum | len | (1 << 27)),
+            None => (target, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len),
         }
-    }
+    };
     let narrow_fields = narrow_unwind_fields(ctx);
     let mut cu_data: Vec<u8> = Vec::new();
     let mut cu_relocs: Vec<MachRel> = Vec::new();
     for &r in &cu_kept {
         let rec = &ctx.unwind_records[r];
-        let isec = &ctx.isecs[rec.isec as usize];
         let entry = cu_data.len() as u32;
         // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
         let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
         let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
-        match sym_at.get(&(rec.isec as usize, rec.input_offset as u64)) {
-            Some(&symnum) => {
-                cu_data.extend_from_slice(&0u64.to_le_bytes());
-                cu_relocs.push(MachRel { r_address: entry, bits: symnum | len(0) | (1 << 27) });
-            }
-            None => {
-                let func_addr = ctx.chunk_header(isec.output_section().unwrap()).addr
-                    + isec.offset as u64
-                    + rec.input_offset as u64;
-                cu_data.extend_from_slice(&func_addr.to_le_bytes());
-                cu_relocs.push(MachRel {
-                    r_address: entry,
-                    bits: ctx.isec_n_sect(isec) as u32 | len(0),
-                });
-            }
-        }
+        let (func, bits) = pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
+        cu_data.extend_from_slice(&func.to_le_bytes());
+        cu_relocs.push(MachRel { r_address: entry, bits });
         cu_data.extend_from_slice(&rec.code_len.to_le_bytes());
         cu_data.extend_from_slice(&rec.encoding.to_le_bytes());
 
@@ -533,27 +576,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
         match rec.lsda() {
             Some((lsda, off)) => {
-                let lsda = ctx.resolve_isec(lsda);
-                match sym_at.get(&(lsda, off as u64)) {
-                    Some(&symnum) => {
-                        cu_data.extend_from_slice(&0u64.to_le_bytes());
-                        cu_relocs.push(MachRel {
-                            r_address: entry + 24,
-                            bits: symnum | len(24) | (1 << 27),
-                        });
-                    }
-                    None => {
-                        let l = &ctx.isecs[lsda];
-                        let lsda_addr = ctx.chunk_header(l.output_section().unwrap()).addr
-                            + l.offset as u64
-                            + off as u64;
-                        cu_data.extend_from_slice(&lsda_addr.to_le_bytes());
-                        cu_relocs.push(MachRel {
-                            r_address: entry + 24,
-                            bits: ctx.isec_n_sect(l) as u32 | len(24),
-                        });
-                    }
-                }
+                let (lsda, bits) = pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
+                cu_data.extend_from_slice(&lsda.to_le_bytes());
+                cu_relocs.push(MachRel { r_address: entry + 24, bits });
             }
             None => cu_data.extend_from_slice(&0u64.to_le_bytes()),
         }
