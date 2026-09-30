@@ -174,6 +174,12 @@ fn place_nodes(fixed: &[usize], kids: &[Vec<u32>]) -> (Vec<u32>, Vec<u32>, u32) 
 /// in ld-prime's order (see place_nodes), then the trie is padded to 8
 /// bytes.
 pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolId]) -> Vec<u8> {
+    // An image no dyld loads has no one to look its symbols up:
+    // ld-prime writes no trie at all, even with the dyld info
+    // -no_fixup_chains gives a -static one.
+    if ctx.args.without_dyld() {
+        return Vec::new();
+    }
     let base = ctx.args.pagezero_size;
 
     // The caller hands over the defined globals already sorted by

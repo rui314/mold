@@ -354,10 +354,10 @@ impl<E: Target> Context<E> {
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {
-        // A static executable (the kernel) has no dyld: it has no fixups
-        // unless -fixup_chains asks for chains, which its own loader
-        // then walks. A kext has none either: kmutil links it into the
-        // kernel by its relocations.
+        // A static executable has no dyld: it has no chains unless
+        // -fixup_chains asks for them, which its own loader then walks
+        // (a -kernel image cannot). A kext has none either: kmutil
+        // links it into the kernel by its relocations.
         if self.args.is_kext() {
             return false;
         }

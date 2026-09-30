@@ -659,9 +659,11 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 
     // Chained fixups replace the classic dyld info; the export trie
     // then gets a load command of its own. A -static image has no dyld
-    // to read either: it exports nothing, has only the chains
-    // -fixup_chains asks for, and has a dynamic symbol table only under
-    // -pie, for the local relocations that slide it without chains.
+    // to read either: it exports nothing, has only the fixups
+    // -fixup_chains or -no_fixup_chains asks for, and has a dynamic
+    // symbol table only under -pie, for the local relocations that
+    // slide it without them (with them, it lists none). A kext has
+    // only its relocations.
     // (Decided by the options, not by the tables' sizes: the layout
     // sizes the header before the tables exist.)
     if ctx.use_chained_fixups() {
@@ -671,7 +673,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         if !ctx.args.without_dyld() {
             vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
         }
-    } else if !ctx.args.without_dyld() {
+    } else if !ctx.args.without_dyld() || ctx.args.fixup_chains == Some(false) {
         vec.push(create_dyld_info_cmd(ctx));
     }
     vec.push(create_symtab_cmd(ctx));

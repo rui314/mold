@@ -42,10 +42,15 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// slot's rebase already holds this image's copy). Sorted by symbol
 /// name, then address, as ld64 writes them.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    // A -static image calls its weak definitions directly, but under
+    // -no_fixup_chains ld-prime still lists the slots holding their
+    // addresses, as the chains do.
+    let binds_weak = |id| ctx.binds_weak_lookup(id) || ctx.is_weak_coalesced(id);
+
     let mut binds: Vec<(crate::symbol::SymbolId, u64)> = Vec::new();
     {
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if ctx.binds_weak_lookup(id) {
+            if binds_weak(id) {
                 binds.push((id, ctx.got.slot_addr(i)));
             }
         }
@@ -65,7 +70,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
                 continue;
             }
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
-                && ctx.binds_weak_lookup(id)
+                && binds_weak(id)
             {
                 binds.push((id, base + rel.offset as u64));
             }

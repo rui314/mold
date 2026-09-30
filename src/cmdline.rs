@@ -305,8 +305,9 @@ pub struct Args {
     pub rename_segments: Vec<(String, String)>,
     /// ZERO_AR_DATE is set: the stabs record no modification times.
     pub zero_ar_date: bool,
-    /// -static: an image no dyld loads (the XNU kernel), with no LC_MAIN,
-    /// imports or dyld info, and fixups only if -fixup_chains asks.
+    /// -static: an image no dyld loads (the XNU kernel), with no LC_MAIN
+    /// or imports, and fixups only if -fixup_chains or -no_fixup_chains
+    /// asks.
     pub static_link: bool,
     /// -kernel: the -static image is a kernel (XNU), which kmutil slides
     /// into a kernel collection: position independent and, like a
@@ -1211,6 +1212,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.pagezero_size = 0;
     }
 
+    // kmutil links a kext by its relocations and slides a -kernel
+    // image by its local ones: ld-prime takes neither -fixup_chains nor
+    // -no_fixup_chains for them.
+    if args.is_kext() || args.kernel {
+        args.fixup_chains = None;
+    }
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);

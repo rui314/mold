@@ -3932,9 +3932,10 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
 /// Adds the __LINKEDIT tables, in ld-prime's order.
 fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     // What dyld reads. A -static image or a kext has no dyld: a -static
-    // one has only the chains -fixup_chains asks for, or under -pie
-    // local relocations to slide by; a kext has its relocations, by
-    // which kmutil links it.
+    // one has only the fixups -fixup_chains or -no_fixup_chains asks
+    // for (chains, or rebase and weak-bind opcodes, never an export
+    // trie), or under -pie local relocations to slide by; a kext has
+    // its relocations, by which kmutil links it.
     if !ctx.args.without_dyld() {
         ctx.chunks.push(ChunkId::ChainedFixups);
         ctx.chunks.push(ChunkId::RebaseInfo);
@@ -3944,6 +3945,9 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::ExportTrie);
     } else if ctx.use_chained_fixups() {
         ctx.chunks.push(ChunkId::ChainedFixups);
+    } else if ctx.args.fixup_chains == Some(false) {
+        ctx.chunks.push(ChunkId::RebaseInfo);
+        ctx.chunks.push(ChunkId::WeakBindInfo);
     } else if ctx.args.pie || ctx.args.is_kext() {
         ctx.chunks.push(ChunkId::LocalRelocs);
     }
