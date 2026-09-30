@@ -3933,19 +3933,22 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
             if ctx.is_internal(isec.file as usize) {
                 return true;
             }
-            !matches!(
-                ctx.hdr_of(isec).sectname(),
-                "__objc_classlist"
-                    | "__objc_nlclslist"
-                    | "__objc_catlist"
-                    | "__objc_nlcatlist"
-                    | "__objc_protolist"
-                    | "__objc_selrefs"
-                    | "__objc_classrefs"
-                    | "__objc_superrefs"
-                    | "__objc_protorefs"
-                    | "__objc_imageinfo"
-            )
+            let hdr = ctx.hdr_of(isec);
+            !(hdr.sectname.starts_with(b"__objc_")
+                && [
+                    "__objc_classlist",
+                    "__objc_nlclslist",
+                    "__objc_catlist",
+                    "__objc_nlcatlist",
+                    "__objc_protolist",
+                    "__objc_selrefs",
+                    "__objc_classrefs",
+                    "__objc_superrefs",
+                    "__objc_protorefs",
+                    "__objc_imageinfo",
+                ]
+                .iter()
+                .any(|name| hdr.sectname_is(name)))
         }
         None => true,
     }
@@ -4246,17 +4249,15 @@ fn symbol_stabs<E: Target>(
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     // ld-prime notes no exception tables' labels and no ivar offsets.
     let hdr = ctx.hdr_of(isec);
+    let text = hdr.segname_is("__TEXT");
     if !isec.is_alive()
-        || matches!(
-            (hdr.segname(), hdr.sectname()),
-            ("__TEXT", "__gcc_except_tab") | ("__DATA", "__objc_ivar")
-        )
+        || (text && hdr.sectname_is("__gcc_except_tab"))
+        || (hdr.segname_is("__DATA") && hdr.sectname_is("__objc_ivar"))
     {
         return None;
     }
     let n_sect = ctx.isec_n_sect(isec);
-    let is_text = hdr.segname() == "__TEXT"
-        && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+    let is_text = text && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
         SymbolStabs { size: isec.size, n_sect, n_type: N_FUN, ..global }
     } else if is_extern {

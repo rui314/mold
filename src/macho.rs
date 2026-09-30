@@ -56,6 +56,12 @@ pub fn name_to_str(name: &[u8; 16]) -> &str {
     std::str::from_utf8(&name[..len]).unwrap_or("")
 }
 
+/// Whether a 16-byte, NUL-padded section or segment name is `s`.
+fn name_is(name: &[u8; 16], s: &str) -> bool {
+    let s = s.as_bytes();
+    name.starts_with(s) && name.get(s.len()).is_none_or(|&b| b == 0)
+}
+
 /// Converts a string to a 16-byte, NUL-padded section or segment name.
 pub fn str_to_name(s: &str) -> [u8; 16] {
     let mut name = [0; 16];
@@ -145,6 +151,17 @@ impl MachSection {
 
     pub fn segname(&self) -> &str {
         name_to_str(&self.segname)
+    }
+
+    /// Whether the section is named `s`, as sectname() == s says but
+    /// without converting the name: for loops over millions of symbols.
+    pub fn sectname_is(&self, s: &str) -> bool {
+        name_is(&self.sectname, s)
+    }
+
+    /// Whether the segment is named `s`; see sectname_is.
+    pub fn segname_is(&self, s: &str) -> bool {
+        name_is(&self.segname, s)
     }
 
     pub fn section_type(&self) -> u32 {
