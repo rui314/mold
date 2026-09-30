@@ -146,11 +146,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     let push32 = |buf: &mut Vec<u8>, v: u32| buf.extend_from_slice(&v.to_le_bytes());
     let push16 = |buf: &mut Vec<u8>, v: u16| buf.extend_from_slice(&v.to_le_bytes());
     let push64 = |buf: &mut Vec<u8>, v: u64| buf.extend_from_slice(&v.to_le_bytes());
-    let pad8 = |buf: &mut Vec<u8>| {
-        while !buf.len().is_multiple_of(8) {
-            buf.push(0);
-        }
-    };
+    let pad = |buf: &mut Vec<u8>, align: usize| buf.resize(buf.len().next_multiple_of(align), 0);
 
     let mut buf = Vec::new();
     // dyld_chained_fixups_header; the offsets are backpatched.
@@ -161,7 +157,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     push32(&mut buf, dynsyms.len() as u32);
     push32(&mut buf, import_format);
     push32(&mut buf, 0); // symbols_format: uncompressed
-    pad8(&mut buf);
+    pad(&mut buf, 8);
 
     // dyld_chained_starts_in_image
     let starts_offset = buf.len();
@@ -173,10 +169,9 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     for _ in 0..seg_count {
         push32(&mut buf, 0);
     }
-    pad8(&mut buf);
 
-    // Per-segment page tables. A segment's offset counts from the
-    // image's own address, which -image_base may move.
+    // Per-segment page tables, each 8-aligned. A segment's offset
+    // counts from the image's own address, which -image_base may move.
     let image_base = ctx.mach_header.hdr.addr;
     for (seg_idx, seg) in ctx.segments.iter().enumerate() {
         let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
@@ -186,18 +181,16 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         }
         let fx = &fixups[lo..hi];
 
+        pad(&mut buf, 8);
         let off = buf.len() - starts_offset;
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
         let page_size = ctx.segment_align();
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
-        // The record is 22 bytes of fields plus one u16 per page,
-        // padded to 8; the declared size must match the bytes present.
-        let size = crate::util::align_to(22 + npages as u64 * 2, 8) as u32;
-        let rec_start = buf.len();
-
-        push32(&mut buf, size);
+        // The record is 22 bytes of fields plus one u16 per page; its
+        // size counts just those, without padding.
+        push32(&mut buf, 22 + npages as u32 * 2);
         push16(&mut buf, page_size as u16);
         push16(&mut buf, pointer_format(ctx));
         push64(&mut buf, seg.cmd.vmaddr - image_base);
@@ -215,10 +208,11 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
                 push16(&mut buf, DYLD_CHAINED_PTR_START_NONE);
             }
         }
-        buf.resize(rec_start + size as usize, 0);
     }
 
-    // Import table
+    // Import table, aligned only as its entries need: 4 bytes, or 8
+    // for 64-bit addends.
+    pad(&mut buf, if import_format == DYLD_CHAINED_IMPORT_ADDEND64 { 8 } else { 4 });
     let imports_offset = buf.len();
     buf[8..12].copy_from_slice(&(imports_offset as u32).to_le_bytes());
     // Each import has a name string of its own after a leading NUL,
@@ -271,7 +265,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         buf.extend_from_slice(ctx.symbols[sym].name().as_bytes());
         buf.push(0);
     }
-    pad8(&mut buf);
+    pad(&mut buf, 8);
 
     Some((buf, fixups, dynsyms, ordinals))
 }
