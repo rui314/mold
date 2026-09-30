@@ -1159,11 +1159,11 @@ pub fn scan_pcrel<E: Target>(
     do_action(ctx, TABLE[output_type(ctx)][sym_type(sym)], isec, sym, rel);
 }
 
-/// This is a decision table for absolute relocations that is smaller
-/// than the pointer size (e.g. R_X86_64_32). Since the dynamic linker
-/// generally does not support dynamic relocations smaller than the
-/// pointer size, we need to report an error if a relocation cannot be
-/// resolved at link-time.
+/// This is a decision table for absolute relocations whose size differs
+/// from the pointer size (e.g. R_X86_64_32). Since the dynamic linker
+/// generally does not support dynamic relocations of other sizes, we
+/// need to report an error if a relocation cannot be resolved at
+/// link-time.
 pub fn scan_absrel<E: Target>(
     ctx: &Context<E>,
     isec: &InputSection<E>,

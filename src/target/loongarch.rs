@@ -378,8 +378,8 @@ where
             }
 
             match rel.r_type() {
-                R_LARCH_32 => {
-                    if IS_64 {
+                R_LARCH_32 | R_LARCH_64 => {
+                    if !Self::is_absrel(rel) {
                         scan_absrel(ctx, isec, sym, rel);
                     }
                 }
@@ -402,8 +402,7 @@ where
                 | R_LARCH_TLS_LE_HI20_R
                 | R_LARCH_TLS_LE_LO12_R => check_tlsle(ctx, isec, sym, rel),
                 R_LARCH_TLS_DESC_CALL => scan_tlsdesc(ctx, sym),
-                R_LARCH_64
-                | R_LARCH_B16
+                R_LARCH_B16
                 | R_LARCH_B21
                 | R_LARCH_ABS_HI20
                 | R_LARCH_ABS_LO12
@@ -520,6 +519,7 @@ where
 
             match rel.r_type() {
                 R_LARCH_32 => write_ul32(loc, sa as u32),
+                R_LARCH_64 => write_ul64(loc, sa),
                 R_LARCH_B16 => {
                     check_branch(pcrel as i64, -(1 << 17), 1 << 17);
                     write_k16(loc, pcrel >> 2);

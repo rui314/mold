@@ -385,8 +385,8 @@ where
             }
 
             match rel.r_type() {
-                R_RISCV_32 => {
-                    if IS_64 {
+                R_RISCV_32 | R_RISCV_64 => {
+                    if !Self::is_absrel(&rel) {
                         scan_absrel(ctx, isec, sym, &rel);
                     }
                 }
@@ -402,8 +402,7 @@ where
                 R_RISCV_TLSDESC_HI20 => scan_tlsdesc(ctx, sym),
                 R_RISCV_32_PCREL | R_RISCV_PCREL_HI20 => scan_pcrel(ctx, isec, sym, &rel),
                 R_RISCV_TPREL_HI20 => check_tlsle(ctx, isec, sym, &rel),
-                R_RISCV_64
-                | R_RISCV_BRANCH
+                R_RISCV_BRANCH
                 | R_RISCV_JAL
                 | R_RISCV_PCREL_LO12_I
                 | R_RISCV_PCREL_LO12_S
@@ -486,6 +485,7 @@ where
 
             match rel.r_type() {
                 R_RISCV_32 => Self::write_u32(loc, sa as u32),
+                R_RISCV_64 => Self::write_u64(loc, sa),
                 R_RISCV_BRANCH => {
                     check(pcrel as i64, -(1 << 12), 1 << 12);
                     write_btype(loc, pcrel);
