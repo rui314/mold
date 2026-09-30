@@ -133,4 +133,4 @@ int main(void) { load_v(); }
 EOF2
 
 not $CC --ld-path=$mold -o $t/exe3 $t/mainv.o $t/loadv.o $t/d.o 2> $t/err
-grep -q 'not aligned to 16' $t/err
+grep -qF "fixup error (kind=arm64_lo12) at '_load_v'+0x4 from loadv.o, target '_v' not 16-byte aligned" $t/err

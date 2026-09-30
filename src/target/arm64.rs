@@ -106,8 +106,9 @@ fn write64(loc: &mut [u8], val: u64) {
     loc[..8].copy_from_slice(&val.to_le_bytes());
 }
 
-/// Writes an immediate to an ADD, LDR or STR instruction.
-fn write_add_ldst(loc: &mut [u8], val: u64) {
+/// Writes an immediate to an ADD, LDR or STR instruction. Fails with
+/// the access size of an LDR or STR whose target it doesn't divide.
+fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
     let insn = read32(loc);
     let mut scale = 0;
 
@@ -131,7 +132,7 @@ fn write_add_ldst(loc: &mut [u8], val: u64) {
     // misaligned target. Silently dropping the low bits would load a
     // neighboring slot.
     if scale > 0 && val & ((1u64 << scale) - 1) != 0 {
-        fatal!("PAGEOFF12 target {val:#x} is not aligned to {}", 1u64 << scale);
+        return Err(1 << scale);
     }
 
     // Bits [21:10] hold the 12-bit immediate. Compilers usually leave
@@ -139,6 +140,24 @@ fn write_add_ldst(loc: &mut [u8], val: u64) {
     // placeholder with the final page offset.
     let imm = (bits(val, 11, scale as u32) as u32) << 10;
     write32(loc, (insn & !IMM12) | imm);
+    Ok(())
+}
+
+/// Reports an LDR or STR, relocation `r` of subsection `isec`, whose
+/// target its access size doesn't divide, as ld-prime does, naming the
+/// target (a GOT slot has no name).
+fn report_ldst_alignment(
+    ctx: &Context<Arm64>,
+    isec: usize,
+    r: &Reloc,
+    kind: &str,
+    target: &str,
+    size: u32,
+) {
+    let msg = format_args!(
+        "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
+    );
+    ctx.fixup_error(isec, r.offset, kind, msg);
 }
 
 // Linker optimization hints (LC_LINKER_OPTIMIZATION_HINT). A compiler
@@ -1197,7 +1216,10 @@ impl Target for Arm64 {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     if !ctx.can_relax_got(id) {
                         let t = ctx.sym_got_addr(id);
-                        write_add_ldst(loc, t.wrapping_add_signed(a));
+                        if let Err(size) = write_add_ldst(loc, t.wrapping_add_signed(a)) {
+                            let kind = "arm64_was_ld12_tlv_load_got";
+                            report_ldst_alignment(ctx, isec_id, r, kind, "", size);
+                        }
                     } else {
                         // ld-prime relaxes an ldr of either width.
                         let insn = read32(loc);
@@ -1216,8 +1238,14 @@ impl Target for Arm64 {
                     check_adrp(ctx, isec_id, rels, i, p, s.wrapping_add_signed(a));
                     write_adrp(loc, s.wrapping_add_signed(a), p);
                 }
+                // (ld-prime checks the alignment only of an offset
+                // whose adrp it hasn't paired with it, and truncates
+                // the others.)
                 ARM64_RELOC_PAGEOFF12 => {
-                    write_add_ldst(loc, s.wrapping_add_signed(a));
+                    if let Err(size) = write_add_ldst(loc, s.wrapping_add_signed(a)) {
+                        let target = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].name();
+                        report_ldst_alignment(ctx, isec_id, r, "arm64_lo12", target, size);
+                    }
                 }
                 // A GOT load of a local symbol relaxes to computing
                 // the address directly: the adrp retargets from the
@@ -1234,7 +1262,10 @@ impl Target for Arm64 {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     if !ctx.can_relax_got(id) {
                         let g = ctx.sym_got_addr(id);
-                        write_add_ldst(loc, g.wrapping_add_signed(a));
+                        if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
+                            let kind = "arm64_was_ld12_got_load_got";
+                            report_ldst_alignment(ctx, isec_id, r, kind, "", size);
+                        }
                     } else {
                         let insn = read32(loc);
                         if is_ldr_imm(insn) || insn & 0xffc0_0000 == 0x9100_0000 {
