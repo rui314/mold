@@ -366,6 +366,14 @@ impl<E: Target> Context<E> {
         self.args.image_base.unwrap_or(self.args.pagezero_size)
     }
 
+    /// The boundary segments start and end on, in memory and in the
+    /// file: the target's page size, but 4 KiB for a -preload image on
+    /// any target (ld64's default segment alignment, which it raises to
+    /// the 16 KiB arm64 page for every other kind of image).
+    pub fn segment_align(&self) -> u64 {
+        if self.args.preload { 4096 } else { E::PAGE_SIZE }
+    }
+
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {

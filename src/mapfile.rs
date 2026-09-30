@@ -215,7 +215,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 
     let _ = writeln!(out, "# Symbols:");
     let _ = writeln!(out, "# Address\tSize    \tFile  Name");
-    if ctx.args.output_type == crate::macho::MH_EXECUTE {
+    if ctx.args.output_type == crate::macho::MH_EXECUTE && !ctx.args.preload {
         let _ = writeln!(
             out,
             "0x{:08X}\t0x00000000\t[  0] __mh_execute_header",

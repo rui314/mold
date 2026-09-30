@@ -258,7 +258,7 @@ fn collect_file<E: Target>(
         }
         // A -static image has no dyld to load a dylib with.
         FileType::Tapi | FileType::Dylib if ctx.args.static_link => {
-            crate::warn!("ignoring unexpected dylib '{}'", mf.name.display());
+            crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
         }
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
@@ -2602,7 +2602,9 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
 pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
     let header_addr = mach_header_addr(ctx);
-    if ctx.args.output_type == MH_EXECUTE {
+    // A -preload image's mach header is in no segment, and nothing
+    // names it.
+    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let id = ctx.symbols.intern("__mh_execute_header");
         let sym = &mut ctx.symbols[id];
         if !sym.is_defined() {
@@ -2728,6 +2730,17 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
             }
         };
         ctx.symbols[id].value = value;
+    }
+
+    // A -preload image's mach header is in no segment; ___dso_handle
+    // names the start of __TEXT, where the header would be, as in
+    // ld-prime.
+    if ctx.args.preload
+        && let Some(text) = ctx.segments.iter().find(|s| s.name == "__TEXT")
+        && let Some(id) = ctx.symbols.get("___dso_handle")
+        && ctx.symbols[id].input_section().is_none()
+    {
+        ctx.symbols[id].value = text.cmd.vmaddr;
     }
 }
 
@@ -3332,8 +3345,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
     // A section cannot be aligned beyond the segment's page: ld64
     // reduces the alignment with a warning (an x86-64 .align 16 asks
-    // for 64KB).
-    if !relocatable {
+    // for 64KB). Not in a -static or -preload image, which no dyld
+    // maps: ld-prime starts the section's segment on the alignment
+    // there (see lay_out_segments).
+    if !relocatable && !ctx.args.static_link {
         let max = E::PAGE_SIZE.trailing_zeros();
         for osec in &mut ctx.output_sections {
             if osec.hdr.p2align > max {
@@ -3737,11 +3752,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             _ => 4,
         };
         // -segment_order orders the rest: __TEXT, which holds the
-        // mach header, stays first and __LINKEDIT last.
-        let seg_rank = match hdr.segname {
-            "__TEXT" => 0,
-            "__LINKEDIT" => usize::MAX,
-            name => match segment_order.iter().position(|s| s == name) {
+        // mach header, stays first and __LINKEDIT last. A -preload
+        // image's header precedes its segments but lies in none, and
+        // its __TEXT goes where the list says.
+        let seg_rank = match (id, hdr.segname) {
+            (ChunkId::MachHeader, _) if ctx.args.preload => 0,
+            (_, "__TEXT") if !ctx.args.preload => 0,
+            (_, "__LINKEDIT") => usize::MAX,
+            (_, name) => match segment_order.iter().position(|s| s == name) {
                 Some(i) => 1 + i,
                 None => 1 + segment_order.len() + standard,
             },
@@ -3773,6 +3791,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     let mut n_sect = 1u8;
     for &id in &order {
+        if id == ChunkId::MachHeader && ctx.args.preload {
+            continue;
+        }
         let segname = ctx.chunk_header(id).segname;
         if segments.last().map(|s: &OutputSegment| s.name) != Some(segname) {
             segments.push(OutputSegment::new(segname));
@@ -4158,7 +4179,8 @@ fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
 
 /// ld-prime's warnings for a -segment_order that places __TEXT or
 /// __LINKEDIT where they cannot go, or leaves segments out (they follow
-/// the listed ones in the usual order).
+/// the listed ones in the usual order). The __TEXT of a -preload image
+/// holds no mach header, and is ordered like any other segment.
 fn check_segment_order<E: Target>(ctx: &Context<E>) {
     let order = &ctx.args.segment_order;
     if order.is_empty() {
@@ -4166,7 +4188,7 @@ fn check_segment_order<E: Target>(ctx: &Context<E>) {
     }
     let (text_pos, text_place) =
         if ctx.args.pagezero_size > 0 { (1, "second") } else { (0, "first") };
-    let has_text = ctx.segments.iter().any(|s| s.name == "__TEXT");
+    let has_text = !ctx.args.preload && ctx.segments.iter().any(|s| s.name == "__TEXT");
     if has_text && order.iter().position(|s| s == "__TEXT").is_some_and(|i| i != text_pos) {
         crate::warn!(
             "-segment_order of __TEXT is ignored, the segment must be ordered {text_place}"
@@ -4176,9 +4198,12 @@ fn check_segment_order<E: Target>(ctx: &Context<E>) {
         crate::warn!("-segment_order of __LINKEDIT is ignored, the segment must be ordered last");
     }
     for seg in &ctx.segments {
-        if !matches!(seg.name, "__PAGEZERO" | "__TEXT" | "__LINKEDIT")
-            && !order.iter().any(|s| s == seg.name)
-        {
+        let fixed = match seg.name {
+            "__PAGEZERO" | "__LINKEDIT" => true,
+            "__TEXT" => !ctx.args.preload,
+            _ => false,
+        };
+        if !fixed && !order.iter().any(|s| s == seg.name) {
             crate::warn!("-segment_order should list all segments, {} is missing", seg.name);
         }
     }
@@ -5157,10 +5182,10 @@ pub fn check_segaddrs<E: Target>(ctx: &Context<E>) {
         if let Some((other, _)) = segaddrs[i + 1..].iter().find(|(_, a)| a == addr) {
             fatal!("duplicate -segaddr addresses for {name} and {other}");
         }
-        if !addr.is_multiple_of(E::PAGE_SIZE) {
+        if !addr.is_multiple_of(ctx.segment_align()) {
             fatal!(
                 "-segaddr {name} 0x{addr:X} is not aligned to the page size ({:#x}), use -segalign to change it",
-                E::PAGE_SIZE
+                ctx.segment_align()
             );
         }
     }
@@ -5217,8 +5242,8 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     } else if !ctx.args.static_link && ctx.use_chained_fixups() {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         ctx.args.image_base = text;
-    } else if !base.is_multiple_of(E::PAGE_SIZE) {
-        let aligned = align_to(base, E::PAGE_SIZE);
+    } else if !base.is_multiple_of(ctx.segment_align()) {
+        let aligned = align_to(base, ctx.segment_align());
         crate::warn!(
             "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
         );
@@ -5229,12 +5254,12 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
 /// Lays out the output: each segment's contents in file order, and the
 /// segments in the address space. Where ld-prime puts a segment can
 /// depend on the size of any other one (place_segments), so a segment
-/// is laid out from address 0 first and moved once all are sized - all
-/// but the mach header's segment (__TEXT), whose address is known up
-/// front (mach_header_addr) and whose __unwind_info encodes the final
-/// addresses of its functions (and of the others once they are placed:
-/// finish_unwind_info). __LINKEDIT comes last: its tables read every
-/// other address.
+/// is laid out where it would go after the ones before it first and
+/// moved once all are sized - all but the mach header's segment
+/// (__TEXT), whose address is known up front (mach_header_addr) and
+/// whose __unwind_info encodes the final addresses of its functions
+/// (and of the others once they are placed: finish_unwind_info).
+/// __LINKEDIT comes last: its tables read every other address.
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     debug_assert_eq!(ctx.segments[linkedit].name, "__LINKEDIT");
@@ -5280,17 +5305,59 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
 /// Lays out every segment but __LINKEDIT and gives each its address.
 /// Returns the file offset past them.
 fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
-    let header_seg = header_segment(ctx);
+    let header_seg = in_place_segment(ctx);
     let header_addr = mach_header_addr(ctx);
     let mut fileoff = 0;
+    // A -preload image's mach header and load commands fill the file's
+    // first pages, ahead of the segments, whose base stands for the
+    // image's address.
+    if ctx.args.preload {
+        ctx.mach_header.hdr.addr = ctx.image_base();
+        ctx.mach_header.hdr.size = mach_header_size(ctx);
+        fileoff = align_to(ctx.mach_header.hdr.size, ctx.segment_align());
+    }
+    // The other segments follow the header's (or the image base), each
+    // on its first section's alignment where that exceeds a page (only
+    // an image no dyld maps allows one); place_segments moves them where
+    // they go. The file skips as many bytes as memory does, unless a
+    // segment is pinned (ld-prime).
+    let mirror_gaps = ctx.args.segaddrs.is_empty();
+    let mut addr = ctx.image_base();
     for seg_idx in 0..ctx.segments.len() - 1 {
-        let vmaddr = if ctx.segments[seg_idx].name == header_seg { header_addr } else { 0 };
-        fileoff = layout_segment(ctx, seg_idx, fileoff, vmaddr);
+        let name = ctx.segments[seg_idx].name;
+        if name == "__PAGEZERO" {
+            fileoff = layout_segment(ctx, seg_idx, fileoff, 0);
+            continue;
+        }
+        let vmaddr = if Some(name) == header_seg {
+            fileoff = layout_segment(ctx, seg_idx, fileoff, header_addr);
+            header_addr
+        } else {
+            let vmaddr = align_to(addr, segment_start_align(ctx, seg_idx));
+            let gap = if mirror_gaps { vmaddr - addr } else { 0 };
+            fileoff = layout_segment(ctx, seg_idx, fileoff + gap, vmaddr);
+            vmaddr
+        };
+        addr = vmaddr + ctx.segments[seg_idx].cmd.vmsize;
     }
     place_segments(ctx);
     check_segment_addresses(ctx);
     crate::error::checkpoint();
     fileoff
+}
+
+/// The segment holding the mach header, laid out in place at the image
+/// base or its -segaddr: none in a -preload image, whose header
+/// precedes every segment in the file.
+fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static str> {
+    (!ctx.args.preload).then(|| header_segment(ctx))
+}
+
+/// The alignment of a segment's address: a page, or its first section's
+/// alignment if greater.
+fn segment_start_align<E: Target>(ctx: &Context<E>, seg_idx: usize) -> u64 {
+    let first = ctx.segments[seg_idx].chunks.first().map_or(0, |&id| ctx.chunk_header(id).p2align);
+    ctx.segment_align().max(1 << first)
 }
 
 /// __unwind_info is encoded as __TEXT is laid out, when only __TEXT's
@@ -5326,7 +5393,7 @@ fn layout_segment<E: Target>(
     fileoff: u64,
     vmaddr: u64,
 ) -> u64 {
-    let page = E::PAGE_SIZE;
+    let page = ctx.segment_align();
     if ctx.segments[seg_idx].name == "__PAGEZERO" {
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = 0;
@@ -5384,10 +5451,14 @@ fn layout_segment<E: Target>(
             ChunkId::CodeSignature => 4,
             _ => ctx.chunk_header(id).p2align,
         };
-        cursor = align_to(cursor, 1 << p2align);
+        // Aligned is the address; the file offset keeps its distance
+        // from it, which is no multiple of the alignment where a
+        // -preload image's header pages shift the file.
+        let addr = align_to(vmaddr + (cursor - seg_fileoff), 1 << p2align);
+        cursor = seg_fileoff + (addr - vmaddr);
         let hdr = ctx.chunk_header_mut(id);
         hdr.fileoff = cursor;
-        hdr.addr = vmaddr + (cursor - seg_fileoff);
+        hdr.addr = addr;
         hdr.size = size;
         cursor += size;
     }
@@ -5437,14 +5508,14 @@ fn layout_segment<E: Target>(
 ///   sized yet, counts from the start, as an empty segment.
 fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let base = ctx.image_base();
-    let header_seg = header_segment(ctx);
+    let header_seg = in_place_segment(ctx);
     let segs = &ctx.segments[..ctx.segments.len() - 1];
     let range = |i: usize, addr: u64| addr..addr + segs[i].cmd.vmsize;
 
     // __PAGEZERO and the mach header's segment are laid out in place
     // already.
     let in_place: Vec<bool> =
-        segs.iter().map(|seg| seg.name == "__PAGEZERO" || seg.name == header_seg).collect();
+        segs.iter().map(|seg| seg.name == "__PAGEZERO" || Some(seg.name) == header_seg).collect();
     let mut addrs: Vec<Option<u64>> = (0..segs.len())
         .map(
             |i| if in_place[i] { Some(segs[i].cmd.vmaddr) } else { ctx.args.segaddr(segs[i].name) },
@@ -5455,14 +5526,15 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
             && follows_pinned_segment(ctx, segs[i].name)
             && let Some(prev) = addrs[i - 1]
         {
-            addrs[i] = Some(prev + segs[i - 1].cmd.vmsize);
+            addrs[i] = Some(align_to(prev + segs[i - 1].cmd.vmsize, segment_start_align(ctx, i)));
         }
     }
 
     let fixed: Vec<usize> =
         (0..segs.len()).filter(|&i| !in_place[i] && addrs[i].is_some()).collect();
-    let header = segs.iter().position(|seg| seg.name == header_seg).unwrap();
-    let mut used = vec![range(header, segs[header].cmd.vmaddr)];
+    let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
+    let mut used: Vec<Range<u64>> =
+        header.map(|i| range(i, segs[i].cmd.vmaddr)).into_iter().collect();
     if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
         used.push(addr..addr);
     }
@@ -5471,9 +5543,10 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
             used.extend(fixed.iter().map(|&j| range(j, addrs[j].unwrap())));
         }
         if addrs[i].is_none() {
-            let addr = lowest_free_addr(base, segs[i].cmd.vmsize, &used);
-            addrs[i] = Some(addr);
-            used.push(range(i, addr));
+            let size = segs[i].cmd.vmsize;
+            let span = lowest_free_span(base, size, segment_start_align(ctx, i), &used);
+            addrs[i] = Some(span.end - size);
+            used.push(span);
         }
     }
 
@@ -5497,25 +5570,32 @@ fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
     false
 }
 
-/// The lowest address from `base` on where `size` bytes run into none of
-/// the `used` ranges: the base itself or the end of a used range. An
-/// empty segment is a point no other segment may straddle, and still
+/// Where `size` bytes go at the lowest address from `base` on where they
+/// run into none of the `used` ranges: the base itself or the end of a
+/// used range, rounded up to `align`. Returns the span from that address
+/// before rounding to the end, which the rounding's padding is part of.
+/// An empty segment is a point no other segment may straddle, and still
 /// needs an address no segment covers.
-fn lowest_free_addr(base: u64, size: u64, used: &[Range<u64>]) -> u64 {
-    let is_free = |addr: u64| used.iter().all(|r| r.end <= addr || addr + size.max(1) <= r.start);
+fn lowest_free_span(base: u64, size: u64, align: u64, used: &[Range<u64>]) -> Range<u64> {
+    let is_free = |span: &Range<u64>| {
+        used.iter().all(|r| r.end <= span.start || span.end.max(span.start + 1) <= r.start)
+    };
     std::iter::once(base)
         .chain(used.iter().map(|r| r.end).filter(|&end| end > base))
-        .filter(|&addr| is_free(addr))
-        .min()
+        .map(|start| start..align_to(start, align) + size)
+        .filter(is_free)
+        .min_by_key(|span| span.start)
         .unwrap()
 }
 
-/// Moves a segment laid out from address 0 to `addr`.
+/// Moves a laid-out segment to `addr`.
 fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
+    let delta = addr.wrapping_sub(ctx.segments[seg_idx].cmd.vmaddr);
     ctx.segments[seg_idx].cmd.vmaddr = addr;
     for i in 0..ctx.segments[seg_idx].chunks.len() {
         let id = ctx.segments[seg_idx].chunks[i];
-        ctx.chunk_header_mut(id).addr += addr;
+        let hdr = ctx.chunk_header_mut(id);
+        hdr.addr = hdr.addr.wrapping_add(delta);
     }
 }
 
@@ -5567,18 +5647,20 @@ fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
 /// __LINKEDIT goes where -segaddr pins it. Otherwise, in an image dyld
 /// slides, it goes above every other segment, and in one that stays
 /// where it was linked to the lowest address from the image base where
-/// it fits, as any other segment would.
+/// it fits, as any other segment would - which, with no segment pinned,
+/// is above them too (a gap a segment's alignment left is no room).
 fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     let others = &ctx.segments[..linkedit];
     let addr = if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
         addr
-    } else if dyld_slides(ctx) {
+    } else if dyld_slides(ctx) || ctx.args.segaddrs.is_empty() {
         others.iter().map(|seg| seg.cmd.vmaddr + seg.cmd.vmsize).max().unwrap_or(0)
     } else {
         let used: Vec<Range<u64>> =
             others.iter().map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize).collect();
-        lowest_free_addr(ctx.image_base(), ctx.segments[linkedit].cmd.vmsize, &used)
+        let size = ctx.segments[linkedit].cmd.vmsize;
+        lowest_free_span(ctx.image_base(), size, ctx.segment_align(), &used).start
     };
     move_segment(ctx, linkedit, addr);
 }

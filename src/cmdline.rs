@@ -72,6 +72,8 @@ pub struct Args {
     pub keep_private_externs: bool,
     /// -arch, canonicalized to the target's own spelling of its name.
     pub arch: Option<&'static str>,
+    /// -e: the entry point, "_main" unless given ("start" for an image
+    /// no dyld loads).
     pub entry: String,
     pub platform: u32,
     pub platform_minos: u32,
@@ -305,6 +307,11 @@ pub struct Args {
     /// or imports, and fixups only if -fixup_chains or -no_fixup_chains
     /// asks.
     pub static_link: bool,
+    /// -preload: a -static executable (static_link is set too) whose
+    /// mach header, load commands and symbol table lie outside its
+    /// segments, for firmware whose segments are copied out into ROM;
+    /// its header says MH_PRELOAD.
+    pub preload: bool,
     /// -kernel: the -static image is a kernel (XNU), which kmutil slides
     /// into a kernel collection: position independent and, like a
     /// shared-cache dylib, with split info.
@@ -422,6 +429,7 @@ impl Default for Args {
             rename_segments: Vec::new(),
             zero_ar_date: false,
             static_link: false,
+            preload: false,
             kernel: false,
             text_exec: false,
             pie: true,
@@ -847,7 +855,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
-            b"-static" => args.static_link = true,
+            // The last of -static and -preload names the output type.
+            b"-static" => {
+                args.static_link = true;
+                args.preload = false;
+            }
+            b"-preload" => {
+                args.output_type = MH_EXECUTE;
+                args.static_link = true;
+                args.preload = true;
+            }
             b"-kernel" => args.kernel = true,
             b"-version_load_command" => args.version_load_command = true,
             b"-pie" => pie = Some(true),
@@ -1221,6 +1238,26 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.function_starts = function_starts.unwrap_or(!args.without_dyld());
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
 
+    // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing
+    // outside its segments but the symbol table (and the local
+    // relocations of a -pie one). The options asking for the code
+    // tables, a build version or a signature go unheeded, as does
+    // -rpath, which only dyld would read.
+    if args.preload {
+        args.function_starts = false;
+        args.data_in_code_info = false;
+        args.version_load_command = false;
+        args.adhoc_codesign = Some(false);
+        args.rpaths.clear();
+    }
+
+    // An image no dyld loads starts from LC_UNIXTHREAD at "start",
+    // crt1.o's entry point, as every executable did before LC_MAIN had
+    // dyld call _main.
+    if args.static_link && !explicit_entry {
+        args.entry = "start".to_string();
+    }
+
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
     }
@@ -1263,9 +1300,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     check_output_kind(&args, pie, data_const, explicit_entry);
 
-    // A dylib is loaded at an arbitrary address; only a main executable
+    // A dylib is loaded at an arbitrary address, and a -preload image
+    // copied to wherever its segments say; only a main executable
     // reserves the low 4 GiB against NULL dereferences.
-    if args.output_type != MH_EXECUTE {
+    if args.output_type != MH_EXECUTE || args.preload {
         args.pagezero_size = 0;
     }
 
@@ -1393,12 +1431,14 @@ impl Args {
 
 /// Rejects the options the kind of output has no use for, as ld-prime
 /// does. Only a main executable has an entry point, a main-thread
-/// stack, a __PAGEZERO and the MH_PIE flag, and a client name is what
-/// a bundle or an executable presents to the umbrella it links against.
-/// A relocatable object also leaves the __DATA_CONST split to the link
-/// that consumes it.
+/// stack, a __PAGEZERO and the MH_PIE flag (a -preload one, copied to
+/// wherever its segments say, has neither stack nor __PAGEZERO), and a
+/// client name is what a bundle or an executable presents to the
+/// umbrella it links against. A relocatable object also leaves the
+/// __DATA_CONST split to the link that consumes it.
 fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
+    let has_stack = main_executable && !args.preload;
     if args.client_name.is_some() && (args.relocatable || args.output_type == MH_DYLIB) {
         fatal!("-client_name can only be used when creating a bundle or main executable");
     }
@@ -1411,10 +1451,10 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     if args.relocatable && data_const == Some(true) {
         fatal!("-data_const not supported with -r");
     }
-    if !main_executable && args.explicit_pagezero && args.pagezero_size != 0 {
+    if !has_stack && args.explicit_pagezero && args.pagezero_size != 0 {
         fatal!("-pagezero_size can only be used when linking a main executable");
     }
-    if !main_executable && args.stack_size != 0 {
+    if !has_stack && args.stack_size != 0 {
         fatal!("-stack_size option can only be used when linking a main executable");
     }
     if !main_executable && entry {
@@ -1444,8 +1484,9 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     }
 }
 
-/// -segment_order lays out an image no dyld loads (ld-prime also
-/// allows -preload and firmware platforms, which mold has not).
+/// -segment_order lays out an image no dyld loads, a -static or a
+/// -preload one (ld-prime also allows firmware platforms, which mold
+/// has not).
 fn check_segment_order(args: &Args) {
     if args.segment_order.is_empty() {
         return;

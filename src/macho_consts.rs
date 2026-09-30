@@ -15,6 +15,7 @@ pub const CPU_SUBTYPE_ARM64_ALL: u32 = 0;
 // File types
 pub const MH_OBJECT: u32 = 1;
 pub const MH_EXECUTE: u32 = 2;
+pub const MH_PRELOAD: u32 = 5;
 pub const MH_DYLIB: u32 = 6;
 pub const MH_DSYM: u32 = 10;
 pub const MH_BUNDLE: u32 = 8;

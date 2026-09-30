@@ -155,7 +155,8 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     // dyld_chained_starts_in_image
     let starts_offset = buf.len();
     buf[4..8].copy_from_slice(&(starts_offset as u32).to_le_bytes());
-    let seg_count = ctx.segments.len();
+    // One per segment command: a -preload image's __LINKEDIT has none.
+    let seg_count = ctx.segments.len() - usize::from(ctx.args.preload);
     push32(&mut buf, seg_count as u32);
     let seg_info_table = buf.len();
     for _ in 0..seg_count {
@@ -178,7 +179,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
-        let page_size = E::PAGE_SIZE;
+        let page_size = ctx.segment_align();
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page,
         // padded to 8; the declared size must match the bytes present.
@@ -268,7 +269,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
 /// rewritten to encode its payload plus the 4-byte-stride distance to
 /// the next fixup in the same page.
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let page_mask = !(E::PAGE_SIZE - 1);
+    let page_mask = !(ctx.segment_align() - 1);
     // What a rebase target counts from: zero for a VM address, the
     // image's own address for an offset.
     let target_base = match pointer_format(ctx) {

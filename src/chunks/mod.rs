@@ -649,8 +649,12 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // (function starts, data-in-code); the signature last.
     let mut vec = Vec::new();
 
+    // A -preload image's __LINKEDIT is no segment: its tables follow
+    // the segments in the file, and nothing maps them.
     for seg in &ctx.segments {
-        vec.push(create_segment_cmd(ctx, seg));
+        if !(ctx.args.preload && seg.name == "__LINKEDIT") {
+            vec.push(create_segment_cmd(ctx, seg));
+        }
     }
 
     if ctx.args.output_type == MH_DYLIB {
@@ -666,8 +670,13 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // only its relocations.
     // (Decided by the options, not by the tables' sizes: the layout
     // sizes the header before the tables exist.)
+    // (A -preload image under -fixup_chains gets its chains, and their
+    // table after the segments, but ld-prime writes no command naming
+    // the table: its loader must know where to find it.)
     if ctx.use_chained_fixups() {
-        vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
+        if !ctx.args.preload {
+            vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
+        }
         // Present even with nothing exported (an 8-byte empty trie),
         // as ld-prime writes it.
         if !ctx.args.without_dyld() {
@@ -695,7 +704,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
             ctx.args.platform_sdk,
         ));
     }
-    vec.push(create_source_version_cmd(ctx));
+    if !ctx.args.preload {
+        vec.push(create_source_version_cmd(ctx));
+    }
     if ctx.args.output_type == MH_EXECUTE {
         vec.push(if ctx.args.static_link {
             create_unixthread_cmd(ctx)
@@ -765,6 +776,11 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 /// LC_DYLD_INFO_ONLY plus LC_DYLD_EXPORTS_TRIE unless the image is an
 /// arm64 one with chained fixups (a -static image: 32 bytes).
 fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
+    // A -preload image's header has pages of its own, ahead of the
+    // segments, and ld-prime leaves nothing free after its commands.
+    if ctx.args.preload {
+        return 0;
+    }
     let dylib_cmds: Vec<(DylibCommand, &[u8])> = cmds
         .iter()
         .filter(|c| {
@@ -810,7 +826,7 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         magic: MH_MAGIC_64,
         cputype: E::CPUTYPE,
         cpusubtype: E::CPUSUBTYPE,
-        filetype: ctx.args.output_type,
+        filetype: if ctx.args.preload { MH_PRELOAD } else { ctx.args.output_type },
         ncmds: cmds.len() as u32,
         sizeofcmds: cmds.iter().map(Vec::len).sum::<usize>() as u32,
         // Under -flat_namespace every import is a flat lookup that
@@ -883,8 +899,9 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
     // -bind_at_load makes the stubs bind through the GOT instead of
     // lazily; ld-prime does not set MH_BINDATLOAD for it (dyld binds
-    // everything at load anyway).
-    if ctx.args.application_extension {
+    // everything at load anyway). MH_APP_EXTENSION_SAFE is for dyld
+    // too, and ld-prime leaves it out of an image no dyld loads.
+    if ctx.args.application_extension && !ctx.args.static_link {
         hdr.flags |= MH_APP_EXTENSION_SAFE;
     }
     if ctx

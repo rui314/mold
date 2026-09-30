@@ -92,7 +92,10 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
-    let exports_all = ctx.args.output_type != MH_EXECUTE || ctx.args.export_dynamic;
+    // -export_dynamic exports all of an executable's globals, but not
+    // a -preload image's, which ld-prime still strips.
+    let exports_all =
+        ctx.args.output_type != MH_EXECUTE || (ctx.args.export_dynamic && !ctx.args.preload);
     let is_exported = |sym: &Symbol| {
         sym.is_extern()
             && !sym.is_private_extern()
