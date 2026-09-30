@@ -15,9 +15,10 @@ pub struct GotSection {
     /// Symbols with a __got slot, in slot order.
     pub got_syms: Vec<SymbolId>,
     /// Synthetic subsections standing for __got slots that absorbed
-    /// __objc_classrefs entries (see fold_objc_classrefs); they are
-    /// placed in this section once it exists.
-    pub objc_classref_slots: Vec<u32>,
+    /// __objc_classrefs entries (see fold_objc_classrefs), with their
+    /// classes; they are placed at the classes' slots once the section
+    /// exists.
+    pub objc_classref_slots: Vec<(u32, SymbolId)>,
 }
 
 impl GotSection {

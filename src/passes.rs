@@ -2462,6 +2462,45 @@ fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
     }
 }
 
+/// Lays out __stubs and __got in ld-prime's order rather than in the
+/// order relocations first reached them. Stubs - and with them the
+/// lazy pointers, their helper entries and the indirect symbol table -
+/// sort by name across all libraries. GOT slots sort by what fills
+/// them: the image's own addresses first, then the -bundle_loader
+/// executable's symbols, each library's in load-command order, the
+/// weak-lookup binds, and flat lookups no library provides; by name
+/// within each. Runs once the dylib ordinals are final.
+pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
+    let mut stubs = std::mem::take(&mut ctx.stubs.symbols);
+    stubs.par_sort_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));
+    for (i, &id) in stubs.iter().enumerate() {
+        ctx.sym_aux_mut(id).stub_idx = i as u32;
+    }
+    ctx.stubs.symbols = stubs;
+
+    let mut got = std::mem::take(&mut ctx.got.got_syms);
+    got.par_sort_by_key(|&id| {
+        (got_rank(ctx, id), crate::util::name_sort_key(ctx.symbols[id].name()))
+    });
+    for (i, &id) in got.iter().enumerate() {
+        ctx.sym_aux_mut(id).got_idx = i as u32;
+    }
+    ctx.got.got_syms = got;
+}
+
+/// A GOT slot's group in ld-prime's order (see sort_stubs_and_got).
+fn got_rank<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> i64 {
+    if ctx.binds_weak_lookup(id) {
+        return i64::MAX - 1;
+    }
+    match ctx.symbols[id].file() {
+        Some(FileId::Dylib(u32::MAX)) => i64::MAX,
+        Some(FileId::Dylib(d)) if ctx.dylibs[d as usize].is_bundle_loader => 0,
+        Some(FileId::Dylib(d)) => ctx.dylibs[d as usize].dylib_idx as i64,
+        _ => -1,
+    }
+}
+
 /// Folds __objc_classrefs into __got, as ld-prime does from a
 /// deployment target of macOS 15 on. A class reference is an 8-byte
 /// slot holding a class's address, fixed up by dyld - exactly what a
@@ -2555,7 +2594,6 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 });
                 (file, shndx)
             });
-            let output_offset = ctx.sym_aux(class).got_idx * 8;
             ctx.isecs.push(InputSection {
                 file,
                 shndx,
@@ -2566,7 +2604,7 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 rel_offset: 0,
                 nrels: 0,
                 output_section: u32::MAX,
-                offset: output_offset,
+                offset: u32::MAX,
                 flags: std::sync::atomic::AtomicU8::new(0),
                 replacement: crate::input_sections::NO_REPLACEMENT,
                 unwind_offset: 0,
@@ -2574,7 +2612,7 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             });
             let synth = (ctx.isecs.len() - 1) as u32;
             ctx.isecs[slot as usize].replacement = synth;
-            ctx.got.objc_classref_slots.push(synth);
+            ctx.got.objc_classref_slots.push((synth, class));
         }
     }
 }
@@ -4541,7 +4579,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.got.hdr.size = ctx.got.got_syms.len() as u64 * 8;
         ctx.chunks.push(ChunkId::Got);
         for i in 0..ctx.got.objc_classref_slots.len() {
-            let slot = ctx.got.objc_classref_slots[i];
+            let (slot, class) = ctx.got.objc_classref_slots[i];
+            ctx.isecs[slot as usize].offset = ctx.sym_aux(class).got_idx * 8;
             ctx.isecs[slot as usize].set_output_section(ChunkId::Got);
         }
     }
