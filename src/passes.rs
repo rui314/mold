@@ -1627,7 +1627,9 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
 
 /// Merges identical literal elements across all live inputs: the first
 /// live copy wins and the rest redirect to it. A labeled record stays
-/// apart.
+/// apart, and so do copies in sections of different names, as in
+/// ld-prime: a class named "Foo" keeps its name in __objc_classname
+/// though __cstring has a "Foo" too.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     mark_labeled_literals(ctx);
     // Deduplication follows the symbol table's sharded shape: every
@@ -1635,7 +1637,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     // hash, and the shards resolve independently - within a shard the
     // first occurrence in input order wins, which is exactly the
     // winner the old serial single-map walk picked.
-    let hashed: Vec<(u64, u32, u32)> = ctx
+    let hashed: Vec<(u64, &MachSection, u32)> = ctx
         .isecs
         .par_iter()
         .enumerate()
@@ -1647,20 +1649,19 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
                 return None;
             }
             let hdr = ctx.hdr_of(isec);
-            let ty = hdr.section_type();
             if !matches!(
-                ty,
+                hdr.section_type(),
                 S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
             ) || is_unterminated_string(hdr, isec)
             {
                 return None;
             }
-            Some((xxhash_rust::xxh3::xxh3_64(isec.data()), ty, i as u32))
+            Some((xxhash_rust::xxh3::xxh3_64(isec.data()), hdr, i as u32))
         })
         .collect();
 
     const NUM_SHARDS: usize = 64;
-    let mut bins: Vec<Vec<(u64, u32, u32)>> = vec![Vec::new(); NUM_SHARDS];
+    let mut bins: Vec<Vec<(u64, &MachSection, u32)>> = vec![Vec::new(); NUM_SHARDS];
     for &e in &hashed {
         bins[(e.0 % NUM_SHARDS as u64) as usize].push(e);
     }
@@ -1669,13 +1670,24 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     let folds: Vec<Vec<(u32, u32)>> = bins
         .into_par_iter()
         .map(|bin| {
-            let mut map: hashbrown::HashMap<(u64, u32, &[u8]), u32> = hashbrown::HashMap::new();
+            // Keyed by the content hash already computed; a match is
+            // the same bytes in a section of the same name.
+            let mut table: hashbrown::HashTable<(u64, &MachSection, u32)> =
+                hashbrown::HashTable::new();
             let mut out = Vec::new();
-            for (hash, ty, i) in bin {
-                match map.entry((hash, ty, isecs[i as usize].data())) {
-                    hashbrown::hash_map::Entry::Occupied(e) => out.push((i, *e.get())),
-                    hashbrown::hash_map::Entry::Vacant(e) => {
-                        e.insert(i);
+            for (hash, hdr, i) in bin {
+                let data = isecs[i as usize].data();
+                let same = |&(h, other, j): &(u64, &MachSection, u32)| {
+                    h == hash
+                        && other.segname == hdr.segname
+                        && other.sectname == hdr.sectname
+                        && other.section_type() == hdr.section_type()
+                        && isecs[j as usize].data() == data
+                };
+                match table.entry(hash, same, |e| e.0) {
+                    hashbrown::hash_table::Entry::Occupied(e) => out.push((i, e.get().2)),
+                    hashbrown::hash_table::Entry::Vacant(e) => {
+                        e.insert((hash, hdr, i));
                     }
                 }
             }
