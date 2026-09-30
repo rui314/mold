@@ -361,22 +361,28 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
     let mut locals: Vec<Local> = Vec::new();
 
-    // The sections whose atoms ld64 names itself: (N_PEXT, record
-    // size; 0 for one record per subsection, as cstring literals are
-    // split).
-    let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<(bool, u64)> {
+    // The sections whose atoms ld64 names itself, as private
+    // externals: the record size; 0 for one record per subsection, as
+    // cstring literals are split.
+    let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<u64> {
         if flags & SECTION_TYPE == S_CSTRING_LITERALS {
-            return Some((true, 0));
+            return Some(0);
         }
         match (segname, sectname) {
-            ("__DATA", "__cfstring") => Some((true, 32)),
-            ("__DATA", "__objc_selrefs") | ("__DATA", "__objc_classrefs") => Some((true, 8)),
-            ("__DATA", "__objc_classlist")
-            | ("__DATA", "__objc_nlclslist")
-            | ("__DATA", "__objc_catlist")
-            | ("__DATA", "__objc_nlcatlist") => Some((false, 8)),
+            ("__DATA", "__cfstring") => Some(32),
+            ("__DATA", "__objc_selrefs") | ("__DATA", "__objc_classrefs") => Some(8),
             _ => None,
         }
+    };
+    // The entries of the __objc_*list sections get no symbol at all
+    // (ld-prime): their labels vanish.
+    let unnamed_list = |isec: usize| -> bool {
+        let h = ctx.hdr_of(&ctx.isecs[isec]);
+        h.segname() == "__DATA"
+            && matches!(
+                h.sectname(),
+                "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
+            )
     };
     // (subsection, record index) -> entry in `locals`; and the record
     // size of each such output section.
@@ -384,8 +390,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let mut entsize_of: HashMap<OutputSectionId, u64> = HashMap::new();
     for &chunk_idx in &section_chunks {
         let chunk = ctx.output_section(chunk_idx);
-        let Some((pext, entsize)) =
-            rename_kind(chunk.hdr.flags, chunk.hdr.segname, &chunk.hdr.sectname)
+        let Some(entsize) = rename_kind(chunk.hdr.flags, chunk.hdr.segname, &chunk.hdr.sectname)
         else {
             continue;
         };
@@ -405,7 +410,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 renamed.insert((id, k), locals.len());
                 locals.push(Local {
                     name: String::new(),
-                    n_type: if pext { N_PEXT | N_SECT } else { N_SECT },
+                    n_type: N_PEXT | N_SECT,
                     n_desc: 0,
                     n_sect: chunk.hdr.n_sect,
                     addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
@@ -476,6 +481,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             // A label on an atom ld64 names itself stands for that atom.
             if let Some(e) = atom_target(isec, sym.value as i64) {
                 locals[e].syms.push(sym_id);
+                continue;
+            }
+            if unnamed_list(isec) && !referenced.contains(&sym_id) {
                 continue;
             }
             let is_label = sym.name().starts_with('l') || sym.name().starts_with('L');

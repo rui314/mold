@@ -3,11 +3,12 @@ source "$(dirname "$0")"/common.inc
 
 # ld64 -r writes local symbols in address order and names some atoms
 # itself, with one counter: each cstring literal is LC<n> with N_PEXT
-# set ("was a private external" in nm -m), the records of __cfstring,
-# __objc_selrefs and __objc_classrefs are l<nnn> with N_PEXT, and the
-# entries of the __objc_*list sections l<nnn> without it. Their
-# original labels vanish. Other assembler labels survive only when
-# they name an atom of their own.
+# set ("was a private external" in nm -m), and the records of
+# __cfstring, __objc_selrefs and __objc_classrefs are l<nnn> with
+# N_PEXT. Their original labels vanish, as do those of the entries of
+# the __objc_*list sections, which get no symbol at all (ld-prime).
+# Other assembler labels survive only when they name an atom of their
+# own.
 cat <<EOF2 | $CC -O2 -fobjc-arc -fno-asynchronous-unwind-tables -fno-exceptions -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject @end
@@ -27,10 +28,11 @@ nm -xp $t/r.o | awk '$2!="0f" && $2!="01" {print $2, $NF}' > $t/locals
 grep -q '^1e LC1$' $t/locals
 [ "$(grep -c '^1e LC[0-9]*$' $t/locals)" -ge 6 ]
 not grep -q 'l_.str\|l_OBJC_METH_VAR_NAME\|l_OBJC_CLASS_NAME' $t/locals
-# Anonymous records: classlist, nlclslist without N_PEXT; cfstring,
-# selrefs, classrefs with it. The counter continues from the LCs.
+# Anonymous records: cfstring, selrefs, classrefs with N_PEXT; the
+# classlist and nlclslist entries carry no symbol. The counter
+# continues from the LCs.
 n=$(grep -c '^1e LC' $t/locals)
-[ "$(grep -c '^0e l[0-9][0-9][0-9]$' $t/locals)" = 3 ]
+[ "$(grep -c '^0e l[0-9][0-9][0-9]$' $t/locals)" = 0 ]
 [ "$(grep -c '^1e l[0-9][0-9][0-9]$' $t/locals)" = 4 ]
 not grep -q 'l_OBJC_LABEL_CLASS\|l__unnamed_cfstring\|_OBJC_SELECTOR_REFERENCES_\|_OBJC_CLASSLIST_REFERENCES' $t/locals
 first_l=$(grep -m1 -o 'l[0-9][0-9][0-9]$' $t/locals | tr -d l | sed 's/^0*//')
