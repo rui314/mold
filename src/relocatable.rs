@@ -420,48 +420,12 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             Sect::Synthetic(_) => None,
         })
         .collect();
-    let RSymtab { nlists: nlists_out, strtab, index_of_sym, atoms, entsize_of } =
-        build_symtab(ctx, &section_chunks);
-    // The symbol a reference to offset `off` of subsection `t` names
-    // where ld-prime re-derives it from the address, and the symbol's
-    // address: the nearest named place's first name, or in an object
-    // without subsections, past a place that does not start the
-    // section, its last (see symbol_places).
-    let places = symbol_places(ctx, &index_of_sym);
-    let name_at = |t: usize, off: u64| -> Option<(u32, u64)> {
-        let (&(isec, at), &(first, last, addr)) = places.range(..=(t, off)).next_back()?;
-        if isec != t {
-            return None;
-        }
-        let whole = !ctx.objs[ctx.isecs[t].file as usize].subsections_via_symbols;
-        Some((if whole && at != 0 && at != off { last } else { first }, addr))
-    };
-    // The symbol a section-relative relocation becomes an extern one
-    // against, and its address: the atom's in a section whose atoms
-    // ld64 names itself, else the name of the place.
-    let atom_target = |t: usize, addend: i64| -> Option<(u32, u64)> {
-        if let Some(ChunkId::Output(osec)) = ctx.isecs[t].output_section()
-            && let Some(&entsize) = entsize_of.get(&osec)
-            && let Some(&atom) = atoms.get(&(t, (addend as u64).checked_div(entsize).unwrap_or(0)))
-        {
-            return Some(atom);
-        }
-        name_at(t, u64::try_from(addend).ok()?)
-    };
+    let symtab = build_symtab(ctx, &section_chunks);
+    let targets = RelocTargets::new(ctx, &symtab);
 
     // Re-synthesize __LD,__compact_unwind so unwind info survives the
     // merge: one 32-byte entry per record, its pointer fields set by
-    // UNSIGNED relocations. ld64 names the function and the LSDA by
-    // symbol where one names the place (an extern relocation, the
-    // offset from the symbol in the field); a nameless one is referred
-    // to section-relatively.
-    let pointer_to = |t: usize, off: u64, len: u32| -> (u64, u32) {
-        let target = ctx.isec_addr(t) + off;
-        match name_at(t, off) {
-            Some((symnum, addr)) => (target - addr, symnum | len | (1 << 27)),
-            None => (target, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len),
-        }
-    };
+    // UNSIGNED relocations.
     let narrow_fields = narrow_unwind_fields(ctx);
     let mut cu_data: Vec<u8> = Vec::new();
     let mut cu_relocs: Vec<MachRel> = Vec::new();
@@ -471,7 +435,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
         let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
         let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
-        let (func, bits) = pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
+        let (func, bits) = targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
         cu_data.extend_from_slice(&func.to_le_bytes());
         cu_relocs.push(MachRel { r_address: entry, bits });
         cu_data.extend_from_slice(&rec.code_len.to_le_bytes());
@@ -479,9 +443,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
         match rec.personality() {
             Some(p) => {
-                let Some(&symnum) = index_of_sym.get(&p) else {
-                    fatal!("-r: unwind personality lost: {}", ctx.symbols[p]);
-                };
+                let symnum = targets.personality(p);
                 cu_data.extend_from_slice(&0u64.to_le_bytes());
                 cu_relocs
                     .push(MachRel { r_address: entry + 16, bits: symnum | len(16) | (1 << 27) });
@@ -491,7 +453,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
         match rec.lsda() {
             Some((lsda, off)) => {
-                let (lsda, bits) = pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
+                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
                 cu_data.extend_from_slice(&lsda.to_le_bytes());
                 cu_relocs.push(MachRel { r_address: entry + 24, bits });
             }
@@ -534,9 +496,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                         // compiler's x86-64 CIE holds 4 too).
                         let at = (off + cie.personality_offset) as usize;
                         eh_data[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
-                        let Some(&symnum) = index_of_sym.get(&p) else {
-                            fatal!("-r: unwind personality lost: {}", ctx.symbols[p]);
-                        };
+                        let symnum = targets.personality(p);
                         eh_relocs.push(MachRel {
                             r_address: off + cie.personality_offset,
                             bits: symnum
@@ -586,10 +546,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Regenerate each section's relocations against the merged tables.
-    let sect_relocs: Vec<Vec<MachRel>> = section_chunks
-        .iter()
-        .map(|&chunk_idx| section_relocs(ctx, chunk_idx, &index_of_sym, &atom_target))
-        .collect();
+    let sect_relocs: Vec<Vec<MachRel>> =
+        section_chunks.iter().map(|&chunk_idx| section_relocs(&targets, chunk_idx)).collect();
 
     for extra in &mut extras {
         // Self-relative cells can be resolved now the address is set.
@@ -630,9 +588,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let lohoff = off;
     off += loh.as_ref().map_or(0, |l| l.len() as u64);
     let symoff = off;
-    off += (nlists_out.len() * size_of::<NList>()) as u64;
+    off += (symtab.nlists.len() * size_of::<NList>()) as u64;
     let stroff = off;
-    off += strtab.len() as u64;
+    off += symtab.strtab.len() as u64;
 
     let mut buf = vec![0u8; off as usize];
 
@@ -714,9 +672,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         cmd: LC_SYMTAB,
         cmdsize: size_of::<SymtabCommand>() as u32,
         symoff: symoff as u32,
-        nsyms: nlists_out.len() as u32,
+        nsyms: symtab.nlists.len() as u32,
         stroff: stroff as u32,
-        strsize: strtab.len() as u32,
+        strsize: symtab.strtab.len() as u32,
     };
     st.write_to(&mut buf[p..]);
     p += size_of::<SymtabCommand>();
@@ -789,8 +747,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     buf[loc..loc + 4].copy_from_slice(&cell.to_le_bytes());
                     continue;
                 }
-                let OutTarget::Section(target, addend) = out_target(ctx, isec, rel, &index_of_sym)
-                else {
+                let OutTarget::Section(target, addend) = targets.out_target(isec, rel) else {
                     continue;
                 };
                 let t = &ctx.isecs[target];
@@ -800,7 +757,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     + t.offset as u64)
                     .wrapping_add_signed(addend);
                 let loc = dst + rel.offset as usize;
-                if let Some((_, atom_addr)) = atom_target(target, addend) {
+                if let Some((_, atom_addr)) = targets.atom_target(target, addend) {
                     // Now a relocation against the atom's symbol: the
                     // field holds the addend relative to it, in the
                     // form an object's extern relocation uses.
@@ -859,11 +816,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         }
     }
     let mut p = symoff as usize;
-    for nlist in &nlists_out {
+    for nlist in &symtab.nlists {
         nlist.write_to(&mut buf[p..]);
         p += size_of::<NList>();
     }
-    buf[stroff as usize..stroff as usize + strtab.len()].copy_from_slice(&strtab);
+    buf[stroff as usize..stroff as usize + symtab.strtab.len()].copy_from_slice(&symtab.strtab);
 
     crate::error::checkpoint();
     output_file::write(&ctx.args.output, &buf);
@@ -1134,11 +1091,10 @@ fn eh_frame_section<E: Target>(ctx: &Context<E>, records: &[(EhRec, u32)]) -> Sy
 /// whatever the input's order, keeping a pair - a SUBTRACTOR and its
 /// UNSIGNED, an arm64 ADDEND and its PAGE21 or PAGEOFF12 - in order.
 fn section_relocs<E: Target>(
-    ctx: &Context<E>,
+    targets: &RelocTargets<E>,
     chunk_idx: OutputSectionId,
-    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
-    atom_target: &impl Fn(usize, i64) -> Option<(u32, u64)>,
 ) -> Vec<MachRel> {
+    let ctx = targets.ctx;
     let mut rels = Vec::new();
     for &id in &ctx.output_section(chunk_idx).members {
         let isec = &ctx.isecs[id];
@@ -1146,7 +1102,7 @@ fn section_relocs<E: Target>(
         let mut open: Vec<MachRel> = Vec::new();
         for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
             let mut group = std::mem::take(&mut open);
-            push_reloc(ctx, isec, rel, index_of_sym, atom_target, &mut group);
+            push_reloc(targets, isec, rel, &mut group);
             if rel.r_type == E::RELOC_SUBTRACTOR {
                 open = group;
             } else {
@@ -1164,15 +1120,14 @@ fn section_relocs<E: Target>(
 
 /// Appends the -r relocation entries standing for one input relocation.
 fn push_reloc<E: Target>(
-    ctx: &Context<E>,
+    targets: &RelocTargets<E>,
     isec: &crate::input_sections::InputSection,
     rel: &crate::input_sections::Reloc,
-    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
-    atom_target: &impl Fn(usize, i64) -> Option<(u32, u64)>,
     out: &mut Vec<MachRel>,
 ) {
+    let ctx = targets.ctx;
     let r_address = (isec.offset as u64 + rel.offset as u64) as u32;
-    let (symnum, is_extern) = match out_target(ctx, isec, rel, index_of_sym) {
+    let (symnum, is_extern) = match targets.out_target(isec, rel) {
         OutTarget::Sym(symnum) => {
             // An explicit addend record precedes relocations whose
             // instruction can't hold one.
@@ -1186,7 +1141,7 @@ fn push_reloc<E: Target>(
             }
             (symnum, true)
         }
-        OutTarget::Section(target, addend) => match atom_target(target, addend) {
+        OutTarget::Section(target, addend) => match targets.atom_target(target, addend) {
             Some((symnum, _)) => (symnum, true),
             None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
         },
@@ -1211,25 +1166,95 @@ enum OutTarget {
     Section(usize, i64),
 }
 
-fn out_target<E: Target>(
-    ctx: &Context<E>,
-    isec: &crate::input_sections::InputSection,
-    rel: &crate::input_sections::Reloc,
-    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
-) -> OutTarget {
-    match rel.target() {
-        RelocTarget::Sym(idx) => {
-            let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
-            if let Some(&symnum) = index_of_sym.get(&sym_id) {
-                return OutTarget::Sym(symnum);
+/// How the -r output names the targets of its relocations and pointer
+/// fields: by their symbols in its symbol table, by a symbol ld-prime
+/// re-derives from the address, or section-relatively.
+struct RelocTargets<'a, E: Target> {
+    ctx: &'a Context<E>,
+    symtab: &'a RSymtab,
+    /// The named places (see symbol_places).
+    places: BTreeMap<(usize, u64), (u32, u32, u64)>,
+}
+
+impl<'a, E: Target> RelocTargets<'a, E> {
+    fn new(ctx: &'a Context<E>, symtab: &'a RSymtab) -> Self {
+        let places = symbol_places(ctx, &symtab.index_of_sym);
+        Self { ctx, symtab, places }
+    }
+
+    /// How the output refers to a relocation's target.
+    fn out_target(
+        &self,
+        isec: &crate::input_sections::InputSection,
+        rel: &crate::input_sections::Reloc,
+    ) -> OutTarget {
+        let ctx = self.ctx;
+        match rel.target() {
+            RelocTarget::Sym(idx) => {
+                let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
+                if let Some(&symnum) = self.symtab.index_of_sym.get(&sym_id) {
+                    return OutTarget::Sym(symnum);
+                }
+                let sym = &ctx.symbols[sym_id];
+                let Some(t) = sym.input_section() else {
+                    fatal!("-r: cannot re-emit relocation against {}", sym.name());
+                };
+                OutTarget::Section(ctx.resolve_isec(t as usize), sym.value as i64 + rel.addend)
             }
-            let sym = &ctx.symbols[sym_id];
-            let Some(t) = sym.input_section() else {
-                fatal!("-r: cannot re-emit relocation against {}", sym.name());
-            };
-            OutTarget::Section(ctx.resolve_isec(t as usize), sym.value as i64 + rel.addend)
+            RelocTarget::Section(t) => OutTarget::Section(ctx.resolve_isec(t as usize), rel.addend),
         }
-        RelocTarget::Section(t) => OutTarget::Section(ctx.resolve_isec(t as usize), rel.addend),
+    }
+
+    /// The symbol a reference to offset `off` of subsection `t` names
+    /// where ld-prime re-derives it from the address, and the symbol's
+    /// address: the nearest named place's first name, or in an object
+    /// without subsections, past a place that does not start the
+    /// section, its last (see symbol_places).
+    fn name_at(&self, t: usize, off: u64) -> Option<(u32, u64)> {
+        let (&(isec, at), &(first, last, addr)) = self.places.range(..=(t, off)).next_back()?;
+        if isec != t {
+            return None;
+        }
+        let whole = !self.ctx.objs[self.ctx.isecs[t].file as usize].subsections_via_symbols;
+        Some((if whole && at != 0 && at != off { last } else { first }, addr))
+    }
+
+    /// The symbol a section-relative relocation becomes an extern one
+    /// against, and its address: the atom's in a section whose atoms
+    /// ld64 names itself, else the name of the place.
+    fn atom_target(&self, t: usize, addend: i64) -> Option<(u32, u64)> {
+        if let Some(ChunkId::Output(osec)) = self.ctx.isecs[t].output_section()
+            && let Some(&entsize) = self.symtab.entsize_of.get(&osec)
+            && let Some(&atom) =
+                self.symtab.atoms.get(&(t, (addend as u64).checked_div(entsize).unwrap_or(0)))
+        {
+            return Some(atom);
+        }
+        self.name_at(t, u64::try_from(addend).ok()?)
+    }
+
+    /// A pointer field to offset `off` of subsection `t`: its contents
+    /// and its relocation's symbol, length (`len`) and extern bits. ld64
+    /// names the target by symbol where one names the place (an extern
+    /// relocation, the offset from the symbol in the field); a nameless
+    /// one is referred to section-relatively.
+    fn pointer_to(&self, t: usize, off: u64, len: u32) -> (u64, u32) {
+        let ctx = self.ctx;
+        let target = ctx.isec_addr(t) + off;
+        match self.name_at(t, off) {
+            Some((symnum, addr)) => (target - addr, symnum | len | (1 << 27)),
+            None => (target, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len),
+        }
+    }
+
+    /// The symbol index of an unwind record's or a CIE's personality
+    /// routine, which the output's symbol table names (see
+    /// referenced_syms).
+    fn personality(&self, p: crate::symbol::SymbolId) -> u32 {
+        let Some(&symnum) = self.symtab.index_of_sym.get(&p) else {
+            fatal!("-r: unwind personality lost: {}", self.ctx.symbols[p]);
+        };
+        symnum
     }
 }
 
