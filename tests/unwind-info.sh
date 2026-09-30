@@ -56,6 +56,23 @@ unwind_entries $t/exe2 > $t/entries2
 grep -q "^$(addr $t/exe2 _f) " $t/entries2
 not grep -q "^$(addr $t/exe2 _main) " $t/entries2
 
+# An empty atom gets an entry too: the empty __text of an object of
+# only data without .subsections_via_symbols, which the arm64
+# assembler labels (ltmp0), at the end of the code or ahead of the
+# function that shares its address.
+if [ $ARCH = arm64 ]; then
+  printf '.data\n.quad 1\n' | $CC -o $t/f.o -c -xassembler -
+  $CC --ld-path=$mold -o $t/exe4 $t/c.o $t/a.o $t/f.o
+  $t/exe4
+  unwind_entries $t/exe4 > $t/entries4
+  [ "$(tail -1 $t/entries4 | cut -d' ' -f2)" = 0x0 ]
+  $CC --ld-path=$mold -o $t/exe5 $t/f.o $t/c.o $t/a.o
+  $t/exe5
+  unwind_entries $t/exe5 > $t/entries5
+  [ "$(sed -n 1p $t/entries5)" = "$(addr $t/exe5 _main) 0x0" ]
+  [ "$(sed -n 2p $t/entries5 | cut -d' ' -f1)" = "$(addr $t/exe5 _main)" ]
+fi
+
 # With more entries than a page holds, ld-prime fills the 4096-byte
 # second-level pages from the first function on, starts each page at
 # an 8-byte boundary of the section, and sizes the first-level index

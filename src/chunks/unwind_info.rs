@@ -114,7 +114,9 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         }
     }
 
-    records.par_sort_by_key(func_addr);
+    // An empty atom shares its address with the function after it, and
+    // comes first, as in the input.
+    records.par_sort_by_key(|r| (func_addr(r), r.isec));
 
     // The table ends where the last function does, as in ld64, however
     // much of it its unwind record covers.
@@ -350,7 +352,8 @@ pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
 /// Records for the code that has no unwind information: ld-prime gives
 /// every atom of an instruction section an entry, encoding 0 ("none")
 /// for one without a record of its own, so that it does not fall under
-/// the unwind rules of the function before it.
+/// the unwind rules of the function before it - an empty atom too,
+/// such as the empty __text of an object with only data.
 fn bare_code_records<E: Target>(
     ctx: &Context<E>,
     records: &[crate::input_files::UnwindRecord],
@@ -364,7 +367,6 @@ fn bare_code_records<E: Target>(
         .filter(|&(i, isec)| {
             isec.is_alive()
                 && isec.replacement == crate::input_sections::NO_REPLACEMENT
-                && isec.size > 0
                 && !ctx.is_internal(isec.file as usize)
                 && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)
                     != 0
