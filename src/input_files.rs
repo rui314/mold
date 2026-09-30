@@ -391,15 +391,18 @@ pub struct DylibFile {
 
 /// Returns true for sections that don't become part of the output image.
 fn is_discarded_section(hdr: &MachSection) -> bool {
-    // Debug sections, including __LD,__compact_unwind, are consumed by
+    // The __DWARF and __LD (__compact_unwind) segments are consumed by
     // other tools or, later, by the linker itself; they are never
     // copied into an output. Not into a -r output either: ld64 does
     // not merge DWARF (the section-relative offsets in it - abbrev,
     // line table, ranges - carry no relocations and would all have to
     // be rebased), it writes debug-note stabs naming the input objects
     // as the places debuggers read DWARF from, and a later link
-    // carries those notes through.
-    hdr.flags & S_ATTR_DEBUG != 0 || hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
+    // carries those notes through. ld-prime goes by the segment alone:
+    // a section with S_ATTR_DEBUG elsewhere is copied like any other
+    // (the attribute is dropped in a final image), and one in those
+    // segments without it is dropped all the same.
+    hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
 }
 
 /// The alignment of every record of a section of fixed-size records (see
