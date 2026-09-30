@@ -59,9 +59,10 @@ pub enum InputArg {
     UpwardLib(OsString),
     UpwardFramework(OsString),
     UpwardFile(PathBuf),
-    /// -lazy-lfoo / -lazy_library path: a library as ld-prime links it
-    /// for an OS before macOS 27 (-lazy_framework is -framework).
+    /// -lazy-lfoo / -lazy_framework Foo / -lazy_library path: a library
+    /// as ld-prime links it for an OS before macOS 27.
     LazyLib(OsString),
+    LazyFramework(OsString),
     LazyFile(PathBuf),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
@@ -1217,7 +1218,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-lazy_framework" => {
                 let arg = next_arg(&mut i, name);
                 add_lazy(&mut lazy_libraries, arg.as_bytes());
-                args.inputs.push(InputArg::Framework(arg.to_owned(), false));
+                args.inputs.push(InputArg::LazyFramework(arg.to_owned()));
             }
             b"-sub_library" => {
                 args.inputs.push(InputArg::ReexportLib(next_arg(&mut i, name).to_owned()))

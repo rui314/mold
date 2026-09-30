@@ -218,6 +218,9 @@ struct ReaderContext {
     needed: bool,
     /// -upward_library, -upward-l, -upward_framework.
     upward: bool,
+    /// -lazy_library, -lazy-l, -lazy_framework, which load a dylib as
+    /// any other before macOS 27.
+    lazy: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
 }
@@ -232,6 +235,7 @@ impl ReaderContext {
             hidden: self.hidden || other.hidden,
             needed: self.needed || other.needed,
             upward: self.upward || other.upward,
+            lazy: self.lazy || other.lazy,
             autolinked: self.autolinked && other.autolinked,
         }
     }
@@ -585,35 +589,29 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     load_pending(ctx, queue);
 }
 
-/// Finds the file each input names: ld-prime looks for every library
-/// and framework before it reads a file, and reports the ones it
-/// doesn't find. (-bundle_loader's is read apart.)
+/// Finds the file each input names: None for a library or framework
+/// not found, or a file a library option names that isn't there.
+/// (-bundle_loader's is read apart.)
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
-    let find = |arg: &InputArg| {
-        let (path, kind, name) = match arg {
-            InputArg::File(path)
-            | InputArg::ForceLoad(path)
-            | InputArg::WeakFile(path)
-            | InputArg::ReexportFile(path)
-            | InputArg::NeededFile(path)
-            | InputArg::UpwardFile(path)
-            | InputArg::LazyFile(path) => return Some(path.clone()),
-            InputArg::BundleLoader(_) => return None,
-            InputArg::Lib(name, _)
-            | InputArg::ReexportLib(name)
-            | InputArg::HiddenLib(name)
-            | InputArg::NeededLib(name)
-            | InputArg::LazyLib(name) => (find_library(ctx, name), "library", name),
-            InputArg::UpwardLib(name) => (find_dylib(ctx, name), "library", name),
-            InputArg::Framework(name, _)
-            | InputArg::ReexportFramework(name)
-            | InputArg::NeededFramework(name)
-            | InputArg::UpwardFramework(name) => (find_framework(ctx, name), "framework", name),
-        };
-        if path.is_none() {
-            error!("{kind} '{}' not found", name.display());
-        }
-        path
+    let find = |arg: &InputArg| match arg {
+        InputArg::File(path) | InputArg::ForceLoad(path) => Some(path.clone()),
+        InputArg::BundleLoader(_) => None,
+        InputArg::WeakFile(path)
+        | InputArg::ReexportFile(path)
+        | InputArg::NeededFile(path)
+        | InputArg::UpwardFile(path)
+        | InputArg::LazyFile(path) => Some(path.clone()).filter(|path| path.is_file()),
+        InputArg::Lib(name, _)
+        | InputArg::ReexportLib(name)
+        | InputArg::HiddenLib(name)
+        | InputArg::NeededLib(name)
+        | InputArg::LazyLib(name) => find_library(ctx, name),
+        InputArg::UpwardLib(name) => find_dylib(ctx, name),
+        InputArg::Framework(name, _)
+        | InputArg::ReexportFramework(name)
+        | InputArg::NeededFramework(name)
+        | InputArg::UpwardFramework(name)
+        | InputArg::LazyFramework(name) => find_framework(ctx, name),
     };
     inputs.iter().map(find).collect()
 }
@@ -633,7 +631,8 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         | Framework(name, _)
         | ReexportFramework(name)
         | NeededFramework(name)
-        | UpwardFramework(name) => name.as_os_str(),
+        | UpwardFramework(name)
+        | LazyFramework(name) => name.as_os_str(),
         WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
         | LazyFile(path) => path.as_os_str(),
         File(_) | ForceLoad(_) | BundleLoader(_) => return None,
@@ -644,47 +643,80 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         hidden: matches!(arg, HiddenLib(_)),
         needed: matches!(arg, NeededLib(_) | NeededFramework(_) | NeededFile(_)),
         upward: matches!(arg, UpwardLib(_) | UpwardFramework(_) | UpwardFile(_)),
+        lazy: matches!(arg, LazyLib(_) | LazyFramework(_) | LazyFile(_)),
         ..Default::default()
     };
     let framework = matches!(
         arg,
-        Framework(..) | ReexportFramework(_) | NeededFramework(_) | UpwardFramework(_)
+        Framework(..)
+            | ReexportFramework(_)
+            | NeededFramework(_)
+            | UpwardFramework(_)
+            | LazyFramework(_)
     );
     Some((rc, framework, name))
 }
 
 /// How each input is named: the flags its option gives the file.
-/// ld-prime merges what the options naming one library say - those
-/// naming one framework, or finding one file: under -L., `-lfoo` and
+/// ld-prime reads the library options before it reads a file, and
+/// merges what those naming one library say - those naming one
+/// framework, or finding one file: under -L., `-lfoo` and
 /// `-upward_library ./libfoo.dylib` both load an upward libfoo. A file
 /// also given by bare path, or named by options that match no other
 /// way (`-upward_library libfoo.dylib`), takes nothing from the other
 /// namings: the first to load the file decides (see collect_file).
+/// ld-prime stops at the first library it doesn't find, and at a
+/// naming check_naming refuses.
 fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<ReaderContext> {
-    // A framework by its name, any other library by the file found.
-    fn named<'a>(
-        arg: &'a InputArg,
-        path: &'a Option<PathBuf>,
-    ) -> Option<(ReaderContext, (bool, &'a OsStr))> {
-        let (rc, framework, name) = library_option(arg)?;
-        let key = if framework { name } else { path.as_ref()?.as_os_str() };
-        Some((rc, (framework, key)))
-    }
     let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
+    let mut keys = Vec::with_capacity(inputs.len());
+    let mut all_found = true;
     for (arg, path) in inputs.iter().zip(paths) {
-        if let Some((rc, key)) = named(arg, path) {
-            let all = merged.entry(key).or_default();
-            *all = all.union(rc);
-        }
+        let key = match (library_option(arg), path) {
+            (Some((_, framework, name)), None) => {
+                let kind = if framework { "framework" } else { "library" };
+                error!("{kind} '{}' not found", name.display());
+                all_found = false;
+                None
+            }
+            (Some((rc, framework, name)), Some(path)) => {
+                // A framework by its name, any other library by the
+                // file found.
+                let key = (framework, if framework { name } else { path.as_os_str() });
+                let all = merged.entry(key).or_default();
+                *all = all.union(rc);
+                if all_found {
+                    check_naming(*all, framework, name);
+                }
+                Some(key)
+            }
+            (None, _) => None,
+        };
+        keys.push(key);
     }
-    let naming = |(arg, path)| match named(arg, path) {
-        Some((_, key)) => merged[&key],
+    let naming = |(arg, key): (&InputArg, Option<_>)| match key {
+        Some(key) => merged[&key],
         None => ReaderContext {
             force_load: matches!(arg, InputArg::ForceLoad(_)),
             ..Default::default()
         },
     };
-    inputs.iter().zip(paths).map(naming).collect()
+    inputs.iter().zip(keys).map(naming).collect()
+}
+
+/// ld-prime refuses to re-export a library that it links weakly or
+/// lazily, naming the pair as the option that makes it spells the
+/// library (a path as `-weak-l<path>`).
+fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
+    let spell = |opt: &str| match framework {
+        true => format!("'-{opt}_framework {}'", name.display()),
+        false => format!("'-{opt}-l{}'", name.display()),
+    };
+    for (on, opt) in [(rc.weak, "weak"), (rc.lazy, "lazy")] {
+        if on && rc.reexport {
+            fatal!("{} and {} cannot be used together", spell(opt), spell("reexport"));
+        }
+    }
 }
 
 /// -bundle_loader: the executable that will load this bundle. Its
