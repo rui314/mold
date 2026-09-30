@@ -71,6 +71,10 @@ pub struct ObjectFile {
     /// -hidden-l: this file's external definitions become private
     /// externals.
     pub hidden: bool,
+    /// MH_SUBSECTIONS_VIA_SYMBOLS was set: symbols split the sections
+    /// into atoms. A -r output carries the flag only if every input
+    /// had it.
+    pub subsections_via_symbols: bool,
     /// Section headers in ordinal order (all segments' sections
     /// concatenated in load command order). Borrowed from the mapped
     /// file; the internal object owns its, and grows the list as the
@@ -123,6 +127,7 @@ impl ObjectFile {
             linker_options: Vec::new(),
             platform_versions: Vec::new(),
             hidden: false,
+            subsections_via_symbols: true,
             sect_hdrs: std::borrow::Cow::Owned(Vec::new()),
             relocs: Vec::new(),
             subsecs: Vec::new(),
@@ -254,6 +259,8 @@ pub struct StagedObject {
     pub sect_hdrs: &'static [MachSection],
     pub linker_options: Vec<Vec<Vec<u8>>>,
     pub platform_versions: Vec<PlatformVersion>,
+    /// MH_SUBSECTIONS_VIA_SYMBOLS: symbols split sections into atoms.
+    pub subsections_via_symbols: bool,
     pub isecs: Vec<InputSection>,
     pub relocs: Vec<crate::input_sections::Reloc>,
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
@@ -764,6 +771,7 @@ pub fn stage_object<E: Target>(
         sect_hdrs,
         linker_options,
         platform_versions,
+        subsections_via_symbols: split_ok,
         isecs,
         relocs: obj_relocs,
         subsecs,
@@ -1004,6 +1012,7 @@ pub fn integrate_objects<E: Target>(
             linker_options: st.linker_options,
             platform_versions: st.platform_versions,
             hidden: st.hidden,
+            subsections_via_symbols: st.subsections_via_symbols,
             sect_hdrs: std::borrow::Cow::Borrowed(st.sect_hdrs),
             relocs: st.relocs,
             subsecs: st.subsecs,
@@ -1098,6 +1107,7 @@ pub fn integrate_object_with<E: Target>(
         linker_options: staged.linker_options,
         platform_versions: staged.platform_versions,
         hidden: staged.hidden,
+        subsections_via_symbols: staged.subsections_via_symbols,
         sect_hdrs: std::borrow::Cow::Borrowed(staged.sect_hdrs),
         relocs: obj_relocs,
         subsecs: staged.subsecs.into_iter().map(|i| i + isec_base as u32).collect(),
@@ -1176,6 +1186,7 @@ pub fn parse_bitcode<E: Target>(
         linker_options: Vec::new(),
         platform_versions: Vec::new(),
         hidden: false,
+        subsections_via_symbols: true,
         sect_hdrs: std::borrow::Cow::Borrowed(&[]),
         relocs: Vec::new(),
         subsecs: Vec::new(),

@@ -77,6 +77,13 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     (seg, sect)
 }
 
+/// The n_desc of a symbol from an object without subsections: ld64
+/// marks the whole-section atoms no-dead-strip and drops the alt-entry
+/// marker, which means nothing there.
+fn whole_desc(desc: u16, whole: bool) -> u16 {
+    if whole { (desc | N_NO_DEAD_STRIP) & !N_ALT_ENTRY } else { desc }
+}
+
 pub fn link<E: Target>(ctx: &mut Context<E>) {
     // Lay out the merged sections from address zero, zero-fill
     // sections last: an object's file image mirrors its address
@@ -450,6 +457,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         if !obj.is_alive {
             continue;
         }
+        // Without subsections the object's sections are whole atoms,
+        // which ld64 marks no-dead-strip - every symbol, the
+        // assembler's ltmpN labels (they name the atoms) included -
+        // and an alt entry means nothing there.
+        let whole = !obj.subsections_via_symbols;
         let r = obj.local_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             if nlist.is_stab() || nlist.is_extern() {
@@ -467,7 +479,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             let is_label = sym.name().starts_with('l') || sym.name().starts_with('L');
-            if is_label && !referenced.contains(&sym_id) {
+            if is_label && !whole && !referenced.contains(&sym_id) {
                 let others =
                     named_at.get(&(obj_idx, nlist.n_sect, nlist.n_value)).copied().unwrap_or(0)
                         - u32::from(!sym.name().starts_with("ltmp"));
@@ -482,7 +494,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             locals.push(Local {
                 name: sym.name().to_string(),
                 n_type: nlist.n_type,
-                n_desc: nlist.n_desc,
+                n_desc: whole_desc(nlist.n_desc, whole),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: Rename::None,
@@ -520,7 +532,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 locals.push(Local {
                     name: sym.name().to_string(),
                     n_type: N_PEXT | N_SECT,
-                    n_desc: nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
+                    n_desc: whole_desc(
+                        nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP),
+                        !obj.subsections_via_symbols,
+                    ),
                     n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                     addr: sym_addr(ctx, sym_id),
                     rename: Rename::None,
@@ -622,6 +637,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 | REFERENCED_DYNAMICALLY);
         if sym.is_weak_def() {
             n_desc |= N_WEAK_DEF;
+        }
+        if let Some(FileId::Obj(o)) = sym.file()
+            && !ctx.objs[o as usize].subsections_via_symbols
+        {
+            n_desc = whole_desc(n_desc, true);
         }
         index_of_sym.insert(i as u32, nlists_out.len() as u32);
         nlists_out.push(NList {
@@ -1004,7 +1024,19 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         filetype: MH_OBJECT,
         ncmds,
         sizeofcmds: sizeofcmds as u32,
-        flags: MH_SUBSECTIONS_VIA_SYMBOLS,
+        // Only if every input had it: one whole-section object makes
+        // the output whole-section too (ld64).
+        flags: if ctx
+            .objs
+            .iter()
+            .enumerate()
+            .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
+            .all(|(_, o)| o.subsections_via_symbols)
+        {
+            MH_SUBSECTIONS_VIA_SYMBOLS
+        } else {
+            0
+        },
         reserved: 0,
     };
     hdr.write_to(&mut buf);

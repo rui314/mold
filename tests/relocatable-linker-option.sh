@@ -27,6 +27,9 @@ $mold -r -arch $ARCH -syslibroot "$(xcrun --show-sdk-path)" -o $t/r.o \
   $t/a.o $t/b.o $t/c.o -lSystem > $t/log 2>&1
 grep -q 'ignoring unexpected dylib' $t/log
 
+# b.o and c.o lack MH_SUBSECTIONS_VIA_SYMBOLS, so the output does too.
+otool -h $t/r.o | tail -1 | grep ' 0x00000000$'
+
 # The zlib reference stays undefined, and each distinct option appears
 # once.
 nm -m $t/r.o | grep 'undefined.*_zlibVersion'
