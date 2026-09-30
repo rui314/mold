@@ -208,6 +208,10 @@ pub struct Args {
     /// Whether the image is bound for the dyld shared cache (ld64's
     /// fSharedRegionEligible): see resolve_shared_region.
     pub shared_region: bool,
+    /// -no_inits / -no_warn_inits: static initializers are an error, or
+    /// go unmentioned in a dylib bound for the shared cache.
+    pub no_inits: bool,
+    pub no_warn_inits: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// -application_extension: mark the image safe for app extensions.
@@ -377,6 +381,8 @@ impl Default for Args {
             not_for_dyld_shared_cache: false,
             debug_variant: false,
             shared_region: false,
+            no_inits: false,
+            no_warn_inits: false,
             bind_at_load: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
@@ -872,6 +878,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_warn_unused_dylibs" => args.warn_unused_dylibs = Some(false),
             b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
             b"-debug_variant" => args.debug_variant = true,
+            b"-no_inits" => args.no_inits = true,
+            b"-no_warn_inits" => args.no_warn_inits = true,
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,

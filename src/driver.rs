@@ -125,6 +125,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         crate::subprocess::notify_parent();
         return Ok(0);
     }
+    passes::check_initializers(&ctx);
     passes::convert_init_offsets(&mut ctx);
     let t = ctx.timer("merge_literals");
     passes::merge_literals(&mut ctx);

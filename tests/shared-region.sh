@@ -62,8 +62,19 @@ r1() { otool -l $t/e.dylib | awk -v s=$1 '$1 == "sectname" { n = $2 } $1 == "res
 [ "$(r1 __weak_got)" -lt "$(r1 __got)" ]
 
 # The cache builder binds every symbol, so none may be looked up
-# dynamically; and an OS image should need no run paths.
+# dynamically; an OS image should need no run paths, and a dylib's
+# static initializers slow down every process.
 not link f.dylib -Wl,-add_split_seg_info -Wl,-U,_nothing 2> $t/log
 grep -q "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U'" $t/log
-link g.dylib -Wl,-add_split_seg_info -Wl,-rpath,/x 2> $t/log
+
+cat <<EOF | $CXX -o $t/g.o -c -xc++ -
+#include <unistd.h>
+int x = getpid();
+EOF
+$CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-add_split_seg_info -Wl,-rpath,/x 2> $t/log
 grep -q 'OS dylibs should not add rpaths' $t/log
+grep -q "static initializer '__GLOBAL__sub_I_.*' found in '.*g.o'. Use -no_inits" $t/log
+$CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-add_split_seg_info -Wl,-no_warn_inits 2> $t/log
+not grep -q 'static initializer' $t/log
+not $CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-no_inits 2> $t/log
+grep -q 'Static initializers:' $t/log

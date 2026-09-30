@@ -1385,6 +1385,62 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// ld-prime's diagnostics for static initializers: a warning for each
+/// in a dylib bound for the dyld shared cache, where every process
+/// would run it, unless -no_warn_inits; with -no_inits, an error listing
+/// them all.
+pub fn check_initializers<E: Target>(ctx: &Context<E>) {
+    let args = &ctx.args;
+    let warn = args.shared_region && args.output_type == MH_DYLIB && !args.no_warn_inits;
+    if !warn && !args.no_inits {
+        return;
+    }
+    let inits = initializers(ctx);
+    if args.no_inits {
+        if !inits.is_empty() {
+            let list: String =
+                inits.iter().map(|(name, file)| format!("{name} in {file}\n")).collect();
+            error!("Static initializers:\n{list}");
+        }
+        return;
+    }
+    for (name, file) in inits {
+        crate::warn!(
+            "static initializer '{name}' found in '{file}'. Use -no_inits to make this an \
+             error.  Use -no_warn_inits to suppress warning"
+        );
+    }
+}
+
+/// The functions the inputs' __mod_init_func sections point at, by
+/// name, with the files that hold the pointers.
+fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
+    let mut vec = Vec::new();
+    for (i, isec) in ctx.isecs.iter().enumerate() {
+        if !isec.is_alive() || ctx.hdr_of(isec).section_type() != S_MOD_INIT_FUNC_POINTERS {
+            continue;
+        }
+        let obj = &ctx.objs[isec.file as usize];
+        let mut relocs = ctx.isec_relocs(i).to_vec();
+        relocs.sort_by_key(|r| r.offset);
+        for rel in relocs {
+            let name = match rel.target() {
+                RelocTarget::Sym(idx) => ctx.symbols[obj.symbols[idx as usize]].name(),
+                RelocTarget::Section(target) => {
+                    let target = ctx.resolve_isec(target as usize) as u32;
+                    obj.symbols
+                        .iter()
+                        .map(|&id| &ctx.symbols[id])
+                        .find(|s| s.input_section() == Some(target) && s.value == rel.addend as u64)
+                        .map_or("", |s| s.name())
+                }
+            };
+            vec.push((name, resolved_file_name(obj.mf)));
+        }
+    }
+    vec
+}
+
 /// Validates only objects selected by resolution, including the LTO
 /// output. Unused archive members must not cause errors or warnings.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
