@@ -8,6 +8,8 @@ echo 'int main() {}' | $CC -c -xc - -o $t/a.o
 $CC --ld-path=$mold $t/a.o $t/libfoo.dylib -Wl,-dead_strip_dylibs -o $t/exe
 otool -L $t/exe > $t/libs
 not grep -q libfoo.dylib $t/libs
+# libSystem stays even though nothing binds to it: ld64 never strips it.
+grep -q libSystem $t/libs
 
 $CC --ld-path=$mold $t/a.o -o $t/exe \
   -Wl,-needed_library,$t/libfoo.dylib,-dead_strip_dylibs
