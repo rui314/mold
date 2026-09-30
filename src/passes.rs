@@ -4671,16 +4671,17 @@ pub fn create_output_symtab<E: Target>(
     data.nundef = undefs.len() as u32;
     // The string table, in ld-prime's layout.
     debug_assert_eq!(names.len(), data.entries.len());
-    let (uniques, size) = crate::chunks::symtab::layout_strings(
+    let nlocal = data.nlocal as usize;
+    let entry_of =
+        crate::chunks::symtab::symbol_entries(&data.entries, nplain, nlocal, ctx.symbols.syms.len());
+    data.strtab_size = crate::chunks::symtab::layout_strings(
         &mut data.entries,
-        &names,
-        nplain,
+        &mut names,
+        nlocal,
         (stabs_start, &stab_names_of),
-        data.nlocal as usize,
-        ctx.symbols.syms.len(),
+        &entry_of,
     );
-    data.strtab_uniques = uniques;
-    data.strtab_size = size;
+    data.names = names;
 
     // Record each global symbol's index for the indirect symbol table.
     data.output_sym_indices = vec![u32::MAX; ctx.symbols.syms.len()];

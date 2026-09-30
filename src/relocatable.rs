@@ -1508,18 +1508,20 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value };
         ents.push((ent, Some(i as u32)));
     }
-    let (uniques, size) = crate::chunks::symtab::layout_strings(
+    let entry_of =
+        crate::chunks::symtab::symbol_entries(&ents, nplain, nlocal, ctx.symbols.syms.len());
+    let size = crate::chunks::symtab::layout_strings(
         &mut ents,
-        &names,
-        nplain,
-        (nplain, &names_of),
+        &mut names,
         nlocal,
-        ctx.symbols.syms.len(),
+        (nplain, &names_of),
+        &entry_of,
     );
     let mut strtab = vec![0u8; size];
     strtab[0] = b' ';
-    for (off, name) in uniques {
-        strtab[off as usize..off as usize + name.len()].copy_from_slice(name);
+    for ((ent, _), name) in ents.iter().zip(&names) {
+        let off = ent.n_strx as usize;
+        strtab[off..off + name.len()].copy_from_slice(name);
     }
 
     let mut atoms = HashMap::new();
