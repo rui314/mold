@@ -1124,7 +1124,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // The obsolete options given, which ld-prime ignores with a
     // warning once it has read them all.
     let mut obsolete: Vec<&str> = Vec::new();
+    // The libraries and the frameworks to load lazily, which ld-prime
+    // keeps apart.
     let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
+    let mut lazy_frameworks: Vec<Vec<u8>> = Vec::new();
     let mut unknown = String::new();
 
     crate::error::set_color(std::io::stderr().is_terminal());
@@ -1237,7 +1240,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-lazy_framework" => {
                 let arg = next_arg(&mut i, name);
-                add_lazy(&mut lazy_libraries, arg.as_bytes());
+                add_lazy(&mut lazy_frameworks, arg.as_bytes());
                 args.inputs.push(InputArg::LazyFramework(arg.to_owned()));
             }
             b"-sub_library" => {
@@ -1917,19 +1920,31 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // dyld loads a lazy dylib when __dyld_lazy_load says so, which
     // ld-prime keeps as an import of any final image that names one,
-    // used or not.
-    if !lazy_libraries.is_empty() {
-        args.lazy_load =
-            args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0);
+    // used or not. Firmware, a -preload image included, has no dyld:
+    // ld-prime links the library as usual there, with a second warning.
+    if !lazy_libraries.is_empty() || !lazy_frameworks.is_empty() {
+        args.lazy_load = args.platform == PLATFORM_MACOS
+            && args.platform_minos >= encode_version(27, 0, 0)
+            && !args.preload;
         if args.lazy_load && !args.relocatable {
             args.forced_undefined.push("__dyld_lazy_load".to_string());
         }
     }
-    for lib in lazy_libraries.iter().filter(|_| !args.lazy_load) {
+    for lib in lazy_frameworks.iter().chain(&lazy_libraries).filter(|_| !args.lazy_load) {
         crate::warn!(
             "lazy-load will be ignored for '{}' because deployment target version is too low",
             display(lib)
         );
+    }
+    if args.platform == PLATFORM_FIRMWARE || args.preload {
+        for _ in &lazy_frameworks {
+            crate::warn!(
+                "-lazy_framework cannot be used on firmware, changing to regular -framework"
+            );
+        }
+        for _ in &lazy_libraries {
+            crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
+        }
     }
     // What is dead is known only once the final link sees every
     // reference.

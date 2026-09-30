@@ -49,3 +49,16 @@ $CC --ld-path=$mold -o $t/exe2 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo,-lazy-lfoo \
 grep -q "lazy-load will be ignored for '$t/libbar.dylib' because" $t/log6
 grep -q "lazy-load will be ignored for 'Foo' because" $t/log6
 otool -L $t/exe2 | grep -q /u/libfoo.dylib
+
+# It warns about the frameworks first, then the libraries. Firmware -
+# and a -preload image, macOS 27's too - has no dyld to load one
+# lazily: ld-prime warns a second time, and links it as usual.
+grep 'lazy-load will be ignored' $t/log6 | grep -o "for '[^']*'" | tr '\n' ' ' > $t/order6
+[ "$(cat $t/order6)" = "for 'Foo' for 'foo' for '$t/libbar.dylib' " ]
+
+$mold -arch $ARCH -preload -e _main -platform_version macos 27.0 27.0 -o $t/exe7 $t/a.o \
+  -L$t -F$t/fw -lazy-lbaz -lazy_library $t/libbar.dylib -lazy_framework Foo 2> $t/log7
+[ "$(grep -c 'lazy-load will be ignored' $t/log7)" = 3 ]
+[ "$(grep -c -- '-lazy_library cannot be used on firmware, changing to regular link$' $t/log7)" = 2 ]
+grep -q -- '-lazy_framework cannot be used on firmware, changing to regular -framework$' $t/log7
+not grep -q 'cannot be used on' $t/log6
