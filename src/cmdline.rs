@@ -1120,6 +1120,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-headerpad_max_install_names" => args.headerpad_max_install_names = true,
 
             b"-deduplicate" => args.deduplicate = true,
+            b"-text_exec" => args.text_exec = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,
