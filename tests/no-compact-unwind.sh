@@ -14,3 +14,27 @@ EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o
 $t/exe
+
+# -no_compact_unwind, which GCC's driver passes on every link, leaves
+# out __unwind_info: the image unwinds by its __eh_frame alone, which
+# keeps every FDE, those of functions with a compact unwind record too.
+# The records are dropped, not turned into FDEs, so each function needs
+# one of its own (-femit-dwarf-unwind=always). A -r link ignores it.
+cat <<EOF | $CXX -c -o $t/b.o -xc++ - -fasynchronous-unwind-tables -femit-dwarf-unwind=always
+__attribute__((noinline)) void thrower(int x) { if (x) throw x; }
+int main(int argc, char **) {
+  try { thrower(argc); } catch (int x) { return x - 1; }
+  return 1;
+}
+EOF
+
+$CXX --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_compact_unwind
+$t/exe2
+otool -l $t/exe2 > $t/exe2.lc
+not grep -q __unwind_info $t/exe2.lc
+dwarfdump --eh-frame $t/b.o | grep -c ' FDE ' > $t/b.fdes
+dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ' > $t/exe2.fdes
+diff $t/b.fdes $t/exe2.fdes
+
+$mold -arch $ARCH -r -no_compact_unwind -o $t/c.o $t/b.o
+objdump --unwind-info $t/c.o | grep -q 'compact encoding'

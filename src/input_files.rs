@@ -785,7 +785,8 @@ fn read_symtab(
 /// .weak_def_can_be_hidden symbol that names a whole section (see
 /// unweaken_section_atom_names). `keep_all_fdes` keeps the
 /// FDEs of functions a compact unwind record already covers, for an
-/// output that has no __unwind_info to hold that record (-r, -static).
+/// output that has no __unwind_info to hold that record (see
+/// Args::unwind_info).
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
@@ -1606,7 +1607,7 @@ pub fn parse_object<E: Target>(
     alive: bool,
 ) -> usize {
     let priority = ctx.next_priority();
-    let keep_all_fdes = ctx.args.relocatable || ctx.args.without_dyld();
+    let keep_all_fdes = !ctx.args.unwind_info();
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
     staged.check_unwind_sections();
     integrate_object(ctx, staged)
@@ -2105,8 +2106,10 @@ impl StagedObject {
     /// DWARF-mode record is the exception: it exists to point at the
     /// FDE. `keep_all_fdes` keeps the FDEs of covered functions too: a
     /// -r output carries every input CIE and FDE through, as ld64's
-    /// does, and a -static image has no __unwind_info for the compact
-    /// record; any other final image has no use for them.
+    /// does, and a -static image or one linked with -no_compact_unwind
+    /// has no __unwind_info for the compact record (which ld-prime
+    /// drops, turning none into an FDE); any other final image has no
+    /// use for them.
     ///
     /// ld-prime unwinds only code. An FDE for a function in a section
     /// of data it refuses: returns true for that. One in a section of

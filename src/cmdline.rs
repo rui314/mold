@@ -216,6 +216,9 @@ pub struct Args {
     /// go unmentioned in a dylib bound for the shared cache.
     pub no_inits: bool,
     pub no_warn_inits: bool,
+    /// -no_compact_unwind: no __unwind_info; the image unwinds by its
+    /// __eh_frame alone (GCC's driver passes it on every link).
+    pub no_compact_unwind: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// -application_extension: mark the image safe for app extensions.
@@ -415,6 +418,7 @@ impl Default for Args {
             shared_region: false,
             no_inits: false,
             no_warn_inits: false,
+            no_compact_unwind: false,
             bind_at_load: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
@@ -1289,6 +1293,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-debug_variant" => args.debug_variant = true,
             b"-no_inits" => args.no_inits = true,
             b"-no_warn_inits" => args.no_warn_inits = true,
+            b"-no_compact_unwind" => args.no_compact_unwind = true,
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,
@@ -1758,6 +1763,15 @@ impl Args {
     /// by its relocations.
     pub fn without_dyld(&self) -> bool {
         self.static_link || self.is_kext()
+    }
+
+    /// Whether the image gets __unwind_info, the table the unwinder
+    /// looks a function up in: not a -r output, which carries the
+    /// objects' __compact_unwind records instead, nor an image no dyld
+    /// loads or one linked with -no_compact_unwind, which unwind by
+    /// their __eh_frame alone and so keep every FDE.
+    pub fn unwind_info(&self) -> bool {
+        !self.relocatable && !self.without_dyld() && !self.no_compact_unwind
     }
 
     /// The output's install name: -install_name, else -final_output,
