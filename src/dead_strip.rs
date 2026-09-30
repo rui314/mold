@@ -11,7 +11,7 @@
 use rayon::prelude::*;
 
 use crate::context::Context;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
 use crate::symbol::Symbol;
@@ -29,17 +29,19 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
         (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
     let redirects = &redirects;
 
-    let roots = collect_root_set(ctx, redirects);
-
-    // For -why_live: who first marked each subsection (usize::MAX for
-    // roots), giving a spanning tree of the liveness walk. The set of
-    // live sections is order-independent, but the spanning tree is not,
-    // so -why_live keeps the serial walk to report stable chains.
+    // For -why_live: what first marked each subsection, giving a
+    // spanning tree of the liveness walk. The set of live sections is
+    // order-independent, but the spanning tree is not, so -why_live
+    // keeps the serial walk to report stable chains.
     let mut pred = Vec::new();
-    if ctx.args.why_live.is_empty() {
+    if !ctx.args.why_live.is_empty() {
+        pred = vec![Pred::None; ctx.isecs.len()];
+    }
+
+    let roots = collect_root_set(ctx, redirects, &mut pred);
+    if pred.is_empty() {
         mark(ctx, redirects, &roots);
     } else {
-        pred = vec![usize::MAX; ctx.isecs.len()];
         walk(ctx, redirects, &mut pred, roots);
     }
 
@@ -48,27 +50,58 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     print_why_live(ctx, &pred);
 }
 
+/// For -why_live, what first marked a subsection live: the subsection
+/// referencing it, or, for a root, why it is one in ld-prime's words.
+#[derive(Clone, Copy)]
+enum Pred {
+    /// Not marked by a reference, and no reason to print: an
+    /// initializer or a live-support atom.
+    None,
+    /// The entry point or a -u symbol.
+    InitialUndef,
+    /// An exported symbol.
+    GlobalDontStrip,
+    /// A section or symbol the format keeps (see should_keep).
+    DontDeadStrip,
+    Section(u32),
+}
+
 /// Sections the format keeps regardless of references: initializers,
-/// no-dead-strip sections and the ObjC image info.
+/// no-dead-strip sections and the ObjC image info. So is every section
+/// of an object without MH_SUBSECTIONS_VIA_SYMBOLS that ld64 cuts at
+/// symbols: it cannot tell where such an atom ends, so it models the
+/// object as one huge atom. Sections it cuts by content (literals,
+/// CFStrings, thread-local variable descriptors) are stripped as usual.
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS)
         || hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
         || hdr.sectname() == "__objc_imageinfo"
+        || (!ctx.objs[isec.file as usize].subsections_via_symbols
+            && !is_literal_section(hdr)
+            && hdr.section_type() != S_THREAD_LOCAL_VARIABLES)
 }
 
 /// Marks the roots and returns them in a fixed order, so that
 /// -why_live's serial walk is reproducible. They are found on all
-/// cores; marking stays serial (it is a handful of sections).
-fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usize> {
+/// cores; marking stays serial (it is a handful of sections). Records
+/// why each is a root in `pred` unless it is empty.
+fn collect_root_set<E: Target>(
+    ctx: &Context<E>,
+    redirects: &[usize],
+    pred: &mut [Pred],
+) -> Vec<usize> {
     let mut roots = Vec::new();
     // Liveness is marked in place, on the section's atomic visited bit
     // (mold's IS_VISITED), rather than in side arrays copied back at
     // the end.
-    let mut enqueue = |id: usize| {
+    let mut enqueue = |id: usize, why: Pred| {
         let id = redirects[id];
         if ctx.isecs[id].mark_visited() {
             roots.push(id);
+            if !pred.is_empty() {
+                pred[id] = why;
+            }
         }
     };
 
@@ -82,13 +115,13 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
         .map(|(id, _)| id)
         .collect();
     for id in sections {
-        enqueue(id);
+        enqueue(id, Pred::DontDeadStrip);
     }
 
     // Initializers converted to __init_offsets are roots; their source
     // sections are gone.
     for &(isec, _) in &ctx.init_offsets.init_funcs {
-        enqueue(isec);
+        enqueue(isec, Pred::None);
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
@@ -107,15 +140,23 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
                     .as_ref()
                     .is_some_and(|exported| exported.find(sym.name().as_bytes()) != -1))
     };
-    let syms: Vec<usize> = ctx
+    let syms: Vec<(usize, Pred)> = ctx
         .symbols
         .syms
         .par_iter()
-        .filter(|sym| sym.no_dead_strip() || is_exported(sym))
-        .filter_map(|sym| sym.input_section().map(|i| i as usize))
+        .filter_map(|sym| {
+            let why = if sym.no_dead_strip() {
+                Pred::DontDeadStrip
+            } else if is_exported(sym) {
+                Pred::GlobalDontStrip
+            } else {
+                return None;
+            };
+            Some((sym.input_section()? as usize, why))
+        })
         .collect();
-    for id in syms {
-        enqueue(id);
+    for (id, why) in syms {
+        enqueue(id, why);
     }
 
     // -u retains the atom as well as extracting its containing archive
@@ -124,7 +165,7 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
         if let Some(id) = ctx.symbols.get(name)
             && let Some(isec) = ctx.symbols[id].input_section()
         {
-            enqueue(isec as usize);
+            enqueue(isec as usize, Pred::InitialUndef);
         }
     }
 
@@ -132,7 +173,7 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
         && let Some(id) = ctx.symbols.get(&ctx.args.entry)
         && let Some(isec) = ctx.symbols[id].input_section()
     {
-        enqueue(isec as usize);
+        enqueue(isec as usize, Pred::InitialUndef);
     }
     roots
 }
@@ -246,7 +287,7 @@ fn mark<E: Target>(ctx: &Context<E>, redirects: &[usize], roots: &[usize]) {
 fn walk<E: Target>(
     ctx: &Context<E>,
     redirects: &[usize],
-    pred: &mut [usize],
+    pred: &mut [Pred],
     mut stack: Vec<usize>,
 ) {
     while let Some(id) = stack.pop() {
@@ -254,7 +295,7 @@ fn walk<E: Target>(
             let target = redirects[target];
             if ctx.isecs[target].mark_visited() {
                 if !pred.is_empty() {
-                    pred[target] = id;
+                    pred[target] = Pred::Section(id as u32);
                 }
                 stack.push(target);
             }
@@ -267,7 +308,7 @@ fn walk<E: Target>(
 /// checks them once, in input order, after what the roots reach is
 /// marked, so one that only a later live-support atom would make live
 /// stays dead.
-fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize], pred: &mut [usize]) {
+fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize], pred: &mut [Pred]) {
     let live_support: Vec<usize> = ctx
         .isecs
         .par_iter()
@@ -372,9 +413,11 @@ pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
 /// -why_live prints, for each symbol matching a -why_live pattern
 /// ("*" wildcards), the chain of references that kept it alive: the
 /// liveness walk's spanning tree read backwards, one "symbol from
-/// file" line per hop, ending at a dead-strip root. Only meaningful
-/// under -dead_strip, like ld64's option of the same name.
-fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[usize]) {
+/// file" line per hop, ending at a dead-strip root. A symbol that is
+/// itself in a root gets a line saying why instead, but a chain ends at
+/// its root without one, as ld-prime's does. Only meaningful under
+/// -dead_strip, like ld64's option of the same name.
+fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[Pred]) {
     if ctx.args.why_live.is_empty() {
         return;
     }
@@ -431,9 +474,18 @@ fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[usize]) {
             sym.name(),
             crate::passes::resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf)
         );
+        let why = match pred[isec] {
+            Pred::InitialUndef => Some("initial-undef"),
+            Pred::GlobalDontStrip => Some("global-dont-strip"),
+            Pred::DontDeadStrip => Some("dont-dead-strip"),
+            Pred::None | Pred::Section(_) => None,
+        };
+        if let Some(why) = why {
+            eprintln!("  {why}");
+        }
         let mut indent = 1;
-        while pred[isec] != usize::MAX {
-            isec = pred[isec];
+        while let Pred::Section(from) = pred[isec] {
+            isec = from as usize;
             eprintln!("{:indent$}{}", "", describe(isec), indent = indent * 2);
             indent += 1;
         }

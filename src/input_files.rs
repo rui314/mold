@@ -1280,7 +1280,7 @@ impl StagedObject {
 /// coalesces by content, as ld64 does: literal pools, literal pointers,
 /// and __cfstring, whose 32-byte CFString constants x86-64 compilers
 /// emit without labels.
-fn is_literal_section(sect: &MachSection) -> bool {
+pub fn is_literal_section(sect: &MachSection) -> bool {
     matches!(
         sect.section_type(),
         S_CSTRING_LITERALS

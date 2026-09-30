@@ -21,3 +21,9 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,_unused 2> $t
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,'_m*' 2> $t/log3
 grep -q '^_middle' $t/log3
 grep -q '^_main' $t/log3
+
+# A root says why it is one, but a chain ends at its root without that.
+$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,_main 2> $t/log4
+grep -q '^_main from .*/a.o' $t/log4
+grep -q '^  initial-undef$' $t/log4
+not grep -q 'initial-undef' $t/log
