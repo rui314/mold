@@ -52,12 +52,21 @@ fn adler32(data: &[u8]) -> u32 {
 }
 
 /// Combines two Adler-32 checksums, where `len2` is the length of the
-/// second input.
-fn adler32_combine(adler1: u32, adler2: u32, len2: u64) -> u32 {
-    let len2 = len2.try_into().unwrap();
-    // SAFETY: the checksums are 32-bit values and len2 is nonnegative and
-    // representable in z_off_t. All callers combine one shard at a time.
-    unsafe { libz_sys::adler32_combine(adler1.into(), adler2.into(), len2) as u32 }
+/// second input. zlib's adler32_combine() does the same, but the width of
+/// its z_off_t parameter depends on how zlib was compiled, so it cannot be
+/// declared portably from Rust.
+fn adler32_combine(adler1: u32, adler2: u32, len2: usize) -> u32 {
+    // An Adler-32 checksum has two sums modulo 65521. The low 16 bits hold
+    // A, one plus the sum of all bytes, and the high 16 bits hold B, the sum
+    // of A's values after each byte. For a concatenation, A = A1 + A2 - 1
+    // and B = B1 + B2 + len2 * (A1 - 1).
+    const BASE: u32 = 65521;
+    let rem = (len2 % BASE as usize) as u32;
+    let (a1, b1) = (adler1 & 0xffff, adler1 >> 16);
+    let (a2, b2) = (adler2 & 0xffff, adler2 >> 16);
+    let a = (a1 + a2 + BASE - 1) % BASE;
+    let b = (rem * a1 % BASE + b1 + b2 + BASE - rem) % BASE;
+    (b << 16) | a
 }
 
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
@@ -151,7 +160,7 @@ impl Compressor {
         // Combine checksums
         let mut checksum = adlers.first().copied().unwrap_or(1);
         for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
-            checksum = adler32_combine(checksum, *adler, shard.len() as u64);
+            checksum = adler32_combine(checksum, *adler, shard.len());
         }
         Self::Zlib { shards, checksum }
     }
