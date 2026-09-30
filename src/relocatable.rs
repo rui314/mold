@@ -30,11 +30,11 @@ use crate::util::align_to;
 /// ld64's section order in a -r output, measured with ld-prime:
 /// segments __TEXT, __DATA_CONST, __DATA, the rest as first seen, __LD
 /// last. In __TEXT, __text leads, other code sections (__StaticInit)
-/// follow, everything else keeps its first-seen order and __eh_frame
-/// closes the segment. __DATA has fixed ranks for the sections ld64
-/// knows - the order a final link gives __DATA_CONST, then __DATA -
-/// unknown ones in first-seen order after them, then the thread-local
-/// template and the zero-fill sections.
+/// follow, everything else keeps its first-seen order, and
+/// __gcc_except_tab and __eh_frame close the segment. __DATA has fixed
+/// ranks for the sections ld64 knows - the order a final link gives
+/// __DATA_CONST, then __DATA - unknown ones in first-seen order after
+/// them, then the thread-local template and the zero-fill sections.
 fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     let seg = match segname {
         "__TEXT" => 0,
@@ -45,7 +45,9 @@ fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     };
     let sect = match (segname, sectname) {
         ("__TEXT", "__text") => 0,
-        ("__TEXT", "__eh_frame") => 3,
+        // After __const and __cstring, whatever the input order.
+        ("__TEXT", "__gcc_except_tab") => 3,
+        ("__TEXT", "__eh_frame") => 4,
         ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
         ("__TEXT", _) => 2,
         ("__DATA", "__got") => 0,

@@ -49,6 +49,8 @@ int main() {
 EOF2
 
 $mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/exc.o $t/e1.o $t/e2.o
+# ld-prime keeps the exception table after the other __TEXT sections.
+otool -l $t/exc.o | awk '$1 == "sectname" {print $2}' | tr '\n' ' ' | grep '__cstring __gcc_except_tab'
 $CXX --ld-path=$mold -o $t/exc1 $t/exc.o
 $t/exc1 | grep 'caught 42'
 $CXX -Wl,-adhoc_codesign -o $t/exc2 $t/exc.o
