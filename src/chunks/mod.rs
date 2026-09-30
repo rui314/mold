@@ -649,8 +649,10 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         filetype: ctx.args.output_type,
         ncmds: cmds.len() as u32,
         sizeofcmds: cmds.iter().map(Vec::len).sum::<usize>() as u32,
+        // Under -flat_namespace every import is a flat lookup that
+        // dyld resolves at load, so ld64 does not claim MH_NOUNDEFS.
         flags: if ctx.args.flat_namespace {
-            MH_NOUNDEFS | MH_DYLDLINK
+            MH_DYLDLINK
         } else {
             MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
         },
@@ -690,7 +692,11 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // MH_WEAK_DEFINES advertises exported weak symbols (auto-hidden and
     // private-extern weak definitions don't count, since no other
     // image can coalesce against them) and strong definitions that
-    // override a dylib's weak export, which dyld must let win.
+    // override a dylib's weak export, which dyld must let win. An
+    // exported weak definition also makes the image bind to weak in
+    // ld-prime's eyes, referenced from within the image or not (a
+    // dylib whose only weak definition nothing calls still gets
+    // 0x118085), since another image's copy may replace it.
     if ctx.symbols.syms.iter().any(|sym| {
         sym.is_weak_def()
             && sym.is_extern()
@@ -699,8 +705,10 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 .input_section()
                 .map(|i| i as usize)
                 .is_some_and(|isec| ctx.isecs[isec].is_alive())
-    }) || (0..ctx.symbols.syms.len()).any(|i| ctx.overrides_weak_export(i as u32))
-    {
+    }) {
+        hdr.flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
+    }
+    if (0..ctx.symbols.syms.len()).any(|i| ctx.overrides_weak_export(i as u32)) {
         hdr.flags |= MH_WEAK_DEFINES;
     }
     // -bind_at_load makes the stubs bind through the GOT instead of

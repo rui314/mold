@@ -31,6 +31,11 @@ EOF2
 load() { otool -L $1 | grep libwl | awk '{print ($NF=="weak)") ? "weak" : "strong"}'; }
 flags() { otool -h $1 | tail -1 | awk '{print $NF}'; }
 
+# The dylib exports a weak definition: WEAK_DEFINES, and BINDS_TO_WEAK
+# too (ld-prime sets both for any exported weak definition, referenced
+# from inside the image or not), on top of NO_REEXPORTED_DYLIBS.
+[ "$(flags $t/libwl.dylib)" = 0x00118085 ]
+
 $CC --ld-path=$mold -o $t/e1 $t/w1.o $t/libwl.dylib -Wl,-rpath,$t
 [ "$(load $t/e1)" = weak ]
 dyld_info -fixups $t/e1 | grep 'libwl/_wf' | grep 'weak-import'
