@@ -518,6 +518,8 @@ pub struct Args {
     pub dependency_file: PathBuf,
     pub dynamic_linker: PathBuf,
     pub output: PathBuf,
+    /// The working directory before -C changed it.
+    pub orig_cwd: Option<PathBuf>,
     pub package_metadata: Vec<u8>,
     pub plugin: PathBuf,
     pub print_gc_sections: Option<ReportOutput>,
@@ -653,6 +655,7 @@ impl Default for Args {
             dependency_file: PathBuf::new(),
             dynamic_linker: PathBuf::new(),
             output: PathBuf::from("a.out"),
+            orig_cwd: None,
             package_metadata: Vec::new(),
             plugin: PathBuf::new(),
             print_gc_sections: None,
@@ -1940,10 +1943,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         parse_report_output(path.as_os_str()).unwrap_or(ReportOutput::Stdout)
     });
 
-    if !directory.as_os_str().is_empty()
-        && let Err(e) = std::env::set_current_dir(&directory)
-    {
-        fatal!("chdir failed: {}: {e}", directory.display());
+    if !directory.as_os_str().is_empty() {
+        a.orig_cwd = std::env::current_dir().ok();
+        if let Err(e) = std::env::set_current_dir(&directory) {
+            fatal!("chdir failed: {}: {e}", directory.display());
+        }
     }
 
     if !a.sysroot.as_os_str().is_empty() {

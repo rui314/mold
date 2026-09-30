@@ -820,6 +820,10 @@ fn restart_process<E: Target>(ctx: &Context<E>) -> ! {
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
     let path = std::env::current_exe().expect("cannot get current executable path");
+    // The new process applies -C again, so it starts where this one did.
+    if let Some(dir) = &ctx.args.orig_cwd {
+        let _ = std::env::set_current_dir(dir);
+    }
     #[cfg(not(windows))]
     let err = std::process::Command::new(path).args(&args[1..]).exec();
     #[cfg(windows)]
