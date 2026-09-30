@@ -10,7 +10,8 @@ use rayon::prelude::*;
 use crate::chunks::sectcreate::SectCreateSection;
 use crate::chunks::symtab::SymtabSection;
 use crate::chunks::{
-    self, ChunkId, OutputSection, OutputSectionId, OutputSegment, Tail, mach_header_size,
+    self, ChunkHeader, ChunkId, OutputSection, OutputSectionId, OutputSegment, Tail,
+    mach_header_size,
 };
 use crate::cmdline::InputArg;
 use crate::context::Context;
@@ -3779,7 +3780,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         };
         // Zero-fill sections go last in their segment so that they don't
         // occupy file space in the middle of it.
-        (seg_rank, hdr.is_zerofill(), sect_rank, seen)
+        (seg_rank, hdr.is_zerofill(), listed_section_rank(ctx, hdr), sect_rank, seen)
     });
 
     // Group them into segments, and number the sections: an nlist's
@@ -3810,11 +3811,59 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     add_boundary_segments(ctx);
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
+    check_section_order(ctx);
     // The mach header's segment must come first after __PAGEZERO. A
     // -static image's header moves with -rename_segment __TEXT, and
     // only -segment_order can then put its segment there.
     if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
         fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
+    }
+}
+
+/// Where -section_order puts a section in its segment: the listed
+/// sections lead in the list's order, after the mach header and after
+/// __text unless the list places it; the rest follow as usual.
+fn listed_section_rank<E: Target>(ctx: &Context<E>, hdr: &ChunkHeader) -> usize {
+    let Some((_, list)) = ctx.args.section_order.iter().find(|(seg, _)| seg == hdr.segname) else {
+        return 0;
+    };
+    match list.iter().position(|s| *s == hdr.sectname) {
+        Some(i) => 1 + i,
+        None if !hdr.is_sect || is_text_section(hdr) => 0,
+        None => usize::MAX,
+    }
+}
+
+fn is_text_section(hdr: &ChunkHeader) -> bool {
+    hdr.segname == "__TEXT" && hdr.sectname == "__text"
+}
+
+/// ld-prime refuses a -section_order that puts a zero-fill section, which
+/// has no file bytes, ahead of one with contents: the listed sections
+/// lead their segment, so a listed zero-fill section must follow every
+/// other section with contents, listed or not.
+fn check_section_order<E: Target>(ctx: &Context<E>) {
+    for (seg, list) in &ctx.args.section_order {
+        let sects: Vec<&ChunkHeader> = ctx
+            .chunks
+            .iter()
+            .map(|&id| ctx.chunk_header(id))
+            .filter(|hdr| hdr.is_sect && hdr.segname == seg)
+            .collect();
+        // ld-prime's order: the listed sections, then the others but an
+        // unlisted __text, which leads them all.
+        let listed = list.iter().filter_map(|name| sects.iter().find(|hdr| hdr.sectname == *name));
+        let others =
+            sects.iter().filter(|hdr| !list.contains(&hdr.sectname) && !is_text_section(hdr));
+        let order: Vec<&&ChunkHeader> = listed.chain(others).collect();
+        if let Some(i) = order.iter().position(|hdr| hdr.is_zerofill())
+            && order[i..].iter().any(|hdr| !hdr.is_zerofill())
+        {
+            fatal!(
+                "{} is zero-fill, it should be ordered at the end of the segment {seg}, or alongside other zero-fill sections",
+                order[i].sectname
+            );
+        }
     }
 }
 

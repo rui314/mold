@@ -297,6 +297,9 @@ pub struct Args {
     pub segprots: Vec<(String, u8, u8)>,
     /// -segment_order: segment names in output order.
     pub segment_order: Vec<String>,
+    /// -section_order: (segment, section names), the sections that
+    /// lead their segment, in this order.
+    pub section_order: Vec<(String, Vec<String>)>,
     /// -rename_section: (old_seg, old_sect, new_seg, new_sect).
     pub rename_sections: Vec<(String, String, String, String)>,
     /// -rename_segment: (old, new).
@@ -425,6 +428,7 @@ impl Default for Args {
             segaddrs: Vec::new(),
             segprots: Vec::new(),
             segment_order: Vec::new(),
+            section_order: Vec::new(),
             rename_sections: Vec::new(),
             rename_segments: Vec::new(),
             zero_ar_date: false,
@@ -921,6 +925,28 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     .map(String::from)
                     .collect();
             }
+            b"-section_order" => {
+                let (Some(seg), Some(list)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
+                    fatal!("-section_order needs <segname> <section-list>");
+                };
+                if list.is_empty() {
+                    fatal!("-section_order needs <segname> <section-list>");
+                }
+                i += 2;
+                let seg = text(name, seg).to_string();
+                let list: Vec<String> = text(name, list)
+                    .split(':')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+                if list.is_empty() {
+                    fatal!("-section_order should specifify at least one section");
+                }
+                if args.section_order.iter().any(|(s, _)| *s == seg) {
+                    fatal!("-section_order {seg} used more than once");
+                }
+                args.section_order.push((seg, list));
+            }
             b"-rename_section" => {
                 let usage = "<from-segment> <from-section> <to-segment> <to-section>";
                 let old_seg = rename_operand(&mut i, name, usage).to_string();
@@ -1232,6 +1258,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
 
     check_segment_order(&args);
+    check_section_order(&args);
 
     // A -static image (a kernel) carries the code tables only when
     // asked to, as ld-prime writes it.
@@ -1497,6 +1524,16 @@ fn check_segment_order(args: &Args) {
     if !args.static_link {
         fatal!(
             "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
+        );
+    }
+}
+
+/// -section_order too lays out an image no dyld loads (ld-prime also
+/// allows -dylinker and firmware platforms, which mold has not).
+fn check_section_order(args: &Args) {
+    if !args.section_order.is_empty() && !args.static_link {
+        fatal!(
+            "-section_order can only be used with -preload, -dylinker, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );
     }
 }
