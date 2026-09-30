@@ -336,6 +336,7 @@ pub fn collect_fixups<E: Target>(
                     );
                 }
                 match ctx.reloc_target_sym(isec.file as usize, rel) {
+                    Some(id) if ctx.is_swift_force_load_ref(id) => None,
                     Some(id) if ctx.binds_at_runtime(id) => {
                         Some((addr, Some(id), rel.addend as u64))
                     }

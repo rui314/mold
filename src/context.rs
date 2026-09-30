@@ -542,6 +542,15 @@ impl<E: Target> Context<E> {
             && !sym.is_private_extern()
     }
 
+    /// A weak reference to an overlay's __swift_FORCE_LOAD_$_ marker.
+    /// The Swift compiler emits one per module to keep the overlay
+    /// loaded; ld-prime keeps the dylib as a dependency but writes no
+    /// fixup for the slot (it stays zero), and so do we.
+    pub fn is_swift_force_load_ref(&self, id: SymbolId) -> bool {
+        let sym = &self.symbols[id];
+        sym.is_imported() && sym.is_weak_ref() && sym.name().starts_with("__swift_FORCE_LOAD_$_")
+    }
+
     /// True if dyld fills the references to this symbol: an import, or
     /// a weak definition subject to coalescing.
     pub fn binds_at_runtime(&self, id: SymbolId) -> bool {
