@@ -81,13 +81,15 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", "__objc_ivar") => 7,
         ("__DATA", "__objc_data") => 8,
         ("__DATA", "__lazy_load_got") => 9,
-        // The thread-local initialization image must be contiguous:
-        // __thread_data last among file-backed __DATA sections, and
-        // __thread_bss first among zero-fill ones (zero-fill sections
-        // sort after all file-backed ones).
-        ("__DATA", "__thread_vars") => 30,
-        ("__DATA", "__thread_data") => 31,
-        ("__DATA", "__thread_bss") => 0,
+        // The thread-local initialization image must be contiguous: its
+        // initial values (__thread_data) last among file-backed __DATA
+        // sections, after the variables' descriptors (__thread_vars),
+        // and its zero fill (__thread_bss) first among zero-fill ones
+        // (zero-fill sections sort after all file-backed ones).
+        // ld-prime goes by the section types, whatever the names.
+        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES => 30,
+        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_REGULAR => 31,
+        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL => 0,
         // __bss and __common in first-seen order: the synthesized
         // __common counts from the first object with a common symbol.
         ("__DATA", "__bss") => 3,
@@ -995,19 +997,18 @@ fn find_output_section<E: Target>(ctx: &Context<E>, name: SectionName) -> Option
 /// share the stricter one, and -sectalign sets a section's (see also
 /// cap_section_alignments).
 fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
-    // The thread-local template (__thread_data followed by
-    // __thread_bss) is one image dyld copies per thread, so ld64 gives
-    // both sections the stricter of their alignments.
-    if let (Some(data), Some(bss)) = (
-        find_output_section(ctx, ("__DATA", "__thread_data")),
-        find_output_section(ctx, ("__DATA", "__thread_bss")),
-    ) {
-        let p2align = ctx.output_sections[data.index()]
-            .hdr
-            .p2align
-            .max(ctx.output_sections[bss.index()].hdr.p2align);
-        ctx.output_sections[data.index()].hdr.p2align = p2align;
-        ctx.output_sections[bss.index()].hdr.p2align = p2align;
+    // The thread-local template (the initial values, __thread_data,
+    // followed by the zero fill, __thread_bss) is one image dyld copies
+    // per thread, so ld-prime gives all its sections, by type, the
+    // strictest of their alignments.
+    let in_template = |osec: &OutputSection| {
+        matches!(osec.hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
+    };
+    let template = ctx.output_sections.iter().filter(|o| in_template(o));
+    if let Some(p2align) = template.map(|osec| osec.hdr.p2align).max() {
+        for osec in ctx.output_sections.iter_mut().filter(|o| in_template(o)) {
+            osec.hdr.p2align = p2align;
+        }
     }
 
     // -sectalign sets an output section's alignment, e.g. to
