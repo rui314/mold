@@ -1511,15 +1511,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);
-    // An image dyld doesn't load has no __DATA_CONST unless bound for
-    // the shared region: nothing else makes that segment read-only
-    // after fixups. Nor does ld-prime give one to a non-PIE executable,
-    // which keeps its classic layout.
-    args.data_const = data_const.unwrap_or(if args.without_dyld() {
-        args.shared_region
-    } else {
-        args.pie || args.output_type != MH_EXECUTE
-    });
+    args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
     resolve_kext(target, &mut args);
     complete_segment_order(&mut args);
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
@@ -1678,6 +1670,31 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
         Some(pie) => pie,
         None => !args.static_link || args.kernel || args.fixup_chains == Some(true),
     }
+}
+
+/// Whether ld-prime gives the image __DATA_CONST, the segment dyld makes
+/// read-only once it has applied the fixups, when neither -data_const
+/// nor -no_data_const says. An image no dyld loads has one only if
+/// bound for the shared region: nothing else would make it read-only.
+/// A non-PIE executable, which keeps its classic layout, has none; an
+/// image bound for the shared region and firmware have one. On macOS,
+/// ld64 gives one from its version2019Fall (10.15) on, but not for
+/// 10.15.4 up to 10.16, and not with -no_pie, even where the option is
+/// otherwise ignored (an arm64 executable, a dylib or a bundle).
+fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
+    if args.without_dyld() {
+        return args.shared_region;
+    }
+    if args.output_type == MH_EXECUTE && !args.pie {
+        return false;
+    }
+    if args.shared_region || args.platform == PLATFORM_FIRMWARE {
+        return true;
+    }
+    let minos = args.platform_minos;
+    pie != Some(false)
+        && minos >= encode_version(10, 15, 0)
+        && !(encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&minos)
 }
 
 /// Whether the command line may lay out the image's segments and
