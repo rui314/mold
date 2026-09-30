@@ -1473,9 +1473,34 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// Marks the literal records a symbol names, other than a temporary
+/// (L-prefixed, which the arm64 assembler keeps for relocations to
+/// name) or linker-private (l-prefixed, the assembler's ltmpN labels
+/// included) one: ld-prime keeps each such record an atom of its own,
+/// merged with no identical copy, and a -r output keeps its label
+/// rather than naming it LC<n>/l<nnn>.
+fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
+    ctx.symbols.syms.par_iter().for_each(|sym| {
+        if let Some(i) = sym.input_section()
+            && !sym.name().is_empty()
+            && !sym.name().starts_with(['l', 'L'])
+        {
+            let isec = &ctx.isecs[i as usize];
+            if matches!(
+                ctx.hdr_of(isec).section_type(),
+                S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+            ) {
+                isec.mark_labeled();
+            }
+        }
+    });
+}
+
 /// Merges identical literal elements across all live inputs: the first
-/// live copy wins and the rest redirect to it.
+/// live copy wins and the rest redirect to it. A labeled record stays
+/// apart.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
+    mark_labeled_literals(ctx);
     // Deduplication follows the symbol table's sharded shape: every
     // element's content hash is computed in parallel, elements bin by
     // hash, and the shards resolve independently - within a shard the
@@ -1486,7 +1511,10 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
         .par_iter()
         .enumerate()
         .filter_map(|(i, isec)| {
-            if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+            if !isec.is_alive()
+                || isec.replacement != crate::input_sections::NO_REPLACEMENT
+                || isec.is_labeled()
+            {
                 return None;
             }
             let ty = ctx.hdr_of(isec).section_type();

@@ -209,6 +209,9 @@ const IS_PLACED: u8 = 1 << 2;
 /// its input offset: a fixed-size literal, which ld64 aligns to the
 /// literal size with no modulus.
 const NO_MODULUS: u8 = 1 << 3;
+/// A literal record a symbol names: ld-prime keeps it an atom of its own,
+/// merged with no identical copy, and a -r output keeps its label.
+const IS_LABELED: u8 = 1 << 4;
 
 impl InputSection {
     /// The initial flag word of a live section.
@@ -291,6 +294,16 @@ impl InputSection {
     #[inline]
     pub fn is_visited(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_VISITED != 0
+    }
+    /// Marks this literal record as named by a symbol.
+    #[inline]
+    pub fn mark_labeled(&self) {
+        self.flags.fetch_or(IS_LABELED, std::sync::atomic::Ordering::Relaxed);
+    }
+    /// Whether a symbol names this literal record.
+    #[inline]
+    pub fn is_labeled(&self) -> bool {
+        self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_LABELED != 0
     }
     /// Reads and clears the visited bit.
     #[inline]

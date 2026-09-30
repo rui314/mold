@@ -136,6 +136,22 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
     places
 }
 
+/// The symbols a live input section's relocations refer to by name.
+fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::SymbolId> {
+    let mut syms = HashSet::new();
+    for isec in ctx.isecs.iter() {
+        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
+            continue;
+        }
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            if let RelocTarget::Sym(idx) = rel.target() {
+                syms.insert(ctx.objs[isec.file as usize].symbols[idx as usize]);
+            }
+        }
+    }
+    syms
+}
+
 /// The places an object names with a symbol other than an assembler
 /// temporary (ltmpN), where an ltmpN label is a mere alias.
 fn named_places<E: Target>(ctx: &Context<E>) -> HashSet<(usize, u8, u64)> {
@@ -1140,7 +1156,11 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         for &id in &chunk.members {
             let id = id as usize;
             let isec = &ctx.isecs[id];
-            if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+            // A literal a label names keeps that label instead.
+            if !isec.is_alive()
+                || isec.replacement != crate::input_sections::NO_REPLACEMENT
+                || isec.is_labeled()
+            {
                 continue;
             }
             let size = isec.data().len() as u64;
@@ -1174,17 +1194,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         renamed.get(&(t, k)).copied()
     };
 
-    let mut referenced: HashSet<crate::symbol::SymbolId> = HashSet::new();
-    for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-            if let RelocTarget::Sym(idx) = rel.target() {
-                referenced.insert(ctx.objs[isec.file as usize].symbols[idx as usize]);
-            }
-        }
-    }
+    let referenced = referenced_syms(ctx);
     let named_at = named_places(ctx);
     for (obj_idx, obj) in ctx.objs.iter().enumerate() {
         if !obj.is_alive {
@@ -1221,6 +1231,9 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             {
                 continue;
             }
+            // A labeled literal is an atom of its own, not a whole
+            // section's.
+            let whole = whole && !ctx.isecs[isec].is_labeled();
             locals.push(Local {
                 name: sym.name().to_string(),
                 n_type: nlist.n_type,
