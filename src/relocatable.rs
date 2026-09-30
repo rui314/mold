@@ -570,15 +570,14 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     let cie = &ctx.cies[c];
                     eh_data.extend_from_slice(cie.data);
                     if let Some(p) = cie.personality {
-                        if let Some(cell) = E::RELOCATABLE_GOTPC_CELL {
-                            let at = (off + cie.personality_offset) as usize;
-                            eh_data[at..at + 4].copy_from_slice(&cell.to_le_bytes());
-                        }
+                        // ld-prime writes 4 into the cell on either
+                        // target, whatever the object held there (a
+                        // compiler's x86-64 CIE holds 4 too).
+                        let at = (off + cie.personality_offset) as usize;
+                        eh_data[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
                         let Some(&symnum) = index_of_sym.get(&p) else {
                             fatal!("-r: unwind personality lost: {}", ctx.symbols[p]);
                         };
-                        // An x86-64 cell keeps the object's addend (4,
-                        // a pcrel field being relative to its own end).
                         eh_relocs.push(MachRel {
                             r_address: off + cie.personality_offset,
                             bits: symnum
