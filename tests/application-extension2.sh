@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# ld64 warned when an app extension linked a dylib not built with
+# -application_extension (no MH_APP_EXTENSION_SAFE); ld-prime says
+# nothing, and the output is still marked safe.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo() {}
 EOF
@@ -14,4 +17,5 @@ EOF
 $CC --ld-path=$mold -shared -o $t/d.so $t/b.so $t/c.o \
   -Wl,-application_extension >& $t/log
 
-grep -q 'not safe for use in application extensions' $t/log
+not grep -q 'application extensions' $t/log
+otool -hv $t/d.so | grep -q APP_EXTENSION_SAFE

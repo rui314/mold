@@ -63,7 +63,8 @@ grep -q 'undefined.*_inner_func (from Some)' $t/nm
 grep -q 'undefined.*_OBJC_CLASS_\$_SomeClass (from Some)' $t/nm
 grep -q 'undefined.*weak.*_some_weak (from Some)' $t/nm
 
-# An app extension may not link a library flagged not_app_extension_safe.
+# A library flagged not_app_extension_safe links into an app extension
+# without a word (ld-prime).
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -F$t/libs -framework Some -framework Foundation \
   -Wl,-application_extension 2> $t/log || true
-grep -q 'not safe for use in application extensions' $t/log
+not grep -q 'application extensions' $t/log

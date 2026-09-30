@@ -245,9 +245,6 @@ pub struct DylibFile {
     /// MH_DEAD_STRIPPABLE_DYLIB: drop the load command whenever no
     /// symbol binds to this dylib, even without -dead_strip_dylibs.
     pub is_dead_strippable: bool,
-    /// MH_APP_EXTENSION_SAFE: built with -application_extension, so
-    /// app-extension clients may link it.
-    pub is_app_extension_safe: bool,
     pub exports: hashbrown::HashSet<&'static str>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
@@ -2330,7 +2327,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_implicit: false,
             load_order: u32::MAX,
             is_dead_strippable: hdr.flags & MH_DEAD_STRIPPABLE_DYLIB != 0,
-            is_app_extension_safe: hdr.flags & MH_APP_EXTENSION_SAFE != 0,
             exports,
             weak_exports,
             tlv_exports,
@@ -2534,7 +2530,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_implicit: false,
             load_order: u32::MAX,
             is_dead_strippable: false,
-            is_app_extension_safe: true,
             exports,
             weak_exports: hashbrown::HashSet::new(),
             tlv_exports,
@@ -2863,7 +2858,6 @@ fn register_tbd<E: Target>(
             is_implicit: false,
             load_order: u32::MAX,
             is_dead_strippable: false,
-            is_app_extension_safe: !tbd.not_app_extension_safe,
             exports,
             weak_exports,
             tlv_exports,
@@ -2876,17 +2870,6 @@ fn register_tbd<E: Target>(
 /// (libc, libm, ...) are stubs for the same /usr/lib/libSystem.B.dylib,
 /// and dyld refuses an image that lists one install name twice.
 fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
-    // An app extension runs in a constrained sandbox; a dylib must opt
-    // in (ld64's -application_extension sets MH_APP_EXTENSION_SAFE, or
-    // a .tbd omits not_app_extension_safe) before extension code may
-    // link it. ld64 warns rather than errs, and -w silences it.
-    if ctx.args.application_extension && !dylib.is_app_extension_safe {
-        crate::warn!(
-            "linking against a dylib which is not safe for use in application extensions: {}",
-            crate::util::display(&dylib.install_name)
-        );
-    }
-
     if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == dylib.install_name) {
         let existing = &mut ctx.dylibs[idx];
         existing.exports.extend(dylib.exports);

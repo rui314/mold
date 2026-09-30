@@ -31,8 +31,6 @@ pub struct TbdFile {
     /// .tbd files; a TLV can only be referenced through TLV
     /// relocations).
     pub tlv_exports: Vec<&'static str>,
-    /// The library was built without -application_extension.
-    pub not_app_extension_safe: bool,
     /// The umbrella the library belongs to (parent-umbrella), and the
     /// clients it lets link it directly (allowable-clients).
     pub parent_umbrella: Option<&'static str>,
@@ -338,13 +336,6 @@ fn parse_json(file: &Path, text: &'static str, arch: &str) -> TbdFile {
         {
             tbd.compatibility_version = parse_version(s);
         }
-        for flags in lib.get("flags").map(Json::arr).unwrap_or(&[]) {
-            if applies(flags, &target)
-                && flags.strs("attributes").any(|a| a == "not_app_extension_safe")
-            {
-                tbd.not_app_extension_safe = true;
-            }
-        }
         for group in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
             if applies(group, &target) {
                 tbd.parent_umbrella = group.get("umbrella").and_then(Json::str);
@@ -507,10 +498,6 @@ pub fn parse(mf: &MappedFile, arch: &str) -> TbdFile {
                 "current-version" => tbd.current_version = parse_version(unquote(field.value)),
                 "compatibility-version" => {
                     tbd.compatibility_version = parse_version(unquote(field.value))
-                }
-                "flags" => {
-                    tbd.not_app_extension_safe =
-                        field.items().any(|s| s == "not_app_extension_safe");
                 }
                 // Version 4 lists them per target group ("umbrella:",
                 // "clients:"), older versions directly.

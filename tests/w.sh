@@ -1,22 +1,16 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-cat <<EOF | $CC -o $t/a.o -c -xc -
+# -w suppresses warnings. An object built for a newer macOS than the
+# link targets draws one from both mold and ld-prime.
+cat <<EOF | $CC -o $t/a.o -c -xc - -mmacosx-version-min=15.0
 void foo() {}
 EOF
 
-$CC --ld-path=$mold -shared -o $t/b.so $t/a.o
-
-cat <<EOF | $CC -o $t/c.o -c -xc -
-void bar() {}
-EOF
-
-$CC --ld-path=$mold -shared -o $t/d.so $t/b.so $t/c.o \
-  -Wl,-application_extension >& $t/log1
+$CC --ld-path=$mold -shared -o $t/d.so $t/a.o -mmacosx-version-min=14.0 >& $t/log1
 
 grep -q warning $t/log1
 
-$CC --ld-path=$mold -shared -o $t/d.so $t/b.so $t/c.o \
-  -Wl,-application_extension -Wl,-w >& $t/log2
+$CC --ld-path=$mold -shared -o $t/d.so $t/a.o -mmacosx-version-min=14.0 -Wl,-w >& $t/log2
 
-! grep -q warning $t/log2 || false
+not grep -q warning $t/log2
