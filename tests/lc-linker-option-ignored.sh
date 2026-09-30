@@ -53,3 +53,11 @@ not $CC --ld-path=$mold -o $t/exe $t/b.o $t/c.o 2> $t/log3
 grep -q "Could not find or use auto-linked library 'nosuchlib': library 'nosuchlib' not found" $t/log3
 $CC --ld-path=$mold -o $t/exe $t/b.o $t/main.o $t/baz.o 2> $t/log4
 not grep -q nosuchlib $t/log4
+
+# A command holds an option and its argument if it takes one: ld-prime
+# refuses a command of more strings, or of none.
+cat <<EOF | $CC -o $t/d.o -c -x assembler -
+.linker_option "-lz", "-lm", "-lc"
+EOF
+not $CC --ld-path=$mold -o $t/exe $t/d.o $t/main.o $t/baz.o 2> $t/log5
+grep -Fq "LC_LINKER_OPTION has count=3, only 1 or 2 is valid in '$t/d.o' in '$t/d.o'" $t/log5

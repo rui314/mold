@@ -766,7 +766,8 @@ struct LoadCommands {
 }
 
 impl LoadCommands {
-    fn read<E: Target>(data: &[u8], hdr: &MachHeader) -> Self {
+    fn read<E: Target>(mf: &MappedFile, hdr: &MachHeader) -> Self {
+        let data = mf.data();
         let mut cmds = Self::default();
         let mut off = size_of::<MachHeader>();
         for _ in 0..hdr.ncmds {
@@ -794,8 +795,16 @@ impl LoadCommands {
                 }
                 LC_LINKER_OPTION => {
                     // Auto-link requests: the object names libraries it
-                    // needs, as NUL-terminated strings after a count.
+                    // needs, as NUL-terminated strings after a count -
+                    // an option and its argument, if it takes one, and
+                    // no more, as ld-prime sees it.
                     let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
+                    if !(1..=2).contains(&count) {
+                        let file = mf.name.display();
+                        fatal!(
+                            "LC_LINKER_OPTION has count={count}, only 1 or 2 is valid in '{file}' in '{file}'"
+                        );
+                    }
                     let mut strs = Vec::with_capacity(count as usize);
                     let mut p = off + 12;
                     for _ in 0..count {
@@ -886,7 +895,7 @@ pub fn stage_object<E: Target>(
         fatal!("{}: incompatible CPU type: expected {}", mf.name.display(), E::NAME);
     }
 
-    let cmds = LoadCommands::read::<E>(data, &hdr);
+    let cmds = LoadCommands::read::<E>(mf, &hdr);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
