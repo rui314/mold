@@ -27,24 +27,14 @@ use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, leak_bytes, path_bytes};
 
-/// Returns the directories to search for `-l` libraries, in order. A
-/// library path that exists under a syslibroot is looked up there; the
-/// default search path is the syslibroot's /usr/lib.
+/// Returns the directories to search for `-l` libraries, in order. An
+/// absolute library path that exists under a syslibroot is looked up
+/// there; the default search path is the syslibroot's /usr/lib.
 fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     for dir in &ctx.args.library_paths {
-        let mut found = false;
-        for root in &ctx.args.syslibroot {
-            let path = under_root(root, dir);
-            if path.is_dir() {
-                dirs.push(path);
-                found = true;
-            }
-        }
-        if !found {
-            dirs.push(dir.clone());
-        }
+        push_search_dir(&ctx.args.syslibroot, &mut dirs, dir);
     }
 
     if !ctx.args.no_standard_dirs {
@@ -57,6 +47,23 @@ fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
         }
     }
     dirs
+}
+
+/// Adds a -L or -F directory to a search path. ld64 looks an absolute
+/// directory up under each syslibroot, keeping those that exist and
+/// falling back to the directory itself. A relative directory is never
+/// put under a syslibroot, which the compiler driver always passes:
+/// `-L.` would otherwise search the SDK's root, not the working
+/// directory.
+fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path) {
+    if dir.is_absolute() {
+        let len = dirs.len();
+        dirs.extend(syslibroot.iter().map(|root| under_root(root, dir)).filter(|p| p.is_dir()));
+        if dirs.len() > len {
+            return;
+        }
+    }
+    dirs.push(dir.to_path_buf());
 }
 
 /// `dir` looked up under a syslibroot: an absolute directory keeps its
@@ -75,17 +82,7 @@ fn framework_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     for dir in &ctx.args.framework_paths {
-        let mut found = false;
-        for root in &ctx.args.syslibroot {
-            let path = under_root(root, dir);
-            if path.is_dir() {
-                dirs.push(path);
-                found = true;
-            }
-        }
-        if !found {
-            dirs.push(dir.clone());
-        }
+        push_search_dir(&ctx.args.syslibroot, &mut dirs, dir);
     }
 
     if !ctx.args.no_standard_dirs {
