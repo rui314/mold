@@ -2928,10 +2928,13 @@ type SectionName = (&'static str, &'static str);
 /// -rename_section matches __DATA_CONST,__const, not __DATA,__const;
 /// then -rename_section and -rename_segment rename that name (see
 /// SectionMap::renamed for __interpose's move, which comes last); and a
-/// section still in __TEXT then merges as in ld64 - __StaticInit into
-/// __text, the fixed-size literal pools (__literal4/8/16, already
-/// merged per element) into __const - under that section's renamed
-/// name. The flags follow the name before the renames: a renamed
+/// section the renames leave in place then merges as in ld64 -
+/// __StaticInit into __text, the fixed-size literal pools
+/// (__literal4/8/16, already merged per element) into __const - under
+/// that section's renamed name, if it is the standard section of its
+/// name (see is_standard_section): a regular __literal8 holds no
+/// literals, and a section renamed __literal8 is not one of the pools.
+/// The flags follow the name before the renames: a renamed
 /// __objc_classlist is still a list the runtime scans, a renamed
 /// __literal8 still a literal pool. A -r output keeps every section
 /// as it came, but for the renames.
@@ -2954,9 +2957,11 @@ fn output_section_for(
     }
     let name = map.builtin_name(name, flags);
     let out = map.renamed(args, name);
-    Some(match merged_name(out) {
-        Some(merged) => (renamed(args, merged), merged),
-        None => (out, name),
+    Some(match merged_name(name) {
+        Some(merged) if out == name && is_standard_section(segname, sectname, flags) => {
+            (renamed(args, merged), merged)
+        }
+        _ => (out, name),
     })
 }
 
@@ -3028,11 +3033,14 @@ impl SectionMap {
         if self.text_exec && flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
             return ("__TEXT_EXEC", "__text");
         }
+        if !is_standard_section(name.0, name.1, flags) {
+            return name;
+        }
         self.const_name(name)
     }
 
-    /// A __DATA section's name in a final image when it needs no
-    /// writes after dyld's fixups: the same section in __DATA_CONST,
+    /// A standard __DATA section's name in a final image when it needs
+    /// no writes after dyld's fixups: the same section in __DATA_CONST,
     /// unless -no_data_const - in the shared region, where dyld fixes
     /// them up for good, the selector references and the Objective-C
     /// runtime's class data too. ld-prime treats this move as a
@@ -3281,9 +3289,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
     let map = SectionMap::new(ctx);
-    // Each input section name's output section - by whether it is code
-    // too, which -text_exec moves.
-    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], bool), Option<OutputSectionId>> =
+    // Each input section name's output section - by its flags too,
+    // which say whether -text_exec moves it and whether it is the
+    // standard section of its name (see is_standard_section).
+    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], u32), Option<OutputSectionId>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
@@ -3316,7 +3325,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         let osec_id = if hdr_ptr == last_hdr {
             last_osec
         } else {
-            let key = (hdr.segname, hdr.sectname, hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0);
+            let key = (hdr.segname, hdr.sectname, hdr.flags);
             let id = match by_name.get(&key) {
                 Some(&id) => id,
                 None => {
@@ -4080,15 +4089,41 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     }
 }
 
+/// Whether ld-prime places an input section of a standard name (see
+/// standard_section_flags) as that standard section: one of the
+/// table's type, or of any type for the Objective-C runtime's sections
+/// and __got, which it knows by name. Only such a section moves to
+/// __DATA_CONST or merges into another section in a final image; any
+/// other, such as a __mod_init_func or __literal8 assembled without
+/// its type, stays where data of its name goes.
+fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
+    let Some(table) = standard_section_flags(segname, sectname) else {
+        return false;
+    };
+    table & SECTION_TYPE == flags & SECTION_TYPE
+        || sectname.starts_with("__objc_")
+        || (segname, sectname) == ("__DATA", "__got")
+}
+
 /// The flags ld-prime reads an input section as having: those its
 /// table holds for the section's name (see standard_section_flags) if
-/// the section has the table's type - a __TEXT,__const or __DATA,__data
-/// an assembler nop landed in is plain data again, a regular __text
-/// code - and its own otherwise (a regular __cstring holds no literals
-/// to merge).
+/// the section has the table's type, or has any type and one of the
+/// Objective-C runtime's names - a __TEXT,__const or __DATA,__data an
+/// assembler nop landed in is plain data again, a regular __text code,
+/// a regular __objc_methname C strings - and its own otherwise (a
+/// regular __cstring holds no literals to merge). __objc_selrefs keeps
+/// its own type, and so does __got (though ld-prime makes a regular
+/// one's slots entries of its GOT, named in the indirect symbol table:
+/// a -r output of it then has non-lazy pointers ld-prime refuses as
+/// input).
 fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
-        Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
+        Some(table)
+            if table & SECTION_TYPE == flags & SECTION_TYPE
+                || (sectname.starts_with("__objc_") && sectname != "__objc_selrefs") =>
+        {
+            table
+        }
         _ => flags,
     }
 }
