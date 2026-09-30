@@ -15,6 +15,11 @@ EOF2
 
 $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 $t/exe | grep '^42$'
+# A function only other bitcode calls is not kept external: libLTO
+# resolves that call itself, and ld-prime exports only _main.
+dyld_info -exports $t/exe > $t/exports
+grep -q _main $t/exports
+not grep -q _times2 $t/exports
 
 # Mixed bitcode and Mach-O, with bitcode in an archive
 cat <<EOF2 | $CC -flto -o $t/c.o -c -xc -

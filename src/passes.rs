@@ -995,10 +995,26 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         // code references (plus the entry point, and everything under
         // -export_dynamic, which exists exactly to let executables
         // keep their globals for dlsym) must survive; the rest can be
-        // internalized and dead-stripped inside the module.
+        // internalized and dead-stripped inside the module. A reference
+        // from another bitcode module does not count: libLTO resolves
+        // those itself, and ld-prime lets such a function go local
+        // (_times2, called only from a bitcode main, is not exported).
         let executable = ctx.args.output_type == MH_EXECUTE;
+        let mut native_refs: hashbrown::HashSet<crate::symbol::SymbolId> =
+            hashbrown::HashSet::new();
+        for obj in &ctx.objs {
+            if !obj.is_alive || obj.lto_module.is_some() {
+                continue;
+            }
+            let r = obj.global_range();
+            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                if !nlist.is_stab() && nlist.n_type() == N_UNDF && !nlist.is_common() {
+                    native_refs.insert(sym_id);
+                }
+            }
+        }
         let mut preserve: Vec<std::ffi::CString> = Vec::new();
-        for sym in &ctx.symbols.syms {
+        for (i, sym) in ctx.symbols.syms.iter().enumerate() {
             if let Some(FileId::Obj(idx)) = sym.file()
                 && ctx.objs[idx as usize].is_alive
                 && ctx.objs[idx as usize].lto_module.is_some()
@@ -1006,7 +1022,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
             {
                 if executable
                     && !ctx.args.export_dynamic
-                    && !sym.is_used()
+                    && (!sym.is_used() || !native_refs.contains(&(i as u32)))
                     && sym.name() != ctx.args.entry
                     && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
                     && !ctx
