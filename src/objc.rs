@@ -247,6 +247,13 @@ fn objc_ref_location<E: Target>(ctx: &Context<E>, r: ObjcRef) -> Option<(u32, u6
     Some((isec, off))
 }
 
+/// The pointers in the 8-byte slots of a list section such as
+/// __objc_classlist (None where a slot has none).
+fn list_entries<E: Target>(ctx: &Context<E>, isec: u32) -> impl Iterator<Item = Option<ObjcRef>> {
+    let size = ctx.isecs[isec as usize].size as u64;
+    (0..size).step_by(8).map(move |off| objc_pointer_at(ctx, isec, off))
+}
+
 /// The relocation of the pointer field at `off` in a subsection, as
 /// (object, index into its relocation arena), for rewriting it.
 fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
@@ -270,6 +277,7 @@ fn objc_class_ro<E: Target>(ctx: &Context<E>, cls: (u32, u64)) -> Option<(u32, u
     Some((isec, off & !3))
 }
 
+/// The C string a reference points at, if it is in the image.
 fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<String> {
     let (isec, off) = objc_ref_location(ctx, r?)?;
     let data = ctx.isecs[isec as usize].data();
@@ -968,10 +976,6 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Appends a synthesized data record for an Objective-C rewrite and
-/// returns its subsection; see merge_objc_categories.
-pub type NewBlob<E> = dyn FnMut(&mut Context<E>, &'static str, Vec<DataField>) -> u32;
-
 /// Merges the categories of a class defined in the image into the
 /// class itself, as ld64 does unless -no_objc_category_merging:
 /// the runtime then has no categories to attach at load. The merged
@@ -991,586 +995,654 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let relative = objc_relative_method_lists(ctx);
-
-    // Classes defined here: class_t location -> (metaclass, ro, meta ro).
-    struct Class {
-        meta: (u32, u64),
-        ro: (u32, u64),
-        meta_ro: (u32, u64),
-        nonlazy: bool,
+    let (mut classes, class_idx) = defined_classes(ctx);
+    if classes.is_empty() {
+        return;
     }
-    let mut classes: hashbrown::HashMap<(u32, u64), Class> = hashbrown::HashMap::new();
-    let mut class_order: Vec<(u32, u64)> = Vec::new();
-    let mut nlclslist_sects = false;
+    let (mut cats, catlists) = find_categories(ctx, &mut classes, &class_idx);
+    if cats.is_empty() {
+        return;
+    }
+
+    let mut writer = MergedListWriter::new(ctx, relative);
+    let mut nonlazy_classes: Vec<(u32, u64)> = Vec::new();
+    for class in &classes {
+        if class.cats.is_empty() {
+            continue;
+        }
+
+        // Gather everything first, and give up on the class if anything
+        // is not in shape: nothing changes until everything checks out.
+        let own = ListRefs::of_class(ctx, class);
+        let cat_lists: Vec<ListRefs> =
+            class.cats.iter().map(|&ci| ListRefs::of_category(ctx, cats[ci].isec)).collect();
+        let ro_ok = ro_rewritable(ctx, class);
+        let lists = match merge_lists(ctx, &own, &cat_lists, relative) {
+            Some(lists) if ro_ok => lists,
+            lists => {
+                if std::env::var_os("MOLD_OBJC_DEBUG").is_some() {
+                    eprintln!(
+                        "category merging: class at {:?} with {} categories skipped (lists in shape: {}, ro reachable: {})",
+                        class.cls,
+                        class.cats.len(),
+                        lists.is_some(),
+                        ro_ok
+                    );
+                }
+                continue;
+            }
+        };
+
+        // Write the merged lists, named after the class and its
+        // categories, and drop the lists they supersede.
+        let class_name = objc_cstring_at(ctx, objc_pointer_at(ctx, class.ro.0, class.ro.1 + 24))
+            .unwrap_or_default();
+        let cat_names: Vec<&str> = class.cats.iter().map(|&ci| cats[ci].name.as_str()).collect();
+        let merged = writer.write(ctx, lists, &format!("{class_name}({})", cat_names.join("|")));
+        drop_superseded_lists(ctx, &own, &merged, &cat_lists);
+
+        // Point the class and its metaclass at new ro records holding
+        // the merged lists.
+        let ro = rewrite_ro(ctx, class.ro, merged.imethods, merged.protocols, merged.iprops);
+        let meta_ro =
+            rewrite_ro(ctx, class.meta_ro, merged.cmethods, merged.protocols, merged.cprops);
+        retarget_class_data(ctx, class.cls, ro);
+        retarget_class_data(ctx, class.meta, meta_ro);
+
+        for &ci in &class.cats {
+            ctx.isecs[cats[ci].isec as usize].set_alive(false);
+            cats[ci].merged = true;
+        }
+        if !class.nonlazy && class.cats.iter().any(|&ci| cats[ci].nonlazy) {
+            nonlazy_classes.push(class.cls);
+        }
+    }
+
+    rebuild_category_lists(ctx, &catlists, &cats);
+
+    // Classes that absorbed a +load category become non-lazy.
+    for cls in nonlazy_classes {
+        add_data_blob(
+            ctx,
+            "__objc_nlclslist",
+            S_ATTR_NO_DEAD_STRIP,
+            vec![DataField::Ptr(ObjcRef::Isec(cls.0, cls.1))],
+        );
+    }
+}
+
+/// A class defined in the image, by where its class_t, its metaclass's
+/// and their class_ro_t records are.
+struct DefinedClass {
+    cls: (u32, u64),
+    meta: (u32, u64),
+    ro: (u32, u64),
+    meta_ro: (u32, u64),
+    /// Listed in __objc_nlclslist, as a class with a +load is.
+    nonlazy: bool,
+    /// The categories on it that can merge, in __objc_catlist order.
+    cats: Vec<usize>,
+}
+
+/// The classes __objc_classlist and __objc_nlclslist list, in the order
+/// first listed, and their index by class_t location.
+fn defined_classes<E: Target>(
+    ctx: &Context<E>,
+) -> (Vec<DefinedClass>, hashbrown::HashMap<(u32, u64), usize>) {
+    let mut classes: Vec<DefinedClass> = Vec::new();
+    let mut class_idx = hashbrown::HashMap::new();
     for i in 0..ctx.isecs.len() {
         let isec = &ctx.isecs[i];
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
             continue;
         }
-        let h = ctx.hdr_of(isec);
-        let nonlazy = match h.sectname() {
+        let nonlazy = match ctx.hdr_of(isec).sectname() {
             "__objc_classlist" => false,
-            "__objc_nlclslist" => {
-                nlclslist_sects = true;
-                true
-            }
+            "__objc_nlclslist" => true,
             _ => continue,
         };
-        for off in (0..isec.size as u64).step_by(8) {
-            let Some(cls) =
-                objc_pointer_at(ctx, i as u32, off).and_then(|r| objc_ref_location(ctx, r))
-            else {
-                continue;
-            };
+        for cls in list_entries(ctx, i as u32).filter_map(|r| objc_ref_location(ctx, r?)) {
+            // class_t: isa (the metaclass), superclass, cache, vtable,
+            // data (the ro).
             let ro = objc_class_ro(ctx, cls);
             let meta = objc_pointer_at(ctx, cls.0, cls.1).and_then(|r| objc_ref_location(ctx, r));
             let meta_ro = meta.and_then(|m| objc_class_ro(ctx, m));
             let (Some(ro), Some(meta), Some(meta_ro)) = (ro, meta, meta_ro) else { continue };
-            if !classes.contains_key(&cls) {
-                class_order.push(cls);
-            }
-            let entry = classes.entry(cls).or_insert(Class { meta, ro, meta_ro, nonlazy: false });
-            entry.nonlazy |= nonlazy;
+            let idx = *class_idx.entry(cls).or_insert_with(|| {
+                classes.push(DefinedClass { cls, meta, ro, meta_ro, nonlazy: false, cats: vec![] });
+                classes.len() - 1
+            });
+            classes[idx].nonlazy |= nonlazy;
         }
     }
-    if classes.is_empty() {
-        return;
-    }
+    (classes, class_idx)
+}
 
-    // The categories, in __objc_catlist order, by class. A category
-    // sits in __objc_catlist and, if it has a +load, in
-    // __objc_nlcatlist too; a list subsection may hold several.
-    struct Category {
-        cat: (u32, u64),
-        nonlazy: bool,
-        merged: bool,
-        name: String,
-    }
-    struct ListSect {
-        isec: u32,
-        nonlazy: bool,
-        /// Each entry: the category it names, if mergeable.
-        entries: Vec<Option<usize>>,
-        /// The entries as references, for rebuilding the list.
-        refs: Vec<ObjcRef>,
-    }
+/// A category on a class defined in the image.
+struct Category {
+    /// Its category_t, a subsection of its own.
+    isec: u32,
+    name: String,
+    /// Listed in __objc_nlcatlist too, as a category with a +load is.
+    nonlazy: bool,
+    merged: bool,
+}
+
+/// A subsection of __objc_catlist or __objc_nlcatlist: each entry's
+/// pointer, and the category it names if one that can merge.
+struct CategoryList {
+    isec: u32,
+    nonlazy: bool,
+    entries: Vec<(ObjcRef, Option<usize>)>,
+}
+
+/// The categories on classes defined in the image, in __objc_catlist
+/// order, each noted on its class, and the category-list subsections.
+/// A category sits in __objc_catlist and, if it has a +load, in
+/// __objc_nlcatlist too; a list subsection may hold several.
+fn find_categories<E: Target>(
+    ctx: &Context<E>,
+    classes: &mut [DefinedClass],
+    class_idx: &hashbrown::HashMap<(u32, u64), usize>,
+) -> (Vec<Category>, Vec<CategoryList>) {
     let mut cats: Vec<Category> = Vec::new();
-    let mut cat_index: hashbrown::HashMap<(u32, u64), usize> = hashbrown::HashMap::new();
-    let mut cats_of: hashbrown::HashMap<(u32, u64), Vec<usize>> = hashbrown::HashMap::new();
-    let mut list_sects: Vec<ListSect> = Vec::new();
+    let mut cat_idx: hashbrown::HashMap<u32, usize> = hashbrown::HashMap::new();
+    let mut lists = Vec::new();
     for i in 0..ctx.isecs.len() {
         let isec = &ctx.isecs[i];
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
             continue;
         }
-        let h = ctx.hdr_of(isec);
-        let nonlazy = match h.sectname() {
+        let nonlazy = match ctx.hdr_of(isec).sectname() {
             "__objc_catlist" => false,
             "__objc_nlcatlist" => true,
             _ => continue,
         };
-        let mut ls = ListSect { isec: i as u32, nonlazy, entries: Vec::new(), refs: Vec::new() };
-        for off in (0..isec.size as u64).step_by(8) {
-            let r = objc_pointer_at(ctx, i as u32, off).unwrap_or(ObjcRef::Null);
-            ls.refs.push(r);
-            let mergeable = (|| {
-                let cat = objc_ref_location(ctx, r)?;
-                if cat.1 != 0 || ctx.isecs[cat.0 as usize].size < 48 {
-                    return None;
+        let mut list = CategoryList { isec: i as u32, nonlazy, entries: Vec::new() };
+        for r in list_entries(ctx, i as u32) {
+            let r = r.unwrap_or(ObjcRef::Null);
+            let ci = category_on_defined_class(ctx, r, class_idx).and_then(|(cat, class)| {
+                if let Some(&ci) = cat_idx.get(&cat) {
+                    return Some(ci);
                 }
-                let cls = objc_pointer_at(ctx, cat.0, 8).and_then(|r| objc_ref_location(ctx, r))?;
-                if !classes.contains_key(&cls) {
-                    return None;
-                }
-                let idx = match cat_index.get(&cat) {
-                    Some(&idx) => idx,
-                    None => {
-                        let name = objc_cstring_at(ctx, objc_pointer_at(ctx, cat.0, 0))?;
-                        cats.push(Category { cat, nonlazy: false, merged: false, name });
-                        cat_index.insert(cat, cats.len() - 1);
-                        cats_of.entry(cls).or_default().push(cats.len() - 1);
-                        cats.len() - 1
-                    }
-                };
-                cats[idx].nonlazy |= nonlazy;
-                Some(idx)
-            })();
-            ls.entries.push(mergeable);
-        }
-        list_sects.push(ls);
-    }
-    if cats_of.is_empty() {
-        return;
-    }
-
-    // The methods of a list (already rewritten in relative form, or
-    // classic), or None if the list is not in a shape we can merge.
-    let methods_of = |ctx: &Context<E>, r: Option<ObjcRef>| -> Option<Vec<ObjcMethod>> {
-        let Some(r) = r else { return Some(Vec::new()) };
-        let (isec, off) = objc_ref_location(ctx, r)?;
-        if off != 0 {
-            return None;
-        }
-        let resolved = ctx.resolve_isec(isec as usize) as u32;
-        if let Some(list) = ctx.objc_methlist.lists.iter().find(|l| l.isec == resolved) {
-            return Some(list.methods.clone());
-        }
-        if relative {
-            return None;
-        }
-        let data = ctx.isecs[isec as usize].data();
-        if data.len() < 8 {
-            return None;
-        }
-        let entsize_flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
-        let count = u32::from_le_bytes(data[4..8].try_into().unwrap()) as u64;
-        if entsize_flags != 24 || 8 + 24 * count != data.len() as u64 {
-            return None;
-        }
-        let mut methods = Vec::new();
-        for i in 0..count {
-            let at = 8 + 24 * i;
-            methods.push(ObjcMethod {
-                name: objc_pointer_at(ctx, isec, at)?,
-                types: objc_pointer_at(ctx, isec, at + 8).unwrap_or(ObjcRef::Null),
-                imp: objc_pointer_at(ctx, isec, at + 16).unwrap_or(ObjcRef::Null),
+                let name = objc_cstring_at(ctx, objc_pointer_at(ctx, cat, 0))?;
+                cats.push(Category { isec: cat, name, nonlazy: false, merged: false });
+                cat_idx.insert(cat, cats.len() - 1);
+                classes[class].cats.push(cats.len() - 1);
+                Some(cats.len() - 1)
             });
-        }
-        Some(methods)
-    };
-    // A protocol list: count (8 bytes) then pointers.
-    let protocols_of = |ctx: &Context<E>, r: Option<ObjcRef>| -> Option<Vec<ObjcRef>> {
-        let Some(r) = r else { return Some(Vec::new()) };
-        let (isec, off) = objc_ref_location(ctx, r)?;
-        let data = ctx.isecs[isec as usize].data();
-        let count =
-            u64::from_le_bytes(data.get(off as usize..off as usize + 8)?.try_into().unwrap());
-        (0..count).map(|i| objc_pointer_at(ctx, isec, off + 8 + 8 * i)).collect()
-    };
-    // A property list: entsize (16), count, then (name, attributes).
-    let properties_of = |ctx: &Context<E>, r: Option<ObjcRef>| -> Option<Vec<(ObjcRef, ObjcRef)>> {
-        let Some(r) = r else { return Some(Vec::new()) };
-        let (isec, off) = objc_ref_location(ctx, r)?;
-        let data = ctx.isecs[isec as usize].data();
-        let entsize =
-            u32::from_le_bytes(data.get(off as usize..off as usize + 4)?.try_into().unwrap());
-        let count =
-            u32::from_le_bytes(data.get(off as usize + 4..off as usize + 8)?.try_into().unwrap())
-                as u64;
-        if entsize != 16 {
-            return None;
-        }
-        (0..count)
-            .map(|i| {
-                let at = off + 8 + 16 * i;
-                Some((
-                    objc_pointer_at(ctx, isec, at)?,
-                    objc_pointer_at(ctx, isec, at + 8).unwrap_or(ObjcRef::Null),
-                ))
-            })
-            .collect()
-    };
-    // A pointer field's reference must be to data in this image (or
-    // null) for a synthesized record to hold it as a plain rebase.
-    let local = |ctx: &Context<E>, r: ObjcRef| -> bool {
-        match r {
-            ObjcRef::Null | ObjcRef::Isec(..) | ObjcRef::TailSelref(_) => true,
-            ObjcRef::Sym(id, _) => {
-                !ctx.symbols[id].is_imported() && ctx.symbols[id].input_section().is_some()
+            if let Some(ci) = ci {
+                cats[ci].nonlazy |= nonlazy;
             }
+            list.entries.push((r, ci));
         }
-    };
+        lists.push(list);
+    }
+    (cats, lists)
+}
 
-    let mut methlist_hdr: Option<(u32, u32)> = None;
-    let mut methlist_off: u64 = ctx
-        .objc_methlist
-        .lists
-        .last()
-        .map(|l| ctx.isecs[l.isec as usize].offset as u64 + ctx.isecs[l.isec as usize].size as u64)
-        .unwrap_or(0);
-    let mut nonlazy_classes: Vec<(u32, u64)> = Vec::new();
+/// The category a category-list entry points at and the class it
+/// extends, if that class is defined in the image and the category_t
+/// is a subsection of its own, long enough to have instance properties.
+fn category_on_defined_class<E: Target>(
+    ctx: &Context<E>,
+    r: ObjcRef,
+    class_idx: &hashbrown::HashMap<(u32, u64), usize>,
+) -> Option<(u32, usize)> {
+    let (cat, off) = objc_ref_location(ctx, r)?;
+    if off != 0 || ctx.isecs[cat as usize].size < 48 {
+        return None;
+    }
+    // category_t: name, cls, ...
+    let cls = objc_pointer_at(ctx, cat, 8).and_then(|r| objc_ref_location(ctx, r))?;
+    Some((cat, *class_idx.get(&cls)?))
+}
 
-    for cls in class_order {
-        let Some(cat_ids) = cats_of.get(&cls) else { continue };
-        let cat_ids = cat_ids.clone();
-        let info = &classes[&cls];
-        // Gather everything first; give up on the class if anything is
-        // not in shape.
-        struct Merged {
-            imethods: Vec<ObjcMethod>,
-            cmethods: Vec<ObjcMethod>,
-            protocols: Vec<ObjcRef>,
-            iprops: Vec<(ObjcRef, ObjcRef)>,
-            cprops: Vec<(ObjcRef, ObjcRef)>,
-            any_imethods: bool,
-            any_cmethods: bool,
-            any_protocols: bool,
-            any_iprops: bool,
-            any_cprops: bool,
-        }
-        let mut m = Merged {
-            imethods: Vec::new(),
-            cmethods: Vec::new(),
-            protocols: Vec::new(),
-            iprops: Vec::new(),
-            cprops: Vec::new(),
-            any_imethods: false,
-            any_cmethods: false,
-            any_protocols: false,
-            any_iprops: false,
-            any_cprops: false,
-        };
-        let mut ok = true;
-        for &ci in cat_ids.iter().rev() {
-            let (c, coff) = cats[ci].cat;
-            let im = objc_pointer_at(ctx, c, coff + 16);
-            let cm = objc_pointer_at(ctx, c, coff + 24);
-            let pr = objc_pointer_at(ctx, c, coff + 32);
-            match (methods_of(ctx, im), methods_of(ctx, cm), protocols_of(ctx, pr)) {
-                (Some(a), Some(b), Some(p)) => {
-                    m.any_imethods |= im.is_some();
-                    m.any_cmethods |= cm.is_some();
-                    m.any_protocols |= pr.is_some();
-                    m.imethods.extend(a);
-                    m.cmethods.extend(b);
-                    m.protocols.extend(p);
-                }
-                _ => {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        if ok {
-            for &ci in cat_ids.iter() {
-                let (c, coff) = cats[ci].cat;
-                let ip = objc_pointer_at(ctx, c, coff + 40);
-                let cp = if ctx.isecs[c as usize].size >= coff as u32 + 56 {
-                    objc_pointer_at(ctx, c, coff + 48)
-                } else {
-                    None
-                };
-                match (properties_of(ctx, ip), properties_of(ctx, cp)) {
-                    (Some(a), Some(b)) => {
-                        m.any_iprops |= ip.is_some();
-                        m.any_cprops |= cp.is_some();
-                        m.iprops.extend(a);
-                        m.cprops.extend(b);
-                    }
-                    _ => {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-        }
-        // The class's own lists follow.
-        let (ro, meta_ro) = (info.ro, info.meta_ro);
-        let base_im = objc_pointer_at(ctx, ro.0, ro.1 + 32);
-        let base_cm = objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 32);
-        let base_pr = objc_pointer_at(ctx, ro.0, ro.1 + 40);
-        let base_ip = objc_pointer_at(ctx, ro.0, ro.1 + 64);
-        let base_cp = objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 64);
-        if ok {
-            match (
-                methods_of(ctx, base_im),
-                methods_of(ctx, base_cm),
-                protocols_of(ctx, base_pr),
-                properties_of(ctx, base_ip),
-                properties_of(ctx, base_cp),
-            ) {
-                (Some(a), Some(b), Some(p), Some(ip), Some(cp)) => {
-                    m.imethods.extend(a);
-                    m.cmethods.extend(b);
-                    m.protocols.extend(p);
-                    m.iprops.extend(ip);
-                    m.cprops.extend(cp);
-                }
-                _ => ok = false,
-            }
-        }
-        if ok && !relative {
-            ok = m
-                .imethods
-                .iter()
-                .chain(&m.cmethods)
-                .all(|x| local(ctx, x.name) && local(ctx, x.types) && local(ctx, x.imp));
-        }
-        if ok {
-            ok = m.protocols.iter().all(|&r| local(ctx, r))
-                && m.iprops.iter().chain(&m.cprops).all(|&(a, b)| local(ctx, a) && local(ctx, b));
-        }
-        // The class's and metaclass's data pointers must be rewritable
-        // to point at new ro records. Nothing is changed until
-        // everything checks out.
-        let ro_ok = objc_pointer_reloc(ctx, cls.0, cls.1 + 32).is_some() && info.meta.1 == 0
-            || objc_pointer_reloc(ctx, info.meta.0, info.meta.1 + 32).is_some();
-        let ro_ok = ro_ok
-            && ctx.isecs[ro.0 as usize].size as u64 >= ro.1 + 72
-            && ctx.isecs[meta_ro.0 as usize].size as u64 >= meta_ro.1 + 72
-            && objc_pointer_reloc(ctx, info.meta.0, info.meta.1 + 32).is_some();
-        if !ok || !ro_ok {
-            if std::env::var_os("MOLD_OBJC_DEBUG").is_some() {
-                eprintln!(
-                    "category merging: class at {:?} with {} categories skipped (lists in shape: {}, ro reachable: {})",
-                    cls,
-                    cat_ids.len(),
-                    ok,
-                    ro_ok
-                );
-            }
-            continue;
-        }
+/// The five lists a category adds to its class, and a class has of its
+/// own, as references to them (None: no list).
+#[derive(Clone, Copy, Default)]
+struct ListRefs {
+    imethods: Option<ObjcRef>,
+    cmethods: Option<ObjcRef>,
+    protocols: Option<ObjcRef>,
+    iprops: Option<ObjcRef>,
+    cprops: Option<ObjcRef>,
+}
 
-        // Emit the merged lists.
-        let mut new_blob = |ctx: &mut Context<E>, sect: &'static str, fields: Vec<DataField>| {
-            add_data_blob(ctx, sect, 0, fields)
-        };
-        let mut new_methlist = |ctx: &mut Context<E>, methods: Vec<ObjcMethod>| -> u32 {
-            if relative {
-                let sect = *methlist_hdr.get_or_insert_with(|| add_methlist_section(ctx));
-                add_relative_method_list(ctx, sect, &mut methlist_off, methods)
-            } else {
-                let mut fields = vec![
-                    DataField::Bytes(24u32.to_le_bytes().to_vec()),
-                    DataField::Bytes((methods.len() as u32).to_le_bytes().to_vec()),
-                ];
-                for m in &methods {
-                    fields.push(DataField::Ptr(m.name));
-                    fields.push(DataField::Ptr(m.types));
-                    fields.push(DataField::Ptr(m.imp));
-                }
-                // ld-prime writes a merged absolute list into
-                // __objc_data (the protocol and property lists stay in
-                // __objc_const).
-                new_blob(ctx, "__objc_data", fields)
-            }
-        };
-        // The class's original lists and the categories' are dropped
-        // (the merged list carries ld64's name); a superseded list
-        // that is still referred to resolves to the merged one.
-        let supersede = |ctx: &mut Context<E>, r: Option<ObjcRef>, merged: Option<u32>| {
-            if let Some((isec, 0)) = r.and_then(|r| objc_ref_location(ctx, r)) {
-                let resolved = ctx.resolve_isec(isec as usize);
-                if Some(resolved as u32) != merged {
-                    ctx.objc_methlist.lists.retain(|l| l.isec as usize != resolved);
-                    ctx.isecs[resolved].set_alive(false);
-                    if let Some(merged) = merged {
-                        ctx.isecs[resolved].replacement = merged;
-                        if resolved != isec as usize {
-                            ctx.isecs[isec as usize].replacement = merged;
-                        }
-                    }
-                }
-            }
-        };
-
-        // ld64 names the merged lists after the class and its
-        // categories: __OBJC_$_INSTANCE_METHODS_Foo(A|B).
-        let class_name =
-            objc_cstring_at(ctx, objc_pointer_at(ctx, ro.0, ro.1 + 24)).unwrap_or_default();
-        let suffix = format!(
-            "{}({})",
-            class_name,
-            cat_ids.iter().map(|&ci| cats[ci].name.as_str()).collect::<Vec<_>>().join("|")
-        );
-        let name_it = |ctx: &mut Context<E>, prefix: &str, isec: u32| {
-            let name: &'static str = String::leak(format!("{prefix}{suffix}"));
-            ctx.extra_local_syms.push((name, isec));
-        };
-        let imethods = if m.any_imethods {
-            Some(new_methlist(ctx, std::mem::take(&mut m.imethods)))
-        } else {
-            None
-        };
-        let cmethods = if m.any_cmethods {
-            Some(new_methlist(ctx, std::mem::take(&mut m.cmethods)))
-        } else {
-            None
-        };
-        let protocols = if m.any_protocols {
-            let mut fields =
-                vec![DataField::Bytes((m.protocols.len() as u64).to_le_bytes().to_vec())];
-            fields.extend(m.protocols.iter().map(|&r| DataField::Ptr(r)));
-            Some(new_blob(ctx, "__objc_const", fields))
-        } else {
-            None
-        };
-        if let Some(l) = imethods {
-            name_it(ctx, "__OBJC_$_INSTANCE_METHODS_", l);
-        }
-        if let Some(l) = cmethods {
-            name_it(ctx, "__OBJC_$_CLASS_METHODS_", l);
-        }
-        if let Some(l) = protocols {
-            name_it(ctx, "__OBJC_CLASS_PROTOCOLS_$_", l);
-        }
-        let props = |ctx: &mut Context<E>, list: &[(ObjcRef, ObjcRef)]| -> u32 {
-            let mut fields = vec![
-                DataField::Bytes(16u32.to_le_bytes().to_vec()),
-                DataField::Bytes((list.len() as u32).to_le_bytes().to_vec()),
-            ];
-            for &(n, a) in list {
-                fields.push(DataField::Ptr(n));
-                fields.push(DataField::Ptr(a));
-            }
-            new_blob(ctx, "__objc_const", fields)
-        };
-        let iprops = if m.any_iprops { Some(props(ctx, &m.iprops)) } else { None };
-        let cprops = if m.any_cprops { Some(props(ctx, &m.cprops)) } else { None };
-
-        if imethods.is_some() {
-            supersede(ctx, base_im, None);
-        }
-        if cmethods.is_some() {
-            supersede(ctx, base_cm, None);
-        }
-        // Superseded protocol and property lists go away (ld64's output
-        // keeps only the merged ones).
-        let retire = |ctx: &mut Context<E>, r: Option<ObjcRef>| {
-            if let Some((isec, 0)) = r.and_then(|r| objc_ref_location(ctx, r)) {
-                ctx.isecs[isec as usize].set_alive(false);
-            }
-        };
-        if protocols.is_some() {
-            retire(ctx, base_pr);
-        }
-        if iprops.is_some() {
-            retire(ctx, base_ip);
-        }
-        if cprops.is_some() {
-            retire(ctx, base_cp);
-        }
-        for &ci in cat_ids.iter() {
-            let (c, coff) = cats[ci].cat;
-            supersede(ctx, objc_pointer_at(ctx, c, coff + 16), None);
-            supersede(ctx, objc_pointer_at(ctx, c, coff + 24), None);
-            for field in [32, 40, 48] {
-                if ctx.isecs[c as usize].size as u64 >= coff + field + 8 {
-                    retire(ctx, objc_pointer_at(ctx, c, coff + field));
-                }
-            }
-        }
-
-        // New ro records with the merged lists, replacing the class's
-        // (their symbols follow). class_ro_t: flags, instanceStart,
-        // instanceSize, reserved, then ivarLayout, name, baseMethods,
-        // baseProtocols, ivars, weakIvarLayout, baseProperties - and,
-        // when the flags carry RO_HAS_SWIFT_INITIALIZER (1 << 6), a
-        // Swift class's metadata initializer pointer at 72, which the
-        // runtime calls while realizing the class (dropping it from
-        // the rewritten record sent NetNewsWire's AppDelegate into a
-        // garbage address in objc_copyClassList).
-        let rewrite_ro = |ctx: &mut Context<E>,
-                          ro: (u32, u64),
-                          methods: Option<u32>,
-                          protocols: Option<u32>,
-                          props: Option<u32>,
-                          new_blob: &mut NewBlob<E>| {
-            let data = ctx.isecs[ro.0 as usize].data()[ro.1 as usize..ro.1 as usize + 16].to_vec();
-            let flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
-            let has_swift_initializer = flags & (1 << 6) != 0;
-            let mut fields = vec![DataField::Bytes(data)];
-            let mut ptr_fields: Vec<u64> = vec![16, 24, 32, 40, 48, 56, 64];
-            if has_swift_initializer {
-                ptr_fields.push(72);
-            }
-            let record_len = ptr_fields.last().unwrap() + 8;
-            for (k, field) in ptr_fields.into_iter().enumerate() {
-                let sub = match k {
-                    2 => methods,
-                    3 => protocols,
-                    6 => props,
-                    _ => None,
-                };
-                let r = match sub {
-                    Some(isec) => ObjcRef::Isec(isec, 0),
-                    None => objc_pointer_at(ctx, ro.0, ro.1 + field).unwrap_or(ObjcRef::Null),
-                };
-                fields.push(DataField::Ptr(r));
-            }
-            // The new record goes where the old one was: Swift puts a
-            // class's ro data in __objc_data (ld64's output keeps
-            // __DATA__TtC... there), clang's in __objc_const.
-            let sect: &'static str = match ctx.hdr_of(&ctx.isecs[ro.0 as usize]).sectname() {
-                "__objc_data" => "__objc_data",
-                _ => "__objc_const",
-            };
-            let blob = new_blob(ctx, sect, fields);
-            let isec = ro.0 as usize;
-            if ro.1 == 0 && ctx.isecs[isec].size as u64 == record_len {
-                // The record was a subsection of its own: replace it, so
-                // its symbol names the new record too (ld64 keeps
-                // __OBJC_CLASS_RO_$_Foo).
-                ctx.isecs[isec].set_alive(false);
-                ctx.isecs[isec].replacement = blob;
-            }
-            blob
-        };
-        // Point a class's data field at its new ro record (keeping the
-        // flag bits a Swift class stores in the pointer's low bits).
-        let retarget = |ctx: &mut Context<E>, cls: (u32, u64), blob: u32| {
-            let (obj, k) = objc_pointer_reloc(ctx, cls.0, cls.1 + 32).unwrap();
-            let rel = ctx.objs[obj].relocs[k];
-            let flags = match rel.target() {
-                RelocTarget::Sym(idx) => {
-                    let id = ctx.objs[obj].symbols[idx as usize];
-                    (ctx.symbols[id].value as i64 + rel.addend) & 3
-                }
-                RelocTarget::Section(_) => rel.addend & 3,
-            };
-            let rel = &mut ctx.objs[obj].relocs[k];
-            rel.set_target(RelocTarget::Section(blob));
-            rel.addend = flags;
-        };
-        let ro_blob = rewrite_ro(ctx, ro, imethods, protocols, iprops, &mut new_blob);
-        let meta_blob = rewrite_ro(ctx, meta_ro, cmethods, protocols, cprops, &mut new_blob);
-        retarget(ctx, cls, ro_blob);
-        retarget(ctx, info.meta, meta_blob);
-        let mut any_nonlazy = false;
-        for &ci in cat_ids.iter() {
-            ctx.isecs[cats[ci].cat.0 as usize].set_alive(false);
-            cats[ci].merged = true;
-            any_nonlazy |= cats[ci].nonlazy;
-        }
-        if any_nonlazy && !info.nonlazy {
-            nonlazy_classes.push(cls);
+impl ListRefs {
+    /// A category's lists. category_t: name, cls, instanceMethods,
+    /// classMethods, protocols, instanceProperties, then
+    /// _classProperties, which a record from an older compiler lacks.
+    fn of_category<E: Target>(ctx: &Context<E>, cat: u32) -> Self {
+        let field = |off| objc_pointer_at(ctx, cat, off);
+        let has_class_props = ctx.isecs[cat as usize].size >= 56;
+        Self {
+            imethods: field(16),
+            cmethods: field(24),
+            protocols: field(32),
+            iprops: field(40),
+            cprops: if has_class_props { field(48) } else { None },
         }
     }
 
-    // The category lists lose the merged entries: a subsection all of
-    // whose entries merged goes away, one with survivors is rebuilt.
-    for ls in &list_sects {
-        let merged: Vec<bool> =
-            ls.entries.iter().map(|e| e.is_some_and(|ci| cats[ci].merged)).collect();
-        if !merged.iter().any(|&m| m) {
-            continue;
+    /// A class's own lists: its ro record's, and for the class methods
+    /// and properties its metaclass's (class_ro_t: baseMethods at 32,
+    /// baseProtocols at 40, baseProperties at 64).
+    fn of_class<E: Target>(ctx: &Context<E>, class: &DefinedClass) -> Self {
+        let (ro, meta_ro) = (class.ro, class.meta_ro);
+        Self {
+            imethods: objc_pointer_at(ctx, ro.0, ro.1 + 32),
+            cmethods: objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 32),
+            protocols: objc_pointer_at(ctx, ro.0, ro.1 + 40),
+            iprops: objc_pointer_at(ctx, ro.0, ro.1 + 64),
+            cprops: objc_pointer_at(ctx, meta_ro.0, meta_ro.1 + 64),
         }
-        ctx.isecs[ls.isec as usize].set_alive(false);
-        let survivors: Vec<DataField> = ls
-            .refs
+    }
+}
+
+/// A class's lists merged with its categories', each None where no
+/// category has a list of that kind (the class keeps its own).
+struct MergedLists {
+    imethods: Option<Vec<ObjcMethod>>,
+    cmethods: Option<Vec<ObjcMethod>>,
+    protocols: Option<Vec<ObjcRef>>,
+    iprops: Option<Vec<(ObjcRef, ObjcRef)>>,
+    cprops: Option<Vec<(ObjcRef, ObjcRef)>>,
+}
+
+/// Merges a class's own lists with its categories' (given in
+/// __objc_catlist order), or returns None if a list is not in a shape
+/// we can read or holds a reference a synthesized record cannot.
+fn merge_lists<E: Target>(
+    ctx: &Context<E>,
+    own: &ListRefs,
+    cats: &[ListRefs],
+    relative: bool,
+) -> Option<MergedLists> {
+    let mut imethods = Vec::new();
+    let mut cmethods = Vec::new();
+    let mut protocols = Vec::new();
+    let mut iprops = Vec::new();
+    let mut cprops = Vec::new();
+
+    // The methods and protocols of the category attached last come
+    // first; the properties take the categories in order. The class's
+    // own lists follow.
+    for c in cats.iter().rev() {
+        imethods.extend(read_method_list(ctx, c.imethods, relative)?);
+        cmethods.extend(read_method_list(ctx, c.cmethods, relative)?);
+        protocols.extend(read_protocol_list(ctx, c.protocols)?);
+    }
+    for c in cats {
+        iprops.extend(read_property_list(ctx, c.iprops)?);
+        cprops.extend(read_property_list(ctx, c.cprops)?);
+    }
+    imethods.extend(read_method_list(ctx, own.imethods, relative)?);
+    cmethods.extend(read_method_list(ctx, own.cmethods, relative)?);
+    protocols.extend(read_protocol_list(ctx, own.protocols)?);
+    iprops.extend(read_property_list(ctx, own.iprops)?);
+    cprops.extend(read_property_list(ctx, own.cprops)?);
+
+    // A synthesized record's pointers are plain rebases (a relative
+    // method list's entries are not pointers).
+    let local = |r: ObjcRef| points_into_image(ctx, r);
+    if !relative
+        && !imethods
             .iter()
-            .zip(&merged)
-            .filter(|&(_, &m)| !m)
-            .map(|(&r, _)| DataField::Ptr(r))
-            .collect();
-        if survivors.is_empty() {
-            continue;
-        }
-        let sect: &'static str = if ls.nonlazy { "__objc_nlcatlist" } else { "__objc_catlist" };
-        add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
+            .chain(&cmethods)
+            .all(|m| local(m.name) && local(m.types) && local(m.imp))
+    {
+        return None;
+    }
+    if !protocols.iter().all(|&r| local(r))
+        || !iprops.iter().chain(&cprops).all(|&(name, attrs)| local(name) && local(attrs))
+    {
+        return None;
     }
 
-    // Classes that absorbed a +load category become non-lazy.
-    if !nonlazy_classes.is_empty() {
-        let _ = nlclslist_sects;
-        for cls in nonlazy_classes {
-            add_data_blob(
-                ctx,
-                "__objc_nlclslist",
-                S_ATTR_NO_DEAD_STRIP,
-                vec![DataField::Ptr(ObjcRef::Isec(cls.0, cls.1))],
-            );
+    let any = |list: fn(&ListRefs) -> Option<ObjcRef>| cats.iter().any(|c| list(c).is_some());
+    Some(MergedLists {
+        imethods: any(|c| c.imethods).then_some(imethods),
+        cmethods: any(|c| c.cmethods).then_some(cmethods),
+        protocols: any(|c| c.protocols).then_some(protocols),
+        iprops: any(|c| c.iprops).then_some(iprops),
+        cprops: any(|c| c.cprops).then_some(cprops),
+    })
+}
+
+/// A method list's methods (none for no list), or None if the list is
+/// not in a shape we can merge: with relative method lists, one that
+/// convert_objc_method_lists rewrote; otherwise a classic one of
+/// 24-byte entries.
+fn read_method_list<E: Target>(
+    ctx: &Context<E>,
+    list: Option<ObjcRef>,
+    relative: bool,
+) -> Option<Vec<ObjcMethod>> {
+    let Some(r) = list else { return Some(Vec::new()) };
+    let (isec, off) = objc_ref_location(ctx, r)?;
+    if off != 0 {
+        return None;
+    }
+    if let Some(list) = ctx.objc_methlist.lists.iter().find(|l| l.isec == isec) {
+        return Some(list.methods.clone());
+    }
+    if relative {
+        return None;
+    }
+    let data = ctx.isecs[isec as usize].data();
+    if data.len() < 8 {
+        return None;
+    }
+    let entsize_flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    let count = u32::from_le_bytes(data[4..8].try_into().unwrap()) as u64;
+    if entsize_flags != 24 || 8 + 24 * count != data.len() as u64 {
+        return None;
+    }
+    let mut methods = Vec::new();
+    for i in 0..count {
+        let at = 8 + 24 * i;
+        methods.push(ObjcMethod {
+            name: objc_pointer_at(ctx, isec, at)?,
+            types: objc_pointer_at(ctx, isec, at + 8).unwrap_or(ObjcRef::Null),
+            imp: objc_pointer_at(ctx, isec, at + 16).unwrap_or(ObjcRef::Null),
+        });
+    }
+    Some(methods)
+}
+
+/// A protocol list's protocols (none for no list): a count (8 bytes),
+/// then pointers.
+fn read_protocol_list<E: Target>(ctx: &Context<E>, list: Option<ObjcRef>) -> Option<Vec<ObjcRef>> {
+    let Some(r) = list else { return Some(Vec::new()) };
+    let (isec, off) = objc_ref_location(ctx, r)?;
+    let data = ctx.isecs[isec as usize].data();
+    let count = u64::from_le_bytes(data.get(off as usize..off as usize + 8)?.try_into().unwrap());
+    (0..count).map(|i| objc_pointer_at(ctx, isec, off + 8 + 8 * i)).collect()
+}
+
+/// A property list's properties (none for no list): entsize (16),
+/// count, then (name, attributes) pairs.
+fn read_property_list<E: Target>(
+    ctx: &Context<E>,
+    list: Option<ObjcRef>,
+) -> Option<Vec<(ObjcRef, ObjcRef)>> {
+    let Some(r) = list else { return Some(Vec::new()) };
+    let (isec, off) = objc_ref_location(ctx, r)?;
+    let data = ctx.isecs[isec as usize].data();
+    let entsize = u32::from_le_bytes(data.get(off as usize..off as usize + 4)?.try_into().unwrap());
+    let count =
+        u32::from_le_bytes(data.get(off as usize + 4..off as usize + 8)?.try_into().unwrap())
+            as u64;
+    if entsize != 16 {
+        return None;
+    }
+    (0..count)
+        .map(|i| {
+            let at = off + 8 + 16 * i;
+            Some((
+                objc_pointer_at(ctx, isec, at)?,
+                objc_pointer_at(ctx, isec, at + 8).unwrap_or(ObjcRef::Null),
+            ))
+        })
+        .collect()
+}
+
+/// Whether a reference is to data in this image (or null), which a
+/// synthesized record can hold as a plain rebase.
+fn points_into_image<E: Target>(ctx: &Context<E>, r: ObjcRef) -> bool {
+    match r {
+        ObjcRef::Null | ObjcRef::Isec(..) | ObjcRef::TailSelref(_) => true,
+        ObjcRef::Sym(id, _) => {
+            !ctx.symbols[id].is_imported() && ctx.symbols[id].input_section().is_some()
+        }
+    }
+}
+
+/// Whether a class's ro records can be replaced: the class's and the
+/// metaclass's data pointers must be rewritable, and both records as
+/// long as the fields through baseProperties.
+fn ro_rewritable<E: Target>(ctx: &Context<E>, class: &DefinedClass) -> bool {
+    let long_enough = |(isec, off): (u32, u64)| ctx.isecs[isec as usize].size as u64 >= off + 72;
+    objc_pointer_reloc(ctx, class.cls.0, class.cls.1 + 32).is_some()
+        && objc_pointer_reloc(ctx, class.meta.0, class.meta.1 + 32).is_some()
+        && long_enough(class.ro)
+        && long_enough(class.meta_ro)
+}
+
+/// Writes merged lists out: relative method lists after
+/// convert_objc_method_lists's in __TEXT,__objc_methlist (in a section
+/// of their own, made on first use), or classic ones as records like
+/// the other lists.
+struct MergedListWriter {
+    relative: bool,
+    methlist_sect: Option<(u32, u32)>,
+    methlist_off: u64,
+}
+
+impl MergedListWriter {
+    fn new<E: Target>(ctx: &Context<E>, relative: bool) -> Self {
+        let last = ctx.objc_methlist.lists.last().map(|l| &ctx.isecs[l.isec as usize]);
+        Self {
+            relative,
+            methlist_sect: None,
+            methlist_off: last.map_or(0, |isec| isec.offset as u64 + isec.size as u64),
+        }
+    }
+
+    /// Writes a class's merged lists and returns references to them.
+    /// ld64 names the method and protocol lists after the class and its
+    /// categories, __OBJC_$_INSTANCE_METHODS_Foo(A|B), `suffix` being
+    /// "Foo(A|B)".
+    fn write<E: Target>(
+        &mut self,
+        ctx: &mut Context<E>,
+        lists: MergedLists,
+        suffix: &str,
+    ) -> ListRefs {
+        let name = |ctx: &mut Context<E>, prefix: &str, isec: u32| {
+            ctx.extra_local_syms.push((String::leak(format!("{prefix}{suffix}")), isec));
+        };
+        let mut refs = ListRefs::default();
+        if let Some(methods) = lists.imethods {
+            let isec = self.method_list(ctx, methods);
+            name(ctx, "__OBJC_$_INSTANCE_METHODS_", isec);
+            refs.imethods = Some(ObjcRef::Isec(isec, 0));
+        }
+        if let Some(methods) = lists.cmethods {
+            let isec = self.method_list(ctx, methods);
+            name(ctx, "__OBJC_$_CLASS_METHODS_", isec);
+            refs.cmethods = Some(ObjcRef::Isec(isec, 0));
+        }
+        if let Some(protocols) = lists.protocols {
+            let isec = add_protocol_list(ctx, &protocols);
+            name(ctx, "__OBJC_CLASS_PROTOCOLS_$_", isec);
+            refs.protocols = Some(ObjcRef::Isec(isec, 0));
+        }
+        if let Some(props) = lists.iprops {
+            refs.iprops = Some(ObjcRef::Isec(add_property_list(ctx, &props), 0));
+        }
+        if let Some(props) = lists.cprops {
+            refs.cprops = Some(ObjcRef::Isec(add_property_list(ctx, &props), 0));
+        }
+        refs
+    }
+
+    fn method_list<E: Target>(&mut self, ctx: &mut Context<E>, methods: Vec<ObjcMethod>) -> u32 {
+        if self.relative {
+            let sect = *self.methlist_sect.get_or_insert_with(|| add_methlist_section(ctx));
+            return add_relative_method_list(ctx, sect, &mut self.methlist_off, methods);
+        }
+        // entsize (24), count, then (name, types, imp) triples.
+        let mut fields = vec![
+            DataField::Bytes(24u32.to_le_bytes().to_vec()),
+            DataField::Bytes((methods.len() as u32).to_le_bytes().to_vec()),
+        ];
+        for m in &methods {
+            fields.extend([DataField::Ptr(m.name), DataField::Ptr(m.types), DataField::Ptr(m.imp)]);
+        }
+        // ld-prime writes a merged absolute list into __objc_data (the
+        // protocol and property lists stay in __objc_const).
+        add_data_blob(ctx, "__objc_data", 0, fields)
+    }
+}
+
+/// Writes a protocol list, as read_protocol_list reads it.
+fn add_protocol_list<E: Target>(ctx: &mut Context<E>, protocols: &[ObjcRef]) -> u32 {
+    let mut fields = vec![DataField::Bytes((protocols.len() as u64).to_le_bytes().to_vec())];
+    fields.extend(protocols.iter().map(|&r| DataField::Ptr(r)));
+    add_data_blob(ctx, "__objc_const", 0, fields)
+}
+
+/// Writes a property list, as read_property_list reads it.
+fn add_property_list<E: Target>(ctx: &mut Context<E>, props: &[(ObjcRef, ObjcRef)]) -> u32 {
+    let mut fields = vec![
+        DataField::Bytes(16u32.to_le_bytes().to_vec()),
+        DataField::Bytes((props.len() as u32).to_le_bytes().to_vec()),
+    ];
+    for &(name, attrs) in props {
+        fields.extend([DataField::Ptr(name), DataField::Ptr(attrs)]);
+    }
+    add_data_blob(ctx, "__objc_const", 0, fields)
+}
+
+/// Drops the lists the merged ones supersede - the class's own of each
+/// kind merged, and all of the categories' - as ld64's output keeps
+/// only the merged lists (which carry the names).
+fn drop_superseded_lists<E: Target>(
+    ctx: &mut Context<E>,
+    own: &ListRefs,
+    merged: &ListRefs,
+    cats: &[ListRefs],
+) {
+    if merged.imethods.is_some() {
+        drop_method_list(ctx, own.imethods);
+    }
+    if merged.cmethods.is_some() {
+        drop_method_list(ctx, own.cmethods);
+    }
+    if merged.protocols.is_some() {
+        drop_list(ctx, own.protocols);
+    }
+    if merged.iprops.is_some() {
+        drop_list(ctx, own.iprops);
+    }
+    if merged.cprops.is_some() {
+        drop_list(ctx, own.cprops);
+    }
+    for c in cats {
+        drop_method_list(ctx, c.imethods);
+        drop_method_list(ctx, c.cmethods);
+        drop_list(ctx, c.protocols);
+        drop_list(ctx, c.iprops);
+        drop_list(ctx, c.cprops);
+    }
+}
+
+fn drop_list<E: Target>(ctx: &mut Context<E>, list: Option<ObjcRef>) {
+    if let Some((isec, 0)) = list.and_then(|r| objc_ref_location(ctx, r)) {
+        ctx.isecs[isec as usize].set_alive(false);
+    }
+}
+
+/// Drops a method list, which __objc_methlist no longer writes either
+/// if it is one convert_objc_method_lists rewrote.
+fn drop_method_list<E: Target>(ctx: &mut Context<E>, list: Option<ObjcRef>) {
+    if let Some((isec, 0)) = list.and_then(|r| objc_ref_location(ctx, r)) {
+        ctx.objc_methlist.lists.retain(|l| l.isec != isec);
+        ctx.isecs[isec as usize].set_alive(false);
+    }
+}
+
+/// Writes a copy of a class_ro_t record pointing at the merged lists
+/// given, in place of the record's own, and returns it. class_ro_t:
+/// flags, instanceStart, instanceSize, reserved, then ivarLayout, name,
+/// baseMethods, baseProtocols, ivars, weakIvarLayout, baseProperties -
+/// and, when the flags carry RO_HAS_SWIFT_INITIALIZER (1 << 6), a
+/// Swift class's metadata initializer pointer at 72, which the runtime
+/// calls while realizing the class (dropping it from the rewritten
+/// record sent NetNewsWire's AppDelegate into a garbage address in
+/// objc_copyClassList).
+fn rewrite_ro<E: Target>(
+    ctx: &mut Context<E>,
+    ro: (u32, u64),
+    methods: Option<ObjcRef>,
+    protocols: Option<ObjcRef>,
+    props: Option<ObjcRef>,
+) -> u32 {
+    let data = ctx.isecs[ro.0 as usize].data()[ro.1 as usize..ro.1 as usize + 16].to_vec();
+    let flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    let len = if flags & (1 << 6) != 0 { 80 } else { 72 };
+    let mut fields = vec![DataField::Bytes(data)];
+    for field in (16..len).step_by(8) {
+        let merged = match field {
+            32 => methods,
+            40 => protocols,
+            64 => props,
+            _ => None,
+        };
+        let r = merged.or_else(|| objc_pointer_at(ctx, ro.0, ro.1 + field));
+        fields.push(DataField::Ptr(r.unwrap_or(ObjcRef::Null)));
+    }
+
+    // The new record goes where the old one was: Swift puts a class's
+    // ro data in __objc_data (ld64's output keeps __DATA__TtC...
+    // there), clang's in __objc_const.
+    let sect = match ctx.hdr_of(&ctx.isecs[ro.0 as usize]).sectname() {
+        "__objc_data" => "__objc_data",
+        _ => "__objc_const",
+    };
+    let blob = add_data_blob(ctx, sect, 0, fields);
+    let isec = &mut ctx.isecs[ro.0 as usize];
+    if ro.1 == 0 && isec.size as u64 == len {
+        // The record was a subsection of its own: replace it, so its
+        // symbol names the new record too (ld64 keeps
+        // __OBJC_CLASS_RO_$_Foo).
+        isec.set_alive(false);
+        isec.replacement = blob;
+    }
+    blob
+}
+
+/// Points a class's data field (class_t.data, at 32) at its new ro
+/// record, keeping the flag bits a Swift class stores in the pointer's
+/// low bits.
+fn retarget_class_data<E: Target>(ctx: &mut Context<E>, cls: (u32, u64), ro: u32) {
+    let (obj, k) = objc_pointer_reloc(ctx, cls.0, cls.1 + 32).unwrap();
+    let rel = ctx.objs[obj].relocs[k];
+    let flags = match rel.target() {
+        RelocTarget::Sym(idx) => {
+            let id = ctx.objs[obj].symbols[idx as usize];
+            (ctx.symbols[id].value as i64 + rel.addend) & 3
+        }
+        RelocTarget::Section(_) => rel.addend & 3,
+    };
+    let rel = &mut ctx.objs[obj].relocs[k];
+    rel.set_target(RelocTarget::Section(ro));
+    rel.addend = flags;
+}
+
+/// Takes the merged categories out of the category lists: a list
+/// subsection all of whose entries merged goes away, one with
+/// survivors is rewritten with those.
+fn rebuild_category_lists<E: Target>(
+    ctx: &mut Context<E>,
+    lists: &[CategoryList],
+    cats: &[Category],
+) {
+    let merged = |ci: Option<usize>| ci.is_some_and(|ci| cats[ci].merged);
+    for list in lists {
+        if !list.entries.iter().any(|&(_, ci)| merged(ci)) {
+            continue;
+        }
+        ctx.isecs[list.isec as usize].set_alive(false);
+        let survivors: Vec<DataField> = (list.entries.iter())
+            .filter(|&&(_, ci)| !merged(ci))
+            .map(|&(r, _)| DataField::Ptr(r))
+            .collect();
+        if !survivors.is_empty() {
+            let sect = if list.nonlazy { "__objc_nlcatlist" } else { "__objc_catlist" };
+            add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
         }
     }
 }
