@@ -4506,6 +4506,10 @@ fn page_align(value: u64, page: u64) -> u64 {
 ///   segments ahead of it are simply laid out one after another - into
 ///   a pinned one, if it is in their way. A pinned __LINKEDIT, not
 ///   sized yet, counts from the start, as an empty segment.
+/// - In an image dyld slides, a pinned __TEXT is no base the others
+///   float from (ld-prime ignores it as a PIE's image base): every
+///   pinned segment then counts as placed from the start, and a
+///   segment may follow one below the base.
 fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let base = ctx.image_base();
     let header_seg = in_place_segment(ctx);
@@ -4533,6 +4537,10 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
 
     let fixed: Vec<usize> =
         (0..segs.len()).filter(|&i| !in_place[i] && addrs[i].is_some()).collect();
+    let detached =
+        dyld_slides(ctx) && header_seg.is_some_and(|seg| ctx.args.segaddr(seg).is_some());
+    let first_pin = if detached { Some(0) } else { fixed.first().copied() };
+    let floor = if detached { 0 } else { base };
     let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
     let mut used: Vec<Range<u64>> =
         header.map(|i| range(i, segs[i].cmd.vmaddr)).into_iter().collect();
@@ -4540,12 +4548,13 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
         used.push(addr..addr);
     }
     for i in 0..segs.len() {
-        if fixed.first() == Some(&i) {
+        if first_pin == Some(i) {
             used.extend(fixed.iter().map(|&j| range(j, addrs[j].unwrap())));
         }
         if addrs[i].is_none() {
             let size = segment_span(ctx, &segs[i]);
-            let span = lowest_free_span(base, size, segment_start_align(ctx, i), &used);
+            let align = segment_start_align(ctx, i);
+            let span = lowest_free_span(base, floor, size, align, &used);
             addrs[i] = Some(span.end - size);
             used.push(span);
         }
@@ -4571,18 +4580,24 @@ fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
     false
 }
 
-/// Where `size` bytes go at the lowest address from `base` on where they
-/// run into none of the `used` ranges: the base itself or the end of a
-/// used range, rounded up to `align`. Returns the span from that address
+/// Where `size` bytes go at the lowest address where they run into none
+/// of the `used` ranges: `base` itself or the end of a used range above
+/// `floor`, rounded up to `align`. Returns the span from that address
 /// before rounding to the end, which the rounding's padding is part of.
 /// An empty segment is a point no other segment may straddle, and still
 /// needs an address no segment covers.
-fn lowest_free_span(base: u64, size: u64, align: u64, used: &[Range<u64>]) -> Range<u64> {
+fn lowest_free_span(
+    base: u64,
+    floor: u64,
+    size: u64,
+    align: u64,
+    used: &[Range<u64>],
+) -> Range<u64> {
     let is_free = |span: &Range<u64>| {
         used.iter().all(|r| r.end <= span.start || span.end.max(span.start + 1) <= r.start)
     };
     std::iter::once(base)
-        .chain(used.iter().map(|r| r.end).filter(|&end| end > base))
+        .chain(used.iter().map(|r| r.end).filter(|&end| end > floor))
         .map(|start| start..align_to(start, align) + size)
         .filter(is_free)
         .min_by_key(|span| span.start)
@@ -4717,7 +4732,8 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
             .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + segment_span(ctx, seg))
             .collect();
         let size = ctx.segments[linkedit].cmd.vmsize;
-        lowest_free_span(ctx.image_base(), size, ctx.segment_align(), &used).start
+        let base = ctx.image_base();
+        lowest_free_span(base, base, size, ctx.segment_align(), &used).start
     };
     move_segment(ctx, linkedit, addr);
 }

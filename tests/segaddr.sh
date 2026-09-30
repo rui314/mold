@@ -107,6 +107,14 @@ not $CC --ld-path=$mold -o $t/exe11 $t/a.o -Wl,-segaddr,__TEXT,0x200000000 2> $t
 grep -q 'Linking with PIE, -image_base will be ignored' $t/log11
 grep -q 'address is out of order' $t/log11
 
+# There, though, every other pinned segment counts as placed from the
+# start: one at the base moves the segments ahead of it past it.
+not $CC --ld-path=$mold -o $t/exe14 $t/a.o -Wl,-segaddr,__TEXT,0x200000000 \
+  -Wl,-segaddr,__AAA,0x100000000 2> $t/log14
+grep -q 'segment __DATA address is out of order' $t/log14
+not grep -q 'overlap' $t/log14
+grep -q '^    __DATA  *addr=0x100008000, ' $t/log14
+
 # A dylib with chained fixups has no preferred address either, but a
 # pinned __TEXT stays where it is, and the other segments follow it.
 echo 'int x = 1; int f(void) { return x; }' | $CC -o $t/b.o -c -xc -
