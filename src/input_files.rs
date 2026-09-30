@@ -1936,7 +1936,7 @@ impl StagedObject {
 
             let Some((isec, func_offset)) = find_subsec(&self.isecs, &self.subsecs, func_addr)
             else {
-                fatal!("{file_name}: __eh_frame: FDE with an invalid function");
+                fatal!("address=0x{func_addr:X} not in any section in '{file_name}'");
             };
             let func_offset = func_offset as u32;
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
@@ -1959,7 +1959,7 @@ impl StagedObject {
                 let Some((lsda_isec, lsda_off)) =
                     find_subsec(&self.isecs, &self.subsecs, lsda_addr)
                 else {
-                    fatal!("{file_name}: __eh_frame: FDE with an invalid LSDA");
+                    fatal!("address=0x{lsda_addr:X} not in any section in '{file_name}'");
                 };
                 lsda = Some((lsda_isec as u32, lsda_off as u32));
             }

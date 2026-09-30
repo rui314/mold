@@ -52,3 +52,12 @@ fail version 'CIE version is not 1 or 3' '.long 12' '.long 0' '.byte 2, 0, 1, 0x
 fail short '' '.byte 1'
 fail cie '' '.long 4' '.long 0'
 fail fde '' "$cie" '.long 12' '.long 20' '.quad 0'
+
+# An FDE whose function is outside every section, at the address
+# ld-prime reads for it: the pc-relative pointer's own plus its value.
+cie_zr='.long 20
+.long 0
+.byte 1, 0x7a, 0x52, 0, 1, 0x78, 30, 1, 0x10, 0x0c, 31, 8, 0, 0, 0, 0'
+fail nowhere 'not in any section' "$cie_zr" '.long 20' '.long 28' '.quad 0x1000' '.quad 0'
+eh=$(otool -l $t/nowhere.o | awk '$2 == "__eh_frame" { f = 1 } f && $1 == "addr" { print $2; exit }')
+grep -Fq "address=0x$(printf %X $((eh + 0x1020))) not in any section" $t/nowhere.err
