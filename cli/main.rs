@@ -4,8 +4,11 @@
 //! decides which of them are built in.
 
 // A Rust executable can define only one global allocator, so select mimalloc
-// here rather than in the linker library.
-#[cfg(not(feature = "system-allocator"))]
+// here rather than in the linker library. sparc64 uses the system allocator
+// because Linux maps sparc64 user memory at sign-extended high addresses,
+// which mimalloc's page map does not cover
+// (https://github.com/rui314/mold/issues/1639).
+#[cfg(not(any(feature = "system-allocator", target_arch = "sparc64")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
