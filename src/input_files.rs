@@ -1800,6 +1800,13 @@ impl StagedObject {
 /// its contents, so that the records' pointers become self-relative
 /// values. Its GOT-relative relocations, a CIE's personality
 /// reference, are left for parse_eh_frame; there may be no other kind.
+///
+/// Either half of a pair may be non-extern, naming a section instead
+/// of a symbol. The x86_64 assembler writes one for a label that no
+/// named label precedes in its section (typically the CIE an FDE
+/// points back at, once a named label starts the FDE) and folds the
+/// label's address into the contents instead, so such a half adds
+/// nothing here.
 fn apply_subtractor_pairs<E: Target>(
     contents: &mut [u8],
     rels: &[MachRel],
@@ -1808,19 +1815,20 @@ fn apply_subtractor_pairs<E: Target>(
 ) {
     // Diagnostics spell the path lossily.
     let file_name = file_name.display();
+    let target = |r: MachRel| {
+        if r.is_extern() { nlists[r.r_symbolnum() as usize].n_value } else { 0 }
+    };
     let mut i = 0;
     while i < rels.len() {
         let r1 = rels[i];
         if r1.r_type() == E::RELOC_SUBTRACTOR {
             let r2 = rels[i + 1];
             i += 2;
-            if r2.r_type() != E::RELOC_UNSIGNED || !r1.is_extern() || !r2.is_extern() {
+            if r2.r_type() != E::RELOC_UNSIGNED {
                 fatal!("{file_name}: __eh_frame: unsupported relocation pair");
             }
-            let target1 = nlists[r1.r_symbolnum() as usize].n_value;
-            let target2 = nlists[r2.r_symbolnum() as usize].n_value;
             let loc = &mut contents[r1.r_address as usize..];
-            let delta = target2.wrapping_sub(target1);
+            let delta = target(r2).wrapping_sub(target(r1));
             match r1.r_length() {
                 2 => {
                     let val = u32::from_le_bytes(loc[..4].try_into().unwrap());
