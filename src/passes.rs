@@ -5358,9 +5358,148 @@ pub fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path
         }
     }
 
-    // An N_SO with an empty name closes the object's stabs.
-    out.push((b"", NList { n_strx: 1, n_type: N_SO, n_sect: 1, ..Default::default() }, None));
+    out.push((b"", STAB_END, None));
     out
+}
+
+/// An N_SO with an empty name: it closes an object's stabs, and
+/// ld-prime opens the stabs of an image with one too.
+const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
+
+/// A final image's local symbols in ld-prime's order: the non-external
+/// symbols it keeps, the private externals it demotes, the linker's own
+/// names and the objc_msgSend$ stubs, all by address. Names at one
+/// address are aliases of one atom, which ld-prime names by its
+/// highest-ranked symbol - a strong external, then a private external,
+/// a local, a weak definition, each rank by descending name - and it
+/// lists the other names in that order before the atom's own (a strong
+/// external's goes with the externals). -x keeps only private externals.
+fn plan_local_symbols<E: Target>(
+    ctx: &Context<E>,
+    pexts: &[usize],
+    sorted_globals: &[crate::symbol::SymbolId],
+) -> Vec<(&'static [u8], NList, Option<crate::symbol::SymbolId>)> {
+    // (address, rank, name, entry, symbol whose address fills n_value)
+    type Ent = (u64, u8, &'static [u8], NList, Option<crate::symbol::SymbolId>);
+    const PEXT: u8 = 0;
+    const LOCAL: u8 = 1;
+    const WEAK: u8 = 2;
+    let local =
+        |n_sect: u8, n_value: u64| NList { n_strx: 0, n_type: N_SECT, n_sect, n_desc: 0, n_value };
+
+    let mut ents: Vec<Ent> = Vec::new();
+    if !ctx.args.strip_locals {
+        let per_obj: Vec<Vec<Ent>> = ctx
+            .objs
+            .par_iter()
+            .map(|obj| {
+                let mut out = Vec::new();
+                if !obj.is_alive {
+                    return out;
+                }
+                let r = obj.local_range();
+                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                    let sym = &ctx.symbols[sym_id];
+                    if nlist.is_stab()
+                        || nlist.is_extern()
+                        || !keep_local_symbol_in(ctx, sym.name(), sym.input_section())
+                    {
+                        continue;
+                    }
+                    // -non_global_symbols_keep_list / _strip_list
+                    // filter local symbols by name; stabs unaffected.
+                    if let Some(keep) = &ctx.args.local_keep_list
+                        && keep.find(sym.name().as_bytes()) == -1
+                    {
+                        continue;
+                    }
+                    if ctx.args.local_strip_list.find(sym.name().as_bytes()) != -1 {
+                        continue;
+                    }
+                    let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
+                    let isec = ctx.resolve_isec(isec);
+                    if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[isec].is_alive() {
+                        continue;
+                    }
+                    let ent = local(ctx.isec_n_sect(&ctx.isecs[isec]), 0);
+                    out.push((
+                        ctx.sym_addr(sym_id),
+                        LOCAL,
+                        sym.name().as_bytes(),
+                        ent,
+                        Some(sym_id),
+                    ));
+                }
+                out
+            })
+            .collect();
+        ents = per_obj.concat();
+
+        // Locals the linker named itself, on synthesized data whose
+        // addresses are final by now.
+        for &(name, isec) in &ctx.extra_local_syms {
+            let sec = &ctx.isecs[isec as usize];
+            if sec.is_alive() && sec.output_section().is_some() {
+                let addr = ctx.isec_addr(isec as usize);
+                ents.push((addr, LOCAL, name.as_bytes(), local(ctx.isec_n_sect(sec), addr), None));
+            }
+        }
+        // The selector stubs, each a non-external symbol with N_PEXT
+        // set (nm: "was a private external"), as ld64 lists them -
+        // NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
+        let hdr = &ctx.objc_stubs.hdr;
+        for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
+            let addr = hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
+            let ent = NList { n_type: N_PEXT | N_SECT, ..local(hdr.n_sect, addr) };
+            ents.push((addr, PEXT, ctx.symbols[sym].name().as_bytes(), ent, None));
+        }
+    }
+
+    // Private external symbols resolve globally but appear as locals
+    // (with N_PEXT still set) in the output.
+    for &i in pexts {
+        let sym = &ctx.symbols[i];
+        let id = Some(i as crate::symbol::SymbolId);
+        let (ent, id) = match (sym.file(), sym.input_section()) {
+            (_, Some(isec)) => {
+                let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
+                (NList { n_type: N_SECT | N_PEXT, ..local(ctx.isec_n_sect(isec), 0) }, id)
+            }
+            // A hidden __mh_execute_header (an export list that omits
+            // it, or -no_exported_symbols) sits in the first section,
+            // the mach header.
+            (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => {
+                (NList { n_type: N_SECT | N_PEXT, ..local(1, 0) }, id)
+            }
+            (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local(0, sym.value) }, None),
+        };
+        let rank = if sym.is_weak_def() { WEAK } else { PEXT };
+        ents.push((ctx.sym_addr(i as u32), rank, sym.name().as_bytes(), ent, id));
+    }
+
+    ents.par_sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(a.2)));
+
+    // Put each atom's own name after its aliases, unless a strong
+    // external names the atom.
+    let mut strong: Vec<u64> = sorted_globals
+        .par_iter()
+        .filter(|&&i| {
+            let sym = &ctx.symbols[i];
+            !sym.is_weak_def() && sym.input_section().is_some()
+        })
+        .map(|&i| ctx.sym_addr(i))
+        .collect();
+    strong.par_sort_unstable();
+    let mut i = 0;
+    while i < ents.len() {
+        let addr = ents[i].0;
+        let n = ents[i..].iter().take_while(|e| e.0 == addr).count();
+        if n > 1 && strong.binary_search(&addr).is_err() {
+            ents[i..i + n].rotate_left(1);
+        }
+        i += n;
+    }
+    ents.into_iter().map(|(_, _, name, ent, sym)| (name, ent, sym)).collect()
 }
 
 /// Builds the output symbol table contents: local symbols in input order,
@@ -5384,170 +5523,7 @@ pub fn create_output_symtab<E: Target>(
     // its loop assigned (the "" and "-" placeholders).
     let mut names: Vec<&'static [u8]> = Vec::new();
 
-    // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
-    for path in &ctx.args.add_ast_paths {
-        let n_strx = 0;
-        names.push(leak_bytes(path_bytes(path).to_vec()));
-        data.entries.push((NList { n_strx, n_type: N_AST, ..Default::default() }, None));
-    }
-
-    let mut t = ctx.timer("symtab-stabs");
-    // Debug stabs. Mach-O binaries don't carry DWARF; instead, for each
-    // object with debug info the symbol table gets stab entries telling
-    // the debugger where the object file is (N_OSO) and where its
-    // functions and globals ended up, and the debugger reads the DWARF
-    // from the objects.
-    if !ctx.args.strip_debug {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let cwd = &cwd;
-
-        // Each object's stab run is independent; plan them in
-        // parallel and append in object order, the same shape as the
-        // per-object locals planning below.
-        let planned: Vec<StabPlan> = ctx
-            .objs
-            .par_iter()
-            .enumerate()
-            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, cwd))
-            .collect();
-        // Write the planned stabs into prefix-summed ranges in
-        // parallel, instead of appending object by object - mold's
-        // populate_symtab shape. Each object owns a disjoint range
-        // starting after whatever entries (e.g. AST paths) precede it.
-        let start = data.entries.len();
-        debug_assert_eq!(names.len(), start);
-        let mut bases = Vec::with_capacity(planned.len());
-        let mut total = start;
-        for plan in &planned {
-            bases.push(total);
-            total += plan.len();
-        }
-        names.reserve(total - start);
-        data.entries.reserve(total - start);
-        struct NamePtr(*mut &'static [u8]);
-        unsafe impl Sync for NamePtr {}
-        struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
-        unsafe impl Sync for EntPtr {}
-        let np = NamePtr(names.as_mut_ptr());
-        let ep = EntPtr(data.entries.as_mut_ptr());
-        let (np, ep) = (&np, &ep);
-        planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
-            for (k, &(name, ent, sym)) in plan.iter().enumerate() {
-                // SAFETY: [base, base+plan.len()) ranges are disjoint
-                // across objects and lie within the reserved capacity.
-                unsafe {
-                    np.0.add(base + k).write(name);
-                    ep.0.add(base + k).write((ent, sym));
-                }
-            }
-        });
-        // SAFETY: every slot in start..total was written above.
-        unsafe {
-            names.set_len(total);
-            data.entries.set_len(total);
-        }
-    }
-
-    t.stop();
-    let mut t = ctx.timer("symtab-locals");
-
-    // Local symbols (-x drops them), planned per object in parallel
-    // - mold's plan_symtab per file - and appended in object order.
-    if !ctx.args.strip_locals {
-        let ctx_ref: &Context<E> = ctx;
-        let per_obj: Vec<Vec<(&'static str, NList, crate::symbol::SymbolId)>> = ctx_ref
-            .objs
-            .par_iter()
-            .map(|obj| {
-                let mut out = Vec::new();
-                if !obj.is_alive {
-                    return out;
-                }
-                let r = obj.local_range();
-                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                    let sym = &ctx_ref.symbols[sym_id];
-                    if nlist.is_stab()
-                        || nlist.is_extern()
-                        || !keep_local_symbol_in(ctx_ref, sym.name(), sym.input_section())
-                    {
-                        continue;
-                    }
-                    // -non_global_symbols_keep_list / _strip_list
-                    // filter local symbols by name; stabs unaffected.
-                    if let Some(keep) = &ctx_ref.args.local_keep_list
-                        && keep.find(sym.name().as_bytes()) == -1
-                    {
-                        continue;
-                    }
-                    if ctx_ref.args.local_strip_list.find(sym.name().as_bytes()) != -1 {
-                        continue;
-                    }
-                    let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-                    let isec = ctx_ref.resolve_isec(isec);
-                    if !matches!(sym.file(), Some(FileId::Obj(_)))
-                        || !ctx_ref.isecs[isec].is_alive()
-                    {
-                        continue;
-                    }
-                    let ent = NList {
-                        n_strx: 0,
-                        n_type: N_SECT,
-                        n_sect: ctx_ref.isec_n_sect(&ctx_ref.isecs[isec]),
-                        n_desc: 0,
-                        n_value: 0,
-                    };
-                    out.push((sym.name(), ent, sym_id));
-                }
-                out
-            })
-            .collect();
-        for group in per_obj {
-            for (name, ent, sym_id) in group {
-                names.push(name.as_bytes());
-                data.entries.push((ent, Some(sym_id)));
-            }
-        }
-        // Locals the linker named itself, on synthesized data whose
-        // addresses are final by now.
-        for &(name, isec) in &ctx.extra_local_syms {
-            let sec = &ctx.isecs[isec as usize];
-            if !sec.is_alive() || sec.output_section().is_none() {
-                continue;
-            }
-            names.push(name.as_bytes());
-            data.entries.push((
-                NList {
-                    n_strx: 0,
-                    n_type: N_SECT,
-                    n_sect: ctx.isec_n_sect(sec),
-                    n_desc: 0,
-                    n_value: ctx.isec_addr(isec as usize),
-                },
-                None,
-            ));
-        }
-        // The selector stubs, each a non-external symbol with N_PEXT
-        // set (nm: "was a private external"), as ld64 lists them -
-        // NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
-        if !ctx.objc_stubs.symbols.is_empty() {
-            let hdr = &ctx.objc_stubs.hdr;
-            for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
-                names.push(ctx.symbols[sym].name().as_bytes());
-                data.entries.push((
-                    NList {
-                        n_strx: 0,
-                        n_type: N_PEXT | N_SECT,
-                        n_sect: hdr.n_sect,
-                        n_desc: 0,
-                        n_value: hdr.addr + i as u64 * E::OBJC_STUB_SIZE,
-                    },
-                    None,
-                ));
-            }
-        }
-    }
-    t.stop();
-    let t = ctx.timer("symtab-globals");
+    let t = ctx.timer("symtab-classify");
     // An import is listed only while live code or data refers to it:
     // after -dead_strip, ld-prime drops the imports only stripped
     // functions used. A reference is a relocation from a live
@@ -5648,50 +5624,89 @@ pub fn create_output_symtab<E: Target>(
             Class::No
         })
         .collect();
+    drop(t);
 
-    // Private external symbols resolve globally but appear as locals
-    // (with N_PEXT still set) in the output.
-    for (i, &class) in classes.iter().enumerate() {
-        if class != Class::Pext {
-            continue;
-        }
-        let sym = &ctx.symbols[i];
-        names.push(sym.name().as_bytes());
-        let ent = match (sym.file(), sym.input_section()) {
-            (_, Some(isec)) => {
-                let isec = ctx.resolve_isec(isec as usize);
-                (
-                    NList {
-                        n_strx: 0,
-                        n_type: N_SECT | N_PEXT,
-                        n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
-                        n_desc: 0,
-                        n_value: 0,
-                    },
-                    Some(i as u32),
-                )
-            }
-            // A hidden __mh_execute_header (an export list that omits
-            // it, or -no_exported_symbols) sits in the first section,
-            // the mach header.
-            (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => (
-                NList { n_strx: 0, n_type: N_SECT | N_PEXT, n_sect: 1, n_desc: 0, n_value: 0 },
-                Some(i as u32),
-            ),
-            (_, None) => (
-                NList {
-                    n_strx: 0,
-                    n_type: N_ABS | N_PEXT,
-                    n_sect: 0,
-                    n_desc: 0,
-                    n_value: sym.value,
-                },
-                None,
-            ),
-        };
-        data.entries.push(ent);
+    // Local symbols, then the debugger's notes: N_AST paths and stabs.
+    let pexts: Vec<usize> =
+        classes.iter().enumerate().filter(|&(_, &c)| c == Class::Pext).map(|(i, _)| i).collect();
+    let t = ctx.timer("symtab-locals");
+    for (name, ent, sym) in plan_local_symbols(ctx, &pexts, sorted_globals) {
+        names.push(name);
+        data.entries.push((ent, sym));
     }
+    drop(t);
+
+    // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
+    for path in &ctx.args.add_ast_paths {
+        let n_strx = 0;
+        names.push(leak_bytes(path_bytes(path).to_vec()));
+        data.entries.push((NList { n_strx, n_type: N_AST, ..Default::default() }, None));
+    }
+
+    let mut t = ctx.timer("symtab-stabs");
+    // Debug stabs. Mach-O binaries don't carry DWARF; instead, for each
+    // object with debug info the symbol table gets stab entries telling
+    // the debugger where the object file is (N_OSO) and where its
+    // functions and globals ended up, and the debugger reads the DWARF
+    // from the objects.
+    if !ctx.args.strip_debug {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let cwd = &cwd;
+
+        // Each object's stab run is independent; plan them in
+        // parallel and append in object order, the same shape as the
+        // per-object locals planning below.
+        let planned: Vec<StabPlan> = ctx
+            .objs
+            .par_iter()
+            .enumerate()
+            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, cwd))
+            .collect();
+        // ld-prime opens the stabs with a closing N_SO of its own.
+        if planned.iter().any(|plan| !plan.is_empty()) {
+            names.push(b"");
+            data.entries.push((STAB_END, None));
+        }
+        // Write the planned stabs into prefix-summed ranges in
+        // parallel, instead of appending object by object - mold's
+        // populate_symtab shape. Each object owns a disjoint range
+        // starting after whatever entries (e.g. AST paths) precede it.
+        let start = data.entries.len();
+        debug_assert_eq!(names.len(), start);
+        let mut bases = Vec::with_capacity(planned.len());
+        let mut total = start;
+        for plan in &planned {
+            bases.push(total);
+            total += plan.len();
+        }
+        names.reserve(total - start);
+        data.entries.reserve(total - start);
+        struct NamePtr(*mut &'static [u8]);
+        unsafe impl Sync for NamePtr {}
+        struct EntPtr(*mut (NList, Option<crate::symbol::SymbolId>));
+        unsafe impl Sync for EntPtr {}
+        let np = NamePtr(names.as_mut_ptr());
+        let ep = EntPtr(data.entries.as_mut_ptr());
+        let (np, ep) = (&np, &ep);
+        planned.par_iter().zip(&bases).for_each(|(plan, &base)| {
+            for (k, &(name, ent, sym)) in plan.iter().enumerate() {
+                // SAFETY: [base, base+plan.len()) ranges are disjoint
+                // across objects and lie within the reserved capacity.
+                unsafe {
+                    np.0.add(base + k).write(name);
+                    ep.0.add(base + k).write((ent, sym));
+                }
+            }
+        });
+        // SAFETY: every slot in start..total was written above.
+        unsafe {
+            names.set_len(total);
+            data.entries.set_len(total);
+        }
+    }
+    t.stop();
     data.nlocal = data.entries.len() as u32;
+    let t = ctx.timer("symtab-globals");
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
