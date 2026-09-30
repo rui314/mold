@@ -2122,6 +2122,13 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
 /// that carries a relocation merge, as identical bytes may point at
 /// different targets (ld-prime merges a __literal8 record by its bytes,
 /// making every copy point where the first does).
+///
+/// __TEXT,__ustring, which holds the UTF-16 strings of CFString
+/// constants (and C's u"" literals), is a regular section that ld-prime
+/// cuts at its symbols, like ld64, but merges each atom with identical
+/// ones whatever labels it: every object that spells @"é" has its own
+/// copy, and so its own CFString, which merges only once the strings
+/// have (iTerm2's debug dylib had 67 CFStrings too many).
 fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
     if isec.nrels != 0 {
         return false;
@@ -2131,6 +2138,7 @@ fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
         S_4BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal4"),
         S_8BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal8"),
         S_16BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal16"),
+        S_REGULAR => hdr.segname_is("__TEXT") && hdr.sectname_is("__ustring"),
         _ => false,
     }
 }
