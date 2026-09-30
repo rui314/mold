@@ -2609,17 +2609,13 @@ fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
 /// origins remapped.
 pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     warn_unused_dylibs(ctx);
-    // A dylib built with -mark_dead_strippable_dylib asks every
-    // linker to drop it when unused, so those are stripped even
-    // without -dead_strip_dylibs; so is an auto-linked one, which
-    // ld64 treats as a hint: NetNewsWire's auto-link options name 43
-    // frameworks and Swift overlays nothing in it binds to, and
-    // ld-prime lists none of them.
+    // An auto-linked dylib is stripped even without -dead_strip_dylibs,
+    // as ld64 treats its option as a hint: NetNewsWire's auto-link
+    // options name 43 frameworks and Swift overlays nothing in it binds
+    // to, and ld-prime lists none of them. (ld-prime ignores
+    // MH_DEAD_STRIPPABLE_DYLIB, with which ld64 stripped a dylib too.)
     let strippable = |dylib: &crate::input_files::DylibFile| {
-        ctx.args.dead_strip_dylibs
-            || dylib.is_dead_strippable
-            || dylib.is_autolinked
-            || dylib.is_implicit
+        ctx.args.dead_strip_dylibs || dylib.is_autolinked || dylib.is_implicit
     };
 
     // libSystem stays whether or not anything binds to it: ld-prime

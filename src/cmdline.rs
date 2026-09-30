@@ -253,9 +253,6 @@ pub struct Args {
     /// -oso_prefix: prefix to strip from N_OSO stab paths ("."  means
     /// the current directory).
     pub oso_prefix: Option<Vec<u8>>,
-    /// -mark_dead_strippable_dylib: mark the output dylib as
-    /// removable when a client binds nothing from it.
-    pub mark_dead_strippable_dylib: bool,
     /// -export_dynamic: keep all global symbols through LTO even in an
     /// executable, for dlsym or plugin use.
     pub export_dynamic: bool,
@@ -435,7 +432,6 @@ impl Default for Args {
             search_dylibs_first: false,
             umbrella: None,
             oso_prefix: None,
-            mark_dead_strippable_dylib: false,
             export_dynamic: false,
             order_files: Vec::new(),
             object_path_lto: None,
@@ -1104,7 +1100,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut local_keep_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
     let mut deprecated_undefined: Vec<&str> = Vec::new();
-    let mut executable_paths = 0;
+    // The obsolete options given, which ld-prime ignores with a
+    // warning once it has read them all.
+    let mut obsolete: Vec<&str> = Vec::new();
     let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
     let mut unknown = String::new();
 
@@ -1562,7 +1560,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     i += 1;
                 }
             }
-            b"-mark_dead_strippable_dylib" => args.mark_dead_strippable_dylib = true,
+            // ld64 set MH_DEAD_STRIPPABLE_DYLIB for this, asking the
+            // linker of a client to drop the dylib's load command if it
+            // bound nothing from it. ld-prime neither sets nor honors
+            // the flag.
+            b"-mark_dead_strippable_dylib" => obsolete.push("-mark_dead_strippable_dylib"),
             b"-export_dynamic" => args.export_dynamic = true,
             b"-order_file" => args.order_files.push(path(next_arg(&mut i, name))),
             b"--print-dependencies" => args.print_dependencies = true,
@@ -1647,7 +1649,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the option with a warning.
             b"-executable_path" => {
                 arg_or_empty(&mut i, name);
-                executable_paths += 1;
+                obsolete.push("-executable_path");
             }
 
             // Reserve enough header padding that install_name_tool can
@@ -1865,20 +1867,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
     }
-    for _ in 0..executable_paths {
-        crate::warn!("-executable_path is obsolete");
-    }
-    // An image dyld loads keeps 32 bytes for the command of a code
-    // signature added later (see chunks::header_pad).
-    if let Some(size) = headerpad
-        && size < 32
-        && !args.without_dyld()
-        && !args.relocatable
-    {
-        crate::warn!(
-            "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
-        );
-    }
     for lib in lazy_libraries {
         if args.platform == PLATFORM_MACOS && args.platform_minos >= encode_version(27, 0, 0) {
             crate::warn!(
@@ -1891,6 +1879,20 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 display(&lib)
             );
         }
+    }
+    // An image dyld loads keeps 32 bytes for the command of a code
+    // signature added later (see chunks::header_pad).
+    if let Some(size) = headerpad
+        && size < 32
+        && !args.without_dyld()
+        && !args.relocatable
+    {
+        crate::warn!(
+            "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
+        );
+    }
+    for opt in obsolete {
+        crate::warn!("{opt} is obsolete");
     }
     if args.kernel && kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");

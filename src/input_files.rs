@@ -409,9 +409,6 @@ pub struct DylibFile {
     /// auto-linked libraries were named (u32::MAX for implicit ones,
     /// which follow, sorted by install name).
     pub load_order: u32,
-    /// MH_DEAD_STRIPPABLE_DYLIB: drop the load command whenever no
-    /// symbol binds to this dylib, even without -dead_strip_dylibs.
-    pub is_dead_strippable: bool,
     pub exports: hashbrown::HashSet<&'static str>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
@@ -3371,7 +3368,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
-            is_dead_strippable: hdr.flags & MH_DEAD_STRIPPABLE_DYLIB != 0,
             exports,
             weak_exports,
             tlv_exports,
@@ -3577,7 +3573,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
-            is_dead_strippable: false,
             exports,
             weak_exports: hashbrown::HashSet::new(),
             tlv_exports,
@@ -3930,7 +3925,6 @@ fn register_tbd<E: Target>(
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
-            is_dead_strippable: false,
             exports,
             weak_exports,
             tlv_exports,
