@@ -563,12 +563,23 @@ fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
     prot
 }
 
-/// A section or segment name -rename_section or -rename_segment
-/// gives, cut to the 16 bytes of a Mach-O header's name field as
-/// ld-prime silently does. (The names they rename from are matched as
-/// given, so a longer one matches nothing.)
+/// A section or segment name an option gives, cut to the 16 bytes of
+/// a Mach-O header's name field, as ld-prime silently does for the new
+/// names of -rename_section and -rename_segment. (The names they
+/// rename from are matched as given, so a longer one matches nothing.)
 fn section_name(name: &str) -> String {
     name[..name.floor_char_boundary(16)].to_string()
+}
+
+/// A -sectcreate segment or section name, cut to 16 bytes with
+/// ld-prime's warning. (-add_empty_section's are cut silently: ld-prime
+/// fails an assertion on them.)
+fn sectcreate_name(kind: &str, name: &str) -> String {
+    let cut = section_name(name);
+    if cut.len() < name.len() {
+        crate::warn!("-sectcreate {kind} name too long ('{name}'), will be truncated to '{cut}'");
+    }
+    cut
 }
 
 fn is_space(c: u8) -> bool {
@@ -909,14 +920,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i))),
             b"-sectcreate" => {
-                let seg = text(name, next_arg(&mut i)).to_string();
-                let sect = text(name, next_arg(&mut i)).to_string();
+                let seg = sectcreate_name("segment", text(name, next_arg(&mut i)));
+                let sect = sectcreate_name("section", text(name, next_arg(&mut i)));
                 let file = path(next_arg(&mut i));
                 args.sectcreate.push((seg, sect, file));
             }
             b"-add_empty_section" => {
-                let seg = text(name, next_arg(&mut i)).to_string();
-                let sect = text(name, next_arg(&mut i)).to_string();
+                let seg = section_name(text(name, next_arg(&mut i)));
+                let sect = section_name(text(name, next_arg(&mut i)));
                 args.add_empty_section.push((seg, sect));
             }
             b"-x" => args.strip_locals = true,
