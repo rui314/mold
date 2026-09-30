@@ -4459,15 +4459,36 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
 /// The flags ld-prime reads a section of an input object as having,
 /// which decide how the link splits the section into atoms and what it
 /// makes of them - mold's canonicalize_type for a section typed by name
-/// alone: __TEXT,__constructor, where GCC put the constructors of code
+/// alone. __TEXT,__constructor, where GCC put the constructors of code
 /// built without dyld (-static, -mkernel) with the assembler's
 /// .constructor directive, is a list of initializer pointers whatever
-/// its type (__TEXT,__destructor stays data). Its own flags otherwise.
+/// its type (__TEXT,__destructor stays data). ld-prime knows the
+/// Objective-C runtime's sections by name too (see
+/// standard_section_flags): one of another type has the table's flags,
+/// so a regular __objc_methname is C strings and a list typed as
+/// strings or literals is pointers still. __objc_selrefs keeps its own
+/// type, which says whether its references merge, but is never split
+/// into strings or literals. Its own flags otherwise.
 pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
-    match (segname, sectname) {
-        ("__TEXT", "__constructor") => S_MOD_INIT_FUNC_POINTERS,
-        _ => flags,
+    if (segname, sectname) == ("__TEXT", "__constructor") {
+        return S_MOD_INIT_FUNC_POINTERS;
     }
+    if !sectname.starts_with("__objc_") {
+        return flags;
+    }
+    let Some(table) = standard_section_flags(segname, sectname) else {
+        return flags;
+    };
+    let ty = flags & SECTION_TYPE;
+    if sectname == "__objc_selrefs" {
+        return match ty {
+            S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
+                flags & !SECTION_TYPE
+            }
+            _ => flags,
+        };
+    }
+    if ty == table & SECTION_TYPE { flags } else { table }
 }
 
 /// Whether ld-prime places an input section of a standard name (see
@@ -4486,25 +4507,19 @@ fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
         || (segname, sectname) == ("__DATA", "__got")
 }
 
-/// The flags ld-prime reads an input section as having: those its
-/// table holds for the section's name (see standard_section_flags) if
-/// the section has the table's type, or has any type and one of the
-/// Objective-C runtime's names - a __TEXT,__const or __DATA,__data an
-/// assembler nop landed in is plain data again, a regular __text code,
-/// a regular __objc_methname C strings - and its own otherwise (a
-/// regular __cstring holds no literals to merge). __objc_selrefs keeps
-/// its own type, and so does __got (though ld-prime makes a regular
-/// one's slots entries of its GOT, named in the indirect symbol table:
-/// a -r output of it then has non-lazy pointers ld-prime refuses as
-/// input).
+/// The flags ld-prime reads an input section as having, from its
+/// canonical ones (see canonical_section_flags): those its table holds
+/// for the section's name (see standard_section_flags) if the section
+/// has the table's type - a __TEXT,__const or __DATA,__data an
+/// assembler nop landed in is plain data again, a regular __text
+/// code - and its own otherwise (a regular __cstring holds no literals
+/// to merge). __got keeps its own type (though ld-prime makes a
+/// regular one's slots entries of its GOT, named in the indirect symbol
+/// table: a -r output of it then has non-lazy pointers ld-prime refuses
+/// as input).
 fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
-        Some(table)
-            if table & SECTION_TYPE == flags & SECTION_TYPE
-                || (sectname.starts_with("__objc_") && sectname != "__objc_selrefs") =>
-        {
-            table
-        }
+        Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
         _ => flags,
     }
 }
