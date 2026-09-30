@@ -153,16 +153,26 @@ struct PendingObject {
     priority: u32,
 }
 
-/// -needed_library / -needed_framework: the dylibs the option names
-/// survive -dead_strip_dylibs. Only those: the public libraries their
-/// stubs re-export (CoreFoundation's libobjc) load implicitly like any
-/// other and get a load command only if something binds to them.
-fn mark_needed<E: Target>(ctx: &mut Context<E>, before: usize) {
-    for dylib in &mut ctx.dylibs[before..] {
-        if !dylib.is_implicit {
-            dylib.is_needed = true;
-        }
+/// Gives a dylib what one naming of it says. Namings add up: one
+/// -needed_* keeps the load command under -dead_strip_dylibs, one
+/// -reexport_* re-exports it, and one -weak_* makes every import from
+/// it weak, in any order. A library so far loaded only as a public
+/// re-export of another (Foundation's stub brings CoreFoundation) got
+/// its weakness from that parent; its first command-line naming decides
+/// it instead - `-weak_framework Foundation -framework CoreFoundation`
+/// imports from CoreFoundation strongly - while an auto-link option,
+/// a hint, changes nothing. -needed_* covers the named library only;
+/// the ones its stub re-exports get a load command only if something
+/// binds to them.
+fn name_dylib(dylib: &mut input_files::DylibFile, rc: ReaderContext) {
+    if dylib.is_implicit && !rc.autolinked {
+        dylib.is_weak = rc.weak;
+    } else {
+        dylib.is_weak |= rc.weak;
     }
+    dylib.is_reexported |= rc.reexport;
+    dylib.is_needed |= rc.needed;
+    dylib.is_implicit = false;
 }
 
 /// How an input was named: the flags its option gives the file, as
@@ -179,6 +189,8 @@ struct ReaderContext {
     hidden: bool,
     /// -needed_library, -needed-l, -needed_framework.
     needed: bool,
+    /// Named by an object's auto-link option: a hint.
+    autolinked: bool,
 }
 
 /// Classifies one input file. Dylib stubs and binaries are registered
@@ -191,9 +203,13 @@ fn collect_file<E: Target>(
     rc: ReaderContext,
     out: &mut Vec<PendingObject>,
 ) {
-    // A library may be named both on the command line and by auto-link
-    // options; load each file once.
+    // A library may be named more than once, on the command line and by
+    // auto-link options; load each file once, and let a dylib take on
+    // what every naming says.
     if !ctx.visited_files.insert(mf.name.clone()) {
+        if let Some(dylib) = ctx.dylibs.iter_mut().find(|d| d.path == mf.name) {
+            name_dylib(dylib, rc);
+        }
         return;
     }
     match get_file_type(mf) {
@@ -223,17 +239,11 @@ fn collect_file<E: Target>(
                 d.is_weak |= rc.weak;
             }
             let dylib = &mut ctx.dylibs[idx];
-            dylib.is_weak |= rc.weak;
-            dylib.is_reexported |= rc.reexport;
-            // Named here (or auto-linked): no longer merely implicit,
-            // and ordered by naming sequence.
-            dylib.is_implicit = false;
+            name_dylib(dylib, rc);
+            // Ordered by naming sequence.
             if dylib.load_order == u32::MAX {
                 dylib.load_order = ctx.dylib_load_seq;
                 ctx.dylib_load_seq += 1;
-            }
-            if rc.needed {
-                mark_needed(ctx, first);
             }
         }
         FileType::Archive => {
@@ -533,7 +543,8 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
         if let Some(path) = path
             && let Some(mf) = MappedFile::open(&path)
         {
-            collect_file(ctx, mf, ReaderContext::default(), &mut queue);
+            let rc = ReaderContext { autolinked: true, ..Default::default() };
+            collect_file(ctx, mf, rc, &mut queue);
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
