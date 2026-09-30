@@ -25,7 +25,7 @@ use crate::input_sections::RelocTarget;
 use crate::macho::*;
 use crate::output_file;
 use crate::target::Target;
-use crate::util::align_to;
+use crate::util::{align_to, encode_uleb};
 
 /// ld64's section order in a -r output, measured with ld-prime 27037:
 /// __TEXT first, __LD last, and the other segments - __DATA and
@@ -191,6 +191,48 @@ pub fn output_target<E: Target>(ctx: &Context<E>) -> (u32, u32, u32) {
         .filter(|o| o.is_alive)
         .find_map(|o| o.platform_versions.first())
         .map_or((ctx.args.platform, 0, 0), |v| (v.platform, v.minos, v.sdk))
+}
+
+/// The payload of the output's LC_LINKER_OPTIMIZATION_HINT, or None
+/// for no command. ld64 carries the arm64 hints through -r for the
+/// final link to apply: each hint it takes (see
+/// ObjectFile::hint_subsec) moves with its subsection, and goes with a
+/// coalesced-away weak copy. The command appears if any input had such
+/// a hint, even if none survives. As in ld64's output, the hints are
+/// written subsection by subsection in address order, each
+/// subsection's in input order: ULEB128 kind, count and addresses,
+/// zero-padded to 8 bytes. (ld-prime 27037 drops them all.)
+fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
+    let mut found = false;
+    // The subsection's new and input addresses, and the hint.
+    let mut hints = Vec::new();
+    for obj in ctx.objs.iter().filter(|o| o.is_alive) {
+        for hint in &obj.loh {
+            let Some(id) = obj.hint_subsec(&ctx.isecs, &hint.1) else {
+                continue;
+            };
+            found = true;
+            let isec = &ctx.isecs[id];
+            if isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT {
+                hints.push((ctx.isec_addr(id), isec.input_addr as u64, hint));
+            }
+        }
+    }
+    if !found {
+        return None;
+    }
+
+    hints.sort_by_key(|h| h.0);
+    let mut buf = Vec::new();
+    for (addr, input_addr, (kind, addrs)) in hints {
+        encode_uleb(&mut buf, *kind as u64);
+        encode_uleb(&mut buf, addrs.len() as u64);
+        for a in addrs {
+            encode_uleb(&mut buf, addr + a - input_addr);
+        }
+    }
+    buf.resize(align_to(buf.len() as u64, 8) as usize, 0);
+    Some(buf)
 }
 
 pub fn link<E: Target>(ctx: &mut Context<E>) {
@@ -610,10 +652,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         align_to(12 + opt.iter().map(|s| s.len() + 1).sum::<usize>() as u64, 8) as usize
     };
 
-    // File layout: header, one segment command with all sections,
-    // build version, linker options, symtab commands; then section
-    // contents, relocations, symbols and strings.
-    let ncmds = 4 + linker_options.len() as u32;
+    let loh = optimization_hints(ctx);
+
+    // File layout: header, one segment command with all sections, the
+    // symtab, build version, data in code, linker option and hint
+    // commands; then section contents, relocations, data in code,
+    // hints, symbols and strings.
+    let ncmds = 4 + linker_options.len() as u32 + loh.is_some() as u32;
     let num_sections = sects.len();
     let seg_cmd_size = size_of::<SegmentCommand>() + num_sections * size_of::<MachSection>();
     let (platform, minos, sdk) = output_target(ctx);
@@ -622,7 +667,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         + size_of::<SymtabCommand>()
         + version_cmd.len()
         + size_of::<LinkEditDataCommand>()
-        + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>();
+        + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>()
+        + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
     // ld-prime leaves -headerpad (32 unless given) free after the load
     // commands, and more when LC_VERSION_MIN_MACOSX stands where its
     // estimate of them counted a 32-byte LC_BUILD_VERSION.
@@ -715,6 +761,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     dice.sort_unstable();
     let diceoff = off;
     off += dice.len() as u64 * 8;
+    let lohoff = off;
+    off += loh.as_ref().map_or(0, |l| l.len() as u64);
     let symoff = off;
     off += (nlists_out.len() * size_of::<NList>()) as u64;
     let stroff = off;
@@ -810,8 +858,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     }
 
     // ld64's order: the symbol table, the build version, data in
-    // code, then the carried auto-link options. A -r output has no
-    // LC_DYSYMTAB (ld-prime writes none).
+    // code, then the carried auto-link options and hints. A -r output
+    // has no LC_DYSYMTAB (ld-prime writes none).
     let st = SymtabCommand {
         cmd: LC_SYMTAB,
         cmdsize: size_of::<SymtabCommand>() as u32,
@@ -852,6 +900,17 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             q += s.len() + 1;
         }
         p += cmdsize;
+    }
+
+    if let Some(loh) = &loh {
+        let cmd = LinkEditDataCommand {
+            cmd: LC_LINKER_OPTIMIZATION_HINT,
+            cmdsize: size_of::<LinkEditDataCommand>() as u32,
+            dataoff: lohoff as u32,
+            datasize: loh.len() as u32,
+        };
+        cmd.write_to(&mut buf[p..]);
+        buf[lohoff as usize..lohoff as usize + loh.len()].copy_from_slice(loh);
     }
 
     // Section contents: raw copies, with non-external targets' embedded

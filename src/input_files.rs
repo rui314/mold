@@ -146,6 +146,25 @@ impl ObjectFile {
             loh: Vec::new(),
         }
     }
+
+    /// The subsection - ld64's atom - holding a linker optimization
+    /// hint's instructions, if they are where ld64 takes a hint: one to
+    /// three of them, 4-byte aligned, in one subsection of code and
+    /// within 64 KiB of each other. ld64 drops any other hint as it
+    /// reads the object.
+    pub fn hint_subsec(&self, isecs: &[InputSection], addrs: &[u64]) -> Option<usize> {
+        let lo = *addrs.iter().min()?;
+        let hi = *addrs.iter().max()?;
+        let (id, _) = find_subsec(isecs, &self.subsecs, lo)?;
+        let isec = &isecs[id];
+        let is_code = self.sect_hdrs[isec.shndx as usize].flags & S_ATTR_PURE_INSTRUCTIONS != 0;
+        (is_code
+            && addrs.len() <= 3
+            && addrs.iter().all(|a| a.is_multiple_of(4))
+            && hi - lo <= 0xffff
+            && hi + 4 <= isec.input_addr as u64 + isec.size as u64)
+            .then_some(id)
+    }
 }
 
 /// A subsection's relocations, sliced from its object's reloc arena.

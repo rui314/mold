@@ -7,6 +7,7 @@ use rayon::prelude::*;
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
+use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::target::Target;
@@ -454,27 +455,21 @@ fn loh_adrp_ldr_got_str(h: &mut Hint) {
     }
 }
 
-/// Finds a hint's instructions where ld64 takes them: in one
-/// subsection of code - ld64's atom - 4-byte aligned and within 64 KiB
-/// of each other. Returns the subsection's range in the output file
-/// with the instructions. A copy folded into another subsection has
-/// its hints dropped with it.
+/// Finds a hint's instructions where ld64 takes them (see
+/// ObjectFile::hint_subsec), in a subsection that made it to the
+/// output. Returns the subsection's range in the output file with the
+/// instructions. A copy folded into another subsection has its hints
+/// dropped with it.
 fn hint_insns<'a>(
     ctx: &'a Context<Arm64>,
-    subsecs: &[crate::input_sections::InputSectionId],
+    obj: &ObjectFile,
     addrs: &[u64],
 ) -> Option<(std::ops::Range<usize>, [HintInsn<'a>; 3])> {
-    let lo = *addrs.iter().min()?;
-    let hi = *addrs.iter().max()?;
-    let (id, _) = crate::input_files::find_subsec(&ctx.isecs, subsecs, lo)?;
+    let id = obj.hint_subsec(&ctx.isecs, addrs)?;
     let isec = &ctx.isecs[id];
     if !isec.is_alive()
         || isec.offset == u32::MAX
         || isec.replacement != crate::input_sections::NO_REPLACEMENT
-        || ctx.hdr_of(isec).flags & S_ATTR_PURE_INSTRUCTIONS == 0
-        || hi - lo > 0xffff
-        || hi + 4 > isec.input_addr as u64 + isec.size as u64
-        || addrs.iter().any(|a| !a.is_multiple_of(4))
     {
         return None;
     }
@@ -522,7 +517,7 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
                 if addrs.len() != n {
                     continue;
                 }
-                let Some((range, insns)) = hint_insns(ctx, &obj.subsecs, addrs) else {
+                let Some((range, insns)) = hint_insns(ctx, obj, addrs) else {
                     continue;
                 };
 

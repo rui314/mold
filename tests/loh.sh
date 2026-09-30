@@ -177,6 +177,16 @@ insns() {
 [ "$(insns far_got_ldr)" = 'adrp nop ldr ret ' ]
 [ "$(insns far_got_str)" = 'adrp nop str ret ' ]
 
+# The hints survive a -r link, moved with their code, so linking its
+# output rewrites every sequence the same way.
+ops() {
+  objdump -d --no-show-raw-insn $1 | awk -F'\t' 'NF > 1 { print $2 }'
+}
+$mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
+$CC --ld-path=$mold -o $t/exe3 $t/r.o $t/libext.dylib
+$t/exe3
+[ "$(ops $t/exe3)" = "$(ops $t/exe)" ]
+
 # -ignore_optimization_hints keeps the compiler's sequences.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o $t/libext.dylib -Wl,-ignore_optimization_hints
 $t/exe2
