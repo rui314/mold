@@ -2,9 +2,10 @@
 /// Targets without a supported prefetch instruction ignore the hint.
 #[inline]
 pub fn prefetch(_ptr: *const u8) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    // SAFETY: SSE is part of our x86 baseline. PREFETCHT0 is a non-faulting
-    // hint and changes no registers or memory.
+    #[cfg(any(all(target_arch = "x86", target_feature = "sse"), target_arch = "x86_64"))]
+    // SAFETY: PREFETCHT0 is an SSE instruction, which x86-64 always has and
+    // the cfg requires on 32-bit x86. It is a non-faulting hint and changes
+    // no registers or memory.
     unsafe {
         std::arch::asm!(
             "prefetcht0 [{ptr}]",
