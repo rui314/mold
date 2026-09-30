@@ -21,6 +21,29 @@ dyld_info -exports $t/exe > $t/exports
 grep -q _main $t/exports
 not grep -q _times2 $t/exports
 
+# An -alias base is referenced by the linker, so it stays external.
+$CC -flto --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o -Wl,-alias,_times2,_t2
+$t/exe3 | grep '^42$'
+dyld_info -exports $t/exe3 > $t/exports3
+grep -q _times2 $t/exports3
+
+# A native common that a bitcode definition overrides addresses the
+# definition's storage, so the definition must survive LTO.
+cat <<EOF2 | $CC -flto -o $t/e.o -c -xc -
+#include <stdio.h>
+int x = 5;
+int getx(void);
+int main() {
+  printf("%d\n", getx());
+}
+EOF2
+cat <<EOF2 | $CC -fcommon -o $t/f.o -c -xc -
+int x;
+int getx(void) { return x; }
+EOF2
+$CC -flto --ld-path=$mold -o $t/exe4 $t/e.o $t/f.o
+$t/exe4 | grep '^5$'
+
 # Mixed bitcode and Mach-O, with bitcode in an archive
 cat <<EOF2 | $CC -flto -o $t/c.o -c -xc -
 int three() { return 3; }

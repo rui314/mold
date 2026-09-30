@@ -999,6 +999,9 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         // from another bitcode module does not count: libLTO resolves
         // those itself, and ld-prime lets such a function go local
         // (_times2, called only from a bitcode main, is not exported).
+        // A native common does count: when a bitcode definition wins,
+        // the common's code addresses that definition's storage. So do
+        // -alias bases, which the linker itself references.
         let executable = ctx.args.output_type == MH_EXECUTE;
         let mut native_refs: hashbrown::HashSet<crate::symbol::SymbolId> =
             hashbrown::HashSet::new();
@@ -1008,7 +1011,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
             }
             let r = obj.global_range();
             for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                if !nlist.is_stab() && nlist.n_type() == N_UNDF && !nlist.is_common() {
+                if !nlist.is_stab() && nlist.n_type() == N_UNDF {
                     native_refs.insert(sym_id);
                 }
             }
@@ -1025,6 +1028,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
                     && (!sym.is_used() || !native_refs.contains(&(i as u32)))
                     && sym.name() != ctx.args.entry
                     && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
+                    && !ctx.args.aliases.iter().any(|(existing, _)| existing == sym.name())
                     && !ctx
                         .args
                         .exported_symbols
