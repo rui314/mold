@@ -85,3 +85,17 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o -image_base 0x200001000 2> $t/log8
 $mold -r -arch $ARCH -o $t/r2.o $t/a.o -image_base 0x200000800 2> $t/log9
 grep -q 'base address 0x200000800 is not properly aligned. Changing it to 0x200001000' $t/log9
 cmp $t/r.o $t/r2.o
+
+# A final image's base is rounded up to a page first, with the warning,
+# whatever happens to it next: the rounded base is what must match a
+# -segaddr for __TEXT, and a PIE executable's is ignored after that.
+$mold -arch $ARCH -static -e _main $t/a.o -image_base 0x200001001 -segaddr __TEXT 0x200004000 \
+  -o $t/exe10 2> $t/log10
+grep -q 'base address 0x200001001 is not properly aligned. Changing it to 0x20000[24]000' $t/log10
+if [ $ARCH = arm64 ]; then
+  not grep -q 'must match' $t/log10
+  [ "$(text $t/exe10)" = 0x0000000200004000 ]
+fi
+$CC --ld-path=$mold -o $t/exe11 $t/a.o -Wl,-image_base,0x200001001 2> $t/log11
+grep -q 'base address 0x200001001 is not properly aligned. Changing it to 0x20000[24]000' $t/log11
+grep -q 'Linking with PIE, -image_base will be ignored' $t/log11

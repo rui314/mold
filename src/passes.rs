@@ -5448,24 +5448,25 @@ pub fn check_segaddrs<E: Target>(ctx: &Context<E>) {
 /// non-PIE executable only when -fixup_chains asks for them). A pinned
 /// __TEXT stays where it is even then: in a dylib the other segments
 /// still follow it, while in a PIE executable they go from __PAGEZERO's
-/// end and so below it, out of order (place_segments). A base is
-/// rounded up to a page.
+/// end and so below it, out of order (place_segments).
 pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     // ld-prime takes a zero base as none at all.
     if ctx.args.image_base == Some(0) {
         ctx.args.image_base = None;
     }
+    // Before anything else looks at it, it rounds a base up to a page:
+    // 4 KiB in an object file, which is loaded nowhere.
+    let align = if ctx.args.relocatable { 0x1000 } else { ctx.segment_align() };
+    if let Some(base) = ctx.args.image_base
+        && !base.is_multiple_of(align)
+    {
+        let aligned = align_to(base, align);
+        crate::warn!(
+            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
+        );
+        ctx.args.image_base = Some(aligned);
+    }
     if ctx.args.relocatable {
-        // An object file is loaded nowhere, and ld-prime only checks
-        // that the base is a multiple of 4 KiB.
-        if let Some(base) = ctx.args.image_base
-            && !base.is_multiple_of(0x1000)
-        {
-            let aligned = align_to(base, 0x1000);
-            crate::warn!(
-                "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
-            );
-        }
         ctx.args.image_base = None;
         return;
     }
@@ -5490,12 +5491,6 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     } else if !ctx.args.static_link && ctx.use_chained_fixups() {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         ctx.args.image_base = text;
-    } else if !base.is_multiple_of(ctx.segment_align()) {
-        let aligned = align_to(base, ctx.segment_align());
-        crate::warn!(
-            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
-        );
-        ctx.args.image_base = Some(aligned);
     }
 }
 
