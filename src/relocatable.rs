@@ -359,158 +359,19 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // address), so content sections must precede the sections that
     // occupy addresses but no file bytes.
     // Synthetic sections: the merged __objc_imageinfo, the
-    // re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame. Their
-    // sizes are known before layout, so they take their places among
-    // the merged sections in ld64's order; their contents are built
-    // once addresses are assigned. `patches` are self-relative pointer
-    // cells filled then: value = target_addr - (section_addr + offset).
-    struct ExtraSection {
-        segname: &'static str,
-        sectname: &'static str,
-        flags: u32,
-        p2align: u8,
-        size: u64,
-        data: Vec<u8>,
-        relocs: Vec<MachRel>,
-        patches: Vec<(u32, u64, u8)>,
-        addr: u64,
-        fileoff: u64,
-        reloff: u64,
-    }
-    let new_extra = |segname, sectname, flags, p2align, size| ExtraSection {
-        segname,
-        sectname,
-        flags,
-        p2align,
-        size,
-        data: Vec::new(),
-        relocs: Vec::new(),
-        patches: Vec::new(),
-        addr: 0,
-        fileoff: 0,
-        reloff: 0,
-    };
-    let mut extras: Vec<ExtraSection> = Vec::new();
-
-    // The merged __objc_imageinfo (create_output_sections folded the
-    // inputs' records into ctx.objc_imageinfo.flags). The record is
-    // what makes the Objective-C runtime look at an image at all:
-    // without it, dyld never hands the image to the runtime, so no
-    // class or category it defines is registered (a class referenced
-    // from another image then dies with "Attempt to use unknown
-    // class", and categories on framework classes never attach).
-    // A prelinked object lacking it silently poisons the image that
-    // links it. ld64 writes it into __DATA in a -r output, and
-    // ld-prime renames it like the input sections (but not the
-    // __eh_frame and __compact_unwind below).
-    if ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
-        let (seg, sect) = crate::passes::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
-        let mut e = new_extra(seg, sect, 0, 2, 8);
-        e.data = vec![0u8; 8];
-        e.data[4..8].copy_from_slice(&ctx.objc_imageinfo.flags.to_le_bytes());
-        extras.push(e);
-    }
-
-    // __LD,__compact_unwind: one 32-byte entry per surviving record.
-    // An input's DWARF-mode record is copied as it came (ld64 does;
-    // the next link regenerates its encoding from the FDE), but a
-    // record we synthesized from an FDE alone is not: the next link
-    // synthesizes it again from the __eh_frame emitted below. A
-    // coalesced-away weak definition's record goes with it.
-    let cu_kept: Vec<usize> = (0..ctx.unwind_records.len())
-        .filter(|&i| {
-            let rec = &ctx.unwind_records[i];
-            let isec = &ctx.isecs[rec.isec as usize];
-            isec.is_alive()
-                && isec.replacement == crate::input_sections::NO_REPLACEMENT
-                && (rec.fde().is_none() || rec.encoding & UNWIND_MODE_MASK == E::UNWIND_MODE_DWARF)
-        })
-        .collect();
-    let mut cu_slot = None;
-    if !cu_kept.is_empty() {
-        // Each record keeps the alignment of the section it came from,
-        // as an ld-prime atom does, so the section takes the largest.
-        let p2align = cu_kept
-            .iter()
-            .filter_map(|&i| {
-                let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
-                obj.sect_hdrs
-                    .iter()
-                    .find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
-            })
-            .map(|s| s.p2align as u8)
-            .max()
-            .unwrap_or(3);
-        cu_slot = Some(extras.len());
-        extras.push(new_extra(
-            "__LD",
-            "__compact_unwind",
-            S_ATTR_DEBUG,
-            p2align,
-            32 * cu_kept.len() as u64,
-        ));
-    }
-
-    // __TEXT,__eh_frame: every input CIE and FDE whose function
-    // survives (a coalesced-away weak copy's goes with it), laid out
-    // per object in input order, as ld64 carries them. The loader kept
-    // the FDEs of compactly-encoded functions for this.
-    #[derive(Clone, Copy)]
-    enum EhRec {
-        Cie(usize),
-        Fde(usize),
-    }
-    let mut eh_records: Vec<(EhRec, u32)> = Vec::new();
-    {
-        let mut per_obj: HashMap<u32, Vec<(u32, EhRec)>> = HashMap::new();
-        let mut cies_used: HashSet<usize> = HashSet::new();
-        for (f, fde) in ctx.fdes.iter().enumerate() {
-            let isec = &ctx.isecs[fde.isec as usize];
-            if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
-                continue;
-            }
-            per_obj.entry(fde.obj).or_default().push((fde.input_addr, EhRec::Fde(f)));
-            if cies_used.insert(fde.cie as usize) {
-                let cie = &ctx.cies[fde.cie as usize];
-                per_obj
-                    .entry(cie.obj)
-                    .or_default()
-                    .push((cie.input_addr, EhRec::Cie(fde.cie as usize)));
-            }
-        }
-        let mut objs: Vec<u32> = per_obj.keys().copied().collect();
-        objs.sort_unstable();
-        let mut off = 0u32;
-        for obj in objs {
-            let mut recs = per_obj.remove(&obj).unwrap();
-            recs.sort_by_key(|r| r.0);
-            for (_, r) in recs {
-                eh_records.push((r, off));
-                off += match r {
-                    EhRec::Cie(c) => ctx.cies[c].data.len() as u32,
-                    EhRec::Fde(f) => ctx.fdes[f].data.len() as u32,
-                };
-            }
-        }
-    }
-    let mut eh_slot = None;
-    if !eh_records.is_empty() {
-        let size: u64 = eh_records
-            .iter()
-            .map(|&(r, _)| match r {
-                EhRec::Cie(c) => ctx.cies[c].data.len() as u64,
-                EhRec::Fde(f) => ctx.fdes[f].data.len() as u64,
-            })
-            .sum();
-        eh_slot = Some(extras.len());
-        extras.push(new_extra(
-            "__TEXT",
-            "__eh_frame",
-            S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
-            3,
-            size,
-        ));
-    }
+    // re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
+    let mut extras: Vec<SyntheticSection> = Vec::new();
+    extras.extend(objc_imageinfo_section(ctx));
+    let cu_kept = compact_unwind_records(ctx);
+    let cu_slot = (!cu_kept.is_empty()).then(|| {
+        extras.push(compact_unwind_section(ctx, &cu_kept));
+        extras.len() - 1
+    });
+    let eh_records = eh_frame_records(ctx);
+    let eh_slot = (!eh_records.is_empty()).then(|| {
+        extras.push(eh_frame_section(ctx, &eh_records));
+        extras.len() - 1
+    });
 
     // Every output section, merged or synthetic, in ld64's order:
     // ranked, and first-seen within a rank (a synthetic section after
@@ -1119,6 +980,181 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
 
     crate::error::checkpoint();
     output_file::write(&ctx.args.output, &buf);
+}
+
+/// A section the -r output synthesizes rather than merges from input
+/// subsections: the merged __objc_imageinfo, the re-synthesized
+/// __LD,__compact_unwind and __TEXT,__eh_frame. Its size is known
+/// before layout, so it takes its place among the merged sections in
+/// ld64's order; its contents are built once addresses are assigned.
+/// `patches` are self-relative pointer cells filled then: value =
+/// target_addr - (section_addr + offset).
+struct SyntheticSection {
+    segname: &'static str,
+    sectname: &'static str,
+    flags: u32,
+    p2align: u8,
+    size: u64,
+    data: Vec<u8>,
+    relocs: Vec<MachRel>,
+    patches: Vec<(u32, u64, u8)>,
+    addr: u64,
+    fileoff: u64,
+    reloff: u64,
+}
+
+impl SyntheticSection {
+    fn new(
+        segname: &'static str,
+        sectname: &'static str,
+        flags: u32,
+        p2align: u8,
+        size: u64,
+    ) -> Self {
+        Self {
+            segname,
+            sectname,
+            flags,
+            p2align,
+            size,
+            data: Vec::new(),
+            relocs: Vec::new(),
+            patches: Vec::new(),
+            addr: 0,
+            fileoff: 0,
+            reloff: 0,
+        }
+    }
+}
+
+/// The merged __objc_imageinfo, if any input has one
+/// (create_output_sections folded the inputs' records into
+/// ctx.objc_imageinfo.flags). The record is what makes the
+/// Objective-C runtime look at an image at all: without it, dyld
+/// never hands the image to the runtime, so no class or category it
+/// defines is registered (a class referenced from another image then
+/// dies with "Attempt to use unknown class", and categories on
+/// framework classes never attach). A prelinked object lacking it
+/// silently poisons the image that links it. ld64 writes it into
+/// __DATA in a -r output, and ld-prime renames it like the input
+/// sections (but not __eh_frame and __compact_unwind).
+fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
+    if !ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
+        return None;
+    }
+    let (seg, sect) = crate::passes::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
+    let mut sec = SyntheticSection::new(seg, sect, 0, 2, 8);
+    sec.data = vec![0u8; 8];
+    sec.data[4..8].copy_from_slice(&ctx.objc_imageinfo.flags.to_le_bytes());
+    Some(sec)
+}
+
+/// The unwind records __LD,__compact_unwind carries: every surviving
+/// one. An input's DWARF-mode record is copied as it came (ld64 does;
+/// the next link regenerates its encoding from the FDE), but a record
+/// we synthesized from an FDE alone is not: the next link synthesizes
+/// it again from the __eh_frame the output carries. A coalesced-away
+/// weak definition's record goes with it.
+fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
+    (0..ctx.unwind_records.len())
+        .filter(|&i| {
+            let rec = &ctx.unwind_records[i];
+            let isec = &ctx.isecs[rec.isec as usize];
+            isec.is_alive()
+                && isec.replacement == crate::input_sections::NO_REPLACEMENT
+                && (rec.fde().is_none() || rec.encoding & UNWIND_MODE_MASK == E::UNWIND_MODE_DWARF)
+        })
+        .collect()
+}
+
+/// __LD,__compact_unwind: one 32-byte entry per record.
+fn compact_unwind_section<E: Target>(ctx: &Context<E>, records: &[usize]) -> SyntheticSection {
+    // Each record keeps the alignment of the section it came from, as
+    // an ld-prime atom does, so the section takes the largest.
+    let p2align = records
+        .iter()
+        .filter_map(|&i| {
+            let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
+            obj.sect_hdrs
+                .iter()
+                .find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+        })
+        .map(|s| s.p2align as u8)
+        .max()
+        .unwrap_or(3);
+    SyntheticSection::new(
+        "__LD",
+        "__compact_unwind",
+        S_ATTR_DEBUG,
+        p2align,
+        32 * records.len() as u64,
+    )
+}
+
+/// A record of __TEXT,__eh_frame: an input CIE or FDE.
+#[derive(Clone, Copy)]
+enum EhRec {
+    Cie(usize),
+    Fde(usize),
+}
+
+impl EhRec {
+    /// The record's bytes as its object has them.
+    fn data<E: Target>(self, ctx: &Context<E>) -> &'static [u8] {
+        match self {
+            EhRec::Cie(c) => ctx.cies[c].data,
+            EhRec::Fde(f) => ctx.fdes[f].data,
+        }
+    }
+}
+
+/// __TEXT,__eh_frame's records and their offsets there: every input
+/// CIE and FDE whose function survives (a coalesced-away weak copy's
+/// goes with it), laid out per object in input order, as ld64 carries
+/// them. The loader kept the FDEs of compactly-encoded functions for
+/// this.
+fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
+    let mut per_obj: HashMap<u32, Vec<(u32, EhRec)>> = HashMap::new();
+    let mut cies_used: HashSet<usize> = HashSet::new();
+    for (f, fde) in ctx.fdes.iter().enumerate() {
+        let isec = &ctx.isecs[fde.isec as usize];
+        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+            continue;
+        }
+        per_obj.entry(fde.obj).or_default().push((fde.input_addr, EhRec::Fde(f)));
+        if cies_used.insert(fde.cie as usize) {
+            let cie = &ctx.cies[fde.cie as usize];
+            per_obj
+                .entry(cie.obj)
+                .or_default()
+                .push((cie.input_addr, EhRec::Cie(fde.cie as usize)));
+        }
+    }
+    let mut objs: Vec<u32> = per_obj.keys().copied().collect();
+    objs.sort_unstable();
+    let mut records = Vec::new();
+    let mut off = 0u32;
+    for obj in objs {
+        let mut recs = per_obj.remove(&obj).unwrap();
+        recs.sort_by_key(|r| r.0);
+        for (_, r) in recs {
+            records.push((r, off));
+            off += r.data(ctx).len() as u32;
+        }
+    }
+    records
+}
+
+/// __TEXT,__eh_frame, sized for `records`.
+fn eh_frame_section<E: Target>(ctx: &Context<E>, records: &[(EhRec, u32)]) -> SyntheticSection {
+    let size = records.iter().map(|&(r, _)| r.data(ctx).len() as u64).sum();
+    SyntheticSection::new(
+        "__TEXT",
+        "__eh_frame",
+        S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
+        3,
+        size,
+    )
 }
 
 /// A -r output section's relocations, regenerated against the merged
