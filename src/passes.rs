@@ -3674,6 +3674,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // Whether each output section has zero-fill (bit 0) and
     // file-backed (bit 1) input sections; renames can mix them.
     let mut fill_kinds: Vec<u8> = Vec::new();
+    // The output sections thread-local data went to.
+    let mut tlv_data: Vec<OutputSectionId> = Vec::new();
     for i in 0..ctx.isecs.len() {
         if !ctx.isecs[i].is_alive()
             || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
@@ -3733,6 +3735,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                     fill_kinds.resize(id.index() + 1, 0);
                 }
                 fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
+                if matches!(hdr.section_type(), S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL) {
+                    tlv_data.push(id);
+                }
             }
             last_hdr = hdr_ptr;
             last_osec = id;
@@ -3751,7 +3756,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     if !relocatable {
         resolve_zerofill_conflicts(ctx, &fill_kinds);
-        check_tlv_sections(ctx);
+        check_tlv_sections(ctx, &tlv_data);
     }
     place_replacing_blobs(ctx);
 
@@ -4785,15 +4790,28 @@ fn resolve_zerofill_conflict<E: Target>(
 /// __thread_bss, in any segment, that its first member doesn't type as
 /// thread-local data, as ld-prime does: it takes those names for the
 /// template dyld copies for each thread, which the variables' offsets
-/// count from.
-fn check_tlv_sections<E: Target>(ctx: &Context<E>) {
+/// count from. Failing that, reports thread-local data (of input
+/// sections so typed, which went to the `tlv_data` output sections)
+/// that a rename put in a section of another type, no part of the
+/// template: the offset from the template's start its variables'
+/// descriptors hold falls outside it. ld-prime reports data before the
+/// template, whose offset wraps past 4GB; mold also data after it, of
+/// which ld-prime writes an image dyld refuses, and data with no
+/// template left, on which ld-prime crashes.
+fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId]) {
+    let is_tlv = |hdr: &crate::chunks::ChunkHeader| {
+        matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
+    };
+    let mut missing = false;
     for osec in &ctx.output_sections {
         let hdr = &osec.hdr;
-        if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss")
-            && !matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
-        {
+        if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss") && !is_tlv(hdr) {
             error!("Missing TLV section flags in {},{}", hdr.segname, hdr.sectname);
+            missing = true;
         }
+    }
+    if !missing && tlv_data.iter().any(|&id| !is_tlv(&ctx.output_section(id).hdr)) {
+        error!("thread-locals too large.  Max 4GB for 64-bit architectures");
     }
 }
 

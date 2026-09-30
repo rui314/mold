@@ -1147,7 +1147,7 @@ impl Target for Arm64 {
                     } else if ctx.reloc_target_is_tls(obj, r) {
                         // __thread_vars holds thread-pointer-relative
                         // offsets into the TLS initialization image.
-                        write64(loc, s.wrapping_add_signed(a) - ctx.tls_begin);
+                        write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
                         // Only a SUBTRACTOR's pair is 4 bytes long.
                         write64(loc, s.wrapping_add_signed(a));

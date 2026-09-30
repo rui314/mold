@@ -66,3 +66,38 @@ not $CC --ld-path=$mold -o $t/exe2 $t/c.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __TEXT,__thread_bss' $t/log
 
 $mold -arch $ARCH -r -o $t/r.o $t/data.o $t/a.o
+
+# Thread-local data a rename puts in a section its first member types
+# otherwise is outside the template, and so is its offset: ld-prime
+# finds that of data before the template past 4GB.
+cat <<EOF | $CC -o $t/d.o -c -xassembler -
+.section __DATA,__bar
+.long 7
+.section __FOO,__bar
+.long 7
+EOF
+
+not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
+  -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar 2> $t/log
+grep -q 'thread-locals too large.  Max 4GB for 64-bit architectures$' $t/log
+
+not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
+  -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log
+grep -q 'thread-locals too large' $t/log
+
+$CC --ld-path=$mold -o $t/exe3 $t/a.o $t/d.o \
+  -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar
+$t/exe3 | grep -q '^5 0$'
+
+# ld-prime writes an image dyld refuses for data after the template,
+# and crashes with no template left.
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
+    -Wl,-rename_section,__DATA,__thread_data,__FOO,__bar 2> $t/log
+  grep -q 'thread-locals too large' $t/log
+
+  not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
+    -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar \
+    -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log
+  grep -q 'thread-locals too large' $t/log
+fi

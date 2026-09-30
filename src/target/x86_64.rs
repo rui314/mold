@@ -419,7 +419,7 @@ impl Target for X86_64 {
                     if imported {
                         // The slot is filled by dyld.
                     } else if ctx.reloc_target_is_tls(obj, r) {
-                        write64(loc, s.wrapping_add_signed(a) - ctx.tls_begin);
+                        write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
                         write64(loc, s.wrapping_add_signed(a));
                     }
