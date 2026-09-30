@@ -79,6 +79,21 @@ EOF
 not $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/d.o 2> $t/log4
 grep -qF "  text-relocation in '_d' ($dir/d.o) to '_d1'" $t/log4
 
+# A literal's linker-private label names no atom (ld64 ignores it), so
+# a pointer to it names the literal as the object's Nth atom.
+cat <<EOF | $CC -o $t/g.o -c -xassembler -
+.text
+.globl _g
+.p2align 3
+_g: .quad lCPI0_0
+.literal8
+.p2align 3
+lCPI0_0: .quad 7
+.subsections_via_symbols
+EOF
+not $CC --ld-path=$mold -o $t/exe17 $t/main.o $t/g.o 2> $t/log17
+grep -qF "  text-relocation in '_g' ($dir/g.o) to 'anon-1'" $t/log17
+
 # A segment -segprot makes read-only counts too.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
 .section __RO,__ptrs

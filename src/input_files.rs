@@ -216,6 +216,19 @@ impl ObjectFile {
     }
 }
 
+/// Whether ld64 names no atom after a label (its ignoreLabel): in a
+/// section of C strings or of 4-, 8- or 16-byte literals, which it
+/// splits into one atom per literal, an assembler temporary (L...) or
+/// linker-private (l...) label - the compiler's lCPI0_0 constant-pool
+/// and l_.str string labels, the assembler's ltmpN - names nothing, and
+/// the literal is known by its contents or size.
+pub fn is_ignored_literal_label(section_type: u32, name: &str) -> bool {
+    matches!(
+        section_type,
+        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+    ) && (name.starts_with('l') || name.starts_with('L'))
+}
+
 /// How ld-prime prefers a symbol at an atom's start to name the atom in
 /// a diagnostic: an exported one before a private extern, a local, a
 /// weak definition and an ltmpN label; among equals, the greatest name.

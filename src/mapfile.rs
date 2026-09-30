@@ -348,18 +348,23 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 }
 
 /// Whether a symbol names its atom in the map, as ld-prime names atoms.
-/// An assembler temporary (L...) doesn't, nor does an arm64 assembler's
-/// ltmpN label where symbols split the sections (it merely marks where a
-/// section starts). A C string is known by its contents, and the atoms
-/// of the sections ld-prime reads as lists of records - CFStrings,
-/// UTF-16 strings, selector and class references, Objective-C class and
-/// category lists - by no local symbol: they are "anon", as unnamed
-/// atoms are.
-fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol, obj: usize) -> bool {
+/// An assembler temporary (L...) doesn't, nor does a linker-private
+/// label (l...) of a fixed-size literal, such as the compiler's lCPI0_0
+/// constant-pool labels: the literal is known by its size, as a C
+/// string is by its contents whatever labels it. The atoms of the
+/// sections ld-prime reads as lists of records - CFStrings, UTF-16
+/// strings, selector and class references, Objective-C class and
+/// category lists - are named by no local symbol: they are "anon", as
+/// unnamed atoms are. (An ltmpN label may be shadowed besides; see
+/// drop_shadowed_ltmps.)
+fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
     let name = sym.name();
     let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
     let hdr = ctx.hdr_of(&ctx.isecs[isec]);
-    if name.is_empty() || hdr.section_type() == S_CSTRING_LITERALS {
+    if name.is_empty()
+        || hdr.section_type() == S_CSTRING_LITERALS
+        || crate::input_files::is_ignored_literal_label(hdr.section_type(), name)
+    {
         return false;
     }
     if sym.is_extern() {
@@ -376,8 +381,40 @@ fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol, obj: usize
                 | "__objc_catlist"
                 | "__objc_nlcatlist"
         );
-    let ltmp = name.starts_with("ltmp") && ctx.objs[obj].subsections_via_symbols;
-    !records && !ltmp && !name.starts_with('L')
+    !records && !name.starts_with('L')
+}
+
+/// Drops from the map's named symbols each ltmpN label another of them
+/// shares a place with. An arm64 assembler puts the label where each
+/// section starts; where symbols split the sections, an atom there
+/// takes the label's name only if it has no other, as ld-prime ranks
+/// the labels an atom may be named after (without subsections the
+/// section's first atom has its name, which the other symbols there
+/// alias).
+fn drop_shadowed_ltmps<E: Target, T>(
+    ctx: &Context<E>,
+    syms: &mut Vec<T>,
+    id: impl Fn(&T) -> SymbolId,
+) {
+    let is_ltmp = |sym: SymbolId| {
+        let sym = &ctx.symbols[sym];
+        matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.objs[obj as usize].subsections_via_symbols)
+            && sym.name().starts_with("ltmp")
+    };
+    let place = |sym: SymbolId| (ctx.symbols[sym].input_section(), ctx.symbols[sym].value);
+    let ltmps: hashbrown::HashSet<_> =
+        syms.iter().map(&id).filter(|&sym| is_ltmp(sym)).map(place).collect();
+    if ltmps.is_empty() {
+        return;
+    }
+    let shadowed: hashbrown::HashSet<_> = syms
+        .iter()
+        .map(&id)
+        .filter(|&sym| !is_ltmp(sym))
+        .map(place)
+        .filter(|at| ltmps.contains(at))
+        .collect();
+    syms.retain(|t| !is_ltmp(id(t)) || !shadowed.contains(&place(id(t))));
 }
 
 /// The nlist of each defined symbol in its object's symbol table: its
@@ -423,10 +460,11 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
             None if is_rewritten_method_list(ctx, isec) => 0,
             None => files.objs[obj as usize],
         };
-        if is_named(ctx, sym, obj as usize) {
+        if is_named(ctx, sym) {
             syms.push((i, file));
         }
     }
+    drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
 
     // Sizes: sort the atoms' first symbols by place and measure to the
     // next one.
@@ -678,17 +716,25 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
     };
 
     // (isec, offset, name) of each symbol, sized as live ones are.
-    let mut syms: Vec<(usize, u64, &str)> = Vec::new();
-    for i in 0..ctx.symbols.syms.len() {
+    let mut ids: Vec<SymbolId> = Vec::new();
+    for i in 0..ctx.symbols.syms.len() as SymbolId {
         let sym = &ctx.symbols[i];
-        let (Some(FileId::Obj(obj)), Some(isec)) = (sym.file(), sym.input_section()) else {
+        let (Some(FileId::Obj(_)), Some(isec)) = (sym.file(), sym.input_section()) else {
             continue;
         };
         let isec = ctx.resolve_isec(isec as usize);
-        if is_dead(&ctx.isecs[isec]) && is_named(ctx, sym, obj as usize) {
-            syms.push((isec, sym.value, sym.name()));
+        if is_dead(&ctx.isecs[isec]) && is_named(ctx, sym) {
+            ids.push(i);
         }
     }
+    drop_shadowed_ltmps(ctx, &mut ids, |&sym| sym);
+    let mut syms: Vec<(usize, u64, &str)> = ids
+        .iter()
+        .map(|&i| {
+            let sym = &ctx.symbols[i];
+            (ctx.resolve_isec(sym.input_section().unwrap() as usize), sym.value, sym.name())
+        })
+        .collect();
     syms.sort();
     let mut dead: Vec<(usize, u64, MapEntry)> = Vec::new();
     for (i, &(isec, value, name)) in syms.iter().enumerate() {

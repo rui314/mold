@@ -823,11 +823,12 @@ impl<E: Target> Context<E> {
     }
 
     /// The symbol that names the atom (subsection) `isec` in ld-prime's
-    /// diagnostics: of those at its start, the one
-    /// input_files::atom_name_rank ranks first.
+    /// diagnostics: of those at its start that a literal's atom does
+    /// not ignore, the one input_files::atom_name_rank ranks first.
     pub fn atom_label(&self, id: usize) -> Option<&'static str> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
+        let section_type = self.hdr_of(isec).section_type();
         obj.nlists
             .iter()
             .zip(&obj.symbols)
@@ -837,10 +838,9 @@ impl<E: Target> Context<E> {
                     && n.n_sect as u32 == isec.shndx + 1
                     && n.n_value == isec.input_addr as u64
             })
-            .map(|(n, &id)| {
-                let name = self.symbols[id].name();
-                (crate::input_files::atom_name_rank(n, name), name)
-            })
+            .map(|(n, &id)| (n, self.symbols[id].name()))
+            .filter(|&(_, name)| !crate::input_files::is_ignored_literal_label(section_type, name))
+            .map(|(n, name)| (crate::input_files::atom_name_rank(n, name), name))
             .max()
             .map(|(_, name)| name)
     }

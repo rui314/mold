@@ -54,8 +54,23 @@ _inner: .quad 2
 .subsections_via_symbols
 EOF
 
+# ld64 names no literal after a linker-private label: a fixed-size
+# literal the compiler labels lCPI0_0 is known by its size all the same.
+# With subsections, an arm64 section's ltmpN label names the atom at the
+# section's start only if nothing else does (here the first of __const).
+cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.section __TEXT,__const
+.p2align 3
+.quad 3
+_c1: .quad 4
+.literal16
+.p2align 4
+lCPI0_0: .quad 9, 10
+.subsections_via_symbols
+EOF
+
 $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$(xcrun --show-sdk-path)" \
-  -o $t/exe $t/a.o $t/b.o $t/d.o -lSystem -map $t/map
+  -o $t/exe $t/a.o $t/b.o $t/d.o $t/e.o -lSystem -map $t/map
 sym() { grep -F $'\t'"[  $1] $2" $t/map | cut -f2; }
 [ "$(sym 1 l_table)" = 0x00000010 ]
 [ "$(sym 1 8-byte-literal)" = 0x00000008 ]
@@ -71,7 +86,14 @@ else
 fi
 [ "$(sym 3 _outer)" = 0x00000010 ]
 [ "$(sym 3 _inner)" = 0x00000000 ]
-not grep -q 'l_selref\|l_meth\|\[  1\] ltmp\|_named_str' $t/map
+not grep -q 'l_selref\|l_meth\|\[  1\] ltmp\|_named_str\|lCPI0_0' $t/map
+[ "$(sym 4 16-byte-literal)" = 0x00000010 ]
+[ "$(sym 4 _c1)" = 0x00000008 ]
+if [ $ARCH = arm64 ]; then
+  [ "$(sym 4 ltmp1)" = 0x00000008 ]
+else
+  [ "$(sym 4 anon)" = 0x00000008 ]
+fi
 
 # With lazy binding, a stub's lazy pointer counts as the defining file
 # too, and the stub helper's entries are anonymous; __dyld_private and
