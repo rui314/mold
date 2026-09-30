@@ -53,6 +53,8 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>, i: u32) {
 
 /// Maps a symbol and addend to the output symbol table. Input section symbols
 /// are replaced by output section symbols, with their offsets in the addend.
+/// So are symbols in sections folded by ICF, which are not in the output
+/// symbol table; they refer to the leaders' locations instead.
 /// A section without an output section has no surviving symbol reference.
 #[inline]
 pub fn output_symidx_addend<E: Target>(
@@ -60,11 +62,13 @@ pub fn output_symidx_addend<E: Target>(
     sym: &Symbol,
     addend: impl FnOnce() -> i64,
 ) -> Option<(u32, i64)> {
-    if sym.st_type() == STT_SECTION {
-        let target = sym.input_section_ref(ctx)?;
+    let isec = sym.input_section_ref(ctx);
+    let leader = isec.and_then(|isec| isec.icf_leader()).map(|leader| ctx.section(leader));
+    if sym.st_type() == STT_SECTION || leader.is_some() {
+        let target = leader.or(isec)?;
         Some((
             ctx.output_section(target.output_section?).hdr.shndx,
-            addend() + target.offset() as i64,
+            addend() + target.offset() as i64 + sym.value as i64,
         ))
     } else {
         Some((sym.output_sym_idx(ctx), addend()))
@@ -100,7 +104,9 @@ fn symidx_addend<'a, E: Target>(
                     + isec.rel_addend(rel),
             );
         }
-    } else if !sym.write_to_symtab() {
+    } else if !sym.write_to_symtab()
+        && !sym.input_section_ref(ctx).is_some_and(|isec| isec.is_icf_removed())
+    {
         return (0, 0);
     }
     // A dead debug section can refer to a COMDAT-eliminated section.
