@@ -179,9 +179,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const STUB_HELPER_REF_OFFS: [u64; 2];
     const OBJC_STUB_REF_OFFS: [u64; 2];
     /// The register state LC_UNIXTHREAD holds: its flavor, its size in
-    /// 32-bit words, and the byte offset of the program counter in it.
+    /// 32-bit words, and the byte offsets of the stack pointer and the
+    /// program counter in it.
     const THREAD_STATE_FLAVOR: u32;
     const THREAD_STATE_COUNT: u32;
+    const THREAD_STATE_SP_OFFSET: usize;
     const THREAD_STATE_PC_OFFSET: usize;
 
     /// Whether re-emitting this relocation type in a relocatable output

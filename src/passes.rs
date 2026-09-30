@@ -3906,6 +3906,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.segments = segments;
     ctx.chunks = order;
     add_boundary_segments(ctx);
+    add_stack_segment(ctx);
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
     check_section_order(ctx);
@@ -4101,6 +4102,15 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
     }
     let linkedit = ctx.segments.len() - 1;
     ctx.segments.splice(linkedit..linkedit, missing.into_iter().map(OutputSegment::new));
+}
+
+/// A static executable's -stack_size stack: a segment of address space
+/// alone before __LINKEDIT, pinned where resolve_stack_size says.
+fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.static_link && ctx.args.stack_size != 0 {
+        let linkedit = ctx.segments.len() - 1;
+        ctx.segments.insert(linkedit, OutputSegment::new("__UNIXSTACK"));
+    }
 }
 
 /// The flags ld-prime gives a section only a section$start$ or
@@ -5693,6 +5703,14 @@ fn layout_segment<E: Target>(
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = 0;
         seg.cmd.vmsize = ctx.args.pagezero_size;
+        return fileoff;
+    }
+    // The kernel maps a static executable's stack from nothing in the
+    // file.
+    if ctx.segments[seg_idx].name == "__UNIXSTACK" {
+        let seg = &mut ctx.segments[seg_idx];
+        seg.cmd.vmaddr = vmaddr;
+        seg.cmd.vmsize = ctx.args.stack_size;
         return fileoff;
     }
 

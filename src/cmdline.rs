@@ -131,7 +131,8 @@ pub struct Args {
     pub fixup_chains: Option<bool>,
     /// The libLTO to load for bitcode inputs (-lto_library).
     pub lto_library: Option<PathBuf>,
-    /// -stack_size: the main thread's stack size, recorded in LC_MAIN.
+    /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
+    /// or reserved as a static executable's __UNIXSTACK segment.
     pub stack_size: u64,
     /// -sectcreate: sections to synthesize from files:
     /// (segment, section, path).
@@ -845,6 +846,7 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
 /// parses once per speculated target, as mold does.
 pub struct TargetTraits {
     pub name: &'static str,
+    pub page_size: u64,
 }
 
 /// What the command line links: ld64's output kinds, which ld-prime
@@ -940,6 +942,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args =
         Args { zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(), ..Default::default() };
     let mut kind = OutputKind::DynamicExecutable;
+    let mut stack_size: Option<u64> = None;
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
@@ -1187,7 +1190,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
             }
-            b"-stack_size" => args.stack_size = parse_hex(name, text(name, next_arg(&mut i, name))),
+            b"-stack_size" => {
+                let size = text(name, next_arg(&mut i, name));
+                stack_size = Some(
+                    u64::from_str_radix(size.trim_start_matches("0x"), 16)
+                        .unwrap_or_else(|_| fatal!("-stack_size must specify an integer size")),
+                );
+            }
             b"-sectcreate" => {
                 let seg = sectcreate_name("segment", text(name, next_arg(&mut i, name)));
                 let sect = sectcreate_name("section", text(name, next_arg(&mut i, name)));
@@ -1623,6 +1632,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.pie = resolve_pie(target, &args, pie);
     args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
+    resolve_stack_size(target, &mut args, stack_size);
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
@@ -1736,7 +1746,8 @@ impl Args {
 /// wherever its segments say, has neither stack nor __PAGEZERO), and a
 /// client name is what a bundle or an executable presents to the
 /// umbrella it links against. A relocatable object also leaves the
-/// __DATA_CONST split to the link that consumes it.
+/// __DATA_CONST split to the link that consumes it. (-stack_size is
+/// checked with its other limits: resolve_stack_size.)
 fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     let has_stack = main_executable && !args.preload;
@@ -1755,12 +1766,44 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     if !has_stack && args.explicit_pagezero && args.pagezero_size != 0 {
         fatal!("-pagezero_size can only be used when linking a main executable");
     }
-    if !has_stack && args.stack_size != 0 {
-        fatal!("-stack_size option can only be used when linking a main executable");
-    }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
     if !main_executable && entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
+    }
+}
+
+/// -stack_size, which ld-prime checks against the most a stack may take
+/// on the target, then for a main executable, then for a multiple of
+/// the page size. No dyld starts a static executable with LC_MAIN's
+/// stack size: its stack is a segment of its own, __UNIXSTACK, which
+/// ld64 pins below a fixed top of stack, as -segaddr would (unless one
+/// pins it elsewhere); LC_UNIXTHREAD's stack pointer starts at its end.
+fn resolve_stack_size(target: &TargetTraits, args: &mut Args, size: Option<u64>) {
+    let Some(size) = size else { return };
+    if size == 0 {
+        crate::warn!("-stack_size 0x0 has no effect");
+        return;
+    }
+    let macos_x86_64 = target.name == "x86_64" && args.platform == PLATFORM_MACOS;
+    if macos_x86_64 && size > 0x100_0000_0000 {
+        fatal!("-stack_size must be <= 1TB on x86_64 macOS");
+    }
+    if !macos_x86_64 && size > 0x2000_0000 {
+        fatal!("-stack_size must be <= 512MB on {} platforms", target.name);
+    }
+    if args.output_type != MH_EXECUTE || args.relocatable || args.preload {
+        fatal!("-stack_size option can only be used when linking a main executable");
+    }
+    if !size.is_multiple_of(target.page_size) {
+        fatal!(
+            "-stack_size (0x{size:08X}) must be multiples of page size (0x{:08X})",
+            target.page_size
+        );
+    }
+    args.stack_size = size;
+    let top: u64 = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
+    if args.static_link && args.segaddr("__UNIXSTACK").is_none() {
+        args.segaddrs.push(("__UNIXSTACK".to_string(), top - size));
     }
 }
 

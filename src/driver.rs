@@ -37,7 +37,7 @@ pub fn main(
 }
 
 fn target_traits<E: Target>() -> cmdline::TargetTraits {
-    cmdline::TargetTraits { name: E::NAME }
+    cmdline::TargetTraits { name: E::NAME, page_size: E::PAGE_SIZE }
 }
 
 /// Links for the target `E`, or reports the target the inputs are

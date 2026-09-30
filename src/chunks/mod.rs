@@ -634,7 +634,8 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
 /// A -static image has no dyld to read LC_MAIN; the kernel (or a boot
 /// loader) starts its thread from LC_UNIXTHREAD's register state, all
-/// zero but the program counter at the entry point.
+/// zero but the program counter at the entry point, and the stack
+/// pointer at the top of a -stack_size stack.
 fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let size = 16 + E::THREAD_STATE_COUNT as usize * 4;
     let mut buf = Vec::with_capacity(size);
@@ -644,6 +645,10 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     buf.resize(size, 0);
     let pc = 16 + E::THREAD_STATE_PC_OFFSET;
     buf[pc..pc + 8].copy_from_slice(&ctx.entry_addr.to_le_bytes());
+    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == "__UNIXSTACK") {
+        let sp = 16 + E::THREAD_STATE_SP_OFFSET;
+        buf[sp..sp + 8].copy_from_slice(&(stack.cmd.vmaddr + stack.cmd.vmsize).to_le_bytes());
+    }
     buf
 }
 

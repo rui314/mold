@@ -147,6 +147,7 @@ impl Target for X86_64 {
     // x86_THREAD_STATE64: rax..r15, then rip.
     const THREAD_STATE_FLAVOR: u32 = 4;
     const THREAD_STATE_COUNT: u32 = 42;
+    const THREAD_STATE_SP_OFFSET: usize = 7 * 8;
     const THREAD_STATE_PC_OFFSET: usize = 16 * 8;
 
     fn relocatable_needs_addend(_r_type: u8) -> bool {
