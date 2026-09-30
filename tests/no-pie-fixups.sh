@@ -30,3 +30,14 @@ grep -q 'cmd LC_DYLD_CHAINED_FIXUPS' $t/lc2
 grep -q 'sectname __init_offsets' $t/lc2
 $t/exe2 > $t/out2
 [ "$(cat $t/out2 | tr '\n' ' ')" = 'init 42 ' ]
+
+# Nothing slides a non-PIE executable, so neither form has rebases:
+# its pointers hold their targets' addresses, and only binds remain.
+dyld_info -opcodes $t/exe1 > $t/opcodes1
+grep -q 'no rebase opcodes' $t/opcodes1
+dyld_info -fixups $t/exe1 > $t/fixups1
+grep -q 'lazy-bind' $t/fixups1
+not grep -q ' rebase ' $t/fixups1
+dyld_info -fixups $t/exe2 > $t/fixups2
+grep -q ' bind ' $t/fixups2
+not grep -q ' rebase ' $t/fixups2

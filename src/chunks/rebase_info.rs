@@ -100,12 +100,23 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     locs
 }
 
+/// Whether nothing ever slides the image: a non-PIE executable, which
+/// the kernel maps where its segments say and dyld leaves there.
+/// ld-prime records no rebases for one, in opcodes or in chains. (A
+/// -static image keeps them for whatever loads it.)
+pub fn is_never_slid<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.output_type == MH_EXECUTE && !ctx.args.pie && !ctx.args.static_link
+}
+
 /// Builds the rebase opcode stream: it tells dyld which pointers in the
 /// image it must slide when the image is loaded at a non-default address.
 /// Every absolute address the linker writes into a data section gets a
 /// record. Runs during layout, once every segment before __LINKEDIT has
 /// an address.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    if is_never_slid(ctx) {
+        return Vec::new();
+    }
     let mut locs: Vec<u64> = rebase_locations(ctx).into_iter().map(|(_, addr)| addr).collect();
     if locs.is_empty() {
         return Vec::new();
