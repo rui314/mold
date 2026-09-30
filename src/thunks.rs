@@ -1,13 +1,19 @@
 //! Range-extension thunks.
 //!
-//! An arm64 bl/b reaches +-128 MiB; a __TEXT section larger than that
-//! needs islands of trampolines so any branch can reach its target.
-//! The layout follows mold's thunks.rs: thunks
-//! are placed after each batch of code, and a batch never grows so
-//! large that its own thunk would fall out of reach - the layout
-//! cursor and the scan cursor stay within one branch reach (minus
-//! margin) of each other, so placing a thunk can never invalidate an
-//! earlier layout decision.
+//! An arm64 bl/b reaches +-128 MiB; code larger than that needs
+//! islands of trampolines so any branch can reach its target. ld-prime
+//! makes its branch islands only for the branches that can't reach
+//! their targets, so an image whose code - from its first code section
+//! to the end of its last, __stubs and __objc_stubs included - fits
+//! within a branch's reach gets none. need_thunks bounds that span
+//! before placement and lays the code out without thunks if it fits.
+//!
+//! Otherwise every code section is laid out with thunks as in mold's
+//! thunks.rs: thunks are placed after each batch of code, and a batch
+//! never grows so large that its own thunk would fall out of reach -
+//! the layout cursor and the scan cursor stay within one branch reach
+//! (minus margin) of each other, so placing a thunk can never
+//! invalidate an earlier layout decision.
 //!
 //! As in mold, a thunk entry belongs to a *symbol*, not to a
 //! relocation: the first pass pessimistically gives every symbol that
@@ -28,21 +34,92 @@
 
 use rayon::prelude::*;
 
-use crate::chunks::{self, OutputSectionId};
+use crate::chunks::{self, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
+use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
 use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
 use crate::util::align_to;
 
-/// Lays out the subsections of one big executable output section with
-/// range-extension thunks interleaved. Each subsection gets its
-/// output_offset; the thunks, with their symbols, are returned.
-pub fn create_range_extension_thunks<E: Target>(
-    ctx: &mut Context<E>,
-    isecs: &[InputSectionId],
-) -> Vec<chunks::Thunk> {
+/// Whether the link needs range-extension thunks: Some(false) if its
+/// code spans no more than a branch reaches, Some(true) if it may span
+/// more, and None if only the placement can tell - the span then holds
+/// a chunk sized as it is placed (a shared-region image's __stubs come
+/// after __unwind_info) or crosses segments.
+pub fn need_thunks<E: Target>(ctx: &Context<E>) -> Option<bool> {
+    if E::THUNK_SIZE == 0 {
+        return Some(false);
+    }
+    let Some((first, last)) = code_range(ctx) else {
+        return Some(false);
+    };
+    let segname = ctx.chunk_header(ctx.chunks[first]).segname;
+    let span = ctx.chunks[first..=last]
+        .iter()
+        .map(|&id| chunk_room(ctx, id, segname))
+        .sum::<Option<u64>>()?;
+    Some(span > E::BRANCH_RANGE / 2)
+}
+
+/// The span of the placed code: from the start of the first code chunk
+/// to the end of the last.
+pub fn code_span<E: Target>(ctx: &Context<E>) -> u64 {
+    let (lo, hi) = ctx
+        .chunks
+        .iter()
+        .filter(|&&id| is_code(ctx, id))
+        .map(|&id| ctx.chunk_header(id))
+        .fold((u64::MAX, 0), |(lo, hi), hdr| (lo.min(hdr.addr), hi.max(hdr.addr + hdr.size)));
+    hi.saturating_sub(lo)
+}
+
+/// Lays out every code section with range-extension thunks.
+pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("create_range_extension_thunks");
+    let Some((first, last)) = code_range(ctx) else {
+        return;
+    };
+    for pos in first..=last {
+        if let ChunkId::Output(id) = ctx.chunks[pos]
+            && is_code(ctx, ctx.chunks[pos])
+        {
+            create_thunks(ctx, id);
+        }
+    }
+}
+
+fn is_code<E: Target>(ctx: &Context<E>, id: ChunkId) -> bool {
+    let hdr = ctx.chunk_header(id);
+    hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0 && hdr.size > 0
+}
+
+/// The positions in the output order of the first and the last code
+/// chunk.
+fn code_range<E: Target>(ctx: &Context<E>) -> Option<(usize, usize)> {
+    let first = ctx.chunks.iter().position(|&id| is_code(ctx, id))?;
+    let last = ctx.chunks.iter().rposition(|&id| is_code(ctx, id))?;
+    Some((first, last))
+}
+
+/// An upper bound on the room a chunk takes in the code span: its size
+/// and the padding its alignment may put before it. None for a chunk
+/// outside `segname` or one whose size is only known once it is
+/// placed.
+fn chunk_room<E: Target>(ctx: &Context<E>, id: ChunkId, segname: &str) -> Option<u64> {
+    let hdr = ctx.chunk_header(id);
+    if hdr.segname != segname || matches!(id, ChunkId::MachHeader | ChunkId::UnwindInfo) {
+        return None;
+    }
+    Some(hdr.size + (1 << hdr.p2align) - 1)
+}
+
+/// Lays out the subsections of a code section with range-extension
+/// thunks interleaved.
+fn create_thunks<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
+    let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
+    let isecs = &members[..];
     const BATCH: u64 = 10 * 1024 * 1024;
     const MAX_THUNK: u64 = 1024 * 1024;
     let budget = E::BRANCH_RANGE / 2 - MAX_THUNK - BATCH;
@@ -133,7 +210,10 @@ pub fn create_range_extension_thunks<E: Target>(
             ctx.symbols[sym].unmark();
         }
     }
-    thunks
+    let osec = &mut ctx.output_sections[id.index()];
+    osec.hdr.size = off;
+    osec.thunks = thunks;
+    osec.members = members;
 }
 
 /// Unmarks the symbols of every thunk that a branch at `from` can no

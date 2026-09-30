@@ -3826,74 +3826,31 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // Following mold's design, sections lay out in parallel: each
     // output section's offsets depend only on its own members, so the
     // per-section prefix sums run on all cores and the results are
-    // written back serially. The exception is a __TEXT section big
-    // enough to need range-extension thunks, whose creation scans and
-    // annotates relocations; those (at most one per link in practice)
-    // stay on the serial path.
+    // written back serially. Code gets range-extension thunks later,
+    // if a branch can be out of reach at all, once the order of the
+    // sections is known (see thunks.rs).
     {
-        // Branches are not confined to their own section: __text,
-        // __StaticInit, the stubs and every other executable section
-        // share the __TEXT segment's address space, so once their
-        // combined size comes near the branch reach, a branch from any
-        // of them can be out of range. One gate over the total decides
-        // for all of them (a small late section like __StaticInit is
-        // exactly the one whose backward branches span the farthest).
-        let mut exec_total: u64 = 0;
-        for osec in &ctx.output_sections {
-            if osec.hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0 {
-                exec_total +=
-                    osec.members.iter().map(|&id| ctx.isecs[id].size as u64 + 16).sum::<u64>();
-            }
-        }
-        let need_thunks = exec_total > E::BRANCH_RANGE / 2 - 64 * 1024 * 1024;
-
-        let mut thunked: Vec<usize> = Vec::new();
-        let mut plain: Vec<(usize, Vec<crate::input_sections::InputSectionId>)> = Vec::new();
-        for (i, osec) in ctx.output_sections.iter().enumerate() {
-            let is_exec =
-                osec.hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
-            if is_exec && need_thunks {
-                thunked.push(i);
-            } else {
-                plain.push((i, osec.members.clone()));
-            }
-        }
-
-        let offsets: Vec<(usize, Vec<u64>, u64)> = plain
+        let offsets: Vec<(usize, Vec<u64>, u64)> = ctx
+            .output_sections
             .par_iter()
-            .map(|(i, isecs)| {
-                let mut offs = Vec::with_capacity(isecs.len());
+            .enumerate()
+            .map(|(i, osec)| {
+                let mut offs = Vec::with_capacity(osec.members.len());
                 let mut off = 0;
-                for &id in isecs {
+                for &id in &osec.members {
                     let isec = &ctx.isecs[id];
                     off = isec.align_offset(off);
                     offs.push(off);
                     off += isec.size as u64;
                 }
-                (*i, offs, off)
+                (i, offs, off)
             })
             .collect();
         for (i, offs, size) in offsets {
-            for (&id, off) in ctx.output_sections[i].members.clone().iter().zip(offs) {
+            for (&id, off) in ctx.output_sections[i].members.iter().zip(offs) {
                 ctx.isecs[id].offset = off as u32;
             }
             ctx.output_sections[i].hdr.size = size;
-        }
-
-        for i in thunked {
-            let isecs = ctx.output_sections[i].members.clone();
-            let thunks = crate::thunks::create_range_extension_thunks::<E>(ctx, &isecs);
-            let end = match thunks.last() {
-                Some(t) => t.offset + t.syms.len() as u64 * E::THUNK_SIZE,
-                None => 0,
-            };
-            let data_end = isecs
-                .last()
-                .map(|&id| ctx.isecs[id].offset as u64 + ctx.isecs[id].size as u64)
-                .unwrap_or(0);
-            let osec = &mut ctx.output_sections[i];
-            osec.hdr.size = end.max(data_end);
-            osec.thunks = thunks;
         }
     }
 
@@ -5951,9 +5908,23 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     debug_assert_eq!(ctx.segments[linkedit].name, "__LINKEDIT");
 
+    // Range-extension thunks go in before the first placement, unless
+    // only the placement can tell whether a branch may be out of reach;
+    // the code is then placed again with them if it turns out so.
+    let need_thunks = crate::thunks::need_thunks(ctx);
+    if need_thunks == Some(true) {
+        crate::thunks::create_range_extension_thunks(ctx);
+    }
     let mut fileoff = lay_out_segments(ctx);
     while !finish_unwind_info(ctx) {
         fileoff = lay_out_segments(ctx);
+    }
+    if need_thunks.is_none() && crate::thunks::code_span(ctx) > E::BRANCH_RANGE / 2 {
+        crate::thunks::create_range_extension_thunks(ctx);
+        fileoff = lay_out_segments(ctx);
+        while !finish_unwind_info(ctx) {
+            fileoff = lay_out_segments(ctx);
+        }
     }
 
     // The output sections with range-extension thunks (executable
