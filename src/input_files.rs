@@ -1285,7 +1285,7 @@ pub fn parse_object<E: Target>(
     alive: bool,
 ) -> usize {
     let priority = ctx.next_priority();
-    let keep_all_fdes = ctx.args.relocatable || ctx.args.static_link;
+    let keep_all_fdes = ctx.args.relocatable || ctx.args.without_dyld();
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
     integrate_object(ctx, staged)
 }

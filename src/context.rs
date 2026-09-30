@@ -9,6 +9,7 @@ use crate::chunks::code_signature::CodeSignatureSection;
 use crate::chunks::data_in_code::DataInCodeSection;
 use crate::chunks::eh_frame::EhFrameSection;
 use crate::chunks::export_trie::ExportTrieSection;
+use crate::chunks::extern_relocs::ExternRelocsSection;
 use crate::chunks::function_starts::FunctionStartsSection;
 use crate::chunks::got::GotSection;
 use crate::chunks::indirect_symtab::IndirectSymtabSection;
@@ -68,6 +69,7 @@ macro_rules! chunk_header {
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
             ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
             ChunkId::LocalRelocs => &$($mutable)? $ctx.local_relocs.hdr,
+            ChunkId::ExternRelocs => &$($mutable)? $ctx.extern_relocs.hdr,
             ChunkId::IndirectSymtab => &$($mutable)? $ctx.indirect_symtab.hdr,
             ChunkId::Symtab => &$($mutable)? $ctx.symtab.hdr,
             ChunkId::Strtab => &$($mutable)? $ctx.strtab.hdr,
@@ -134,6 +136,7 @@ pub struct Context<E: Target> {
     pub data_in_code: DataInCodeSection,
     pub split_info: SplitInfoSection,
     pub local_relocs: LocalRelocsSection,
+    pub extern_relocs: ExternRelocsSection,
     pub indirect_symtab: IndirectSymtabSection,
     pub symtab: SymtabSection,
     pub strtab: StrtabSection,
@@ -226,6 +229,7 @@ impl<E: Target> Context<E> {
             data_in_code: DataInCodeSection::new(),
             split_info: SplitInfoSection::new(),
             local_relocs: LocalRelocsSection::new(),
+            extern_relocs: ExternRelocsSection::new(),
             indirect_symtab: IndirectSymtabSection::new(),
             symtab: SymtabSection::new(),
             strtab: StrtabSection::new(),
@@ -339,12 +343,12 @@ impl<E: Target> Context<E> {
 
     /// Returns true if the output is ad-hoc code signed. ld-prime signs
     /// arm64 images by default and leaves x86_64 ones unsigned (Intel
-    /// Macs and Rosetta run unsigned code), and a -static image (a
-    /// kernel, signed if at all by whoever packages it) unsigned too.
+    /// Macs and Rosetta run unsigned code), and a -static image or a
+    /// kext (signed if at all by whoever packages it) unsigned too.
     pub fn adhoc_codesign(&self) -> bool {
         self.args
             .adhoc_codesign
-            .unwrap_or(E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 && !self.args.static_link)
+            .unwrap_or(E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 && !self.args.without_dyld())
     }
 
     /// Returns true if the output uses chained fixups rather than
@@ -352,7 +356,11 @@ impl<E: Target> Context<E> {
     pub fn use_chained_fixups(&self) -> bool {
         // A static executable (the kernel) has no dyld: it has no fixups
         // unless -fixup_chains asks for chains, which its own loader
-        // then walks.
+        // then walks. A kext has none either: kmutil links it into the
+        // kernel by its relocations.
+        if self.args.is_kext() {
+            return false;
+        }
         if self.args.static_link {
             return self.args.fixup_chains == Some(true);
         }
@@ -519,7 +527,10 @@ impl<E: Target> Context<E> {
     /// __stub_helper), as ld64 does below the chained-fixups
     /// deployment targets unless -bind_at_load.
     pub fn lazy_binding(&self) -> bool {
-        !self.args.relocatable && !self.use_chained_fixups() && !self.args.bind_at_load
+        !self.args.relocatable
+            && !self.args.without_dyld()
+            && !self.use_chained_fixups()
+            && !self.args.bind_at_load
     }
 
     /// The address of the pointer slot stub `i` (for symbol `id`)
@@ -615,8 +626,11 @@ impl<E: Target> Context<E> {
         // A static image has no dyld to perform runtime weak lookup, so a
         // call to a weakly-defined symbol in the image binds directly.
         // ld64 emits neither a stub nor a weak bind for it (the stock
-        // XNU kernel has no stubs and an empty weak bind table).
-        if self.args.static_link {
+        // XNU kernel has no stubs and an empty weak bind table). Nor
+        // does a kext's but in the shared region, where it calls and
+        // takes its weak definitions through __weak_got as ld-prime
+        // links an arm64 kext.
+        if self.args.static_link || (self.args.is_kext() && !self.args.shared_region) {
             return false;
         }
         if self.is_weak_coalesced(id) {

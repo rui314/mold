@@ -312,6 +312,9 @@ pub struct Args {
     /// into a kernel collection: position independent and, like a
     /// shared-cache dylib, with split info.
     pub kernel: bool,
+    /// Code goes in its own __TEXT_EXEC segment, and __TEXT is
+    /// read-only (ld64's -text_exec, implied by an arm64 -kext).
+    pub text_exec: bool,
     /// Whether an executable is position independent (MH_PIE):
     /// -pie / -no_pie, resolved for the target at the end of parsing.
     pub pie: bool,
@@ -425,6 +428,7 @@ impl Default for Args {
             zero_ar_date: false,
             static_link: false,
             kernel: false,
+            text_exec: false,
             pie: true,
         }
     }
@@ -775,6 +779,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-F" => args.framework_paths.push(path(next_arg(&mut i))),
             b"-dylib" => args.output_type = MH_DYLIB,
             b"-bundle" => args.output_type = MH_BUNDLE,
+            b"-kext" => args.output_type = MH_KEXT_BUNDLE,
             b"-bundle_loader" => args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i)))),
             b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i))),
             b"-keep_private_externs" => args.keep_private_externs = true,
@@ -1143,8 +1148,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // A -static image (a kernel) carries the code tables only when
     // asked to, as ld-prime writes it.
-    args.function_starts = function_starts.unwrap_or(!args.static_link);
-    args.data_in_code_info = data_in_code_info.unwrap_or(!args.static_link);
+    args.function_starts = function_starts.unwrap_or(!args.without_dyld());
+    args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
 
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
@@ -1186,10 +1191,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
-    resolve_shared_region(&mut args);
-    // A -static image has no __DATA_CONST unless bound for the shared
-    // region: nothing else makes that segment read-only after fixups.
-    args.data_const = data_const.unwrap_or(!args.static_link || args.shared_region);
+    resolve_shared_region(target, &mut args);
+    // An image dyld doesn't load has no __DATA_CONST unless bound for
+    // the shared region: nothing else makes that segment read-only
+    // after fixups.
+    args.data_const = data_const.unwrap_or(!args.without_dyld() || args.shared_region);
+    resolve_kext(target, &mut args);
 
     args
 }
@@ -1210,20 +1217,21 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
 
 /// Decides whether the image is bound for the dyld shared cache or a
 /// kernel collection (ld64's fSharedRegionEligible): with
-/// -add_split_seg_info or -kernel, or a dylib installed where the cache
-/// takes libraries from, unless -not_for_dyld_shared_cache, or
-/// -debug_variant for a dylib. Such an image records its references
-/// between sections (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as
-/// compiled (no optimization hints); it may not look symbols up
-/// dynamically, since the cache builder binds every one to the dylib
-/// that exports it; and ld-prime warns about run paths, which an OS
-/// library must not need.
-fn resolve_shared_region(args: &mut Args) {
+/// -add_split_seg_info or -kernel, an arm64 kext, or a dylib installed
+/// where the cache takes libraries from, unless
+/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
+/// image records its references between sections
+/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
+/// optimization hints); it may not look symbols up dynamically, since
+/// the cache builder binds every one to the dylib that exports it; and
+/// ld-prime warns about run paths, which an OS library must not need.
+fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     let is_dylib = args.output_type == MH_DYLIB;
     args.shared_region = !args.not_for_dyld_shared_cache
         && !(is_dylib && args.debug_variant)
         && (args.add_split_seg_info
             || args.kernel
+            || (args.is_kext() && target.name == "arm64")
             || (is_dylib && in_shared_cache_path(args.output_install_name())));
     if !args.shared_region {
         return;
@@ -1236,9 +1244,11 @@ fn resolve_shared_region(args: &mut Args) {
              (or linker flag '-not_for_dyld_shared_cache')"
         );
     }
-    // (-undefined warning passes, but not suppress.)
-    if (args.undefined_dynamic_lookup && !args.undefined_is_warning)
-        || !args.allowed_undefined.is_empty()
+    // (-undefined warning passes, but not suppress; a kext looks up
+    // every import.)
+    if ((args.undefined_dynamic_lookup && !args.undefined_is_warning)
+        || !args.allowed_undefined.is_empty())
+        && !args.is_kext()
     {
         fatal!(
             "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
@@ -1254,7 +1264,32 @@ fn resolve_shared_region(args: &mut Args) {
     }
 }
 
+/// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
+/// kernel by kmutil, which resolves its undefined symbols against the
+/// kernel's and other kexts' exports: ld64 treats them as dynamically
+/// looked up. On arm64 its code gets a __TEXT_EXEC segment of its own
+/// (-text_exec) and, as the kext is bound for the shared region,
+/// __DATA_CONST (-data_const).
+fn resolve_kext(target: &TargetTraits, args: &mut Args) {
+    if !args.is_kext() {
+        return;
+    }
+    args.undefined_dynamic_lookup = true;
+    args.text_exec |= target.name == "arm64";
+}
+
 impl Args {
+    pub fn is_kext(&self) -> bool {
+        self.output_type == MH_KEXT_BUNDLE
+    }
+
+    /// Whether no dyld loads the image: a -static one, which loads (and
+    /// slides) itself, or a kext, which kmutil links into the kernel
+    /// by its relocations.
+    pub fn without_dyld(&self) -> bool {
+        self.static_link || self.is_kext()
+    }
+
     /// The output's install name: -install_name, else -final_output,
     /// else the output path.
     pub fn output_install_name(&self) -> &[u8] {

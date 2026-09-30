@@ -292,6 +292,16 @@ impl Target for X86_64 {
                         _ => fatal!("bad SUBTRACTOR relocation size"),
                     }
                 }
+                // A kext's call to an import, without a stub, keeps
+                // its addend for kmutil's external relocation.
+                X86_64_RELOC_BRANCH
+                    if ctx.reloc_target_sym(obj, r).is_some_and(|id| {
+                        ctx.symbols[id].is_imported()
+                            && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX
+                    }) =>
+                {
+                    write32(loc, a as u32);
+                }
                 X86_64_RELOC_BRANCH => {
                     debug_assert!(r.size == 4);
                     let s = match ctx.reloc_target_sym(obj, r) {

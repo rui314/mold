@@ -15,6 +15,7 @@ pub mod code_signature;
 pub mod data_in_code;
 pub mod eh_frame;
 pub mod export_trie;
+pub mod extern_relocs;
 pub mod function_starts;
 pub mod got;
 pub mod indirect_symtab;
@@ -146,6 +147,7 @@ pub enum ChunkId {
     ChainedFixups,
     ExportTrie,
     LocalRelocs,
+    ExternRelocs,
     FunctionStarts,
     DataInCode,
     SplitInfo,
@@ -159,7 +161,7 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 26] = [
+    const UNITS: [Self; 27] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
@@ -179,6 +181,7 @@ impl ChunkId {
         Self::ChainedFixups,
         Self::ExportTrie,
         Self::LocalRelocs,
+        Self::ExternRelocs,
         Self::FunctionStarts,
         Self::DataInCode,
         Self::SplitInfo,
@@ -277,8 +280,9 @@ pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64
 }
 
 /// Writes a chunk's bytes into its own slice of the output. The mach
-/// header, the symbol and string tables, the local relocations (which
-/// read the pointers they describe) and the code signature are written
+/// header, the symbol and string tables, the relocations (the local
+/// ones read the pointers they describe, the external ones the symbol
+/// indices) and the code signature are written
 /// serially after the parallel copy (see copy_chunks), so they have
 /// nothing to do here.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
@@ -287,6 +291,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         | ChunkId::Symtab
         | ChunkId::Strtab
         | ChunkId::LocalRelocs
+        | ChunkId::ExternRelocs
         | ChunkId::CodeSignature => {}
         ChunkId::Output(id) => output_section::copy_buf(ctx, id, buf),
         ChunkId::Stubs => stubs::copy_buf(ctx, buf),
@@ -338,7 +343,11 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     cmd.nsects = sects.len() as u32;
     cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
     cmd.maxprot = segment_prot(seg.name);
-    cmd.initprot = segment_prot(seg.name);
+    // With __TEXT_EXEC, __TEXT holds no code.
+    if seg.name == "__TEXT" && ctx.args.text_exec {
+        cmd.maxprot = VM_PROT_READ;
+    }
+    cmd.initprot = cmd.maxprot;
     // -segprot overrides the defaults.
     if let Some(&(_, max, init)) = ctx.args.segprots.iter().find(|(name, _, _)| name == seg.name) {
         cmd.maxprot = u32::from(max);
@@ -450,6 +459,10 @@ fn create_dysymtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if ctx.chunks.contains(&ChunkId::LocalRelocs) {
         cmd.locreloff = ctx.local_relocs.hdr.fileoff as u32;
         cmd.nlocrel = ctx.local_relocs.locs.len() as u32;
+    }
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+        cmd.extreloff = ctx.extern_relocs.hdr.fileoff as u32;
+        cmd.nextrel = ctx.extern_relocs.relocs.len() as u32;
     }
     to_vec(&cmd)
 }
@@ -653,10 +666,10 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
         // Present even with nothing exported (an 8-byte empty trie),
         // as ld-prime writes it.
-        if !ctx.args.static_link {
+        if !ctx.args.without_dyld() {
             vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
         }
-    } else if !ctx.args.static_link {
+    } else if !ctx.args.without_dyld() {
         vec.push(create_dyld_info_cmd(ctx));
     }
     vec.push(create_symtab_cmd(ctx));
@@ -671,7 +684,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.args.uuid {
         vec.push(create_uuid_cmd(ctx));
     }
-    if !ctx.args.static_link || ctx.args.version_load_command {
+    if !ctx.args.without_dyld() || ctx.args.version_load_command {
         vec.push(create_version_cmd::<E>(
             ctx.args.platform,
             ctx.args.platform_minos,
@@ -766,6 +779,8 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
 
     let mut excess = if ctx.args.static_link {
         32
+    } else if ctx.args.is_kext() {
+        0
     } else if !ctx.use_chained_fixups() {
         16
     } else if E::CPUTYPE == CPU_TYPE_ARM64 {

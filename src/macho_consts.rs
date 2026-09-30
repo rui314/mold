@@ -18,6 +18,7 @@ pub const MH_EXECUTE: u32 = 2;
 pub const MH_DYLIB: u32 = 6;
 pub const MH_DSYM: u32 = 10;
 pub const MH_BUNDLE: u32 = 8;
+pub const MH_KEXT_BUNDLE: u32 = 11;
 
 // Mach header flags
 pub const MH_NOUNDEFS: u32 = 0x1;

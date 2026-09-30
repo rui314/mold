@@ -1,0 +1,93 @@
+//! The external relocations of a kext (LC_DYSYMTAB's extreloff): each
+//! place kmutil fills with the address of a symbol the kext imports
+//! from the kernel or another kext, as dyld's binds would for a dylib.
+//! Its local relocations (local_relocs.rs) slide the rest.
+
+use crate::chunks::ChunkHeader;
+use crate::context::Context;
+use crate::input_sections::NO_REPLACEMENT;
+use crate::macho::*;
+use crate::symbol::SymbolId;
+use crate::target::{RelocClass, Target};
+
+#[derive(Debug)]
+pub struct ExternRelocsSection {
+    pub hdr: ChunkHeader,
+    /// The places, each with its symbol and whether it is an x86-64
+    /// call, which calls an import directly.
+    pub relocs: Vec<(u64, SymbolId, bool)>,
+}
+
+impl ExternRelocsSection {
+    pub fn new() -> Self {
+        Self { hdr: ChunkHeader::linkedit(), relocs: Vec::new() }
+    }
+}
+
+impl Default for ExternRelocsSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Collects the GOT slots and data pointers that hold an import's
+/// address, and the calls to one (on x86-64, which has no stubs for a
+/// kext).
+pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
+    let got = &ctx.got;
+    let mut vec: Vec<(u64, SymbolId, bool)> = (got.got_syms.iter().enumerate())
+        .filter(|&(_, &id)| ctx.symbols[id].is_imported())
+        .map(|(i, &id)| (got.slot_addr(i), id, false))
+        .collect();
+    for isec in ctx.isecs.iter() {
+        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
+            continue;
+        }
+        let Some(chunk) = isec.output_section() else {
+            continue;
+        };
+        let base = ctx.chunk_header(chunk).addr + isec.offset as u64;
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) else {
+                continue;
+            };
+            if !ctx.symbols[id].is_imported() || rel.is_subtracted {
+                continue;
+            }
+            let pointer = E::classify_reloc(rel.r_type) == RelocClass::Plain
+                && rel.size == 8
+                && !rel.is_pcrel
+                && rel.r_type != E::RELOC_SUBTRACTOR;
+            let call = E::classify_reloc(rel.r_type) == RelocClass::Branch
+                && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
+            if pointer || call {
+                vec.push((base + rel.offset as u64, id, call));
+            }
+        }
+    }
+    vec
+}
+
+/// Writes the records once the symbol table is numbered, in ld-prime's
+/// order: the pointers, then the calls, each by symbol and address. An
+/// address counts from the start of the image.
+pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let index = |id: SymbolId| ctx.symtab.output_sym_indices[id as usize];
+    let mut relocs: Vec<(bool, u32, u64)> =
+        ctx.extern_relocs.relocs.iter().map(|&(addr, id, call)| (call, index(id), addr)).collect();
+    relocs.sort_unstable();
+    let base = ctx.mach_header.hdr.addr;
+    let mut off = ctx.extern_relocs.hdr.fileoff as usize;
+    for (call, sym, addr) in relocs {
+        // A pointer: 8-byte UNSIGNED. A call: 4-byte pc-relative
+        // BRANCH (x86-64's).
+        let bits = if call {
+            sym | (1 << 24) | (2 << 25) | (1 << 27) | (u32::from(X86_64_RELOC_BRANCH) << 28)
+        } else {
+            sym | (3 << 25) | (1 << 27) | (u32::from(E::RELOC_UNSIGNED) << 28)
+        };
+        let rel = MachRel { r_address: (addr - base) as u32, bits };
+        rel.write_to(&mut buf[off..]);
+        off += size_of::<MachRel>();
+    }
+}

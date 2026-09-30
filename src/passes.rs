@@ -341,7 +341,7 @@ fn warn_unknown_ld_sections(staged: &[input_files::StagedObject]) {
 /// input order - the parallel front end of the mold design.
 fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let relocatable = ctx.args.relocatable;
-    let keep_all_fdes = relocatable || ctx.args.static_link;
+    let keep_all_fdes = relocatable || ctx.args.without_dyld();
     let t = ctx.timer("stage");
     let staged: Vec<input_files::StagedObject> = pending
         .par_iter()
@@ -2399,6 +2399,9 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                 add_stub(ctx, id);
                 add_got(ctx, id);
             }
+            // An x86-64 kext calls an import directly; kmutil fills in
+            // the call by an external relocation.
+            RelocClass::Branch if ctx.args.is_kext() && E::CPUTYPE == CPU_TYPE_X86_64 => {}
             RelocClass::Branch if sym.is_imported() => {
                 // A stub jumps through the symbol's lazy pointer, or,
                 // without lazy binding, its GOT slot.
@@ -2738,7 +2741,7 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA_CONST", "__objc_selrefs") => 23,
         ("__DATA_CONST", "__got") => 25,
         ("__DATA_CONST", _) => 20,
-        // Without __DATA_CONST (-no_data_const),
+        // Without __DATA_CONST (-no_data_const, an x86-64 kext),
         // ld-prime's __DATA starts with the lazy pointers and the
         // initializer and terminator lists, and the GOT follows the
         // input sections.
@@ -2836,15 +2839,22 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
 /// it and ld-prime emits no such section); and the __DATA sections
 /// that need no writes after fixups move to __DATA_CONST, and in the
 /// shared region, where dyld fixes them up for good, the selector
-/// references and the Objective-C runtime's class data too. A -r output
+/// references and the Objective-C runtime's class data too; with
+/// -text_exec (an arm64 kext), __text moves to __TEXT_EXEC. A -r output
 /// keeps every input section as it came.
 fn output_section_for(
     map: SectionMap,
     segname: &str,
     sectname: &str,
 ) -> Option<(&'static str, &'static str)> {
-    let SectionMap { relocatable, data_const, objc_const_refs, shared_region, relative_methods } =
-        map;
+    let SectionMap {
+        relocatable,
+        data_const,
+        objc_const_refs,
+        shared_region,
+        relative_methods,
+        text_exec,
+    } = map;
     let intern_seg = |seg: &str| -> &'static str {
         match seg {
             "__TEXT" => "__TEXT",
@@ -2863,6 +2873,7 @@ fn output_section_for(
     }
     match (segname, sectname) {
         ("__DATA", "__objc_clsrolist") => None,
+        ("__TEXT", "__text" | "__StaticInit") if text_exec => Some(("__TEXT_EXEC", "__text")),
         ("__TEXT", "__StaticInit") => Some(("__TEXT", "__text")),
         ("__TEXT", "__literal4" | "__literal8" | "__literal16") => Some(("__TEXT", "__const")),
         ("__DATA", sect) if data_const && DATA_CONST_SECTIONS.contains(&sect) => {
@@ -2893,6 +2904,7 @@ struct SectionMap {
     objc_const_refs: bool,
     shared_region: bool,
     relative_methods: bool,
+    text_exec: bool,
 }
 
 impl SectionMap {
@@ -2903,6 +2915,7 @@ impl SectionMap {
             objc_const_refs: objc_refs_are_const(ctx),
             shared_region: ctx.args.shared_region,
             relative_methods: objc_relative_method_lists(ctx),
+            text_exec: ctx.args.text_exec,
         }
     }
 
@@ -3551,8 +3564,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::ObjcImageInfo);
     }
 
-    // A -static image unwinds by its __eh_frame alone.
-    if !ctx.unwind_records.is_empty() && !ctx.args.static_link {
+    // A -static image or a kext unwinds by its __eh_frame alone.
+    if !ctx.unwind_records.is_empty() && !ctx.args.without_dyld() {
         ctx.chunks.push(ChunkId::UnwindInfo);
     }
 
@@ -3609,39 +3622,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::EhFrame);
     }
 
-    // What dyld reads. A -static image has no dyld: it has only the
-    // chains -fixup_chains asks for, or under -pie local relocations to
-    // slide by.
-    if !ctx.args.static_link {
-        ctx.chunks.push(ChunkId::ChainedFixups);
-        ctx.chunks.push(ChunkId::RebaseInfo);
-        ctx.chunks.push(ChunkId::BindInfo);
-        ctx.chunks.push(ChunkId::WeakBindInfo);
-        ctx.chunks.push(ChunkId::LazyBindInfo);
-        ctx.chunks.push(ChunkId::ExportTrie);
-    } else if ctx.use_chained_fixups() {
-        ctx.chunks.push(ChunkId::ChainedFixups);
-    } else if ctx.args.pie {
-        ctx.chunks.push(ChunkId::LocalRelocs);
-    }
-    if ctx.args.shared_region {
-        ctx.chunks.push(ChunkId::SplitInfo);
-    }
-    ctx.chunks.push(ChunkId::FunctionStarts);
-    if ctx.args.data_in_code_info {
-        ctx.chunks.push(ChunkId::DataInCode);
-    }
-    ctx.chunks.push(ChunkId::Symtab);
-    if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {
-        let lazy = ctx.stubs.lazy.len();
-        ctx.indirect_symtab.hdr.size =
-            (ctx.stubs.symbols.len() + ctx.got.got_syms.len() + lazy) as u64 * 4;
-        ctx.chunks.push(ChunkId::IndirectSymtab);
-    }
-    ctx.chunks.push(ChunkId::Strtab);
-    if ctx.adhoc_codesign() {
-        ctx.chunks.push(ChunkId::CodeSignature);
-    }
+    add_linkedit_chunks(ctx);
 
     // Sort the chunks into file order: the standard segment order, and
     // section ranks within a segment. Sections of one rank follow the
@@ -3680,11 +3661,13 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let segment_order = &ctx.args.segment_order;
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
-        // A -static image's __DATA_CONST (only with -data_const) comes
-        // after __DATA, as ld-prime places it.
+        // Code in __TEXT_EXEC follows __TEXT. The __DATA_CONST of an
+        // image no dyld loads (a -static one with -data_const or in the
+        // shared region, a kext) comes after __DATA, as ld-prime
+        // places it.
         let standard = match hdr.segname {
-            "__TEXT" => 0,
-            "__DATA_CONST" if !ctx.args.static_link => 1,
+            "__TEXT" | "__TEXT_EXEC" => 0,
+            "__DATA_CONST" if !ctx.args.without_dyld() => 1,
             "__DATA" => 2,
             "__DATA_CONST" => 3,
             _ => 4,
@@ -3748,6 +3731,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 /// use to the output.
 fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
+        if ctx.args.text_exec {
+            ctx.stubs.hdr.segname = "__TEXT_EXEC";
+        }
         ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
         ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
         // ld-prime's x86-64 stubs are byte-aligned when all of them go
@@ -3783,9 +3769,14 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     got.hdr.size = got.weak_start as u64 * 8;
     got.weak_hdr.size = weak as u64 * 8;
     let seg = data_seg(ctx);
+    // A kext's are plain data to ld-prime (indexed into the indirect
+    // symbol table all the same).
+    let flags = if ctx.args.is_kext() { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
     for (id, len) in [(ChunkId::Got, ctx.got.weak_start), (ChunkId::WeakGot, weak)] {
         if len > 0 {
-            ctx.chunk_header_mut(id).segname = seg;
+            let hdr = ctx.chunk_header_mut(id);
+            hdr.segname = seg;
+            hdr.flags = flags;
             ctx.chunks.push(id);
         }
     }
@@ -3794,6 +3785,61 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         let (chunk, off) = ctx.got.slot_place(ctx.sym_aux(class).got_idx as usize);
         ctx.isecs[slot as usize].offset = off as u32;
         ctx.isecs[slot as usize].set_output_section(chunk);
+    }
+}
+
+/// Adds the __LINKEDIT tables, in ld-prime's order.
+fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
+    // What dyld reads. A -static image or a kext has no dyld: a -static
+    // one has only the chains -fixup_chains asks for, or under -pie
+    // local relocations to slide by; a kext has its relocations, by
+    // which kmutil links it.
+    if !ctx.args.without_dyld() {
+        ctx.chunks.push(ChunkId::ChainedFixups);
+        ctx.chunks.push(ChunkId::RebaseInfo);
+        ctx.chunks.push(ChunkId::BindInfo);
+        ctx.chunks.push(ChunkId::WeakBindInfo);
+        ctx.chunks.push(ChunkId::LazyBindInfo);
+        ctx.chunks.push(ChunkId::ExportTrie);
+    } else if ctx.use_chained_fixups() {
+        ctx.chunks.push(ChunkId::ChainedFixups);
+    } else if ctx.args.pie || ctx.args.is_kext() {
+        ctx.chunks.push(ChunkId::LocalRelocs);
+    }
+    if ctx.args.shared_region {
+        ctx.chunks.push(ChunkId::SplitInfo);
+    }
+    ctx.chunks.push(ChunkId::FunctionStarts);
+    if ctx.args.data_in_code_info {
+        ctx.chunks.push(ChunkId::DataInCode);
+    }
+    ctx.chunks.push(ChunkId::Symtab);
+    if ctx.args.is_kext() {
+        ctx.chunks.push(ChunkId::ExternRelocs);
+    }
+    if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {
+        let lazy = ctx.stubs.lazy.len();
+        ctx.indirect_symtab.hdr.size =
+            (ctx.stubs.symbols.len() + ctx.got.got_syms.len() + lazy) as u64 * 4;
+        ctx.chunks.push(ChunkId::IndirectSymtab);
+    }
+    ctx.chunks.push(ChunkId::Strtab);
+    if ctx.adhoc_codesign() {
+        ctx.chunks.push(ChunkId::CodeSignature);
+    }
+}
+
+/// Collects the relocations of an image no dyld loads (LC_DYSYMTAB's):
+/// a -static -pie image's local ones, and a kext's local and external
+/// ones.
+fn collect_relocations<E: Target>(ctx: &mut Context<E>) {
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+        ctx.local_relocs.locs = chunks::local_relocs::build(ctx);
+        ctx.local_relocs.hdr.size = (ctx.local_relocs.locs.len() * size_of::<MachRel>()) as u64;
+    }
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+        ctx.extern_relocs.relocs = chunks::extern_relocs::build(ctx);
+        ctx.extern_relocs.hdr.size = (ctx.extern_relocs.relocs.len() * size_of::<MachRel>()) as u64;
     }
 }
 
@@ -4879,11 +4925,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             ctx.function_starts.contents = starts;
             ctx.export_trie.hdr.size = trie.len() as u64;
             ctx.export_trie.contents = trie;
-            if ctx.chunks.contains(&ChunkId::LocalRelocs) {
-                ctx.local_relocs.locs = chunks::local_relocs::build(ctx);
-                ctx.local_relocs.hdr.size =
-                    (ctx.local_relocs.locs.len() * size_of::<MachRel>()) as u64;
-            }
+            collect_relocations(ctx);
         }
 
         if ctx.segments[seg_idx].name == "__PAGEZERO" {
@@ -4960,7 +5002,8 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
                 | ChunkId::FunctionStarts
                 | ChunkId::DataInCode
                 | ChunkId::SplitInfo
-                | ChunkId::LocalRelocs => 3,
+                | ChunkId::LocalRelocs
+                | ChunkId::ExternRelocs => 3,
                 ChunkId::IndirectSymtab => 2,
                 ChunkId::CodeSignature => 4,
                 _ => ctx.chunk_header(id).p2align,
@@ -5256,6 +5299,9 @@ pub fn copy_chunks<E: Target>(
     }
     if ctx.chunks.contains(&ChunkId::LocalRelocs) {
         chunks::local_relocs::write(ctx, buf);
+    }
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+        chunks::extern_relocs::write(ctx, buf);
     }
     let t = ctx.timer("apply_optimization_hints");
     E::apply_optimization_hints(ctx, buf);

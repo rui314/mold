@@ -1,8 +1,8 @@
-//! The local relocations of a -static -pie image (LC_DYSYMTAB's
-//! locreloff): one per pointer a loader must slide, the job dyld's
-//! rebase info does for a dynamic image. A kernel slides itself by
-//! them. mold's reldyn.rs holds the ELF relative relocations they
-//! stand in for.
+//! The local relocations of a -static -pie image or a kext
+//! (LC_DYSYMTAB's locreloff): one per pointer a loader must slide, the
+//! job dyld's rebase info does for a dynamic image. A kernel slides
+//! itself by them, kmutil a kext. mold's reldyn.rs holds the ELF
+//! relative relocations they stand in for.
 
 use crate::chunks::{ChunkHeader, segment_and_offset, segment_prot};
 use crate::context::Context;
@@ -84,7 +84,7 @@ fn atom_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
 /// non-extern 8-byte UNSIGNED relocation whose r_symbolnum is the
 /// ordinal of the section the pointer points into, and whose address
 /// counts from the first segment - on x86-64 from the first writable
-/// one, as ld64 bases x86-64 relocations.
+/// one, as ld64 bases x86-64 relocations, but for a kext's.
 pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut sects: Vec<(u64, u8)> = ctx
         .chunks
@@ -98,7 +98,11 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         .segments
         .iter()
         .filter(|seg| seg.name != "__PAGEZERO")
-        .find(|seg| E::CPUTYPE != CPU_TYPE_X86_64 || segment_prot(seg.name) & VM_PROT_WRITE != 0)
+        .find(|seg| {
+            E::CPUTYPE != CPU_TYPE_X86_64
+                || ctx.args.is_kext()
+                || segment_prot(seg.name) & VM_PROT_WRITE != 0
+        })
         .map_or(0, |seg| seg.cmd.vmaddr);
 
     let mut off = ctx.local_relocs.hdr.fileoff as usize;
