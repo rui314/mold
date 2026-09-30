@@ -2463,84 +2463,49 @@ fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
 /// A reference that cannot become a GOT load (the slot's address
 /// taken, or a pointer to it) keeps the slot: it is replaced by a
 /// synthetic subsection standing for the class's GOT entry.
+///
+/// On arm64 ld-prime relaxes a class's loads only if each adrp of its
+/// slot is followed, within the function, by one @PAGEOFF use before
+/// the next adrp of it (-O0 code can load twice through one adrp). If
+/// any reference of the class's, in any object, pairs up otherwise,
+/// no reference is rewritten: the slot moves to the GOT and every
+/// load reads it there.
 pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !objc_refs_are_const(ctx) {
         return;
     }
+    let slots: Vec<_> = (0..ctx.objs.len()).map(|i| classref_slots(ctx, i)).collect();
+    let uses: Vec<_> = (0..ctx.objs.len()).map(|i| classref_uses(ctx, i, &slots[i])).collect();
+    let mut unpaired = hashbrown::HashSet::new();
+    let pairs: Vec<_> =
+        (0..ctx.objs.len()).map(|i| pair_classref_uses(ctx, i, &uses[i], &mut unpaired)).collect();
     let mut got_hdr: Option<(u32, u32)> = None;
     for obj_idx in 0..ctx.objs.len() {
-        if !ctx.objs[obj_idx].is_alive {
-            continue;
-        }
-        // The object's class-reference slots: slot subsection -> the
-        // class symbol (its index in the object, and globally).
-        let mut slots: hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)> =
-            hashbrown::HashMap::new();
-        for &i in &ctx.objs[obj_idx].subsecs {
-            let isec = &ctx.isecs[i];
-            if !isec.is_alive()
-                || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                || isec.size != 8
-            {
-                continue;
-            }
-            let h = ctx.hdr_of(isec);
-            if h.segname() != "__DATA" || h.sectname() != "__objc_classrefs" {
-                continue;
-            }
-            let rels = ctx.isec_relocs(i as usize);
-            if rels.len() != 1 {
-                continue;
-            }
-            let rel = rels[0];
-            let RelocTarget::Sym(idx) = rel.target() else { continue };
-            if E::classify_reloc(rel.r_type) != RelocClass::Plain
-                || rel.size != 8
-                || rel.is_pcrel
-                || rel.is_subtracted
-                || rel.addend != 0
-            {
-                continue;
-            }
-            slots.insert(i, (idx, ctx.objs[obj_idx].symbols[idx as usize]));
-        }
+        let slots = &slots[obj_idx];
         if slots.is_empty() {
             continue;
         }
 
         // Retarget the loads; note the slots something else refers to.
+        // A pair's halves go together, as its offset half decides.
         let mut keep: hashbrown::HashSet<u32> = hashbrown::HashSet::new();
-        let subsecs = ctx.objs[obj_idx].subsecs.clone();
-        for &i in &subsecs {
-            let isec = &ctx.isecs[i];
-            if !isec.is_alive() || slots.contains_key(&i) {
-                continue;
-            }
-            let (data, rel_offset, nrels) =
-                (isec.data(), isec.rel_offset as usize, isec.nrels as usize);
-            for k in rel_offset..rel_offset + nrels {
-                let rel = ctx.objs[obj_idx].relocs[k];
-                let slot = match rel.target() {
-                    RelocTarget::Section(t) if rel.addend == 0 => t,
-                    RelocTarget::Sym(idx) => {
-                        let sym = &ctx.symbols[ctx.objs[obj_idx].symbols[idx as usize]];
-                        match sym.input_section() {
-                            Some(t) if sym.value == 0 && rel.addend == 0 => t,
-                            _ => continue,
-                        }
-                    }
-                    _ => continue,
-                };
-                let Some(&(class_idx, _)) = slots.get(&slot) else { continue };
-                match E::got_load_form(rel.r_type) {
-                    Some(form) if E::can_relax_got_load(data, rel.offset, form) => {
-                        let r = &mut ctx.objs[obj_idx].relocs[k];
-                        r.r_type = form;
-                        r.set_target(RelocTarget::Sym(class_idx));
-                    }
-                    _ => {
-                        keep.insert(slot);
-                    }
+        let partner: hashbrown::HashMap<usize, usize> =
+            pairs[obj_idx].iter().flat_map(|&(page, off)| [(page, off), (off, off)]).collect();
+        for u in &uses[obj_idx] {
+            let rel = ctx.objs[obj_idx].relocs[u.k];
+            let decider = ctx.objs[obj_idx].relocs[partner.get(&u.k).copied().unwrap_or(u.k)];
+            let data = ctx.isecs[u.isec as usize].data();
+            match (E::got_load_form(rel.r_type), E::got_load_form(decider.r_type)) {
+                (Some(form), Some(dform))
+                    if !unpaired.contains(&u.class)
+                        && E::can_relax_got_load(data, decider.offset, dform) =>
+                {
+                    let r = &mut ctx.objs[obj_idx].relocs[u.k];
+                    r.r_type = form;
+                    r.set_target(RelocTarget::Sym(slots[&u.slot].0));
+                }
+                _ => {
+                    keep.insert(u.slot);
                 }
             }
         }
@@ -2595,6 +2560,128 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             ctx.got.objc_classref_slots.push(synth);
         }
     }
+}
+
+/// An object's class-reference slots: slot subsection -> the class
+/// symbol (its index in the object, and globally).
+fn classref_slots<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+) -> hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)> {
+    let mut slots = hashbrown::HashMap::new();
+    if !ctx.objs[obj_idx].is_alive {
+        return slots;
+    }
+    for &i in &ctx.objs[obj_idx].subsecs {
+        let isec = &ctx.isecs[i];
+        if !isec.is_alive()
+            || isec.replacement != crate::input_sections::NO_REPLACEMENT
+            || isec.size != 8
+        {
+            continue;
+        }
+        let h = ctx.hdr_of(isec);
+        if h.segname() != "__DATA" || h.sectname() != "__objc_classrefs" {
+            continue;
+        }
+        let rels = ctx.isec_relocs(i as usize);
+        if rels.len() != 1 {
+            continue;
+        }
+        let rel = rels[0];
+        let RelocTarget::Sym(idx) = rel.target() else { continue };
+        if E::classify_reloc(rel.r_type) != RelocClass::Plain
+            || rel.size != 8
+            || rel.is_pcrel
+            || rel.is_subtracted
+            || rel.addend != 0
+        {
+            continue;
+        }
+        slots.insert(i, (idx, ctx.objs[obj_idx].symbols[idx as usize]));
+    }
+    slots
+}
+
+/// A reference to a class-reference slot: relocation `k` of the
+/// object, in subsection `isec`.
+struct ClassrefUse {
+    isec: u32,
+    k: usize,
+    slot: u32,
+    class: crate::symbol::SymbolId,
+}
+
+/// The references an object's code and data make to its class-reference
+/// slots, in subsection and then address order.
+fn classref_uses<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+    slots: &hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)>,
+) -> Vec<ClassrefUse> {
+    let mut uses = Vec::new();
+    if slots.is_empty() {
+        return uses;
+    }
+    let obj = &ctx.objs[obj_idx];
+    for &i in &obj.subsecs {
+        let isec = &ctx.isecs[i];
+        if !isec.is_alive() || slots.contains_key(&i) {
+            continue;
+        }
+        for k in isec.rel_offset as usize..(isec.rel_offset + isec.nrels) as usize {
+            let rel = obj.relocs[k];
+            let slot = match rel.target() {
+                RelocTarget::Section(t) if rel.addend == 0 => t,
+                RelocTarget::Sym(idx) => {
+                    let sym = &ctx.symbols[obj.symbols[idx as usize]];
+                    match sym.input_section() {
+                        Some(t) if sym.value == 0 && rel.addend == 0 => t,
+                        _ => continue,
+                    }
+                }
+                _ => continue,
+            };
+            if let Some(&(_, class)) = slots.get(&slot) {
+                uses.push(ClassrefUse { isec: i, k, slot, class });
+            }
+        }
+    }
+    uses
+}
+
+/// Pairs an object's page-and-offset references to class slots (arm64's
+/// adrp then ldr or add), each page half with the next offset half of
+/// the same class in its subsection, and returns the pairs' relocation
+/// indices. A class with a half left over joins `unpaired`.
+fn pair_classref_uses<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+    uses: &[ClassrefUse],
+    unpaired: &mut hashbrown::HashSet<crate::symbol::SymbolId>,
+) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+    let mut open: hashbrown::HashMap<crate::symbol::SymbolId, usize> = hashbrown::HashMap::new();
+    for (n, u) in uses.iter().enumerate() {
+        match E::page_pair_half(ctx.objs[obj_idx].relocs[u.k].r_type) {
+            Some(true) => {
+                if open.insert(u.class, u.k).is_some() {
+                    unpaired.insert(u.class);
+                }
+            }
+            Some(false) => match open.remove(&u.class) {
+                Some(page) => pairs.push((page, u.k)),
+                None => {
+                    unpaired.insert(u.class);
+                }
+            },
+            None => {}
+        }
+        if uses.get(n + 1).is_none_or(|next| next.isec != u.isec) {
+            unpaired.extend(open.drain().map(|(class, _)| class));
+        }
+    }
+    pairs
 }
 
 /// A reference held by a rewritten method-list entry, resolved to an

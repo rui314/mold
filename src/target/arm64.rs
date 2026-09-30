@@ -29,6 +29,11 @@ fn read32(loc: &[u8]) -> u32 {
     u32::from_le_bytes(loc[..4].try_into().unwrap())
 }
 
+/// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
+fn is_ldr_imm(insn: u32) -> bool {
+    insn & 0xbfc0_0000 == 0xb940_0000
+}
+
 fn write32(loc: &mut [u8], val: u32) {
     loc[..4].copy_from_slice(&val.to_le_bytes());
 }
@@ -97,10 +102,10 @@ impl Target for Arm64 {
     }
 
     // Both halves of an adrp+ldr GOT load relax together: the adrp
-    // keeps its shape and the ldr becomes an add, so the pair-wide
-    // answer is always yes (the ldr's shape is verified when the
-    // rewrite happens - compilers emit nothing else for these
-    // relocations).
+    // keeps its shape and the ldr becomes an add. So the page half is
+    // always relaxable, and the offset half is if it is an ldr (of 64
+    // or 32 bits; ld-prime relaxes both); an add under it takes the
+    // slot's address and keeps the slot.
     fn got_load_form(r_type: u8) -> Option<u8> {
         match r_type {
             ARM64_RELOC_PAGE21 => Some(ARM64_RELOC_GOT_LOAD_PAGE21),
@@ -109,8 +114,16 @@ impl Target for Arm64 {
         }
     }
 
-    fn can_relax_got_load(_data: &[u8], _offset: u32, _r_type: u8) -> bool {
-        true
+    fn can_relax_got_load(data: &[u8], offset: u32, r_type: u8) -> bool {
+        r_type != ARM64_RELOC_GOT_LOAD_PAGEOFF12 || is_ldr_imm(read32(&data[offset as usize..]))
+    }
+
+    fn page_pair_half(r_type: u8) -> Option<bool> {
+        match r_type {
+            ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 => Some(true),
+            ARM64_RELOC_PAGEOFF12 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => Some(false),
+            _ => None,
+        }
     }
 
     // LC_LINKER_OPTIMIZATION_HINT: compilers can't know how far a
@@ -575,7 +588,7 @@ impl Target for Arm64 {
                         write_add_ldst(loc, g.wrapping_add_signed(a));
                     } else {
                         let insn = read32(loc);
-                        if insn & 0xffc0_0000 != 0xf940_0000 {
+                        if !is_ldr_imm(insn) {
                             fatal!("unexpected instruction under GOT_LOAD_PAGEOFF12");
                         }
                         let target = s.wrapping_add_signed(a);

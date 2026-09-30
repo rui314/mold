@@ -88,6 +88,14 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// relocation types.
     fn got_load_form(r_type: u8) -> Option<u8>;
 
+    /// Which half of a two-instruction address or load a relocation
+    /// is: Some(true) for the page (arm64's adrp), Some(false) for the
+    /// offset into it (the ldr or add that follows); None for one that
+    /// stands alone (x86-64's RIP-relative references).
+    fn page_pair_half(_r_type: u8) -> Option<bool> {
+        None
+    }
+
     /// Writes the __stubs section: for each symbol in `ctx.stubs.symbols`, a
     /// jump through the symbol's __got slot. `addr` is the section's
     /// address and `buf` its bytes in the output.
