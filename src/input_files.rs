@@ -2911,7 +2911,8 @@ pub fn trace_name(name: &[u8]) -> String {
 
 /// Loads the libraries a dylib re-exports: a public one as a dylib of
 /// its own, a private one merged into the dylib's exports. Returns the
-/// install names of the merged ones, and with -map the files they are.
+/// install names of the merged ones, and with -map or -why_live the
+/// files they are.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -2924,9 +2925,9 @@ fn load_reexports<E: Target>(
     let mut queue = reexports;
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
-    // Only -map reads the files, and gathering them costs.
+    // Only -map and -why_live read the files, and gathering them costs.
     let mut merged_files = Vec::new();
-    let map = ctx.args.map.is_some();
+    let map = ctx.args.map.is_some() || !ctx.args.why_live.is_empty();
     let mut record = |install_name: &[u8], path: &Path, exports: Vec<&'static str>| {
         let (install_name, path) = (install_name.to_vec(), path.to_path_buf());
         merged_files.push(MergedFile { install_name, path, exports });

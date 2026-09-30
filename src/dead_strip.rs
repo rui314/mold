@@ -8,13 +8,15 @@
 //! liveness walk's section-level counterpart, and mirrors
 //! gc_sections.rs in mold (dead-strip.cc in sold).
 
+use std::collections::{HashMap, HashSet};
+
 use rayon::prelude::*;
 
 use crate::context::Context;
 use crate::input_files::{FileId, is_literal_section};
-use crate::input_sections::{InputSection, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::symbol::Symbol;
+use crate::symbol::{Symbol, SymbolId};
 use crate::target::Target;
 
 /// Removes subsections that are not reachable from the roots: the entry
@@ -29,41 +31,64 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
         (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
     let redirects = &redirects;
 
-    // For -why_live: what first marked each subsection, giving a
-    // spanning tree of the liveness walk. The set of live sections is
-    // order-independent, but the spanning tree is not, so -why_live
-    // keeps the serial walk to report stable chains.
-    let mut pred = Vec::new();
-    if !ctx.args.why_live.is_empty() {
-        pred = vec![Pred::None; ctx.isecs.len()];
-    }
-
-    let roots = collect_root_set(ctx, redirects, &mut pred);
-    if pred.is_empty() {
+    // The set of live sections is order-independent, which lets the
+    // walk run on all cores; -why_live's chains are not, and it walks
+    // serially as ld-prime does.
+    if ctx.args.why_live.is_empty() {
+        let roots = collect_root_set(ctx, redirects);
         mark(ctx, redirects, &roots);
     } else {
-        walk(ctx, redirects, &mut pred, roots);
+        WhyLive::new(ctx, redirects).walk();
     }
 
-    mark_live_support(ctx, redirects, &mut pred);
+    mark_live_support(ctx, redirects);
     sweep(ctx);
-    print_why_live(ctx, &pred);
 }
 
-/// For -why_live, what first marked a subsection live: the subsection
-/// referencing it, or, for a root, why it is one in ld-prime's words.
+/// Why an atom is a dead-strip root, in ld-prime's words for -why_live.
 #[derive(Clone, Copy)]
-enum Pred {
-    /// Not marked by a reference, and no reason to print: an
-    /// initializer or a live-support atom.
-    None,
+enum Root {
     /// The entry point or a -u symbol.
     InitialUndef,
     /// An exported symbol.
     GlobalDontStrip,
     /// A section or symbol the format keeps (see should_keep).
     DontDeadStrip,
-    Section(u32),
+}
+
+impl Root {
+    fn name(self) -> &'static str {
+        match self {
+            Root::InitialUndef => "initial-undef",
+            Root::GlobalDontStrip => "global-dont-strip",
+            Root::DontDeadStrip => "dont-dead-strip",
+        }
+    }
+}
+
+/// Whether a symbol makes its subsection a root, and why: a
+/// no-dead-strip symbol, or an export dead stripping keeps.
+fn symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<Root> {
+    let is_exported = || {
+        sym.is_extern()
+            && !sym.is_private_extern()
+            && sym.is_defined()
+            && keeps_export(ctx, sym.name())
+    };
+    if sym.no_dead_strip() {
+        Some(Root::DontDeadStrip)
+    } else if is_exported() {
+        Some(Root::GlobalDontStrip)
+    } else {
+        None
+    }
+}
+
+/// The symbols that are roots by name: the -u ones and the entry point,
+/// in ld-prime's order.
+fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
+    let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
+    entry.into_iter().chain(&ctx.args.forced_undefined).filter_map(|name| ctx.symbols.get(name))
 }
 
 /// Sections the format keeps regardless of references: initializers,
@@ -86,26 +111,17 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
             && hdr.section_type() != S_THREAD_LOCAL_VARIABLES)
 }
 
-/// Marks the roots and returns them in a fixed order, so that
-/// -why_live's serial walk is reproducible. They are found on all
-/// cores; marking stays serial (it is a handful of sections). Records
-/// why each is a root in `pred` unless it is empty.
-fn collect_root_set<E: Target>(
-    ctx: &Context<E>,
-    redirects: &[usize],
-    pred: &mut [Pred],
-) -> Vec<usize> {
+/// Marks the roots and returns them. They are found on all cores;
+/// marking stays serial (it is a handful of sections).
+fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usize> {
     let mut roots = Vec::new();
     // Liveness is marked in place, on the section's atomic visited bit
     // (mold's IS_VISITED), rather than in side arrays copied back at
     // the end.
-    let mut enqueue = |id: usize, why: Pred| {
+    let mut enqueue = |id: usize| {
         let id = redirects[id];
         if ctx.isecs[id].mark_visited() {
             roots.push(id);
-            if !pred.is_empty() {
-                pred[id] = why;
-            }
         }
     };
 
@@ -119,56 +135,33 @@ fn collect_root_set<E: Target>(
         .map(|(id, _)| id)
         .collect();
     for id in sections {
-        enqueue(id, Pred::DontDeadStrip);
+        enqueue(id);
     }
 
     // Initializers converted to __init_offsets are roots; their source
     // sections are gone.
     for &(isec, _) in &ctx.init_offsets.init_funcs {
-        enqueue(isec, Pred::None);
+        enqueue(isec);
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
-    let is_exported = |sym: &Symbol| {
-        sym.is_extern()
-            && !sym.is_private_extern()
-            && sym.is_defined()
-            && keeps_export(ctx, sym.name())
-    };
-    let syms: Vec<(usize, Pred)> = ctx
+    let syms: Vec<usize> = ctx
         .symbols
         .syms
         .par_iter()
-        .filter_map(|sym| {
-            let why = if sym.no_dead_strip() {
-                Pred::DontDeadStrip
-            } else if is_exported(sym) {
-                Pred::GlobalDontStrip
-            } else {
-                return None;
-            };
-            Some((sym.input_section()? as usize, why))
-        })
+        .filter(|sym| symbol_root(ctx, sym).is_some())
+        .filter_map(|sym| Some(sym.input_section()? as usize))
         .collect();
-    for (id, why) in syms {
-        enqueue(id, why);
+    for id in syms {
+        enqueue(id);
     }
 
     // -u retains the atom as well as extracting its containing archive
     // member. It may name a private external, unlike an export root.
-    for name in &ctx.args.forced_undefined {
-        if let Some(id) = ctx.symbols.get(name)
-            && let Some(isec) = ctx.symbols[id].input_section()
-        {
-            enqueue(isec as usize, Pred::InitialUndef);
+    for id in initial_undefines(ctx) {
+        if let Some(isec) = ctx.symbols[id].input_section() {
+            enqueue(isec as usize);
         }
-    }
-
-    if ctx.args.has_entry_point()
-        && let Some(id) = ctx.symbols.get(&ctx.args.entry)
-        && let Some(isec) = ctx.symbols[id].input_section()
-    {
-        enqueue(isec as usize, Pred::InitialUndef);
     }
     roots
 }
@@ -202,23 +195,34 @@ fn for_each_edge<E: Target>(ctx: &Context<E>, id: usize, mut f: impl FnMut(usize
             RelocTarget::Section(target) => f(target as usize),
         }
     }
+    for_each_unwind_edge(ctx, id, |target, _| f(target));
+}
 
+/// Calls `f` with the LSDAs and the personality routine (and the symbol
+/// naming it) of subsection `id`'s compact-unwind records.
+#[inline]
+fn for_each_unwind_edge<E: Target>(
+    ctx: &Context<E>,
+    id: usize,
+    mut f: impl FnMut(usize, Option<SymbolId>),
+) {
+    let isec = &ctx.isecs[id];
     let recs = isec.unwind_offset as usize..(isec.unwind_offset + isec.nunwind) as usize;
     for rec in &ctx.unwind_records[recs] {
         if let Some((lsda, _)) = rec.lsda() {
-            f(lsda);
+            f(lsda, None);
         }
         let mut personality = rec.personality();
         if let Some(fde) = rec.fde() {
             if let Some((lsda, _)) = ctx.fdes[fde].lsda {
-                f(lsda as usize);
+                f(lsda as usize, None);
             }
             personality = personality.or(ctx.cies[ctx.fdes[fde].cie as usize].personality);
         }
         if let Some(p) = personality
             && let Some(target) = ctx.symbols[p].input_section()
         {
-            f(target as usize);
+            f(target as usize, Some(p));
         }
     }
 }
@@ -287,22 +291,13 @@ fn mark<E: Target>(ctx: &Context<E>, redirects: &[usize], roots: &[usize]) {
     });
 }
 
-/// The serial walk from the marked sections on `stack`, for -why_live's
-/// stable chains and for what a live-support atom keeps. Records who
-/// first marked each section in `pred` unless it is empty.
-fn walk<E: Target>(
-    ctx: &Context<E>,
-    redirects: &[usize],
-    pred: &mut [Pred],
-    mut stack: Vec<usize>,
-) {
+/// The serial walk from the marked sections on `stack`, for what a
+/// live-support atom keeps.
+fn walk<E: Target>(ctx: &Context<E>, redirects: &[usize], mut stack: Vec<usize>) {
     while let Some(id) = stack.pop() {
         for_each_edge(ctx, id, |target| {
             let target = redirects[target];
             if ctx.isecs[target].mark_visited() {
-                if !pred.is_empty() {
-                    pred[target] = Pred::Section(id as u32);
-                }
                 stack.push(target);
             }
         });
@@ -314,7 +309,7 @@ fn walk<E: Target>(
 /// checks them once, in input order, after what the roots reach is
 /// marked, so one that only a later live-support atom would make live
 /// stays dead.
-fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize], pred: &mut [Pred]) {
+fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize]) {
     let live_support: Vec<usize> = ctx
         .isecs
         .par_iter()
@@ -330,7 +325,7 @@ fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize], pred: &mu
         });
         let id = redirects[id];
         if references_live && ctx.isecs[id].mark_visited() {
-            walk(ctx, redirects, pred, vec![id]);
+            walk(ctx, redirects, vec![id]);
         }
     }
 }
@@ -416,84 +411,324 @@ pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
-/// -why_live prints, for each symbol matching a -why_live pattern
-/// ("*" wildcards), the chain of references that kept it alive: the
-/// liveness walk's spanning tree read backwards, one "symbol from
-/// file" line per hop, ending at a dead-strip root. A symbol that is
-/// itself in a root gets a line saying why instead, but a chain ends at
-/// its root without one, as ld-prime's does. Only meaningful under
-/// -dead_strip, like ld64's option of the same name.
-fn print_why_live<E: Target>(ctx: &Context<E>, pred: &[Pred]) {
-    if ctx.args.why_live.is_empty() {
-        return;
-    }
+/// An atom of ld-prime's, for -why_live: a subsection, a symbol in a
+/// section of an object without MH_SUBSECTIONS_VIA_SYMBOLS that does
+/// not name the section, a dylib's symbol, or one of the linker's own
+/// (those of a "boundary-file"). Such a section is one atom, named by
+/// the symbol at its start, and each other symbol in it an atom of its
+/// own that references that one.
+#[derive(Clone, Copy)]
+enum Atom {
+    Isec(usize),
+    Label(SymbolId),
+    Import(SymbolId),
+    Boundary(&'static str),
+}
 
-    // A displayable symbol for each live subsection: prefer an extern
-    // symbol defined at it, else any named local.
-    let mut name_of: std::collections::HashMap<usize, &str> = std::collections::HashMap::new();
-    for sym in &ctx.symbols.syms {
-        if !matches!(sym.file(), Some(FileId::Obj(_))) || sym.name().is_empty() {
-            continue;
-        }
-        let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-        let isec = ctx.resolve_isec(isec);
-        match name_of.entry(isec) {
-            std::collections::hash_map::Entry::Vacant(e) => {
-                e.insert(sym.name());
+/// The names of the mach header, which ld-prime's boundary-file defines
+/// as atoms that reference the start of __TEXT (itself an atom there).
+const HEADER_NAMES: [&str; 5] = [
+    "__mh_execute_header",
+    "__mh_dylib_header",
+    "__mh_bundle_header",
+    "__mh_dylinker_header",
+    "___dso_handle",
+];
+const TEXT_START: &str = "segment$start$__TEXT";
+
+/// A step of the walk: an atom, what it references, how many of those
+/// have been followed, and whether reports are off (see walk_from).
+struct Frame {
+    atom: Atom,
+    edges: Vec<(Atom, bool)>,
+    next: usize,
+    quiet: bool,
+}
+
+/// -why_live prints, for each atom whose name matches a -why_live
+/// pattern ("*" wildcards), every chain of references that keeps it
+/// alive, on stderr, as ld-prime does. Its walk goes from each root in
+/// turn - the entry point and the -u symbols, then every root atom in
+/// input order - and when a reference reaches a matching atom, prints
+/// "name from file" and the referencing atoms back to the root, one to
+/// a line and indented a step further each; for a root itself, why it
+/// is one. An atom already reached is not walked again. An initializer
+/// pointer's atom is a "mod-init-ptr", and an arm64 assembler label
+/// (ltmpN) that is an atom of its own goes by "none" in a chain. Only
+/// meaningful under -dead_strip, like ld64's option of the same name.
+struct WhyLive<'a, E: Target> {
+    ctx: &'a Context<E>,
+    redirects: &'a [usize],
+    /// The symbol naming each subsection's atom, if one does.
+    names: Vec<Option<SymbolId>>,
+    /// Why each subsection is a root for a symbol it defines.
+    roots: Vec<Option<Root>>,
+    /// The other symbols of each section of an object without
+    /// subsections, in address order.
+    labels: HashMap<usize, Vec<SymbolId>>,
+    /// The label and import atoms reached so far.
+    live_syms: HashSet<SymbolId>,
+    live_boundaries: HashSet<&'static str>,
+    /// The file each import a dylib merged from a library it re-exports
+    /// comes from (libSystem's from its libsystem_* stubs).
+    providers: HashMap<SymbolId, &'a std::path::Path>,
+}
+
+impl<'a, E: Target> WhyLive<'a, E> {
+    fn new(ctx: &'a Context<E>, redirects: &'a [usize]) -> Self {
+        let mut names: Vec<Option<SymbolId>> = vec![None; ctx.isecs.len()];
+        let mut roots: Vec<Option<Root>> = vec![None; ctx.isecs.len()];
+        let mut labels: HashMap<usize, Vec<SymbolId>> = HashMap::new();
+        // A name at the start: an extern one first, an assembler label
+        // last.
+        let rank = |sym: &Symbol| (sym.name().starts_with("ltmp"), !sym.is_extern());
+        for (id, sym) in ctx.symbols.syms.iter().enumerate() {
+            let id = id as SymbolId;
+            let Some(isec) = sym.input_section().map(|i| redirects[i as usize]) else {
+                continue;
+            };
+            if roots[isec].is_none() {
+                roots[isec] = symbol_root(ctx, sym);
             }
-            std::collections::hash_map::Entry::Occupied(mut e) => {
-                if sym.is_extern() && sym.value == 0 {
-                    e.insert(sym.name());
+            if !matches!(sym.file(), Some(FileId::Obj(_))) || sym.name().is_empty() {
+                continue;
+            }
+            if !ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
+                labels.entry(isec).or_default().push(id);
+            }
+            if sym.value == 0 && names[isec].is_none_or(|name| rank(sym) < rank(&ctx.symbols[name]))
+            {
+                names[isec] = Some(id);
+            }
+        }
+        for (&isec, syms) in &mut labels {
+            syms.retain(|&id| Some(id) != names[isec]);
+            syms.sort_by_key(|&id| (ctx.symbols[id].value, rank(&ctx.symbols[id]).0));
+        }
+        let mut by_name: HashMap<&str, &std::path::Path> = HashMap::new();
+        for dylib in &ctx.dylibs {
+            for file in &dylib.merged_files {
+                for &name in &file.exports {
+                    by_name.entry(name).or_insert(&file.path);
                 }
             }
         }
+        let providers = (0..ctx.symbols.syms.len() as SymbolId)
+            .filter(|&id| matches!(ctx.symbols[id].file(), Some(FileId::Dylib(_))))
+            .filter_map(|id| Some((id, *by_name.get(ctx.symbols[id].name())?)))
+            .collect();
+        let (live_syms, live_boundaries) = (HashSet::new(), HashSet::new());
+        Self { ctx, redirects, names, roots, labels, live_syms, live_boundaries, providers }
     }
-    let describe = |isec: usize| -> String {
-        let sec = &ctx.isecs[isec];
-        let name = name_of.get(&isec).copied().map(String::from).unwrap_or_else(|| {
-            format!("{},{}", ctx.hdr_of(sec).segname(), ctx.hdr_of(sec).sectname())
-        });
-        if ctx.is_internal(sec.file as usize) {
-            return name;
-        }
-        format!(
-            "{} from {}",
-            name,
-            crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf)
-        )
-    };
 
-    for sym in &ctx.symbols.syms {
-        if !matches!(sym.file(), Some(FileId::Obj(_)))
-            || ctx.args.why_live.find(sym.name().as_bytes()) == -1
-        {
-            continue;
+    /// Walks from every root, marking what it reaches live.
+    fn walk(&mut self) {
+        let ctx = self.ctx;
+        for id in initial_undefines(ctx) {
+            if let Some(atom) = self.atom_of(id) {
+                self.walk_from(atom, Root::InitialUndef);
+            }
         }
-        let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-        let mut isec = ctx.resolve_isec(isec);
-        if !ctx.isecs[isec].is_alive() {
-            continue;
+        for (id, isec) in ctx.isecs.iter().enumerate() {
+            if !ctx.objs[isec.file as usize].is_alive {
+                continue;
+            }
+            // An initializer pointer ld-prime keeps, even converted to
+            // __init_offsets (which leaves its section dead).
+            let init_pointers = ctx.hdr_of(isec).section_type() == S_MOD_INIT_FUNC_POINTERS;
+            if !isec.is_alive() && !init_pointers {
+                continue;
+            }
+            let keep = should_keep(ctx, isec) || init_pointers;
+            let why = match self.roots[id] {
+                _ if keep => Root::DontDeadStrip,
+                Some(why) if self.redirects[id] == id => why,
+                _ => continue,
+            };
+            let id = self.redirects[id];
+            self.walk_from(Atom::Isec(id), why);
+            if keep && let Some(labels) = self.labels.get(&id) {
+                for label in labels.clone() {
+                    self.walk_from(Atom::Label(label), Root::DontDeadStrip);
+                }
+            }
         }
-        // On stderr, as ld-prime prints it.
-        eprintln!(
-            "{} from {}",
-            sym.name(),
-            crate::passes::resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf)
-        );
-        let why = match pred[isec] {
-            Pred::InitialUndef => Some("initial-undef"),
-            Pred::GlobalDontStrip => Some("global-dont-strip"),
-            Pred::DontDeadStrip => Some("dont-dead-strip"),
-            Pred::None | Pred::Section(_) => None,
+        // An executable's mach header is a root, last.
+        if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
+            self.walk_from(Atom::Boundary(HEADER_NAMES[0]), Root::DontDeadStrip);
+        }
+    }
+
+    /// The atom a symbol names, if a file or the linker defines it.
+    fn atom_of(&self, sym: SymbolId) -> Option<Atom> {
+        let symbol = &self.ctx.symbols[sym];
+        if matches!(symbol.file(), Some(FileId::Dylib(_))) {
+            return Some(Atom::Import(sym));
+        }
+        let Some(isec) = symbol.input_section() else {
+            let name = HEADER_NAMES.into_iter().find(|&name| name == symbol.name())?;
+            return symbol.is_defined().then_some(Atom::Boundary(name));
         };
+        let isec = self.redirects[isec as usize];
+        let whole = !self.ctx.objs[self.ctx.isecs[isec].file as usize].subsections_via_symbols;
+        if whole && self.names[isec] != Some(sym) {
+            Some(Atom::Label(sym))
+        } else {
+            Some(Atom::Isec(isec))
+        }
+    }
+
+    /// Marks an atom live, and says whether it was not before.
+    fn mark(&mut self, atom: Atom) -> bool {
+        match atom {
+            Atom::Isec(id) => self.ctx.isecs[id].mark_visited(),
+            Atom::Label(sym) | Atom::Import(sym) => self.live_syms.insert(sym),
+            Atom::Boundary(name) => self.live_boundaries.insert(name),
+        }
+    }
+
+    /// What an atom references, in the order of the places it does (a
+    /// label, its section's atom), and whether ld-prime reports the
+    /// reference. It follows an arm64 instruction pair referring to a
+    /// symbol by its ADRP alone, and reports no LSDA or personality
+    /// routine; those references come last, unreported, so that the
+    /// walk marks all mold's does.
+    fn edges(&self, atom: Atom) -> Vec<(Atom, bool)> {
+        let ctx = self.ctx;
+        let id = match atom {
+            Atom::Label(sym) => {
+                let isec = ctx.symbols[sym].input_section().unwrap() as usize;
+                return vec![(Atom::Isec(self.redirects[isec]), true)];
+            }
+            Atom::Import(_) | Atom::Boundary(TEXT_START) => return Vec::new(),
+            Atom::Boundary(_) => return vec![(Atom::Boundary(TEXT_START), true)],
+            Atom::Isec(id) => id,
+        };
+        let file = &ctx.objs[ctx.isecs[id].file as usize];
+        let mut relocs: Vec<_> = ctx.isec_relocs(id).iter().collect();
+        let second = |rel: &Reloc| {
+            E::CPUTYPE == CPU_TYPE_ARM64
+                && matches!(
+                    rel.r_type,
+                    ARM64_RELOC_PAGEOFF12
+                        | ARM64_RELOC_GOT_LOAD_PAGEOFF12
+                        | ARM64_RELOC_TLVP_LOAD_PAGEOFF12
+                )
+        };
+        relocs.sort_by_key(|rel| (second(rel), rel.offset));
+        let mut edges = Vec::new();
+        for rel in relocs {
+            let atom = match rel.target() {
+                RelocTarget::Sym(idx) => self.atom_of(file.symbols[idx as usize]),
+                RelocTarget::Section(target) => Some(Atom::Isec(self.redirects[target as usize])),
+            };
+            edges.extend(atom.map(|atom| (atom, !second(rel))));
+        }
+        for_each_unwind_edge(ctx, id, |target, sym| {
+            let atom = match sym {
+                Some(sym) => self.atom_of(sym),
+                None => Some(Atom::Isec(self.redirects[target])),
+            };
+            edges.extend(atom.map(|atom| (atom, false)));
+        });
+        edges
+    }
+
+    /// Walks from a root, depth first as ld-prime does. What only an
+    /// unreported reference reaches is reported on no further.
+    fn walk_from(&mut self, root: Atom, why: Root) {
+        self.report(root, &[], Some(why));
+        if !self.mark(root) {
+            return;
+        }
+        let mut stack = vec![Frame { atom: root, edges: self.edges(root), next: 0, quiet: false }];
+        while let Some(frame) = stack.last_mut() {
+            let Some(&(target, reported)) = frame.edges.get(frame.next) else {
+                stack.pop();
+                continue;
+            };
+            frame.next += 1;
+            let quiet = frame.quiet || !reported;
+            if !quiet {
+                self.report(target, &stack, None);
+            }
+            if self.mark(target) {
+                let edges = self.edges(target);
+                stack.push(Frame { atom: target, edges, next: 0, quiet });
+            }
+        }
+    }
+
+    /// Prints the chain that reaches an atom if the atom matches.
+    fn report(&self, atom: Atom, stack: &[Frame], why: Option<Root>) {
+        let Some(name) = self.name(atom, false) else { return };
+        if self.ctx.args.why_live.find(name.as_bytes()) == -1 {
+            return;
+        }
+        eprintln!("{}", self.describe(atom, name));
         if let Some(why) = why {
-            eprintln!("  {why}");
+            eprintln!("  {}", why.name());
         }
-        let mut indent = 1;
-        while let Pred::Section(from) = pred[isec] {
-            isec = from as usize;
-            eprintln!("{:indent$}{}", "", describe(isec), indent = indent * 2);
-            indent += 1;
+        for (depth, frame) in stack.iter().rev().enumerate() {
+            let referrer = frame.atom;
+            let name =
+                self.name(referrer, true).map_or_else(|| self.section_name(referrer), String::from);
+            eprintln!("{:indent$}{}", "", self.describe(referrer, &name), indent = depth * 2 + 2);
         }
+    }
+
+    /// An atom's name, if it has one, as a match or in a chain: an
+    /// initializer pointer is a "mod-init-ptr" there, and an assembler
+    /// label that is an atom of its own "none". Literals have none.
+    fn name(&self, atom: Atom, in_chain: bool) -> Option<&str> {
+        let ctx = self.ctx;
+        match atom {
+            Atom::Label(sym) => {
+                let name = ctx.symbols[sym].name();
+                Some(if in_chain && name.starts_with("ltmp") { "none" } else { name })
+            }
+            Atom::Import(sym) => Some(ctx.symbols[sym].name()),
+            Atom::Boundary(name) => Some(name),
+            Atom::Isec(id) => {
+                let hdr = ctx.hdr_of(&ctx.isecs[id]);
+                if in_chain && hdr.section_type() == S_MOD_INIT_FUNC_POINTERS {
+                    return Some("mod-init-ptr");
+                }
+                if is_literal_section(hdr) {
+                    return None;
+                }
+                self.names[id].map(|sym| ctx.symbols[sym].name())
+            }
+        }
+    }
+
+    fn section_name(&self, atom: Atom) -> String {
+        let Atom::Isec(id) = atom else { unreachable!() };
+        let hdr = self.ctx.hdr_of(&self.ctx.isecs[id]);
+        format!("{},{}", hdr.segname(), hdr.sectname())
+    }
+
+    /// "name from file", but the linker's own sections have no file. A
+    /// dylib goes by its real path, as ld-prime reports the files it
+    /// loads.
+    fn describe(&self, atom: Atom, name: &str) -> String {
+        let ctx = self.ctx;
+        let isec = match atom {
+            Atom::Isec(id) => id,
+            Atom::Label(sym) => ctx.symbols[sym].input_section().unwrap() as usize,
+            Atom::Boundary(_) => return format!("{name} from boundary-file"),
+            Atom::Import(sym) => {
+                let Some(FileId::Dylib(i)) = ctx.symbols[sym].file() else { unreachable!() };
+                let path = self.providers.get(&sym).copied();
+                let path = path.unwrap_or(&ctx.dylibs[i as usize].path);
+                let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                return format!("{name} from {}", real.display());
+            }
+        };
+        let file = ctx.isecs[isec].file as usize;
+        if ctx.is_internal(file) {
+            return name.to_string();
+        }
+        format!("{name} from {}", crate::passes::resolved_file_name(ctx.objs[file].mf))
     }
 }
