@@ -763,7 +763,13 @@ impl LoadCommands {
                     for i in 0..seg.nsects as usize {
                         let sect_off =
                             off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
-                        cmds.sect_hdrs.push(MachSection::read_from(&data[sect_off..]));
+                        let mut sect = MachSection::read_from(&data[sect_off..]);
+                        sect.flags = crate::passes::canonical_section_flags(
+                            sect.segname(),
+                            sect.sectname(),
+                            sect.flags,
+                        );
+                        cmds.sect_hdrs.push(sect);
                     }
                 }
                 LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(&data[off..])),

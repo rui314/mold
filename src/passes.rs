@@ -4429,6 +4429,20 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     }
 }
 
+/// The flags ld-prime reads a section of an input object as having,
+/// which decide how the link splits the section into atoms and what it
+/// makes of them - mold's canonicalize_type for a section typed by name
+/// alone: __TEXT,__constructor, where GCC put the constructors of code
+/// built without dyld (-static, -mkernel) with the assembler's
+/// .constructor directive, is a list of initializer pointers whatever
+/// its type (__TEXT,__destructor stays data). Its own flags otherwise.
+pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
+    match (segname, sectname) {
+        ("__TEXT", "__constructor") => S_MOD_INIT_FUNC_POINTERS,
+        _ => flags,
+    }
+}
+
 /// Whether ld-prime places an input section of a standard name (see
 /// standard_section_flags) as that standard section: one of the
 /// table's type, or of any type for the Objective-C runtime's sections
