@@ -9,7 +9,6 @@ use crate::context::Context;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::macho::*;
-use crate::passes::file_display;
 use crate::symbol::SymbolId;
 use crate::target::RelocClass;
 use crate::target::Target;
@@ -26,6 +25,9 @@ pub struct ChainedFixupsSection {
     /// and each entry's index.
     pub imports: Vec<(SymbolId, u64)>,
     pub ordinals: ImportOrdinals,
+    /// Set when an x86-64 image laid out for chained fixups gets classic
+    /// dyld info instead, for an unaligned pointer.
+    pub disabled: bool,
 }
 
 /// Each import's index in the table, by (symbol, table addend).
@@ -39,6 +41,7 @@ impl ChainedFixupsSection {
             fixups: Vec::new(),
             imports: Vec::new(),
             ordinals: std::collections::HashMap::new(),
+            disabled: false,
         }
     }
 }
@@ -116,12 +119,17 @@ fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
     }
 }
 
-pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
+/// Returns None if the image must have classic dyld info instead (see
+/// check_pointer_alignment).
+pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups> {
     // An image with nothing to fix up still gets the payload (a
     // header and a starts table with no pages), as ld64 writes it:
     // dyld reads the format from the load command, and its absence
     // would mean classic dyld info.
-    let with_atoms = collect_fixups(ctx);
+    let (with_atoms, suspects) = collect_fixups(ctx);
+    if !check_pointer_alignment(ctx, suspects, true) {
+        return None;
+    }
     let (dynsyms, ordinals) = import_table(&with_atoms);
     let fixups: Vec<(u64, Option<SymbolId>, u64)> =
         with_atoms.into_iter().map(|(addr, sym, addend, _)| (addr, sym, addend)).collect();
@@ -265,7 +273,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> ChainedFixups {
     }
     pad8(&mut buf);
 
-    (buf, fixups, dynsyms, ordinals)
+    Some((buf, fixups, dynsyms, ordinals))
 }
 
 /// Writes the fixup chains into the copied output: every fixup word is
@@ -334,15 +342,23 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 }
 
-fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
+/// Collects the fixups, with the pointers of subsections aligned less
+/// than a pointer and those at an address no multiple of 8, as
+/// (subsection, address) pairs, for check_pointer_alignment.
+fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) {
     // Every subsection's fixups are independent; collect them on all
     // cores and sort the union in parallel, as mold does.
+    let suspects = std::sync::Mutex::new(Vec::new());
     let mut fixups: Vec<Fixup> = ctx
         .isecs
         .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
-        .flat_map_iter(|isec| {
+        .enumerate()
+        .filter(|(_, isec)| {
+            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        })
+        .flat_map_iter(|(id, isec)| {
             let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
+            let suspects = &suspects;
             crate::input_files::isec_relocs_of(&ctx.objs, isec).iter().filter_map(move |rel| {
                 if E::classify_reloc(rel.r_type) != RelocClass::Plain
                     || rel.size != 8
@@ -359,18 +375,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
                     return None;
                 }
                 let addr = base + rel.offset as u64;
-                // A chain link's stride is 4 bytes, so a fixup at an
-                // unaligned address is unrepresentable. ld64 diagnoses
-                // the offending input section rather than the output.
-                if !addr.is_multiple_of(4) {
-                    fatal!(
-                        "{}({},{}): unaligned base relocation",
-                        file_display(&ctx.objs[isec.file as usize]),
-                        ctx.hdr_of(isec).segname(),
-                        ctx.hdr_of(isec).sectname()
-                    );
-                }
-                match ctx.reloc_target_sym(isec.file as usize, rel) {
+                let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
                     Some(id) if ctx.is_swift_force_load_ref(id) => None,
                     Some(id) if ctx.binds_at_runtime(id) || ctx.binds_to_self(id) => {
                         Some((addr, Some(id), rel.addend as u64, base))
@@ -382,7 +387,11 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
                             None
                         }
                     }
+                };
+                if fixup.is_some() && (isec.p2align < 3 || !addr.is_multiple_of(8)) {
+                    suspects.lock().unwrap().push((id as u32, addr));
                 }
+                fixup
             })
         })
         .collect();
@@ -411,9 +420,100 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> Vec<Fixup> {
     }
 
     fixups.par_sort_unstable_by_key(|&(addr, _, _, _)| addr);
-    fixups
+    (fixups, suspects.into_inner().unwrap())
 }
 
 /// The largest addend a chained bind can carry inline; anything bigger
 /// goes into the import table.
 const MAX_INLINE_ADDEND: u64 = 255;
+
+/// Checks the pointers of an image with classic dyld info as
+/// check_pointer_alignment does.
+pub fn check_classic_pointers<E: Target>(ctx: &Context<E>) {
+    if checks_pointer_alignment(ctx) {
+        check_pointer_alignment(ctx, collect_fixups(ctx).1, false);
+    }
+}
+
+/// Whether ld-prime checks the alignment of the pointers dyld fixes up:
+/// in an image dyld loads, for a deployment target it gives chained
+/// fixups by default (with classic dyld info too) or with -fixup_chains.
+fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
+    !ctx.args.without_dyld()
+        && (ctx.args.fixup_chains == Some(true)
+            || crate::macho::is_new_os(
+                E::NAME,
+                ctx.args.output_type,
+                ctx.args.platform,
+                ctx.args.platform_minos,
+            ))
+}
+
+/// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
+/// chain's links are words: it warns of every atom aligned less than a
+/// pointer that holds one, then of every unaligned pointer where the
+/// image has classic dyld info. With chained fixups, arm64 fails the link
+/// at the first unaligned pointer (of the atoms in address order, each
+/// one's from the last, the order of an assembler's relocations), and
+/// x86-64 gives chains up for classic dyld info instead, whose header
+/// the load commands fit in as laid out (see header_pad). `suspects` are
+/// the pointers collect_fixups gives. Returns false for that fallback.
+fn check_pointer_alignment<E: Target>(
+    ctx: &Context<E>,
+    mut suspects: Vec<(u32, u64)>,
+    chained: bool,
+) -> bool {
+    if suspects.is_empty() || !checks_pointer_alignment(ctx) {
+        return true;
+    }
+    let atom_addr = |id: u32| ctx.isec_addr(id as usize);
+    suspects.sort_unstable_by_key(|&(id, addr)| (atom_addr(id), id, addr));
+
+    let mut atoms: Vec<u32> = suspects.iter().map(|&(id, _)| id).collect();
+    atoms.dedup();
+    for id in atoms {
+        let p2align = ctx.isecs[id as usize].p2align;
+        if p2align < 3 {
+            crate::warn!(
+                "alignment ({}) of atom {} is too small and may result in unaligned pointers",
+                1 << p2align,
+                atom_location(ctx, id, None)
+            );
+        }
+    }
+
+    suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
+    let Some(&(first, _)) = suspects.first() else {
+        return true;
+    };
+    if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
+        let &(_, addr) = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
+        crate::error!("pointer not aligned in {}", atom_location(ctx, first, Some(addr)));
+        return true;
+    }
+    if chained {
+        crate::warn!("disabling chained fixups because of unaligned pointers");
+    }
+    for &(id, addr) in &suspects {
+        crate::warn!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+    }
+    !chained
+}
+
+/// A place in an atom as ld-prime names it in a diagnostic: 'name' of
+/// the atom, +0xoffset of `addr` in it (if not its start), and its
+/// file's real path in parentheses. An atom is named by a symbol at its
+/// start, an exported one first.
+fn atom_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
+    let obj = &ctx.objs[ctx.isecs[isec as usize].file as usize];
+    let name = obj
+        .symbols
+        .iter()
+        .map(|&sym| &ctx.symbols[sym])
+        .filter(|sym| sym.input_section() == Some(isec) && sym.value == 0)
+        .max_by_key(|sym| (sym.is_extern() && !sym.is_private_extern(), sym.is_extern()))
+        .map_or("", |sym| sym.name());
+    let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
+    let off = if off == 0 { String::new() } else { format!("+0x{off:x}") };
+    format!("'{name}'{off} ({})", crate::passes::resolved_file_name(obj.mf))
+}

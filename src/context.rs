@@ -380,6 +380,13 @@ impl<E: Target> Context<E> {
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {
+        self.lays_out_chained_fixups() && !self.chained_fixups.disabled
+    }
+
+    /// Returns true if the output is laid out for chained fixups (its
+    /// imports bound by no lazy pointer), as it stays when an unaligned
+    /// pointer turns an x86-64 image's to classic dyld info.
+    fn lays_out_chained_fixups(&self) -> bool {
         // A static executable has no dyld: it has no chains unless
         // -fixup_chains asks for them, which its own loader then walks
         // (a -kernel image cannot). A kext has none either: kmutil
@@ -556,7 +563,7 @@ impl<E: Target> Context<E> {
     pub fn lazy_binding(&self) -> bool {
         !self.args.relocatable
             && !self.args.without_dyld()
-            && !self.use_chained_fixups()
+            && !self.lays_out_chained_fixups()
             && !self.args.bind_at_load
     }
 

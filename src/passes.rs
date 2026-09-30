@@ -322,18 +322,30 @@ fn collect_file<E: Target>(
     }
 }
 
-/// ld-prime drops each __LD section it doesn't know with a warning,
-/// in every object it parses - archive members the link doesn't use
-/// included. Staging runs in parallel, so the warnings come here, in
-/// input order.
-fn warn_unknown_ld_sections(staged: &[input_files::StagedObject]) {
+/// ld-prime warns of some sections of every object it parses - archive
+/// members the link doesn't use included: it drops each __LD section it
+/// doesn't know, and aligns the constants of a __DATA,__cfstring to a
+/// pointer whatever the section says. Staging runs in parallel, so the
+/// warnings come here, in input order.
+fn warn_about_sections(staged: &[input_files::StagedObject]) {
     for obj in staged {
-        for hdr in obj.sect_hdrs.iter().filter(|h| input_files::is_unknown_ld_section(h)) {
-            crate::warn!(
-                "unknown section: __LD/{} in {}",
-                hdr.sectname(),
-                resolved_file_name(obj.mf)
-            );
+        for (i, hdr) in obj.sect_hdrs.iter().enumerate() {
+            if input_files::is_unknown_ld_section(hdr) {
+                crate::warn!(
+                    "unknown section: __LD/{} in {}",
+                    hdr.sectname(),
+                    resolved_file_name(obj.mf)
+                );
+            } else if hdr.segname() == "__DATA"
+                && hdr.sectname() == "__cfstring"
+                && hdr.p2align != 3
+                && obj.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
+            {
+                crate::warn!(
+                    "section __DATA/__cfstring is not pointer aligned in {}",
+                    resolved_file_name(obj.mf)
+                );
+            }
         }
     }
 }
@@ -358,7 +370,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         })
         .collect();
     drop(t);
-    warn_unknown_ld_sections(&staged);
+    warn_about_sections(&staged);
     for obj in &staged {
         obj.check_unwind_sections();
     }
@@ -5875,22 +5887,26 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
                 || {
                     if use_chained {
                         let _t = shared.timer("chained_fixups");
-                        Streams::Chained(chunks::chained_fixups::build_chained_fixups(shared))
+                        if let Some(chained) = chunks::chained_fixups::build_chained_fixups(shared)
+                        {
+                            return Streams::Chained(chained);
+                        }
                     } else {
-                        let (rebase, bind) = rayon::join(
-                            || {
-                                let _t = shared.timer("rebase_info");
-                                chunks::rebase_info::build(shared)
-                            },
-                            || {
-                                let _t = shared.timer("bind_info");
-                                chunks::bind_info::build(shared)
-                            },
-                        );
-                        let (lazy, lazy_offsets) = chunks::lazy_bind_info::build(shared);
-                        let weak = chunks::weak_bind_info::build(shared);
-                        Streams::Classic(rebase, bind, weak, lazy, lazy_offsets)
+                        chunks::chained_fixups::check_classic_pointers(shared);
                     }
+                    let (rebase, bind) = rayon::join(
+                        || {
+                            let _t = shared.timer("rebase_info");
+                            chunks::rebase_info::build(shared)
+                        },
+                        || {
+                            let _t = shared.timer("bind_info");
+                            chunks::bind_info::build(shared)
+                        },
+                    );
+                    let (lazy, lazy_offsets) = chunks::lazy_bind_info::build(shared);
+                    let weak = chunks::weak_bind_info::build(shared);
+                    Streams::Classic(rebase, bind, weak, lazy, lazy_offsets)
                 },
                 || {
                     rayon::join(
@@ -5929,6 +5945,8 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
             sec.ordinals = ordinals;
         }
         Streams::Classic(rebase, bind, weak, lazy, lazy_offsets) => {
+            // An image laid out for chains may fall back to these.
+            ctx.chained_fixups.disabled = use_chained;
             ctx.rebase_info.hdr.size = rebase.len() as u64;
             ctx.rebase_info.contents = rebase;
             ctx.bind_info.hdr.size = bind.len() as u64;
