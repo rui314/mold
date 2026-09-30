@@ -1037,7 +1037,7 @@ impl Target for Arm64 {
         for (i, &sym) in syms.iter().enumerate() {
             let ent = &mut buf[i * 12..];
             let ent_addr = addr + i as u64 * 12;
-            let target = ctx.sym_addr(sym);
+            let target = ctx.branch_target_addr(sym);
 
             // adrp x16, target@PAGE; add x16, x16, target@PAGEOFF; br x16
             write32(&mut ent[0..], 0x9000_0010 | page_offset(target, ent_addr));
