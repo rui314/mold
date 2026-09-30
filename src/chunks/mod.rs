@@ -630,9 +630,9 @@ fn create_linkedit_data_cmd(cmd: u32, hdr: &ChunkHeader) -> Vec<u8> {
 pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // In ld64's order: the segments; a dylib's identity; the dyld
     // tables; the symbol tables; the dynamic linker; identification
-    // (UUID, build and source versions); the entry point; the
-    // libraries; the run-path list; the code tables (function starts,
-    // data-in-code); the signature last.
+    // (UUID, build and source versions); the entry point; the split
+    // info; the libraries; the run-path list; the code tables
+    // (function starts, data-in-code); the signature last.
     let mut vec = Vec::new();
 
     for seg in &ctx.segments {
@@ -687,6 +687,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
             create_main_cmd(ctx)
         });
     }
+    if ctx.chunks.contains(&ChunkId::SplitInfo) {
+        vec.push(create_linkedit_data_cmd(LC_SEGMENT_SPLIT_INFO, &ctx.split_info.hdr));
+    }
 
     // Libraries in ordinal order (command-line order, then the
     // auto-linked ones).
@@ -723,10 +726,6 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.chunks.contains(&ChunkId::DataInCode) {
         vec.push(create_linkedit_data_cmd(LC_DATA_IN_CODE, &ctx.data_in_code.hdr));
     }
-    if ctx.chunks.contains(&ChunkId::SplitInfo) {
-        vec.push(create_linkedit_data_cmd(LC_SEGMENT_SPLIT_INFO, &ctx.split_info.hdr));
-    }
-
     if ctx.chunks.contains(&ChunkId::CodeSignature) {
         vec.push(create_code_signature_cmd(ctx));
     }

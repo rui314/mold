@@ -62,12 +62,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         buf[off + 8..off + 16].copy_from_slice(&pc_begin.to_le_bytes());
 
         if let Some((lsda_isec, lsda_off)) = fde.lsda {
-            let mut pos = 24;
-            // Skip the augmentation data length.
-            while buf[off + pos] & 0x80 != 0 {
-                pos += 1;
-            }
-            pos += 1;
+            let pos = lsda_pos(fde.data);
             let cell_addr = fde_addr + pos as u64;
             let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
             match ctx.cies[fde.cie as usize].lsda_size {
@@ -77,4 +72,15 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             }
         }
     }
+}
+
+/// The offset of an FDE's LSDA pointer: the augmentation data, past
+/// its ULEB128 length, after the length, CIE pointer, pc_begin and
+/// pc_range.
+pub fn lsda_pos(fde: &[u8]) -> usize {
+    let mut pos = 24;
+    while fde[pos] & 0x80 != 0 {
+        pos += 1;
+    }
+    pos + 1
 }

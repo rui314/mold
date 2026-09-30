@@ -3600,12 +3600,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     } else if ctx.args.pie {
         ctx.chunks.push(ChunkId::LocalRelocs);
     }
+    if ctx.args.add_split_seg_info {
+        ctx.chunks.push(ChunkId::SplitInfo);
+    }
     ctx.chunks.push(ChunkId::FunctionStarts);
     if ctx.args.data_in_code_info {
         ctx.chunks.push(ChunkId::DataInCode);
-    }
-    if ctx.args.add_split_seg_info {
-        ctx.chunks.push(ChunkId::SplitInfo);
     }
     ctx.chunks.push(ChunkId::Symtab);
     if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {

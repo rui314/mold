@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::Target;
+use crate::target::{SplitRef, Target};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -54,6 +54,10 @@ impl Target for X86_64 {
     const RELOCATABLE_GOTPC_CELL: Option<u32> = None;
     // x86-64 embeds every addend in the relocated field.
     const RELOC_ADDEND: u8 = 0xff;
+    const SPLIT_PCREL_KINDS: &'static [u8] = &[DYLD_CACHE_ADJ_V2_DELTA_32];
+    const STUB_REF_OFF: u64 = 2;
+    const STUB_HELPER_REF_OFFS: [u64; 2] = [3, 11];
+    const OBJC_STUB_REF_OFFS: [u64; 2] = [3, 9];
     // x86_THREAD_STATE64: rax..r15, then rip.
     const THREAD_STATE_FLAVOR: u32 = 4;
     const THREAD_STATE_COUNT: u32 = 42;
@@ -90,6 +94,14 @@ impl Target for X86_64 {
             X86_64_RELOC_GOT => RelocClass::Got,
             X86_64_RELOC_TLV => RelocClass::Tlv,
             _ => RelocClass::Plain,
+        }
+    }
+
+    fn split_ref(r_type: u8) -> SplitRef {
+        match r_type {
+            X86_64_RELOC_UNSIGNED => SplitRef::Pointer,
+            X86_64_RELOC_SUBTRACTOR => SplitRef::Subtractor,
+            _ => SplitRef::PcRel32,
         }
     }
 

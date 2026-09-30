@@ -1,14 +1,33 @@
-//! LC_SEGMENT_SPLIT_INFO data: records inter-segment and inter-section
-//! references so that a kernel collection or dyld shared-cache builder
-//! can slide segments independently (as kmutil does).
+//! LC_SEGMENT_SPLIT_INFO: every reference the image makes from one
+//! section into another, or into the mach header, so that the dyld
+//! shared cache builder, or kmutil building a kernel collection, can
+//! slide the segments apart and fix the references up. ld-prime 27037
+//! writes it in the V2 format on both targets.
+//!
+//! The entries are ld-prime's. An absolute pointer or a distance (a
+//! SUBTRACTOR pair) in data counts wherever it points, its own section
+//! included; arm64's adrp, the ldr or add under it and its branches
+//! count when they reach another section, and so does an x86-64 32-bit
+//! displacement, which outside code counts anywhere. A reference dyld
+//! binds (into another image) or to an absolute symbol needs no entry.
+//! Besides the inputs' relocations, the linker's own references count:
+//! __stubs and __stub_helper to their pointers, the lazy pointers to
+//! __stub_helper, a GOT slot to a symbol of this image, __objc_stubs,
+//! the synthesized selector references and Objective-C records, method
+//! lists, __init_offsets and __unwind_info (image offsets), and
+//! __eh_frame's records.
 
-use crate::chunks::ChunkHeader;
+use rayon::prelude::*;
+
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
-use crate::input_sections::RelocTarget;
+use crate::input_files::FileId;
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
-use crate::target::Target;
+use crate::objc::{DataField, ObjcRef};
+use crate::symbol::{NO_IDX, SymbolId};
+use crate::target::{RelocClass, SplitRef, Target};
 use crate::util::encode_uleb;
-use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub struct SplitInfoSection {
@@ -33,245 +52,520 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SplitEntry {
-    pub from_sect: u8,
-    pub to_sect: u8,
-    pub kind: u8,
-    pub from_offset: u64,
-    pub to_offset: u64,
+/// One reference, in the V2 format's terms. The fields are in the
+/// order the format groups references by: (from, to) section, then
+/// target offset, then kind.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Entry {
+    from_sect: u8,
+    to_sect: u8,
+    to_off: u64,
+    kind: u8,
+    from_off: u64,
 }
 
-/// References grouped the way the V2 format encodes them: (from
-/// section, to section) -> target offset -> kind -> source offsets.
-type Grouped = BTreeMap<(u8, u8), BTreeMap<u64, BTreeMap<u8, Vec<u64>>>>;
+/// A place in the image: a section's ordinal (0 for the mach header)
+/// and an offset in it.
+type Place = (u8, u64);
+
+fn push(out: &mut Vec<Entry>, from: Place, kind: u8, to: Option<Place>) {
+    if let Some((to_sect, to_off)) = to {
+        out.push(Entry { from_sect: from.0, to_sect, to_off, kind, from_off: from.1 });
+    }
+}
 
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.add_split_seg_info {
         return Vec::new();
     }
+    let places = Places::new(ctx);
+    let mut entries: Vec<Entry> = ctx
+        .output_sections
+        .par_iter()
+        .flat_map(|osec| {
+            osec.members.par_iter().flat_map_iter(|&id| {
+                let mut v = Vec::new();
+                places.isec_entries(id as usize, &mut v);
+                v
+            })
+        })
+        .collect();
+    places.stub_entries(&mut entries);
+    places.objc_entries(&mut entries);
+    places.table_entries(&mut entries);
+    places.unwind_entries(&mut entries);
+    places.eh_frame_entries(&mut entries);
+    entries.par_sort_unstable();
+    encode(&entries)
+}
 
-    let mut entries = Vec::new();
-
-    // Iterate all live subsections and collect cross-section references.
-    for isec_id in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[isec_id];
-        if !isec.is_alive() {
-            continue;
+/// Encodes the V2 format:
+///   0x7f <count> FromToSection+ 0, padded to 8 bytes
+///   FromToSection :== <from-sect> <to-sect> <count> ToOffset+
+///   ToOffset      :== <to-offset-delta> <count> FromOffset+
+///   FromOffset    :== <kind> <count> <from-offset-delta>+
+fn encode(entries: &[Entry]) -> Vec<u8> {
+    let mut buf = vec![DYLD_CACHE_ADJ_V2_FORMAT];
+    let sects: Vec<&[Entry]> =
+        entries.chunk_by(|a, b| (a.from_sect, a.to_sect) == (b.from_sect, b.to_sect)).collect();
+    encode_uleb(&mut buf, sects.len() as u64);
+    for sect in sects {
+        encode_uleb(&mut buf, sect[0].from_sect as u64);
+        encode_uleb(&mut buf, sect[0].to_sect as u64);
+        let targets: Vec<&[Entry]> = sect.chunk_by(|a, b| a.to_off == b.to_off).collect();
+        encode_uleb(&mut buf, targets.len() as u64);
+        let mut last_to = 0u64;
+        for target in targets {
+            encode_uleb(&mut buf, target[0].to_off.wrapping_sub(last_to));
+            last_to = target[0].to_off;
+            let kinds: Vec<&[Entry]> = target.chunk_by(|a, b| a.kind == b.kind).collect();
+            encode_uleb(&mut buf, kinds.len() as u64);
+            for kind in kinds {
+                encode_uleb(&mut buf, kind[0].kind as u64);
+                encode_uleb(&mut buf, kind.len() as u64);
+                let mut last_from = 0u64;
+                for e in kind {
+                    encode_uleb(&mut buf, e.from_off - last_from);
+                    last_from = e.from_off;
+                }
+            }
         }
-        let from_sect = ctx.isec_n_sect(isec);
-        if from_sect == 0 {
-            continue;
-        }
-        if isec.output_section().is_none() {
-            continue;
-        }
-        let from_isec_offset = isec.offset as u64;
+    }
+    buf.push(0);
+    buf.resize(buf.len().next_multiple_of(8), 0);
+    buf
+}
 
-        let obj = isec.file as usize;
-        let rels = ctx.isec_relocs(isec_id);
+/// Resolves what the image refers to into places, as the output's
+/// writers resolve them into addresses.
+struct Places<'a, E: Target> {
+    ctx: &'a Context<E>,
+    header_addr: u64,
+    /// The sections with contents, by address: (start, end, ordinal).
+    sects: Vec<(u64, u64, u8)>,
+    /// The layout-boundary symbols (section$start$..., segment$end$...),
+    /// each at the section it bounds.
+    boundaries: hashbrown::HashMap<SymbolId, Place>,
+}
 
+impl<'a, E: Target> Places<'a, E> {
+    fn new(ctx: &'a Context<E>) -> Self {
+        let mut sects: Vec<(u64, u64, u8)> = ctx
+            .chunks
+            .iter()
+            .map(|&id| ctx.chunk_header(id))
+            .filter(|h| h.is_sect && h.size > 0)
+            .map(|h| (h.addr, h.addr + h.size, h.n_sect))
+            .collect();
+        sects.sort_unstable();
+        let mut places = Self {
+            ctx,
+            header_addr: ctx.mach_header.hdr.addr,
+            sects,
+            boundaries: Default::default(),
+        };
+        places.boundaries = ctx
+            .boundary_syms
+            .iter()
+            .filter_map(|(id, is_start, seg, sect)| {
+                Some((*id, places.boundary(*is_start, seg, sect.as_deref())?))
+            })
+            .collect();
+        places
+    }
+
+    /// A section$ symbol's section, at its start or end; a segment$
+    /// symbol's first section at its start, or last at its end.
+    fn boundary(&self, is_start: bool, seg: &str, sect: Option<&str>) -> Option<Place> {
+        let ctx = self.ctx;
+        let mut hdrs = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|h| {
+            h.is_sect && h.segname == seg && sect.is_none_or(|sect| h.sectname == sect)
+        });
+        let hdr = if is_start { hdrs.next()? } else { hdrs.last()? };
+        let end = match sect {
+            Some(_) => hdr.addr + hdr.size,
+            None => {
+                let seg = ctx.segments.iter().find(|s| s.name == seg)?;
+                seg.cmd.vmaddr + seg.cmd.vmsize
+            }
+        };
+        Some((hdr.n_sect, if is_start { 0 } else { end - hdr.addr }))
+    }
+
+    fn chunk(&self, id: ChunkId, off: u64) -> Place {
+        (self.ctx.chunk_header(id).n_sect, off)
+    }
+
+    /// Where a subsection lies, if it is laid out.
+    fn isec(&self, id: usize) -> Option<Place> {
+        let isec = &self.ctx.isecs[self.ctx.resolve_isec(id)];
+        let chunk = isec.output_section()?;
+        (isec.offset != u32::MAX).then(|| self.chunk(chunk, isec.offset as u64))
+    }
+
+    /// Where a symbol's address lies, as Context::sym_addr resolves it
+    /// (a dylib symbol at its stub); None for an absolute symbol. The
+    /// linker's own sectionless symbols are the layout boundaries and
+    /// the mach header's names (___dso_handle, __mh_*_header).
+    fn sym(&self, id: SymbolId) -> Option<Place> {
+        let ctx = self.ctx;
+        let sym = &ctx.symbols[id];
+        let aux = ctx.sym_aux(id);
+        match sym.file()? {
+            FileId::Dylib(_) => (aux.stub_idx != NO_IDX)
+                .then(|| self.chunk(ChunkId::Stubs, aux.stub_idx as u64 * E::STUB_SIZE)),
+            FileId::Obj(obj) => {
+                if let Some(isec) = sym.input_section() {
+                    let (n, off) = self.isec(isec as usize)?;
+                    Some((n, off + sym.value))
+                } else if aux.objc_stub_idx != NO_IDX {
+                    Some(
+                        self.chunk(
+                            ChunkId::ObjcStubs,
+                            aux.objc_stub_idx as u64 * E::OBJC_STUB_SIZE,
+                        ),
+                    )
+                } else if ctx.is_internal(obj as usize) {
+                    let header = (0, sym.value.wrapping_sub(self.header_addr));
+                    Some(self.boundaries.get(&id).copied().unwrap_or(header))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Where a symbol dyld doesn't bind lies; None for an import.
+    fn own_sym(&self, id: SymbolId) -> Option<Place> {
+        if self.ctx.symbols[id].is_imported() { None } else { self.sym(id) }
+    }
+
+    fn got_slot(&self, id: SymbolId) -> Place {
+        self.chunk(ChunkId::Got, self.ctx.sym_aux(id).got_idx as u64 * 8)
+    }
+
+    /// Where a GOT slot of a symbol of this image points. ld-prime
+    /// takes a slot holding the mach header's address as pointing
+    /// before the first section.
+    fn got_target(&self, id: SymbolId) -> Option<Place> {
+        match self.own_sym(id)? {
+            (0, off) => {
+                let &(start, _, n) = self.sects.first()?;
+                Some((n, (self.header_addr + off).wrapping_sub(start)))
+            }
+            place => Some(place),
+        }
+    }
+
+    /// The place of an image offset (in __unwind_info): the section it
+    /// lies in, or for the index's sentinel, one past the end of the
+    /// last function, the section that function ends.
+    fn image_offset(&self, off: u32, is_sentinel: bool) -> Option<Place> {
+        let addr = self.header_addr + off as u64;
+        let key = addr - if is_sentinel { 2 } else { 0 };
+        let i = self.sects.partition_point(|&(start, _, _)| start <= key).checked_sub(1)?;
+        let (start, end, n) = self.sects[i];
+        (key < end).then_some((n, addr - start))
+    }
+
+    /// Where relocation `r` of a subsection points, as apply_relocs
+    /// resolves it: at a stub or GOT slot, or at the target plus the
+    /// addend; for a distance's positive term, at the target itself,
+    /// as ld64 takes it. None for a reference dyld binds.
+    fn reloc_target(&self, isec: &InputSection, r: &Reloc, with_addend: bool) -> Option<Place> {
+        let ctx = self.ctx;
+        let addend = if with_addend { r.addend } else { 0 };
+        let id = match r.target() {
+            RelocTarget::Section(idx) => {
+                let (n, off) = self.isec(idx as usize)?;
+                return Some((n, off.wrapping_add_signed(addend)));
+            }
+            RelocTarget::Sym(idx) => ctx.objs[isec.file as usize].symbols[idx as usize],
+        };
+        match E::classify_reloc(r.r_type) {
+            RelocClass::Got => return Some(self.got_slot(id)),
+            RelocClass::GotLoad | RelocClass::Tlv
+                if !ctx.can_relax_got(id)
+                    || !E::can_relax_got_load(isec.data(), r.offset, r.r_type) =>
+            {
+                return Some(self.got_slot(id));
+            }
+            RelocClass::Branch => {
+                let stub = ctx.sym_aux(id).stub_idx;
+                if ctx.is_weak_coalesced(id) && stub != NO_IDX {
+                    return Some(self.chunk(ChunkId::Stubs, stub as u64 * E::STUB_SIZE));
+                }
+                let (n, off) = self.sym(id)?;
+                return Some((n, off.wrapping_add_signed(addend)));
+            }
+            _ => {}
+        }
+        let (n, off) = self.own_sym(id)?;
+        Some((n, off.wrapping_add_signed(addend)))
+    }
+
+    /// The references of one input subsection's relocations.
+    fn isec_entries(&self, id: usize, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        let isec = &ctx.isecs[id];
+        let Some(chunk) = isec.output_section().filter(|_| isec.is_alive()) else {
+            return;
+        };
+        let hdr = ctx.chunk_header(chunk);
+        let is_code = hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+        let rels = ctx.isec_relocs(id);
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
-            let a = r.addend;
-            let offset_in_sect = from_isec_offset + r.offset as u64;
-
-            // Target information
-            let (to_sect, to_offset, kind) = match r.r_type {
-                ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 => {
-                    let target_isec = match r.target() {
-                        RelocTarget::Sym(idx) => {
-                            let sym_id = ctx.objs[obj].symbols[idx as usize];
-                            ctx.symbols[sym_id].input_section().map(|s| s as usize)
-                        }
-                        RelocTarget::Section(idx) => Some(idx as usize),
-                    };
-                    if let Some(tisec_id) = target_isec {
-                        let tisec = &ctx.isecs[ctx.resolve_isec(tisec_id)];
-                        let t_sect = ctx.isec_n_sect(tisec);
-                        if t_sect != 0 && t_sect != from_sect {
-                            let sym_val = match r.target() {
-                                RelocTarget::Sym(idx) => {
-                                    ctx.symbols[ctx.objs[obj].symbols[idx as usize]].value
-                                }
-                                RelocTarget::Section(_) => 0,
-                            };
-                            let to_off = tisec.offset as u64 + sym_val.wrapping_add_signed(a);
-                            (t_sect, to_off, DYLD_CACHE_ADJ_V2_ARM64_ADRP)
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    } else {
-                        i += 1;
-                        continue;
-                    }
-                }
-                ARM64_RELOC_PAGEOFF12 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
-                    let target_isec = match r.target() {
-                        RelocTarget::Sym(idx) => {
-                            let sym_id = ctx.objs[obj].symbols[idx as usize];
-                            ctx.symbols[sym_id].input_section().map(|s| s as usize)
-                        }
-                        RelocTarget::Section(idx) => Some(idx as usize),
-                    };
-                    if let Some(tisec_id) = target_isec {
-                        let tisec = &ctx.isecs[ctx.resolve_isec(tisec_id)];
-                        let t_sect = ctx.isec_n_sect(tisec);
-                        if t_sect != 0 && t_sect != from_sect {
-                            let sym_val = match r.target() {
-                                RelocTarget::Sym(idx) => {
-                                    ctx.symbols[ctx.objs[obj].symbols[idx as usize]].value
-                                }
-                                RelocTarget::Section(_) => 0,
-                            };
-                            let to_off = tisec.offset as u64 + sym_val.wrapping_add_signed(a);
-                            (t_sect, to_off, DYLD_CACHE_ADJ_V2_ARM64_OFF12)
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    } else {
-                        i += 1;
-                        continue;
-                    }
-                }
-                ARM64_RELOC_BRANCH26 => {
-                    let target_isec = match r.target() {
-                        RelocTarget::Sym(idx) => {
-                            let sym_id = ctx.objs[obj].symbols[idx as usize];
-                            ctx.symbols[sym_id].input_section().map(|s| s as usize)
-                        }
-                        RelocTarget::Section(idx) => Some(idx as usize),
-                    };
-                    if let Some(tisec_id) = target_isec {
-                        let tisec = &ctx.isecs[ctx.resolve_isec(tisec_id)];
-                        let t_sect = ctx.isec_n_sect(tisec);
-                        if t_sect != 0 && t_sect != from_sect {
-                            let sym_val = match r.target() {
-                                RelocTarget::Sym(idx) => {
-                                    ctx.symbols[ctx.objs[obj].symbols[idx as usize]].value
-                                }
-                                RelocTarget::Section(_) => 0,
-                            };
-                            let to_off = tisec.offset as u64 + sym_val.wrapping_add_signed(a);
-                            (t_sect, to_off, DYLD_CACHE_ADJ_V2_ARM64_BR26)
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    } else {
-                        i += 1;
-                        continue;
-                    }
-                }
-                ARM64_RELOC_UNSIGNED => {
-                    let target_isec = match r.target() {
-                        RelocTarget::Sym(idx) => {
-                            let sym_id = ctx.objs[obj].symbols[idx as usize];
-                            ctx.symbols[sym_id].input_section().map(|s| s as usize)
-                        }
-                        RelocTarget::Section(idx) => Some(idx as usize),
-                    };
-                    if let Some(tisec_id) = target_isec {
-                        let tisec = &ctx.isecs[ctx.resolve_isec(tisec_id)];
-                        let t_sect = ctx.isec_n_sect(tisec);
-                        if t_sect != 0 {
-                            let sym_val = match r.target() {
-                                RelocTarget::Sym(idx) => {
-                                    ctx.symbols[ctx.objs[obj].symbols[idx as usize]].value
-                                }
-                                RelocTarget::Section(_) => 0,
-                            };
-                            let to_off = tisec.offset as u64 + sym_val.wrapping_add_signed(a);
-                            let k = if r.size == 8 {
-                                DYLD_CACHE_ADJ_V2_POINTER_64
-                            } else {
-                                DYLD_CACHE_ADJ_V2_POINTER_32
-                            };
-                            (t_sect, to_off, k)
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    } else {
-                        i += 1;
-                        continue;
-                    }
-                }
-                _ => {
-                    i += 1;
-                    continue;
-                }
+            let from = (hdr.n_sect, isec.offset as u64 + r.offset as u64);
+            let pointer = if r.size == 8 {
+                DYLD_CACHE_ADJ_V2_POINTER_64
+            } else {
+                DYLD_CACHE_ADJ_V2_POINTER_32
             };
-
-            entries.push(SplitEntry {
-                from_sect,
-                to_sect,
-                kind,
-                from_offset: offset_in_sect,
-                to_offset,
-            });
+            match E::split_ref(r.r_type) {
+                // The UNSIGNED record that follows names the target.
+                SplitRef::Subtractor => {
+                    i += 1;
+                    let kind = if r.size == 8 {
+                        DYLD_CACHE_ADJ_V2_DELTA_64
+                    } else {
+                        DYLD_CACHE_ADJ_V2_DELTA_32
+                    };
+                    push(out, from, kind, self.reloc_target(isec, &rels[i], false));
+                }
+                // A thread-local's descriptor holds an offset into the
+                // thread-local template, which doesn't move.
+                SplitRef::Pointer if ctx.reloc_target_is_tls(isec.file as usize, r) => {}
+                SplitRef::Pointer => push(out, from, pointer, self.reloc_target(isec, r, true)),
+                split => {
+                    let to = self.reloc_target(isec, r, true);
+                    let kind = match split {
+                        SplitRef::Page => DYLD_CACHE_ADJ_V2_ARM64_ADRP,
+                        SplitRef::PageOff => DYLD_CACHE_ADJ_V2_ARM64_OFF12,
+                        SplitRef::Branch26 => DYLD_CACHE_ADJ_V2_ARM64_BR26,
+                        _ => DYLD_CACHE_ADJ_V2_DELTA_32,
+                    };
+                    let anywhere = split == SplitRef::PcRel32 && !is_code;
+                    if to.is_some_and(|to| to.0 != from.0 || anywhere) {
+                        push(out, from, kind, to);
+                    }
+                }
+            }
             i += 1;
         }
     }
 
-    if entries.is_empty() {
-        return Vec::new();
-    }
-
-    // Encode V2 format:
-    // Whole         :== <count> FromToSection+
-    // FromToSection :== <from-sect-index> <to-sect-index> <count> ToOffset+
-    // ToOffset      :== <to-sect-offset-delta> <count> FromOffset+
-    // FromOffset    :== <kind> <count> <from-sect-offset-delta>
-
-    // Grouping: (from_sect, to_sect) -> to_offset -> kind -> Vec<from_offset>
-    let mut whole: Grouped = BTreeMap::new();
-    for e in entries {
-        whole
-            .entry((e.from_sect, e.to_sect))
-            .or_default()
-            .entry(e.to_offset)
-            .or_default()
-            .entry(e.kind)
-            .or_default()
-            .push(e.from_offset);
-    }
-
-    let mut buf = Vec::new();
-    buf.push(DYLD_CACHE_ADJ_V2_FORMAT);
-
-    encode_uleb(&mut buf, whole.len() as u64);
-    for ((from_sect, to_sect), to_offsets) in whole {
-        encode_uleb(&mut buf, from_sect as u64);
-        encode_uleb(&mut buf, to_sect as u64);
-        encode_uleb(&mut buf, to_offsets.len() as u64);
-
-        let mut last_to_offset = 0u64;
-        for (to_offset, from_offsets) in to_offsets {
-            encode_uleb(&mut buf, to_offset - last_to_offset);
-            encode_uleb(&mut buf, from_offsets.len() as u64);
-
-            for (kind, mut offsets) in from_offsets {
-                encode_uleb(&mut buf, kind as u64);
-                encode_uleb(&mut buf, offsets.len() as u64);
-                offsets.sort_unstable();
-                let mut last_from_offset = 0u64;
-                for off in offsets {
-                    encode_uleb(&mut buf, off - last_from_offset);
-                    last_from_offset = off;
-                }
+    /// An address the linker's own code materializes PC-relatively at
+    /// `from`, when it reaches another section.
+    fn pcrel(&self, out: &mut Vec<Entry>, from: Place, to: Option<Place>) {
+        if to.is_some_and(|to| to.0 != from.0) {
+            for (i, &kind) in E::SPLIT_PCREL_KINDS.iter().enumerate() {
+                push(out, (from.0, from.1 + 4 * i as u64), kind, to);
             }
-            last_to_offset = to_offset;
         }
     }
 
-    buf.push(0); // trailing null byte
-    while buf.len() % 8 != 0 {
-        buf.push(0);
+    /// __stubs, the lazy pointers and __stub_helper, the GOT, and the
+    /// range-extension thunks.
+    fn stub_entries(&self, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        let has = |id| ctx.chunks.contains(&id);
+        if has(ChunkId::Stubs) {
+            for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
+                let slot = if ctx.lazy_binding() && !ctx.binds_weak_lookup(id) {
+                    let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
+                    self.chunk(ChunkId::LazyPtrs, lazy as u64 * 8)
+                } else {
+                    self.got_slot(id)
+                };
+                let from = self.chunk(ChunkId::Stubs, i as u64 * E::STUB_SIZE + E::STUB_REF_OFF);
+                self.pcrel(out, from, Some(slot));
+            }
+        }
+        if has(ChunkId::LazyPtrs) {
+            for i in 0..ctx.stubs.lazy.len() as u64 {
+                let helper = E::STUB_HELPER_HEADER_SIZE + i * E::STUB_HELPER_ENTRY_SIZE;
+                let to = self.chunk(ChunkId::StubHelper, helper);
+                push(
+                    out,
+                    self.chunk(ChunkId::LazyPtrs, i * 8),
+                    DYLD_CACHE_ADJ_V2_POINTER_64,
+                    Some(to),
+                );
+            }
+        }
+        if has(ChunkId::StubHelper) {
+            let helper = &ctx.stub_helper;
+            let [private, binder] = E::STUB_HELPER_REF_OFFS;
+            let to = self.isec(helper.dyld_private_isec as usize);
+            self.pcrel(out, self.chunk(ChunkId::StubHelper, private), to);
+            let to = helper.dyld_stub_binder.map(|id| self.got_slot(id));
+            self.pcrel(out, self.chunk(ChunkId::StubHelper, binder), to);
+        }
+        if has(ChunkId::Got) {
+            for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+                let from = self.chunk(ChunkId::Got, i as u64 * 8);
+                push(out, from, DYLD_CACHE_ADJ_V2_POINTER_64, self.got_target(id));
+            }
+        }
+        for osec in &ctx.output_sections {
+            for thunk in &osec.thunks {
+                for (i, &id) in thunk.syms.iter().enumerate() {
+                    let from = (osec.hdr.n_sect, thunk.offset + i as u64 * E::THUNK_SIZE);
+                    self.pcrel(out, from, self.sym(id));
+                }
+            }
+        }
     }
 
-    buf
+    fn objc_ref(&self, r: ObjcRef) -> Option<Place> {
+        match r {
+            ObjcRef::Isec(isec, off) => self.isec(isec as usize).map(|(n, o)| (n, o + off)),
+            ObjcRef::Sym(id, addend) => {
+                self.own_sym(id).map(|(n, o)| (n, o.wrapping_add_signed(addend)))
+            }
+            ObjcRef::TailSelref(i) => Some(self.selref(i)),
+            ObjcRef::Null => None,
+        }
+    }
+
+    /// Slot `i` of the synthesized selector references.
+    fn selref(&self, i: usize) -> Place {
+        let osec = self.ctx.output_section(self.ctx.objc_stubs.selrefs.unwrap());
+        (osec.hdr.n_sect, osec.tail_off + i as u64 * 8)
+    }
+
+    /// __objc_stubs, the selector references synthesized for them and
+    /// for method lists, the synthesized Objective-C records, and the
+    /// relative method lists.
+    fn objc_entries(&self, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        let stubs = &ctx.objc_stubs;
+        if ctx.chunks.contains(&ChunkId::ObjcStubs) {
+            let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
+            let msgsend_slot = self.chunk(ChunkId::Got, stubs.msgsend_got_idx as u64 * 8);
+            for i in 0..stubs.symbols.len() {
+                let at = i as u64 * E::OBJC_STUB_SIZE;
+                self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));
+                self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + msgsend), Some(msgsend_slot));
+            }
+        }
+        if stubs.selrefs.is_some() {
+            let n = stubs.symbols.len();
+            for i in 0..n {
+                let name = match stubs.name_isec[i] {
+                    u32::MAX => {
+                        let osec = ctx.output_section(stubs.methname.unwrap());
+                        Some((osec.hdr.n_sect, osec.tail_off + stubs.methname_offs[i]))
+                    }
+                    isec => self.isec(isec as usize),
+                };
+                push(out, self.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, name);
+            }
+            for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
+                let to = self.isec(name as usize);
+                push(out, self.selref(n + j), DYLD_CACHE_ADJ_V2_POINTER_64, to);
+            }
+        }
+        for blob in &ctx.data_blobs {
+            let Some((n, mut at)) = self.isec(blob.isec as usize) else {
+                continue;
+            };
+            for field in &blob.fields {
+                match field {
+                    DataField::Bytes(bytes) => at += bytes.len() as u64,
+                    DataField::Ptr(r) => {
+                        push(out, (n, at), DYLD_CACHE_ADJ_V2_POINTER_64, self.objc_ref(*r));
+                        at += 8;
+                    }
+                }
+            }
+        }
+        for list in &ctx.objc_methlist.lists {
+            let Some((n, base)) = self.isec(list.isec as usize) else {
+                continue;
+            };
+            for (i, m) in list.methods.iter().enumerate() {
+                for (k, r) in [m.name, m.types, m.imp].into_iter().enumerate() {
+                    let from = (n, base + 8 + 12 * i as u64 + 4 * k as u64);
+                    push(out, from, DYLD_CACHE_ADJ_V2_DELTA_32, self.objc_ref(r));
+                }
+            }
+        }
+    }
+
+    /// __init_offsets: an image offset per initializer.
+    fn table_entries(&self, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        if !ctx.chunks.contains(&ChunkId::InitOffsets) {
+            return;
+        }
+        for (i, &(isec, off)) in ctx.init_offsets.init_funcs.iter().enumerate() {
+            let from = self.chunk(ChunkId::InitOffsets, i as u64 * 4);
+            let to = self.isec(isec).map(|(n, o)| (n, o + off));
+            push(out, from, DYLD_CACHE_ADJ_V2_IMAGE_OFF_32, to);
+        }
+    }
+
+    /// __unwind_info's image offsets: the personalities' GOT slots,
+    /// the first function of each second-level page and the end of
+    /// the last one, and the (function, LSDA) pairs.
+    fn unwind_entries(&self, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        if !ctx.chunks.contains(&ChunkId::UnwindInfo) {
+            return;
+        }
+        let buf = &ctx.unwind_info.contents;
+        let word = |off: usize| u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        let from = |off: usize| self.chunk(ChunkId::UnwindInfo, off as u64);
+        let kind = DYLD_CACHE_ADJ_V2_IMAGE_OFF_32;
+        let personalities = word(12) as usize;
+        for (i, &id) in ctx.unwind_info.personalities.iter().enumerate() {
+            push(out, from(personalities + 4 * i), kind, Some(self.got_slot(id)));
+        }
+        let (index, count) = (word(20) as usize, word(24) as usize);
+        for i in 0..count {
+            let off = index + 12 * i;
+            push(out, from(off), kind, self.image_offset(word(off), i + 1 == count));
+        }
+        if count > 0 {
+            let lsdas = word(index + 8) as usize..word(index + 12 * (count - 1) + 8) as usize;
+            for off in lsdas.step_by(4) {
+                push(out, from(off), kind, self.image_offset(word(off), false));
+            }
+        }
+    }
+
+    /// __eh_frame: each CIE's personality pointer (to its GOT slot),
+    /// and each FDE's CIE pointer (which ld-prime records against the
+    /// FDE itself), function and LSDA.
+    fn eh_frame_entries(&self, out: &mut Vec<Entry>) {
+        let ctx = self.ctx;
+        if !ctx.chunks.contains(&ChunkId::EhFrame) {
+            return;
+        }
+        let at = |off: u64| self.chunk(ChunkId::EhFrame, off);
+        for cie in ctx.cies.iter().filter(|cie| cie.is_alive) {
+            if let Some(id) = cie.personality {
+                let from = at((cie.output_offset + cie.personality_offset) as u64);
+                push(out, from, DYLD_CACHE_ADJ_V2_DELTA_32, Some(self.got_slot(id)));
+            }
+        }
+        for fde in &ctx.fdes {
+            let off = fde.output_offset as u64;
+            push(out, at(off + 4), DYLD_CACHE_ADJ_V2_DELTA_32, Some(at(off)));
+            let func = self.isec(fde.isec as usize).map(|(n, o)| (n, o + fde.func_offset as u64));
+            push(out, at(off + 8), DYLD_CACHE_ADJ_V2_DELTA_64, func);
+            if let Some((isec, lsda_off)) = fde.lsda {
+                let pos = crate::chunks::eh_frame::lsda_pos(fde.data) as u64;
+                let kind = match ctx.cies[fde.cie as usize].lsda_size {
+                    8 => DYLD_CACHE_ADJ_V2_DELTA_64,
+                    _ => DYLD_CACHE_ADJ_V2_DELTA_32,
+                };
+                let to = self.isec(isec as usize).map(|(n, o)| (n, o + lsda_off as u64));
+                push(out, at(off + pos), kind, to);
+            }
+        }
+    }
 }

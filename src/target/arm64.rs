@@ -10,7 +10,7 @@ use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::Target;
+use crate::target::{SplitRef, Target};
 use crate::util::{bits, sign_extend};
 
 #[derive(Clone, Copy, Default)]
@@ -549,6 +549,11 @@ impl Target for Arm64 {
     const RELOC_GOTPC: u8 = ARM64_RELOC_POINTER_TO_GOT;
     const RELOCATABLE_GOTPC_CELL: Option<u32> = Some(4);
     const RELOC_ADDEND: u8 = ARM64_RELOC_ADDEND;
+    const SPLIT_PCREL_KINDS: &'static [u8] =
+        &[DYLD_CACHE_ADJ_V2_ARM64_ADRP, DYLD_CACHE_ADJ_V2_ARM64_OFF12];
+    const STUB_REF_OFF: u64 = 0;
+    const STUB_HELPER_REF_OFFS: [u64; 2] = [0, 12];
+    const OBJC_STUB_REF_OFFS: [u64; 2] = [0, 8];
     // ARM_THREAD_STATE64: x0..x28, fp, lr, sp, then pc.
     const THREAD_STATE_FLAVOR: u32 = 6;
     const THREAD_STATE_COUNT: u32 = 68;
@@ -603,6 +608,21 @@ impl Target for Arm64 {
             ARM64_RELOC_POINTER_TO_GOT => RelocClass::Got,
             ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => RelocClass::Tlv,
             _ => RelocClass::Plain,
+        }
+    }
+
+    fn split_ref(r_type: u8) -> SplitRef {
+        match r_type {
+            ARM64_RELOC_SUBTRACTOR => SplitRef::Subtractor,
+            ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
+                SplitRef::Page
+            }
+            ARM64_RELOC_PAGEOFF12
+            | ARM64_RELOC_GOT_LOAD_PAGEOFF12
+            | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => SplitRef::PageOff,
+            ARM64_RELOC_BRANCH26 => SplitRef::Branch26,
+            ARM64_RELOC_POINTER_TO_GOT => SplitRef::PcRel32,
+            _ => SplitRef::Pointer,
         }
     }
 

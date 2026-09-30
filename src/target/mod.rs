@@ -34,6 +34,25 @@ pub enum RelocClass {
     Plain,
 }
 
+/// How LC_SEGMENT_SPLIT_INFO records a reference a relocation type
+/// makes, when it crosses sections.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitRef {
+    /// An absolute address in data, recorded wherever it points.
+    Pointer,
+    /// The first of a SUBTRACTOR/UNSIGNED pair: a distance, recorded
+    /// wherever it points.
+    Subtractor,
+    /// arm64's adrp and the ldr or add under it, and its 26-bit
+    /// branch: recorded only when they reach another section.
+    Page,
+    PageOff,
+    Branch26,
+    /// A 32-bit PC-relative displacement: recorded when it reaches
+    /// another section, or anywhere from outside code.
+    PcRel32,
+}
+
 pub trait Target: Copy + Default + Send + Sync + 'static {
     const NAME: &'static str;
     const CPUTYPE: u32;
@@ -68,6 +87,18 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const RELOCATABLE_GOTPC_CELL: Option<u32>;
     /// The explicit-addend relocation type, for targets that have one.
     const RELOC_ADDEND: u8;
+    /// Where the linker's own code materializes an address
+    /// PC-relatively, for LC_SEGMENT_SPLIT_INFO: the split-info kinds
+    /// of one such address (arm64's adrp, then the ldr or add 4 bytes
+    /// on; x86-64's 32-bit displacement), and where it sits in a
+    /// __stubs entry (its pointer slot), the __stub_helper header
+    /// (__dyld_private, then dyld_stub_binder's GOT slot) and an
+    /// __objc_stubs entry (its selector reference, then
+    /// _objc_msgSend's GOT slot).
+    const SPLIT_PCREL_KINDS: &'static [u8];
+    const STUB_REF_OFF: u64;
+    const STUB_HELPER_REF_OFFS: [u64; 2];
+    const OBJC_STUB_REF_OFFS: [u64; 2];
     /// The register state LC_UNIXTHREAD holds: its flavor, its size in
     /// 32-bit words, and the byte offset of the program counter in it.
     const THREAD_STATE_FLAVOR: u32;
@@ -87,6 +118,9 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 
     /// Classifies a relocation type by how it uses its target.
     fn classify_reloc(r_type: u8) -> RelocClass;
+
+    /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
+    fn split_ref(r_type: u8) -> SplitRef;
 
     /// True if the GotLoad relocation at `offset` sits on the
     /// instruction shape the relaxation rewrites.
