@@ -2304,6 +2304,34 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
     }
     check_shared_cache_deps(ctx);
+    check_libsystem_linked(ctx);
+}
+
+/// ld64 takes a dynamic image that would load no dylib at all for one
+/// linked without libSystem by mistake (a stray -nostdlib) and refuses
+/// it: an executable other than a -static one, or a dylib or bundle,
+/// -static or not. Any dylib left after -dead_strip_dylibs, the bundle
+/// loader included, will do, libSystem or not. ld-prime does the same
+/// and, like ld64, lets off libsystem_kernel, which libSystem is built
+/// on, and any link with an exit-asm.o (a stopgap for rdar://39514191).
+fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
+    let dynamic = match ctx.args.output_type {
+        MH_EXECUTE => !ctx.args.static_link,
+        MH_DYLIB | MH_BUNDLE => true,
+        _ => false,
+    };
+    if !dynamic || !ctx.dylibs.is_empty() {
+        return;
+    }
+    let is_exit_asm = |obj: &input_files::ObjectFile| {
+        memchr::memmem::find(path_bytes(&obj.mf.name), b"exit-asm.o").is_some()
+    };
+    if ctx.args.install_name.as_deref() == Some(b"/usr/lib/system/libsystem_kernel.dylib")
+        || ctx.objs.iter().any(is_exit_asm)
+    {
+        return;
+    }
+    fatal!("dynamic executables or dylibs must link with libSystem.dylib");
 }
 
 /// Decides which symbols need a stub or a GOT slot, from how relocations
