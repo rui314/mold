@@ -1087,7 +1087,25 @@ impl<'a> ArgCursor<'a> {
     }
 
     fn read_lto_option(&mut self) -> Option<Vec<u8>> {
-        // Argument forms precede flags, as in the main option grammar.
+        // Flags precede argument forms, so that a bare --thinlto-index-only
+        // does not take the next argument as its value.
+        for (name, value) in [
+            ("--lto-cs-profile-generate", "cs-profile-generate"),
+            ("--lto-debug-pass-manager", "debug-pass-manager"),
+            ("disable-verify", "disable-verify"),
+            ("--lto-emit-asm", "emit-asm"),
+            ("no-legacy-pass-manager", "legacy-pass-manager"),
+            ("no-lto-legacy-pass-manager", "new-pass-manager"),
+            ("--opt-remarks-with-hotness", "opt-remarks-with-hotness"),
+            ("lto-pseudo-probe-for-profiling", "pseudo-probe-for-profiling"),
+            ("save-temps", "save-temps"),
+            ("thinlto-emit-imports-files", "thinlto-emit-imports-files"),
+            ("thinlto-index-only", "thinlto-index-only"),
+        ] {
+            if self.read_flag(name) {
+                return Some(value.as_bytes().to_vec());
+            }
+        }
         for (name, prefix) in [
             ("--lto-cs-profile-file", "cs-profile-path="),
             ("--lto-partitions", "lto-partitions="),
@@ -1096,7 +1114,6 @@ impl<'a> ArgCursor<'a> {
             ("--opt-remarks-format", "opt-remarks-format="),
             ("--opt-remarks-hotness-threshold", "opt-remarks-hotness-threshold="),
             ("--opt-remarks-passes", "opt-remarks-passes="),
-            ("lto-pseudo-probe-for-profiling", "pseudo-probe-for-profiling="),
             ("--lto-sample-profile", "sample-profile="),
             ("thinlto-index-only", "thinlto-index-only="),
             ("thinlto-object-suffix-replace", "thinlto-object-suffix-replace="),
@@ -1107,22 +1124,6 @@ impl<'a> ArgCursor<'a> {
         ] {
             if let Some(value) = self.read_arg(name) {
                 return Some([prefix.as_bytes(), value.as_encoded_bytes()].concat());
-            }
-        }
-        for (name, value) in [
-            ("--lto-cs-profile-generate", "cs-profile-generate"),
-            ("--lto-debug-pass-manager", "debug-pass-manager"),
-            ("disable-verify", "disable-verify"),
-            ("--lto-emit-asm", "emit-asm"),
-            ("no-legacy-pass-manager", "legacy-pass-manager"),
-            ("no-lto-legacy-pass-manager", "new-pass-manager"),
-            ("--opt-remarks-with-hotness", "opt-remarks-with-hotness"),
-            ("save-temps", "save-temps"),
-            ("thinlto-emit-imports-files", "thinlto-emit-imports-files"),
-            ("thinlto-index-only", "thinlto-index-only"),
-        ] {
-            if self.read_flag(name) {
-                return Some(value.as_bytes().to_vec());
             }
         }
         let level = self.current().as_encoded_bytes().strip_prefix(b"--lto-O")?;
@@ -1504,7 +1505,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             cursor.read_switch("--use-android-relr-tags", "no-use-android-relr-tags")
         {
             a.use_android_relr_tags = value;
-        } else if read_arg!("package-metadata", true) {
+        } else if read_eq!("package-metadata", true) {
             a.package_metadata = parse_package_metadata(raw_arg.as_encoded_bytes());
         } else if cursor.read_flag("stats") {
             a.stats = true;
@@ -1881,7 +1882,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.bsymbolic = BsymbolicKind::All;
             let mf = crate::mapped_file::must_open_file(&a.chroot, raw_arg);
             a.dynamic_list.push(DynamicListSource::File(mf));
-        } else if read_arg!("dynamic-list-data") {
+        } else if cursor.read_flag("dynamic-list-data") {
             a.dynamic_list_data = true;
         } else if read_arg!("--export-dynamic-symbol", true) {
             a.dynamic_list.push(DynamicListSource::Pattern(raw_arg.as_encoded_bytes().to_vec()));
