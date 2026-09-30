@@ -2862,9 +2862,9 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
 /// An output section's name: (segment, section).
 type SectionName = (&'static str, &'static str);
 
-/// The output section an input section lands in, and the name its
-/// flags follow; None for one the link consumes or drops. `args`
-/// gives -rename_section and -rename_segment.
+/// The output section an input section with `flags` lands in, and the
+/// name its flags follow; None for one the link consumes or drops.
+/// `args` gives -rename_section and -rename_segment.
 ///
 /// The __LLVM segment (bitcode, __swift_modhash, __cmdline, __asm) is
 /// copied into no output, and __objc_clsrolist, a compiler-to-linker
@@ -2885,6 +2885,7 @@ fn output_section_for(
     map: SectionMap,
     segname: &str,
     sectname: &str,
+    flags: u32,
 ) -> Option<(SectionName, SectionName)> {
     if segname == "__LLVM" {
         return None;
@@ -2896,7 +2897,7 @@ fn output_section_for(
     if name == ("__DATA", "__objc_clsrolist") {
         return None;
     }
-    let name = map.builtin_name(name);
+    let name = map.builtin_name(name, flags);
     let out = renamed(args, name);
     Some(match merged_name(out) {
         Some(merged) => (renamed(args, merged), merged),
@@ -2961,15 +2962,17 @@ struct SectionMap {
 }
 
 impl SectionMap {
-    /// The name ld-prime gives an input section of a final image
-    /// before -rename_section and -rename_segment: with -text_exec (an
-    /// arm64 kext) __text and __StaticInit move to __TEXT_EXEC,__text,
-    /// and data that needs no writes after fixups to __DATA_CONST.
-    fn builtin_name(self, name: SectionName) -> SectionName {
-        match name {
-            ("__TEXT", "__text" | "__StaticInit") if self.text_exec => ("__TEXT_EXEC", "__text"),
-            _ => self.const_name(name),
+    /// The name ld-prime gives an input section of a final image, with
+    /// the section's `flags`, before -rename_section and
+    /// -rename_segment: with -text_exec (an arm64 kext) every section
+    /// of code - pure instructions, in any segment - moves into
+    /// __TEXT_EXEC,__text, and data that needs no writes after fixups
+    /// to __DATA_CONST.
+    fn builtin_name(self, name: SectionName, flags: u32) -> SectionName {
+        if self.text_exec && flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
+            return ("__TEXT_EXEC", "__text");
         }
+        self.const_name(name)
     }
 
     /// A __DATA section's name in a final image when it needs no
@@ -3132,7 +3135,7 @@ fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
     for (replaced, blob) in anchors.into_iter().rev() {
         let hdr = ctx.hdr_of(&ctx.isecs[replaced as usize]);
         let map = SectionMap::final_link(ctx);
-        let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname());
+        let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname(), hdr.flags);
         let Some(pos) = out.and_then(|((seg, sect), _)| {
             ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
         }) else {
@@ -3161,7 +3164,7 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     for sect in sects {
         let map = SectionMap::final_link(ctx);
         let ((seg, out), (flags_seg, flags_sect)) =
-            output_section_for(&ctx.args, map, "__DATA", sect).unwrap();
+            output_section_for(&ctx.args, map, "__DATA", sect, 0).unwrap();
         let flags = output_section_flags(flags_seg, flags_sect, 0, false);
         let mut size = 0u64;
         let mut offs = Vec::new();
@@ -3191,9 +3194,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let relocatable = ctx.args.relocatable;
     let map = SectionMap::new(ctx);
     // Each input section name's output section, with the name its
-    // flags follow.
+    // flags follow - by whether it is code too, which -text_exec moves.
     type Place = (OutputSectionId, SectionName);
-    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16]), Option<Place>> =
+    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], bool), Option<Place>> =
         hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
@@ -3229,11 +3232,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         let osec_id = if hdr_ptr == last_hdr {
             last_osec
         } else {
-            let key = (hdr.segname, hdr.sectname);
+            let key = (hdr.segname, hdr.sectname, hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0);
             let id = match by_name.get(&key) {
                 Some(&id) => id,
                 None => {
-                    let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname());
+                    let (seg, sect) = (hdr.segname(), hdr.sectname());
+                    let out = output_section_for(&ctx.args, map, seg, sect, hdr.flags);
                     let id = out.map(|(out, flags_name)| match by_out.get(&out) {
                         Some(&id) => (id, flags_name),
                         None => {
@@ -3502,7 +3506,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         let map = SectionMap::final_link(ctx);
         if methname_size > 0 {
             let ((seg, sect), _) =
-                output_section_for(&ctx.args, map, "__TEXT", "__objc_methname").unwrap();
+                output_section_for(&ctx.args, map, "__TEXT", "__objc_methname", S_CSTRING_LITERALS)
+                    .unwrap();
             let id = tail_section(
                 ctx,
                 seg,
@@ -3516,7 +3521,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
         if selrefs_size > 0 {
             let ((seg, sect), (flags_seg, flags_sect)) =
-                output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs").unwrap();
+                output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
+                    .unwrap();
             let id = tail_section(
                 ctx,
                 seg,
@@ -3809,7 +3815,8 @@ fn mach_header_addr<E: Target>(ctx: &Context<E>) -> u64 {
 /// -rename_segment rename it like any section - but -rename_segment
 /// __TEXT leaves it with the mach header.
 fn text_section_name<E: Target>(ctx: &Context<E>) -> SectionName {
-    let (seg, sect) = SectionMap::final_link(ctx).builtin_name(("__TEXT", "__text"));
+    let (seg, sect) =
+        SectionMap::final_link(ctx).builtin_name(("__TEXT", "__text"), S_ATTR_PURE_INSTRUCTIONS);
     let is_renamed = ctx.args.rename_sections.iter().any(|(s, t, _, _)| s == seg && t == sect);
     if seg == "__TEXT" && !is_renamed {
         (header_segment(ctx), sect)
