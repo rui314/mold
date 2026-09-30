@@ -27,52 +27,53 @@ use crate::output_file;
 use crate::target::Target;
 use crate::util::align_to;
 
-/// ld64's section order in a -r output, measured with ld-prime:
-/// segments __TEXT, __DATA_CONST, __DATA, the rest as first seen, __LD
-/// last. In __TEXT, __text leads, other code sections (__StaticInit)
-/// follow, everything else keeps its first-seen order, and
-/// __gcc_except_tab and __eh_frame close the segment. __DATA has fixed
-/// ranks for the sections ld64 knows - the order a final link gives
-/// __DATA_CONST, then __DATA - unknown ones in first-seen order after
-/// them, then the thread-local template and the zero-fill sections.
+/// ld64's section order in a -r output, measured with ld-prime 27037:
+/// __TEXT first, __LD last, and the other segments - __DATA and
+/// __DATA_CONST included - in the order their first section appears.
+/// In __TEXT the code sections come first, __text among them, in
+/// first-seen order, then __StaticInit, then everything else as first
+/// seen, and __gcc_except_tab and __eh_frame close the segment. __DATA
+/// has fixed ranks for the sections ld64 knows (__const, the
+/// Objective-C sections, the initializer lists, __data), unknown ones
+/// in first-seen order after them, then the thread-local template and
+/// the zero-fill sections. The first element ranks the segment.
 fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
     let seg = match segname {
         "__TEXT" => 0,
-        "__DATA_CONST" => 1,
-        "__DATA" => 2,
-        "__LD" => 4,
-        _ => 3,
+        "__LD" => 2,
+        _ => 1,
     };
     let sect = match (segname, sectname) {
-        ("__TEXT", "__text") => 0,
+        ("__TEXT", "__StaticInit") => 1,
         // After __const and __cstring, whatever the input order.
         ("__TEXT", "__gcc_except_tab") => 3,
         ("__TEXT", "__eh_frame") => 4,
-        ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
+        ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
         ("__TEXT", _) => 2,
         ("__DATA", "__got") => 0,
-        ("__DATA", "__mod_init_func") => 1,
-        ("__DATA", "__mod_term_func") => 2,
-        ("__DATA", "__const") => 3,
-        ("__DATA", "__cfstring") => 4,
-        ("__DATA", "__objc_classlist") => 5,
-        ("__DATA", "__objc_nlclslist") => 6,
-        ("__DATA", "__objc_catlist") => 7,
-        ("__DATA", "__objc_nlcatlist") => 8,
-        ("__DATA", "__objc_protolist") => 9,
-        ("__DATA", "__objc_imageinfo") => 10,
-        ("__DATA", "__objc_const") => 11,
-        ("__DATA", "__objc_selrefs") => 12,
-        ("__DATA", "__objc_protorefs") => 13,
-        ("__DATA", "__objc_classrefs") => 14,
-        ("__DATA", "__objc_superrefs") => 15,
-        ("__DATA", "__objc_ivar") => 16,
-        ("__DATA", "__objc_data") => 17,
+        ("__DATA", "__const") => 1,
+        ("__DATA", "__cfstring") => 2,
+        ("__DATA", "__objc_classlist") => 3,
+        ("__DATA", "__objc_nlclslist") => 4,
+        ("__DATA", "__objc_catlist") => 5,
+        ("__DATA", "__objc_nlcatlist") => 6,
+        ("__DATA", "__objc_protolist") => 7,
+        ("__DATA", "__objc_imageinfo") => 8,
+        ("__DATA", "__objc_const") => 9,
+        ("__DATA", "__objc_selrefs") => 10,
+        ("__DATA", "__objc_protorefs") => 11,
+        ("__DATA", "__objc_classrefs") => 12,
+        ("__DATA", "__objc_superrefs") => 13,
+        ("__DATA", "__objc_ivar") => 14,
+        ("__DATA", "__objc_data") => 15,
+        ("__DATA", "__mod_init_func") => 16,
+        ("__DATA", "__mod_term_func") => 17,
+        ("__DATA", "__data") => 18,
         ("__DATA", _) => match flags & SECTION_TYPE {
-            S_THREAD_LOCAL_REGULAR => 19,
-            S_THREAD_LOCAL_ZEROFILL => 20,
-            S_ZEROFILL => 21,
-            _ => 18,
+            S_THREAD_LOCAL_REGULAR => 20,
+            S_THREAD_LOCAL_ZEROFILL => 21,
+            S_ZEROFILL => 22,
+            _ => 19,
         },
         _ => 0,
     };
@@ -271,12 +272,24 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         .map(|i| Sect::Chunk(OutputSectionId::new(i as u32)))
         .chain((0..extras.len()).map(Sect::Extra))
         .collect();
-    sects.sort_by_key(|s| match *s {
+    let name_of = |s: Sect| match s {
         Sect::Chunk(i) => {
             let h = &ctx.output_section(i).hdr;
-            section_rank(h.segname, &h.sectname, h.flags)
+            (h.segname, &*h.sectname, h.flags)
         }
-        Sect::Extra(i) => section_rank(extras[i].segname, extras[i].sectname, extras[i].flags),
+        Sect::Extra(i) => (extras[i].segname, extras[i].sectname, extras[i].flags),
+    };
+    let mut segs_seen: Vec<&str> = Vec::new();
+    for &s in &sects {
+        let seg = name_of(s).0;
+        if !segs_seen.contains(&seg) {
+            segs_seen.push(seg);
+        }
+    }
+    sects.sort_by_key(|&s| {
+        let (seg, sect, flags) = name_of(s);
+        let (seg_rank, sect_rank) = section_rank(seg, sect, flags);
+        (seg_rank, segs_seen.iter().position(|&x| x == seg), sect_rank)
     });
 
     // Addresses run from zero in that order; zero-fill sections take
