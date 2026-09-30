@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ChunkHeader;
+use crate::cmdline::GcsKind;
 use crate::context::Context;
 use crate::elf::*;
 use crate::target::{Family, Target};
@@ -99,6 +100,21 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
                 GNU_PROPERTY_X86_FEATURE_1_SHSTK;
         }
         *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
+    }
+
+    if E::FAMILY == Family::Arm64 {
+        let features = map.entry(GNU_PROPERTY_AARCH64_FEATURE_1_AND).or_insert(0);
+        if ctx.args.z_force_bti {
+            *features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
+        }
+        if ctx.args.z_pac_plt {
+            *features |= GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
+        }
+        match ctx.args.z_gcs {
+            GcsKind::Implicit => {}
+            GcsKind::Never => *features &= !GNU_PROPERTY_AARCH64_FEATURE_1_GCS,
+            GcsKind::Always => *features |= GNU_PROPERTY_AARCH64_FEATURE_1_GCS,
+        }
     }
 
     ctx.note_property.as_mut().unwrap().contents =

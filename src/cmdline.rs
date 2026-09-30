@@ -283,11 +283,19 @@ pub enum SeparateCodeKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum CetReportKind {
+pub enum ReportKind {
     #[default]
     None,
     Warning,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GcsKind {
+    #[default]
+    Implicit,
+    Never,
+    Always,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -426,7 +434,10 @@ pub struct ReaderJob {
 pub struct Args {
     pub bsymbolic: BsymbolicKind,
     pub build_id: BuildId,
-    pub z_cet_report: CetReportKind,
+    pub z_cet_report: ReportKind,
+    pub z_bti_report: ReportKind,
+    pub z_gcs_report: ReportKind,
+    pub z_gcs: GcsKind,
     pub undefined_glob: Glob,
     pub unique: Glob,
     pub z_separate_code: SeparateCodeKind,
@@ -490,6 +501,7 @@ pub struct Args {
     pub z_dynamic_undefined_weak: bool,
     pub z_execstack: bool,
     pub z_execstack_if_needed: bool,
+    pub z_force_bti: bool,
     pub z_ibt: bool,
     pub z_initfirst: bool,
     pub z_interpose: bool,
@@ -497,6 +509,7 @@ pub struct Args {
     pub z_nodefaultlib: bool,
     pub z_now: bool,
     pub z_origin: bool,
+    pub z_pac_plt: bool,
     pub z_relro: bool,
     pub z_rewrite_endbr: bool,
     pub z_rodynamic: bool,
@@ -563,7 +576,10 @@ impl Default for Args {
         Self {
             bsymbolic: BsymbolicKind::None,
             build_id: BuildId::default(),
-            z_cet_report: CetReportKind::None,
+            z_cet_report: ReportKind::None,
+            z_bti_report: ReportKind::None,
+            z_gcs_report: ReportKind::None,
+            z_gcs: GcsKind::Implicit,
             undefined_glob: Glob::new(),
             unique: Glob::new(),
             z_separate_code: SeparateCodeKind::NoSeparateCode,
@@ -627,6 +643,7 @@ impl Default for Args {
             z_dynamic_undefined_weak: true,
             z_execstack: false,
             z_execstack_if_needed: false,
+            z_force_bti: false,
             z_ibt: false,
             z_initfirst: false,
             z_interpose: false,
@@ -634,6 +651,7 @@ impl Default for Args {
             z_nodefaultlib: false,
             z_now: false,
             z_origin: false,
+            z_pac_plt: false,
             z_relro: true,
             z_rewrite_endbr: false,
             z_rodynamic: false,
@@ -1214,6 +1232,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut report_undefined: Option<bool> = None;
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
+    let mut z_bti_report: Option<ReportKind> = None;
+    let mut z_gcs_report: Option<ReportKind> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
@@ -1615,11 +1635,23 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if let Some(value) = cursor.read_z_switch("now", "lazy") {
             a.z_now = value;
         } else if cursor.read_z_flag("cet-report=none") {
-            a.z_cet_report = CetReportKind::None;
+            a.z_cet_report = ReportKind::None;
         } else if cursor.read_z_flag("cet-report=warning") {
-            a.z_cet_report = CetReportKind::Warning;
+            a.z_cet_report = ReportKind::Warning;
         } else if cursor.read_z_flag("cet-report=error") {
-            a.z_cet_report = CetReportKind::Error;
+            a.z_cet_report = ReportKind::Error;
+        } else if cursor.read_z_flag("bti-report=none") {
+            z_bti_report = Some(ReportKind::None);
+        } else if cursor.read_z_flag("bti-report=warning") {
+            z_bti_report = Some(ReportKind::Warning);
+        } else if cursor.read_z_flag("bti-report=error") {
+            z_bti_report = Some(ReportKind::Error);
+        } else if cursor.read_z_flag("gcs-report=none") {
+            z_gcs_report = Some(ReportKind::None);
+        } else if cursor.read_z_flag("gcs-report=warning") {
+            z_gcs_report = Some(ReportKind::Warning);
+        } else if cursor.read_z_flag("gcs-report=error") {
+            z_gcs_report = Some(ReportKind::Error);
         } else if cursor.read_z_flag("execstack") {
             a.z_execstack = true;
         } else if cursor.read_z_flag("execstack-if-needed") {
@@ -1658,6 +1690,16 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_z_flag("ibt") {
             a.z_ibt = true;
         } else if cursor.read_z_flag("ibtplt") {
+        } else if cursor.read_z_flag("force-bti") {
+            a.z_force_bti = true;
+        } else if cursor.read_z_flag("pac-plt") {
+            a.z_pac_plt = true;
+        } else if cursor.read_z_flag("gcs=implicit") {
+            a.z_gcs = GcsKind::Implicit;
+        } else if cursor.read_z_flag("gcs=never") {
+            a.z_gcs = GcsKind::Never;
+        } else if cursor.read_z_flag("gcs=always") {
+            a.z_gcs = GcsKind::Always;
         } else if cursor.read_z_flag("muldefs") {
             a.allow_multiple_definition = true;
         } else if let Some(value) =
@@ -2024,6 +2066,16 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
 
     // `-z dynamic-undefined-weak` is enabled by default for DSOs.
     a.z_dynamic_undefined_weak = z_dynamic_undefined_weak.unwrap_or(a.shared);
+
+    // `-z force-bti` implies `-z bti-report=warning`, and `-z gcs=always`
+    // implies `-z gcs-report=warning`.
+    a.z_bti_report =
+        z_bti_report.unwrap_or(if a.z_force_bti { ReportKind::Warning } else { ReportKind::None });
+    a.z_gcs_report = z_gcs_report.unwrap_or(if a.z_gcs == GcsKind::Always {
+        ReportKind::Warning
+    } else {
+        ReportKind::None
+    });
 
     // --section-order implies `-z norelro`
     a.z_relro = z_relro.unwrap_or(a.section_order.is_empty());

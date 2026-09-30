@@ -47,8 +47,13 @@ pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
 /// The size of a PLT entry, for targets whose entries are uniformly sized.
 pub fn entry_size<E: Target>(ctx: &Context<E>) -> u64 {
     // ARM64 PLT entries grow from 16 to 24 bytes to make room for a `bti c`
-    // landing pad if BTI is enabled.
-    if note_property::is_bti(ctx) { 24 } else { E::PLT_SIZE }
+    // landing pad if BTI is enabled and for an `autia1716` if -z pac-plt is
+    // given.
+    if E::FAMILY == Family::Arm64 && (note_property::is_bti(ctx) || ctx.args.z_pac_plt) {
+        24
+    } else {
+        E::PLT_SIZE
+    }
 }
 
 /// The offset of a PLT entry within `.plt`.

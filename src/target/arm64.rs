@@ -225,8 +225,13 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     }
 
     // A PLT entry is 16 bytes long by default and 24 bytes long if BTI is
-    // enabled. The extra space holds a `bti c` if the entry needs one, and
-    // the rest of the entry is filled with brks.
+    // enabled or -z pac-plt is given. The extra space is used for `bti c` if
+    // the entry needs one and for `autia1716` if -z pac-plt is given, and the
+    // rest is filled with brks.
+    //
+    // With -z pac-plt, the dynamic linker is expected to sign .got.plt entries
+    // with `pacia1716` using the entry's address as a modifier, and the PLT
+    // entry authenticates the address before jumping to it.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         const INSN: [u32; 6] = [
             0x9000_0010, // adrp x16, .got.plt[n]
@@ -236,9 +241,18 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0xd420_7d00, // brk
             0xd420_7d00, // brk
         ];
+        const PAC_INSN: [u32; 6] = [
+            0x9000_0010, // adrp x16, .got.plt[n]
+            0xf940_0211, // ldr  x17, [x16, .got.plt[n]]
+            0x9100_0210, // add  x16, x16, .got.plt[n]
+            0xd503_219f, // autia1716
+            0xd61f_0220, // br   x17
+            0xd420_7d00, // brk
+        ];
+        let insn = if ctx.args.z_pac_plt { &PAC_INSN } else { &INSN };
         let off = write_landing_pad(buf, Self::plt_needs_landing_pad(ctx, sym));
         let buf = &mut buf[off..plt::entry_size(ctx) as usize];
-        for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
+        for (loc, &v) in buf.chunks_exact_mut(4).zip(insn) {
             write_insn(loc, v);
         }
         let gotplt = sym.gotplt_addr(ctx);
