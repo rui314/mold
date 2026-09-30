@@ -149,8 +149,8 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
     for source in std::mem::take(&mut ctx.args.dynamic_list) {
         match source {
-            cmdline::DynamicListSource::File(path) => {
-                let patterns = crate::linker_script::parse_dynamic_list(&mut ctx, &path);
+            cmdline::DynamicListSource::File(mf) => {
+                let patterns = crate::linker_script::parse_dynamic_list(&mut ctx, mf);
                 ctx.dynamic_list_patterns.extend(patterns);
             }
             cmdline::DynamicListSource::Pattern(pattern) => {

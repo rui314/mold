@@ -363,7 +363,9 @@ pub enum DefsymValue {
 /// A source of dynamic-list patterns, kept in command line order.
 #[derive(Clone, Debug)]
 pub enum DynamicListSource {
-    File(PathBuf),
+    /// A dynamic list file. It is opened during option parsing, so a
+    /// relative path is resolved before -C changes the directory.
+    File(&'static MappedFile),
     Pattern(Vec<u8>),
 }
 
@@ -1872,13 +1874,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.version_scripts.push(PathBuf::from(raw_arg));
         } else if read_arg!("dynamic-list", true) {
             a.bsymbolic = BsymbolicKind::All;
-            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(raw_arg)));
+            let mf = crate::mapped_file::must_open_file(&a.chroot, raw_arg);
+            a.dynamic_list.push(DynamicListSource::File(mf));
         } else if read_arg!("dynamic-list-data") {
             a.dynamic_list_data = true;
         } else if read_arg!("--export-dynamic-symbol", true) {
             a.dynamic_list.push(DynamicListSource::Pattern(raw_arg.as_encoded_bytes().to_vec()));
         } else if read_arg!("--export-dynamic-symbol-list", true) {
-            a.dynamic_list.push(DynamicListSource::File(PathBuf::from(raw_arg)));
+            let mf = crate::mapped_file::must_open_file(&a.chroot, raw_arg);
+            a.dynamic_list.push(DynamicListSource::File(mf));
         } else if read_arg!("entry", true) || read_arg!("e", true) {
             a.entry = raw_arg.as_encoded_bytes().to_vec();
         } else if let Some(value) = cursor.read_switch("as-needed", "no-as-needed") {
