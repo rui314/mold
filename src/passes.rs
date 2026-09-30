@@ -2509,7 +2509,9 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             (sym.is_imported(), sym.is_exported(), sym.ty())
         };
 
-        if is_imported || is_exported {
+        // An executable without .dynamic has no dynamic symbol table even
+        // if --export-dynamic or --dynamic-list exports symbols.
+        if (is_imported || is_exported) && ctx.dynamic.is_some() {
             ctx.dynsym.add_symbol(&mut ctx.symbols, id);
         }
         if flags & NEEDS_GOT != 0 {
