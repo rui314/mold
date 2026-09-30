@@ -56,13 +56,37 @@ pub fn set_suppress_warnings(on: bool) {
     SUPPRESS_WARNINGS.store(on, Ordering::Relaxed);
 }
 
+/// The messages given from the worker threads of a parallel pass, which
+/// would come out in whatever order the threads happened to run. They
+/// wait here and come out sorted, the same in every run, before the
+/// next message the link's own thread gives, or as the link ends.
+static PARALLEL: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 // Format each message before taking the lock so diagnostics from different
 // threads cannot interleave.
 fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
     let prefix = if COLOR.load(Ordering::Relaxed) { prefix_color } else { prefix_mono };
     let text = format!("{prefix}{msg}\n");
+    if rayon::current_thread_index().is_some() {
+        PARALLEL.lock().unwrap_or_else(|e| e.into_inner()).push(text);
+        return;
+    }
+    release_parallel();
     let _guard = OUTPUT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _ = io::stderr().write_all(text.as_bytes());
+}
+
+/// Gives the messages of parallel passes held back so far, sorted.
+fn release_parallel() {
+    let mut msgs = std::mem::take(&mut *PARALLEL.lock().unwrap_or_else(|e| e.into_inner()));
+    if msgs.is_empty() {
+        return;
+    }
+    msgs.sort_unstable();
+    let _guard = OUTPUT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    for text in msgs {
+        let _ = io::stderr().write_all(text.as_bytes());
+    }
 }
 
 /// Reports an unrecoverable error and exits, giving the messages held
@@ -166,7 +190,9 @@ pub fn warn(msg: fmt::Arguments) {
 }
 
 /// Prints a message with no prefix: ld-prime gives a few notices that
-/// are neither warnings nor errors (a renamed option).
+/// are neither warnings nor errors (a renamed option), and reports some
+/// of what it did (-why_live, -why_load, the text relocations and the
+/// final layout it fails on) in lines of its own.
 pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
 }
@@ -181,6 +207,7 @@ pub fn hidden_warning() {
 /// warning as a warning, then fails with the output in place; this is
 /// called once the output is written.
 pub fn check_fatal_warnings() {
+    release_parallel();
     if FATAL_WARNINGS.load(Ordering::Relaxed) && HAS_WARNING.load(Ordering::Relaxed) {
         error(format_args!("fatal warning(s) induced error (-fatal_warnings)"));
         exit_after_cleanup(1);
@@ -207,6 +234,7 @@ pub fn checkpoint_in_layout() {
 /// lifetime, so there is nothing else to release.
 pub fn exit_after_cleanup(status: i32) -> ! {
     release_layout_errors();
+    release_parallel();
     crate::output_file::cleanup();
     let _ = io::stdout().flush();
     let _ = io::stderr().flush();

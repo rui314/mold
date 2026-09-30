@@ -674,15 +674,20 @@ impl<'a, E: Target> WhyLive<'a, E> {
         if self.ctx.args.why_live.find(name.as_bytes()) == -1 {
             return;
         }
-        eprintln!("{}", self.describe(atom, name));
+        crate::error::notice(format_args!("{}", self.describe(atom, name)));
         if let Some(why) = why {
-            eprintln!("  {}", why.name());
+            crate::error::notice(format_args!("  {}", why.name()));
         }
         for (depth, frame) in stack.iter().rev().enumerate() {
             let referrer = frame.atom;
             let name =
                 self.name(referrer, true).map_or_else(|| self.section_name(referrer), String::from);
-            eprintln!("{:indent$}{}", "", self.describe(referrer, &name), indent = depth * 2 + 2);
+            crate::error::notice(format_args!(
+                "{:indent$}{}",
+                "",
+                self.describe(referrer, &name),
+                indent = depth * 2 + 2
+            ));
         }
     }
 

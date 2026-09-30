@@ -2707,12 +2707,18 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
             "-ObjC"
         };
         for obj in run.iter().rev() {
-            eprintln!("{option} caused load of {}", resolved_file_name(obj.mf));
+            crate::error::notice(format_args!(
+                "{option} caused load of {}",
+                resolved_file_name(obj.mf)
+            ));
         }
     }
     for (idx, obj) in members() {
         if let Some(name) = ctx.why_load.get(&idx) {
-            eprintln!("'{name}' caused load of {}", resolved_file_name(obj.mf));
+            crate::error::notice(format_args!(
+                "'{name}' caused load of {}",
+                resolved_file_name(obj.mf)
+            ));
         }
     }
 }
@@ -4069,12 +4075,15 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             if rebase_opcodes && osec.is_some() {
                 break;
             }
-            eprintln!("Illegal text-relocations:");
+            crate::error::notice(format_args!("Illegal text-relocations:"));
             osec = Some(isec.output_section);
         }
         let rel = &ctx.isec_relocs(id as usize)[i as usize];
         let target = ctx.text_reloc_target_name(isec.file as usize, rel);
-        eprintln!("  text-relocation in {} to '{target}'", ctx.atom_ref(id as usize, rel.offset));
+        crate::error::notice(format_args!(
+            "  text-relocation in {} to '{target}'",
+            ctx.atom_ref(id as usize, rel.offset)
+        ));
     }
     if !chunks::chained_fixups::report_unaligned_chain_pointer(ctx) && osec.is_some() {
         error!("Found illegal text-relocations");
@@ -4109,7 +4118,7 @@ pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
             );
         }
     }
-    eprint!("{out}");
+    crate::error::notice(format_args!("{}", out.trim_end_matches('\n')));
 }
 
 /// Lays out every segment but __LINKEDIT and gives each its address.
