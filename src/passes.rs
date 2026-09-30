@@ -5384,7 +5384,14 @@ fn symbol_stabs<E: Target>(
         return common.then(|| (0, vec![global_stab(name, sym_id)]));
     };
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-    if !isec.is_alive() {
+    // ld-prime notes no exception tables' labels and no ivar offsets.
+    let hdr = ctx.hdr_of(isec);
+    if !isec.is_alive()
+        || matches!(
+            (hdr.segname(), hdr.sectname()),
+            ("__TEXT", "__gcc_except_tab") | ("__DATA", "__objc_ivar")
+        )
+    {
         return None;
     }
     let addr = ctx.sym_addr(sym_id);
