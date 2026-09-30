@@ -662,11 +662,16 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // symtab, build version, data in code, linker option and hint
     // commands; then section contents, relocations, data in code,
     // hints, symbols and strings.
-    let ncmds = 4 + linker_options.len() as u32 + loh.is_some() as u32;
+    let (platform, minos, sdk) = output_target(ctx);
+    let version_cmd = if crate::chunks::has_version_cmd(&ctx.args, platform) {
+        crate::chunks::create_version_cmd::<E>(platform, minos, sdk)
+    } else {
+        Vec::new()
+    };
+    let ncmds =
+        3 + u32::from(!version_cmd.is_empty()) + linker_options.len() as u32 + loh.is_some() as u32;
     let num_sections = sects.len();
     let seg_cmd_size = size_of::<SegmentCommand>() + num_sections * size_of::<MachSection>();
-    let (platform, minos, sdk) = output_target(ctx);
-    let version_cmd = crate::chunks::create_version_cmd::<E>(platform, minos, sdk);
     let sizeofcmds = seg_cmd_size
         + size_of::<SymtabCommand>()
         + version_cmd.len()
@@ -674,8 +679,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         + linker_options.iter().map(|o| linker_option_cmdsize(o)).sum::<usize>()
         + if loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 };
     // ld-prime leaves -headerpad (32 unless given) free after the load
-    // commands, and more when LC_VERSION_MIN_MACOSX stands where its
-    // estimate of them counted a 32-byte LC_BUILD_VERSION.
+    // commands, and more when LC_VERSION_MIN_MACOSX, or no command at
+    // all, stands where its estimate of them counted a 32-byte
+    // LC_BUILD_VERSION.
     let pad = ctx.args.headerpad + 32u64.saturating_sub(version_cmd.len() as u64);
     let mut off = (size_of::<MachHeader>() + sizeofcmds) as u64 + pad;
 

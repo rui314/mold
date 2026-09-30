@@ -399,7 +399,14 @@ impl MachRel {
 /// versions".
 pub fn is_new_os(arch: &str, output_type: u32, platform: u32, minos: u32) -> bool {
     let min = if arch == "x86_64" && output_type == MH_EXECUTE { 13 } else { 12 };
-    platform == PLATFORM_MACOS && minos >= encode_version(min, 0, 0)
+    targets_macos(platform, minos, encode_version(min, 0, 0))
+}
+
+/// Whether the deployment target is macOS `version` or later. Firmware
+/// waits for no OS to support a feature, and ld-prime takes a firmware
+/// target, whatever its version, as the newest.
+pub fn targets_macos(platform: u32, minos: u32, version: u32) -> bool {
+    platform == PLATFORM_FIRMWARE || (platform == PLATFORM_MACOS && minos >= version)
 }
 
 /// Encodes an X.Y.Z version number for a load command.
@@ -429,6 +436,8 @@ pub fn platform_name(platform: u32) -> String {
         PLATFORM_DRIVERKIT => "DriverKit",
         PLATFORM_VISIONOS => "visionOS",
         PLATFORM_VISIONOSSIMULATOR => "visionOS-simulator",
+        PLATFORM_FIRMWARE => "firmware",
+        PLATFORM_SEPOS => "sepOS",
         _ => return format!("unknown platform ({platform})"),
     }
     .to_string()

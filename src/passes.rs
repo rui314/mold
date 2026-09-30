@@ -1495,22 +1495,26 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
     // The deployment target the inputs are checked against: zero if none
     // was specified, but a -r output takes its first object's, and
     // ld-prime checks the later ones against that.
-    let minos = if ctx.args.relocatable {
-        crate::relocatable::output_target(ctx).1
+    let (platform, minos) = if ctx.args.relocatable {
+        let (platform, minos, _) = crate::relocatable::output_target(ctx);
+        (platform, minos)
     } else {
-        ctx.args.platform_minos
+        (ctx.args.platform, ctx.args.platform_minos)
     };
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
         // Old objects and the synthesized object may have no version
         // command. An object may also declare more than one platform;
         // use the deployment target for the platform being linked.
         let Some(first) = obj.platform_versions.first() else { continue };
-        let Some(version) = obj.platform_versions.iter().find(|v| v.platform == ctx.args.platform)
-        else {
+        let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
+            // Firmware takes code built for any platform.
+            if platform == crate::macho::PLATFORM_FIRMWARE {
+                continue;
+            }
             crate::error!(
                 "building for '{}', but linking in object file ({}) built for '{}'",
-                platform_name(ctx.args.platform),
-                obj.mf.name.display(),
+                platform_name(platform),
+                resolved_file_name(obj.mf),
                 platform_name(first.platform)
             );
             continue;
@@ -2349,7 +2353,11 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
 /// loader included, will do, libSystem or not. ld-prime does the same
 /// and, like ld64, lets off libsystem_kernel, which libSystem is built
 /// on, and any link with an exit-asm.o (a stopgap for rdar://39514191).
+/// Firmware has no libSystem to link.
 fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
+    if ctx.args.platform == crate::macho::PLATFORM_FIRMWARE {
+        return;
+    }
     let dynamic = match ctx.args.output_type {
         MH_EXECUTE => !ctx.args.static_link,
         MH_DYLIB | MH_BUNDLE => true,

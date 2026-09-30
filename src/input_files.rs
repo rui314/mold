@@ -2353,12 +2353,18 @@ fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
                 );
             }
         } else {
-            fatal!(
+            let msg = format!(
                 "building for '{}', but linking in dylib ({}) built for '{}'",
                 platform_name(ctx.args.platform),
-                mf.name.display(),
+                crate::passes::resolved_file_name(mf),
                 platform_name(first.platform)
             );
+            // Firmware links against any platform's dylibs.
+            if ctx.args.platform == PLATFORM_FIRMWARE {
+                crate::warn!("{msg}");
+            } else {
+                fatal!("{msg}");
+            }
         }
     }
 }

@@ -216,7 +216,8 @@ pub struct Args {
     pub add_ast_paths: Vec<PathBuf>,
     pub dynamic: bool,
     /// -headerpad: the space left free after the load commands (32
-    /// unless given; a final image never gets less).
+    /// unless given, 128 in firmware dyld loads; a final image never
+    /// gets less than 32).
     pub headerpad: u64,
     /// -headerpad_max_install_names: room for every dylib load command
     /// to grow to MAXPATHLEN.
@@ -464,11 +465,13 @@ fn parse_version(arg: &str) -> u32 {
     encode_version(major, minor, patch)
 }
 
-/// ld64 takes the platform by name or by its PLATFORM_* number; Xcode
-/// passes the number for some prelink steps (`-platform_version 1 11.0`).
+/// ld64 takes the platform by name, in any case, or by its PLATFORM_*
+/// number; Xcode passes the number for some prelink steps
+/// (`-platform_version 1 11.0`).
 fn parse_platform(arg: &str) -> u32 {
-    match arg {
+    match arg.to_ascii_lowercase().as_str() {
         "macos" | "macosx" | "1" => PLATFORM_MACOS,
+        "firmware" | "13" => PLATFORM_FIRMWARE,
         _ => fatal!("unsupported platform: {arg}"),
     }
 }
@@ -752,6 +755,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut explicit_entry = false;
+    let mut read_only_relocs = false;
+    let mut headerpad: Option<u64> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
     let mut version_shown = false;
@@ -882,7 +887,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
                 );
             }
-            b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
+            b"-headerpad" => headerpad = Some(parse_hex(name, text(name, next_arg(&mut i)))),
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i)));
                 args.explicit_pagezero = true;
@@ -978,6 +983,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-r" => args.relocatable = true,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
+            // How relocations in read-only segments are treated; only
+            // firmware and images no dyld loads may have them. mold
+            // refuses none, so the treatment changes nothing.
+            b"-read_only_relocs" => {
+                let Some(treatment) = cmdline.get(i + 1) else {
+                    fatal!("-read_only_relocs missing <option>");
+                };
+                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
+                    fatal!("-read_only_relocs invalid option (warning | error | suppress)");
+                }
+                i += 1;
+                read_only_relocs = true;
+            }
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates
             // every other one (error, warning or anything else) and
@@ -1278,6 +1296,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.rpaths.clear();
     }
 
+    // ld-prime leaves 32 bytes free after the load commands unless
+    // -headerpad says otherwise, but 128 in firmware that dyld loads.
+    let dyld_loaded_firmware =
+        args.platform == PLATFORM_FIRMWARE && !args.without_dyld() && !args.relocatable;
+    args.headerpad = headerpad.unwrap_or(if dyld_loaded_firmware { 128 } else { 32 });
+
     // An image no dyld loads starts from LC_UNIXTHREAD at "start",
     // crt1.o's entry point, as every executable did before LC_MAIN had
     // dyld call _main.
@@ -1318,6 +1342,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         crate::warn!("{msg}");
     }
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    warn_platform_options(&args, read_only_relocs);
 
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
@@ -1354,6 +1379,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.pie || args.output_type != MH_EXECUTE
     });
     resolve_kext(target, &mut args);
+    complete_segment_order(&mut args);
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
     }
@@ -1511,9 +1537,14 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     }
 }
 
-/// -segment_order lays out an image no dyld loads, a -static or a
-/// -preload one (ld-prime also allows firmware platforms, which mold
-/// has not).
+/// Whether the command line may lay out the image's segments and
+/// sections: an image no dyld loads (a -static or a -preload one) or
+/// firmware (ld-prime also allows sepOS, and -section_order a
+/// -dylinker image, which mold has not).
+fn custom_layout(args: &Args) -> bool {
+    args.static_link || args.platform == PLATFORM_FIRMWARE
+}
+
 fn check_segment_order(args: &Args) {
     if args.segment_order.is_empty() {
         return;
@@ -1521,20 +1552,51 @@ fn check_segment_order(args: &Args) {
     if args.segment_order.len() < 2 {
         fatal!("-segment_order should specifify at least two segments");
     }
-    if !args.static_link {
+    if !custom_layout(args) {
         fatal!(
             "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );
     }
 }
 
-/// -section_order too lays out an image no dyld loads (ld-prime also
-/// allows -dylinker and firmware platforms, which mold has not).
+/// In an image dyld loads (firmware), __DATA_CONST is one of the
+/// standard segments, and ld-prime puts it right before __DATA where
+/// -segment_order names that alone.
+fn complete_segment_order(args: &mut Args) {
+    let has = |name: &str| args.segment_order.iter().position(|s| s == name);
+    if !args.without_dyld()
+        && args.data_const
+        && has("__DATA_CONST").is_none()
+        && let Some(i) = has("__DATA")
+    {
+        crate::warn!(
+            "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
+        );
+        args.segment_order.insert(i, "__DATA_CONST".to_string());
+    }
+}
+
 fn check_section_order(args: &Args) {
-    if !args.section_order.is_empty() && !args.static_link {
+    if !args.section_order.is_empty() && !custom_layout(args) {
         fatal!(
             "-section_order can only be used with -preload, -dylinker, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );
+    }
+}
+
+/// ld-prime deprecates -flat_namespace on every platform but macOS, and
+/// allows relocations in read-only segments only in firmware and in
+/// images no dyld loads.
+fn warn_platform_options(args: &Args, read_only_relocs: bool) {
+    if args.flat_namespace && args.platform == PLATFORM_FIRMWARE {
+        crate::warn!("-flat_namespace is deprecated on firmware");
+    }
+    if read_only_relocs
+        && !args.without_dyld()
+        && !args.relocatable
+        && args.platform != PLATFORM_FIRMWARE
+    {
+        crate::warn!("-read_only_relocs relocs cannot be used in this configuration");
     }
 }
 

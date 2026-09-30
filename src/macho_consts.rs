@@ -81,6 +81,8 @@ pub const PLATFORM_WATCHOSSIMULATOR: u32 = 9;
 pub const PLATFORM_DRIVERKIT: u32 = 10;
 pub const PLATFORM_VISIONOS: u32 = 11;
 pub const PLATFORM_VISIONOSSIMULATOR: u32 = 12;
+pub const PLATFORM_FIRMWARE: u32 = 13;
+pub const PLATFORM_SEPOS: u32 = 14;
 
 // Segment protections
 pub const VM_PROT_READ: u32 = 1;
