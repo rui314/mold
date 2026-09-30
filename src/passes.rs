@@ -5182,7 +5182,12 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
 /// the symbol whose final address fills in n_value, if any.
 pub type StabPlan = Vec<(&'static [u8], NList, Option<crate::symbol::SymbolId>)>;
 
-pub fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) -> StabPlan {
+pub fn plan_object_stabs<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+    cwd: &Path,
+    commons: &hashbrown::HashMap<crate::symbol::SymbolId, usize>,
+) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     let mut out: StabPlan = Vec::new();
     if !obj.is_alive {
@@ -5243,7 +5248,7 @@ pub fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path
             }
             out.push((name.as_bytes(), ent, None));
         }
-        return out;
+        return sort_copied_stabs(ctx, out);
     }
 
     if !obj.has_debug_info {
@@ -5300,65 +5305,164 @@ pub fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path
         None,
     ));
 
+    // A symbol's notes, by its address: ld-prime lists them in address
+    // order, functions and data alike.
+    let mut groups: Vec<(u64, StabPlan)> = Vec::new();
     for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
         let sym = &ctx.symbols[sym_id];
+        // A tentative definition gets its note in the first object that
+        // declares it.
+        let common = nlist.is_common() && commons.get(&sym_id) == Some(&obj_idx);
         if nlist.is_stab()
-            || !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
+            || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
             || (!nlist.is_extern() && !keep_local_symbol_in(ctx, sym.name(), sym.input_section()))
         {
             continue;
         }
-        let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-        let isec_id = ctx.resolve_isec(isec);
-        let isec = &ctx.isecs[isec_id];
-        if !isec.is_alive() {
-            continue;
-        }
-
-        let stab_name = sym.name();
-        let is_text = ctx.hdr_of(isec).segname() == "__TEXT"
-            && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
-        if is_text {
-            // ld64's shape: N_BNSYM, the N_FUN pair (the function's
-            // address, then its size), N_ENSYM. Its stab reader takes
-            // an N_FUN without the bracketing symbols badly (a crash
-            // on a -r output that had only the pair).
-            let sect = ctx.isec_n_sect(isec);
-            out.push((
-                b"",
-                NList { n_strx: 1, n_type: N_BNSYM, n_sect: sect, ..Default::default() },
-                Some(sym_id),
-            ));
-            out.push((
-                stab_name.as_bytes(),
-                NList { n_strx: 0, n_type: N_FUN, n_sect: sect, ..Default::default() },
-                Some(sym_id),
-            ));
-            out.push((
-                b"",
-                NList { n_strx: 1, n_type: N_FUN, n_value: isec.size as u64, ..Default::default() },
-                None,
-            ));
-            out.push((
-                b"",
-                NList { n_strx: 1, n_type: N_ENSYM, n_sect: sect, ..Default::default() },
-                Some(sym_id),
-            ));
-        } else {
-            out.push((
-                stab_name.as_bytes(),
-                NList {
-                    n_strx: 0,
-                    n_type: if nlist.is_extern() { N_GSYM } else { N_STSYM },
-                    n_sect: ctx.isec_n_sect(isec),
-                    ..Default::default()
-                },
-                Some(sym_id),
-            ));
-        }
+        groups.extend(symbol_stabs(ctx, sym_id, nlist.is_extern(), common));
     }
+    groups.sort_by_key(|g| g.0);
+    out.extend(groups.into_iter().flat_map(|g| g.1));
 
     out.push((b"", STAB_END, None));
+    out
+}
+
+/// A symbol's debug notes, with the address they sort by: N_BNSYM, the
+/// N_FUN pair and N_ENSYM for a function, an N_GSYM for global data,
+/// an N_STSYM for a local's.
+fn symbol_stabs<E: Target>(
+    ctx: &Context<E>,
+    sym_id: crate::symbol::SymbolId,
+    is_extern: bool,
+    common: bool,
+) -> Option<(u64, StabPlan)> {
+    let sym = &ctx.symbols[sym_id];
+    let name = sym.name().as_bytes();
+    let Some(isec) = sym.input_section().map(|i| i as usize) else {
+        // A -r output keeps a common undefined; it has no address.
+        return common.then(|| (0, vec![(name, global_stab(), None)]));
+    };
+    let isec = &ctx.isecs[ctx.resolve_isec(isec)];
+    if !isec.is_alive() {
+        return None;
+    }
+    let addr = ctx.sym_addr(sym_id);
+    let sect = ctx.isec_n_sect(isec);
+    let is_text = ctx.hdr_of(isec).segname() == "__TEXT"
+        && ctx.hdr_of(isec).flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+    // Named entries get their string offsets later; the rest keep 1,
+    // the empty string.
+    let stab = |n_type, n_sect| NList { n_strx: 1, n_type, n_sect, ..Default::default() };
+    let group = if is_text {
+        // ld64's shape: N_BNSYM, the N_FUN pair (the function's
+        // address, then its size), N_ENSYM. Its stab reader takes
+        // an N_FUN without the bracketing symbols badly (a crash
+        // on a -r output that had only the pair).
+        vec![
+            (&b""[..], stab(N_BNSYM, sect), Some(sym_id)),
+            (name, NList { n_strx: 0, ..stab(N_FUN, sect) }, Some(sym_id)),
+            (b"", NList { n_value: isec.size as u64, ..stab(N_FUN, 0) }, None),
+            (b"", stab(N_ENSYM, sect), Some(sym_id)),
+        ]
+    } else if is_extern {
+        // A global's note names it only; the debugger looks the
+        // address up by name.
+        vec![(name, global_stab(), None)]
+    } else {
+        vec![(name, NList { n_strx: 0, ..stab(N_STSYM, sect) }, Some(sym_id))]
+    };
+    Some((addr, group))
+}
+
+/// An N_GSYM: a global's debug note, with no section or address.
+fn global_stab() -> NList {
+    NList { n_strx: 0, n_type: N_GSYM, ..Default::default() }
+}
+
+/// The object whose stabs note each tentative definition that no real
+/// one overrode: the first live object that declares it.
+pub fn common_stab_owners<E: Target>(
+    ctx: &Context<E>,
+) -> hashbrown::HashMap<crate::symbol::SymbolId, usize> {
+    let per_obj: Vec<Vec<crate::symbol::SymbolId>> = ctx
+        .objs
+        .par_iter()
+        .map(|obj| {
+            if !obj.is_alive || !obj.has_debug_info {
+                return Vec::new();
+            }
+            let r = obj.global_range();
+            obj.nlists[r.clone()]
+                .iter()
+                .zip(&obj.symbols[r])
+                .filter(|&(nlist, &id)| {
+                    let sym = &ctx.symbols[id];
+                    !nlist.is_stab()
+                        && nlist.is_common()
+                        && (sym.is_common()
+                            || matches!(sym.file(), Some(FileId::Obj(o)) if ctx.is_internal(o as usize)))
+                })
+                .map(|(_, &id)| id)
+                .collect()
+        })
+        .collect();
+    let mut owners = hashbrown::HashMap::new();
+    for (obj_idx, ids) in per_obj.into_iter().enumerate() {
+        for id in ids {
+            owners.entry(id).or_insert(obj_idx);
+        }
+    }
+    owners
+}
+
+/// Stabs an input carries through (a -r output's) in final-link order:
+/// one run per compilation unit, the symbol notes of each sorted by
+/// their addresses now - an N_GSYM by its global's - and without the
+/// closing N_SO that opened the input's stabs (the output has its own).
+fn sort_copied_stabs<E: Target>(ctx: &Context<E>, plan: StabPlan) -> StabPlan {
+    let is_end = |e: &NList, name: &[u8]| e.n_type == N_SO && name.is_empty();
+    let mut out: StabPlan = Vec::with_capacity(plan.len());
+    let mut groups: Vec<(u64, StabPlan)> = Vec::new();
+    let mut in_unit = false;
+    let mut i = 0;
+    while i < plan.len() {
+        let (name, ent, _) = plan[i];
+        if is_end(&ent, name) {
+            groups.sort_by_key(|g| g.0);
+            out.extend(groups.drain(..).flat_map(|g| g.1));
+            if in_unit {
+                out.push(plan[i]);
+            }
+            in_unit = false;
+            i += 1;
+            continue;
+        }
+        in_unit = true;
+        // A function's notes run from N_BNSYM to N_ENSYM, or are an
+        // N_FUN pair; any other note stands alone.
+        let len = match ent.n_type {
+            N_BNSYM => plan[i..].iter().position(|e| e.1.n_type == N_ENSYM).map_or(1, |n| n + 1),
+            N_FUN if !name.is_empty() => 2.min(plan.len() - i),
+            _ => 1,
+        };
+        let addr = match ent.n_type {
+            N_GSYM => ctx
+                .symbols
+                .get(std::str::from_utf8(name).unwrap_or(""))
+                .map_or(0, |id| ctx.sym_addr(id)),
+            N_SO | N_OSO | N_AST => {
+                out.push(plan[i]);
+                i += 1;
+                continue;
+            }
+            _ => ent.n_value,
+        };
+        groups.push((addr, plan[i..i + len].to_vec()));
+        i += len;
+    }
+    groups.sort_by_key(|g| g.0);
+    out.extend(groups.into_iter().flat_map(|g| g.1));
     out
 }
 
@@ -5652,6 +5756,7 @@ pub fn create_output_symtab<E: Target>(
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
         let cwd = &cwd;
+        let commons = common_stab_owners(ctx);
 
         // Each object's stab run is independent; plan them in
         // parallel and append in object order, the same shape as the
@@ -5660,7 +5765,7 @@ pub fn create_output_symtab<E: Target>(
             .objs
             .par_iter()
             .enumerate()
-            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, cwd))
+            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, cwd, &commons))
             .collect();
         // ld-prime opens the stabs with a closing N_SO of its own.
         if planned.iter().any(|plan| !plan.is_empty()) {

@@ -360,8 +360,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     // carries the notes through.
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
+        let commons = crate::passes::common_stab_owners(ctx);
         for obj_idx in 0..ctx.objs.len() {
-            for (name, mut ent, sym) in crate::passes::plan_object_stabs(ctx, obj_idx, &cwd) {
+            for (name, mut ent, sym) in
+                crate::passes::plan_object_stabs(ctx, obj_idx, &cwd, &commons)
+            {
                 if let Some(id) = sym {
                     ent.n_value = sym_addr(ctx, id);
                 }
