@@ -288,8 +288,8 @@ pub struct Args {
     /// symbols stay.
     pub local_keep_list: Option<Glob>,
     pub pagezero_size: u64,
-    /// True when -pagezero_size was given explicitly (it is an error
-    /// anywhere but a main executable).
+    /// True when -pagezero_size was given explicitly (a non-zero size
+    /// is an error anywhere but a main executable).
     pub explicit_pagezero: bool,
     /// -image_base: the VM address of the first segment.
     pub image_base: Option<u64>,
@@ -701,6 +701,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, String, String)> = Vec::new();
     let mut no_dead_strip_inits_and_terms = false;
+    let mut explicit_entry = false;
     let mut i = 1;
     let mut version_shown = false;
 
@@ -746,7 +747,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                         .unwrap_or_else(|| fatal!("unsupported target: {arch}")),
                 );
             }
-            b"-e" => args.entry = text(name, next_arg(&mut i)).to_string(),
+            b"-e" => {
+                args.entry = text(name, next_arg(&mut i)).to_string();
+                explicit_entry = true;
+            }
             b"-platform_version" => {
                 args.platform = parse_platform(text(name, next_arg(&mut i)));
                 args.platform_minos = parse_version(text(name, next_arg(&mut i)));
@@ -1135,15 +1139,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         std::process::exit(0);
     }
 
-    // A dylib is loaded at an arbitrary address; only a main executable
-    // reserves the low 4 GiB against NULL dereferences.
-    if args.output_type != MH_EXECUTE {
-        if args.explicit_pagezero {
-            fatal!("-pagezero_size option can only be used when linking a main executable");
-        }
-        args.pagezero_size = 0;
-    }
-
     check_segment_order(&args);
 
     // A -static image (a kernel) carries the code tables only when
@@ -1189,6 +1184,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.kernel && !args.static_link {
         fatal!("-kernel must be used with -static");
     }
+    check_output_kind(&args, pie, data_const, explicit_entry);
+
+    // A dylib is loaded at an arbitrary address; only a main executable
+    // reserves the low 4 GiB against NULL dereferences.
+    if args.output_type != MH_EXECUTE {
+        args.pagezero_size = 0;
+    }
+
     args.pie = resolve_pie(target, &args, pie);
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);
@@ -1300,6 +1303,37 @@ impl Args {
     }
 }
 
+/// Rejects the options the kind of output has no use for, as ld-prime
+/// does. Only a main executable has an entry point, a main-thread
+/// stack, a __PAGEZERO and the MH_PIE flag, and a client name is what
+/// a bundle or an executable presents to the umbrella it links against.
+/// A relocatable object also leaves the __DATA_CONST split to the link
+/// that consumes it.
+fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
+    let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
+    if args.client_name.is_some() && (args.relocatable || args.output_type == MH_DYLIB) {
+        fatal!("-client_name can only be used when creating a bundle or main executable");
+    }
+    if pie == Some(true) && !main_executable {
+        if args.relocatable {
+            fatal!("-pie can only be used when linking a main executable");
+        }
+        crate::warn!("-pie being ignored. It is only used when linking a main executable");
+    }
+    if args.relocatable && data_const == Some(true) {
+        fatal!("-data_const not supported with -r");
+    }
+    if !main_executable && args.explicit_pagezero && args.pagezero_size != 0 {
+        fatal!("-pagezero_size can only be used when linking a main executable");
+    }
+    if !main_executable && args.stack_size != 0 {
+        fatal!("-stack_size option can only be used when linking a main executable");
+    }
+    if !main_executable && entry {
+        crate::warn!("ignoring -e, not used for output type");
+    }
+}
+
 /// Whether an executable is position independent (MH_PIE). It is
 /// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
 /// PIE executables only) and which ld-prime deprecates from the OS
@@ -1308,7 +1342,7 @@ impl Args {
 /// chains exist to slide it.
 fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
     match pie {
-        Some(false) if args.output_type == MH_EXECUTE && !args.static_link => {
+        Some(false) if args.output_type == MH_EXECUTE && !args.static_link && !args.relocatable => {
             if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
                 crate::warn!("-no_pie is deprecated when targeting new OS versions");
             }
