@@ -3146,11 +3146,14 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     mark(ctx_ref.syms.init);
     mark(ctx_ref.syms.fini);
     // Exported symbols are conservatively considered address-taken.
-    for &id in ctx_ref.dynsym.symbols.iter().flatten() {
-        if ctx_ref.symbols[id].is_exported() {
-            mark(id);
+    ctx_ref.objs.par_iter().for_each(|file| {
+        for &id in file.base.global_symbols() {
+            let sym = &ctx_ref.symbols[id];
+            if sym.file() == Some(FileId::Obj(file.id())) && sym.is_exported() {
+                mark(id);
+            }
         }
-    }
+    });
 }
 
 // We want to sort output chunks in the following order.
