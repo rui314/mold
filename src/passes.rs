@@ -2929,7 +2929,11 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
 }
 
 /// Decides which symbols need a stub or a GOT slot, from how relocations
-/// refer to them.
+/// refer to them. Only the relocations of subsections the output keeps
+/// count: not those of a copy merged into another, such as a losing
+/// weak definition. Swift's symbolic type references are weak, and the
+/// copy in the object defining the type refers to its descriptor
+/// directly while every other object's goes through a GOT slot.
 pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // Classification reads only; collect it on all cores. The apply
     // loop below stays serial so GOT and stub slots keep their
@@ -2938,7 +2942,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     let classes: Vec<(crate::symbol::SymbolId, RelocClass)> = ctx_ref
         .isecs
         .par_iter()
-        .filter(|isec| isec.is_alive())
+        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
         .flat_map_iter(|isec| {
             crate::input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
