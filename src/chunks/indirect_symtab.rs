@@ -4,7 +4,6 @@
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::symbol::SymbolId;
 use crate::target::Target;
 
 /// The indirect symbol table: for each __stubs, __got and
@@ -28,7 +27,7 @@ impl Default for IndirectSymtabSection {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut off = 0;
-    let lazy: &[SymbolId] = if ctx.lazy_binding() { &ctx.stubs.symbols } else { &[] };
+    let lazy = ctx.stubs.lazy.iter().map(|&i| ctx.stubs.symbols[i as usize]);
     // A GOT slot holding a definition of this image that dyld never
     // rebinds is INDIRECT_SYMBOL_LOCAL, as ld64 writes it, whatever
     // the symbol's scope; a stub's or an imported (or
@@ -39,7 +38,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         .iter()
         .map(|&id| (id, false))
         .chain(ctx.got.got_syms.iter().map(|&id| (id, !ctx.binds_at_runtime(id))))
-        .chain(lazy.iter().map(|&id| (id, false)));
+        .chain(lazy.map(|id| (id, false)));
     for (id, local) in entries {
         let val = match ctx.symtab.output_sym_indices[id as usize] {
             _ if local => INDIRECT_SYMBOL_LOCAL,

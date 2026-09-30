@@ -2476,6 +2476,11 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     for (i, &id) in stubs.iter().enumerate() {
         ctx.sym_aux_mut(id).stub_idx = i as u32;
     }
+    if ctx.lazy_binding() {
+        ctx.stubs.lazy = (0..stubs.len() as u32)
+            .filter(|&i| !ctx.binds_weak_lookup(stubs[i as usize]))
+            .collect();
+    }
     ctx.stubs.symbols = stubs;
 
     let mut got = std::mem::take(&mut ctx.got.got_syms);
@@ -4560,14 +4565,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     // (A stub bound by weak lookup goes through the GOT; only lazily
     // bound stubs need the helper and lazy pointers.)
-    if ctx.lazy_binding() && ctx.stubs.symbols.iter().any(|&id| !ctx.binds_weak_lookup(id)) {
+    if !ctx.stubs.lazy.is_empty() {
         ctx.stub_helper.hdr.size = E::STUB_HELPER_HEADER_SIZE
-            + ctx.stubs.symbols.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
+            + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
             - E::STUB_HELPER_ENTRY_PADDING;
         ctx.chunks.push(ChunkId::StubHelper);
         // Indirect symbol table entries: stubs, the GOT's, then these.
         ctx.lazy_ptrs.hdr.reserved1 = (ctx.stubs.symbols.len() + ctx.got.got_syms.len()) as u32;
-        ctx.lazy_ptrs.hdr.size = ctx.stubs.symbols.len() as u64 * 8;
+        ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
         ctx.chunks.push(ChunkId::LazyPtrs);
     }
 
@@ -4874,7 +4879,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.chunks.push(ChunkId::Symtab);
     if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {
-        let lazy = if ctx.lazy_binding() { ctx.stubs.symbols.len() } else { 0 };
+        let lazy = ctx.stubs.lazy.len();
         ctx.indirect_symtab.hdr.size =
             (ctx.stubs.symbols.len() + ctx.got.got_syms.len() + lazy) as u64 * 4;
         ctx.chunks.push(ChunkId::IndirectSymtab);

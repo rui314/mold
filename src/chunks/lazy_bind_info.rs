@@ -36,24 +36,20 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
-/// The lazy-bind opcode stream: one self-contained record per stub
-/// (segment/offset of its lazy pointer, dylib ordinal, symbol, bind,
-/// done), and each record's offset, which the stub helper entry pushes
-/// for dyld_stub_binder. ld64's layout, byte for byte.
+/// The lazy-bind opcode stream: one self-contained record per lazily
+/// bound stub (segment/offset of its lazy pointer, dylib ordinal,
+/// symbol, bind, done), and each record's offset, which the stub helper
+/// entry pushes for dyld_stub_binder. ld64's layout, byte for byte.
 pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
-    if !ctx.lazy_binding() || ctx.stubs.symbols.is_empty() {
+    if ctx.stubs.lazy.is_empty() {
         return (Vec::new(), Vec::new());
     }
     let mut buf = Vec::new();
-    let mut offsets = Vec::with_capacity(ctx.stubs.symbols.len());
-    for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
+    let mut offsets = Vec::with_capacity(ctx.stubs.lazy.len());
+    for &i in &ctx.stubs.lazy {
+        let id = ctx.stubs.symbols[i as usize];
         offsets.push(buf.len() as u32);
-        // A stub for a symbol bound by weak lookup jumps through its
-        // GOT slot, not lazily.
-        if ctx.binds_weak_lookup(id) {
-            continue;
-        }
-        let addr = ctx.stub_ptr_addr(i, id);
+        let addr = ctx.stub_ptr_addr(i as usize, id);
         let (seg, off) = segment_and_offset(ctx, addr);
         buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
         encode_uleb(&mut buf, off);

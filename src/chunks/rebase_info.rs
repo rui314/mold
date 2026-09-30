@@ -83,12 +83,9 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     }
     // Lazy pointers start out pointing at their stub helper entries (a
     // weak-lookup stub's GOT slot is rebased with the GOT).
-    if ctx.lazy_binding() {
-        for i in 0..ctx.stubs.symbols.len() {
-            if !ctx.binds_weak_lookup(ctx.stubs.symbols[i]) {
-                synthesized.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
-            }
-        }
+    for &i in &ctx.stubs.lazy {
+        let i = i as usize;
+        synthesized.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
     }
 
     // GOT slots that hold local addresses.

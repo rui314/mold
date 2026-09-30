@@ -120,7 +120,7 @@ impl Target for X86_64 {
         write32(&mut buf[11..], binder.wrapping_sub(addr + 15) as u32);
         buf[15] = 0x90;
         // Each entry: push $offset; jmp header; the zero padding.
-        let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.symbols.len()];
+        let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
             let off =
                 (Self::STUB_HELPER_HEADER_SIZE + i as u64 * Self::STUB_HELPER_ENTRY_SIZE) as usize;

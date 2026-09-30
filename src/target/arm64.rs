@@ -337,7 +337,7 @@ impl Target for Arm64 {
         write32(&mut buf[20..], 0xd61f_0200);
         // Each entry: ldr w16, #8 (the lazy-bind offset that follows);
         // b header; .long offset.
-        let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.symbols.len()];
+        let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
             let off = 24 + i * 12;
             let ent_addr = addr + off as u64;

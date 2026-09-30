@@ -63,6 +63,14 @@ $CXX --ld-path=$mold -o $t/exe3 $t/c.o -mmacosx-version-min=14.0
 $t/exe3 | grep -q '^9$'
 [ "$(slots $t/exe3 __got)" = '_printf __ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm ' ]
 
+# With lazy binding only the lazily bound stubs have a lazy pointer and
+# a stub helper entry; a weak-lookup stub jumps through its GOT slot.
+$CXX --ld-path=$mold -o $t/exe5 $t/c.o -mmacosx-version-min=$classic
+$t/exe5 | grep -q '^9$'
+[ "$(slots $t/exe5 __stubs)" = '__ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm _printf ' ]
+[ "$(slots $t/exe5 __got)" = 'dyld_stub_binder __ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm ' ]
+[ "$(slots $t/exe5 __la_symbol_ptr)" = '_printf ' ]
+
 # Slots holding the image's own addresses come first, by name.
 [ $ARCH = x86_64 ] || exit 0
 cat <<EOF | $CC -o $t/d.o -c -xassembler -

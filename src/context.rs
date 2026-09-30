@@ -522,7 +522,8 @@ impl<E: Target> Context<E> {
     /// lazy binder cannot do weak lookup), as in ld64.
     pub fn stub_ptr_addr(&self, i: usize, id: SymbolId) -> u64 {
         if self.lazy_binding() && !self.binds_weak_lookup(id) {
-            self.lazy_ptrs.hdr.addr + i as u64 * 8
+            let slot = self.stubs.lazy.binary_search(&(i as u32)).unwrap();
+            self.lazy_ptrs.hdr.addr + slot as u64 * 8
         } else {
             self.sym_got_addr(id)
         }
