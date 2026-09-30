@@ -1471,7 +1471,10 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         match value {
             DefsymValue::Symbol(target) => {
                 let sym2 = ctx.symbols.get_or_intern(target);
-                if ctx.symbols[sym2].file().is_none() {
+
+                // A symbol defined by a shared library has no link-time address,
+                // so it cannot be aliased, as in GNU ld and lld.
+                if !matches!(ctx.symbols[sym2].file(), Some(FileId::Obj(_))) {
                     error!("--defsym: undefined symbol: {}", ctx.symbols[sym2]);
                     continue;
                 }
