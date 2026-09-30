@@ -49,3 +49,14 @@ if [ $ARCH = arm64 ]; then
 else
   [ "$(prot $t/exe5 __MYSEG)" = '3 1' ]
 fi
+
+# It warns about each byte of a non-ASCII letter.
+$CC --ld-path=$mold -o $t/exe6 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,$'r\xc3\xa9',r 2> $t/log6
+[ "$(grep -c "unknown -segprot letter" $t/log6)" = 2 ]
+
+# An empty or missing argument is an error.
+not $CC --ld-path=$mold -o $t/exe7 $t/main.o $t/a.o -Xlinker -segprot -Xlinker __MYSEG \
+  -Xlinker '' -Xlinker r 2> $t/log7
+grep -q -- '-segprot missing <seg> <max-prot> <init-prot>' $t/log7
+not $mold -arch $ARCH -o $t/exe8 $t/main.o $t/a.o -segprot __MYSEG r 2> $t/log8
+grep -q -- '-segprot missing <seg> <max-prot> <init-prot>' $t/log8

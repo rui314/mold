@@ -536,17 +536,18 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
 }
 
 /// Parses a -segprot protection: the letters r, w and x in either
-/// case, and '-' for none. ld-prime warns about any other letter and
-/// ignores it.
-fn parse_prot(val: &str) -> u8 {
+/// case, and '-' for none. ld-prime warns about any other byte and
+/// ignores it, so a non-ASCII letter draws a warning for each of its
+/// bytes (which the warnings spell lossily).
+fn parse_prot(val: &[u8]) -> u8 {
     let mut prot = 0u8;
-    for c in val.chars() {
+    for &c in val {
         match c.to_ascii_lowercase() {
-            'r' => prot |= 1,
-            'w' => prot |= 2,
-            'x' => prot |= 4,
-            '-' => {}
-            _ => crate::warn!("unknown -segprot letter '{c}'"),
+            b'r' => prot |= 1,
+            b'w' => prot |= 2,
+            b'x' => prot |= 4,
+            b'-' => {}
+            _ => crate::warn!("unknown -segprot letter '{}'", display(&[c])),
         }
     }
     prot
@@ -716,7 +717,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut data_const: Option<bool> = None;
-    let mut segprots: Vec<(String, String, String)> = Vec::new();
+    let mut segprots: Vec<(String, Vec<u8>, Vec<u8>)> = Vec::new();
     let mut no_dead_strip_inits_and_terms = false;
     let mut explicit_entry = false;
     let mut warnings = OptionWarnings::default();
@@ -852,10 +853,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.segaddrs.push((seg, addr));
             }
             b"-segprot" => {
-                let seg = text(name, next_arg(&mut i)).to_string();
-                let max = text(name, next_arg(&mut i)).to_string();
-                let init = text(name, next_arg(&mut i)).to_string();
-                segprots.push((seg, max, init));
+                // ld-prime takes a missing argument for an empty one.
+                let mut arg = || {
+                    i += 1;
+                    cmdline.get(i).map_or(&b""[..], |arg| arg.as_bytes())
+                };
+                let (seg, max, init) = (arg(), arg(), arg());
+                if seg.is_empty() || max.is_empty() || init.is_empty() {
+                    fatal!("-segprot missing <seg> <max-prot> <init-prot>");
+                }
+                let seg = text(name, OsStr::from_bytes(seg)).to_string();
+                segprots.push((seg, max.to_vec(), init.to_vec()));
             }
             b"-segment_order" => {
                 if !args.segment_order.is_empty() {
@@ -1431,7 +1439,7 @@ fn check_segment_order(args: &Args) {
 /// __LINKEDIT, which dyld reads, keeps its own.
 fn resolve_segprots(
     target: &TargetTraits,
-    segprots: Vec<(String, String, String)>,
+    segprots: Vec<(String, Vec<u8>, Vec<u8>)>,
 ) -> Vec<(String, u8, u8)> {
     let mut out: Vec<(String, u8, u8)> = Vec::new();
     for (name, max, init) in segprots {
