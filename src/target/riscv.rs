@@ -229,7 +229,7 @@ fn is_got_load_pair<E: Target>(
         && rels[i + 2].r_type() == R_RISCV_PCREL_LO12_I
         && rels[i + 3].r_type() == R_RISCV_RELAX
         && rels[i].r_offset() == rels[i + 2].r_offset() - 4
-        && rels[i].r_offset() == ctx.symbols[file.base.symbols[rels[i + 2].r_sym() as usize]].value
+        && rels[i].r_offset() == file.base.elf_syms[rels[i + 2].r_sym() as usize].st_value()
         && rd(&contents[rels[i].r_offset() as usize..])
             == rd(&contents[rels[i + 2].r_offset() as usize..])
 }
