@@ -1501,7 +1501,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_flag("r") || cursor.read_flag("relocatable") {
             a.relocatable = true;
             a.emit_relocs = true;
-            a.discard_locals = false;
         } else if cursor.read_flag("relocatable-merge-sections") {
             a.relocatable_merge_sections = true;
         } else if cursor.read_flag("perf") {
@@ -2183,9 +2182,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         a.dynamic_linker.clear();
     }
 
-    // We don't garbage-collect sections when creating a relocatable output.
+    // We don't garbage-collect sections or remove symbols when creating a
+    // relocatable output. -s strips only debug info there.
     if a.relocatable {
         a.gc_sections = false;
+        a.discard_all = false;
+        a.discard_locals = false;
+        a.strip_debug |= a.strip_all;
+        a.strip_all = false;
     }
 
     a.undefined_glob = undefined_glob.build();
