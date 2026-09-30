@@ -963,8 +963,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-alias_list" => {
                 let list = path(next_arg(&mut i));
-                let Ok(contents) = std::fs::read_to_string(&list) else {
-                    fatal!("cannot read -alias_list: {}", list.display());
+                // ld64 links on without the aliases, warning in the
+                // words it uses for an order file.
+                let contents = match std::fs::read_to_string(&list) {
+                    Ok(contents) => contents,
+                    Err(e) => {
+                        let errno = crate::error::errno_text(&e);
+                        crate::warn!(
+                            "order file '{}' could not be opened, {errno}",
+                            list.display()
+                        );
+                        String::new()
+                    }
                 };
                 for line in contents.lines() {
                     let line = line.split('#').next().unwrap_or("").trim();

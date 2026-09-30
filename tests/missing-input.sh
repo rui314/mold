@@ -34,3 +34,12 @@ try -Wl,-filelist,$t/nosuch.txt
 grep -q "\-filelist file '$t/nosuch.txt' could not be opened, errno=2" $t/log
 try -Wl,-sectcreate,__X,__y,$t/nosuch.bin
 grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.bin" $t/log
+
+# A missing order file or alias list only costs the order or the
+# aliases: ld-prime warns, in its order-file words for both, and links.
+$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-order_file,$t/nosuch.txt 2> $t/log
+grep -q "order file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+$t/exe2
+$CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-alias_list,$t/nosuch.txt 2> $t/log
+grep -q "order file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+$t/exe3

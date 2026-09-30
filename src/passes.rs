@@ -6169,8 +6169,14 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         std::collections::HashMap::new();
     let mut next = 0u64;
     for path in &ctx.args.order_files {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            fatal!("-order_file: cannot read {}", path.display());
+        // ld64 links on without the order a missing file would give.
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                let errno = crate::error::errno_text(&e);
+                crate::warn!("order file '{}' could not be opened, {errno}", path.display());
+                continue;
+            }
         };
         for line in text.lines() {
             let mut line = line.split('#').next().unwrap_or("").trim();
