@@ -55,3 +55,37 @@ $t/exe2
 unwind_entries $t/exe2 > $t/entries2
 grep -q "^$(addr $t/exe2 _f) " $t/entries2
 not grep -q "^$(addr $t/exe2 _main) " $t/entries2
+
+# With more entries than a page holds, ld-prime fills the 4096-byte
+# second-level pages from the first function on, starts each page at
+# an 8-byte boundary of the section, and sizes the first-level index
+# for as many pages as the entries could take in the regular format
+# (511 per page), plus the terminator and one spare, zero-filled.
+python3 - > $t/many.c <<'EOF2'
+print('int printf(const char *, ...);')
+for i in range(2500):
+    if i % 2:
+        print(f'int f{i}(int x) {{ return x + {i}; }}')
+    else:
+        print(f'int f{i}(int x) {{ return printf("%d", x + {i}) + 1; }}')
+print('int main() { return f1(-1); }')
+EOF2
+$CC -O1 -momit-leaf-frame-pointer -o $t/many.o -c $t/many.c
+$CC --ld-path=$mold -o $t/exe3 $t/many.o
+python3 - $t/exe3 <<'EOF2'
+import struct, subprocess, sys
+out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
+for i, l in enumerate(out):
+    if l.strip() == 'sectname __unwind_info':
+        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
+d = open(sys.argv[1], 'rb').read()[off:off + size]
+_, _, _, _, _, iso, isc = struct.unpack_from('<7I', d, 0)
+pages = [struct.unpack_from('<3I', d, iso + 12 * k)[1] for k in range(isc - 1)]
+counts = [struct.unpack_from('<IHH', d, p)[2] for p in pages]
+lsda = struct.unpack_from('<3I', d, iso)[2]
+assert len(counts) > 1, counts
+assert all(c == counts[0] for c in counts[:-1]) and counts[-1] <= counts[0], counts
+assert (lsda - iso) // 12 == -(-sum(counts) // 511) + 2, (lsda - iso, sum(counts))
+assert all(p % 8 == 0 for p in pages[1:]), pages
+assert len(d) % 8 == 0, len(d)
+EOF2

@@ -152,15 +152,17 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     let common_idx: std::collections::HashMap<u32, u32> =
         common.iter().enumerate().map(|(i, &(e, _))| (e, i as u32)).collect();
 
-    // Second-level pages, 4096 bytes each, filled from the end of the
-    // record list as ld64 does (so the first page is the partial one).
-    // A compressed page holds 32-bit entries (a 24-bit offset from the
-    // page's first function and an 8-bit encoding index) plus its
-    // page-local encodings; a regular page 8-byte entries. Each page
-    // takes the format that holds more of the remaining records.
+    // Second-level pages, 4096 bytes each, filled from the start of the
+    // record list as ld-prime does (so the last page is the partial
+    // one). A compressed page holds 32-bit entries (a 24-bit offset from
+    // the page's first function and an 8-bit encoding index) plus its
+    // page-local encodings, in order of first use; a regular page 8-byte
+    // entries. Each page takes the format that holds more of the
+    // remaining records.
     const PAGE_SIZE: usize = 4096;
     const COMPRESSED_HDR: usize = 12;
     const REGULAR_HDR: usize = 8;
+    const REGULAR_ENTRIES: usize = (PAGE_SIZE - REGULAR_HDR) / 8;
     struct Page {
         start: usize,
         end: usize,
@@ -168,14 +170,14 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         encodings: Vec<u32>,
     }
     let mut pages: Vec<Page> = Vec::new();
-    let mut end = records.len();
-    while end > 0 {
-        let last_addr = func_addr(&records[end - 1]);
+    let mut start = 0;
+    while start < records.len() {
+        let first_addr = func_addr(&records[start]);
         let mut encs: Vec<u32> = Vec::new();
         let mut n = 0;
-        let mut i = end;
-        while i > 0 {
-            let rec = &records[i - 1];
+        let mut i = start;
+        while i < records.len() {
+            let rec = &records[i];
             let is_common = common_idx.contains_key(&rec.encoding);
             let new_enc = !is_common && !encs.contains(&rec.encoding);
             if new_enc && common.len() + encs.len() + 1 > 256 {
@@ -185,38 +187,41 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             if COMPRESSED_HDR + (n + 1) * 4 + encs_len * 4 > PAGE_SIZE {
                 break;
             }
-            if last_addr - func_addr(rec) >= (1 << 24) {
+            if func_addr(rec) - first_addr >= (1 << 24) {
                 break;
             }
             if new_enc {
                 encs.push(rec.encoding);
             }
             n += 1;
-            i -= 1;
+            i += 1;
         }
-        let regular = end.min((PAGE_SIZE - REGULAR_HDR) / 8);
+        let regular = (records.len() - start).min(REGULAR_ENTRIES);
         if n >= regular {
-            pages.push(Page { start: end - n, end, compressed: true, encodings: encs });
-            end -= n;
+            pages.push(Page { start, end: start + n, compressed: true, encodings: encs });
+            start += n;
         } else {
             pages.push(Page {
-                start: end - regular,
-                end,
+                start,
+                end: start + regular,
                 compressed: false,
                 encodings: Vec::new(),
             });
-            end -= regular;
+            start += regular;
         }
     }
-    pages.reverse();
 
     let num_lsda = records.iter().filter(|r| r.lsda().is_some()).count();
 
-    // Compute the layout of the section.
+    // Compute the layout of the section. ld-prime sizes the first-level
+    // index before it picks page formats, for the most pages the records
+    // could take (all regular) plus the terminator and one spare, and
+    // leaves the entries it doesn't use zero.
     let common_off = 28;
     let personality_off = common_off + common.len() * 4;
     let page1_off = personality_off + personalities.len() * 4;
-    let lsda_off = page1_off + (pages.len() + 1) * 12;
+    let index_len = (records.len().div_ceil(REGULAR_ENTRIES) + 2) * 12;
+    let lsda_off = page1_off + index_len;
     let page2_off = lsda_off + num_lsda * 8;
 
     let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
@@ -305,6 +310,9 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         push32(&mut page1, (lsda_off + lsda.len()) as u32);
         lsda.extend_from_slice(&out.lsda);
         page2.extend_from_slice(&out.page2);
+        // ld-prime ends each page at an 8-byte boundary of the section.
+        let end = page2_off + page2.len();
+        page2.resize(page2.len() + end.next_multiple_of(8) - end, 0);
     }
 
     // The terminating first-level entry.
@@ -312,6 +320,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     push32(&mut page1, (func_addr(last) + last.code_len as u64 + 1 - base) as u32);
     push32(&mut page1, 0);
     push32(&mut page1, (lsda_off + lsda.len()) as u32);
+    page1.resize(index_len, 0);
 
     buf.extend_from_slice(&page1);
     buf.extend_from_slice(&lsda);
