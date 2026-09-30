@@ -539,7 +539,7 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
 /// case, and '-' for none. ld-prime warns about any other byte and
 /// ignores it, so a non-ASCII letter draws a warning for each of its
 /// bytes (which the warnings spell lossily).
-fn parse_prot(val: &[u8]) -> u8 {
+fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
     let mut prot = 0u8;
     for &c in val {
         match c.to_ascii_lowercase() {
@@ -547,7 +547,7 @@ fn parse_prot(val: &[u8]) -> u8 {
             b'w' => prot |= 2,
             b'x' => prot |= 4,
             b'-' => {}
-            _ => crate::warn!("unknown -segprot letter '{}'", display(&[c])),
+            _ => warnings.warn(format!("unknown -segprot letter '{}'", display(&[c]))),
         }
     }
     prot
@@ -696,9 +696,9 @@ struct OptionWarnings {
 }
 
 impl OptionWarnings {
-    fn warn(&mut self, msg: String) {
+    fn warn(&mut self, msg: impl Into<String>) {
         if !self.quiet {
-            self.msgs.push(msg);
+            self.msgs.push(msg.into());
         }
     }
 }
@@ -717,8 +717,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut data_const: Option<bool> = None;
-    let mut segprots: Vec<(String, Vec<u8>, Vec<u8>)> = Vec::new();
-    let mut no_dead_strip_inits_and_terms = false;
+    let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut explicit_entry = false;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
@@ -837,7 +836,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // them now, and ld64 takes this for -dead_strip alone.
             b"-no_dead_strip_inits_and_terms" => {
                 args.dead_strip = true;
-                no_dead_strip_inits_and_terms = true;
+                warnings.warn(
+                    "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
+                );
             }
             b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
             b"-pagezero_size" => {
@@ -863,7 +864,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-segprot missing <seg> <max-prot> <init-prot>");
                 }
                 let seg = text(name, OsStr::from_bytes(seg)).to_string();
-                segprots.push((seg, max.to_vec(), init.to_vec()));
+                // __LINKEDIT, which dyld reads, keeps its own.
+                if seg == "__LINKEDIT" {
+                    warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
+                } else {
+                    let max = parse_prot(max, &mut warnings);
+                    let init = parse_prot(init, &mut warnings);
+                    segprots.push((seg, max, init));
+                }
             }
             b"-segment_order" => {
                 if !args.segment_order.is_empty() {
@@ -1227,11 +1235,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
     }
-    if no_dead_strip_inits_and_terms {
-        crate::warn!(
-            "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
-        );
-    }
     if args.kernel && !args.static_link {
         fatal!("-kernel must be used with -static");
     }
@@ -1434,20 +1437,14 @@ fn check_segment_order(args: &Args) {
 }
 
 /// -segprot's (segment, max, init) protections, as ld-prime applies
-/// them: the first one given for a segment wins, arm64's maximum is its
-/// initial protection (nothing may raise it later there), and
-/// __LINKEDIT, which dyld reads, keeps its own.
+/// them: the first one given for a segment wins, and arm64's maximum
+/// is its initial protection (nothing may raise it later there).
 fn resolve_segprots(
     target: &TargetTraits,
-    segprots: Vec<(String, Vec<u8>, Vec<u8>)>,
+    segprots: Vec<(String, u8, u8)>,
 ) -> Vec<(String, u8, u8)> {
     let mut out: Vec<(String, u8, u8)> = Vec::new();
     for (name, max, init) in segprots {
-        if name == "__LINKEDIT" {
-            crate::warn!("-segprot cannot be used to modify __LINKEDIT protections");
-            continue;
-        }
-        let (max, init) = (parse_prot(&max), parse_prot(&init));
         if out.iter().all(|(seen, _, _)| *seen != name) {
             out.push((name, if target.name == "arm64" { init } else { max }, init));
         }

@@ -26,8 +26,17 @@ not grep -q warning $t/log4
 
 # ld-prime gives some warnings as it reads the option they are about,
 # so only a -w before that option silences them: that an -alias_list
-# can't be opened, given once, is one.
+# can't be opened, given once, is one, and so are -segprot's and the
+# one about an obsolete option, all in command-line order.
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch,-w >& $t/log5
 [ "$(grep -c "order file '$t/nosuch' could not be opened" $t/log5)" = 1 ]
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-w,-alias_list,$t/nosuch >& $t/log6
 not grep -q warning $t/log6
+
+$CC --ld-path=$mold -o $t/exe $t/b.o \
+  -Wl,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r,-w >& $t/log7
+[ "$(grep -o 'letter .z.\|obsolete\|__LINKEDIT' $t/log7 | tr '\n' ' ')" = \
+  "letter 'z' obsolete __LINKEDIT " ]
+$CC --ld-path=$mold -o $t/exe $t/b.o \
+  -Wl,-w,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r >& $t/log8
+not grep -q warning $t/log8
