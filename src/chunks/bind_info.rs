@@ -77,40 +77,65 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if binds.is_empty() {
         return Vec::new();
     }
-    binds.sort_unstable_by_key(|&(addr, _, _)| addr);
+    // ld64 lists the binds by library, symbol, addend, then address, so
+    // each library and symbol is set once.
+    let ordinal = |id: crate::symbol::SymbolId| {
+        let Some(FileId::Dylib(dylib)) = ctx.symbols[id].file() else { unreachable!() };
+        ctx.bind_ordinal(dylib)
+    };
+    binds.sort_by(|a, b| {
+        (ordinal(a.1), ctx.symbols[a.1].name().as_bytes(), a.2, a.0).cmp(&(
+            ordinal(b.1),
+            ctx.symbols[b.1].name().as_bytes(),
+            b.2,
+            b.0,
+        ))
+    });
+    let ops = compress(bind_ops(ctx, &binds, ordinal));
 
     let mut buf = Vec::new();
-    let mut last_addend = 0i64;
-    for (addr, id, addend) in binds {
-        let sym = &ctx.symbols[id];
-        let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
-        let ordinal = ctx.bind_ordinal(dylib);
-        // The special ordinals (main executable 0, flat lookup -2) take
-        // the SPECIAL_IMM form, as ld64 emits them.
-        if ordinal <= 0 {
-            buf.push(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (ordinal & 0xf) as u8);
-        } else if ordinal < 16 {
-            buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | ordinal as u8);
-        } else {
-            buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
-            encode_uleb(&mut buf, ordinal as u64);
+    for op in ops {
+        match op {
+            Op::Dylib(ord) if ord <= 0 => {
+                buf.push(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (ord & 0xf) as u8)
+            }
+            Op::Dylib(ord) if ord < 16 => buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | ord as u8),
+            Op::Dylib(ord) => {
+                buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
+                encode_uleb(&mut buf, ord as u64);
+            }
+            Op::Symbol(name, flags) => {
+                buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
+                buf.extend_from_slice(name.as_bytes());
+                buf.push(0);
+            }
+            Op::Type => buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER),
+            Op::SegOffset(seg, off) => {
+                buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
+                encode_uleb(&mut buf, off);
+            }
+            Op::AddAddr(delta) => {
+                buf.push(BIND_OPCODE_ADD_ADDR_ULEB);
+                encode_uleb(&mut buf, delta);
+            }
+            Op::Addend(addend) => {
+                buf.push(BIND_OPCODE_SET_ADDEND_SLEB);
+                crate::util::encode_sleb(&mut buf, addend);
+            }
+            Op::Bind => buf.push(BIND_OPCODE_DO_BIND),
+            Op::BindAddAddr(delta) if delta < 15 * 8 && delta % 8 == 0 => {
+                buf.push(BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED | (delta / 8) as u8)
+            }
+            Op::BindAddAddr(delta) => {
+                buf.push(BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB);
+                encode_uleb(&mut buf, delta);
+            }
+            Op::BindTimesSkipping(count, skip) => {
+                buf.push(BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB);
+                encode_uleb(&mut buf, count);
+                encode_uleb(&mut buf, skip);
+            }
         }
-        let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
-        buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-        buf.extend_from_slice(sym.name().as_bytes());
-        buf.push(0);
-        buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
-        // The addend is bind-machine state: it persists across
-        // BIND opcodes, so emit SET_ADDEND_SLEB only on change.
-        if addend != last_addend {
-            buf.push(BIND_OPCODE_SET_ADDEND_SLEB);
-            crate::util::encode_sleb(&mut buf, addend);
-            last_addend = addend;
-        }
-        let (seg, off) = segment_and_offset(ctx, addr);
-        buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
-        encode_uleb(&mut buf, off);
-        buf.push(BIND_OPCODE_DO_BIND);
     }
 
     buf.push(BIND_OPCODE_DONE);
@@ -118,4 +143,102 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         buf.push(0);
     }
     buf
+}
+
+/// A bind opcode before encoding.
+enum Op {
+    Dylib(i32),
+    Symbol(&'static str, u8),
+    Type,
+    SegOffset(usize, u64),
+    AddAddr(u64),
+    Addend(i64),
+    Bind,
+    BindAddAddr(u64),
+    BindTimesSkipping(u64, u64),
+}
+
+/// The opcodes binding the sorted `binds`, each piece of the bind
+/// machine's state set only when it changes, as ld-prime writes them:
+/// the address moves by ADD_ADDR_ULEB within a segment, backwards too,
+/// and by SET_SEGMENT_AND_OFFSET_ULEB into another one.
+fn bind_ops<E: Target>(
+    ctx: &Context<E>,
+    binds: &[(u64, crate::symbol::SymbolId, i64)],
+    ordinal: impl Fn(crate::symbol::SymbolId) -> i32,
+) -> Vec<Op> {
+    let mut ops = Vec::new();
+    let mut cur_ordinal = None;
+    let mut cur_symbol = None;
+    let mut cur_seg = None;
+    let mut cur_addr = 0;
+    let mut cur_addend = 0;
+    for &(addr, id, addend) in binds {
+        let sym = &ctx.symbols[id];
+        let ord = ordinal(id);
+        if cur_ordinal != Some(ord) {
+            ops.push(Op::Dylib(ord));
+            cur_ordinal = Some(ord);
+        }
+        let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
+        if cur_symbol != Some((id, flags)) {
+            ops.push(Op::Symbol(sym.name(), flags));
+            if cur_symbol.is_none() {
+                ops.push(Op::Type);
+            }
+            cur_symbol = Some((id, flags));
+        }
+        if cur_seg.is_none() || addr != cur_addr {
+            let (seg, off) = segment_and_offset(ctx, addr);
+            if cur_seg == Some(seg) {
+                ops.push(Op::AddAddr(addr.wrapping_sub(cur_addr)));
+            } else {
+                ops.push(Op::SegOffset(seg, off));
+                cur_seg = Some(seg);
+            }
+        }
+        if addend != cur_addend {
+            ops.push(Op::Addend(addend));
+            cur_addend = addend;
+        }
+        ops.push(Op::Bind);
+        cur_addr = addr + 8;
+    }
+    ops
+}
+
+/// ld64's compression of a bind opcode list: a bind followed by an
+/// address step becomes one opcode, and a run of those with one step
+/// becomes DO_BIND_ULEB_TIMES_SKIPPING_ULEB. (Encoding then writes a
+/// small, pointer-aligned step as DO_BIND_ADD_ADDR_IMM_SCALED.)
+fn compress(ops: Vec<Op>) -> Vec<Op> {
+    let mut paired = Vec::with_capacity(ops.len());
+    let mut it = ops.into_iter().peekable();
+    while let Some(op) = it.next() {
+        match (op, it.peek()) {
+            (Op::Bind, Some(&Op::AddAddr(delta))) => {
+                it.next();
+                paired.push(Op::BindAddAddr(delta));
+            }
+            (op, _) => paired.push(op),
+        }
+    }
+    let mut out = Vec::with_capacity(paired.len());
+    let mut it = paired.into_iter().peekable();
+    while let Some(op) = it.next() {
+        match (op, it.peek()) {
+            (Op::BindAddAddr(delta), Some(&Op::BindAddAddr(next))) if next == delta => {
+                let mut count = 1;
+                while let Some(&Op::BindAddAddr(next)) = it.peek()
+                    && next == delta
+                {
+                    it.next();
+                    count += 1;
+                }
+                out.push(Op::BindTimesSkipping(count, delta));
+            }
+            (op, _) => out.push(op),
+        }
+    }
+    out
 }
