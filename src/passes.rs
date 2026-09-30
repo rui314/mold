@@ -4583,7 +4583,17 @@ pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
         ctx.args.image_base = None;
         return;
     }
-    if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
+    if ctx.args.relocatable {
+        // An object file is loaded nowhere, and ld-prime only checks
+        // that the base is a multiple of 4 KiB.
+        let aligned = align_to(base, 0x1000);
+        if base != aligned {
+            crate::warn!(
+                "base address {base:#x} is not properly aligned. Changing it to {aligned:#x}"
+            );
+        }
+        ctx.args.image_base = None;
+    } else if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
         crate::warn!("Linking with PIE, -image_base will be ignored");
         ctx.args.image_base = None;
     } else if matches!(ctx.args.output_type, MH_DYLIB | MH_BUNDLE) && ctx.use_chained_fixups() {

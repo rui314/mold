@@ -65,3 +65,11 @@ if [ $ARCH = arm64 ]; then
 else
   $mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7
 fi
+
+# An object file is loaded nowhere, and ld-prime takes the base of a -r
+# link only to warn when it is not a multiple of 4 KiB.
+$mold -r -arch $ARCH -o $t/r.o $t/a.o -image_base 0x200001000 2> $t/log8
+[ ! -s $t/log8 ]
+$mold -r -arch $ARCH -o $t/r2.o $t/a.o -image_base 0x200000800 2> $t/log9
+grep -q 'base address 0x200000800 is not properly aligned. Changing it to 0x200001000' $t/log9
+cmp $t/r.o $t/r2.o
