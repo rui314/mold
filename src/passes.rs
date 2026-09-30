@@ -3858,6 +3858,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             ctx.boundary_syms[i].2 = seg.to_string();
             continue;
         };
+        let flags = boundary_section_flags(seg, sect);
         let name = map.const_name((static_name(seg), static_name(sect)));
         let (seg, sect) = renamed(&ctx.args, name);
         ctx.boundary_syms[i].2 = seg.to_string();
@@ -3866,8 +3867,47 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             let hdr = ctx.chunk_header(id);
             hdr.is_sect && hdr.segname == seg && hdr.sectname == sect
         }) {
-            add_sectcreate(ctx, SectCreateSection::new(seg, sect, &[], false));
+            let mut sec = SectCreateSection::new(seg, sect, &[], false);
+            sec.hdr.flags = flags;
+            add_sectcreate(ctx, sec);
         }
+    }
+}
+
+/// The flags ld-prime gives a section only a section$start$ or
+/// section$end$ symbol makes, by the name the symbol gives (before any
+/// move or rename): those a compiler marks a section of that name
+/// with - code, literals, pointer lists, the thread-local and
+/// zero-fill types, no-dead-strip for the lists the Objective-C
+/// runtime scans - and none for another name, or in another segment.
+fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
+    match (segname, sectname) {
+        ("__TEXT", "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs") => {
+            S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+        }
+        ("__TEXT", "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype") => {
+            S_CSTRING_LITERALS
+        }
+        ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
+        ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
+        ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
+        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, false),
+        ("__DATA", "__got" | "__auth_got") => S_NON_LAZY_SYMBOL_POINTERS,
+        ("__DATA", "__la_symbol_ptr") => S_LAZY_SYMBOL_POINTERS,
+        (
+            "__DATA",
+            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_nlcatlist"
+            | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
+        ) => S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__objc_protolist") => S_COALESCED,
+        ("__DATA", "__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
+        ("__DATA", "__thread_vars") => S_THREAD_LOCAL_VARIABLES,
+        ("__DATA", "__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
+        ("__DATA", "__thread_data") => S_THREAD_LOCAL_REGULAR,
+        ("__DATA", "__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
+        ("__DATA", "__bss" | "__common") => S_ZEROFILL,
+        _ => 0,
     }
 }
 
