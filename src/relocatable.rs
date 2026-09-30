@@ -22,9 +22,10 @@ use crate::context::Context;
 use crate::error;
 use crate::fatal;
 use crate::input_files::FileId;
-use crate::input_sections::RelocTarget;
+use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::output_file;
+use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::{align_to, encode_uleb};
 
@@ -106,7 +107,7 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
 /// whose atoms dead stripping keeps by their section type alone: there
 /// ld-prime marks only the name of each atom no-dead-strip, not its
 /// aliases - unless the section says no_dead_strip itself.
-fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: crate::symbol::SymbolId) -> bool {
+fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: SymbolId) -> bool {
     let Some(isec) = ctx.symbols[sym].input_section() else { return false };
     let h = ctx.hdr_of(&ctx.isecs[isec as usize]);
     matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
@@ -151,7 +152,7 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
 /// holds the bytes and is the one a reference into them names.
 fn symbol_places<E: Target>(
     ctx: &Context<E>,
-    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
+    index_of_sym: &HashMap<SymbolId, u32>,
 ) -> BTreeMap<(usize, u64), (u32, u32, u64)> {
     let mut names: Vec<_> = index_of_sym
         .iter()
@@ -181,7 +182,7 @@ fn symbol_places<E: Target>(
 /// The symbols the output's relocations refer to by name: those a live
 /// input section's refer to, and the personality routines of the
 /// unwind records (__compact_unwind) and CIEs (__eh_frame).
-fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::SymbolId> {
+fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<SymbolId> {
     let mut syms = HashSet::new();
     for isec in ctx.isecs.iter() {
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
@@ -200,7 +201,7 @@ fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::Symbol
 
 /// The symbols the terms of a subtraction (a SUBTRACTOR and the
 /// relocation it pairs with) refer to.
-fn subtracted_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::SymbolId> {
+fn subtracted_syms<E: Target>(ctx: &Context<E>) -> HashSet<SymbolId> {
     let mut syms = HashSet::new();
     for isec in ctx.isecs.iter() {
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
@@ -264,7 +265,7 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
             };
             found = true;
             let isec = &ctx.isecs[id];
-            if isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT {
+            if isec.is_alive() && isec.replacement == NO_REPLACEMENT {
                 hints.push((ctx.isec_addr(id), isec.input_addr as u64, hint));
             }
         }
@@ -732,7 +733,7 @@ fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
             let rec = &ctx.unwind_records[i];
             let isec = &ctx.isecs[rec.isec as usize];
             isec.is_alive()
-                && isec.replacement == crate::input_sections::NO_REPLACEMENT
+                && isec.replacement == NO_REPLACEMENT
                 && (rec.fde().is_none() || rec.encoding & UNWIND_MODE_MASK == E::UNWIND_MODE_DWARF)
         })
         .collect()
@@ -790,7 +791,7 @@ fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
     let mut cies_used: HashSet<usize> = HashSet::new();
     for (f, fde) in ctx.fdes.iter().enumerate() {
         let isec = &ctx.isecs[fde.isec as usize];
-        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
             continue;
         }
         per_obj.entry(fde.obj).or_default().push((fde.input_addr, EhRec::Fde(f)));
@@ -977,8 +978,8 @@ fn section_relocs<E: Target>(
 /// Appends the -r relocation entries standing for one input relocation.
 fn push_reloc<E: Target>(
     targets: &RelocTargets<E>,
-    isec: &crate::input_sections::InputSection,
-    rel: &crate::input_sections::Reloc,
+    isec: &InputSection,
+    rel: &Reloc,
     out: &mut Vec<MachRel>,
 ) {
     let ctx = targets.ctx;
@@ -1039,11 +1040,7 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     }
 
     /// How the output refers to a relocation's target.
-    fn out_target(
-        &self,
-        isec: &crate::input_sections::InputSection,
-        rel: &crate::input_sections::Reloc,
-    ) -> OutTarget {
+    fn out_target(&self, isec: &InputSection, rel: &Reloc) -> OutTarget {
         let ctx = self.ctx;
         match rel.target() {
             RelocTarget::Sym(idx) => {
@@ -1102,7 +1099,7 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     /// The symbol index of an unwind record's or a CIE's personality
     /// routine, which the output's symbol table names (see
     /// referenced_syms).
-    fn personality(&self, p: crate::symbol::SymbolId) -> u32 {
+    fn personality(&self, p: SymbolId) -> u32 {
         let Some(&symnum) = self.symtab.index_of_sym.get(&p) else {
             fatal!("-r: unwind personality lost: {}", self.ctx.symbols[p]);
         };
@@ -1264,8 +1261,8 @@ fn copy_section_contents<E: Target>(
 /// an extern one against it.
 fn rewrite_field<E: Target>(
     targets: &RelocTargets<E>,
-    isec: &crate::input_sections::InputSection,
-    rel: &crate::input_sections::Reloc,
+    isec: &InputSection,
+    rel: &Reloc,
     here: u64,
     field: &mut [u8],
 ) {
@@ -1321,7 +1318,7 @@ fn rewrite_field<E: Target>(
 struct RSymtab {
     nlists: Vec<NList>,
     strtab: Vec<u8>,
-    index_of_sym: HashMap<crate::symbol::SymbolId, u32>,
+    index_of_sym: HashMap<SymbolId, u32>,
     /// The linker-named atoms: each one's symbol index and address.
     atoms: LiteralAtoms<(u32, u64)>,
 }
@@ -1336,7 +1333,7 @@ struct Local {
     rename: Rename,
     /// The input symbols it stands for: a label's own, or the labels of
     /// a literal atom ld64 names itself (none, often).
-    syms: Vec<crate::symbol::SymbolId>,
+    syms: Vec<SymbolId>,
     /// The object, the section there and the address, which order the
     /// locals.
     at: (u32, u8, u64),
@@ -1364,7 +1361,7 @@ enum Rank {
 }
 
 /// A symbol's address in the -r output.
-fn sym_addr<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> u64 {
+fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
         Some(isec) => ctx.isec_addr(isec as usize) + sym.value,
@@ -1389,8 +1386,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
     }
     let (locals, atoms) = locals.finish();
 
-    let mut index_of_sym: HashMap<crate::symbol::SymbolId, u32> = HashMap::new();
-    let mut ents: Vec<(NList, Option<crate::symbol::SymbolId>)> = Vec::new();
+    let mut index_of_sym: HashMap<SymbolId, u32> = HashMap::new();
+    let mut ents: Vec<(NList, Option<SymbolId>)> = Vec::new();
     let mut names: Vec<&[u8]> = Vec::new();
     for l in &locals {
         for &sym_id in &l.syms {
@@ -1411,7 +1408,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
     // output, it names the objects that hold it (N_OSO) and where their
     // symbols landed, and a later link carries the notes through.
-    let mut names_of: Vec<Option<crate::symbol::SymbolId>> = Vec::new();
+    let mut names_of: Vec<Option<SymbolId>> = Vec::new();
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
         let commons = crate::chunks::symtab::common_stab_owners(ctx);
@@ -1466,7 +1463,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
 }
 
 /// A -r output's defined externals, sorted by name, with their entries.
-fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, crate::symbol::SymbolId)> {
+fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
     // The n_desc flags a defined global carries in its object, which the
     // next link needs as much as this one did. N_ALT_ENTRY is the
     // critical one: it marks a symbol that does not begin a new
@@ -1474,7 +1471,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, crate::symbol::
     // into the full-metadata object $s..CMf, referenced as CMf+0x18),
     // and a link that splits there re-aligns the tail and moves the
     // symbol away from every non-symbolic reference to it.
-    let mut desc_of: HashMap<crate::symbol::SymbolId, u16> = HashMap::new();
+    let mut desc_of: HashMap<SymbolId, u16> = HashMap::new();
     for (obj_idx, obj) in ctx.objs.iter().enumerate() {
         if !obj.is_alive {
             continue;
@@ -1551,8 +1548,8 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, crate::symbol::
 /// uses, goes.
 fn undefined_symbols<E: Target>(
     ctx: &Context<E>,
-    referenced: &HashSet<crate::symbol::SymbolId>,
-) -> Vec<(NList, crate::symbol::SymbolId)> {
+    referenced: &HashSet<SymbolId>,
+) -> Vec<(NList, SymbolId)> {
     let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
     let mut undefs: Vec<usize> = (0..ctx.symbols.syms.len())
         .filter(|&i| {
@@ -1636,7 +1633,7 @@ struct Locals<'a, E: Target> {
     /// The literal sections whose atoms get no name.
     unnamed: HashSet<OutputSectionId>,
     /// The symbols a subtraction names, on x86-64 (see vanishes).
-    subtracted: HashSet<crate::symbol::SymbolId>,
+    subtracted: HashSet<SymbolId>,
 }
 
 impl<'a, E: Target> Locals<'a, E> {
@@ -1689,10 +1686,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 let id = id as usize;
                 let isec = &ctx.isecs[id];
                 // A literal a label names keeps that label instead.
-                if !isec.is_alive()
-                    || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                    || isec.is_labeled()
-                {
+                if !isec.is_alive() || isec.replacement != NO_REPLACEMENT || isec.is_labeled() {
                     continue;
                 }
                 let size = isec.data().len() as u64;
@@ -1731,7 +1725,7 @@ impl<'a, E: Target> Locals<'a, E> {
     /// or protocol reference, a demoted private external's too (Swift's
     /// protocol references) - unless a subtraction names it, which has
     /// no section-relative form (ld-prime fails an assertion on it).
-    fn vanishes(&self, isec: usize, sym_id: crate::symbol::SymbolId) -> bool {
+    fn vanishes(&self, isec: usize, sym_id: SymbolId) -> bool {
         let ctx = self.ctx;
         if E::CPUTYPE == CPU_TYPE_ARM64 || self.subtracted.contains(&sym_id) {
             return false;
@@ -1756,7 +1750,7 @@ impl<'a, E: Target> Locals<'a, E> {
 
     /// Adds the objects' local labels that survive, `referenced` being
     /// the symbols the output's relocations name.
-    fn add_labels(&mut self, referenced: &HashSet<crate::symbol::SymbolId>) {
+    fn add_labels(&mut self, referenced: &HashSet<SymbolId>) {
         let ctx = self.ctx;
         let named_at = named_places(ctx);
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
