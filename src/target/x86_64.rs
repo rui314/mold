@@ -89,20 +89,30 @@ fn check_reloc(rels: &[MachRel], i: usize) -> Result<(), BadReloc> {
     Ok(())
 }
 
-/// Writes a one-byte branch (jmp rel8) at `loc`, whose address is `p`,
-/// to `t`, the address of `sym`. It reaches only a definition near it
-/// in the image: ld-prime gives it no stub.
-fn write_branch8(ctx: &Context<X86_64>, obj: usize, sym: SymbolId, t: u64, p: u64, loc: &mut [u8]) {
+/// Writes a one-byte branch (jmp rel8) at `loc`, relocation `r` of
+/// subsection `isec` whose address is `p`, to `t`, the address of
+/// `sym`. It reaches only a definition near it in the image: ld-prime
+/// gives it no stub.
+fn write_branch8(
+    ctx: &Context<X86_64>,
+    isec: usize,
+    r: &Reloc,
+    sym: SymbolId,
+    t: u64,
+    p: u64,
+    loc: &mut [u8],
+) {
     let sym = &ctx.symbols[sym];
     let val = t.wrapping_sub(p + 1) as i64;
-    let file_name = ctx.objs[obj].mf.name.display();
     if sym.is_imported() {
-        error!("{file_name}: 8-bit branch target '{sym}' does not have address");
+        let msg = format_args!("target '{sym}' does not have address");
+        ctx.fixup_error(isec, r.offset, "x86_64_branch8", msg);
     } else if !(-128..128).contains(&val) {
-        error!(
-            "{file_name}: 8-bit branch out of range (displacement={val}, max is +/-127), \
+        let msg = format_args!(
+            "8-bit branch out of range (displacement={val}, max is +/-127), \
              from 0x{p:X} to 0x{t:X} ('{sym}')"
         );
+        ctx.fixup_error(isec, r.offset, "x86_64_branch8", msg);
     }
     loc[0] = val as u8;
 }
@@ -392,7 +402,7 @@ impl Target for X86_64 {
                 }
                 X86_64_RELOC_BRANCH if r.size == 1 => {
                     let sym = ctx.reloc_target_sym(obj, r).unwrap();
-                    write_branch8(ctx, obj, sym, s.wrapping_add_signed(a), p, loc);
+                    write_branch8(ctx, isec_id, r, sym, s.wrapping_add_signed(a), p, loc);
                 }
                 // A kext's call to an import, without a stub, keeps
                 // its addend for kmutil's external relocation.

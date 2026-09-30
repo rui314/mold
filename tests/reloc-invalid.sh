@@ -219,4 +219,35 @@ EOF
   $mold -r -arch $ARCH -o $t/r.o $t/e1.o
   otool -rv $t/r.o > $t/relocs
   grep -q 'True *byte *True *BRANCH' $t/relocs
+
+  # But it can't reach a symbol more than 127 bytes away, or one in a
+  # dylib.
+  cat <<EOF | $CC -o $t/f.o -c -xassembler -
+.text
+.globl _main
+_main:
+  movl \$3, %eax
+  jmp _g
+  .space 303, 0x90
+.globl _g
+_g:
+  ret
+.subsections_via_symbols
+EOF
+  patch_reloc $t/f.o $t/f1.o __text 0 length=0 opcode=0xeb insn=0x90909000
+  not $CC --ld-path=$mold -o $t/exe $t/f1.o 2> $t/log
+  grep -Eq "fixup error \(kind=x86_64_branch8\) at '_main'\+0x6 from f1.o, 8-bit branch out of range \(displacement=306, max is \+/-127\), from 0x[0-9A-F]+ to 0x[0-9A-F]+ \('_g'\)" $t/log
+
+  $CC --ld-path=$mold -shared -o $t/libext.dylib $t/ext.o
+  cat <<EOF | $CC -o $t/g.o -c -xassembler -
+.text
+.globl _main
+_main:
+  jmp _ext
+  ret
+.subsections_via_symbols
+EOF
+  patch_reloc $t/g.o $t/g1.o __text 0 length=0 opcode=0xeb insn=0x90909000
+  not $CC --ld-path=$mold -o $t/exe $t/g1.o $t/libext.dylib 2> $t/log
+  grep -qF "fixup error (kind=x86_64_branch8) at '_main'+0x1 from g1.o, target '_ext' does not have address" $t/log
 fi
