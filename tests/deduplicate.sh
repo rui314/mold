@@ -19,3 +19,12 @@ $t/exe | grep '^1 0 28$'
 # -no_deduplicate keeps them apart
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-no_deduplicate
 $t/exe2 | grep '^0 0 28$'
+
+# -deduplicate asks for the default; the last of it and -no_deduplicate
+# wins.
+$CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-deduplicate
+$t/exe3 | grep '^1 0 28$'
+$CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-deduplicate -Wl,-no_deduplicate
+$t/exe4 | grep '^0 0 28$'
+$CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-no_deduplicate -Wl,-deduplicate
+$t/exe5 | grep '^1 0 28$'

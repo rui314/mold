@@ -140,7 +140,7 @@ pub struct Args {
     /// -x: strip non-global symbols from the output symbol table.
     pub strip_locals: bool,
     /// Fold identical functions (on by default; -no_deduplicate turns
-    /// it off).
+    /// it off and a later -deduplicate back on).
     pub deduplicate: bool,
     /// Emit LC_FUNCTION_STARTS (on by default but in a -static image).
     pub function_starts: bool,
@@ -1109,6 +1109,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // grow install names in place.
             b"-headerpad_max_install_names" => args.headerpad_max_install_names = true,
 
+            b"-deduplicate" => args.deduplicate = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,
