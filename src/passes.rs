@@ -5753,17 +5753,20 @@ pub fn create_output_symtab<E: Target>(
     data
 }
 
-/// -pagezero_size, as ld-prime takes it: rounded up to a page, and no
-/// more than 4 GiB in an executable with chained fixups.
+/// -pagezero_size, as ld-prime takes it: rounded up to a page (past the
+/// top, to 0), and no more than 4 GiB in an executable with chained
+/// fixups.
 pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable {
         return;
     }
     let size = ctx.args.pagezero_size;
     if !size.is_multiple_of(E::PAGE_SIZE) {
-        let aligned = align_to(size, E::PAGE_SIZE);
+        let aligned = size.wrapping_add(E::PAGE_SIZE - 1) & !(E::PAGE_SIZE - 1);
+        // (As printf's %#llx spells it.)
+        let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
         crate::warn!(
-            "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
+            "-pagezero_size not aligned, rounded up to: {shown}, use -segalign to change the alignment"
         );
         ctx.args.pagezero_size = aligned;
     }
@@ -5811,21 +5814,22 @@ pub fn check_segaddrs<E: Target>(ctx: &Context<E>) {
 /// still follow it, while in a PIE executable they go from __PAGEZERO's
 /// end and so below it, out of order (place_segments).
 pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
-    // ld-prime takes a zero base as none at all.
-    if ctx.args.image_base == Some(0) {
-        ctx.args.image_base = None;
-    }
-    // Before anything else looks at it, it rounds a base up to a page:
-    // 4 KiB in an object file, which is loaded nowhere.
+    // Before anything else looks at it, ld-prime rounds a base up to a
+    // page (past the top, to 0): 4 KiB in an object file, which is
+    // loaded nowhere.
     let align = if ctx.args.relocatable { 0x1000 } else { ctx.segment_align() };
     if let Some(base) = ctx.args.image_base
         && !base.is_multiple_of(align)
     {
-        let aligned = align_to(base, align);
+        let aligned = base.wrapping_add(align - 1) & !(align - 1);
         crate::warn!(
             "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
         );
         ctx.args.image_base = Some(aligned);
+    }
+    // It takes a zero base as none at all.
+    if ctx.args.image_base == Some(0) {
+        ctx.args.image_base = None;
     }
     if ctx.args.relocatable {
         ctx.args.image_base = None;

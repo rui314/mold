@@ -729,13 +729,31 @@ fn symbol_list(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// ld64 numeric option arguments are hexadecimal, with or without a
-/// 0x prefix.
-fn parse_hex(opt: &str, val: &str) -> u64 {
-    match u64::from_str_radix(val.trim_start_matches("0x"), 16) {
-        Ok(num) => num,
-        Err(_) => fatal!("malformed {opt}: {val}"),
+/// ld64 numeric option arguments are hexadecimal, read as strtoull()
+/// reads them: after white space and a sign, with or without a 0x
+/// prefix. One too big is the largest there is, and a negative one
+/// wraps around; anything left over makes it no number.
+fn hex_number(val: &str) -> Option<u64> {
+    let val = val.trim_start_matches(|c: char| c.is_ascii() && is_space(c as u8));
+    let (negative, val) = match val.as_bytes().first() {
+        Some(b'-') => (true, &val[1..]),
+        Some(b'+') => (false, &val[1..]),
+        _ => (false, val),
+    };
+    // "0x" is a prefix only before a digit: alone, it is a 0 and an x.
+    let digits = match val.strip_prefix("0x").or_else(|| val.strip_prefix("0X")) {
+        Some(rest) if rest.starts_with(|c: char| c.is_ascii_hexdigit()) => rest,
+        _ => val,
+    };
+    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return None;
     }
+    let num = u64::from_str_radix(digits, 16).unwrap_or(u64::MAX);
+    Some(if negative && num != u64::MAX { num.wrapping_neg() } else { num })
+}
+
+fn parse_hex(opt: &str, val: &str) -> u64 {
+    hex_number(val).unwrap_or_else(|| fatal!("{opt}: not a hexadecimal number: {val}"))
 }
 
 /// Parses a -segprot protection: the letters r, w and x in either
@@ -1213,7 +1231,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
                 );
             }
-            b"-headerpad" => headerpad = Some(parse_hex(name, text(name, next_arg(&mut i, name)))),
+            b"-headerpad" => {
+                let size = parse_hex(name, text(name, next_arg(&mut i, name)));
+                if size > u32::MAX as u64 {
+                    fatal!("-headerpad size too large");
+                }
+                headerpad = Some(size);
+            }
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i, name)));
                 args.explicit_pagezero = true;
@@ -1261,9 +1285,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-seg_page_size needs <segname> <size>");
                 };
                 i += 2;
-                let size = text(name, size);
-                let size = u64::from_str_radix(size.trim_start_matches("0x"), 16)
-                    .unwrap_or_else(|_| fatal!("-seg_page_size: not a hexadecimal number: {size}"));
+                let size = parse_hex(name, text(name, size));
+                if size > u32::MAX as u64 {
+                    fatal!("-seg_page_size {size}: size too big");
+                }
                 seg_page_sizes.push((text(name, seg).to_string(), size));
             }
             b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
@@ -1304,17 +1329,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.rename_segments.push((old, new));
             }
             b"-stack_size" => {
-                let size = text(name, next_arg(&mut i, name));
+                let size = hex_number(text(name, next_arg(&mut i, name)));
                 stack_size = Some(
-                    u64::from_str_radix(size.trim_start_matches("0x"), 16)
-                        .unwrap_or_else(|_| fatal!("-stack_size must specify an integer size")),
+                    size.unwrap_or_else(|| fatal!("-stack_size must specify an integer size")),
                 );
             }
             b"-stack_addr" => {
-                let addr = text(name, next_arg(&mut i, name));
+                let addr = hex_number(text(name, next_arg(&mut i, name)));
                 stack_addr = Some(
-                    u64::from_str_radix(addr.trim_start_matches("0x"), 16)
-                        .unwrap_or_else(|_| fatal!("-stack_addr must specify an integer address")),
+                    addr.unwrap_or_else(|| fatal!("-stack_addr must specify an integer address")),
                 );
             }
             b"-sectcreate" => {
@@ -1508,6 +1531,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let seg = text(name, next_arg(&mut i, name)).to_string();
                 let sect = text(name, next_arg(&mut i, name)).to_string();
                 let align = parse_hex(name, text(name, next_arg(&mut i, name)));
+                if align > u32::MAX as u64 {
+                    fatal!("-sectalign {align}: alignment too big");
+                }
                 let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
                 if !align.is_power_of_two() {
                     warnings.warn(format!(
