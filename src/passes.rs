@@ -1856,41 +1856,22 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
 }
 
 pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
-    // Undefined symbols a live relocation actually targets. A .globl with
-    // no definition (XNU's `SleepToken` under !WITH_CLASSIC_S2R, or
-    // `clean_mmu_dcache` declared beside `CleanPoC_Dcache`) emits an
-    // undefined extern nlist and no relocation at all; ld64 drops such a
-    // symbol silently, and so must this check, or linking the individual
-    // objects (no LTO to fold them away) fails on them.
-    let mut referenced: hashbrown::HashSet<crate::symbol::SymbolId> = {
-        let ctx_ref: &Context<E> = ctx;
-        let ids: Vec<crate::symbol::SymbolId> = ctx_ref
-            .isecs
-            .par_iter()
-            .filter(|isec| isec.is_alive())
-            .flat_map_iter(|isec| {
-                crate::input_files::isec_relocs_of(&ctx_ref.objs, isec)
-                    .iter()
-                    .filter_map(move |rel| ctx_ref.reloc_target_sym(isec.file as usize, rel))
-            })
-            .collect();
-        ids.into_iter().collect()
-    };
-    // Symbols the command line insists on even without a reference.
-    for name in &ctx.args.forced_undefined {
-        if let Some(id) = ctx.symbols.get(name) {
-            referenced.insert(id);
-        }
+    use std::sync::atomic::Ordering;
+    // An alive object may name a symbol undefined that nothing refers
+    // to - a .globl with neither a definition nor a relocation, as XNU
+    // declares `SleepToken` under !WITH_CLASSIC_S2R. ld-prime drops
+    // such a name without a word: no error, and no import under
+    // -undefined dynamic_lookup. Most links have no undefined symbol at
+    // all, so the relocations are looked at only when there is one.
+    let undef: Vec<usize> = (0..ctx.symbols.syms.len())
+        .into_par_iter()
+        .filter(|&i| ctx.symbols.syms[i].is_used() && !ctx.symbols.syms[i].is_defined())
+        .collect();
+    if undef.is_empty() {
+        return;
     }
-    if let Some(id) = ctx.symbols.get(&ctx.args.entry) {
-        referenced.insert(id);
-    }
-    for (existing, _) in &ctx.args.aliases {
-        if let Some(id) = ctx.symbols.get(existing) {
-            referenced.insert(id);
-        }
-    }
+    let referenced = referenced_symbols(ctx);
+
     // Errors name a file that wants the symbol; the map from symbol to
     // referencing object is built only once an error is certain.
     let mut referencers: Option<std::collections::HashMap<crate::symbol::SymbolId, usize>> = None;
@@ -1916,12 +1897,9 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         }
     };
 
-    for i in 0..ctx.symbols.syms.len() {
+    for i in undef {
         let sym = &ctx.symbols[i];
-        if sym.is_used() && !sym.is_defined() {
-            if !referenced.contains(&(i as crate::symbol::SymbolId)) {
-                continue;
-            }
+        if referenced[i].load(Ordering::Relaxed) {
             let allowed = ctx.args.undefined_dynamic_lookup
                 || ctx.args.allowed_undefined.iter().any(|n| n == sym.name());
             if allowed {
@@ -1938,6 +1916,33 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
+}
+
+/// The symbols something in the output refers to: the target of a live
+/// relocation, or a name -u, -e or -alias insists on.
+fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let referenced: Vec<AtomicBool> =
+        (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
+    ctx.isecs.par_iter().filter(|isec| isec.is_alive()).for_each(|isec| {
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
+                referenced[id as usize].store(true, Ordering::Relaxed);
+            }
+        }
+    });
+    for name in ctx
+        .args
+        .forced_undefined
+        .iter()
+        .chain((ctx.args.output_type == MH_EXECUTE).then_some(&ctx.args.entry))
+        .chain(ctx.args.aliases.iter().map(|(base, _)| base))
+    {
+        if let Some(id) = ctx.symbols.get(name) {
+            referenced[id as usize].store(true, Ordering::Relaxed);
+        }
+    }
+    referenced
 }
 
 /// --print-dependencies prints, for every undefined symbol of every
