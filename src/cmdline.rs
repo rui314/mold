@@ -1003,6 +1003,19 @@ impl OptionWarnings {
     fn notice(&mut self, msg: impl Into<String>) {
         self.msgs.push(OptionMessage::Notice(msg.into()));
     }
+
+    /// Gives the messages, once the parse is known to be the last.
+    fn print(&self) {
+        for msg in &self.msgs {
+            match msg {
+                OptionMessage::Warning(msg) => crate::warn!("{msg}"),
+                OptionMessage::Notice(msg) => crate::error::notice(format_args!("{msg}")),
+            }
+        }
+        if self.hidden {
+            crate::error::hidden_warning();
+        }
+    }
 }
 
 /// The error for an option the command line ends before the argument
@@ -1091,6 +1104,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut deprecated_undefined: Vec<&str> = Vec::new();
     let mut executable_paths = 0;
     let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
+    let mut unknown = String::new();
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -1728,13 +1742,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     // switches function deduplication, which here is
                     // on unless -no_deduplicate, whatever the level.
                 } else if raw.starts_with(b"-") {
-                    fatal!("unknown command line option: {name}");
+                    unknown.push_str(name);
+                    unknown.push(' ');
                 } else {
                     args.inputs.push(InputArg::File(PathBuf::from(opt)));
                 }
             }
         }
         i += 1;
+    }
+
+    // ld-prime reports the options it doesn't know together, once it
+    // has read the others (and given their warnings).
+    if !unknown.is_empty() {
+        warnings.print();
+        fatal!("unknown options: {unknown}");
     }
 
     args.output_type = match kind {
@@ -1827,15 +1849,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // the command line. So does -w to those from the option checks
     // below, but not to those given as options were read.
     crate::error::set_fatal_warnings(args.fatal_warnings);
-    for msg in &warnings.msgs {
-        match msg {
-            OptionMessage::Warning(msg) => crate::warn!("{msg}"),
-            OptionMessage::Notice(msg) => crate::error::notice(format_args!("{msg}")),
-        }
-    }
-    if warnings.hidden {
-        crate::error::hidden_warning();
-    }
+    warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
     if let Some((old, new)) = incompatible_platforms {
         fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
