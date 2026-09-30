@@ -1295,12 +1295,10 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
     refs
 }
 
-/// The rank of a definition: (class << 40) | (alignment term << 32) |
-/// priority, lower is better. Among weak definitions ld64 keeps the
-/// copy with the greatest alignment (a Swift metadata record comes
-/// 8-aligned from one object and 16-aligned from another; the first
-/// copy wins only at equal alignment), so a live weak definition's rank
-/// carries its subsection's alignment, inverted.
+/// The rank of a definition: (class << 40) | (weak term << 32) |
+/// priority, lower is better. A live weak definition's rank carries
+/// the order in which ld-prime, like ld64, prefers the copies of one
+/// (see weak_definition_rank); the first copy wins only among equals.
 fn definition_rank(
     isecs: &[InputSection],
     obj: &crate::input_files::ObjectFile,
@@ -1317,15 +1315,35 @@ fn definition_rank(
         N_UNDF if nlist.is_common() && obj.is_alive => 3,
         _ => return None,
     };
-    let mut align_term = 0u64;
+    let mut weak_term = 0u64;
     if class == 1
         && nlist.n_type() == N_SECT
         && let Some((isec, _)) =
             crate::input_files::find_symbol_subsec(isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
     {
-        align_term = 63 - isecs[isec].p2align as u64;
+        weak_term = weak_definition_rank(&isecs[isec], nlist, obj.hidden);
     }
-    Some((class << 40) | (align_term << 32) | obj.priority as u64)
+    Some((class << 40) | (weak_term << 32) | obj.priority as u64)
+}
+
+/// How ld-prime, like ld64, orders the copies of a weak definition,
+/// lower first: a copy that can't be auto-hidden before one that can
+/// (.weak_def_can_be_hidden, a global's N_WEAK_DEF | N_WEAK_REF), then
+/// a global before a private extern (unless both can be hidden), then
+/// the more aligned. An atom's alignment is its section's with the
+/// atom's address as the modulus, so a copy at 8 mod 16 is 8-aligned:
+/// a Swift metadata record comes at 16 from one object and at 8 from
+/// another, and the first copy wins only if equally aligned.
+fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64 {
+    let private = nlist.n_type & N_PEXT != 0 || hidden;
+    let auto_hide = !private && nlist.n_desc & N_WEAK_REF != 0;
+    let modulus = nlist.n_value & ((1 << isec.p2align) - 1);
+    let p2align = if isec.is_record() || modulus == 0 {
+        isec.p2align as u64
+    } else {
+        modulus.trailing_zeros() as u64
+    };
+    ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
 }
 
 /// The best definition rank of each symbol. Ranks race into it with an

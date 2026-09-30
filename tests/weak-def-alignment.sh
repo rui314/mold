@@ -64,3 +64,40 @@ nm -m $t/exe3 > $t/nm3
 grep '(__TEXT,__const) external _w$' $t/nm3
 otool -h $t/exe3 > $t/hdr3
 grep ' 0x00200085$' $t/hdr3
+
+# An atom keeps its address modulo its section's alignment, and that is
+# the alignment the copies compare by: a copy at 8 mod 16 of a 16-aligned
+# section loses to one at 0 mod 16. Before alignment come the kinds of
+# copy: one that can't be hidden beats a .weak_def_can_be_hidden one,
+# and a global beats a private extern, however aligned.
+copy() {
+  cat <<EOF2 | $CC -o $t/$1.o -c -xassembler -
+.data
+.p2align 4
+.globl _pad_$1
+_pad_$1: .space $2
+.globl _v
+$3
+_v: .quad $4
+.subsections_via_symbols
+EOF2
+}
+cat <<EOF2 | $CC -o $t/vmain.o -c -xc -
+#include <stdio.h>
+extern long v;
+int main() { printf("%ld\n", v); }
+EOF2
+pick() {
+  $CC --ld-path=$mold -o $t/exe-$1-$2 $t/vmain.o $t/$1.o $t/$2.o
+  $t/exe-$1-$2
+}
+copy w8 8 '.weak_definition _v' 1
+copy w16 16 '.weak_definition _v' 2
+copy hidden16 16 '.private_extern _v
+.weak_definition _v' 3
+copy hidable16 16 '.weak_def_can_be_hidden _v' 4
+pick w8 w16 | grep '^2$'
+pick w16 w8 | grep '^2$'
+pick hidden16 w8 | grep '^1$'
+pick hidable16 w8 | grep '^1$'
+pick w8 hidable16 | grep '^1$'
