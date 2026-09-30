@@ -3170,14 +3170,22 @@ fn load_reexports<E: Target>(
             );
             continue;
         };
+        // A file of another kind, which only a -dylib_file names, is
+        // one ld-prime loads as any input.
+        use crate::filetype::FileType;
+        let ty = crate::filetype::get_file_type(dep);
+        if !matches!(ty, FileType::Tapi | FileType::Dylib | FileType::Fat) {
+            ctx.indirect_files.push(dep);
+            continue;
+        }
         trace_file(ctx, crate::util::path_bytes(&dep.name));
         // The file found decides by its own install name, which a lookup
         // by leaf name may find to differ from the one re-exported:
         // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it
         // found as the SDK's /usr/lib/libz.1.dylib, and merges a
         // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
-        match crate::filetype::get_file_type(dep) {
-            crate::filetype::FileType::Tapi => {
+        match ty {
+            FileType::Tapi => {
                 let Some(mut dep_tbd) = load_tbd(ctx, dep) else { continue };
                 if DylibIdentity::of_tbd(&dep_tbd).is_public(ctx) {
                     let idx = register_tbd_file(ctx, dep, dep_tbd);
@@ -3191,11 +3199,11 @@ fn load_reexports<E: Target>(
                 }
                 walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[]);
             }
-            ty @ (crate::filetype::FileType::Dylib | crate::filetype::FileType::Fat) => {
+            _ => {
                 // A universal binary (Xcode's XCTestCore, re-exported by
                 // XCTest) is read for the target's slice, if it has one.
                 let binary = match ty {
-                    crate::filetype::FileType::Dylib => dep,
+                    FileType::Dylib => dep,
                     _ => match fat_slice::<E>(dep) {
                         Some(slice) => slice,
                         None => {
@@ -3218,11 +3226,6 @@ fn load_reexports<E: Target>(
                 merged.push(found.install_name);
                 walk.merge_binary(binary_exports, &dir_of(&dep.name));
             }
-            _ => crate::warn!(
-                "{}: unsupported reexported library: {}",
-                parent.display(),
-                crate::util::display(&name)
-            ),
         }
     }
     (merged, merged_files, walk.moved)
@@ -3715,9 +3718,6 @@ fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static st
 pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);
-    if hdr.magic != MH_MAGIC_64 || hdr.filetype != MH_EXECUTE {
-        fatal!("{}: -bundle_loader is not an executable", mf.name.display());
-    }
 
     let mut symtab_cmd = None;
     let mut dysymtab_cmd = None;

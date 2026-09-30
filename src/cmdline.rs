@@ -68,6 +68,7 @@ pub enum InputArg {
     LazyFile(PathBuf),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
+    /// A file of another kind is an input like any other.
     BundleLoader(PathBuf),
 }
 
@@ -1260,7 +1261,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-bundle" => kind = OutputKind::Bundle,
             b"-kext" => kind = OutputKind::Kext,
             b"-dylinker" => kind = OutputKind::Dylinker,
+            // The last one counts; ld-prime reads no other.
             b"-bundle_loader" => {
+                let loader = |arg: &InputArg| matches!(arg, InputArg::BundleLoader(_));
+                if let Some(pos) = args.inputs.iter().position(loader)
+                    && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
+                {
+                    let old = old.display();
+                    warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
+                }
                 args.inputs.push(InputArg::BundleLoader(path(next_arg(&mut i, name))))
             }
             b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i, name))),

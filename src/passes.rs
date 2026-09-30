@@ -108,7 +108,7 @@ fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> 
         let fw = dir.join(with_suffix(".framework"));
         for file in [with_suffix(".tbd"), name.to_os_string()] {
             let path = fw.join(file);
-            if path.is_file() {
+            if path.exists() {
                 return Some(path);
             }
         }
@@ -142,7 +142,8 @@ fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
 }
 
 /// Looks for lib<name>.<ext> in the library search path, for each pass
-/// of extensions in turn.
+/// of extensions in turn. What is there counts, as for ld-prime, which
+/// fails on a directory it finds (see unreadable_input).
 fn search_library<E: Target>(
     ctx: &Context<E>,
     name: &OsStr,
@@ -155,7 +156,7 @@ fn search_library<E: Target>(
                 file.push(name);
                 file.push(format!(".{ext}"));
                 let path = dir.join(file);
-                if path.is_file() {
+                if path.exists() {
                     return Some(path);
                 }
             }
@@ -401,7 +402,15 @@ fn collect_file<E: Target>(
             input_files::parse_bitcode(ctx, mf, true);
         }
         FileType::Empty => {}
-        _ => fatal!("{}: unknown file type", mf.name.display()),
+        _ => {
+            let name = input_files::trace_name(path_bytes(&mf.name));
+            if crate::filetype::get_macho_filetype(mf.data()).is_some() {
+                fatal!(
+                    "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
+                );
+            }
+            fatal!("unknown file type in '{name}'");
+        }
     }
 }
 
@@ -611,21 +620,29 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 
     let mut queue: Vec<PendingObject> = Vec::new();
     for ((arg, path), rc) in inputs.iter().zip(paths).zip(namings) {
-        if let InputArg::BundleLoader(path) = arg {
-            load_bundle_loader(ctx, path);
-            continue;
-        }
         let (Some(path), Some(rc)) = (path, rc) else { continue };
         match MappedFile::try_open(&path) {
             Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
+            Ok(mf) if matches!(arg, InputArg::BundleLoader(_)) => {
+                load_bundle_loader(ctx, mf, rc, &mut queue)
+            }
             Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
-            // A bare path names a file; the other forms name a library.
-            Err(e) if matches!(arg, InputArg::File(_)) => error!("{}", unreadable_input(&path, &e)),
-            Err(_) => error!("library '{}' not found", path.display()),
+            Err(e) => error!("{}", unreadable_input(&path, &e)),
         }
     }
     ctx.args.inputs = inputs;
+    collect_indirect_files(ctx, &mut queue);
     load_pending(ctx, queue);
+}
+
+/// Loads the files that -dylib_file names for re-exported libraries
+/// but that are no libraries (see load_reexports) as any input, after
+/// the command line's: ld-prime links an object named so into the
+/// output.
+fn collect_indirect_files<E: Target>(ctx: &mut Context<E>, out: &mut Vec<PendingObject>) {
+    for mf in std::mem::take(&mut ctx.indirect_files) {
+        collect_file(ctx, mf, ReaderContext::default(), out);
+    }
 }
 
 /// ld-prime's words for an input file MappedFile::try_open failed on
@@ -648,18 +665,18 @@ pub fn unreadable_input(path: &Path, e: &std::io::Error) -> String {
 }
 
 /// Finds the file each input names: None for a library or framework
-/// not found, or a file a library option or -force_load names that
-/// isn't there. (-bundle_loader's is read apart.)
+/// not found, or a file a library option, -force_load or -bundle_loader
+/// names that isn't there.
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
     let find = |arg: &InputArg| match arg {
         InputArg::File(path) => Some(path.clone()),
-        InputArg::BundleLoader(_) => None,
         InputArg::ForceLoad(path)
+        | InputArg::BundleLoader(path)
         | InputArg::WeakFile(path)
         | InputArg::ReexportFile(path)
         | InputArg::NeededFile(path)
         | InputArg::UpwardFile(path)
-        | InputArg::LazyFile(path) => Some(path.clone()).filter(|path| path.is_file()),
+        | InputArg::LazyFile(path) => find_file(ctx, path),
         InputArg::Lib(name, _)
         | InputArg::HiddenLib(name)
         | InputArg::NeededLib(name)
@@ -672,6 +689,29 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         | InputArg::LazyFramework(name) => find_framework(ctx, name),
     };
     inputs.iter().map(find).collect()
+}
+
+/// The file an option that takes a library's path names: an absolute
+/// path under each -syslibroot first, as ld64's findFile looks it up,
+/// then as it is, each time a stub in place of the library where there
+/// is one - `-weak_library /usr/lib/libz.dylib` links the SDK's
+/// usr/lib/libz.tbd. An object is taken as it is.
+fn find_file<E: Target>(ctx: &Context<E>, path: &Path) -> Option<PathBuf> {
+    let ext = path.extension();
+    let object = ext == Some(OsStr::new("o"));
+    let archive = ext == Some(OsStr::new("a"));
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if path.is_absolute() && !object {
+        for root in &ctx.args.syslibroot {
+            let path = under_root(root, path);
+            candidates.extend([path.with_extension("tbd"), path]);
+        }
+    }
+    if !object && !archive {
+        candidates.push(path.with_extension("tbd"));
+    }
+    candidates.push(path.to_path_buf());
+    candidates.into_iter().find(|path| path.exists())
 }
 
 /// What a library option says of the library it names: the flags it
@@ -738,7 +778,9 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option
             }
             (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
             (None, None) => match arg {
-                InputArg::ForceLoad(path) => fatal!("library '{}' not found", path.display()),
+                InputArg::ForceLoad(path) | InputArg::BundleLoader(path) => {
+                    fatal!("library '{}' not found", path.display())
+                }
                 _ => None,
             },
             (Some((rc, framework, name)), Some(path)) => {
@@ -802,13 +844,26 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
 /// exports resolve the bundle's remaining undefined symbols, bound at
 /// run time to the main executable (XCTest bundles hosted by an app are
 /// linked this way). It loads where the command line names it, which
-/// places it among the dylibs as ld-prime does.
-fn load_bundle_loader<E: Target>(ctx: &mut Context<E>, path: &Path) {
-    let Ok(mf) = MappedFile::try_open(path) else {
-        fatal!("library '{}' not found", path.display());
+/// places it among the dylibs as ld-prime does. A file of another kind
+/// loads as any input would: ld-prime links an object named so into
+/// the bundle, binds to a dylib as usual and refuses another bundle.
+fn load_bundle_loader<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    rc: ReaderContext,
+    out: &mut Vec<PendingObject>,
+) {
+    let exe = match get_file_type(mf) {
+        FileType::Fat => input_files::fat_slice::<E>(mf),
+        _ => Some(mf),
     };
-    input_files::trace_file(ctx, path_bytes(&mf.name));
-    input_files::parse_bundle_loader(ctx, mf);
+    match exe.filter(|exe| crate::filetype::get_macho_filetype(exe.data()) == Some(MH_EXECUTE)) {
+        Some(exe) => {
+            input_files::trace_file(ctx, path_bytes(&mf.name));
+            input_files::parse_bundle_loader(ctx, exe);
+        }
+        None => collect_file(ctx, mf, rc, out),
+    }
 }
 
 /// Acts on auto-link options (LC_LINKER_OPTION) of live objects: each
@@ -1031,6 +1086,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     for (dylib, was_implicit) in ctx.dylibs.iter_mut().zip(implicit_before) {
         dylib.is_autolinked |= was_implicit && !dylib.is_implicit;
     }
+    collect_indirect_files(ctx, &mut queue);
     load_pending(ctx, queue);
     // A new dylib that an earlier one merged as a private re-export takes
     // its symbols from that one, which a light claim pass cannot move.

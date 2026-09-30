@@ -78,3 +78,28 @@ not $mold -arch $ARCH -dylib -o $t/lib.dylib $t/unused.o -lnosuchlib -r -dead_st
 grep -v '^+' $t/log4 > $t/msgs4
 grep -q -- '-bundle_loader can only be used with -bundle$' $t/msgs4
 not grep -q 'nosuch\|dead_strip\|headerpad\|segalign' $t/msgs4
+
+# Only the last -bundle_loader counts. The file it names is an input
+# like any other that is no executable: ld-prime links an object into
+# the bundle, binds to a dylib as usual and words a file it can't link
+# by what it is.
+$CC --ld-path=$mold -bundle -o $t/d1.bundle $t/plugin.o -Wl,-bundle_loader,$t/nosuch \
+  -Wl,-bundle_loader,$t/host 2> $t/log5
+grep -qF "duplicate -bundle_loader option, '$t/nosuch' ignored" $t/log5
+nm -m $t/d1.bundle | grep -q 'undefined.*_host_func (from executable)'
+
+echo 'int host_value = 1; int host_func(void) { return 2; }' | $CC -o $t/h.o -c -xc -
+$CC --ld-path=$mold -bundle -o $t/d2.bundle $t/plugin.o -Wl,-bundle_loader,$t/h.o
+nm -m $t/d2.bundle | grep -q '(__TEXT,__text) external _host_func'
+
+$CC --ld-path=$mold -o $t/libh.dylib -shared $t/h.o -Wl,-install_name,@rpath/libh.dylib
+$CC --ld-path=$mold -bundle -o $t/d3.bundle $t/plugin.o -Wl,-bundle_loader,$t/libh.dylib
+otool -L $t/d3.bundle | grep -q '@rpath/libh.dylib'
+nm -m $t/d3.bundle | grep -q 'undefined.*_host_func (from libh)'
+
+echo 'int x;' > $t/x.c
+not $CC --ld-path=$mold -bundle -o $t/d4.bundle $t/plugin.o -Wl,-bundle_loader,$t/x.c 2> $t/log6
+grep -qF "unknown file type in '$t/x.c'" $t/log6
+not $CC --ld-path=$mold -bundle -o $t/d5.bundle $t/plugin.o \
+  -Wl,-bundle_loader,$t/plugin.bundle 2> $t/log7
+grep -qF "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '$t/plugin.bundle'" $t/log7

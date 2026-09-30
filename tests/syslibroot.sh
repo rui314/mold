@@ -14,3 +14,27 @@ EOF
 
 $CC --ld-path=$mold -shared -o $t/b.dylib $t/a.o -nodefaultlibs \
   -L/foo/bar -isysroot $t -lbaz
+
+# An option that takes a library's path looks an absolute one up under
+# the syslibroot first, a stub in place of the dylib; a bare path is a
+# file as it is.
+mkdir -p $t/root/opt/lib
+cat > $t/root/opt/lib/libqux.tbd <<EOT
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+install-name:    '/opt/lib/libqux.dylib'
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:         [ _qux ]
+...
+EOT
+echo 'void qux(void); void f(void) { qux(); }' | $CC -o $t/q.o -c -xc -
+for opt in -weak_library -needed_library -reexport_library -upward_library -lazy_library; do
+  $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
+    -Wl,$opt,/opt/lib/libqux.dylib -Wl,-undefined,dynamic_lookup 2> /dev/null
+  otool -L $t/q.dylib | grep -q /opt/lib/libqux.dylib
+done
+not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
+  -Wl,/opt/lib/libqux.dylib 2> $t/log
+grep -q 'file cannot be open()ed' $t/log

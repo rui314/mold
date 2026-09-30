@@ -32,6 +32,16 @@ pub fn get_macho_target(data: &[u8]) -> Option<&'static str> {
     crate::target::cputype_name(hdr.cputype)
 }
 
+/// Returns the file type (MH_EXECUTE, MH_BUNDLE, ...) of a 64-bit
+/// Mach-O file, or `None` if it is not one.
+pub fn get_macho_filetype(data: &[u8]) -> Option<u32> {
+    if data.len() < size_of::<MachHeader>() {
+        return None;
+    }
+    let hdr = MachHeader::read_from(data);
+    (hdr.magic == MH_MAGIC_64).then_some(hdr.filetype)
+}
+
 pub fn get_file_type(mf: &MappedFile) -> FileType {
     let data = mf.data();
     if data.is_empty() {

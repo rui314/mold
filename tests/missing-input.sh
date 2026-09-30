@@ -61,3 +61,18 @@ try -framework NoSuch1 -framework NoSuch2
 grep -v '^+' $t/log > $t/msgs
 [ "$(grep -c 'not found' $t/msgs)" = 1 ]
 grep -q "framework 'NoSuch1' not found" $t/msgs
+
+# A library search finds what is there, a directory too, which ld-prime
+# then fails to map.
+mkdir -p $t/libdir/libdir.dylib $t/fwdir/Dir.framework/Dir
+try -L$t/libdir -ldir
+grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/libdir/libdir.dylib" $t/log
+try -F$t/fwdir -framework Dir
+grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/fwdir/Dir.framework/Dir" $t/log
+
+# A file it can't link it words by what the file is.
+echo 'int x;' > $t/x.c
+try -Wl,$t/x.c
+grep -qF "unknown file type in '$t/x.c'" $t/log
+try -Wl,$t/exe2
+grep -qF "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '$t/exe2'" $t/log

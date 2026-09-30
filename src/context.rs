@@ -116,6 +116,9 @@ pub struct Context<E: Target> {
     /// dropped, which ld-prime's -map still lists: their positions
     /// among the inputs and paths.
     pub stripped_dylibs: Vec<(u32, std::path::PathBuf)>,
+    /// The files -dylib_file names for re-exported libraries that are
+    /// no libraries, to load as inputs (see collect_indirect_files).
+    pub indirect_files: Vec<&'static crate::mapped_file::MappedFile>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -228,6 +231,7 @@ impl<E: Target> Context<E> {
             processed_linker_options: std::collections::HashSet::new(),
             autolink_misses: Vec::new(),
             stripped_dylibs: Vec::new(),
+            indirect_files: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
             fdes: Vec::new(),

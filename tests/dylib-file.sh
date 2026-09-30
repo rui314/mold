@@ -42,3 +42,14 @@ grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/dir in '$
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/empty.dylib 2> $t/log
 grep -qF "file is empty in '$t/empty.dylib'" $t/log
+
+# A file of another kind is an input like any other: ld-prime links an
+# object named so into the output, and refuses a file it can't link.
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
+  -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/foo.o 2> $t/log
+not grep -q 'unsupported' $t/log
+nm -m $t/exe | grep -q '(__TEXT,__text) external _foo'
+echo 'int x;' > $t/x.c
+not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
+  -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/x.c 2> $t/log
+grep -qF "unknown file type in '$t/x.c'" $t/log
