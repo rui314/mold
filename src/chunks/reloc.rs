@@ -140,7 +140,14 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: O
             // meant to be consumed as if they were in an object file, so we
             // follow that convention.
             let out_addend = if E::FAMILY == Family::Sh4 { 0 } else { addend };
-            out[base + j] = ElfRel::<E>::new(r_offset, rel.r_type(), symidx, out_addend);
+
+            // R_SPARC_OLO10 stores a second addend in the type field, so we
+            // start from a copy of the input record rather than a new one.
+            let mut out_rel = *rel;
+            out_rel.set_r_offset(r_offset);
+            out_rel.set_r_sym(symidx);
+            out_rel.set_r_addend(out_addend);
+            out[base + j] = out_rel;
 
             if ctx.args.relocatable
                 && (!E::IS_RELA || E::FAMILY == Family::Sh4)
