@@ -1157,8 +1157,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-preload" => kind = OutputKind::Preload,
             b"-kernel" => args.kernel = true,
             b"-version_load_command" => args.version_load_command = true,
-            b"-pie" => pie = Some(true),
-            b"-no_pie" => pie = Some(false),
+            // The last one wins; ld-prime warns as it reads one that
+            // turns the other around.
+            b"-pie" | b"-no_pie" => {
+                let on = name == "-pie";
+                if pie == Some(!on) {
+                    let other = if on { "-no_pie" } else { "-pie" };
+                    warnings.warn(format!("{name} overriding previous {other}"));
+                }
+                pie = Some(on);
+            }
             // Given with -dead_strip, this once kept initializers and
             // terminators nothing referenced. -dead_strip always keeps
             // them now, and ld64 takes this for -dead_strip alone.
