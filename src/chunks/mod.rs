@@ -639,6 +639,7 @@ pub fn update_phdr<E: Target>(ctx: &mut Context<E>) {
 /// indices are known.
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
     match id {
+        ChunkId::Output(id) => output_section::update_shdr(ctx, id),
         ChunkId::Phdr => update_phdr(ctx),
         ChunkId::Interp => interp::update_shdr(ctx),
         ChunkId::GotPlt => gotplt::update_shdr(ctx),

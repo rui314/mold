@@ -30,17 +30,66 @@
 //!
 //!  - Relocations are copied, but we need to fix symbol indices.
 
+use std::collections::HashMap;
+
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::note_property::NotePropertySection;
+use crate::chunks::output_section::{self, OutputSection};
 use crate::chunks::riscv_attributes::RiscvAttributesSection;
-use crate::chunks::{self, ChunkId};
+use crate::chunks::{self, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
+use crate::input_sections::InputSectionId;
 use crate::output_file::OutputFile;
 use crate::passes;
 use crate::target::Target;
 use crate::util::align_to;
+
+/// An output section's sh_link can refer to only one section, so
+/// SHF_LINK_ORDER sections of the same name share an output section only
+/// if the sections they are linked to do too.
+fn split_link_order_sections<E: Target>(ctx: &mut Context<E>) {
+    for i in 0..ctx.chunks.len() {
+        let ChunkId::Output(id) = ctx.chunks[i] else {
+            continue;
+        };
+        let osec = &ctx.output_sections[id.index()];
+        if osec.hdr.shdr.sh_flags.get() & SHF_LINK_ORDER as u64 == 0 {
+            continue;
+        }
+
+        let mut groups: Vec<Vec<InputSectionId>> = Vec::new();
+        let mut group_of = HashMap::new();
+        for &m in &osec.members {
+            let link = output_section::link_order_target(ctx, m);
+            let j = *group_of.entry(link).or_insert_with(|| {
+                groups.push(Vec::new());
+                groups.len() - 1
+            });
+            groups[j].push(m);
+        }
+
+        let (name, shdr) = (osec.hdr.name, osec.hdr.shdr);
+        let mut groups = groups.into_iter();
+        ctx.output_sections[id.index()].members = groups.next().unwrap();
+
+        for members in groups {
+            let id = OutputSectionId::new(ctx.output_sections.len() as u32);
+            for &m in &members {
+                let isec = ctx.input_section(m);
+                let (file, shndx) = (isec.file, isec.shndx as usize);
+                ctx.objs[file.index()].section_mut(shndx).unwrap().output_section = Some(id);
+            }
+            let mut osec = OutputSection::<E>::new(name, shdr.sh_type.get());
+            osec.hdr.shdr.sh_flags = shdr.sh_flags;
+            osec.hdr.shdr.sh_addralign = shdr.sh_addralign;
+            osec.members = members;
+            ctx.output_sections.push(osec);
+            ctx.chunks.push(ChunkId::Output(id));
+        }
+    }
+}
 
 // Create linker-synthesized sections
 fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
@@ -162,6 +211,7 @@ fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
 
 pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     passes::create_output_sections(ctx);
+    split_link_order_sections(ctx);
     create_synthetic_sections(ctx);
     claim_unresolved_symbols(ctx);
     passes::compute_section_sizes(ctx);

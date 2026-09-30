@@ -76,6 +76,32 @@ impl<E: Target> OutputSection<E> {
     }
 }
 
+/// The output section of the section that an SHF_LINK_ORDER input section
+/// is linked to.
+pub fn link_order_target<E: Target>(
+    ctx: &Context<E>,
+    id: InputSectionId,
+) -> Option<OutputSectionId> {
+    let isec = ctx.input_section(id);
+    if isec.sh_flags & SHF_LINK_ORDER as u64 == 0 {
+        return None;
+    }
+    let file = &ctx.objs[isec.file.index()];
+    file.section(file.shdr(isec.shndx as usize).sh_link.get() as usize)?.output_section
+}
+
+/// An SHF_LINK_ORDER output section's sh_link refers to the output section
+/// of the sections its members are linked to.
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
+    let osec = &ctx.output_sections[id.index()];
+    if osec.hdr.shdr.sh_flags.get() & SHF_LINK_ORDER as u64 != 0
+        && let Some(link) = osec.members.iter().find_map(|&m| link_order_target(ctx, m))
+    {
+        let shndx = ctx.output_sections[link.index()].hdr.shndx;
+        ctx.output_sections[id.index()].hdr.shdr.sh_link.set(shndx);
+    }
+}
+
 // Assign offsets to OutputSection members
 pub fn compute_section_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let size = layout(ctx, id);
