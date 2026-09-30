@@ -89,6 +89,31 @@ fn check_reloc(rels: &[MachRel], i: usize) -> Result<(), BadReloc> {
     Ok(())
 }
 
+/// The displacement a 32-bit pc-relative fixup, relocation `r` of
+/// subsection `isec` at `p`, holds to reach `t`: from the end of the
+/// instruction, past the field and the immediate after it a SIGNED_1/2/4
+/// counts. One that doesn't fit is a fixup error of ld-prime's `kind`,
+/// naming the target `name`.
+fn rip32_displacement(
+    ctx: &Context<X86_64>,
+    isec: usize,
+    r: &Reloc,
+    kind: &str,
+    p: u64,
+    t: u64,
+    name: &str,
+) -> u32 {
+    let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.r_type) as u64) as i64;
+    if i32::try_from(disp).is_err() {
+        let msg = format_args!(
+            "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
+             from 0x{p:08X} to 0x{t:08X} ('{name}')"
+        );
+        ctx.fixup_error(isec, r.offset, kind, msg);
+    }
+    disp as u32
+}
+
 /// Writes a one-byte branch (jmp rel8) at `loc`, relocation `r` of
 /// subsection `isec` whose address is `p`, to `t`, the address of
 /// `sym`. It reaches only a definition near it in the image: ld-prime
@@ -194,10 +219,21 @@ impl Target for X86_64 {
     }
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let mut reported = false;
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 6..];
             let ent_addr = addr + i as u64 * 6;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
+            let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
+            if !reported && i32::try_from(disp).is_err() {
+                let p = ent_addr + 2;
+                let msg = format_args!(
+                    "32-bit RIP-relative reference out of range (displacement={disp}, max is \
+                     +/-2GB), from 0x{p:08X} to 0x{ptr_addr:08X} ('')"
+                );
+                ctx.stub_fixup_error(i, 2, "x86_64_rip", msg);
+                reported = true;
+            }
 
             // jmp *ptr(%rip)
             ent[0] = 0xff;
@@ -415,44 +451,60 @@ impl Target for X86_64 {
                 {
                     write32(loc, a as u32);
                 }
+                // A pc-relative fixup that can't reach is an error
+                // named after what ld-prime makes of the reference: a
+                // call, a plain one, or a GOT or TLV load that it
+                // relaxed ("elide") or not. It names a GOT slot ''.
                 X86_64_RELOC_BRANCH => {
                     let s = match ctx.reloc_target_sym(obj, r) {
                         Some(id) => ctx.branch_target_addr(id),
                         None => s,
                     };
-                    let val = s.wrapping_add_signed(a).wrapping_sub(p + 4);
-                    write32(loc, val as u32);
+                    let name = ctx.fixup_target_name(obj, r);
+                    let t = s.wrapping_add_signed(a);
+                    write32(loc, rip32_displacement(ctx, isec_id, r, "x86_64_call", p, t, name));
                 }
                 X86_64_RELOC_SIGNED
                 | X86_64_RELOC_SIGNED_1
                 | X86_64_RELOC_SIGNED_2
                 | X86_64_RELOC_SIGNED_4 => {
-                    let val = s
-                        .wrapping_add_signed(a)
-                        .wrapping_sub(p + 4)
-                        .wrapping_sub(reloc_bias(r.r_type) as u64);
-                    write32(loc, val as u32);
+                    let kind = match r.r_type {
+                        X86_64_RELOC_SIGNED => "x86_64_rip",
+                        X86_64_RELOC_SIGNED_1 => "x86_64_rip1",
+                        X86_64_RELOC_SIGNED_2 => "x86_64_rip2",
+                        _ => "x86_64_rip4",
+                    };
+                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
                 }
                 X86_64_RELOC_GOT_LOAD if relaxed_got_load => {
-                    let val = s.wrapping_add_signed(a).wrapping_sub(p + 4);
-                    write32(loc, val as u32);
+                    let kind = "x86_64_was_rip_got_load_elide_got";
+                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT => {
                     let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
-                    let val = g.wrapping_add_signed(a).wrapping_sub(p + 4);
-                    write32(loc, val as u32);
+                    let kind = if r.r_type == X86_64_RELOC_GOT {
+                        "x86_64_rip_got"
+                    } else {
+                        "x86_64_was_rip_got_load_load_got"
+                    };
+                    let t = g.wrapping_add_signed(a);
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, ""));
                 }
                 // A local thread-local's TLV load relaxes just like a
                 // GOT load: the movq of the descriptor's GOT slot
                 // becomes a leaq of the __thread_vars descriptor itself.
                 X86_64_RELOC_TLV if relaxed_got_load => {
-                    let val = s.wrapping_add_signed(a).wrapping_sub(p + 4);
-                    write32(loc, val as u32);
+                    let kind = "x86_64_was_rip_tlv_elide_got";
+                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
                 }
                 X86_64_RELOC_TLV => {
-                    let t = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
-                    let val = t.wrapping_add_signed(a).wrapping_sub(p + 4);
-                    write32(loc, val as u32);
+                    let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
+                    let kind = "x86_64_was_rip_tlv_load_got";
+                    let t = g.wrapping_add_signed(a);
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, ""));
                 }
                 _ => fatal!("unsupported relocation type: {}", r.r_type),
             }

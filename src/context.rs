@@ -761,15 +761,13 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The name ld-prime gives the atom (subsection) `isec` in a
-    /// diagnostic: that of a symbol at its start, ranked as
-    /// input_files::atom_name_rank ranks them, or else "anon-N" for the
-    /// object's Nth atom in address order.
-    pub fn atom_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
+    /// The symbol that names the atom (subsection) `isec` in ld-prime's
+    /// diagnostics: of those at its start, the one
+    /// input_files::atom_name_rank ranks first.
+    pub fn atom_label(&self, id: usize) -> Option<&'static str> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
-        let name = obj
-            .nlists
+        obj.nlists
             .iter()
             .zip(&obj.symbols)
             .filter(|(n, _)| {
@@ -782,13 +780,48 @@ impl<E: Target> Context<E> {
                 let name = self.symbols[id].name();
                 (crate::input_files::atom_name_rank(n, name), name)
             })
-            .max();
-        match name {
-            Some((_, name)) => name.into(),
+            .max()
+            .map(|(_, name)| name)
+    }
+
+    /// The name ld-prime gives the atom (subsection) `isec` in a
+    /// diagnostic: its label, or else "anon-N" for the object's Nth
+    /// atom in address order.
+    pub fn atom_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
+        match self.atom_label(id) {
+            Some(name) => name.into(),
             None => {
+                let obj = &self.objs[self.isecs[id].file as usize];
                 let n = obj.subsecs.iter().position(|&sub| sub as usize == id).unwrap_or(0);
                 format!("anon-{n}").into()
             }
+        }
+    }
+
+    /// Reports that stub `i` can't reach its pointer, as ld-prime does:
+    /// a fixup error of the atoms it makes the stubs of, in its
+    /// "stubs-got-file", whose first stub is anon-2 (anon-6 with lazy
+    /// binding, the stub helper's atoms first). It reports only the
+    /// first such stub. `off` is the offset of the field in the stub.
+    pub fn stub_fixup_error(&self, i: usize, off: u32, kind: &str, msg: std::fmt::Arguments) {
+        let atom = if self.stubs.lazy.is_empty() { 2 } else { 6 } + i;
+        match off {
+            0 => crate::error!(
+                "fixup error (kind={kind}) at 'anon-{atom}' from stubs-got-file, {msg}"
+            ),
+            _ => crate::error!(
+                "fixup error (kind={kind}) at 'anon-{atom}'+0x{off:X} from stubs-got-file, {msg}"
+            ),
+        }
+    }
+
+    /// How a fixup error names the target of relocation `rel` of object
+    /// `obj`: by its symbol, or else by the label of the atom it points
+    /// into, if that has one.
+    pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
+        match rel.target() {
+            RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
+            RelocTarget::Section(idx) => self.atom_label(idx as usize).unwrap_or(""),
         }
     }
 

@@ -5,7 +5,6 @@ use std::path::Path;
 use rayon::prelude::*;
 
 use crate::context::Context;
-use crate::error;
 use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
@@ -44,6 +43,54 @@ fn read32(loc: &[u8]) -> u32 {
 /// ld-prime ignores it.
 fn write_adrp(loc: &mut [u8], hi: u64, lo: u64) {
     write32(loc, (read32(loc) & !ADRP_IMM) | page_offset(hi, lo));
+}
+
+/// Whether an ADRP at `lo` reaches `hi`'s page: its 21-bit immediate
+/// counts 4 KiB pages, 4 GiB either way.
+fn adrp_reaches(hi: u64, lo: u64) -> bool {
+    let delta = page(hi).wrapping_sub(page(lo)) as i64;
+    (-(1 << 32)..1 << 32).contains(&delta)
+}
+
+/// Checks that the ADRP of relocation `i` of subsection `isec`, at `p`,
+/// reaches its target `t`, named `name`, and reports it as ld-prime does
+/// if not. ld-prime names the fixup after the instructions it makes of
+/// the reference: the ADRP alone or with the instruction taking its page
+/// offset ("lo12", "ldr"), an addend, a GOT or TLV load it relaxed
+/// ("elide") or not. It names a GOT slot ''.
+fn check_adrp(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, p: u64, t: u64) {
+    if adrp_reaches(t, p) {
+        return;
+    }
+    let obj = ctx.isecs[isec].file as usize;
+    let r = &rels[i];
+    let lo12 = |r_type: u8| {
+        rels[i + 1..]
+            .iter()
+            .any(|q| q.r_type == r_type && q.target == r.target && q.addend == r.addend)
+    };
+    let relaxed = || ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id));
+    let (kind, name) = match r.r_type {
+        ARM64_RELOC_PAGE21 => {
+            let kind = match (lo12(ARM64_RELOC_PAGEOFF12), r.addend != 0) {
+                (true, false) => "arm64_adrp_lo12",
+                (true, true) => "arm64_adrp_lo12_addend",
+                (false, false) => "arm64_adrp",
+                (false, true) => "arm64_adrp_addend",
+            };
+            (kind, ctx.fixup_target_name(obj, r))
+        }
+        ARM64_RELOC_GOT_LOAD_PAGE21 => match (lo12(ARM64_RELOC_GOT_LOAD_PAGEOFF12), relaxed()) {
+            (true, true) => ("arm64_was_adrp_ldr_got_elide_got", ctx.fixup_target_name(obj, r)),
+            (true, false) => ("arm64_was_adrp_ldr_got_load_got", ""),
+            (false, true) => ("arm64_was_adrp_got_elide_got", ctx.fixup_target_name(obj, r)),
+            (false, false) => ("arm64_was_adrp_got_use_got", ""),
+        },
+        _ if relaxed() => ("arm64_was_adrp_tlv_elide_got", ctx.fixup_target_name(obj, r)),
+        _ => ("arm64_was_adrp_tlv_load_got", ""),
+    };
+    let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
+    ctx.fixup_error(isec, r.offset, kind, msg);
 }
 
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
@@ -892,10 +939,18 @@ impl Target for Arm64 {
     }
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let mut reported = false;
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 12..];
             let ent_addr = addr + i as u64 * 12;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
+            if !reported && !adrp_reaches(ptr_addr, ent_addr) {
+                let msg = format_args!(
+                    "ADRP out of range, from 0x{ent_addr:08X} to 0x{ptr_addr:08X} ('')"
+                );
+                ctx.stub_fixup_error(i, 0, "arm64_adrp_lo12", msg);
+                reported = true;
+            }
 
             // adrp x16, $ptr@PAGE; ldr x16, [x16, $ptr@PAGEOFF]; br x16
             write32(&mut ent[0..], 0x9000_0010 | page_offset(ptr_addr, ent_addr));
@@ -1100,17 +1155,30 @@ impl Target for Arm64 {
                         Some(id) => ctx.branch_target_addr(id),
                         None => s,
                     };
-                    let mut val = s.wrapping_add_signed(a).wrapping_sub(p) as i64;
+                    let t = s.wrapping_add_signed(a);
+                    let mut val = t.wrapping_sub(p) as i64;
                     if !(-(1 << 27)..1 << 27).contains(&val) {
                         // Out of reach: branch through one of the
                         // symbol's thunk entries that is within reach of
-                        // here (mold's thunk_addrs lookup).
+                        // here (mold's thunk_addrs lookup) - if its ADRP
+                        // reaches the target. ld-prime has no island
+                        // either for a target more than 4 GiB away.
                         let thunk = ctx.reloc_target_sym(obj, r).and_then(|sym| {
                             crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
                         });
                         match thunk {
-                            Some(t) => val = t.wrapping_sub(p) as i64,
-                            None => error!("branch target out of range: {val:x}"),
+                            Some(thunk) if adrp_reaches(t, thunk) => {
+                                val = thunk.wrapping_sub(p) as i64
+                            }
+                            _ => {
+                                let kind = if a != 0 { "arm64_b26_addend" } else { "arm64_b26" };
+                                let name = ctx.fixup_target_name(obj, r);
+                                let msg = format_args!(
+                                    "B/BL out of range (displacement={val}, max is +/-128MB), \
+                                     from 0x{p:08X} to 0x{t:08X} ('{name}')"
+                                );
+                                ctx.fixup_error(isec_id, r.offset, kind, msg);
+                            }
                         }
                     }
                     write32(loc, (read32(loc) & !B_IMM) | bits(val as u64, 27, 2) as u32);
@@ -1122,6 +1190,7 @@ impl Target for Arm64 {
                 ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
+                    check_adrp(ctx, isec_id, rels, i, p, target.wrapping_add_signed(a));
                     write_adrp(loc, target.wrapping_add_signed(a), p);
                 }
                 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
@@ -1143,7 +1212,10 @@ impl Target for Arm64 {
                         }
                     }
                 }
-                ARM64_RELOC_PAGE21 => write_adrp(loc, s.wrapping_add_signed(a), p),
+                ARM64_RELOC_PAGE21 => {
+                    check_adrp(ctx, isec_id, rels, i, p, s.wrapping_add_signed(a));
+                    write_adrp(loc, s.wrapping_add_signed(a), p);
+                }
                 ARM64_RELOC_PAGEOFF12 => {
                     write_add_ldst(loc, s.wrapping_add_signed(a));
                 }
@@ -1155,6 +1227,7 @@ impl Target for Arm64 {
                 ARM64_RELOC_GOT_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target = if !ctx.can_relax_got(id) { ctx.sym_got_addr(id) } else { s };
+                    check_adrp(ctx, isec_id, rels, i, p, target.wrapping_add_signed(a));
                     write_adrp(loc, target.wrapping_add_signed(a), p);
                 }
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
