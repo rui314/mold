@@ -312,12 +312,25 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         .collect();
     let mut cu_slot = None;
     if !cu_kept.is_empty() {
+        // Each record keeps the alignment of the section it came from,
+        // as an ld-prime atom does, so the section takes the largest.
+        let p2align = cu_kept
+            .iter()
+            .filter_map(|&i| {
+                let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
+                obj.sect_hdrs
+                    .iter()
+                    .find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+            })
+            .map(|s| s.p2align as u8)
+            .max()
+            .unwrap_or(3);
         cu_slot = Some(extras.len());
         extras.push(new_extra(
             "__LD",
             "__compact_unwind",
             S_ATTR_DEBUG,
-            3,
+            p2align,
             32 * cu_kept.len() as u64,
         ));
     }
