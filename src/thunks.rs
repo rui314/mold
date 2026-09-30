@@ -311,9 +311,10 @@ fn batch_end<E: Target>(ctx: &Context<E>, members: &[InputSectionId], b: usize, 
 /// Scans `batch`'s branch relocations in parallel and returns the
 /// symbols that need an entry in the batch's thunk: those whose target
 /// may be out of reach and that no thunk still within reach covers (a
-/// symbol claims its entry with mark()). mold scans each batch's
-/// members with par_iter and dedups with the symbol's atomic mark the
-/// same way.
+/// symbol claims its entry with mark()). A thunk entry jumps to its
+/// symbol, so a branch with an addend never gets one; applying it
+/// reports it if it is out of reach. mold scans each batch's members
+/// with par_iter and dedups with the symbol's atomic mark the same way.
 fn scan_batch<E: Target>(
     ctx: &Context<E>,
     batch: &[InputSectionId],
@@ -326,7 +327,7 @@ fn scan_batch<E: Target>(
             let obj = isec.file as usize;
             let rels = &ctx.objs[obj].relocs[isec.rel_offset as usize..][..isec.nrels as usize];
             for rel in rels {
-                if E::classify_reloc(rel.r_type) != RelocClass::Branch {
+                if E::classify_reloc(rel.r_type) != RelocClass::Branch || rel.addend != 0 {
                     continue;
                 }
                 let Some(sym) = ctx.reloc_target_sym(obj, rel) else {

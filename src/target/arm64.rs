@@ -1181,10 +1181,14 @@ impl Target for Arm64 {
                         // symbol's thunk entries that is within reach of
                         // here (mold's thunk_addrs lookup) - if its ADRP
                         // reaches the target. ld-prime has no island
-                        // either for a target more than 4 GiB away.
-                        let thunk = ctx.reloc_target_sym(obj, r).and_then(|sym| {
-                            crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
-                        });
+                        // either for a target more than 4 GiB away. An
+                        // entry jumps to its symbol, so a branch with an
+                        // addend can't take one (ld-prime's branches to
+                        // its island plus the addend, past the island).
+                        let thunk =
+                            ctx.reloc_target_sym(obj, r).filter(|_| a == 0).and_then(|sym| {
+                                crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
+                            });
                         match thunk {
                             Some(thunk) if adrp_reaches(t, thunk) => {
                                 val = thunk.wrapping_sub(p) as i64
