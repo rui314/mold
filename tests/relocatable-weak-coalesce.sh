@@ -26,11 +26,10 @@ grep -q 'weak external automatically hidden __ZNK3BoxIiE3getEv' $t/nm
 $CC --ld-path=$mold -o $t/exe $t/r.o
 $t/exe
 
-# Two copies of a weak definition may differ by trailing zero padding
-# only (Swift's __swift5_typeref strings come with or without a pad
-# byte from one object to the next); ld64 discards the loser
-# regardless, and so do we. Copies of the same size fold as before
-# (the content is the compiler's promise, not compared).
+# Two copies of a weak definition may differ (Swift's __swift5_typeref
+# strings come with or without a pad byte from one object to the next);
+# ld64 discards the loser regardless, and so do we: the content is the
+# compiler's promise, not compared.
 cat <<EOF2 | $CC -o $t/w1.o -c -xassembler -
 .section __TEXT,__swift5_typeref
 .globl _sym
@@ -67,6 +66,68 @@ EOF2
 $mold -r -arch $ARCH -o $t/w.o $t/w1.o $t/w2.o
 otool -l $t/w.o | grep -A3 'sectname __swift5_typeref' | grep 'size 0x0000000000000013'
 
+# So do copies of code of different sizes (an inline function compiled
+# at different optimization levels): the kept copy, the first at equal
+# alignment, stands for the others, and their bytes, relocations and
+# unwind records go, in -r and in the final link alike. The output is
+# then the size it would be without the dropped copy.
+echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
+insn=$([ $ARCH = arm64 ] && echo bl || echo call)
+cat <<EOF2 > $t/big.s
+.text
+.globl _sized
+.weak_definition _sized
+.p2align 2
+_sized:
+  .cfi_startproc
+  nop
+  $insn _callee
+  nop
+  ret
+  .cfi_endproc
+.subsections_via_symbols
+EOF2
+cat <<EOF2 > $t/small.s
+.text
+.globl _sized
+.weak_definition _sized
+.p2align 2
+_sized:
+  .cfi_startproc
+  ret
+  .cfi_endproc
+.globl _other2
+.p2align 2
+_other2:
+  ret
+.subsections_via_symbols
+EOF2
+$CC -o $t/big.o -c $t/big.s
+$CC -o $t/small.o -c $t/small.s
+cat <<EOF2 | $CC -o $t/other.o -c -xassembler -
+.text
+.globl _other2
+.p2align 2
+_other2:
+  ret
+.subsections_via_symbols
+EOF2
+echo 'void callee(void) {}' | $CC -o $t/callee.o -c -xc -
+
+sizes() { otool -l $1 | grep -A4 -e 'sectname __text' -e 'sectname __compact_unwind' | grep size; }
+$mold -r -arch $ARCH -o $t/s1.o $t/big.o $t/small.o
+$mold -r -arch $ARCH -o $t/s2.o $t/big.o $t/other.o
+[ "$(sizes $t/s1.o)" = "$(sizes $t/s2.o)" ]
+$mold -r -arch $ARCH -o $t/s3.o $t/small.o $t/big.o
+$mold -r -arch $ARCH -o $t/s4.o $t/small.o
+[ "$(sizes $t/s3.o)" = "$(sizes $t/s4.o)" ]
+otool -rv $t/s3.o > $t/relocs3
+not grep -q _callee $t/relocs3
+$CC --ld-path=$mold -o $t/exe3 $t/main.o $t/callee.o $t/small.o $t/big.o
+$CC --ld-path=$mold -o $t/exe4 $t/main.o $t/callee.o $t/small.o
+[ "$(sizes $t/exe3)" = "$(sizes $t/exe4)" ]
+$t/exe3
+
 # Each copy of a weak function brings its own LC_DATA_IN_CODE entries,
 # and only the kept copy's are written; a dropped copy's must not land
 # a second time at the kept copy's address. The final link coalesces
@@ -88,7 +149,6 @@ done
 $mold -r -arch $ARCH -o $t/d.o $t/d1.o $t/d2.o
 otool -G $t/d.o > $t/dice
 grep -q '(1 entries)' $t/dice
-echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/d1.o $t/d2.o -Wl,-u,_jt
 otool -G $t/exe2 > $t/dice2
 grep -q '(1 entries)' $t/dice2
