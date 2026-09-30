@@ -4529,17 +4529,42 @@ fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u3
                     "__objc_catlist2",
                     "__objc_nlcatlist",
                     "__objc_protolist",
-                    "__objc_selrefs",
-                    "__objc_classrefs",
                     "__objc_superrefs",
                     "__objc_protorefs",
                     "__objc_imageinfo",
                 ]
                 .iter()
-                .any(|name| hdr.sectname_is(name)))
+                .any(|name| hdr.sectname_is(name))
+                || has_unnamed_atoms(hdr))
         }
         None => true,
     }
+}
+
+/// Whether ld-prime makes a section's atoms by content and names none
+/// of them: CFStrings, selector and class references, UTF-16 literals
+/// and Objective-C constant literals (@42, @[...], @{...}). No label
+/// of theirs is in an output's symbol table; a -r output names the
+/// atoms itself on arm64 (see relocatable.rs).
+pub(crate) fn has_unnamed_atoms(hdr: &MachSection) -> bool {
+    if hdr.segname_is("__TEXT") {
+        return hdr.sectname_is("__ustring");
+    }
+    hdr.segname_is("__DATA")
+        && [
+            "__cfstring",
+            "__objc_selrefs",
+            "__objc_classrefs",
+            "__objc_intobj",
+            "__objc_floatobj",
+            "__objc_doubleobj",
+            "__objc_dateobj",
+            "__objc_arraydata",
+            "__objc_arrayobj",
+            "__objc_dictobj",
+        ]
+        .iter()
+        .any(|name| hdr.sectname_is(name))
 }
 
 /// One stab entry: its name and nlist, the symbol whose final address

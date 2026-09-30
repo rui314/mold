@@ -194,6 +194,25 @@ fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::Symbol
     syms
 }
 
+/// The symbols the terms of a subtraction (a SUBTRACTOR and the
+/// relocation it pairs with) refer to.
+fn subtracted_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::SymbolId> {
+    let mut syms = HashSet::new();
+    for isec in ctx.isecs.iter() {
+        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
+            continue;
+        }
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            if let RelocTarget::Sym(idx) = rel.target()
+                && (rel.r_type == E::RELOC_SUBTRACTOR || rel.is_subtracted)
+            {
+                syms.insert(ctx.objs[isec.file as usize].symbols[idx as usize]);
+            }
+        }
+    }
+    syms
+}
+
 /// The places an object names with a symbol other than an assembler
 /// temporary (ltmpN), where an ltmpN label is a mere alias.
 fn named_places<E: Target>(ctx: &Context<E>) -> HashSet<(usize, u8, u64)> {
@@ -980,18 +999,18 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                     buf[loc..loc + 4].copy_from_slice(&cell.to_le_bytes());
                     continue;
                 }
-                let RelocTarget::Section(target) = rel.target() else {
+                let OutTarget::Section(target, addend) = out_target(ctx, isec, rel, &index_of_sym)
+                else {
                     continue;
                 };
-                let target = ctx.resolve_isec(target as usize);
                 let t = &ctx.isecs[target];
                 // The addend is negative for a target before its
                 // section's start.
                 let target_addr = (ctx.chunk_header(t.output_section().unwrap()).addr
                     + t.offset as u64)
-                    .wrapping_add_signed(rel.addend);
+                    .wrapping_add_signed(addend);
                 let loc = dst + rel.offset as usize;
-                if let Some((_, atom_addr)) = atom_target(target, rel.addend) {
+                if let Some((_, atom_addr)) = atom_target(target, addend) {
                     // Now a relocation against the atom's symbol: the
                     // field holds the addend relative to it, in the
                     // form an object's extern relocation uses.
@@ -1103,12 +1122,8 @@ fn push_reloc<E: Target>(
     out: &mut Vec<MachRel>,
 ) {
     let r_address = (isec.offset as u64 + rel.offset as u64) as u32;
-    let (symnum, is_extern) = match rel.target() {
-        RelocTarget::Sym(idx) => {
-            let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
-            let Some(&symnum) = index_of_sym.get(&sym_id) else {
-                fatal!("-r: cannot re-emit relocation against {}", ctx.symbols[sym_id].name());
-            };
+    let (symnum, is_extern) = match out_target(ctx, isec, rel, index_of_sym) {
+        OutTarget::Sym(symnum) => {
             // An explicit addend record precedes relocations whose
             // instruction can't hold one.
             if rel.addend != 0 && E::relocatable_needs_addend(rel.r_type) {
@@ -1121,13 +1136,10 @@ fn push_reloc<E: Target>(
             }
             (symnum, true)
         }
-        RelocTarget::Section(target) => {
-            let target = ctx.resolve_isec(target as usize);
-            match atom_target(target, rel.addend) {
-                Some((symnum, _)) => (symnum, true),
-                None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
-            }
-        }
+        OutTarget::Section(target, addend) => match atom_target(target, addend) {
+            Some((symnum, _)) => (symnum, true),
+            None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
+        },
     };
     out.push(MachRel {
         r_address,
@@ -1137,6 +1149,38 @@ fn push_reloc<E: Target>(
             | ((is_extern as u32) << 27)
             | ((rel.r_type as u32) << 28),
     });
+}
+
+/// How a -r output refers to a relocation's target.
+enum OutTarget {
+    /// By the symbol at this index of its symbol table.
+    Sym(u32),
+    /// Section-relatively: a subsection and the offset in it. A
+    /// section-relative input relocation stays so, and so does one
+    /// against a label the output drops (see build_symtab).
+    Section(usize, i64),
+}
+
+fn out_target<E: Target>(
+    ctx: &Context<E>,
+    isec: &crate::input_sections::InputSection,
+    rel: &crate::input_sections::Reloc,
+    index_of_sym: &HashMap<crate::symbol::SymbolId, u32>,
+) -> OutTarget {
+    match rel.target() {
+        RelocTarget::Sym(idx) => {
+            let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
+            if let Some(&symnum) = index_of_sym.get(&sym_id) {
+                return OutTarget::Sym(symnum);
+            }
+            let sym = &ctx.symbols[sym_id];
+            let Some(t) = sym.input_section() else {
+                fatal!("-r: cannot re-emit relocation against {}", sym.name());
+            };
+            OutTarget::Section(ctx.resolve_isec(t as usize), sym.value as i64 + rel.addend)
+        }
+        RelocTarget::Section(t) => OutTarget::Section(ctx.resolve_isec(t as usize), rel.addend),
+    }
 }
 
 /// A -r output's symbol and string tables, and where relocations find
@@ -1181,21 +1225,29 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     let mut ents: Vec<(NList, Option<crate::symbol::SymbolId>)> = Vec::new();
     let mut names: Vec<&[u8]> = Vec::new();
 
-    // Local symbols, in ld64's form. ld64 -r names some atoms itself
-    // with one shared counter: every string in a cstring-literal
-    // section becomes LC<n> (N_PEXT set, so a later link can still
-    // coalesce it), and the records of __cfstring, __objc_selrefs,
-    // __objc_classrefs and, on arm64, the fixed-size literal sections
-    // (N_PEXT) become l<nnn>; the entries of the __objc_*list sections
-    // get no symbol.
-    // Their original labels vanish, and relocations against them - by
+    // Local symbols, in ld64's form. ld-prime makes the literals -
+    // the strings of a cstring-literal section, the records of a
+    // fixed-size literal section and the atoms has_unnamed_atoms names
+    // (CFStrings, selector and class references, UTF-16 and ObjC
+    // constant literals) - by content: their labels vanish, all but
+    // those of the cstring and fixed-size literals a symbol names
+    // (labeled, kept apart). arm64 relocations must name what they
+    // refer to, so there ld64 names each such atom itself, with one
+    // shared counter: a cstring literal LC<n>, the others l<nnn>, all
+    // with N_PEXT set so that a later link can still coalesce them.
+    // x86-64 ones refer to them section-relatively, and only the
+    // literals of __TEXT,__cstring get names (LC<n>). The entries of
+    // the __objc_*list sections get no symbol, and on x86-64 neither
+    // do the class and protocol references only a linker-private label
+    // (l...) names. Relocations against the vanished labels - by
     // label, or section-relative as x86-64 objects refer to literals -
-    // are re-targeted at the new symbols. Other labels survive, those
-    // of the linker-private kind (l...) too, except the ltmpN labels
-    // the arm64 assembler puts at each section's start: in an object
-    // with subsections one survives only where no other symbol names
-    // the place, or where a relocation refers to it. Private externals
-    // are demoted to non-external symbols that keep N_PEXT (below).
+    // are re-targeted at the new symbols, or are section-relative.
+    // Other labels survive, those of the linker-private kind too,
+    // except the ltmpN labels the arm64 assembler puts at each
+    // section's start: in an object with subsections one survives
+    // only where no other symbol names the place, or where a relocation
+    // refers to it. Private externals are demoted to non-external
+    // symbols that keep N_PEXT (below).
     #[derive(Clone, Copy, PartialEq)]
     enum Rename {
         None,
@@ -1217,22 +1269,28 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     }
     let mut locals: Vec<Local> = Vec::new();
 
-    // The sections whose atoms ld64 names itself, as private
-    // externals: the record size; 0 for one record per subsection, as
-    // cstring literals are split.
-    let rename_kind = |flags: u32, segname: &str, sectname: &str| -> Option<u64> {
+    // The sections of literals: the record size; 0 for one record per
+    // subsection, as cstring literals are split.
+    let literal_size = |isec: usize, flags: u32| -> Option<u64> {
         match flags & SECTION_TYPE {
             S_CSTRING_LITERALS => return Some(0),
-            S_4BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(4),
-            S_8BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(8),
-            S_16BYTE_LITERALS if E::CPUTYPE == CPU_TYPE_ARM64 => return Some(16),
+            S_4BYTE_LITERALS => return Some(4),
+            S_8BYTE_LITERALS => return Some(8),
+            S_16BYTE_LITERALS => return Some(16),
             _ => {}
         }
-        match (segname, sectname) {
-            ("__DATA", "__cfstring") => Some(32),
-            ("__DATA", "__objc_selrefs") | ("__DATA", "__objc_classrefs") => Some(8),
-            _ => None,
+        let h = ctx.hdr_of(&ctx.isecs[isec]);
+        if !crate::passes::has_unnamed_atoms(h) {
+            return None;
         }
+        match h.sectname() {
+            "__cfstring" => Some(32),
+            "__objc_selrefs" | "__objc_classrefs" => Some(8),
+            _ => Some(0),
+        }
+    };
+    let names_literals = |segname: &str, sectname: &str| {
+        E::CPUTYPE == CPU_TYPE_ARM64 || (segname == "__TEXT" && sectname == "__cstring")
     };
     // The entries of the __objc_*list sections get no symbol at all
     // (ld-prime): their labels vanish.
@@ -1248,16 +1306,20 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                     | "__objc_nlcatlist"
             )
     };
-    // (subsection, record index) -> entry in `locals`; and the record
-    // size of each such output section.
+    // (subsection, record index) -> entry in `locals`; the record
+    // size of each such output section; the literal sections whose
+    // atoms get no name.
     let mut renamed: HashMap<(usize, u64), usize> = HashMap::new();
     let mut entsize_of: HashMap<OutputSectionId, u64> = HashMap::new();
+    let mut unnamed: HashSet<OutputSectionId> = HashSet::new();
     for &chunk_idx in section_chunks {
         let chunk = ctx.output_section(chunk_idx);
-        let Some(entsize) = rename_kind(chunk.hdr.flags, chunk.hdr.segname, &chunk.hdr.sectname)
-        else {
+        let Some(&first) = chunk.members.first() else { continue };
+        let Some(entsize) = literal_size(first as usize, chunk.hdr.flags) else { continue };
+        if !names_literals(chunk.hdr.segname, &chunk.hdr.sectname) {
+            unnamed.insert(chunk_idx);
             continue;
-        };
+        }
         entsize_of.insert(chunk_idx, entsize);
         for &id in &chunk.members {
             let id = id as usize;
@@ -1282,7 +1344,11 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                     n_desc: section_desc(ctx, id),
                     n_sect: chunk.hdr.n_sect,
                     addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
-                    rename: if entsize == 0 { Rename::Cstring } else { Rename::Anon },
+                    rename: if chunk.hdr.flags & SECTION_TYPE == S_CSTRING_LITERALS {
+                        Rename::Cstring
+                    } else {
+                        Rename::Anon
+                    },
                     syms: Vec::new(),
                     at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
                     rank: LOCAL,
@@ -1300,6 +1366,28 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         renamed.get(&(t, k)).copied()
     };
 
+    // On x86-64 the label of a literal left unnamed vanishes, as does a
+    // linker-private (l...) name of a class or protocol reference, a
+    // demoted private external's too (Swift's protocol references) -
+    // unless a subtraction names it, which has no section-relative form
+    // (ld-prime fails an assertion on it).
+    let subtracted =
+        if E::CPUTYPE == CPU_TYPE_ARM64 { HashSet::new() } else { subtracted_syms(ctx) };
+    let vanishes = |isec: usize, sym_id: crate::symbol::SymbolId| -> bool {
+        if E::CPUTYPE == CPU_TYPE_ARM64 || subtracted.contains(&sym_id) {
+            return false;
+        }
+        let t = &ctx.isecs[isec];
+        if let Some(ChunkId::Output(osec)) = t.output_section()
+            && unnamed.contains(&osec)
+        {
+            return !t.is_labeled();
+        }
+        let h = ctx.hdr_of(t);
+        h.segname_is("__DATA")
+            && (h.sectname_is("__objc_superrefs") || h.sectname_is("__objc_protorefs"))
+            && ctx.symbols[sym_id].name().starts_with('l')
+    };
     let referenced = referenced_syms(ctx);
     let named_at = named_places(ctx);
     for (obj_idx, obj) in ctx.objs.iter().enumerate() {
@@ -1327,7 +1415,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 locals[e].syms.push(sym_id);
                 continue;
             }
-            if unnamed_list(isec) && !referenced.contains(&sym_id) {
+            if (unnamed_list(isec) && !referenced.contains(&sym_id)) || vanishes(isec, sym_id) {
                 continue;
             }
             if sym.name().starts_with("ltmp")
@@ -1377,7 +1465,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 }
                 let Some(input) = sym.input_section().map(|i| i as usize) else { continue };
                 let isec = ctx.resolve_isec(input);
-                if !ctx.isecs[isec].is_alive() {
+                if !ctx.isecs[isec].is_alive() || vanishes(isec, sym_id) {
                     continue;
                 }
                 locals.push(Local {
