@@ -61,6 +61,20 @@ not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/libext.dylib 2> $t
 grep -E '^(Illegal|  text-relocation)' $t/log2 > $t/list2
 diff $t/expected $t/list2
 
+# Encoding rebase opcodes (without chained fixups), ld-prime lists
+# each atom's in address order, and the first section's only.
+cat > $t/expected5 <<EOF
+Illegal text-relocations:
+  text-relocation in '_site'+0x8 ($dir/a.o) to '_ext'
+  text-relocation in '_site2' ($dir/a.o) to '_ext2'
+  text-relocation in '_site2'+0x8 ($dir/a.o) to '_ext'
+  text-relocation in '_bsite' ($dir/b.o) to '_ext'
+EOF
+not $CC --ld-path=$mold -o $t/exe5 $t/main.o $t/a.o $t/b.o $t/ext.o -Wl,-no_fixup_chains \
+  2> $t/log5
+grep -E '^(Illegal|  text-relocation)' $t/log5 > $t/list5
+diff $t/expected5 $t/list5
+
 not $CC --ld-path=$mold -shared -o $t/c.dylib $t/b.o $t/ext.o 2> $t/log3
 grep -qF "  text-relocation in '_bsite' ($dir/b.o) to '_ext'" $t/log3
 

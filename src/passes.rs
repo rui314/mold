@@ -4022,14 +4022,15 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
 }
 
 /// Fails the link on the text relocations applying relocations found,
-/// listing every one as ld-prime does: output section by output
-/// section, each atom's in address order where it encodes rebase
-/// opcodes, else from the last to the first (the order an assembler
-/// emits relocations in). An unaligned pointer in a chain fails the
-/// link then instead.
+/// listing them as ld-prime does: output section by output section,
+/// each atom's from the last to the first (the order an assembler emits
+/// relocations in). Where it encodes rebase opcodes, it lists each
+/// atom's in address order, and those of the first section only. An
+/// unaligned pointer in a chain fails the link then instead.
 fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
-    if !ctx.use_chained_fixups() && ctx.chunks.contains(&ChunkId::RebaseInfo) {
+    let rebase_opcodes = !ctx.use_chained_fixups() && ctx.chunks.contains(&ChunkId::RebaseInfo);
+    if rebase_opcodes {
         found.sort_unstable_by_key(|&(isec, i)| (ctx.isec_addr(isec as usize), i));
     } else {
         found.sort_unstable_by_key(|&(isec, i)| {
@@ -4040,6 +4041,9 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     for (id, i) in found {
         let isec = &ctx.isecs[id as usize];
         if osec != Some(isec.output_section) {
+            if rebase_opcodes && osec.is_some() {
+                break;
+            }
             eprintln!("Illegal text-relocations:");
             osec = Some(isec.output_section);
         }
