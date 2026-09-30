@@ -1300,7 +1300,7 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 
 fn start_stop_name<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<Cow<'static, [u8]>> {
     let hdr = ctx.chunk_header(id);
-    if !hdr.is_alloc() || hdr.name.is_empty() {
+    if id.is_header() || !hdr.is_alloc() || hdr.name.is_empty() {
         return None;
     }
     if is_c_identifier(hdr.name) {
