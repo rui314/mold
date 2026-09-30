@@ -502,6 +502,12 @@ fn verify_leaders<E: Target>(
     candidates: &[usize],
     leaders: &[u32],
 ) {
+    // Two members may reference different candidates of one class: those
+    // were folded together, so an edge names the class's leader.
+    let edge = |obj: usize, r: &Reloc| match edge_of(ctx, cand_index, obj, r) {
+        (Edge::Candidate(c), addend) => (Edge::Candidate(leaders[c] as usize), addend),
+        e => e,
+    };
     let equal = |a: usize, b: usize| -> bool {
         let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
         let (xr, yr) = (ctx.isec_relocs(a), ctx.isec_relocs(b));
@@ -513,8 +519,7 @@ fn verify_leaders<E: Target>(
                     && r.r_type == s.r_type
                     && r.size == s.size
                     && r.is_pcrel == s.is_pcrel
-                    && edge_of(ctx, cand_index, x.file as usize, r)
-                        == edge_of(ctx, cand_index, y.file as usize, s)
+                    && edge(x.file as usize, r) == edge(y.file as usize, s)
             })
     };
     for (i, &l) in leaders.iter().enumerate() {
