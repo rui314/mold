@@ -1937,9 +1937,6 @@ fn load_reexports<E: Target>(
             continue;
         }
         let public = !ctx.args.no_implicit_dylibs && is_public_location(&name);
-        if !public {
-            merged.push(name.clone());
-        }
         // A library already in the link, matched by install name
         // (libXCTestSwiftSupport re-exports @rpath/XCTest.framework/...,
         // which its own rpaths cannot reach but -framework XCTest has
@@ -1950,6 +1947,7 @@ fn load_reexports<E: Target>(
                 exports.extend(loaded.exports.iter().copied());
                 tlv_exports.extend(loaded.tlv_exports.iter().copied());
                 weak_exports.extend(loaded.weak_exports.iter().copied());
+                merged.push(name);
             }
             continue;
         }
@@ -1981,6 +1979,7 @@ fn load_reexports<E: Target>(
                     loader_rpaths.clone(),
                 ));
             }
+            merged.push(name);
             continue;
         }
         let Some(dep) = on_disk else {
@@ -1991,14 +1990,21 @@ fn load_reexports<E: Target>(
             );
             continue;
         };
+        // The file found decides by its own install name, which a lookup
+        // by leaf name may find to differ from the one re-exported:
+        // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it
+        // found as the SDK's /usr/lib/libz.1.dylib, and merges a
+        // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
+        let is_public = |found: &[u8]| !ctx.args.no_implicit_dylibs && is_public_location(found);
         match crate::filetype::get_file_type(dep) {
             crate::filetype::FileType::Tapi => {
-                if public {
+                let mut dep_tbd = tapi::parse_cached(dep, E::NAME);
+                if is_public(dep_tbd.install_name.as_bytes()) {
                     let idx = parse_dylib(ctx, dep);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
-                let mut dep_tbd = tapi::parse_cached(dep, E::NAME);
+                merged.push(dep_tbd.install_name.as_bytes().to_vec());
                 interpret_ld_symbols(ctx, &mut dep_tbd);
                 tlv_exports.extend(dep_tbd.tlv_exports.iter().copied());
                 exports.extend(dep_tbd.tlv_exports);
@@ -2011,11 +2017,13 @@ fn load_reexports<E: Target>(
                 }
             }
             crate::filetype::FileType::Dylib => {
-                if public {
+                let found = binary_install_name(dep);
+                if is_public(&found) {
                     let idx = parse_dylib_binary(ctx, dep);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
+                merged.push(found);
                 check_dylib_versions(ctx, dep);
                 let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) = dylib_binary_exports(dep);
                 exports.extend(dep_exports);
@@ -2026,11 +2034,13 @@ fn load_reexports<E: Target>(
             }
             crate::filetype::FileType::Fat => {
                 let slice = get_fat_slice::<E>(dep);
-                if public {
+                let found = binary_install_name(slice);
+                if is_public(&found) {
                     let idx = parse_dylib_binary(ctx, slice);
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
+                merged.push(found);
                 check_dylib_versions(ctx, slice);
                 let (dep_exports, dep_tlvs, dep_reexports, dep_rpaths) =
                     dylib_binary_exports(slice);
@@ -2048,6 +2058,24 @@ fn load_reexports<E: Target>(
         }
     }
     merged
+}
+
+/// A dylib binary's install name, from LC_ID_DYLIB.
+fn binary_install_name(mf: &MappedFile) -> Vec<u8> {
+    let data = mf.data();
+    let hdr = MachHeader::read_from(data);
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..hdr.ncmds {
+        let lc = LoadCommand::read_from(&data[off..]);
+        if lc.cmd == LC_ID_DYLIB {
+            let cmd = DylibCommand::read_from(&data[off..]);
+            let name = &data[off + cmd.nameoff as usize..off + cmd.cmdsize as usize];
+            let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+            return name[..len].to_vec();
+        }
+        off += lc.cmdsize as usize;
+    }
+    Vec::new()
 }
 
 /// Check binary dependencies, including private reexports whose symbols
@@ -2554,26 +2582,62 @@ fn resolve_dylib_ref<E: Target>(
     loader_rpaths: &[PathBuf],
 ) -> Option<&'static MappedFile> {
     use crate::util::{os_str, path_bytes};
+    // A name relative to the re-exporter, its executable or its rpaths
+    // resolves as such first, and failing that like an absolute one.
     if let Some(rest) = name.strip_prefix(b"@loader_path/") {
-        return find_reexport_file(ctx, path_bytes(&loader_dir.join(os_str(rest))));
+        return find_reexport_file(ctx, path_bytes(&loader_dir.join(os_str(rest))))
+            .or_else(|| find_reexport_by_leaf(ctx, name));
     }
     if let Some(rest) = name.strip_prefix(b"@executable_path/") {
         let exe = match &ctx.args.executable_path {
-            Some(path) => path.clone(),
-            None if ctx.args.output_type == MH_EXECUTE => ctx.args.output.clone(),
-            None => return None,
+            Some(path) => Some(path.clone()),
+            None if ctx.args.output_type == MH_EXECUTE => Some(ctx.args.output.clone()),
+            None => None,
         };
-        return find_reexport_file(ctx, path_bytes(&dir_of(&exe).join(os_str(rest))));
+        return exe
+            .and_then(|exe| find_reexport_file(ctx, path_bytes(&dir_of(&exe).join(os_str(rest)))))
+            .or_else(|| find_reexport_by_leaf(ctx, name));
     }
     if let Some(rest) = name.strip_prefix(b"@rpath/") {
-        for rpath in loader_rpaths {
-            if let Some(mf) = find_reexport_file(ctx, path_bytes(&rpath.join(os_str(rest)))) {
+        return loader_rpaths
+            .iter()
+            .find_map(|rpath| find_reexport_file(ctx, path_bytes(&rpath.join(os_str(rest)))))
+            .or_else(|| find_reexport_by_leaf(ctx, name));
+    }
+    find_reexport(ctx, name)
+}
+
+/// Locates a re-exported library by an absolute install name. As in
+/// ld-prime, a library of the name's leaf in the library search path
+/// (-L, then the SDK's /usr/lib) comes first - a stub for a library not
+/// yet installed, found next to the re-exporter's own - and the install
+/// path only after that.
+pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
+    find_reexport_by_leaf(ctx, name).or_else(|| find_reexport_file(ctx, name))
+}
+
+/// Looks a re-exported library up in the library search path by its
+/// install name's leaf, less its extension: /opt/x/libfoo.1.dylib as
+/// libfoo.1.tbd or libfoo.1.dylib. A framework is not looked up this way.
+fn find_reexport_by_leaf<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
+    let leaf = Path::new(crate::util::os_str(name)).file_name()?;
+    if memchr::memmem::find(name, b".framework/").is_some() {
+        return None;
+    }
+    let stem = Path::new(leaf).with_extension("").into_os_string();
+    for dir in crate::passes::library_search_dirs(ctx) {
+        for ext in [".tbd", ".dylib"] {
+            let mut file = stem.clone();
+            file.push(ext);
+            if let Some(mf) = MappedFile::open(dir.join(file)) {
+                if crate::filetype::get_file_type(mf) == crate::filetype::FileType::Fat {
+                    return Some(get_fat_slice::<E>(mf));
+                }
                 return Some(mf);
             }
         }
-        return None;
     }
-    find_reexport_file(ctx, name)
+    None
 }
 
 /// Locates the stub or binary for a reexported library's install name

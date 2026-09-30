@@ -30,7 +30,7 @@ use crate::util::{align_to, leak_bytes, path_bytes};
 /// Returns the directories to search for `-l` libraries, in order. An
 /// absolute library path that exists under a syslibroot is looked up
 /// there; the default search path is the syslibroot's /usr/lib.
-fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
+pub(crate) fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     for dir in &ctx.args.library_paths {
@@ -402,7 +402,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 if tbd.document(name).is_some() {
                     continue;
                 }
-                if let Some(dep) = crate::input_files::find_reexport_file(ctx, name.as_bytes())
+                if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
                     && get_file_type(dep) == FileType::Tapi
                 {
                     deps.push(dep);
