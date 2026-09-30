@@ -1268,6 +1268,14 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
 /// Validates only objects selected by resolution, including the LTO
 /// output. Unused archive members must not cause errors or warnings.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
+    // The deployment target the inputs are checked against: zero if none
+    // was specified, but a -r output takes its first object's, and
+    // ld-prime checks the later ones against that.
+    let minos = if ctx.args.relocatable {
+        crate::relocatable::output_target(ctx).1
+    } else {
+        ctx.args.platform_minos
+    };
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
         // Old objects and the synthesized object may have no version
         // command. An object may also declare more than one platform;
@@ -1284,15 +1292,15 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
             continue;
         };
 
-        // Zero means no deployment target was specified. The SDK
-        // version used to compile an input does not constrain its use.
-        if ctx.args.platform_minos != 0 && version.minos > ctx.args.platform_minos {
+        // The SDK version used to compile an input does not constrain
+        // its use.
+        if minos != 0 && version.minos > minos {
             crate::warn!(
                 "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
                 obj.mf.name.display(),
                 platform_name(version.platform),
                 format_version(version.minos),
-                format_version(ctx.args.platform_minos)
+                format_version(minos)
             );
         }
     }
