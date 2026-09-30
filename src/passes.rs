@@ -4509,10 +4509,19 @@ fn keep_local_symbol(name: &str) -> bool {
 /// sections, whose entries ld64 never names in an output (Swift's
 /// _objc_classes_* in __objc_classlist: ld-prime's NetNewsWire has
 /// none of the 127 ours carried). A demoted private external in those
-/// sections stays (clang's __OBJC_LABEL_PROTOCOL_$_X does).
-fn keep_local_symbol_in<E: Target>(ctx: &Context<E>, name: &str, isec: Option<u32>) -> bool {
+/// sections stays (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one
+/// an earlier ld -r demoted, a local that kept N_PEXT (`demoted`).
+fn keep_local_symbol_in<E: Target>(
+    ctx: &Context<E>,
+    name: &str,
+    isec: Option<u32>,
+    demoted: bool,
+) -> bool {
     if !keep_local_symbol(name) {
         return false;
+    }
+    if demoted {
+        return true;
     }
     match isec {
         Some(isec) => {
@@ -4881,7 +4890,13 @@ pub fn plan_object_stabs<E: Target>(
         let common = nlist.is_common() && commons.get(&sym_id) == Some(&obj_idx);
         if nlist.is_stab()
             || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
-            || (!nlist.is_extern() && !keep_local_symbol_in(ctx, sym.name(), sym.input_section()))
+            || (!nlist.is_extern()
+                && !keep_local_symbol_in(
+                    ctx,
+                    sym.name(),
+                    sym.input_section(),
+                    nlist.n_type & N_PEXT != 0,
+                ))
         {
             continue;
         }
@@ -5008,7 +5023,12 @@ fn plan_local_symbols<E: Target>(
                     let sym = &ctx.symbols[sym_id];
                     if nlist.is_stab()
                         || nlist.is_extern()
-                        || !keep_local_symbol_in(ctx, sym.name(), sym.input_section())
+                        || !keep_local_symbol_in(
+                            ctx,
+                            sym.name(),
+                            sym.input_section(),
+                            nlist.n_type & N_PEXT != 0,
+                        )
                     {
                         continue;
                     }
