@@ -23,10 +23,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
-use crate::passes::{
-    absorb_got_slots, add_got, objc_refs_are_const, pointer_target,
-    redirect_symbols_to_replacements,
-};
+use crate::passes::{absorb_got_slots, add_got, pointer_target, redirect_symbols_to_replacements};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
@@ -363,7 +360,7 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
                 && !rel.is_subtracted
         };
         let key = match h.sectname() {
-            "__objc_classrefs" if !ctx.args.relocatable && objc_refs_are_const(ctx) => continue,
+            "__objc_classrefs" if folds_objc_classrefs(ctx) => continue,
             "__objc_selrefs" | "__objc_classrefs" => {
                 if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
                     continue;
@@ -601,7 +598,7 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
 /// object refers to a class only a temporary (L) label names; ld-prime
 /// folds it all the same (see name_classref_targets).
 pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable || !objc_refs_are_const(ctx) {
+    if !folds_objc_classrefs(ctx) {
         return;
     }
     name_classref_targets(ctx);
@@ -679,6 +676,16 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
     if coalesced {
         redirect_symbols_to_replacements(ctx);
     }
+}
+
+/// Whether the link folds class references into __got: a final link
+/// for macOS 15 or later (see fold_objc_classrefs). From macOS 14.4 on
+/// they are read-only after fixups all the same (see
+/// objc_refs_are_const).
+fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
+    !ctx.args.relocatable
+        && ctx.args.platform == PLATFORM_MACOS
+        && ctx.args.platform_minos >= encode_version(15, 0, 0)
 }
 
 /// Names by a symbol of its object, anonymous and in no symbol table,

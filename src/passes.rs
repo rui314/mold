@@ -3708,7 +3708,8 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA_CONST", "__objc_protolist") => 10,
         ("__DATA_CONST", "__objc_imageinfo") => 11,
         ("__DATA_CONST", "__objc_protorefs") => 12,
-        ("__DATA_CONST", "__objc_superrefs") => 13,
+        ("__DATA_CONST", "__objc_classrefs") => 13,
+        ("__DATA_CONST", "__objc_superrefs") => 14,
         // The GOT closes __DATA_CONST, after every input-derived
         // section (ld-prime: __cfstring, __objc_classlist,
         // __objc_imageinfo, then __got). In the shared region the lazy
@@ -3810,12 +3811,12 @@ const DATA_CONST_SECTIONS: &[&str] = &[
 
 /// Class, protocol and superclass references are written by the
 /// Objective-C runtime on older systems, so they stay in __DATA unless
-/// the deployment target is macOS 15 or later, where ld64 moves them to
-/// __DATA_CONST (dyld fixes them up there; most class references fold
-/// into __got).
+/// the deployment target is macOS 14.4 or later, where ld-prime moves
+/// them to __DATA_CONST (dyld fixes them up there; from macOS 15 on
+/// most class references fold into __got, see fold_objc_classrefs).
 pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
     ctx.args.platform == crate::macho::PLATFORM_MACOS
-        && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
+        && ctx.args.platform_minos >= crate::macho::encode_version(14, 4, 0)
 }
 
 /// dyld reads an image's interposing tuples (__DATA,__interpose) but
