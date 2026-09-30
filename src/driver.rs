@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::cmdline;
 use crate::context::Context;
 use crate::dead_strip;
+use crate::objc;
 use crate::output_file;
 use crate::passes;
 use crate::target::Target;
@@ -111,7 +112,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
         passes::merge_literals(&mut ctx);
-        passes::coalesce_objc_refs(&mut ctx);
+        objc::coalesce_objc_refs(&mut ctx);
         // ld64 -r keeps one copy of each weak definition (the marker
         // stays on it for the final link to auto-hide); Swift's
         // per-object conformance and metadata records doubled
@@ -130,7 +131,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::convert_init_offsets(&mut ctx);
     let t = ctx.timer("merge_literals");
     passes::merge_literals(&mut ctx);
-    passes::coalesce_objc_refs(&mut ctx);
+    objc::coalesce_objc_refs(&mut ctx);
     drop(t);
     macro_rules! timed {
         ($name:literal, $e:expr) => {{
@@ -141,7 +142,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     }
     timed!("add_synthetic_symbols", passes::add_synthetic_symbols(&mut ctx));
     timed!("convert_common_symbols", passes::convert_common_symbols(&mut ctx));
-    timed!("create_objc_msgsend_stubs", passes::create_objc_msgsend_stubs(&mut ctx));
+    timed!("create_objc_msgsend_stubs", objc::create_objc_msgsend_stubs(&mut ctx));
     timed!("auto_hide_weak_defs", passes::auto_hide_weak_defs(&mut ctx));
     timed!("hide_all_exports", passes::hide_all_exports(&mut ctx));
     timed!("handle_exported_symbols_list", passes::handle_exported_symbols_list(&mut ctx));
@@ -166,10 +167,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("scan_relocations", passes::scan_relocations(&mut ctx));
     passes::add_entry_stub(&mut ctx);
     passes::scan_unwind_personalities(&mut ctx);
-    passes::scan_objc_stubs(&mut ctx);
-    passes::fold_objc_classrefs(&mut ctx);
-    passes::convert_objc_method_lists(&mut ctx);
-    passes::merge_objc_categories(&mut ctx);
+    objc::scan_objc_stubs(&mut ctx);
+    objc::fold_objc_classrefs(&mut ctx);
+    objc::convert_objc_method_lists(&mut ctx);
+    objc::merge_objc_categories(&mut ctx);
     // Synthetic stubs and unwind data can introduce library references
     // (notably dyld_stub_binder). Establish them before pruning dylibs.
     timed!("dead_strip_dylibs", passes::dead_strip_dylibs(&mut ctx));

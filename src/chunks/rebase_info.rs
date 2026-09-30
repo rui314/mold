@@ -4,7 +4,7 @@
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::passes::{DataField, objc_ref_addr};
+use crate::objc::{DataField, objc_ref_addr};
 use crate::target::{RelocClass, Target};
 use crate::util::encode_uleb;
 

@@ -3,7 +3,7 @@
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::passes::{ObjcMethList, ObjcRef};
+use crate::objc::{ObjcMethList, ObjcRef};
 use crate::target::Target;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in

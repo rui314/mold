@@ -143,7 +143,7 @@ pub struct Context<E: Target> {
     /// Objective-C data records the linker synthesized (see
     /// merge_objc_categories), each placed as the tail of the output
     /// section it names.
-    pub data_blobs: Vec<crate::passes::DataBlob>,
+    pub data_blobs: Vec<crate::objc::DataBlob>,
     /// Local symbols the linker names itself, on synthesized data:
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
     /// list, and the like. (name, subsection).

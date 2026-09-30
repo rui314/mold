@@ -17,6 +17,7 @@ pub mod macho;
 mod macho_consts;
 pub(crate) mod mapfile;
 pub(crate) mod mapped_file;
+pub(crate) mod objc;
 pub(crate) mod output_file;
 pub(crate) mod passes;
 pub(crate) mod relocatable;
