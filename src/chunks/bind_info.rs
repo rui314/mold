@@ -49,17 +49,6 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         }
     }
 
-    // __thread_ptrs slots for thread-locals imported from dylibs: dyld
-    // writes the foreign TLV descriptor's address.
-    {
-        let addr = ctx.thread_ptrs.hdr.addr;
-        for (i, &id) in ctx.thread_ptrs.symbols.iter().enumerate() {
-            if ctx.symbols[id].is_imported() {
-                binds.push((addr + i as u64 * 8, id, 0));
-            }
-        }
-    }
-
     // Pointers in data sections initialized with an imported symbol's
     // address.
     for isec in ctx.isecs.iter() {

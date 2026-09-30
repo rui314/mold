@@ -24,7 +24,6 @@ use crate::chunks::strtab::StrtabSection;
 use crate::chunks::stub_helper::StubHelperSection;
 use crate::chunks::stubs::StubsSection;
 use crate::chunks::symtab::SymtabSection;
-use crate::chunks::thread_ptrs::ThreadPtrsSection;
 use crate::chunks::unwind_info::UnwindInfoSection;
 use crate::chunks::weak_bind_info::WeakBindInfoSection;
 use crate::chunks::{
@@ -49,7 +48,6 @@ macro_rules! chunk_header {
             ChunkId::StubHelper => &$($mutable)? $ctx.stub_helper.hdr,
             ChunkId::LazyPtrs => &$($mutable)? $ctx.lazy_ptrs.hdr,
             ChunkId::Got => &$($mutable)? $ctx.got.hdr,
-            ChunkId::ThreadPtrs => &$($mutable)? $ctx.thread_ptrs.hdr,
             ChunkId::ObjcStubs => &$($mutable)? $ctx.objc_stubs.hdr,
             ChunkId::ObjcMethlist => &$($mutable)? $ctx.objc_methlist.hdr,
             ChunkId::ObjcImageInfo => &$($mutable)? $ctx.objc_imageinfo.hdr,
@@ -114,7 +112,6 @@ pub struct Context<E: Target> {
     pub stub_helper: StubHelperSection,
     pub lazy_ptrs: LazyPtrsSection,
     pub got: GotSection,
-    pub thread_ptrs: ThreadPtrsSection,
     pub objc_stubs: ObjcStubsSection,
     pub objc_methlist: ObjcMethlistSection,
     pub objc_imageinfo: ObjcImageInfoSection,
@@ -198,7 +195,6 @@ impl<E: Target> Context<E> {
             stub_helper: StubHelperSection::new(),
             lazy_ptrs: LazyPtrsSection::new(),
             got: GotSection::new(),
-            thread_ptrs: ThreadPtrsSection::new(),
             objc_stubs: ObjcStubsSection::new(),
             objc_methlist: ObjcMethlistSection::new(),
             objc_imageinfo: ObjcImageInfoSection::new(),
@@ -620,11 +616,6 @@ impl<E: Target> Context<E> {
     /// Returns the address of a symbol's __got slot.
     pub fn sym_got_addr(&self, id: SymbolId) -> u64 {
         self.got.hdr.addr + self.sym_aux(id).got_idx as u64 * 8
-    }
-
-    /// Returns the address of a symbol's __thread_ptrs slot.
-    pub fn sym_tlv_ptr_addr(&self, id: SymbolId) -> u64 {
-        self.thread_ptrs.hdr.addr + self.sym_aux(id).tlv_idx as u64 * 8
     }
 
     /// Returns the symbol a relocation refers to, if it refers to one.

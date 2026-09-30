@@ -2097,9 +2097,10 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             RelocClass::Got => add_got(ctx, id),
             RelocClass::GotLoad if !ctx.can_relax_got(id) => add_got(ctx, id),
             // A TLV load of a local thread-local relaxes to the
-            // descriptor's address; only imported ones need a
-            // __thread_ptrs slot for dyld to fill.
-            RelocClass::Tlv if sym.is_imported() => add_thread_ptr(ctx, id),
+            // descriptor's address; only imported ones need a slot for
+            // dyld to fill, and ld-prime gives them an ordinary __got
+            // entry (no __thread_ptrs section, chained or classic).
+            RelocClass::Tlv if sym.is_imported() => add_got(ctx, id),
             _ => {}
         }
     }
@@ -2178,13 +2179,6 @@ pub fn scan_unwind_personalities<E: Target>(ctx: &mut Context<E>) {
     personalities.extend(ctx.fdes.iter().filter_map(|fde| ctx.cies[fde.cie as usize].personality));
     for id in personalities {
         add_got(ctx, id);
-    }
-}
-
-fn add_thread_ptr<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
-    if ctx.sym_aux(id).tlv_idx == crate::symbol::NO_IDX {
-        ctx.sym_aux_mut(id).tlv_idx = ctx.thread_ptrs.symbols.len() as u32;
-        ctx.thread_ptrs.symbols.push(id);
     }
 }
 
@@ -4062,11 +4056,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if !ctx.init_offsets.init_funcs.is_empty() {
         ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
         ctx.chunks.push(ChunkId::InitOffsets);
-    }
-
-    if !ctx.thread_ptrs.symbols.is_empty() {
-        ctx.thread_ptrs.hdr.size = ctx.thread_ptrs.symbols.len() as u64 * 8;
-        ctx.chunks.push(ChunkId::ThreadPtrs);
     }
 
     if !ctx.objc_stubs.symbols.is_empty() {

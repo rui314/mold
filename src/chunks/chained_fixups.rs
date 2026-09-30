@@ -362,13 +362,6 @@ pub fn collect_fixups<E: Target>(
             fixups.push((addr + i as u64 * 8, sym, 0));
         }
     }
-    {
-        let addr = ctx.thread_ptrs.hdr.addr;
-        for (i, &id) in ctx.thread_ptrs.symbols.iter().enumerate() {
-            let sym = Some(id).filter(|&id| ctx.symbols[id].is_imported());
-            fixups.push((addr + i as u64 * 8, sym, 0));
-        }
-    }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
         if !ctx.objc_stub_reuses_selref(i) {
             fixups.push((ctx.objc_selref_addr(i), None, 0));

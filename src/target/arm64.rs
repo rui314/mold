@@ -537,14 +537,14 @@ impl Target for Arm64 {
                 ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target =
-                        if ctx.symbols[id].is_imported() { ctx.sym_tlv_ptr_addr(id) } else { s };
+                        if ctx.symbols[id].is_imported() { ctx.sym_got_addr(id) } else { s };
                     let val = read32(loc) | page_offset(target.wrapping_add_signed(a), p);
                     write32(loc, val);
                 }
                 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     if ctx.symbols[id].is_imported() {
-                        let t = ctx.sym_tlv_ptr_addr(id);
+                        let t = ctx.sym_got_addr(id);
                         write_add_ldst(loc, t.wrapping_add_signed(a));
                     } else {
                         let insn = read32(loc);

@@ -252,16 +252,15 @@ impl std::fmt::Display for Symbol {
 /// Sentinel for a synthetic-slot index a symbol does not have.
 pub const NO_IDX: u32 = u32::MAX;
 
-/// A symbol's synthetic-slot indices (__stubs, __got, __thread_ptrs,
-/// __objc_stubs), each `NO_IDX` when absent. Only the few symbols that
-/// take a slot ever have one, so these live in a side table indexed by
+/// A symbol's synthetic-slot indices (__stubs, __got, __objc_stubs),
+/// each `NO_IDX` when absent. Only the few symbols that take a slot
+/// ever have one, so these live in a side table indexed by
 /// SymbolId - mold's SymbolAux - keeping Symbol itself small, as
 /// it is loaded in every symbol scan.
 #[derive(Clone, Debug)]
 pub struct SymAux {
     pub stub_idx: u32,
     pub got_idx: u32,
-    pub tlv_idx: u32,
     pub objc_stub_idx: u32,
     /// The addresses of this symbol's range-extension thunk entries,
     /// sorted, so that applying an out-of-range branch can find the one
@@ -270,13 +269,8 @@ pub struct SymAux {
 }
 
 impl SymAux {
-    pub const NONE: Self = Self {
-        stub_idx: NO_IDX,
-        got_idx: NO_IDX,
-        tlv_idx: NO_IDX,
-        objc_stub_idx: NO_IDX,
-        thunk_addrs: Vec::new(),
-    };
+    pub const NONE: Self =
+        Self { stub_idx: NO_IDX, got_idx: NO_IDX, objc_stub_idx: NO_IDX, thunk_addrs: Vec::new() };
 }
 
 /// The shared "no slots" entry that sym_aux() returns for symbols
