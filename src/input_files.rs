@@ -1873,11 +1873,12 @@ fn cie_lsda_size(data: &[u8], file_name: &Path) -> u8 {
                 pos += 5;
             }
             b'R' => pos += 1,
-            // 'S' marks a signal frame and 'B' is the GNU
-            // "frameless" augmentation; neither carries
-            // augmentation data.
-            b'S' | b'B' => {}
-            _ => fatal!("{file_name}: __eh_frame: unknown augmentation"),
+            // The rest carry no augmentation data: 'S' marks a signal
+            // frame and, on AArch64, 'B' return addresses signed with
+            // the pointer-authentication B key and 'G' an MTE-tagged
+            // frame. ld64 parses CIEs with libunwind, which ignores any
+            // letter it does not know.
+            _ => {}
         }
     }
     lsda_size
