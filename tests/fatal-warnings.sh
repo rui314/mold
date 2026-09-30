@@ -18,3 +18,8 @@ $CC --ld-path=$mold $t/b.o -mmacosx-version-min=14.0 -Wl,-fatal_warnings -o $t/e
 not $CC --ld-path=$mold $t/b.o -mmacosx-version-min=14.0 \
   -Wl,-no_pie,-fatal_warnings -o $t/exe 2> $t/log2
 grep -q -- '-no_pie' $t/log2
+
+# So are those given as an option is read, whatever the order of the
+# options.
+not $CC --ld-path=$mold $t/a.o -Wl,-alias_list,$t/nosuch,-fatal_warnings -o $t/exe 2> $t/log3
+grep -q "order file '$t/nosuch' could not be opened" $t/log3

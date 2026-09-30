@@ -23,3 +23,11 @@ $CC --ld-path=$mold -o $t/exe $t/b.o -mmacosx-version-min=14.0 -Wl,-no_pie >& $t
 grep -q warning $t/log3
 $CC --ld-path=$mold -o $t/exe $t/b.o -mmacosx-version-min=14.0 -Wl,-no_pie,-w >& $t/log4
 not grep -q warning $t/log4
+
+# ld-prime gives some warnings as it reads the option they are about,
+# so only a -w before that option silences them: that an -alias_list
+# can't be opened, given once, is one.
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch,-w >& $t/log5
+[ "$(grep -c "order file '$t/nosuch' could not be opened" $t/log5)" = 1 ]
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-w,-alias_list,$t/nosuch >& $t/log6
+not grep -q warning $t/log6

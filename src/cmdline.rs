@@ -685,6 +685,23 @@ pub struct TargetTraits {
     pub name: &'static str,
 }
 
+/// The warnings ld-prime gives as it reads an option, which only a -w
+/// before the option silences. They wait until the parse is known to
+/// be for the target, so that they are given once.
+#[derive(Default)]
+struct OptionWarnings {
+    quiet: bool,
+    msgs: Vec<String>,
+}
+
+impl OptionWarnings {
+    fn warn(&mut self, msg: String) {
+        if !self.quiet {
+            self.msgs.push(msg);
+        }
+    }
+}
+
 /// Parses all options. `cmdline` includes the program name.
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
@@ -702,6 +719,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut segprots: Vec<(String, String, String)> = Vec::new();
     let mut no_dead_strip_inits_and_terms = false;
     let mut explicit_entry = false;
+    let mut warnings = OptionWarnings::default();
     let mut i = 1;
     let mut version_shown = false;
 
@@ -894,7 +912,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
             }
             b"-U" => args.allowed_undefined.push(text(name, next_arg(&mut i)).to_string()),
-            b"-w" => args.suppress_warnings = true,
+            b"-w" => {
+                args.suppress_warnings = true;
+                warnings.quiet = true;
+            }
             b"-fatal_warnings" => args.fatal_warnings = true,
             b"-demangle" => args.demangle = true,
             b"-help" => {
@@ -1045,10 +1066,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     Ok(contents) => contents,
                     Err(e) => {
                         let errno = crate::error::errno_text(&e);
-                        crate::warn!(
+                        warnings.warn(format!(
                             "order file '{}' could not be opened, {errno}",
                             list.display()
-                        );
+                        ));
                         String::new()
                     }
                 };
@@ -1186,10 +1207,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         return args;
     }
 
-    // The option checks below warn too, and -w and -fatal_warnings
-    // apply to them wherever those appear on the command line.
-    crate::error::set_suppress_warnings(args.suppress_warnings);
+    // -fatal_warnings applies to every warning, wherever it appears on
+    // the command line. So does -w to those from the option checks
+    // below, but not to those given as options were read.
     crate::error::set_fatal_warnings(args.fatal_warnings);
+    for msg in &warnings.msgs {
+        crate::warn!("{msg}");
+    }
+    crate::error::set_suppress_warnings(args.suppress_warnings);
 
     for treatment in deprecated_undefined {
         crate::warn!("-undefined {treatment} is deprecated");
