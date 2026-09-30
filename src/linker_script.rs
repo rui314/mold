@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
-use crate::mapped_file::{MappedFile, apply_chroot, must_open_file, open_file};
+use crate::mapped_file::{MappedFile, apply_chroot, must_open_file};
 use crate::reader;
 use crate::target::Target;
 use crate::util;
@@ -143,8 +143,9 @@ fn resolve_path<E: Target>(
     let s = unquote(tok);
     let name = Path::new(util::os_str(s));
     let chroot = &ctx.args.chroot;
+    // Opens `path`, to which --chroot has already been applied.
     let open = |path: &Path| -> Option<&'static MappedFile> {
-        let mf = open_file(chroot, path)?;
+        let mf = MappedFile::open(path)?;
         if check_target
             && let Some(target) = reader::get_machine_type(ctx, rctx, mf)
             && target != E::NAME
@@ -180,11 +181,12 @@ fn resolve_path<E: Target>(
             return mf;
         }
     }
-    if let Some(mf) = open(name) {
+    if let Some(mf) = open(&apply_chroot(chroot, name)) {
         return mf;
     }
     for dir in &ctx.args.library_paths {
-        if let Some(mf) = open(&dir.join(name.strip_prefix("/").unwrap_or(name))) {
+        let path = dir.join(name.strip_prefix("/").unwrap_or(name));
+        if let Some(mf) = open(&apply_chroot(chroot, &path)) {
             return mf;
         }
     }

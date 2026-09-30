@@ -1618,7 +1618,8 @@ fn create_response_file<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
 pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("write_repro_file");
-    let mut name = ctx.args.output.as_os_str().to_os_string();
+    let output = crate::mapped_file::apply_chroot(&ctx.args.chroot, &ctx.args.output);
+    let mut name = output.as_os_str().to_os_string();
     name.push(".repro.tar");
     let path = std::path::PathBuf::from(name);
     let mut basedir = ctx.args.output.file_name().unwrap_or_default().to_os_string();

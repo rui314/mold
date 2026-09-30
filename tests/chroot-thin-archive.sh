@@ -17,3 +17,11 @@ echo 'INPUT(/lib.a)' > "$root/script.ld"
 ./mold --chroot "$root" --whole-archive /empty.o /script.ld -o $t/script
 readelf -Ws $t/direct | grep ' _start$'
 readelf -Ws $t/script | grep ' _start$'
+
+# A relative member path is relative to the archive in the root.
+mkdir -p "$root/sub"
+cp "$root$member" "$root/sub/rel.o"
+rm -f "$root/sub/rel.a"
+(cd "$root/sub"; ar crsT rel.a rel.o)
+./mold --chroot "$root" --whole-archive /sub/rel.a -o $t/relative
+readelf -Ws $t/relative | grep ' _start$'

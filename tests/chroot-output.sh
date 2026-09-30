@@ -17,3 +17,10 @@ for mode in executable relocatable; do
   not test -e "$output"
   readelf -h "$root$output" | grep ELF
 done
+
+# The --repro archive is written next to the output.
+output=$PWD/$t/repro
+rm -f "$output.repro.tar" "$root$output.repro.tar"
+./mold --chroot "$root" /a.o -o "$output" --repro
+tar -tf "$root$output.repro.tar" | grep "$root/a.o\$"
+not test -e "$output.repro.tar"

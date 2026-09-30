@@ -100,6 +100,8 @@ const READ_THRESHOLD: u64 = 32 * 1024;
 // memory. Either way, its contents are accessible through `data`.
 #[derive(Debug)]
 pub struct MappedFile {
+    /// The path this file was opened by, which already has --chroot
+    /// applied, or the member name for a slice of an archive.
     pub name: PathBuf,
     /// The contents, in an allocation that is deliberately leaked with the
     /// input file. The bytes are cells because the linker modifies private
@@ -207,8 +209,8 @@ impl MappedFile {
     }
 
     /// Opens a member whose bytes are stored outside this thin archive.
-    pub fn open_thin_member(&'static self, chroot: &Path, path: &Path) -> &'static Self {
-        let member = must_open_file(chroot, path);
+    pub fn open_thin_member(&'static self, path: &Path) -> &'static Self {
+        let member = Self::must_open(path);
         util::leak(Self {
             name: member.name.clone(),
             data: member.data,

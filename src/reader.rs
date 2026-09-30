@@ -368,12 +368,13 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                     }
                 }
                 FileType::ThinAr => {
-                    for path in archive_file::get_thin_archive_member_paths(mf) {
+                    let chroot = &ctx_ref.args.chroot;
+                    for path in archive_file::get_thin_archive_member_paths(chroot, mf) {
                         let child_rctx = rctx.next_child();
                         let archive_name = mf.name.as_path();
                         let loaded = &loaded;
                         scope.spawn(move |_| {
-                            let child = mf.open_thin_member(&ctx_ref.args.chroot, &path);
+                            let child = mf.open_thin_member(&path);
                             if let Some(file) =
                                 read_archive_member(ctx_ref, child_rctx, child, archive_name)
                             {

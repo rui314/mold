@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::fatal;
-use crate::mapped_file::MappedFile;
+use crate::mapped_file::{MappedFile, apply_chroot};
 use crate::util;
 
 const HEADER_SIZE: usize = 60;
@@ -155,12 +155,21 @@ fn archive_members(
 
 /// Returns the paths of the members of a thin archive, which are stored
 /// outside of the archive file, without opening them.
-pub fn get_thin_archive_member_paths(mf: &'static MappedFile) -> impl Iterator<Item = PathBuf> {
-    archive_members(mf, true).map(move |(name, _)| member_path(mf, name))
+pub fn get_thin_archive_member_paths<'a>(
+    chroot: &'a Path,
+    mf: &'static MappedFile,
+) -> impl Iterator<Item = PathBuf> + 'a {
+    archive_members(mf, true).map(move |(name, _)| member_path(chroot, mf, name))
 }
 
-fn member_path(mf: &MappedFile, name: PathBuf) -> PathBuf {
-    if name.is_absolute() { name } else { mf.name.parent().unwrap_or(Path::new(".")).join(name) }
+// An absolute member name is looked up in the --chroot directory. A relative
+// one is relative to the archive, whose path is already in that directory.
+fn member_path(chroot: &Path, mf: &MappedFile, name: PathBuf) -> PathBuf {
+    if name.is_absolute() {
+        apply_chroot(chroot, &name).into_owned()
+    } else {
+        mf.name.parent().unwrap_or(Path::new(".")).join(name)
+    }
 }
 
 /// Opens members as they are consumed. Parallel readers can instead schedule
@@ -174,7 +183,7 @@ pub fn read_archive_members<'a>(
     let base = mf.data().as_ptr() as usize;
     archive_members(mf, thin).map(move |(name, body)| {
         if thin {
-            mf.open_thin_member(chroot, &member_path(mf, name))
+            mf.open_thin_member(&member_path(chroot, mf, name))
         } else {
             mf.slice(name, body.as_ptr() as usize - base, body.len())
         }
