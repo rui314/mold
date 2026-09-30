@@ -178,7 +178,9 @@ fn symbol_places<E: Target>(
         .collect()
 }
 
-/// The symbols a live input section's relocations refer to by name.
+/// The symbols the output's relocations refer to by name: those a live
+/// input section's refer to, and the personality routines of the
+/// unwind records (__compact_unwind) and CIEs (__eh_frame).
 fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::SymbolId> {
     let mut syms = HashSet::new();
     for isec in ctx.isecs.iter() {
@@ -191,6 +193,8 @@ fn referenced_syms<E: Target>(ctx: &Context<E>) -> HashSet<crate::symbol::Symbol
             }
         }
     }
+    syms.extend(ctx.unwind_records.iter().filter_map(|rec| rec.personality()));
+    syms.extend(ctx.cies.iter().filter_map(|cie| cie.personality));
     syms
 }
 
@@ -1673,11 +1677,18 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
         ents.push((NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, Some(i as u32)));
     }
 
-    // Undefined and tentative symbols, sorted by name.
+    // Undefined and tentative symbols, sorted by name. ld-prime keeps
+    // an undefined one only if a relocation refers to it or the command
+    // line makes it an initial undefine (-u): a stray `.globl`, a weak
+    // or lazy reference nothing uses, goes.
+    let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
     let mut undefs: Vec<usize> = (0..ctx.symbols.syms.len())
         .filter(|&i| {
             let sym = &ctx.symbols[i];
-            sym.is_used() && (!sym.is_defined() || sym.is_common())
+            sym.is_used()
+                && (sym.is_common()
+                    || !sym.is_defined()
+                        && (referenced.contains(&(i as u32)) || forced.contains(sym.name())))
         })
         .collect();
     undefs.sort_by_key(|&i| ctx.symbols[i].name());
