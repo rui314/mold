@@ -455,9 +455,10 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 /// input, and mostly the section's own. A literal is aligned to its
 /// size: compilers emit __literal16 with p2align 3 for a 16-byte
 /// constant whose type is only 8-aligned, and rely on the linker to
-/// place it where a 16-byte load can reach it. An initializer or
-/// terminator pointer, a CFString constant and a pointer-auth slot are
-/// aligned to a pointer, even from a section that claims less or more,
+/// place it where a 16-byte load can reach it. An initializer,
+/// terminator or non-lazy symbol pointer, a CFString constant and a
+/// pointer-auth slot are aligned to a pointer, even from a section that
+/// claims less or more,
 /// in a -r output as in an image; a thread-local variable descriptor
 /// (from a section clang aligns to a byte) to a pointer in an image,
 /// and in a -r output to at least one.
@@ -466,7 +467,7 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
     let p2align = hdr.p2align as u8;
     Some(match hdr.section_type() {
         S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => size.trailing_zeros() as u8,
-        S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => 3,
+        S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS => 3,
         S_THREAD_LOCAL_VARIABLES if relocatable => p2align.max(3),
         S_THREAD_LOCAL_VARIABLES => 3,
         _ if hdr.segname() == "__DATA" && matches!(hdr.sectname(), "__cfstring" | "__auth_ptr") => {
@@ -507,22 +508,18 @@ fn record_size(hdr: &MachSection) -> Option<u64> {
 
 /// Reports the first section of an object ld-prime refuses to split
 /// into atoms, and returns false if there is one: a section of
-/// fixed-size records that doesn't end on a record boundary. A 64-bit
-/// object has no business with the classic lazy pointers only dyld's
-/// lazy binder fills either: a non-empty __DATA,__la_symbol_ptr of that
-/// type is a section of fixed-size records whose size ld-prime doesn't
-/// know. `nindirect` is the number of the object's indirect symbol
-/// table entries.
+/// fixed-size records that doesn't end on a record boundary, or a
+/// non-empty one of the pointers only ld-prime makes (see
+/// linker_pointer_content). `nindirect` is the number of the object's
+/// indirect symbol table entries.
 fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
     for hdr in hdrs {
         if hdr.size != 0
-            && hdr.section_type() == S_LAZY_SYMBOL_POINTERS
-            && hdr.segname() == "__DATA"
-            && hdr.sectname() == "__la_symbol_ptr"
+            && let Some(content) = linker_pointer_content(hdr)
         {
             crate::error!(
-                "unknown fixed size section __DATA,__la_symbol_ptr with content type: \
-                 lazy-pointer in '{}'",
+                "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
+                hdr.sectname(),
                 file.display()
             );
             return false;
@@ -546,7 +543,7 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
     // as a 32-bit object's GOT did, and mold would leave the slots null.
     // ld-prime refuses every such section of an object with indirect
     // symbols, an empty one or one the table names no slot of too; in
-    // an object without, one is data its relocations fill.
+    // an object without, one is pointers its relocations fill.
     if nindirect != 0 && hdrs.iter().any(|h| h.section_type() == S_NON_LAZY_SYMBOL_POINTERS) {
         crate::error!(
             "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
@@ -555,6 +552,26 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
         return false;
     }
     true
+}
+
+/// The kind of pointers ld-prime reads a __DATA section as holding by
+/// its name and type if they are ones only it makes, which it knows no
+/// record size of: a 64-bit object has no business with the classic
+/// lazy pointers only dyld's lazy binder fills, nor with the signed or
+/// weak GOTs of an image (an input __got is GOT slots, see
+/// fold_input_got). A section of one of those names but of another type
+/// is data.
+fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
+    if hdr.segname() != "__DATA" {
+        return None;
+    }
+    match (hdr.section_type(), hdr.sectname()) {
+        (S_LAZY_SYMBOL_POINTERS, "__la_symbol_ptr") => Some("lazy-pointer"),
+        (S_NON_LAZY_SYMBOL_POINTERS, "__auth_got") => Some("auth-got"),
+        (S_NON_LAZY_SYMBOL_POINTERS, "__weak_got") => Some("weak-got"),
+        (S_NON_LAZY_SYMBOL_POINTERS, "__weak_auth_got") => Some("weak-auth-got"),
+        _ => None,
+    }
 }
 
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
@@ -1074,9 +1091,12 @@ impl StagedObject {
             } else {
                 std::mem::take(&mut split_points[i])
             };
-            // Each initializer or terminator pointer is an atom of its
-            // own too, which ld-prime's diagnostics name.
-            if matches!(sect.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS) {
+            // Each initializer, terminator or non-lazy symbol pointer is
+            // an atom of its own too, which ld-prime's diagnostics name.
+            if matches!(
+                sect.section_type(),
+                S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS
+            ) {
                 points.extend((0..sect.size).step_by(8).map(|off| sect.addr + off));
             }
             points.push(sect.addr);

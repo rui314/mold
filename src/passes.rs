@@ -3626,12 +3626,20 @@ impl SectionMap {
     /// -rename_segment: with -text_exec (an arm64 kext) every section
     /// of code - pure instructions, in any segment - moves into
     /// __TEXT_EXEC,__text, and data that needs no writes after fixups
-    /// to __DATA_CONST.
+    /// to __DATA_CONST - as do the non-lazy symbol pointers of a
+    /// __DATA section of any name, which ld-prime knows by their type
+    /// (see output_section_flags).
     fn builtin_name(self, name: SectionName, flags: u32) -> SectionName {
         if self.text_exec && flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
             return ("__TEXT_EXEC", "__text");
         }
         if !is_standard_section(name.0, name.1, flags) {
+            if name.0 == "__DATA"
+                && flags & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS
+                && self.data_const
+            {
+                return ("__DATA_CONST", name.1);
+            }
             return name;
         }
         self.const_name(name)
@@ -3711,9 +3719,11 @@ impl SectionMap {
 /// image ld-prime keeps only the section types it lays out as such -
 /// zero fill (S_GB_ZEROFILL is plain zero fill there), strings and
 /// literals, initializer and terminator lists, the thread-local kinds,
-/// and DOF, if bare - and makes the rest regular: coalesced data, and
-/// the pointers, stubs, interposing tuples and init offsets only it
-/// makes in an image. It marks code (a regular or coalesced section
+/// DOF, if bare, and non-lazy symbol pointers, a GOT of the input's
+/// whose slots it names in the indirect symbol table (see
+/// indirect_symtab) - and makes the rest regular: coalesced data, and
+/// the lazy pointers, stubs, interposing tuples and init offsets only
+/// it makes in an image. It marks code (a regular or coalesced section
 /// of pure instructions) as having some instructions, drops every
 /// other input attribute - no_dead_strip, live_support,
 /// strip_static_syms and no_toc direct the linker, not dyld, and
@@ -3780,6 +3790,7 @@ fn output_section_flags(
         | S_16BYTE_LITERALS
         | S_MOD_INIT_FUNC_POINTERS
         | S_MOD_TERM_FUNC_POINTERS
+        | S_NON_LAZY_SYMBOL_POINTERS
         | S_THREAD_LOCAL_REGULAR
         | S_THREAD_LOCAL_ZEROFILL
         | S_THREAD_LOCAL_VARIABLES) => ty,
@@ -3933,6 +3944,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // hot loop does no allocation and no linear scans; chunks are
     // still created in first-encounter order.
     let relocatable = ctx.args.relocatable;
+    let kext = ctx.args.is_kext();
     let map = SectionMap::new(ctx);
     let text = text_section_name(ctx);
     // Each input section name's output section - by its flags too,
@@ -3998,7 +4010,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                                 // constants there, whatever its type.
                                 S_REGULAR
                             } else {
-                                let input = input_section_flags(seg, sect, hdr.flags);
+                                let mut input = input_section_flags(seg, sect, hdr.flags);
+                                // A kext's pointers are plain data to
+                                // ld-prime, its GOT's too.
+                                if kext && input & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS {
+                                    input &= !SECTION_TYPE;
+                                }
                                 let standard = is_standard_section(seg, sect, hdr.flags);
                                 let (seg, sect) = flags_name;
                                 output_section_flags(seg, sect, input, standard, relocatable)
@@ -4975,10 +4992,8 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.is_kext() {
         ctx.chunks.push(ChunkId::ExternRelocs);
     }
-    if !ctx.stubs.symbols.is_empty() || !ctx.got.got_syms.is_empty() {
-        let lazy = ctx.stubs.lazy.len();
-        ctx.indirect_symtab.hdr.size =
-            (ctx.stubs.symbols.len() + ctx.got.got_syms.len() + lazy) as u64 * 4;
+    // (Sized once the sections are in order, see assign_indices.)
+    if chunks::indirect_symtab::sections(ctx).next().is_some() {
         ctx.chunks.push(ChunkId::IndirectSymtab);
     }
     ctx.chunks.push(ChunkId::Strtab);
