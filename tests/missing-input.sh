@@ -43,3 +43,15 @@ $t/exe2
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-alias_list,$t/nosuch.txt 2> $t/log
 grep -q "order file '$t/nosuch.txt' could not be opened, errno=2" $t/log
 $t/exe3
+
+# ld-prime stops at the first library it doesn't find, looking the
+# libraries up in command-line order (-force_load's among them), and the
+# frameworks only after them: it reports one only.
+try -framework NoSuch1 -Wl,-force_load,$t/nosuch.a -lnosuch -lnosuch -framework NoSuch2
+grep -v '^+' $t/log > $t/msgs
+[ "$(grep -c 'not found' $t/msgs)" = 1 ]
+grep -q "library '$t/nosuch.a' not found" $t/msgs
+try -framework NoSuch1 -framework NoSuch2
+grep -v '^+' $t/log > $t/msgs
+[ "$(grep -c 'not found' $t/msgs)" = 1 ]
+grep -q "framework 'NoSuch1' not found" $t/msgs

@@ -634,13 +634,14 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Finds the file each input names: None for a library or framework
-/// not found, or a file a library option names that isn't there.
-/// (-bundle_loader's is read apart.)
+/// not found, or a file a library option or -force_load names that
+/// isn't there. (-bundle_loader's is read apart.)
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
     let find = |arg: &InputArg| match arg {
-        InputArg::File(path) | InputArg::ForceLoad(path) => Some(path.clone()),
+        InputArg::File(path) => Some(path.clone()),
         InputArg::BundleLoader(_) => None,
-        InputArg::WeakFile(path)
+        InputArg::ForceLoad(path)
+        | InputArg::WeakFile(path)
         | InputArg::ReexportFile(path)
         | InputArg::NeededFile(path)
         | InputArg::UpwardFile(path)
@@ -709,19 +710,23 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
 /// match no other way (`-upward_library libfoo.dylib`), takes nothing
 /// from the other namings: the first to load the file decides (see
 /// collect_file). ld-prime stops at the first library it doesn't find,
-/// and at a naming check_naming refuses.
+/// -force_load's among them, and at a naming check_naming refuses; it
+/// looks the frameworks up only after all of the libraries.
 fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option<ReaderContext>> {
     let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
     let mut keys = Vec::with_capacity(inputs.len());
-    let mut all_found = true;
+    let mut missing_framework = None;
     for (arg, path) in inputs.iter().zip(paths) {
         let key = match (library_option(arg), path) {
-            (Some((_, framework, name)), None) => {
-                let kind = if framework { "framework" } else { "library" };
-                error!("{kind} '{}' not found", name.display());
-                all_found = false;
+            (Some((_, true, name)), None) => {
+                missing_framework.get_or_insert(name);
                 None
             }
+            (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
+            (None, None) => match arg {
+                InputArg::ForceLoad(path) => fatal!("library '{}' not found", path.display()),
+                _ => None,
+            },
             (Some((rc, framework, name)), Some(path)) => {
                 // A framework by its name, any other library by the
                 // file found.
@@ -740,7 +745,7 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option
                     );
                 }
                 *all = all.union(rc);
-                if all_found {
+                if missing_framework.is_none() {
                     check_naming(*all, framework, name);
                 }
                 Some(key)
@@ -748,6 +753,9 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option
             (None, _) => None,
         };
         keys.push(key);
+    }
+    if let Some(name) = missing_framework {
+        fatal!("framework '{}' not found", name.display());
     }
     // The options naming one library make one input, where it is first
     // named; each other input is one of its own.
