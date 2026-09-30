@@ -60,6 +60,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let mut ctx: Context<E> = Context::new(args);
     crate::error::set_demangle(ctx.args.demangle);
     passes::resolve_pagezero_size(&mut ctx);
+    passes::check_segaddrs(&ctx);
     passes::resolve_image_base(&mut ctx);
 
     let t_all = ctx.timer("all");

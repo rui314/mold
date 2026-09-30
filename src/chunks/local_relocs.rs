@@ -41,16 +41,18 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
 
 /// On arm64, ld-prime counts a -static -pie image's relocation
 /// addresses from -image_base plus the __PAGEZERO size, not from
-/// __TEXT, and rejects the link when one of them overflows the 32-bit
-/// r_address - which, with the default 4 GiB __PAGEZERO, any nonzero
-/// -image_base does. mold counts from __TEXT, which is where the image
-/// starts, but refuses the same links.
+/// __TEXT (unless -segaddr pins __TEXT: then from there, as ld64's
+/// machHeaderVmAddr does), and rejects the link when one of them
+/// overflows the 32-bit r_address - which, with the default 4 GiB
+/// __PAGEZERO, any nonzero -image_base does. mold counts from __TEXT,
+/// which is where the image starts, but refuses the same links.
 fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
     let Some(image_base) = ctx.args.image_base else { return };
     if E::CPUTYPE != CPU_TYPE_ARM64 {
         return;
     }
-    let base = image_base.wrapping_add(ctx.args.pagezero_size);
+    let base =
+        ctx.args.segaddr("__TEXT").unwrap_or(image_base.wrapping_add(ctx.args.pagezero_size));
     let Some(&(atom, addr)) =
         locs.iter().find(|&&(_, addr)| i32::try_from(addr.wrapping_sub(base) as i64).is_err())
     else {

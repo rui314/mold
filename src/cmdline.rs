@@ -284,9 +284,12 @@ pub struct Args {
     /// True when -pagezero_size was given explicitly (a non-zero size
     /// is an error anywhere but a main executable).
     pub explicit_pagezero: bool,
-    /// -image_base: the VM address of the first segment.
+    /// -image_base (or -seg1addr): __TEXT's address, and so the mach
+    /// header's; a -segaddr for __TEXT sets it too. resolve_image_base
+    /// drops it for an image dyld slides wherever it likes.
     pub image_base: Option<u64>,
-    /// -segaddr: (segment, address) overrides.
+    /// -segaddr: (segment, address) pins, one per segment (the last
+    /// one given wins).
     pub segaddrs: Vec<(String, u64)>,
     /// -segprot: (segment, max, init) protections.
     pub segprots: Vec<(String, u8, u8)>,
@@ -423,6 +426,13 @@ impl Default for Args {
             text_exec: false,
             pie: true,
         }
+    }
+}
+
+impl Args {
+    /// The address -segaddr pins a segment to.
+    pub fn segaddr(&self, segname: &str) -> Option<u64> {
+        self.segaddrs.iter().find(|(name, _)| name == segname).map(|&(_, addr)| addr)
     }
 }
 
@@ -1254,6 +1264,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.fixup_chains = None;
     }
     args.pie = resolve_pie(target, &args, pie);
+    args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     args.segprots = resolve_segprots(target, segprots);
     resolve_shared_region(target, &mut args);
     // An image dyld doesn't load has no __DATA_CONST unless bound for
@@ -1435,6 +1446,23 @@ fn check_segment_order(args: &Args) {
             "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );
     }
+}
+
+/// -segaddr's (segment, address) pins, one per segment: ld-prime takes
+/// the last address given for a segment, with a warning.
+fn resolve_segaddrs(segaddrs: Vec<(String, u64)>) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = Vec::new();
+    for (name, addr) in segaddrs {
+        match out.iter_mut().find(|(seen, _)| *seen == name) {
+            Some((_, old)) if *old == addr => crate::warn!("-segaddr {name} used more than once"),
+            Some((_, old)) => {
+                crate::warn!("-segaddr {name} has conflicting values, using 0x{addr:X}");
+                *old = addr;
+            }
+            None => out.push((name, addr)),
+        }
+    }
+    out
 }
 
 /// -segprot's (segment, max, init) protections, as ld-prime applies

@@ -2601,12 +2601,13 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
 /// Defines the symbols the linker itself provides.
 pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
+    let header_addr = mach_header_addr(ctx);
     if ctx.args.output_type == MH_EXECUTE {
         let id = ctx.symbols.intern("__mh_execute_header");
         let sym = &mut ctx.symbols[id];
         if !sym.is_defined() {
             sym.set_file(FileId::Obj(internal));
-            sym.value = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
+            sym.value = header_addr;
             sym.set_is_extern(true);
         }
     }
@@ -2618,7 +2619,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     let sym = &mut ctx.symbols[id];
     if !sym.is_defined() {
         sym.set_file(FileId::Obj(internal));
-        sym.value = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
+        sym.value = header_addr;
         sym.set_is_extern(false);
     }
 
@@ -3794,6 +3795,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 /// __TEXT, where dyld looks for it.
 fn header_segment<E: Target>(ctx: &Context<E>) -> &'static str {
     if ctx.args.static_link { renamed_segment(&ctx.args, "__TEXT") } else { "__TEXT" }
+}
+
+/// The mach header's address, the start of its segment: where -segaddr
+/// pins that segment, or else the image base.
+fn mach_header_addr<E: Target>(ctx: &Context<E>) -> u64 {
+    ctx.args.segaddr(header_segment(ctx)).unwrap_or(ctx.image_base())
 }
 
 /// The name of the __text section a final image always has: it moves
@@ -5018,338 +5025,131 @@ pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// -image_base (or -seg1addr) sets the address of the first segment
-/// after __PAGEZERO, for an image that stays where it was linked. dyld
-/// slides a PIE executable wherever it likes, and ld-prime ignores the
-/// option for one with a warning; it ignores it too for any other image
-/// dyld loads with chained fixups (a non-PIE executable only when
-/// -fixup_chains asks for them), and rounds a base up to a page.
-pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
-    let Some(base) = ctx.args.image_base else { return };
-    // ld-prime takes a zero base as none at all.
-    if base == 0 {
-        ctx.args.image_base = None;
+/// ld-prime's checks of the -segaddr pins, one pin at a time: a pin may
+/// not lie in __PAGEZERO, share its address with another one, or be off
+/// a page boundary - even one for a segment the image does not have.
+pub fn check_segaddrs<E: Target>(ctx: &Context<E>) {
+    if ctx.args.relocatable {
         return;
+    }
+    let segaddrs = &ctx.args.segaddrs;
+    for (i, (name, addr)) in segaddrs.iter().enumerate() {
+        if *addr < ctx.args.pagezero_size {
+            fatal!("-segaddr {name} 0x{addr:X} conflicts with -pagezero_size");
+        }
+        if let Some((other, _)) = segaddrs[i + 1..].iter().find(|(_, a)| a == addr) {
+            fatal!("duplicate -segaddr addresses for {name} and {other}");
+        }
+        if !addr.is_multiple_of(E::PAGE_SIZE) {
+            fatal!(
+                "-segaddr {name} 0x{addr:X} is not aligned to the page size ({:#x}), use -segalign to change it",
+                E::PAGE_SIZE
+            );
+        }
+    }
+}
+
+/// -image_base (or -seg1addr) sets __TEXT's address, for an image that
+/// stays where it was linked. A -segaddr for __TEXT names the same
+/// address, and the two must agree (a non-PIE -static image takes the
+/// -segaddr's, with a warning). dyld slides a PIE executable wherever
+/// it likes, and ld-prime ignores the base for one with a warning; it
+/// ignores it too for any other image dyld loads with chained fixups (a
+/// non-PIE executable only when -fixup_chains asks for them). A pinned
+/// __TEXT stays where it is even then: in a dylib the other segments
+/// still follow it, while in a PIE executable they go from __PAGEZERO's
+/// end and so below it, out of order (place_segments). A base is
+/// rounded up to a page.
+pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
+    // ld-prime takes a zero base as none at all.
+    if ctx.args.image_base == Some(0) {
+        ctx.args.image_base = None;
     }
     if ctx.args.relocatable {
         // An object file is loaded nowhere, and ld-prime only checks
         // that the base is a multiple of 4 KiB.
-        let aligned = align_to(base, 0x1000);
-        if base != aligned {
+        if let Some(base) = ctx.args.image_base
+            && !base.is_multiple_of(0x1000)
+        {
+            let aligned = align_to(base, 0x1000);
             crate::warn!(
-                "base address {base:#x} is not properly aligned. Changing it to {aligned:#x}"
+                "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
             );
         }
         ctx.args.image_base = None;
-    } else if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
+        return;
+    }
+
+    let text = ctx.args.segaddr("__TEXT");
+    if let (Some(base), Some(text)) = (ctx.args.image_base, text)
+        && base != text
+    {
+        if !ctx.args.static_link || ctx.args.pie {
+            fatal!("-image_base and -segaddr __TEXT must match");
+        }
+        crate::warn!(
+            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
+        );
+    }
+    let Some(base) = text.or(ctx.args.image_base) else { return };
+    ctx.args.image_base = Some(base);
+
+    if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
         crate::warn!("Linking with PIE, -image_base will be ignored");
         ctx.args.image_base = None;
     } else if !ctx.args.static_link && ctx.use_chained_fixups() {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
-        ctx.args.image_base = None;
-    } else if base % E::PAGE_SIZE != 0 {
+        ctx.args.image_base = text;
+    } else if !base.is_multiple_of(E::PAGE_SIZE) {
         let aligned = align_to(base, E::PAGE_SIZE);
-        crate::warn!("base address {base:#x} is not properly aligned. Changing it to {aligned:#x}");
+        crate::warn!(
+            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
+        );
         ctx.args.image_base = Some(aligned);
     }
 }
 
-/// An -image_base below __PAGEZERO's end would map the image into the
-/// zero page.
-fn check_image_base<E: Target>(ctx: &Context<E>) {
-    let Some(base) = ctx.args.image_base else { return };
-    if base < ctx.args.pagezero_size
-        && let Some(seg) = ctx.segments.iter().find(|s| s.name != "__PAGEZERO")
-    {
-        error!(
-            "custom segments overlap: __PAGEZERO(0x0-{:#x}) {}({:#x}-{:#x})",
-            ctx.args.pagezero_size,
-            seg.name,
-            seg.cmd.vmaddr,
-            seg.cmd.vmaddr + seg.cmd.vmsize
-        );
-    }
-}
-
+/// Lays out the output: each segment's contents in file order, and the
+/// segments in the address space. Where ld-prime puts a segment can
+/// depend on the size of any other one (place_segments), so a segment
+/// is laid out from address 0 first and moved once all are sized - all
+/// but the mach header's segment (__TEXT), whose address is known up
+/// front (mach_header_addr) and whose __unwind_info encodes its
+/// functions' final addresses. __LINKEDIT comes last: its tables read
+/// every other address.
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
-    let page = E::PAGE_SIZE;
-    let mut addr = ctx.args.image_base.unwrap_or(0);
+    let linkedit = ctx.segments.len() - 1;
+    debug_assert_eq!(ctx.segments[linkedit].name, "__LINKEDIT");
+
+    let header_seg = header_segment(ctx);
+    let header_addr = mach_header_addr(ctx);
     let mut fileoff = 0;
+    for seg_idx in 0..linkedit {
+        let vmaddr = if ctx.segments[seg_idx].name == header_seg { header_addr } else { 0 };
+        fileoff = layout_segment(ctx, seg_idx, fileoff, vmaddr);
+    }
+    place_segments(ctx);
+    check_segment_addresses(ctx);
+    crate::error::checkpoint();
 
-    // Chunk sizes that are independent of the layout.
-    let header_size = mach_header_size(ctx);
-
-    for seg_idx in 0..ctx.segments.len() {
-        // Everything the bind stream describes (the GOT, data sections)
-        // is laid out by the time we reach __LINKEDIT.
-        if ctx.segments[seg_idx].name == "__LINKEDIT" {
-            // Every code and data address is final by now; the tables
-            // below would read ones inside __PAGEZERO as negative.
-            check_image_base(ctx);
-            crate::error::checkpoint();
-            // The LINKEDIT tables are independent of one another and
-            // every address they read is final (the symbol table needs
-            // none at all), so they build as one parallel task group;
-            // the chunk loop below just consumes the cached bytes.
-            // sold sizes its __LINKEDIT members with the same
-            // parallel-for.
-            enum Streams {
-                Chained(chunks::chained_fixups::ChainedFixups),
-                Classic(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u32>),
-            }
-            let use_chained = ctx.use_chained_fixups();
-            let shared = &*ctx;
-            // The defined globals, sorted by name, feed both the
-            // symbol table and the export trie (identical filters);
-            // sort once and share - on a debug link this is hundreds
-            // of thousands of long mangled names.
-            // The name sort feeds only the symtab and the trie, so it
-            // runs inside their arm of the task group and the fixup
-            // streams, function starts and data-in-code build under it.
-            let sorted_globals_of = || -> Vec<crate::symbol::SymbolId> {
-                let _t = shared.timer("globals_sort");
-                {
-                    let mut v: Vec<crate::symbol::SymbolId> = (0..shared.symbols.syms.len())
-                        .into_par_iter()
-                        .filter(|&i| {
-                            let sym = &shared.symbols[i];
-                            sym.is_extern()
-                                && !sym.is_private_extern()
-                                && matches!(sym.file(), Some(FileId::Obj(_)))
-                                && sym.input_section().map(|i| i as usize).is_none_or(|isec| {
-                                    shared.isecs[shared.resolve_isec(isec)].is_alive()
-                                })
-                        })
-                        .map(|i| i as u32)
-                        .collect();
-                    v.par_sort_unstable_by_key(|&i| {
-                        crate::util::name_sort_key(shared.symbols[i].name())
-                    });
-                    v
-                }
-            };
-            let ((symtab, trie), (streams, (starts, dice))) = rayon::join(
-                || {
-                    let sorted_globals = sorted_globals_of();
-                    let sorted_globals = &sorted_globals;
-                    rayon::join(
-                        || {
-                            let _t = shared.timer("symtab");
-                            create_output_symtab(shared, sorted_globals)
-                        },
-                        || {
-                            let _t = shared.timer("trie_encode");
-                            chunks::export_trie::encode_export_trie(shared, sorted_globals)
-                        },
-                    )
-                },
-                || {
-                    rayon::join(
-                        || {
-                            if use_chained {
-                                let _t = shared.timer("chained_fixups");
-                                Streams::Chained(chunks::chained_fixups::build_chained_fixups(
-                                    shared,
-                                ))
-                            } else {
-                                let (rebase, bind) = rayon::join(
-                                    || {
-                                        let _t = shared.timer("rebase_info");
-                                        chunks::rebase_info::build(shared)
-                                    },
-                                    || {
-                                        let _t = shared.timer("bind_info");
-                                        chunks::bind_info::build(shared)
-                                    },
-                                );
-                                let (lazy, lazy_offsets) = chunks::lazy_bind_info::build(shared);
-                                let weak = chunks::weak_bind_info::build(shared);
-                                Streams::Classic(rebase, bind, weak, lazy, lazy_offsets)
-                            }
-                        },
-                        || {
-                            rayon::join(
-                                || {
-                                    let _t = shared.timer("function_starts");
-                                    chunks::function_starts::build(shared)
-                                },
-                                || {
-                                    let _t = shared.timer("data_in_code");
-                                    let dice = chunks::data_in_code::build(shared);
-                                    let split = chunks::split_info::build(shared);
-                                    (dice, split)
-                                },
-                            )
-                        },
-                    )
-                },
-            );
-            // Each table's size follows from its contents; the chunk
-            // loop below places them.
-            let (dice, split) = dice;
-            ctx.symtab = symtab;
-            ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<NList>()) as u64;
-            ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
-            ctx.data_in_code.hdr.size = (dice.len() * 8) as u64;
-            ctx.data_in_code.entries = dice;
-            ctx.split_info.hdr.size = split.len() as u64;
-            ctx.split_info.contents = split;
-            match streams {
-                Streams::Chained((contents, fixups, imports, ordinals)) => {
-                    let sec = &mut ctx.chained_fixups;
-                    sec.hdr.size = contents.len() as u64;
-                    sec.contents = contents;
-                    sec.fixups = fixups;
-                    sec.imports = imports;
-                    sec.ordinals = ordinals;
-                }
-                Streams::Classic(rebase, bind, weak, lazy, lazy_offsets) => {
-                    ctx.rebase_info.hdr.size = rebase.len() as u64;
-                    ctx.rebase_info.contents = rebase;
-                    ctx.bind_info.hdr.size = bind.len() as u64;
-                    ctx.bind_info.contents = bind;
-                    ctx.weak_bind_info.hdr.size = weak.len() as u64;
-                    ctx.weak_bind_info.contents = weak;
-                    ctx.lazy_bind_info.hdr.size = lazy.len() as u64;
-                    ctx.lazy_bind_info.contents = lazy;
-                    ctx.lazy_bind_info.offsets = lazy_offsets;
-                }
-            }
-            ctx.function_starts.hdr.size = starts.len() as u64;
-            ctx.function_starts.contents = starts;
-            ctx.export_trie.hdr.size = trie.len() as u64;
-            ctx.export_trie.contents = trie;
-            collect_relocations(ctx);
-        }
-
-        if ctx.segments[seg_idx].name == "__PAGEZERO" {
-            let seg = &mut ctx.segments[seg_idx];
-            seg.cmd.vmaddr = 0;
-            seg.cmd.vmsize = ctx.args.pagezero_size;
-            addr = ctx.args.image_base.unwrap_or(ctx.args.pagezero_size);
-            continue;
-        }
-
-        // -segaddr pins a segment's address; the running address
-        // resumes where it was, or past the pinned segment if that
-        // lies above it.
-        let pinned = ctx
-            .args
-            .segaddrs
-            .iter()
-            .find(|(name, _)| name == ctx.segments[seg_idx].name)
-            .map(|&(_, a)| a);
-        let resume = addr;
-        let seg_vmaddr = pinned.unwrap_or(addr);
-        let seg_fileoff = fileoff;
-        let mut cursor = fileoff;
-
-        let chunk_ids = ctx.segments[seg_idx].chunks.clone();
-
-        // The output sections with range-extension thunks (executable
-        // sections of __TEXT); their entries' addresses are recorded on
-        // the symbols once this segment is placed.
-        let thunked: Vec<OutputSectionId> = chunk_ids
-            .iter()
-            .filter_map(|&id| match id {
-                ChunkId::Output(id) if !ctx.output_section(id).thunks.is_empty() => Some(id),
-                _ => None,
-            })
-            .collect();
-        // Regular chunks, in file order
-        for &id in &chunk_ids {
-            if ctx.chunk_header(id).is_zerofill() {
-                continue;
-            }
-            let size = match id {
-                ChunkId::MachHeader => header_size,
-                // Encoded once its segment's addresses are known (the
-                // __LINKEDIT tables are built ahead, above, but
-                // __unwind_info embeds __TEXT offsets); the personality
-                // cells the encoding cannot know yet (GOT addresses)
-                // come back as a patch list for the copy phase.
-                ChunkId::UnwindInfo => {
-                    let (data, personalities) = {
-                        let _t = ctx.timer("unwind_encode");
-                        chunks::unwind_info::encode_unwind_info(ctx)
-                    };
-                    let len = data.len() as u64;
-                    ctx.unwind_info.contents = data;
-                    ctx.unwind_info.personalities = personalities;
-                    len
-                }
-                ChunkId::CodeSignature => {
-                    cursor = align_to(cursor, 16);
-                    chunks::code_signature::size(&ctx.args.output, cursor)
-                }
-                _ => ctx.chunk_header(id).size,
-            };
-            let p2align = match id {
-                ChunkId::Symtab
-                | ChunkId::Strtab
-                | ChunkId::RebaseInfo
-                | ChunkId::BindInfo
-                | ChunkId::WeakBindInfo
-                | ChunkId::LazyBindInfo
-                | ChunkId::ChainedFixups
-                | ChunkId::ExportTrie
-                | ChunkId::FunctionStarts
-                | ChunkId::DataInCode
-                | ChunkId::SplitInfo
-                | ChunkId::LocalRelocs
-                | ChunkId::ExternRelocs => 3,
-                ChunkId::IndirectSymtab => 2,
-                ChunkId::CodeSignature => 4,
-                _ => ctx.chunk_header(id).p2align,
-            };
-            cursor = align_to(cursor, 1 << p2align);
-            let hdr = ctx.chunk_header_mut(id);
-            hdr.fileoff = cursor;
-            hdr.addr = seg_vmaddr + (cursor - seg_fileoff);
-            hdr.size = size;
-            cursor += size;
-        }
-
-        if !thunked.is_empty() {
-            crate::thunks::gather_thunk_addresses(ctx, &thunked);
-        }
-
-        let filesize = cursor - seg_fileoff;
-        let mut vm_end = seg_vmaddr + filesize;
-
-        // Zero-fill chunks occupy address space after the file-backed
-        // part of the segment.
-        for &id in &chunk_ids {
-            let hdr = ctx.chunk_header_mut(id);
-            if !hdr.is_zerofill() {
-                continue;
-            }
-            vm_end = align_to(vm_end, 1 << hdr.p2align);
-            hdr.addr = vm_end;
-            hdr.fileoff = 0;
-            vm_end += hdr.size;
-        }
-
-        // __LINKEDIT's file contents end exactly at the code signature;
-        // other segments are padded to a page boundary in the file.
-        let seg = &mut ctx.segments[seg_idx];
-        seg.cmd.vmaddr = seg_vmaddr;
-        seg.cmd.fileoff = seg_fileoff;
-        if seg.name == "__LINKEDIT" {
-            seg.cmd.filesize = filesize;
-        } else {
-            seg.cmd.filesize = align_to(filesize, page);
-        }
-        seg.cmd.vmsize = align_to(vm_end - seg_vmaddr, page).max(seg.cmd.filesize);
-
-        addr = seg_vmaddr + seg.cmd.vmsize;
-        if pinned.is_some() {
-            addr = addr.max(resume);
-        }
-        fileoff = seg_fileoff + seg.cmd.filesize;
+    // The output sections with range-extension thunks (executable
+    // sections); their entries' addresses are recorded on the symbols
+    // now that the sections are placed.
+    let thunked: Vec<OutputSectionId> = ctx
+        .chunks
+        .iter()
+        .filter_map(|&id| match id {
+            ChunkId::Output(id) if !ctx.output_section(id).thunks.is_empty() => Some(id),
+            _ => None,
+        })
+        .collect();
+    if !thunked.is_empty() {
+        crate::thunks::gather_thunk_addresses(ctx, &thunked);
     }
 
-    ctx.output_size = fileoff;
+    build_linkedit_tables(ctx);
+    ctx.output_size = layout_segment(ctx, linkedit, fileoff, 0);
+    place_linkedit(ctx);
 
     // Thread pointers are relative to the start of the first
     // thread-local data section.
@@ -5363,6 +5163,411 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         .map(|hdr| hdr.addr)
         .min()
         .unwrap_or(0);
+}
+
+/// Lays out a segment's chunks from file offset `fileoff` and address
+/// `vmaddr`, and returns the file offset past the segment.
+fn layout_segment<E: Target>(
+    ctx: &mut Context<E>,
+    seg_idx: usize,
+    fileoff: u64,
+    vmaddr: u64,
+) -> u64 {
+    let page = E::PAGE_SIZE;
+    if ctx.segments[seg_idx].name == "__PAGEZERO" {
+        let seg = &mut ctx.segments[seg_idx];
+        seg.cmd.vmaddr = 0;
+        seg.cmd.vmsize = ctx.args.pagezero_size;
+        return fileoff;
+    }
+
+    let seg_fileoff = fileoff;
+    let mut cursor = fileoff;
+    let chunk_ids = ctx.segments[seg_idx].chunks.clone();
+
+    // Regular chunks, in file order
+    for &id in &chunk_ids {
+        if ctx.chunk_header(id).is_zerofill() {
+            continue;
+        }
+        let size = match id {
+            ChunkId::MachHeader => mach_header_size(ctx),
+            // Encoded once its segment's addresses are known (the
+            // __LINKEDIT tables are built ahead, but __unwind_info
+            // embeds __TEXT offsets); the personality cells the
+            // encoding cannot know yet (GOT addresses) come back as a
+            // patch list for the copy phase.
+            ChunkId::UnwindInfo => {
+                let (data, personalities) = {
+                    let _t = ctx.timer("unwind_encode");
+                    chunks::unwind_info::encode_unwind_info(ctx)
+                };
+                let len = data.len() as u64;
+                ctx.unwind_info.contents = data;
+                ctx.unwind_info.personalities = personalities;
+                len
+            }
+            ChunkId::CodeSignature => {
+                cursor = align_to(cursor, 16);
+                chunks::code_signature::size(&ctx.args.output, cursor)
+            }
+            _ => ctx.chunk_header(id).size,
+        };
+        let p2align = match id {
+            ChunkId::Symtab
+            | ChunkId::Strtab
+            | ChunkId::RebaseInfo
+            | ChunkId::BindInfo
+            | ChunkId::WeakBindInfo
+            | ChunkId::LazyBindInfo
+            | ChunkId::ChainedFixups
+            | ChunkId::ExportTrie
+            | ChunkId::FunctionStarts
+            | ChunkId::DataInCode
+            | ChunkId::SplitInfo
+            | ChunkId::LocalRelocs
+            | ChunkId::ExternRelocs => 3,
+            ChunkId::IndirectSymtab => 2,
+            ChunkId::CodeSignature => 4,
+            _ => ctx.chunk_header(id).p2align,
+        };
+        cursor = align_to(cursor, 1 << p2align);
+        let hdr = ctx.chunk_header_mut(id);
+        hdr.fileoff = cursor;
+        hdr.addr = vmaddr + (cursor - seg_fileoff);
+        hdr.size = size;
+        cursor += size;
+    }
+
+    let filesize = cursor - seg_fileoff;
+    let mut vm_end = vmaddr + filesize;
+
+    // Zero-fill chunks occupy address space after the file-backed part
+    // of the segment.
+    for &id in &chunk_ids {
+        let hdr = ctx.chunk_header_mut(id);
+        if !hdr.is_zerofill() {
+            continue;
+        }
+        vm_end = align_to(vm_end, 1 << hdr.p2align);
+        hdr.addr = vm_end;
+        hdr.fileoff = 0;
+        vm_end += hdr.size;
+    }
+
+    // __LINKEDIT's file contents end exactly at the code signature;
+    // other segments are padded to a page boundary in the file.
+    let seg = &mut ctx.segments[seg_idx];
+    seg.cmd.vmaddr = vmaddr;
+    seg.cmd.fileoff = seg_fileoff;
+    if seg.name == "__LINKEDIT" {
+        seg.cmd.filesize = filesize;
+    } else {
+        seg.cmd.filesize = align_to(filesize, page);
+    }
+    seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
+    seg_fileoff + seg.cmd.filesize
+}
+
+/// Gives every segment but __LINKEDIT its address, as ld-prime does:
+///
+/// - A segment -segaddr pins goes there.
+/// - With -segment_order, the segments listed after a pinned one
+///   follow it, one after another (ld64's
+///   segmentOrderAfterFixedAddressSegment).
+/// - The others go from the image base, in segment order, each to the
+///   lowest address where it runs into no segment placed before it.
+///   The segments the two rules above place count as placed only from
+///   the first of them (the mach header's segment aside) on, so the
+///   segments ahead of it are simply laid out one after another - into
+///   a pinned one, if it is in their way. A pinned __LINKEDIT, not
+///   sized yet, counts from the start, as an empty segment.
+fn place_segments<E: Target>(ctx: &mut Context<E>) {
+    let base = ctx.image_base();
+    let header_seg = header_segment(ctx);
+    let segs = &ctx.segments[..ctx.segments.len() - 1];
+    let range = |i: usize, addr: u64| addr..addr + segs[i].cmd.vmsize;
+
+    // __PAGEZERO and the mach header's segment are laid out in place
+    // already.
+    let in_place: Vec<bool> =
+        segs.iter().map(|seg| seg.name == "__PAGEZERO" || seg.name == header_seg).collect();
+    let mut addrs: Vec<Option<u64>> = (0..segs.len())
+        .map(
+            |i| if in_place[i] { Some(segs[i].cmd.vmaddr) } else { ctx.args.segaddr(segs[i].name) },
+        )
+        .collect();
+    for i in 1..segs.len() {
+        if addrs[i].is_none()
+            && follows_pinned_segment(ctx, segs[i].name)
+            && let Some(prev) = addrs[i - 1]
+        {
+            addrs[i] = Some(prev + segs[i - 1].cmd.vmsize);
+        }
+    }
+
+    let fixed: Vec<usize> =
+        (0..segs.len()).filter(|&i| !in_place[i] && addrs[i].is_some()).collect();
+    let header = segs.iter().position(|seg| seg.name == header_seg).unwrap();
+    let mut used = vec![range(header, segs[header].cmd.vmaddr)];
+    if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
+        used.push(addr..addr);
+    }
+    for i in 0..segs.len() {
+        if fixed.first() == Some(&i) {
+            used.extend(fixed.iter().map(|&j| range(j, addrs[j].unwrap())));
+        }
+        if addrs[i].is_none() {
+            let addr = lowest_free_addr(base, segs[i].cmd.vmsize, &used);
+            addrs[i] = Some(addr);
+            used.push(range(i, addr));
+        }
+    }
+
+    for (i, addr) in addrs.into_iter().enumerate() {
+        if !in_place[i] {
+            move_segment(ctx, i, addr.unwrap());
+        }
+    }
+}
+
+/// Whether -segment_order lists a segment after one that -segaddr pins
+/// (ld64's segmentOrderAfterFixedAddressSegment).
+fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
+    let mut pinned = false;
+    for name in &ctx.args.segment_order {
+        if name == segname {
+            return pinned;
+        }
+        pinned |= ctx.args.segaddr(name).is_some();
+    }
+    false
+}
+
+/// The lowest address from `base` on where `size` bytes run into none of
+/// the `used` ranges: the base itself or the end of a used range. An
+/// empty segment is a point no other segment may straddle, and still
+/// needs an address no segment covers.
+fn lowest_free_addr(base: u64, size: u64, used: &[Range<u64>]) -> u64 {
+    let is_free = |addr: u64| used.iter().all(|r| r.end <= addr || addr + size.max(1) <= r.start);
+    std::iter::once(base)
+        .chain(used.iter().map(|r| r.end).filter(|&end| end > base))
+        .filter(|&addr| is_free(addr))
+        .min()
+        .unwrap()
+}
+
+/// Moves a segment laid out from address 0 to `addr`.
+fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
+    ctx.segments[seg_idx].cmd.vmaddr = addr;
+    for i in 0..ctx.segments[seg_idx].chunks.len() {
+        let id = ctx.segments[seg_idx].chunks[i];
+        ctx.chunk_header_mut(id).addr += addr;
+    }
+}
+
+/// ld-prime refuses segments that overlap, which takes a -segaddr (or
+/// an -image_base inside __PAGEZERO), and in an image dyld slides, a
+/// segment below the one before it. It reports the first such segment.
+/// Left out of the overlap check are empty segments and __LINKEDIT,
+/// sized last.
+fn check_segment_addresses<E: Target>(ctx: &Context<E>) {
+    let (linkedit, segs) = ctx.segments.split_last().unwrap();
+    let end = |seg: &OutputSegment| seg.cmd.vmaddr + seg.cmd.vmsize;
+    for (i, a) in segs.iter().enumerate() {
+        for b in &segs[i + 1..] {
+            if a.cmd.vmsize > 0
+                && b.cmd.vmsize > 0
+                && a.cmd.vmaddr < end(b)
+                && b.cmd.vmaddr < end(a)
+            {
+                error!(
+                    "custom segments overlap: {}({:#x}-{:#x}) {}({:#x}-{:#x})",
+                    a.name,
+                    a.cmd.vmaddr,
+                    end(a),
+                    b.name,
+                    b.cmd.vmaddr,
+                    end(b)
+                );
+                return;
+            }
+        }
+    }
+
+    if !dyld_slides(ctx) {
+        return;
+    }
+    for pair in segs.windows(2) {
+        if pair[1].cmd.vmaddr < pair[0].cmd.vmaddr {
+            error!("segment {} address is out of order", pair[1].name);
+            return;
+        }
+    }
+    if let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
+        && addr < last.cmd.vmaddr
+    {
+        error!("segment {} address is out of order", linkedit.name);
+    }
+}
+
+/// __LINKEDIT goes where -segaddr pins it. Otherwise, in an image dyld
+/// slides, it goes above every other segment, and in one that stays
+/// where it was linked to the lowest address from the image base where
+/// it fits, as any other segment would.
+fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
+    let linkedit = ctx.segments.len() - 1;
+    let others = &ctx.segments[..linkedit];
+    let addr = if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
+        addr
+    } else if dyld_slides(ctx) {
+        others.iter().map(|seg| seg.cmd.vmaddr + seg.cmd.vmsize).max().unwrap_or(0)
+    } else {
+        let used: Vec<Range<u64>> =
+            others.iter().map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize).collect();
+        lowest_free_addr(ctx.image_base(), ctx.segments[linkedit].cmd.vmsize, &used)
+    };
+    move_segment(ctx, linkedit, addr);
+}
+
+/// Whether dyld loads the image wherever it likes: a PIE executable, a
+/// dylib or a bundle, but not a -static image or a non-PIE executable.
+fn dyld_slides<E: Target>(ctx: &Context<E>) -> bool {
+    !ctx.args.static_link && (ctx.args.output_type != MH_EXECUTE || ctx.args.pie)
+}
+
+/// Builds the __LINKEDIT tables, once every other address is final.
+fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
+    // The LINKEDIT tables are independent of one another and
+    // every address they read is final (the symbol table needs
+    // none at all), so they build as one parallel task group;
+    // layout_segment just consumes the cached bytes.
+    // sold sizes its __LINKEDIT members with the same
+    // parallel-for.
+    enum Streams {
+        Chained(chunks::chained_fixups::ChainedFixups),
+        Classic(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u32>),
+    }
+    let use_chained = ctx.use_chained_fixups();
+    let shared = &*ctx;
+    // The defined globals, sorted by name, feed both the
+    // symbol table and the export trie (identical filters);
+    // sort once and share - on a debug link this is hundreds
+    // of thousands of long mangled names.
+    // The name sort feeds only the symtab and the trie, so it
+    // runs inside their arm of the task group and the fixup
+    // streams, function starts and data-in-code build under it.
+    let sorted_globals_of = || -> Vec<crate::symbol::SymbolId> {
+        let _t = shared.timer("globals_sort");
+        {
+            let mut v: Vec<crate::symbol::SymbolId> = (0..shared.symbols.syms.len())
+                .into_par_iter()
+                .filter(|&i| {
+                    let sym = &shared.symbols[i];
+                    sym.is_extern()
+                        && !sym.is_private_extern()
+                        && matches!(sym.file(), Some(FileId::Obj(_)))
+                        && sym
+                            .input_section()
+                            .map(|i| i as usize)
+                            .is_none_or(|isec| shared.isecs[shared.resolve_isec(isec)].is_alive())
+                })
+                .map(|i| i as u32)
+                .collect();
+            v.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(shared.symbols[i].name()));
+            v
+        }
+    };
+    let ((symtab, trie), (streams, (starts, dice))) = rayon::join(
+        || {
+            let sorted_globals = sorted_globals_of();
+            let sorted_globals = &sorted_globals;
+            rayon::join(
+                || {
+                    let _t = shared.timer("symtab");
+                    create_output_symtab(shared, sorted_globals)
+                },
+                || {
+                    let _t = shared.timer("trie_encode");
+                    chunks::export_trie::encode_export_trie(shared, sorted_globals)
+                },
+            )
+        },
+        || {
+            rayon::join(
+                || {
+                    if use_chained {
+                        let _t = shared.timer("chained_fixups");
+                        Streams::Chained(chunks::chained_fixups::build_chained_fixups(shared))
+                    } else {
+                        let (rebase, bind) = rayon::join(
+                            || {
+                                let _t = shared.timer("rebase_info");
+                                chunks::rebase_info::build(shared)
+                            },
+                            || {
+                                let _t = shared.timer("bind_info");
+                                chunks::bind_info::build(shared)
+                            },
+                        );
+                        let (lazy, lazy_offsets) = chunks::lazy_bind_info::build(shared);
+                        let weak = chunks::weak_bind_info::build(shared);
+                        Streams::Classic(rebase, bind, weak, lazy, lazy_offsets)
+                    }
+                },
+                || {
+                    rayon::join(
+                        || {
+                            let _t = shared.timer("function_starts");
+                            chunks::function_starts::build(shared)
+                        },
+                        || {
+                            let _t = shared.timer("data_in_code");
+                            let dice = chunks::data_in_code::build(shared);
+                            let split = chunks::split_info::build(shared);
+                            (dice, split)
+                        },
+                    )
+                },
+            )
+        },
+    );
+    // Each table's size follows from its contents; layout_segment
+    // places them.
+    let (dice, split) = dice;
+    ctx.symtab = symtab;
+    ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<NList>()) as u64;
+    ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
+    ctx.data_in_code.hdr.size = (dice.len() * 8) as u64;
+    ctx.data_in_code.entries = dice;
+    ctx.split_info.hdr.size = split.len() as u64;
+    ctx.split_info.contents = split;
+    match streams {
+        Streams::Chained((contents, fixups, imports, ordinals)) => {
+            let sec = &mut ctx.chained_fixups;
+            sec.hdr.size = contents.len() as u64;
+            sec.contents = contents;
+            sec.fixups = fixups;
+            sec.imports = imports;
+            sec.ordinals = ordinals;
+        }
+        Streams::Classic(rebase, bind, weak, lazy, lazy_offsets) => {
+            ctx.rebase_info.hdr.size = rebase.len() as u64;
+            ctx.rebase_info.contents = rebase;
+            ctx.bind_info.hdr.size = bind.len() as u64;
+            ctx.bind_info.contents = bind;
+            ctx.weak_bind_info.hdr.size = weak.len() as u64;
+            ctx.weak_bind_info.contents = weak;
+            ctx.lazy_bind_info.hdr.size = lazy.len() as u64;
+            ctx.lazy_bind_info.contents = lazy;
+            ctx.lazy_bind_info.offsets = lazy_offsets;
+        }
+    }
+    ctx.function_starts.hdr.size = starts.len() as u64;
+    ctx.function_starts.contents = starts;
+    ctx.export_trie.hdr.size = trie.len() as u64;
+    ctx.export_trie.contents = trie;
+    collect_relocations(ctx);
 }
 
 /// Builds the LC_FUNCTION_STARTS payload: the addresses of all

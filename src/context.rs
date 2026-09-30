@@ -357,6 +357,15 @@ impl<E: Target> Context<E> {
             .unwrap_or(E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 && !self.args.without_dyld())
     }
 
+    /// The address the segments are laid out from: -image_base (or
+    /// -segaddr __TEXT) as resolve_image_base settles it, else the end
+    /// of __PAGEZERO. __TEXT, and the mach header with it, goes here
+    /// unless -segaddr pins __TEXT in a PIE executable, which then
+    /// fails to link.
+    pub fn image_base(&self) -> u64 {
+        self.args.image_base.unwrap_or(self.args.pagezero_size)
+    }
+
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes.
     pub fn use_chained_fixups(&self) -> bool {
