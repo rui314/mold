@@ -292,7 +292,7 @@ impl Target for X86_64 {
                 else {
                     fatal!("{file_name}: bad relocation: {}", r.r_address);
                 };
-                (RelocTarget::Section(idx as u32), (addr - sections[idx].addr) as i64)
+                (RelocTarget::Section(idx as u32), addr.wrapping_sub(sections[idx].addr) as i64)
             };
 
             vec.push(Reloc {

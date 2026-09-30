@@ -941,9 +941,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
                 };
                 let target = ctx.resolve_isec(target as usize);
                 let t = &ctx.isecs[target];
-                let target_addr = ctx.chunk_header(t.output_section().unwrap()).addr
-                    + t.offset as u64
-                    + rel.addend as u64;
+                // The addend is negative for a target before its
+                // section's start.
+                let target_addr = (ctx.chunk_header(t.output_section().unwrap()).addr
+                    + t.offset as u64)
+                    .wrapping_add_signed(rel.addend);
                 let loc = dst + rel.offset as usize;
                 if let Some((_, atom_addr)) = atom_target(target, rel.addend) {
                     // Now a relocation against the atom's symbol: the

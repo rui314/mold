@@ -1025,7 +1025,7 @@ impl Target for Arm64 {
                     fatal!("{file_name}: bad relocation: {}", r.r_address);
                 };
                 let target = RelocTarget::Section(idx as u32);
-                (target, (addr - sections[idx].addr) as i64)
+                (target, addr.wrapping_sub(sections[idx].addr) as i64)
             };
 
             vec.push(Reloc {

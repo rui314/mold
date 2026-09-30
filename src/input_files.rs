@@ -1198,7 +1198,10 @@ impl StagedObject {
     }
 
     /// The subsection at a section-relative relocation target, section
-    /// `sect_pos` plus `addend`, and the target's offset within it.
+    /// `sect_pos` plus `addend`, and the target's offset within it. It
+    /// is one of that section's: an address one past its end is its
+    /// last subsection's, and one outside it (which read_relocs warns
+    /// of) its first or last subsection's, as in ld-prime.
     fn section_target(
         &self,
         sect_pos: u32,
@@ -1206,20 +1209,14 @@ impl StagedObject {
         sect_isecs: &[std::ops::Range<usize>],
     ) -> (usize, u64) {
         let sect = &self.sect_hdrs[sect_pos as usize];
-        let addr = (sect.addr as i64 + addend) as u64;
-        let found = find_subsec(&self.isecs, &self.subsecs, addr).or_else(|| {
-            // One past the section's end (a DWARF range end): one past
-            // its last subsection.
-            if addr != sect.addr + sect.size {
-                return None;
-            }
-            let last = sect_isecs[sect_pos as usize].clone().last()?;
-            Some((last, self.isecs[last].size as u64))
-        });
-        let Some(found) = found else {
+        let addr = sect.addr.wrapping_add_signed(addend);
+        let range = sect_isecs[sect_pos as usize].clone();
+        if range.is_empty() {
             fatal!("{}: relocation against a discarded section", self.mf.name.display());
-        };
-        found
+        }
+        let n = self.isecs[range.clone()].partition_point(|isec| isec.input_addr as u64 <= addr);
+        let isec = range.start + n.saturating_sub(1);
+        (isec, addr.wrapping_sub(self.isecs[isec].input_addr as u64))
     }
 
     /// Records each symbol's name, and for an external symbol the hash

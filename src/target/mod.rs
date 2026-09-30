@@ -280,29 +280,30 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 /// The canonical name of a target named on the command line, borrowed
 /// from static storage so that a restart for that target can carry it.
 /// The section a non-extern relocation targets: the one its
-/// r_symbolnum names (a 1-based section ordinal) when the target
-/// address lies in it or one past its end, as ld64 reads it, else the
-/// section containing the address. Only the ordinal tells apart
+/// r_symbolnum names (a 1-based section ordinal), wherever the target
+/// address lies, as ld-prime reads it. Only the ordinal tells apart
 /// sections that share an address - an empty one and its successor,
-/// or one section's end and the next one's start.
+/// or one section's end and the next one's start. An address outside
+/// the section, ld-prime takes for its first or last atom's with a
+/// warning; one past its end (a label after the last instruction) is
+/// its last atom's.
 pub fn nonextern_target_section(
     sections: &[MachSection],
     ordinal: u32,
     addr: u64,
 ) -> Option<usize> {
-    if let Some(i) = (ordinal as usize).checked_sub(1)
-        && let Some(sec) = sections.get(i)
-        && sec.addr <= addr
-        && addr <= sec.addr + sec.size
-    {
-        return Some(i);
+    let i = (ordinal as usize).checked_sub(1)?;
+    let sec = sections.get(i)?;
+    if addr < sec.addr {
+        crate::warn!(
+            "address=0x{addr:X} points before section({ordinal}) start and the target atom is ambiguous"
+        );
+    } else if addr > sec.addr + sec.size {
+        crate::warn!(
+            "address=0x{addr:X} points beyond section({ordinal}) end and the target atom is ambiguous"
+        );
     }
-    // The address may be one past a section's end: a DWARF range end
-    // or high_pc, or a label after the last instruction.
-    sections
-        .iter()
-        .position(|sec| sec.addr <= addr && addr < sec.addr + sec.size)
-        .or_else(|| sections.iter().position(|sec| addr == sec.addr + sec.size))
+    Some(i)
 }
 
 pub fn canonical_name(name: &str) -> Option<&'static str> {
