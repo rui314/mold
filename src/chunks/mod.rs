@@ -545,13 +545,18 @@ fn create_dylinker_cmd() -> Vec<u8> {
     buf
 }
 
-fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    let name: &[u8] = ctx
-        .args
+/// The install name a dylib output records in LC_ID_DYLIB: -install_name,
+/// else -final_output, else the output path.
+pub fn output_install_name<E: Target>(ctx: &Context<E>) -> &[u8] {
+    ctx.args
         .install_name
         .as_deref()
         .or(ctx.args.final_output.as_deref())
-        .unwrap_or(crate::util::path_bytes(&ctx.args.output));
+        .unwrap_or(crate::util::path_bytes(&ctx.args.output))
+}
+
+fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    let name = output_install_name(ctx);
     let cmd = DylibCommand {
         cmd: LC_ID_DYLIB,
         cmdsize: 0,

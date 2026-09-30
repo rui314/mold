@@ -192,6 +192,13 @@ pub struct Args {
     /// -dead_strip_dylibs: drop load commands for dylibs nothing binds
     /// to.
     pub dead_strip_dylibs: bool,
+    /// -warn_unused_dylibs / -no_warn_unused_dylibs: warn about linked
+    /// dylibs nothing binds to (by default only for a dylib bound for
+    /// the dyld shared cache).
+    pub warn_unused_dylibs: Option<bool>,
+    /// -not_for_dyld_shared_cache: a dylib installed in /usr/lib or
+    /// /System/Library that won't go into the dyld shared cache.
+    pub not_for_dyld_shared_cache: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// -application_extension: mark the image safe for app extensions.
@@ -355,6 +362,8 @@ impl Default for Args {
             undefined_is_warning: false,
             allowed_undefined: Vec::new(),
             dead_strip_dylibs: false,
+            warn_unused_dylibs: None,
+            not_for_dyld_shared_cache: false,
             bind_at_load: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
@@ -834,6 +843,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-dead_strip" => args.dead_strip = true,
             b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
+            b"-warn_unused_dylibs" => args.warn_unused_dylibs = Some(true),
+            b"-no_warn_unused_dylibs" => args.warn_unused_dylibs = Some(false),
+            b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,

@@ -2195,11 +2195,59 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
     real(&mf.name).display().to_string()
 }
 
+/// Warns about each dylib the command line links that nothing binds
+/// to. ld-prime does so by default for a dylib bound for the dyld shared
+/// cache - one installed in /usr/lib or /System/Library, unless
+/// -not_for_dyld_shared_cache - where each needless load costs every
+/// process, and for any output under -warn_unused_dylibs. A -needed_* or
+/// -reexport_* library is linked on purpose, and libSystem, libc++ and
+/// Foundation, which compiler drivers and project templates link by
+/// habit, are let off.
+fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
+    let install_name = crate::chunks::output_install_name(ctx);
+    let for_shared_cache = ctx.args.output_type == MH_DYLIB
+        && !ctx.args.not_for_dyld_shared_cache
+        && (install_name.starts_with(b"/usr/lib/")
+            || install_name.starts_with(b"/System/Library/"));
+    if !ctx.args.warn_unused_dylibs.unwrap_or(for_shared_cache) {
+        return;
+    }
+    const EXEMPT: [&[u8]; 3] = [
+        b"/usr/lib/libSystem.B.dylib",
+        b"/usr/lib/libc++.1.dylib",
+        b"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+    ];
+    let mut bound = vec![false; ctx.dylibs.len()];
+    for sym in &ctx.symbols.syms {
+        if let Some(FileId::Dylib(idx)) = sym.file()
+            && idx != u32::MAX
+        {
+            bound[idx as usize] = true;
+        }
+    }
+    for (i, dylib) in ctx.dylibs.iter().enumerate() {
+        if !bound[i]
+            && !dylib.is_implicit
+            && !dylib.is_autolinked
+            && !dylib.is_needed
+            && !dylib.is_reexported
+            && !dylib.is_bundle_loader
+            && !EXEMPT.contains(&dylib.install_name.as_slice())
+        {
+            crate::warn!(
+                "linking with ({}) but not using any symbols from it",
+                crate::util::display(&dylib.install_name)
+            );
+        }
+    }
+}
+
 /// Drops load commands for dylibs no symbol binds to
 /// (-dead_strip_dylibs). Bind records name dylibs by their 1-based
 /// load-command ordinal, so surviving dylibs are renumbered and symbol
 /// origins remapped.
 pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
+    warn_unused_dylibs(ctx);
     // A dylib built with -mark_dead_strippable_dylib asks every
     // linker to drop it when unused, so those are stripped even
     // without -dead_strip_dylibs; so is an auto-linked one, which
