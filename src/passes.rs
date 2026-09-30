@@ -1904,6 +1904,11 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let referenced = referenced_symbols(ctx);
+    // An initial undefine (-u, or a name an export list gives without
+    // wildcards) must resolve: ld-prime reports one even under
+    // -undefined dynamic_lookup or -U.
+    let initial: hashbrown::HashSet<crate::symbol::SymbolId> =
+        ctx.args.forced_undefined.iter().filter_map(|name| ctx.symbols.get(name)).collect();
 
     // Errors name a file that wants the symbol; the map from symbol to
     // referencing object is built only once an error is certain.
@@ -1926,6 +1931,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         });
         match map.get(&id) {
             Some(&obj_idx) => file_display(&ctx.objs[obj_idx]).to_string(),
+            None if initial.contains(&id) => "<initial-undefines>".to_string(),
             None => "<synthesized>".to_string(),
         }
     };
@@ -1933,8 +1939,9 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     for i in undef {
         let sym = &ctx.symbols[i];
         if referenced[i].load(Ordering::Relaxed) {
-            let allowed = ctx.args.undefined_dynamic_lookup
-                || ctx.args.allowed_undefined.iter().any(|n| n == sym.name());
+            let allowed = (ctx.args.undefined_dynamic_lookup
+                || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
+                && !initial.contains(&(i as crate::symbol::SymbolId));
             if allowed {
                 if ctx.args.undefined_warning {
                     crate::warn!("undefined symbol: {}", ctx.symbols[i]);

@@ -90,8 +90,11 @@ pub struct Args {
     pub strip_debug: bool,
     pub all_load: bool,
     pub load_objc: bool,
-    /// Symbols to treat as undefined from the start (-u), forcing
-    /// archive members that define them to be linked.
+    /// Symbols to treat as undefined from the start, forcing archive
+    /// members that define them to be linked: those -u names, and those
+    /// an export list names without wildcards (ld64's "initial
+    /// undefines"). One that stays undefined is an error even under
+    /// -undefined dynamic_lookup.
     pub forced_undefined: Vec<String>,
     /// If set, only these symbols are exported (-exported_symbols_list
     /// or -exported_symbol).
@@ -413,6 +416,18 @@ fn parse_platform(arg: &str) -> u32 {
 /// Reads a symbol-list file for an option, fatal on I/O error.
 /// Adds symbol-list patterns to a matcher. ld64's lists accept `*`, `?`
 /// and `[...]` wildcards.
+/// Whether a symbol list entry is a wildcard pattern rather than a name.
+fn is_pattern(s: &str) -> bool {
+    s.contains(['*', '?', '['])
+}
+
+/// Makes the names among a symbol list's entries initial undefines: an
+/// object need not mention them for them to pull in an archive member,
+/// and each must resolve. Patterns only match symbols already there.
+fn add_initial_undefines<'a>(undefs: &mut Vec<String>, entries: impl IntoIterator<Item = &'a str>) {
+    undefs.extend(entries.into_iter().filter(|s| !is_pattern(s)).map(str::to_string));
+}
+
 fn add_patterns<'a>(glob: &mut GlobBuilder, opt: &str, pats: impl IntoIterator<Item = &'a str>) {
     for pat in pats {
         if !glob.add(pat.as_bytes(), 0) {
@@ -773,11 +788,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-u" => args.forced_undefined.push(text(name, next_arg(&mut i)).to_string()),
             b"-exported_symbol" => {
                 let pat = text(name, next_arg(&mut i));
+                add_initial_undefines(&mut args.forced_undefined, [pat]);
                 add_patterns(exported_symbols.get_or_insert_default(), name, [pat]);
             }
             b"-no_exported_symbols" => args.no_exported_symbols = true,
             b"-exported_symbols_list" => {
                 let names = read_symbol_list(&path(next_arg(&mut i)));
+                add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 add_patterns(
                     exported_symbols.get_or_insert_default(),
                     name,
@@ -795,9 +812,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let names = read_symbol_list(&path(next_arg(&mut i)));
                 // Exact names force a reference even if no object
                 // mentions them. Patterns only match existing symbols.
+                add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 for sym in &names {
-                    if !sym.contains(['*', '?', '[']) {
-                        args.forced_undefined.push(sym.clone());
+                    if !is_pattern(sym) {
                         args.reexported_names.push(sym.clone());
                     }
                 }
