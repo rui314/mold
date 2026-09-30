@@ -30,6 +30,7 @@ use crate::chunks::output_section::OutputSection;
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
+use crate::error;
 use crate::input_sections::{InputSection, InputSectionId};
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
 use crate::target::{Family, Target};
@@ -454,6 +455,24 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
                         continue;
                     }
                     let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+
+                    // A thunk jumps to the start of a symbol, so it can't serve a
+                    // branch to an offset from a section symbol, which assemblers
+                    // emit for calls to static functions.
+                    if sym.ty() == STT_SECTION
+                        && isec.rel_addend(rel) != 0
+                        && requires_thunk(ctx, isec, rel, sym, false)
+                    {
+                        error!(
+                            "{}: relocation {} against {} needs a range extension thunk, \
+                             which can't jump to an offset from a section; recompile \
+                             with -ffunction-sections",
+                            isec.display(file),
+                            rel.type_name::<E>(),
+                            sym
+                        );
+                    }
+
                     if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
                         sym.mark();
                     }
