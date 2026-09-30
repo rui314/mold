@@ -273,11 +273,13 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mu
     // Write a terminator.
     E::write_u32(&mut buf[sh_size as usize - 4..], 0);
 
-    // Sort .eh_frame_hdr contents.
+    // Sort .eh_frame_hdr contents. FDEs for the same function are ordered by
+    // their addresses, because an unstable sort orders equal keys differently
+    // on 32-bit and 64-bit hosts.
     if let Some(table) = hdr_table {
         let (entries, remainder) = table.as_chunks_mut::<8>();
         debug_assert!(remainder.is_empty());
-        entries.par_sort_unstable_by_key(|entry| E::read_i32(entry));
+        entries.par_sort_unstable_by_key(|entry| (E::read_i32(entry), E::read_i32(&entry[4..])));
     }
 }
 

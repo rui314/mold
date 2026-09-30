@@ -2671,21 +2671,25 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
         struct Entry {
             bucket: u32,
             name: &'static [u8],
+            idx: u32,
             id: SymbolId,
             hash: u32,
         }
         let mut entries: Vec<_> = exported
             .par_iter()
-            .map(|&id| {
+            .enumerate()
+            .map(|(idx, &id)| {
                 let name: &'static [u8] = ctx.symbols[id].name();
                 let hash = gnu_hash::djb_hash(name);
-                Entry { bucket: hash % num_buckets, name, id, hash }
+                Entry { bucket: hash % num_buckets, name, idx: idx as u32, id, hash }
             })
             .collect();
         ctx.symbols.par_for_each_aux(exported, |i, _, aux| {
             aux.djb_hash.store(entries[i].hash, Ordering::Relaxed);
         });
-        entries.par_sort_unstable_by(|a, b| (a.bucket, a.name).cmp(&(b.bucket, b.name)));
+        // Versions of a symbol share a name. The index breaks the tie, because
+        // an unstable sort orders equal keys differently on 32-bit and 64-bit hosts.
+        entries.par_sort_unstable_by_key(|e| (e.bucket, e.name, e.idx));
         exported
             .par_iter_mut()
             .zip(&mut dynstr_entries[first_exported + 1..])
