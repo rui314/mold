@@ -81,6 +81,23 @@ EOF
 not $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/c.o 2> $t/log4
 grep -q "initializer pointer has no target in '/.*/$t/c.o'" $t/log4
 
+# So does each entry of __objc_clsrolist, the list of Swift's class_ro_t
+# records, which is an atom of its own. (ld-prime has the check, but an
+# assertion that the entry has a relocation trips first.)
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.section __DATA,__objc_const
+.p2align 3
+_ro: .space 72
+.section __DATA,__objc_clsrolist,regular,no_dead_strip
+.p2align 3
+.quad _ro
+.quad 0
+EOF
+  not $CC --ld-path=$mold -o $t/exe5 $t/main.o $t/e.o 2> $t/log5
+  grep -q "__objc_clsrolist pointer has no target in '/.*/$t/e.o'" $t/log5
+fi
+
 # An __objc_imageinfo record is 8 bytes; ld-prime ignores a shorter one
 # (silently if empty) and reads the first 8 bytes of a longer one.
 imageinfo() {

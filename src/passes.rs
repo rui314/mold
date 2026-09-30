@@ -413,7 +413,8 @@ fn collect_file<E: Target>(
 /// pointer whatever the section says, reads an __objc_imageinfo record
 /// only if it has its 8 bytes and no more than their worth, and ignores
 /// a label at the end of a section of fixed-size records. It fails the
-/// link on an initializer or terminator pointer with no relocation.
+/// link on an initializer, terminator or __objc_clsrolist pointer with
+/// no relocation.
 /// Staging runs in parallel, so the diagnostics come here, in input
 /// order.
 fn warn_about_sections(staged: &[input_files::StagedObject]) {
@@ -459,8 +460,8 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                 obj.sect_hdrs[nlist.n_sect as usize - 1].sectname()
             );
         }
-        if obj.init_without_target {
-            error!("initializer pointer has no target in '{}'", resolved_file_name(obj.mf));
+        if let Some(what) = obj.pointer_without_target {
+            error!("{what} has no target in '{}'", resolved_file_name(obj.mf));
         }
     }
 }

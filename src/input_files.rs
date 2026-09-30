@@ -652,10 +652,10 @@ pub struct StagedObject {
     /// An FDE describes a function in a section of data, which
     /// ld-prime refuses (see add_fdes).
     pub data_fde: bool,
-    /// An initializer or terminator pointer has no relocation to name
-    /// its function, which ld-prime refuses (unless it stopped at a bad
-    /// relocation first).
-    pub init_without_target: bool,
+    /// The first pointer that has no relocation to name its target
+    /// where ld-prime requires one, as its refusal words it (unless it
+    /// stopped at a bad relocation first): see pointer_without_target.
+    pub pointer_without_target: Option<&'static str>,
     /// The __compact_unwind pointer fields a 4-byte relocation set, as
     /// (subsection, function offset, 1 << field offset / 8) of their
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
@@ -986,7 +986,7 @@ pub fn stage_object<E: Target>(
         cies: Vec::new(),
         fdes: Vec::new(),
         data_fde: false,
-        init_without_target: false,
+        pointer_without_target: None,
         unwind_ptr32: Vec::new(),
         objc_image_info,
         has_debug_info,
@@ -1030,7 +1030,9 @@ pub fn stage_object<E: Target>(
     {
         obj.data_fde = obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
     }
-    obj.init_without_target = relocs_ok && obj.has_init_pointer_without_target();
+    if relocs_ok {
+        obj.pointer_without_target = obj.pointer_without_target();
+    }
     // A DWARF-mode record whose FDE never turned up describes nothing.
     obj.unwind.retain(|rec| {
         rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
@@ -2510,14 +2512,28 @@ impl StagedObject {
         }
     }
 
-    /// Whether an initializer or terminator pointer, an atom of its own,
-    /// has no relocation to name its function.
-    fn has_init_pointer_without_target(&self) -> bool {
-        self.isecs.iter().any(|isec| {
+    /// The first pointer, an atom of ld-prime's own, that has no
+    /// relocation to name its target though ld-prime requires one: an
+    /// initializer or terminator pointer, which names a function and is
+    /// an atom of mold's too, or an entry of __objc_clsrolist, which
+    /// lists the class_ro_t records of Swift's generic classes. mold
+    /// keeps that list whole: the compiler marks only the symbol at its
+    /// start no-dead-strip, and what it lists must stay for the method
+    /// lists to be rewritten (ld-prime reads it before dead stripping).
+    /// ld-prime's check of the list is preceded by an assertion that
+    /// trips on it instead.
+    fn pointer_without_target(&self) -> Option<&'static str> {
+        self.isecs.iter().find_map(|isec| {
             let hdr = &self.sect_hdrs[isec.shndx as usize];
-            matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
-                && isec.size != 0
-                && isec.nrels == 0
+            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
+            if matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS) {
+                (isec.size != 0 && rels.is_empty()).then_some("initializer pointer")
+            } else if hdr.segname() == "__DATA" && hdr.sectname() == "__objc_clsrolist" {
+                let bare = |off| !rels.iter().any(|r| r.offset as u64 == off);
+                (0..isec.size as u64).step_by(8).any(bare).then_some("__objc_clsrolist pointer")
+            } else {
+                None
+            }
         })
     }
 }

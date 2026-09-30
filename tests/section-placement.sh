@@ -43,9 +43,12 @@ cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
 .byte 1
 .section __LLVM,__swift_modhash
 .byte 2
+.section __DATA,__objc_const
+.p2align 3
+_ro: .space 72
 .section __DATA,__objc_clsrolist,regular,no_dead_strip
 .p2align 3
-.quad 0
+.quad _ro
 .section __DATA,__mine,regular,no_dead_strip
 .p2align 3
 _mine: .quad 3
