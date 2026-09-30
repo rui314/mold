@@ -456,9 +456,9 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 /// size: compilers emit __literal16 with p2align 3 for a 16-byte
 /// constant whose type is only 8-aligned, and rely on the linker to
 /// place it where a 16-byte load can reach it. An initializer,
-/// terminator or non-lazy symbol pointer, a CFString constant and a
-/// pointer-auth slot are aligned to a pointer, even from a section that
-/// claims less or more,
+/// terminator or non-lazy symbol pointer, a GOT slot of any type (see
+/// fold_input_got), a CFString constant and a pointer-auth slot are
+/// aligned to a pointer, even from a section that claims less or more,
 /// in a -r output as in an image; a thread-local variable descriptor
 /// (from a section clang aligns to a byte) to a pointer in an image,
 /// and in a -r output to at least one.
@@ -470,7 +470,9 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
         S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS => 3,
         S_THREAD_LOCAL_VARIABLES if relocatable => p2align.max(3),
         S_THREAD_LOCAL_VARIABLES => 3,
-        _ if hdr.segname() == "__DATA" && matches!(hdr.sectname(), "__cfstring" | "__auth_ptr") => {
+        _ if hdr.segname() == "__DATA"
+            && matches!(hdr.sectname(), "__cfstring" | "__auth_ptr" | "__got") =>
+        {
             3
         }
         _ => p2align,

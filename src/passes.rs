@@ -3039,30 +3039,40 @@ pub(crate) fn absorb_got_slots<E: Target>(
 /// makes each slot an entry of its own __got, named in the indirect
 /// symbol table; mold makes each the entry of the symbol it points at,
 /// which a load through the GOT may share. A slot that is no plain
-/// pointer to a symbol (with an addend, or a constant, on which
-/// ld-prime crashes) stays data, in a section of that name of its own.
+/// pointer to a symbol (one with an addend, or to a place in a
+/// section) keeps its bytes and relocation in a slot of its own after
+/// the symbols' (see GotSection::input_slots), as ld-prime's does; so
+/// does a constant, on which ld-prime crashes.
 pub fn fold_input_got<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable {
         return;
     }
     let is_got = |hdr: &MachSection| hdr.segname() == "__DATA" && hdr.sectname() == "__got";
     let mut slots = Vec::new();
+    let mut input_slots = Vec::new();
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
         if !obj.sect_hdrs.iter().any(is_got) {
             continue;
         }
         for &i in &obj.subsecs {
             let isec = &ctx.isecs[i];
-            if isec.is_alive()
-                && isec.replacement == crate::input_sections::NO_REPLACEMENT
-                && is_got(ctx.hdr_of(isec))
-                && let Some(idx) = pointer_target(ctx, i as usize)
+            if !isec.is_alive()
+                || isec.replacement != crate::input_sections::NO_REPLACEMENT
+                || !is_got(ctx.hdr_of(isec))
             {
-                slots.push((i, obj.symbols[idx as usize]));
+                continue;
+            }
+            match pointer_target(ctx, i as usize) {
+                Some(idx) => slots.push((i, obj.symbols[idx as usize])),
+                None => input_slots.push(i),
             }
         }
     }
     absorb_got_slots(ctx, slots);
+    for &i in &input_slots {
+        ctx.isecs[i as usize].set_placed();
+    }
+    ctx.got.input_slots = input_slots;
 }
 
 /// The symbol, by its index in the object, that subsection `i` is a
@@ -4830,8 +4840,8 @@ fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
 /// has the table's type - a __TEXT,__const or __DATA,__data an
 /// assembler nop landed in is plain data again, a regular __text
 /// code - and its own otherwise (a regular __cstring holds no literals
-/// to merge). __got keeps its own type, what is left of it once its
-/// slots moved to the GOT (see fold_input_got).
+/// to merge). (A final image has no input __got left: its slots are
+/// the GOT's, see fold_input_got.)
 fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
         Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
@@ -4937,13 +4947,18 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
 
     let got = &mut ctx.got;
     let weak = got.got_syms.len() - got.weak_start;
-    got.hdr.size = got.weak_start as u64 * 8;
+    let slots = got.weak_start + got.input_slots.len();
+    got.hdr.size = slots as u64 * 8;
     got.weak_hdr.size = weak as u64 * 8;
+    for (j, &i) in got.input_slots.iter().enumerate() {
+        ctx.isecs[i as usize].offset = ((got.weak_start + j) * 8) as u32;
+        ctx.isecs[i as usize].set_output_section(ChunkId::Got);
+    }
     let seg = data_seg(ctx);
     // A kext's are plain data to ld-prime (indexed into the indirect
     // symbol table all the same).
     let flags = if ctx.args.is_kext() { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
-    for (id, len) in [(ChunkId::Got, ctx.got.weak_start), (ChunkId::WeakGot, weak)] {
+    for (id, len) in [(ChunkId::Got, slots), (ChunkId::WeakGot, weak)] {
         if len > 0 {
             let hdr = ctx.chunk_header_mut(id);
             hdr.segname = seg;

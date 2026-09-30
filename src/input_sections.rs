@@ -201,9 +201,10 @@ const _: () = assert!(std::mem::size_of::<InputSection>() == 56);
 
 const IS_ALIVE: u8 = 1 << 0;
 const IS_VISITED: u8 = 1 << 1;
-/// Placed by the pass that synthesized it (its osec and output offset
-/// are set by hand), so create_output_sections must not assign it to
-/// an output section by name.
+/// Placed by the pass that synthesized it, or that moved it into a
+/// chunk of the linker's (its osec and output offset are set by hand),
+/// so create_output_sections must not assign it to an output section by
+/// name.
 const IS_PLACED: u8 = 1 << 2;
 /// The subsection starts at a multiple of its alignment regardless of
 /// its input offset: a fixed-size record (a literal, an initializer
@@ -247,6 +248,10 @@ impl InputSection {
     #[inline]
     pub fn is_placed(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_PLACED != 0
+    }
+    /// Marks a subsection a pass places by hand in a chunk of its own.
+    pub fn set_placed(&mut self) {
+        *self.flags.get_mut() |= IS_PLACED;
     }
     #[inline]
     /// The next output offset at or after `off` where this subsection

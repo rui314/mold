@@ -26,6 +26,10 @@ pub struct GotSection {
     /// fold_input_got) - with their symbols; they are placed at the
     /// symbols' slots once the section exists.
     pub stand_ins: Vec<(u32, SymbolId)>,
+    /// The slots of the inputs' __got that are no plain pointer to a
+    /// symbol (see fold_input_got), after the symbols' slots in __got:
+    /// each keeps its bytes and relocation, as data does.
+    pub input_slots: Vec<u32>,
 }
 
 impl GotSection {
@@ -36,7 +40,14 @@ impl GotSection {
         let mut weak_hdr = ChunkHeader::new("__DATA", "__weak_got");
         weak_hdr.flags = S_NON_LAZY_SYMBOL_POINTERS;
         weak_hdr.p2align = 3;
-        Self { hdr, got_syms: Vec::new(), weak_hdr, weak_start: 0, stand_ins: Vec::new() }
+        Self {
+            hdr,
+            got_syms: Vec::new(),
+            weak_hdr,
+            weak_start: 0,
+            stand_ins: Vec::new(),
+            input_slots: Vec::new(),
+        }
     }
 
     /// The section slot `i` lies in, and its offset there.
@@ -69,5 +80,16 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, weak: bool, buf: &mut [u8]) {
         if !ctx.binds_as_import(id) {
             buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
         }
+    }
+    if weak {
+        return;
+    }
+    for &id in &got.input_slots {
+        let isec = &ctx.isecs[id as usize];
+        let off = isec.offset as usize;
+        let slice = &mut buf[off..off + isec.size as usize];
+        slice.copy_from_slice(isec.data());
+        let rels = ctx.isec_relocs(id as usize);
+        E::apply_relocs(ctx, rels, id as usize, got.hdr.addr + off as u64, slice);
     }
 }
