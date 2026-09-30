@@ -909,6 +909,13 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
                 sym.set_is_extern(true);
                 sym.set_input_section(None);
                 sym.set_is_common(false);
+                // -weak_framework / -weak_library / -weak-l: every
+                // import from the library is a weak import (ld64 binds
+                // it weak-import and marks it N_WEAK_REF), whatever the
+                // references say.
+                if dylib.is_weak {
+                    sym.set_is_weak_ref(true);
+                }
                 break;
             }
         }
