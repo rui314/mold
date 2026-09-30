@@ -495,6 +495,8 @@ pub enum Autolinked {
     /// priorities than everything already loaded), so a light claim
     /// pass replaces a full re-resolution.
     DylibsOnly(usize),
+    /// Objects, or dylibs that take symbols from ones already claimed:
+    /// resolution runs again.
     Objects,
 }
 
@@ -567,13 +569,51 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
         dylib.is_autolinked |= was_implicit && !dylib.is_implicit;
     }
     load_pending(ctx, queue);
-    if ctx.objs.len() != before.0 {
+    // A new dylib that an earlier one merged as a private re-export takes
+    // its symbols from that one, which a light claim pass cannot move.
+    let (old, new) = ctx.dylibs.split_at(before.1);
+    let rebinds =
+        new.iter().any(|d| old.iter().any(|o| o.merged_reexports.contains(&d.install_name)));
+    if ctx.objs.len() != before.0 || rebinds {
         Autolinked::Objects
     } else if ctx.dylibs.len() != before.1 {
         Autolinked::DylibsOnly(before.1)
     } else {
         Autolinked::Nothing
     }
+}
+
+/// For each dylib, the dylibs of the link it merged as private
+/// re-exports (see `providing_dylib`).
+fn merged_providers(dylibs: &[input_files::DylibFile]) -> Vec<Vec<usize>> {
+    let by_name: hashbrown::HashMap<&[u8], usize> =
+        dylibs.iter().enumerate().map(|(i, d)| (d.install_name.as_slice(), i)).collect();
+    dylibs
+        .iter()
+        .map(|d| {
+            d.merged_reexports.iter().filter_map(|n| by_name.get(n.as_slice()).copied()).collect()
+        })
+        .collect()
+}
+
+/// The dylib a symbol found in `dylibs[idx]`'s exports binds to. A
+/// private re-export's exports count as the re-exporting dylib's
+/// (libswiftDarwin's include libswift_Builtin_float's), but when the
+/// library that defines the symbol is in the link itself - named or
+/// auto-linked - ld-prime binds to it, whichever of the two comes first.
+fn providing_dylib(
+    dylibs: &[input_files::DylibFile],
+    providers: &[Vec<usize>],
+    mut idx: usize,
+    name: &str,
+) -> usize {
+    for _ in 0..dylibs.len() {
+        match providers[idx].iter().find(|&&p| dylibs[p].exports.contains(name)) {
+            Some(&p) => idx = p,
+            None => break,
+        }
+    }
+    idx
 }
 
 /// Lets newly auto-linked dylibs claim still-unresolved symbols. They
@@ -586,6 +626,7 @@ pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
     let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
     let syms_ptr = &syms_ptr;
     let dylibs = &ctx.dylibs;
+    let providers = merged_providers(dylibs);
     (0..ctx.symbols.syms.len()).into_par_iter().for_each(|i| {
         // SAFETY: each index is written only by its own iteration.
         let sym = unsafe { &mut *syms_ptr.0.add(i) };
@@ -594,7 +635,8 @@ pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
         }
         for (dylib_idx, dylib) in dylibs.iter().enumerate().skip(first) {
             if dylib.exports.contains(sym.name()) {
-                sym.set_file(FileId::Dylib((dylib_idx) as u32));
+                let owner = providing_dylib(dylibs, &providers, dylib_idx, sym.name());
+                sym.set_file(FileId::Dylib(owner as u32));
                 sym.set_is_imported(true);
                 sym.set_is_extern(true);
                 sym.set_input_section(None);
@@ -926,6 +968,7 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
         return;
     }
     let dylibs = &ctx.dylibs;
+    let providers = merged_providers(dylibs);
     (0..n).into_par_iter().for_each(|i| {
         if !used[i].load(Ordering::Relaxed) {
             return;
@@ -939,7 +982,9 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
             let rank = (2u64 << 40) | dylib.priority as u64;
             if rank < best[i].load(Ordering::Relaxed) && dylib.exports.contains(sym.name()) {
                 best[i].store(rank, Ordering::Relaxed);
-                sym.set_file(FileId::Dylib((dylib_idx) as u32));
+                let owner = providing_dylib(dylibs, &providers, dylib_idx, sym.name());
+                let dylib = &dylibs[owner];
+                sym.set_file(FileId::Dylib(owner as u32));
                 sym.set_is_imported(true);
                 sym.set_is_extern(true);
                 sym.set_input_section(None);

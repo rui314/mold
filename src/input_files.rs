@@ -259,6 +259,9 @@ pub struct DylibFile {
     pub weak_exports: hashbrown::HashSet<&'static str>,
     /// The subset of exports that are thread-local variables.
     pub tlv_exports: hashbrown::HashSet<&'static str>,
+    /// The install names of the private libraries this dylib re-exports,
+    /// whose exports are merged into its own.
+    pub merged_reexports: Vec<Vec<u8>>,
 }
 
 /// Returns true for sections that don't become part of the output image.
@@ -1912,7 +1915,8 @@ fn is_public_location(install_name: &[u8]) -> bool {
 /// file of its own or a document inlined in a stub (`documents`: the
 /// re-exporting stub's). A public one is loaded from its file when one
 /// exists, as ld-prime does, and from its document otherwise; a private
-/// one inlined is merged from its document.
+/// one inlined is merged from its document. Returns the install names
+/// of the private libraries merged.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -1921,9 +1925,10 @@ fn load_reexports<E: Target>(
     exports: &mut hashbrown::HashSet<&'static str>,
     tlv_exports: &mut hashbrown::HashSet<&'static str>,
     weak_exports: &mut hashbrown::HashSet<&'static str>,
-) {
+) -> Vec<Vec<u8>> {
     let mut queue = reexports;
     let mut visited = std::collections::HashSet::new();
+    let mut merged = Vec::new();
     // The inlined documents a name may resolve to: the parent's, and
     // those of every stub merged along the way.
     let mut pool = documents;
@@ -1932,6 +1937,9 @@ fn load_reexports<E: Target>(
             continue;
         }
         let public = !ctx.args.no_implicit_dylibs && is_public_location(&name);
+        if !public {
+            merged.push(name.clone());
+        }
         // A library already in the link, matched by install name
         // (libXCTestSwiftSupport re-exports @rpath/XCTest.framework/...,
         // which its own rpaths cannot reach but -framework XCTest has
@@ -2039,6 +2047,7 @@ fn load_reexports<E: Target>(
             ),
         }
     }
+    merged
 }
 
 /// Check binary dependencies, including private reexports whose symbols
@@ -2189,7 +2198,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // relative to the referrer.
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> =
         reexports.into_iter().map(|name| (name, dir_of(&mf.name), rpaths.clone())).collect();
-    load_reexports(
+    let merged_reexports = load_reexports(
         ctx,
         reexports,
         &mf.name,
@@ -2223,6 +2232,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             exports,
             weak_exports,
             tlv_exports,
+            merged_reexports,
         },
     )
 }
@@ -2428,6 +2438,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             exports,
             weak_exports: hashbrown::HashSet::new(),
             tlv_exports,
+            merged_reexports: Vec::new(),
         },
     )
 }
@@ -2688,7 +2699,7 @@ fn register_tbd<E: Target>(
         .into_iter()
         .map(|name| (name.as_bytes().to_vec(), dir_of(path), Vec::new()))
         .collect();
-    load_reexports(
+    let merged_reexports = load_reexports(
         ctx,
         reexports,
         path,
@@ -2722,6 +2733,7 @@ fn register_tbd<E: Target>(
             exports,
             weak_exports,
             tlv_exports,
+            merged_reexports,
         },
     )
 }
@@ -2768,8 +2780,9 @@ fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
         }
     }
     if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == dylib.install_name) {
-        let exports = dylib.exports;
-        ctx.dylibs[idx].exports.extend(exports);
+        let existing = &mut ctx.dylibs[idx];
+        existing.exports.extend(dylib.exports);
+        existing.merged_reexports.extend(dylib.merged_reexports);
         return idx;
     }
     ctx.dylibs.push(dylib);
