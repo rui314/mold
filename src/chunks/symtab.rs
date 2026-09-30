@@ -672,19 +672,20 @@ const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n
 /// lists the other names in that order before the atom's own (a strong
 /// external's goes with the externals). The absolute symbols, which are
 /// in no section, follow by value, locals before private externals
-/// where values tie. -x keeps only private externals.
+/// where values tie. -x drops them all, the demoted private externals
+/// too, as ld64 lists no local symbol under it.
 fn plan_local_symbols<E: Target>(
     ctx: &Context<E>,
     pexts: &[usize],
     sorted_globals: &[SymbolId],
 ) -> Vec<LocalEnt> {
-    let mut ents: Vec<LocalEnt> = Vec::new();
-    if !ctx.args.strip_locals {
-        let per_obj: Vec<Vec<LocalEnt>> =
-            ctx.objs.par_iter().map(|obj| object_locals(ctx, obj)).collect();
-        ents = per_obj.concat();
-        ents.extend(linker_locals(ctx));
+    if ctx.args.strip_locals {
+        return Vec::new();
     }
+    let per_obj: Vec<Vec<LocalEnt>> =
+        ctx.objs.par_iter().map(|obj| object_locals(ctx, obj)).collect();
+    let mut ents = per_obj.concat();
+    ents.extend(linker_locals(ctx));
 
     // Private external symbols resolve globally but appear as locals
     // (with N_PEXT still set) in the output.
