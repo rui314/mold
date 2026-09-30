@@ -2738,8 +2738,13 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA_CONST", "__objc_selrefs") => 23,
         ("__DATA_CONST", "__got") => 25,
         ("__DATA_CONST", _) => 20,
+        // Without __DATA_CONST (-no_data_const),
+        // ld-prime's __DATA starts with the lazy pointers and the
+        // initializer and terminator lists, and the GOT follows the
+        // input sections.
         ("__DATA", "__la_symbol_ptr") => 0,
-        ("__DATA", "__got") => 1,
+        ("__DATA", "__mod_init_func" | "__mod_term_func") => 1,
+        ("__DATA", "__got") => 25,
         ("__DATA", "__objc_const") => 2,
         ("__DATA", "__objc_selrefs") => 3,
         ("__DATA", "__objc_classrefs") => 4,
