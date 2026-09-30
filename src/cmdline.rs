@@ -248,6 +248,10 @@ pub struct Args {
     /// -search_dylibs_first: search every path for a dylib before
     /// falling back to archives.
     pub search_dylibs_first: bool,
+    /// -dylib_file install_name:file: (install name, file) pairs, the
+    /// files to load a dylib re-exports under those install names from,
+    /// before looking anywhere else.
+    pub dylib_files: Vec<(Vec<u8>, PathBuf)>,
     /// -umbrella: declare this dylib a subframework of the named
     /// umbrella framework (LC_SUB_FRAMEWORK).
     pub umbrella: Option<Vec<u8>>,
@@ -437,6 +441,7 @@ impl Default for Args {
             headerpad: 32,
             headerpad_max_install_names: false,
             search_dylibs_first: false,
+            dylib_files: Vec::new(),
             umbrella: None,
             oso_prefix: None,
             export_dynamic: false,
@@ -1055,6 +1060,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-read_only_relocs" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
+        "-dylib_file" => "missing <path:path>",
         "-platform_version" => "missing arguments <platform> <min_version> <sdk_version>",
         "-sectcreate" => "missing arguments <segname> <sectname> <file>",
         "-add_empty_section" => "missing arguments <segname> <sectname>",
@@ -1569,6 +1575,20 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-search_paths_first" => args.search_dylibs_first = false,
             b"-search_dylibs_first" => args.search_dylibs_first = true,
             b"-umbrella" => args.umbrella = Some(bytes(next_arg(&mut i, name))),
+            // ld-prime deprecates the option, once, as it reads it.
+            b"-dylib_file" => {
+                let arg = next_arg(&mut i, name).as_bytes();
+                let Some(colon) = memchr::memchr(b':', arg) else {
+                    fatal!("-dylib_file malformed <path:path>");
+                };
+                if args.dylib_files.is_empty() {
+                    warnings.warn(
+                        "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found",
+                    );
+                }
+                let file = PathBuf::from(os_str(&arg[colon + 1..]));
+                args.dylib_files.push((arg[..colon].to_vec(), file));
+            }
             // ld-prime takes this one without its argument.
             b"-oso_prefix" => {
                 if let Some(arg) = cmdline.get(i + 1) {

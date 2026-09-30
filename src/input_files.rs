@@ -3686,7 +3686,7 @@ fn dir_of(path: &Path) -> PathBuf {
 /// names the dependency, and @rpath tries that dylib's own LC_RPATH
 /// entries. ld-prime expands no @executable_path (ld64 took the output
 /// executable's directory, or -executable_path's), so such a name
-/// resolves only by its leaf.
+/// resolves only by its leaf. A -dylib_file for the name comes first.
 fn resolve_dylib_ref<E: Target>(
     ctx: &Context<E>,
     name: &[u8],
@@ -3694,6 +3694,13 @@ fn resolve_dylib_ref<E: Target>(
     loader_rpaths: &[PathBuf],
 ) -> Option<&'static MappedFile> {
     use crate::util::{os_str, path_bytes};
+    let dylib_file = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
+    if let Some(mf) = dylib_file.filter_map(|(_, file)| MappedFile::open(file)).next() {
+        if crate::filetype::get_file_type(mf) == crate::filetype::FileType::Fat {
+            return Some(get_fat_slice::<E>(mf));
+        }
+        return Some(mf);
+    }
     // A name relative to the re-exporter or its rpaths resolves as
     // such first, and failing that like an absolute one.
     if let Some(rest) = name.strip_prefix(b"@loader_path/") {
