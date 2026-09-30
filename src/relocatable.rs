@@ -977,23 +977,20 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
     let mut ents: Vec<(NList, Option<crate::symbol::SymbolId>)> = Vec::new();
     let mut names: Vec<&[u8]> = Vec::new();
 
-    // Local symbols, in ld64's form. ld64 -r emits them in atom order
-    // (by address), and names some atoms itself with one shared
-    // counter: every string in a cstring-literal section becomes LC<n>
-    // (N_PEXT set, so a later link can still coalesce it), and the
-    // anonymous records of __cfstring, __objc_selrefs and
-    // __objc_classrefs (N_PEXT) and of the __objc_*list sections (no
-    // N_PEXT) become l<nnn>. Their original labels vanish, and
-    // relocations against them - by label, or section-relative as
-    // x86-64 objects refer to literals - are re-targeted at the new
-    // symbols. Otherwise assembler-local labels (L...) and
-    // linker-private ones (l...) survive only when they name an atom
-    // of their own: one no other symbol names, or that a relocation
-    // refers to (the arm64 assembler names every section-relative
-    // target ltmpN). Dropping the rest is the bulk of what made our
-    // -r symbol tables larger than ld-prime's (7739 vs 6540 symbols
-    // for NetNewsWire's RSCore.o). Private externals are demoted to
-    // non-external symbols that keep N_PEXT (below).
+    // Local symbols, in ld64's form. ld64 -r names some atoms itself
+    // with one shared counter: every string in a cstring-literal
+    // section becomes LC<n> (N_PEXT set, so a later link can still
+    // coalesce it), and the records of __cfstring, __objc_selrefs and
+    // __objc_classrefs (N_PEXT) become l<nnn>; the entries of the
+    // __objc_*list sections get no symbol.
+    // Their original labels vanish, and relocations against them - by
+    // label, or section-relative as x86-64 objects refer to literals -
+    // are re-targeted at the new symbols. Other labels survive, those
+    // of the linker-private kind (l...) too, except the ltmpN labels
+    // the arm64 assembler puts at each section's start: in an object
+    // with subsections one survives only where no other symbol names
+    // the place, or where a relocation refers to it. Private externals
+    // are demoted to non-external symbols that keep N_PEXT (below).
     #[derive(Clone, Copy, PartialEq)]
     enum Rename {
         None,
@@ -1097,10 +1094,9 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             }
         }
     }
-    // How many symbols other than assembler temporaries (ltmpN) an
-    // object defines at each place, so a label there is recognized as
-    // an alias of a real name.
-    let mut named_at: HashMap<(usize, u8, u64), u32> = HashMap::new();
+    // The places an object names with a symbol other than an assembler
+    // temporary (ltmpN), where an ltmpN label is a mere alias.
+    let mut named_at: HashSet<(usize, u8, u64)> = HashSet::new();
     for (obj_idx, obj) in ctx.objs.iter().enumerate() {
         if !obj.is_alive {
             continue;
@@ -1110,7 +1106,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
                 continue;
             }
             if !ctx.symbols[sym_id].name().starts_with("ltmp") {
-                *named_at.entry((obj_idx, nlist.n_sect, nlist.n_value)).or_default() += 1;
+                named_at.insert((obj_idx, nlist.n_sect, nlist.n_value));
             }
         }
     }
@@ -1142,18 +1138,12 @@ fn build_symtab<E: Target>(ctx: &Context<E>, section_chunks: &[OutputSectionId])
             if unnamed_list(isec) && !referenced.contains(&sym_id) {
                 continue;
             }
-            let is_label = sym.name().starts_with('l') || sym.name().starts_with('L');
-            if is_label && !whole && !referenced.contains(&sym_id) {
-                let others =
-                    named_at.get(&(obj_idx, nlist.n_sect, nlist.n_value)).copied().unwrap_or(0)
-                        - u32::from(!sym.name().starts_with("ltmp"));
-                if others > 0 {
-                    continue;
-                }
-                // A label on an empty section names nothing.
-                if obj.sect_hdrs.get(nlist.n_sect as usize - 1).is_some_and(|h| h.size == 0) {
-                    continue;
-                }
+            if sym.name().starts_with("ltmp")
+                && !whole
+                && !referenced.contains(&sym_id)
+                && named_at.contains(&(obj_idx, nlist.n_sect, nlist.n_value))
+            {
+                continue;
             }
             locals.push(Local {
                 name: sym.name().to_string(),
