@@ -369,6 +369,14 @@ impl MachRel {
     }
 }
 
+/// Whether ld-prime defaults to chained fixups for a macOS deployment
+/// target: from macOS 12 on arm64 and 13 on x86-64. Its diagnostics
+/// call these the "new OS versions".
+pub fn is_new_os(arch: &str, platform: u32, minos: u32) -> bool {
+    let min = if arch == "arm64" { 12 } else { 13 };
+    platform == PLATFORM_MACOS && minos >= encode_version(min, 0, 0)
+}
+
 /// Encodes an X.Y.Z version number for a load command.
 pub fn encode_version(major: u32, minor: u32, patch: u32) -> u32 {
     (major << 16) | (minor << 8) | patch

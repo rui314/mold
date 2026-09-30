@@ -4,10 +4,9 @@ use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 
-use crate::cmdline::{self, InputArg};
+use crate::cmdline;
 use crate::context::Context;
 use crate::dead_strip;
-use crate::mapped_file::MappedFile;
 use crate::output_file;
 use crate::passes;
 use crate::target::Target;
@@ -36,31 +35,16 @@ pub fn main(
     }
 }
 
-/// The target of the first Mach-O input file named on the command line,
-/// for a link without -arch; the host's if there is none.
-fn detect_target(args: &cmdline::Args) -> &'static str {
-    for input in &args.inputs {
-        if let InputArg::File(path) = input
-            && let Some(mf) = MappedFile::open(path)
-            && let Some(name) = crate::filetype::get_macho_target(mf.data())
-        {
-            return name;
-        }
-    }
-    if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" }
+fn target_traits<E: Target>() -> cmdline::TargetTraits {
+    cmdline::TargetTraits { name: E::NAME }
 }
 
 /// Links for the target `E`, or reports the target the inputs are
 /// actually for.
 pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
-    let mut args = cmdline::parse_args(&cmdline);
+    let args = cmdline::parse_args(&target_traits::<E>(), &cmdline);
 
-    // If no -arch option is given, deduce it from input files.
-    if args.arch.is_none() {
-        args.arch = Some(detect_target(&args));
-    }
-
-    // Redo if -arch does not match with our speculation.
+    // Redo if the target does not match with our speculation.
     if args.arch != Some(E::NAME) {
         return Err(args.arch.unwrap());
     }

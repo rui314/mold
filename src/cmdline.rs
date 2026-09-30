@@ -274,7 +274,8 @@ pub struct Args {
     pub rename_segments: Vec<(String, String)>,
     /// -static: no dyld rebase/bind or chained fixups (the XNU kernel).
     pub static_link: bool,
-    /// -pie / -no_pie: emit a position-independent executable (MH_PIE).
+    /// Whether an executable is position independent (MH_PIE):
+    /// -pie / -no_pie, resolved for the target at the end of parsing.
     pub pie: bool,
 }
 
@@ -577,6 +578,12 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
         .collect()
 }
 
+/// What option parsing needs to know about the target: the driver
+/// parses once per speculated target, as mold does.
+pub struct TargetTraits {
+    pub name: &'static str,
+}
+
 /// Parses all options. `cmdline` includes the program name.
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
@@ -584,8 +591,9 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
 /// file system and the load commands unchanged. Arguments that are text
 /// by nature (symbol and section names, versions, the -undefined
 /// treatment) must be UTF-8.
-pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
+pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args = Args::default();
+    let mut pie: Option<bool> = None;
     let mut i = 1;
     let mut version_shown = false;
 
@@ -679,8 +687,8 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-dynamic" => args.dynamic = true,
             b"-static" => args.static_link = true,
             b"-version_load_command" => {}
-            b"-pie" => args.pie = true,
-            b"-no_pie" => args.pie = false,
+            b"-pie" => pie = Some(true),
+            b"-no_pie" => pie = Some(false),
             b"-no_dead_strip_inits_and_terms" => {}
             b"-headerpad" => args.headerpad = parse_hex(name, text(name, next_arg(&mut i))),
             b"-pagezero_size" => {
@@ -1007,5 +1015,53 @@ pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> Args {
     {
         fatal!("-no_exported_symbols cannot be used with -exported_symbol* or -unexported_symbol*");
     }
+
+    // Without -arch, the first Mach-O input names the target. A parse
+    // for another target than this one is redone by the driver, so
+    // what depends on the target is left to that parse.
+    if args.arch.is_none() {
+        args.arch = Some(detect_target(&args.inputs));
+    }
+    if args.arch != Some(target.name) {
+        return args;
+    }
+
+    args.pie = resolve_pie(target, &args, pie);
+
     args
+}
+
+/// Whether an executable is position independent (MH_PIE). It is
+/// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
+/// PIE executables only) and which ld-prime deprecates from the OS
+/// versions that default to chained fixups. A -static image (a kernel)
+/// is PIE only with -pie.
+fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
+    match pie {
+        Some(false) if args.output_type == MH_EXECUTE && !args.static_link => {
+            if is_new_os(target.name, args.platform, args.platform_minos) {
+                crate::warn!("-no_pie is deprecated when targeting new OS versions");
+            }
+            if target.name == "arm64" {
+                crate::warn!("-no_pie ignored for arm64*");
+            }
+            target.name == "arm64"
+        }
+        Some(pie) => pie,
+        None => !args.static_link,
+    }
+}
+
+/// The target of the first Mach-O input file named on the command line;
+/// the host's if there is none.
+fn detect_target(inputs: &[InputArg]) -> &'static str {
+    for input in inputs {
+        if let InputArg::File(path) = input
+            && let Some(mf) = MappedFile::open(path)
+            && let Some(name) = crate::filetype::get_macho_target(mf.data())
+        {
+            return name;
+        }
+    }
+    if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" }
 }
