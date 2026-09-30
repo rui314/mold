@@ -1866,10 +1866,11 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
 }
 
 /// Merges identical literal elements across all live inputs: the first
-/// live copy wins and the rest redirect to it. A labeled record stays
-/// apart, and so do copies in sections of different names, as in
-/// ld-prime: a class named "Foo" keeps its name in __objc_classname
-/// though __cstring has a "Foo" too.
+/// live copy wins and the rest redirect to it. Only the elements
+/// ld-prime merges take part (see is_mergeable_literal); a labeled
+/// record stays apart, and so do copies in sections of different
+/// names, as in ld-prime: a class named "Foo" keeps its name in
+/// __objc_classname though __cstring has a "Foo" too.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     mark_labeled_literals(ctx);
     // Deduplication follows the symbol table's sharded shape: every
@@ -1889,11 +1890,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
                 return None;
             }
             let hdr = ctx.hdr_of(isec);
-            if !matches!(
-                hdr.section_type(),
-                S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-            ) || is_unterminated_string(hdr, isec)
-            {
+            if !is_mergeable_literal(hdr, isec) {
                 return None;
             }
             Some((xxhash_rust::xxh3::xxh3_64(isec.data()), hdr, i as u32))
@@ -1945,6 +1942,27 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     }
 
     redirect_symbols_to_replacements(ctx);
+}
+
+/// Whether ld-prime merges a literal element with identical ones: a C
+/// string of a section of any name, but a fixed-size record only of the
+/// standard pool of its size, __TEXT,__literal4, __literal8 or
+/// __literal16 of that type - its records in a section of another name
+/// or type stay, however many copies there are. Nor does an element
+/// that carries a relocation merge, as identical bytes may point at
+/// different targets (ld-prime merges a __literal8 record by its bytes,
+/// making every copy point where the first does).
+fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
+    if isec.nrels != 0 {
+        return false;
+    }
+    match hdr.section_type() {
+        S_CSTRING_LITERALS => !is_unterminated_string(hdr, isec),
+        S_4BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal4"),
+        S_8BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal8"),
+        S_16BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal16"),
+        _ => false,
+    }
 }
 
 /// Whether a C-string literal is the unterminated string that ended its
