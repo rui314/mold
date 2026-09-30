@@ -4365,9 +4365,8 @@ fn plan_local_symbols<E: Target>(
     ctx: &Context<E>,
     pexts: &[usize],
     sorted_globals: &[crate::symbol::SymbolId],
-) -> Vec<(&'static [u8], NList, Option<crate::symbol::SymbolId>)> {
-    // (address, rank, name, entry, symbol whose address fills n_value)
-    type Ent = (u64, u8, &'static [u8], NList, Option<crate::symbol::SymbolId>);
+) -> Vec<LocalEnt> {
+    type Ent = LocalEnt;
     const PEXT: u8 = 0;
     const LOCAL: u8 = 1;
     const WEAK: u8 = 2;
@@ -4499,7 +4498,36 @@ fn plan_local_symbols<E: Target>(
             }
         }
     }
-    ents.into_iter().map(|(_, _, name, ent, sym)| (name, ent, sym)).collect()
+    ents
+}
+
+/// A local symbol table entry as plan_local_symbols sorts it: address,
+/// rank, name, entry, and the symbol whose address fills n_value.
+type LocalEnt = (u64, u8, &'static [u8], NList, Option<crate::symbol::SymbolId>);
+
+/// Appends an entry and its name for each item, made by `f` on all cores
+/// straight into the arrays' spare capacity, which the caller reserved.
+fn par_push_entries<T: Sync>(
+    names: &mut Vec<&'static [u8]>,
+    entries: &mut Vec<(NList, Option<crate::symbol::SymbolId>)>,
+    items: &[T],
+    f: impl Fn(&T) -> (&'static [u8], NList, Option<crate::symbol::SymbolId>) + Sync,
+) {
+    let n = items.len();
+    names.spare_capacity_mut()[..n]
+        .par_iter_mut()
+        .zip(&mut entries.spare_capacity_mut()[..n])
+        .zip(items)
+        .for_each(|((name, ent), item)| {
+            let (n, e, sym) = f(item);
+            name.write(n);
+            ent.write((e, sym));
+        });
+    // SAFETY: the n slots past each array's end were written above.
+    unsafe {
+        names.set_len(names.len() + n);
+        entries.set_len(entries.len() + n);
+    }
 }
 
 /// Builds the output symbol table contents: local symbols in input order,
@@ -4661,8 +4689,9 @@ pub fn create_output_symtab<E: Target>(
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     data.entries.reserve_exact(total);
 
-    names.par_extend(locals.par_iter().map(|l| l.0));
-    data.entries.par_extend(locals.par_iter().map(|l| (l.1, l.2)));
+    par_push_entries(&mut names, &mut data.entries, &locals, |&(_, _, name, ent, sym)| {
+        (name, ent, sym)
+    });
     let nplain = data.entries.len();
     drop(locals);
 
@@ -4683,8 +4712,7 @@ pub fn create_output_symtab<E: Target>(
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
-    names.par_extend(sorted_globals.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
-    data.entries.par_extend(sorted_globals.par_iter().map(|&i| {
+    par_push_entries(&mut names, &mut data.entries, sorted_globals, |&i| {
         let sym = &ctx.symbols[i];
         let (n_type, n_sect, mut n_desc) = match (sym.file(), sym.input_section()) {
             (_, Some(isec)) => {
@@ -4705,13 +4733,13 @@ pub fn create_output_symtab<E: Target>(
         if sym.is_weak_def() {
             n_desc |= N_WEAK_DEF;
         }
-        (NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 }, Some(i))
-    }));
+        let ent = NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 };
+        (sym.name().as_bytes(), ent, Some(i))
+    });
     data.nextdef = sorted_globals.len() as u32;
 
     // The imports. The library ordinal lives in the high byte of n_desc.
-    names.par_extend(undefs.par_iter().map(|&i| ctx.symbols[i].name().as_bytes()));
-    data.entries.par_extend(undefs.par_iter().map(|&i| {
+    par_push_entries(&mut names, &mut data.entries, &undefs, |&i| {
         let sym = &ctx.symbols[i];
         let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
         // A flat-namespace import records the DYNAMIC_LOOKUP ordinal, a
@@ -4721,8 +4749,9 @@ pub fn create_output_symtab<E: Target>(
         if sym.is_weak_ref() {
             n_desc |= N_WEAK_REF;
         }
-        (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 }, None)
-    }));
+        let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 };
+        (sym.name().as_bytes(), ent, None)
+    });
     data.nundef = undefs.len() as u32;
     debug_assert_eq!(data.entries.len(), total);
     drop(t);
