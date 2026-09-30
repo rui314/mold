@@ -1570,6 +1570,44 @@ pub fn hide_all_exports<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
+/// -exported_symbol(s_list) and -unexported_symbol(s_list) narrow the
+/// exports by scope, as -no_exported_symbols does: ld64 turns every
+/// definition they leave out into a private extern, in executables,
+/// dylibs, bundles and -r outputs alike. Such a symbol is then a local
+/// in the symbol table, not a dead-strip root of a dylib, not bound by
+/// weak lookup and not counted toward MH_WEAK_DEFINES. The exports
+/// -reexported_symbols_list adds are created afterwards, so the lists
+/// never hide them. Ported from sold's handle_exported_symbols_list
+/// and handle_unexported_symbols_list.
+pub fn handle_exported_symbols_list<E: Target>(ctx: &mut Context<E>) {
+    let Some(exported) = &ctx.args.exported_symbols else {
+        return;
+    };
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        if matches!(sym.file(), Some(FileId::Obj(_)))
+            && sym.is_extern()
+            && exported.find(sym.name().as_bytes()) == -1
+        {
+            sym.set_is_private_extern(true);
+        }
+    });
+}
+
+pub fn handle_unexported_symbols_list<E: Target>(ctx: &mut Context<E>) {
+    let unexported = &ctx.args.unexported_symbols;
+    if unexported.is_empty() {
+        return;
+    }
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        if matches!(sym.file(), Some(FileId::Obj(_)))
+            && sym.is_extern()
+            && unexported.find(sym.name().as_bytes()) != -1
+        {
+            sym.set_is_private_extern(true);
+        }
+    });
+}
+
 /// Discards the losing copies of coalesced weak definitions. Symbol
 /// resolution picks one definition per weak symbol, but the losing
 /// objects' subsections still hold the duplicate bodies - a C++-heavy
@@ -4751,10 +4789,16 @@ pub fn create_output_symtab<E: Target>(
             }
             if sym.is_extern()
                 && sym.is_private_extern()
-                && matches!(sym.file(), Some(FileId::Obj(_)))
-                && sym
-                    .input_section()
-                    .is_some_and(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+                && let Some(FileId::Obj(obj)) = sym.file()
+                && match sym.input_section() {
+                    Some(isec) => ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive(),
+                    // __mh_execute_header, hidden by an export
+                    // list, stays a local as in ld-prime's output.
+                    None => {
+                        ctx.is_internal(obj as usize)
+                            && !ctx.indirect_aliases.iter().any(|&(a, _)| a == i as u32)
+                    }
+                }
             {
                 // A private external becomes a local, and a label
                 // is not emitted (ld-prime keeps clang's
@@ -4776,12 +4820,15 @@ pub fn create_output_symtab<E: Target>(
             continue;
         }
         let sym = &ctx.symbols[i];
-        let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
         names.push(sym.name().as_bytes());
         let ent = NList {
             n_strx: 0,
             n_type: N_SECT | N_PEXT,
-            n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
+            // A symbol with no section sits in the first one, the
+            // mach header, like a global __mh_execute_header.
+            n_sect: sym
+                .input_section()
+                .map_or(1, |isec| ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)])),
             n_desc: 0,
             n_value: 0,
         };

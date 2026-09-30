@@ -122,6 +122,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::error::checkpoint();
     if ctx.args.relocatable {
         passes::hide_all_exports(&mut ctx);
+        passes::handle_exported_symbols_list(&mut ctx);
+        passes::handle_unexported_symbols_list(&mut ctx);
         passes::merge_literals(&mut ctx);
         passes::coalesce_objc_refs(&mut ctx);
         // ld64 -r keeps one copy of each weak definition (the marker
@@ -156,6 +158,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("create_objc_msgsend_stubs", passes::create_objc_msgsend_stubs(&mut ctx));
     timed!("auto_hide_weak_defs", passes::auto_hide_weak_defs(&mut ctx));
     timed!("hide_all_exports", passes::hide_all_exports(&mut ctx));
+    timed!("handle_exported_symbols_list", passes::handle_exported_symbols_list(&mut ctx));
+    timed!("handle_unexported_symbols_list", passes::handle_unexported_symbols_list(&mut ctx));
     timed!("create_symbol_reexports", passes::create_symbol_reexports(&mut ctx));
     timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
     passes::print_dependencies(&ctx);

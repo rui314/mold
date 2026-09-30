@@ -142,27 +142,16 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
     let base = ctx.args.pagezero_size;
 
     // The caller hands over the defined globals already sorted by
-    // name - the same list the symbol table emits - so the trie only
-    // filters the explicit export/unexport lists (order-preserving)
-    // and never sorts.
+    // name - the same list the symbol table emits, with what the
+    // export lists leave out already made private extern - so the
+    // trie never sorts.
     let exports: Vec<(&'static str, Export)> = sorted_globals
         .par_iter()
         .filter_map(|&id| {
             let sym = &ctx.symbols[id];
             let target = ctx.indirect_aliases.iter().find_map(|&(a, t)| (a == id).then_some(t));
-            let same_name = target.is_some_and(|t| ctx.symbols[t].name() == sym.name());
-            // Explicit reexports survive restrictions on local exports.
-            if !same_name {
-                if let Some(exported) = &ctx.args.exported_symbols
-                    && exported.find(sym.name().as_bytes()) == -1
-                {
-                    return None;
-                }
-                if ctx.args.unexported_symbols.find(sym.name().as_bytes()) != -1 {
-                    return None;
-                }
-            }
             if let Some(target) = target {
+                let same_name = ctx.symbols[target].name() == sym.name();
                 let Some(FileId::Dylib(dylib)) = ctx.symbols[target].file() else {
                     return None;
                 };
