@@ -586,7 +586,10 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         cmd: LC_ID_DYLIB,
         cmdsize: 0,
         nameoff: size_of::<DylibCommand>() as u32,
-        timestamp: 0,
+        // The build time once, which prebinding compared with the
+        // one a client recorded; nothing reads it now, and ld-prime
+        // writes 1 here and 2 in the clients' load commands.
+        timestamp: 1,
         current_version: ctx.args.current_version,
         compatibility_version: ctx.args.compatibility_version,
     };

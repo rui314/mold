@@ -11,6 +11,15 @@ otool -l $t/libfoo.dylib | grep -A5 LC_ID_DYLIB > $t/log
 grep -q 'current version 2.3.4' $t/log
 grep -q 'compatibility version 2.0.0' $t/log
 
+# The time stamps, once build times that prebinding compared, are
+# constants: 1 in the dylib's own command, 2 in its clients'.
+grep -q 'time stamp 1 ' $t/log
+echo 'int foo(); int main() { return foo(); }' | $CC -o $t/main.o -c -xc -
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/libfoo.dylib
+otool -l $t/exe | grep -A5 'cmd LC_LOAD_DYLIB' > $t/log
+grep -q 'libfoo.dylib' $t/log
+not grep -q 'time stamp [^2]' $t/log
+
 # Without either option both versions are 0.0.0, as ld64 writes them.
 $CC --ld-path=$mold -shared -o $t/libnov.dylib $t/a.o
 otool -l $t/libnov.dylib | grep -A5 LC_ID_DYLIB > $t/log
