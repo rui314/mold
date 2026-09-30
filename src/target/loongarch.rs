@@ -33,7 +33,7 @@ use crate::input_sections::{
     InputSection, RelocDelta, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc,
 };
 use crate::shrink_sections::compute_distance;
-use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, NEEDS_TLSGD, Symbol};
 use crate::target::{Class, ElfClass, Family, Target};
 use crate::util::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
 use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
@@ -402,6 +402,15 @@ where
                 | R_LARCH_TLS_LE_HI20_R
                 | R_LARCH_TLS_LE_LO12_R => check_tlsle(ctx, isec, sym, rel),
                 R_LARCH_TLS_DESC_CALL => scan_tlsdesc(ctx, sym),
+                // The extreme code model's TLSDESC sequence uses these relocations.
+                // Like GNU ld and lld, we don't relax the sequence, since its IE form
+                // could reach the GOT only within ±2 GiB. A static executable can't
+                // use TLSDESC, so the sequence is always relaxed to LE there.
+                R_LARCH_TLS_DESC64_PC_LO20 | R_LARCH_TLS_DESC64_PC_HI12 => {
+                    if !ctx.args.is_static {
+                        sym.add_flags(NEEDS_TLSDESC);
+                    }
+                }
                 R_LARCH_B16
                 | R_LARCH_B21
                 | R_LARCH_ABS_HI20
@@ -722,8 +731,14 @@ where
                 }
                 R_LARCH_TLS_DESC_PC_LO12 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
+                        // In the extreme code model, this instruction is followed by
+                        // lu32i.d and lu52i.d to make a 64-bit offset, so it can't be
+                        // rewritten with pcaddi.
+                        let is_extreme = rels
+                            .get(rel_idx + 1)
+                            .is_some_and(|r| r.r_type() == R_LARCH_TLS_DESC64_PC_LO20);
                         let dist = sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p) as i64;
-                        if is_int(dist, 22) {
+                        if is_int(dist, 22) && !is_extreme {
                             write_pcaddi(loc, (dist >> 2) as u64);
                             if ctx.args.emit_relocs {
                                 rels[rel_idx].set_r_type(R_LARCH_TLS_DESC_PCREL20_S2);
@@ -733,6 +748,18 @@ where
                         }
                     }
                     if !sym.has_tlsdesc(&ctx.symbols) && ctx.args.emit_relocs {
+                        rels[rel_idx].set_r_type(R_NONE);
+                    }
+                }
+                R_LARCH_TLS_DESC64_PC_LO20 | R_LARCH_TLS_DESC64_PC_HI12 => {
+                    if sym.has_tlsdesc(&ctx.symbols) {
+                        let val = sym.tlsdesc_addr(ctx).wrapping_add(a);
+                        if rel.r_type() == R_LARCH_TLS_DESC64_PC_LO20 {
+                            write_j20(loc, higher20(val, p));
+                        } else {
+                            write_k12(loc, highest12(val, p));
+                        }
+                    } else if ctx.args.emit_relocs {
                         rels[rel_idx].set_r_type(R_NONE);
                     }
                 }
