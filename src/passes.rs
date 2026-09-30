@@ -3788,26 +3788,31 @@ fn output_section_for(
     }
 }
 
-/// The flags an output section carries. ld64 keeps the section type
-/// (a coalesced input section becomes regular; a literal pool folded
-/// into __TEXT,__const is regular) and the instruction attributes,
-/// drops every other input attribute (no_dead_strip, live_support,
-/// strip_static_syms, no_toc: they direct the linker, not dyld), and
-/// marks just the ObjC list sections the runtime scans as
-/// no-dead-strip. A -r output gets the same treatment (ld-prime's
-/// prelinks show the coalesced Swift and protocol sections as plain
-/// regular). __eh_frame carries the compiler's fixed flags in both.
+/// The flags an output section carries. In a final image ld64 keeps
+/// the section type (a coalesced input section becomes regular; a
+/// literal pool folded into __TEXT,__const is regular) and the
+/// instruction attributes, drops every other input attribute
+/// (no_dead_strip, live_support, strip_static_syms, no_toc: they
+/// direct the linker, not dyld), and marks just the ObjC list sections
+/// the runtime scans as no-dead-strip. A -r output is input to another
+/// link, so ld-prime copies the first input section's type and
+/// attributes verbatim - but for __objc_imageinfo and
+/// __objc_protolist, which lose no_dead_strip. __eh_frame carries the
+/// compiler's fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
+    if relocatable {
+        if segname == "__DATA" && matches!(sectname, "__objc_imageinfo" | "__objc_protolist") {
+            return input & !S_ATTR_NO_DEAD_STRIP;
+        }
+        return input;
+    }
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
-    // of a final image; a -r output normalizes them like the rest.
-    if !relocatable
-        && segname == "__DATA"
-        && matches!(sectname, "__objc_protorefs" | "__objc_superrefs")
-    {
+    // of a final image.
+    if segname == "__DATA" && matches!(sectname, "__objc_protorefs" | "__objc_superrefs") {
         return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
     }
     let mut ty = input & SECTION_TYPE;
@@ -3858,6 +3863,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // millions of hash lookups into a handful of thousands.
     let mut last_hdr: *const crate::macho::MachSection = std::ptr::null();
     let mut last_osec: Option<OutputSectionId> = None;
+    // A -r output section's flags come from its first non-empty input
+    // section (ld-prime skips empty ones); whether that one was seen.
+    let mut flags_from_data: Vec<bool> = Vec::new();
     for i in 0..ctx.isecs.len() {
         if !ctx.isecs[i].is_alive()
             || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
@@ -3918,9 +3926,24 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         if osec.hdr.flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES {
             osec.hdr.p2align = osec.hdr.p2align.max(3);
         }
-        osec.hdr.flags |=
-            output_section_flags(osec.hdr.segname, &osec.hdr.sectname, hdr.flags, relocatable)
-                & !SECTION_TYPE;
+        // A final image merges the members' attributes; a -r output
+        // takes those of the first non-empty member alone, as ld-prime
+        // does.
+        if !relocatable {
+            osec.hdr.flags |=
+                output_section_flags(osec.hdr.segname, &osec.hdr.sectname, hdr.flags, false)
+                    & !SECTION_TYPE;
+        } else if hdr.size != 0 {
+            let idx = osec_id.index();
+            if flags_from_data.len() <= idx {
+                flags_from_data.resize(idx + 1, false);
+            }
+            if !flags_from_data[idx] {
+                osec.hdr.flags =
+                    output_section_flags(osec.hdr.segname, &osec.hdr.sectname, hdr.flags, true);
+                flags_from_data[idx] = true;
+            }
+        }
         osec.members.push(i as u32);
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
     }
