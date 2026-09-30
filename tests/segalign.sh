@@ -70,3 +70,24 @@ grep -q '^    __TEXT  *addr=0x000000000, size=0x000000000, fileOffset=0x00000000
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0x80000000
+
+# The linker's own sections are reduced as well, in output order. A
+# pointer 8-aligned in its segment is fine, though the segment is off 8
+# bytes: ld-prime gives x86-64's fixup chains up without a word of it,
+# and fails an arm64 link on the chain pages, printing the layout.
+cat <<EOF | $CC -o $t/d.o -c -xc -
+#include <stdio.h>
+int x = 5;
+int main() { printf("%d\n", x); }
+EOF
+if [ $ARCH = arm64 ]; then
+  not $CC --ld-path=$mold -o $t/exe9 $t/d.o -Wl,-segalign,0x1 2> $t/log
+  grep -q 'chained fixups, page_size not 4KB or 16KB in segment #2' $t/log
+  grep -q '^final section layout:$' $t/log
+else
+  $CC --ld-path=$mold -o $t/exe9 $t/d.o -Wl,-segalign,0x1 2> $t/log
+  grep -q 'disabling chained fixups because of unaligned pointers' $t/log
+fi
+not grep -q 'pointer not aligned' $t/log
+grep -o 'reducing alignment of section [^ ]*' $t/log | cut -d' ' -f5 | tr '\n' ' ' > $t/sects
+[ "$(cat $t/sects)" = '__TEXT,__text __TEXT,__stubs __TEXT,__unwind_info __DATA_CONST,__got __DATA,__data ' ]

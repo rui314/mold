@@ -793,7 +793,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         add_output_section(ctx, text.0, text.1, flags);
     }
 
-    set_section_alignments(ctx, text);
+    set_section_alignments(ctx);
     sort_section_members(ctx);
     compute_section_sizes(ctx);
 
@@ -820,6 +820,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     create_segments(ctx);
     add_boundary_segments(ctx);
     add_stack_segment(ctx);
+    cap_section_alignments(ctx, text);
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
     check_section_order(ctx);
@@ -991,9 +992,9 @@ fn find_output_section<E: Target>(ctx: &Context<E>, name: SectionName) -> Option
 
 /// Settles the output sections' alignments, which their members raised
 /// to the largest of theirs: the thread-local template's two sections
-/// share the stricter one, -sectalign sets a section's, a section's may
-/// not exceed its segment's, and dyld's own __text is page-aligned.
-fn set_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+/// share the stricter one, and -sectalign sets a section's (see also
+/// cap_section_alignments).
+fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
     // The thread-local template (__thread_data followed by
     // __thread_bss) is one image dyld copies per thread, so ld64 gives
     // both sections the stricter of their alignments.
@@ -1029,24 +1030,30 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
             }
         }
     }
+}
 
-    // A section cannot be aligned beyond its segment's (the page, unless
-    // -segalign says otherwise): ld64 reduces the alignment with a
-    // warning (an x86-64 .align 16 asks for 64KB). Not in a -static or
-    // -preload image, which no dyld maps: ld-prime starts the section's
-    // segment on the alignment there (see lay_out_segments).
+/// A section cannot be aligned beyond its segment's (the page, unless
+/// -segalign says otherwise): ld64 reduces the alignment with a warning
+/// (an x86-64 .align 16 asks for 64KB), for each section in output
+/// order, the linker's own (__stubs, __got, __unwind_info...) as well.
+/// Not in a -static or -preload image, which no dyld maps: ld-prime
+/// starts the section's segment on the alignment there (see
+/// lay_out_segments).
+fn cap_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     if !ctx.args.relocatable && !ctx.args.static_link {
         let max = ctx.segment_align().max(1).trailing_zeros();
-        for osec in &mut ctx.output_sections {
-            if osec.hdr.p2align > max {
+        let ids: Vec<ChunkId> = ctx.segments.iter().flat_map(|seg| seg.chunks.clone()).collect();
+        for id in ids {
+            let hdr = ctx.chunk_header_mut(id);
+            if hdr.is_sect && hdr.p2align > max {
                 crate::warn!(
                     "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
-                    osec.hdr.segname,
-                    osec.hdr.sectname,
-                    1u64 << osec.hdr.p2align,
+                    hdr.segname,
+                    hdr.sectname,
+                    1u64 << hdr.p2align,
                     1u64 << max
                 );
-                osec.hdr.p2align = max;
+                hdr.p2align = max;
             }
         }
     }

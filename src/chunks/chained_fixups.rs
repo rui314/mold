@@ -132,7 +132,8 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     // dyld reads the format from the load command, and its absence
     // would mean classic dyld info.
     let (with_atoms, suspects) = collect_fixups(ctx);
-    if !check_pointer_alignment(ctx, suspects, true) {
+    let unaligned = with_atoms.iter().any(|&(addr, ..)| !addr.is_multiple_of(8));
+    if !check_pointer_alignment(ctx, suspects, true, unaligned) {
         return None;
     }
     let (dynsyms, ordinals) = import_table(&with_atoms);
@@ -191,9 +192,18 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
+        // A -segalign below 4KB makes arm64 chain pages no dyld reads:
+        // ld-prime lays the image out to the end all the same, and
+        // reports the first segment, unless an unaligned pointer in a
+        // chain fails the link first (see check_pointer_alignment).
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
-            fatal!("chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}");
+            if ctx.chained_fixups.unaligned.lock().unwrap().is_empty() {
+                crate::layout_error!(
+                    "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
+                );
+            }
+            break;
         }
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
@@ -449,7 +459,7 @@ const MAX_INLINE_ADDEND: u64 = 255;
 /// check_pointer_alignment does.
 pub fn check_classic_pointers<E: Target>(ctx: &Context<E>) {
     if checks_pointer_alignment(ctx) {
-        check_pointer_alignment(ctx, collect_fixups(ctx).1, false);
+        check_pointer_alignment(ctx, collect_fixups(ctx).1, false, false);
     }
 }
 
@@ -475,15 +485,18 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 /// chain (of the atoms in address order, each one's from the last, the
 /// order of an assembler's relocations), and x86-64 gives chains up for
 /// classic dyld info instead, whose header the load commands fit in as
-/// laid out (see header_pad). `suspects` are the pointers collect_fixups
-/// gives; the unaligned ones are left for report_unaligned_chain_pointer
-/// and warn_unaligned_pointers. Returns false for that fallback.
+/// laid out (see header_pad), on an unaligned pointer of its own too
+/// (`unaligned`: a GOT slot a -segalign below 8 moved off 8 bytes).
+/// `suspects` are the pointers collect_fixups gives; the unaligned ones
+/// are left for report_unaligned_chain_pointer and
+/// warn_unaligned_pointers. Returns false for that fallback.
 fn check_pointer_alignment<E: Target>(
     ctx: &Context<E>,
     mut suspects: Vec<(u32, u64)>,
     chained: bool,
+    unaligned: bool,
 ) -> bool {
-    if suspects.is_empty() || !checks_pointer_alignment(ctx) {
+    if !checks_pointer_alignment(ctx) || suspects.is_empty() && !unaligned {
         return true;
     }
     let atom_addr = |id: u32| ctx.isec_addr(id as usize);
@@ -505,15 +518,18 @@ fn check_pointer_alignment<E: Target>(
     suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
     if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
         // A pointer in a read-only segment is a text relocation, which
-        // no chain holds.
+        // no chain holds. One 8-aligned in its segment is fine, though a
+        // -segalign below 8 moved the segment off 8 bytes: the chain
+        // pages fail the link then (see build_chained_fixups).
         suspects.retain(|&(_, addr)| !ctx.text_reloc_ranges.iter().any(|r| r.contains(&addr)));
+        suspects.retain(|&(_, addr)| !offset_in_segment(ctx, addr).is_multiple_of(8));
         if let Some(&(first, _)) = suspects.first() {
             let &last = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
             ctx.chained_fixups.unaligned.lock().unwrap().push(last);
         }
         return true;
     }
-    if suspects.is_empty() {
+    if suspects.is_empty() && !unaligned {
         return true;
     }
     if chained {
@@ -540,13 +556,26 @@ pub fn report_unaligned_chain_pointer<E: Target>(ctx: &Context<E>) -> bool {
 
 /// Warns of each unaligned pointer check_pointer_alignment found in an
 /// image with classic dyld info, as ld-prime does when it encodes them:
-/// only once nothing has failed the link.
+/// only once nothing has failed the link, and only of one off 8 bytes
+/// in its segment - not of one a -segalign below 8 moved off with the
+/// segment, which gives chained fixups up all the same.
 pub fn warn_unaligned_pointers<E: Target>(ctx: &Context<E>) {
     if !ctx.use_chained_fixups() {
         for &(id, addr) in ctx.chained_fixups.unaligned.lock().unwrap().iter() {
-            crate::warn!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+            if !offset_in_segment(ctx, addr).is_multiple_of(8) {
+                crate::warn!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+            }
         }
     }
+}
+
+/// An address's offset from the start of the segment that holds it.
+fn offset_in_segment<E: Target>(ctx: &Context<E>, addr: u64) -> u64 {
+    let seg = ctx
+        .segments
+        .iter()
+        .find(|seg| (seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize).contains(&addr));
+    addr - seg.map_or(0, |seg| seg.cmd.vmaddr)
 }
 
 /// A place in an atom as ld-prime names it in a diagnostic: 'name' of
