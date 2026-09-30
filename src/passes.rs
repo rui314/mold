@@ -3890,6 +3890,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     crate::chunks::indirect_symtab::assign_indices(ctx);
     check_segment_order(ctx);
     check_section_order(ctx);
+    check_interposing(ctx);
     // The mach header's segment must come first after __PAGEZERO. A
     // -static image's header moves with -rename_segment __TEXT, and
     // only -segment_order can then put its segment there.
@@ -3942,6 +3943,30 @@ fn check_section_order<E: Target>(ctx: &Context<E>) {
                 order[i].sectname
             );
         }
+    }
+}
+
+/// An image bound for the shared region (see resolve_shared_region)
+/// may not carry interposing tuples, which the dyld shared cache
+/// builder refuses. ld-prime finds them as dyld does - a section named
+/// __interpose in a segment whose name starts with __DATA or __AUTH,
+/// by its final name - and rejects even an empty one.
+fn check_interposing<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.shared_region {
+        return;
+    }
+    let is_interpose = |hdr: &&ChunkHeader| {
+        hdr.is_sect
+            && hdr.sectname == "__interpose"
+            && (hdr.segname.starts_with("__DATA") || hdr.segname.starts_with("__AUTH"))
+    };
+    if let Some(hdr) = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).find(is_interpose) {
+        error!(
+            "Shared cache eligible dylib cannot use interposing tuples (found in '{} {}').  \
+             Remove interposing tuples, or opt out of the shared cache using the build setting \
+             'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')",
+            hdr.segname, hdr.sectname
+        );
     }
 }
 
