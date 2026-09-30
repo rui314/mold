@@ -84,6 +84,12 @@ fn symidx_addend<'a, E: Target>(
     rel: &ElfRel<E>,
     cache: &mut FragmentLookup<'a>,
 ) -> (u32, i64) {
+    // A relocation without a symbol keeps its addend. For example,
+    // R_RISCV_ALIGN's addend is the size of its NOP padding.
+    if rel.r_sym() == 0 {
+        return (0, isec.rel_addend(rel));
+    }
+
     let file = &ctx.objs[isec.file.index()];
     let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
 
