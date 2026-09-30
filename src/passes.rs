@@ -2096,11 +2096,12 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             }
             RelocClass::Got => add_got(ctx, id),
             RelocClass::GotLoad if !ctx.can_relax_got(id) => add_got(ctx, id),
-            // A TLV load of a local thread-local relaxes to the
-            // descriptor's address; only imported ones need a slot for
-            // dyld to fill, and ld-prime gives them an ordinary __got
-            // entry (no __thread_ptrs section, chained or classic).
-            RelocClass::Tlv if sym.is_imported() => add_got(ctx, id),
+            // A TLV load relaxes to the descriptor's address like a GOT
+            // load; one dyld must fill - an imported thread-local, or a
+            // weak one coalesced across images (C++'s inline
+            // thread_local) - goes through an ordinary __got entry, as
+            // in ld-prime (no __thread_ptrs section, chained or classic).
+            RelocClass::Tlv if !ctx.can_relax_got(id) => add_got(ctx, id),
             _ => {}
         }
     }

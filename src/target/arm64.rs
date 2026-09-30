@@ -531,19 +531,19 @@ impl Target for Arm64 {
                     }
                     write32(loc, read32(loc) | bits(val as u64, 27, 2) as u32);
                 }
-                // A local thread-local's TLV load relaxes like a GOT
-                // load: the adrp retargets to the __thread_vars
-                // descriptor's page and the ldr becomes an add.
+                // A TLV load of a thread-local nothing binds at run time
+                // relaxes like a GOT load: the adrp retargets to the
+                // __thread_vars descriptor's page and the ldr becomes an
+                // add. Others load the descriptor's address from __got.
                 ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let target =
-                        if ctx.symbols[id].is_imported() { ctx.sym_got_addr(id) } else { s };
+                    let target = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
                     let val = read32(loc) | page_offset(target.wrapping_add_signed(a), p);
                     write32(loc, val);
                 }
                 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if ctx.symbols[id].is_imported() {
+                    if !ctx.can_relax_got(id) {
                         let t = ctx.sym_got_addr(id);
                         write_add_ldst(loc, t.wrapping_add_signed(a));
                     } else {
