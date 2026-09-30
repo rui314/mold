@@ -178,7 +178,7 @@ pub fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.riscv_attributes = Some(crate::chunks::riscv_attributes::RiscvAttributesSection::new());
         chunks.push(ChunkId::RiscvAttributes);
     }
-    if E::FAMILY == Family::Ppc64V2 {
+    if E::IS_PPC64 {
         ctx.ppc64_save_restore = Some(chunks::ppc64_save_restore::new_header());
         chunks.push(ChunkId::Ppc64SaveRestore);
     }
@@ -1438,8 +1438,8 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    if E::FAMILY == Family::Ppc64V2 {
-        for &(label, _) in crate::target::ppc64v2::SAVE_RESTORE_INSNS {
+    if E::IS_PPC64 {
+        for &(label, _) in chunks::ppc64_save_restore::SAVE_RESTORE_INSNS {
             if !label.is_empty() {
                 s(ctx, label);
             }
@@ -3915,8 +3915,8 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 
     // PPC64's _{save,rest}gpr{0,1}_{14,15,16,...,31} symbols
-    if E::FAMILY == Family::Ppc64V2 {
-        for (i, &(label, _)) in crate::target::ppc64v2::SAVE_RESTORE_INSNS.iter().enumerate() {
+    if E::IS_PPC64 {
+        for (i, &(label, _)) in chunks::ppc64_save_restore::SAVE_RESTORE_INSNS.iter().enumerate() {
             if label.is_empty() {
                 continue;
             }
