@@ -54,6 +54,7 @@ pub const LC_ID_DYLINKER: u32 = 0xf;
 pub const LC_UNIXTHREAD: u32 = 0x5;
 pub const LC_LOAD_WEAK_DYLIB: u32 = 0x18 | LC_REQ_DYLD;
 pub const LC_SEGMENT_64: u32 = 0x19;
+pub const LC_ROUTINES_64: u32 = 0x1a;
 pub const LC_UUID: u32 = 0x1b;
 pub const LC_RPATH: u32 = 0x1c | LC_REQ_DYLD;
 pub const LC_SUB_FRAMEWORK: u32 = 0x12;

@@ -113,8 +113,8 @@ pub struct Args {
     pub all_load: bool,
     pub load_objc: bool,
     /// Symbols to treat as undefined from the start, forcing archive
-    /// members that define them to be linked: those -u names, and those
-    /// an export list names without wildcards (ld64's "initial
+    /// members that define them to be linked: those -u and -init name,
+    /// and those an export list names without wildcards (ld64's "initial
     /// undefines"). One that stays undefined is an error even under
     /// -undefined dynamic_lookup.
     pub forced_undefined: Vec<String>,
@@ -178,6 +178,9 @@ pub struct Args {
     /// -init_offsets: emit initializers as 32-bit image offsets
     /// (__init_offsets) instead of absolute pointers (__mod_init_func).
     pub init_offsets: bool,
+    /// -init: the function the image runs before its other
+    /// initializers (the last one given).
+    pub init: Option<String>,
     /// -data_const / -no_data_const: whether read-only-after-fixup data
     /// sections (__const, __cfstring, the ObjC lists, __got ...) go in
     /// a __DATA_CONST segment. ld64's default is on but for a -static
@@ -417,6 +420,7 @@ impl Default for Args {
             version_load_command: false,
             add_split_seg_info: false,
             init_offsets: false,
+            init: None,
             data_const: true,
             no_implicit_dylibs: false,
             objc_relative_method_lists: None,
@@ -1027,6 +1031,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
     let usage = match opt {
         "-arch" => "missing <arch>",
         "-e"
+        | "-init"
         | "-u"
         | "-U"
         | "-install_name"
@@ -1690,6 +1695,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
             b"-init_offsets" => args.init_offsets = true,
+            b"-init" => args.init = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-data_const" => data_const = Some(true),
             b"-no_data_const" => data_const = Some(false),
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
@@ -1956,6 +1962,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
         fatal!("{} is an entry point and can't be used with -U for dynamic lookup", args.entry);
     }
+    // So is the -init function, as -u would make it (a -r output keeps
+    // it undefined).
+    args.forced_undefined.extend(args.init.clone());
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
     }

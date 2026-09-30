@@ -191,6 +191,9 @@ pub struct Context<E: Target> {
     pub uuid: std::sync::Mutex<[u8; 16]>,
     /// The resolved address of the entry point symbol.
     pub entry_addr: u64,
+    /// The -init function, when LC_ROUTINES_64 names it (the image has
+    /// no __init_offsets to run it first from).
+    pub init_routine: Option<SymbolId>,
     /// Total size of the output file.
     pub output_size: u64,
     /// -print_statistics timers; inactive otherwise.
@@ -263,6 +266,7 @@ impl<E: Target> Context<E> {
             literals: std::collections::HashMap::new(),
             uuid: std::sync::Mutex::new([0; 16]),
             entry_addr: 0,
+            init_routine: None,
             output_size: 0,
             timers,
             _marker: PhantomData,

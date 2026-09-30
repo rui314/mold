@@ -43,6 +43,7 @@ use std::num::NonZeroU32;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
+use crate::symbol::SymbolId;
 use crate::target::Target;
 
 pub use output_section::{OutputSection, Tail, Thunk};
@@ -650,6 +651,19 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
+/// LC_ROUTINES_64 names the -init function by its unslid address, and
+/// dyld runs it before the image's other initializers. (The layout
+/// sizes the command before the function has an address.)
+fn create_routines_cmd<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<u8> {
+    let cmd = RoutinesCommand64 {
+        cmd: LC_ROUTINES_64,
+        cmdsize: size_of::<RoutinesCommand64>() as u32,
+        init_address: ctx.sym_addr(id),
+        ..Default::default()
+    };
+    to_vec(&cmd)
+}
+
 /// A -static image has no dyld to read LC_MAIN, nor has dyld itself;
 /// the kernel (or a boot loader) starts its thread from LC_UNIXTHREAD's
 /// register state, all zero but the program counter at the entry
@@ -702,6 +716,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 
     if ctx.args.output_type == MH_DYLIB {
         vec.push(create_id_dylib_cmd(ctx));
+    }
+    if let Some(id) = ctx.init_routine {
+        vec.push(create_routines_cmd(ctx, id));
     }
 
     // Chained fixups replace the classic dyld info; the export trie

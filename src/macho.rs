@@ -297,6 +297,20 @@ pub struct EntryPointCommand {
 
 unsafe impl FileRecord for EntryPointCommand {}
 
+/// LC_ROUTINES_64: the image's -init function, by its unslid address;
+/// the fields after it were for the long-gone multi-module dylibs.
+#[derive(Clone, Copy, Default, Debug)]
+#[repr(C)]
+pub struct RoutinesCommand64 {
+    pub cmd: u32,
+    pub cmdsize: u32,
+    pub init_address: u64,
+    pub init_module: u64,
+    pub reserved: [u64; 6],
+}
+
+unsafe impl FileRecord for RoutinesCommand64 {}
+
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
 pub struct LinkEditDataCommand {

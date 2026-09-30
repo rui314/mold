@@ -1756,8 +1756,22 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     // __mod_init_func itself): it converts only with -init_offsets.
     let implied = !ctx.args.static_link
         && ctx.args.fixup_chains.unwrap_or_else(|| ctx.chained_fixups_by_default());
+    let init = init_function(ctx);
     if !ctx.args.init_offsets && !implied {
+        // ld-prime runs an -init function only from __init_offsets and
+        // drops it here. ld64 named it in LC_ROUTINES_64, which dyld
+        // runs before the image's other initializers; so do we, for an
+        // image dyld loads.
+        if !ctx.args.without_dyld() {
+            ctx.init_routine = init;
+        }
         return;
+    }
+    // ld-prime makes it the first of the initializer offsets.
+    if let Some(id) = init {
+        let sym = &ctx.symbols[id];
+        let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
+        ctx.init_offsets.init_funcs.push((isec, sym.value));
     }
     for i in 0..ctx.isecs.len() {
         if ctx.hdr_of(&ctx.isecs[i]).section_type() != S_MOD_INIT_FUNC_POINTERS
@@ -1793,6 +1807,27 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.isecs[i].set_alive(false);
     }
+}
+
+/// The function -init names, if it is one of the image's own. An
+/// undefined one is reported with the other initial undefines, and an
+/// import with ld-prime's error for an initializer offset to it. (So is
+/// an absolute symbol, whose value ld-prime takes as the offset.)
+fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
+    let id = ctx.symbols.get(ctx.args.init.as_deref()?)?;
+    let sym = &ctx.symbols[id];
+    if !sym.is_defined() {
+        return None;
+    }
+    if sym.input_section().is_none() {
+        error!(
+            "fixup error (kind=imageOffset32) at 'anon-1' from inits-file, target '{}' does not \
+             have address",
+            sym.name()
+        );
+        return None;
+    }
+    Some(id)
 }
 
 /// The relocations naming the functions of the initializer pointers
