@@ -59,8 +59,19 @@ otool -l $t/exe_ch > $t/lc_ch
 not grep -q '__la_symbol_ptr' $t/lc_ch
 
 # x86-64 stubs are byte-aligned with classic dyld info, 2-byte aligned
-# with chained fixups.
+# with chained fixups - and with classic dyld info too once one stub
+# (operator new's, bound by weak lookup) skips the helper.
 if [ $ARCH = x86_64 ]; then
   grep -A8 'sectname __stubs' $t/lc | grep 'align 2^0'
   grep -A8 'sectname __stubs' $t/lc_ch | grep 'align 2^1'
+  cat <<EOF | $CXX -o $t/c.o -c -xc++ -
+#include <cstdio>
+#include <new>
+int main() { int *p = new int(4); std::printf("%d\n", *p); delete p; }
+EOF
+  $CXX --ld-path=$mold -o $t/exe_mix $t/c.o -mmacosx-version-min=$classic
+  $t/exe_mix | grep '^4$'
+  otool -l $t/exe_mix > $t/lc_mix
+  grep -q '__stub_helper' $t/lc_mix
+  grep -A8 'sectname __stubs' $t/lc_mix | grep 'align 2^1'
 fi

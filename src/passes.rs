@@ -4127,13 +4127,14 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
         ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
         ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
-        // ld-prime's x86-64 stubs are byte-aligned when they go
-        // through the lazy-binding helper and 2-byte aligned otherwise
-        // (chained fixups, -bind_at_load, weak-lookup stubs); arm64's
-        // are instruction-aligned.
+        // ld-prime's x86-64 stubs are byte-aligned when all of them go
+        // through the lazy-binding helper and 2-byte aligned as soon as
+        // one doesn't (chained fixups, -bind_at_load, a weak-lookup
+        // stub): each stub has its own alignment and the section takes
+        // the largest. arm64's are instruction-aligned.
         if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
             let lazy = ctx.lazy_binding()
-                && ctx.stubs.symbols.iter().any(|&id| !ctx.binds_weak_lookup(id));
+                && ctx.stubs.symbols.iter().all(|&id| !ctx.binds_weak_lookup(id));
             ctx.stubs.hdr.p2align = if lazy { 0 } else { 1 };
         }
         ctx.chunks.push(ChunkId::Stubs);
