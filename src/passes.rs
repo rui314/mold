@@ -359,6 +359,9 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         .collect();
     drop(t);
     warn_unknown_ld_sections(&staged);
+    for obj in &staged {
+        obj.check_unwind_sections();
+    }
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop

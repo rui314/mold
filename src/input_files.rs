@@ -419,6 +419,9 @@ pub struct StagedObject {
     pub unwind: Vec<UnwindRecord>,
     pub cies: Vec<Cie>,
     pub fdes: Vec<Fde>,
+    /// An FDE describes a function in a section of data, which
+    /// ld-prime refuses (see add_fdes).
+    pub data_fde: bool,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -688,6 +691,7 @@ pub fn stage_object<E: Target>(
         unwind: Vec::new(),
         cies: Vec::new(),
         fdes: Vec::new(),
+        data_fde: false,
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
@@ -723,7 +727,7 @@ pub fn stage_object<E: Target>(
         && let Some(hdr) =
             sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
     {
-        obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
+        obj.data_fde = obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
     obj.unwind.retain(|rec| {
@@ -1457,6 +1461,7 @@ pub fn parse_object<E: Target>(
     let priority = ctx.next_priority();
     let keep_all_fdes = ctx.args.relocatable || ctx.args.without_dyld();
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
+    staged.check_unwind_sections();
     integrate_object(ctx, staged)
 }
 
@@ -1778,7 +1783,8 @@ impl StagedObject {
     /// copied through: the linker re-synthesizes it, keeping only FDEs for
     /// functions that have no compact unwind record, patching each CIE's
     /// personality cell to be GOT-relative, and dropping the rest.
-    fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) {
+    /// Returns whether an FDE describes a function in a section of data.
+    fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) -> bool {
         let mf = self.mf;
         // Diagnostics spell the path lossily.
         let file_name = mf.name.display();
@@ -1885,7 +1891,7 @@ impl StagedObject {
             cie.personality_offset = addr - cie.input_addr;
         }
 
-        self.add_fdes::<E>(&fdes, keep_all_fdes);
+        self.add_fdes::<E>(&fdes, keep_all_fdes)
     }
 
     /// Adds an __eh_frame's FDEs, given as (input address, bytes, CIE
@@ -1897,9 +1903,19 @@ impl StagedObject {
     /// input CIE and FDE through, as ld64's does, and a -static image
     /// has no __unwind_info for the compact record; any other final
     /// image has no use for them.
-    fn add_fdes<E: Target>(&mut self, fdes: &[(u32, &'static [u8], u32)], keep_all_fdes: bool) {
+    ///
+    /// ld-prime unwinds only code. An FDE for a function in a section
+    /// of data it refuses: returns true for that. One in a section of
+    /// no kind it knows it carries, but gives the function no entry of
+    /// __unwind_info. (check_unwind_sections warns about both.)
+    fn add_fdes<E: Target>(
+        &mut self,
+        fdes: &[(u32, &'static [u8], u32)],
+        keep_all_fdes: bool,
+    ) -> bool {
         // Diagnostics spell the path lossily.
         let file_name = self.mf.name.display();
+        let mut data_fde = false;
         let mut covered: std::collections::HashSet<(usize, u32)> = std::collections::HashSet::new();
         let mut dwarf_recs: std::collections::HashMap<(usize, u32), usize> =
             std::collections::HashMap::new();
@@ -1923,6 +1939,9 @@ impl StagedObject {
                 fatal!("{file_name}: __eh_frame: FDE with an invalid function");
             };
             let func_offset = func_offset as u32;
+            let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
+            let is_code = is_code_section(sect);
+            data_fde |= is_typed_data_section(sect);
 
             let is_covered = covered.contains(&(isec, func_offset));
             if is_covered && !keep_all_fdes {
@@ -1960,13 +1979,16 @@ impl StagedObject {
 
             // A covered function's compact record wins; its FDE is only
             // carried. Otherwise the object's own DWARF-mode record now
-            // points at the FDE, or one is synthesized so that the unwinder
-            // can find the FDE through __unwind_info.
+            // points at the FDE, or, for code, one is synthesized so that
+            // the unwinder can find the FDE through __unwind_info.
             if is_covered {
                 continue;
             }
             if let Some(&i) = dwarf_recs.get(&(isec, func_offset)) {
                 self.unwind[i].fde_idx = fde_idx as u32;
+                continue;
+            }
+            if !is_code {
                 continue;
             }
             self.unwind.push(UnwindRecord {
@@ -1980,6 +2002,103 @@ impl StagedObject {
                 fde_idx: fde_idx as u32,
             });
         }
+        data_fde
+    }
+
+    /// Warns about each section of the object that has unwind info
+    /// (compact or DWARF) but no code, as ld-prime does, then refuses an
+    /// FDE for a function in a section of data (see add_fdes).
+    pub fn check_unwind_sections(&self) {
+        let isecs = self.unwind.iter().map(|rec| rec.isec).chain(self.fdes.iter().map(|f| f.isec));
+        let mut sects: Vec<u32> = isecs
+            .map(|isec| self.isecs[isec as usize].shndx)
+            .filter(|&shndx| !is_code_section(&self.sect_hdrs[shndx as usize]))
+            .collect();
+        sects.sort_unstable();
+        sects.dedup();
+        for shndx in sects {
+            let sect = &self.sect_hdrs[shndx as usize];
+            crate::warn!(
+                "symbols in {},{} ({}) have unwind information, but it's not a code section \
+                 (missing 'regular,pure_instructions' section flag)",
+                sect.segname(),
+                sect.sectname(),
+                crate::passes::resolved_file_name(self.mf)
+            );
+        }
+        if self.data_fde {
+            fatal!(
+                "invalid function target for dwarf unwind in '{}'",
+                crate::passes::resolved_file_name(self.mf)
+            );
+        }
+    }
+}
+
+/// Whether ld-prime takes a section for code, which is what unwind info
+/// describes: __TEXT,__text and __TEXT,__StaticInit by their names, and
+/// any other with S_ATTR_PURE_INSTRUCTIONS that is not one it knows for
+/// data.
+fn is_code_section(hdr: &MachSection) -> bool {
+    matches!((hdr.segname(), hdr.sectname()), ("__TEXT", "__text" | "__StaticInit"))
+        || (hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0 && !is_typed_data_section(hdr))
+}
+
+/// Whether ld-prime gives a section's contents a kind of their own that
+/// no function has: by the section's type (strings, literals, non-lazy
+/// pointers, zero fill, thread-local data) or, for a regular section,
+/// by a name it knows data by, whatever its attributes. Any other
+/// section that is not code holds contents of no kind it knows, which
+/// an FDE may describe.
+fn is_typed_data_section(hdr: &MachSection) -> bool {
+    match hdr.section_type() {
+        S_ZEROFILL
+        | S_GB_ZEROFILL
+        | S_THREAD_LOCAL_ZEROFILL
+        | S_THREAD_LOCAL_REGULAR
+        | S_CSTRING_LITERALS
+        | S_4BYTE_LITERALS
+        | S_8BYTE_LITERALS
+        | S_16BYTE_LITERALS
+        | S_NON_LAZY_SYMBOL_POINTERS => true,
+        S_REGULAR => matches!(
+            (hdr.segname(), hdr.sectname()),
+            (
+                "__TEXT",
+                "__const"
+                    | "__ustring"
+                    | "__gcc_except_tab"
+                    | "__objc_classname"
+                    | "__objc_methname"
+                    | "__objc_methtype"
+                    | "__objc_methlist"
+            ) | (
+                "__DATA",
+                "__data"
+                    | "__const"
+                    | "__got"
+                    | "__auth_ptr"
+                    | "__const_cfobj2"
+                    | "__objc_data"
+                    | "__objc_const"
+                    | "__objc_ivar"
+                    | "__objc_selrefs"
+                    | "__objc_classrefs"
+                    | "__objc_superrefs"
+                    | "__objc_protorefs"
+                    | "__objc_protolist"
+                    | "__objc_nlclslist"
+                    | "__objc_nlcatlist"
+                    | "__objc_intobj"
+                    | "__objc_floatobj"
+                    | "__objc_doubleobj"
+                    | "__objc_dateobj"
+                    | "__objc_dictobj"
+                    | "__objc_arrayobj"
+                    | "__objc_arraydata"
+            ) | ("__LD", "__func_variants")
+        ),
+        _ => false,
     }
 }
 
