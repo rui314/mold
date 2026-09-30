@@ -46,6 +46,10 @@ pub fn set_noinhibit_exec(on: bool) {
     NOINHIBIT_EXEC.store(on, Ordering::Relaxed);
 }
 
+pub fn noinhibit_exec() -> bool {
+    NOINHIBIT_EXEC.load(Ordering::Relaxed)
+}
+
 // Format each message before taking the lock so diagnostics from different
 // threads cannot interleave.
 fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {

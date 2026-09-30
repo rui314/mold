@@ -921,8 +921,11 @@ impl<E: Target> InputSection<E> {
         if is_undef && sym.is_undef() {
             match ctx.args.unresolved_symbols {
                 UnresolvedKind::Error if !sym.is_imported() => {
+                    // With --noinhibit-exec, the error is reported as a warning
+                    // and we create an output file anyway, so the relocation has
+                    // to be processed as it is with --warn-unresolved-symbols.
                     self.record_undefined_reference(ctx, file, rel, sym_id);
-                    return true;
+                    return !crate::error::noinhibit_exec();
                 }
                 UnresolvedKind::Warn => self.record_undefined_reference(ctx, file, rel, sym_id),
                 _ => {}
