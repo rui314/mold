@@ -20,3 +20,7 @@ not grep -q ' _dead$' $t/syms
 grep -q ' _ctor$' $t/syms
 grep -q ' _dtor$' $t/syms
 [ "$($t/exe | tr '\n' ' ')" = 'ctor dtor ' ]
+
+# That makes it an error with -r.
+not $mold -r -arch $ARCH -o $t/r.o $t/a.o -no_dead_strip_inits_and_terms 2> $t/log2
+grep -q -- '-r and -dead_strip cannot be used together' $t/log2

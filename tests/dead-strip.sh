@@ -30,3 +30,8 @@ not grep -q '__exit' $t/syms2
 # ...but one live code still binds is listed.
 $CC --ld-path=$mold -o $t/exe3 $t/b.o
 nm -m $t/exe3 | grep 'undefined.*_getpid'
+
+# What is dead is known only in the final link, which sees every
+# reference, so ld64 refuses -dead_strip with -r.
+not $mold -r -arch $ARCH -o $t/r.o $t/a.o -dead_strip 2> $t/log4
+grep -q -- '-r and -dead_strip cannot be used together' $t/log4

@@ -1132,6 +1132,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.relocatable && args.sdk_imports.is_some() {
         fatal!("-sdk_imports cannot be used with -r");
     }
+    // What is dead is known only once the final link sees every
+    // reference.
+    if args.relocatable && args.dead_strip {
+        fatal!("-r and -dead_strip cannot be used together");
+    }
     args.exported_symbols = exported_symbols.map(GlobBuilder::build);
     args.unexported_symbols = unexported_symbols.build();
     args.reexported_symbols = reexported_symbols.build();
