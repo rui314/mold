@@ -791,4 +791,17 @@ impl<E: Target> Context<E> {
             crate::error!("fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}");
         }
     }
+
+    /// Names the place `offset` bytes into atom `isec` as ld-prime's
+    /// other diagnostics do: "'atom'+0xOFF (path)", with the object's
+    /// full path.
+    pub fn atom_ref(&self, isec: usize, offset: u32) -> String {
+        let path = crate::passes::resolved_file_name(self.objs[self.isecs[isec].file as usize].mf);
+        let atom = self.atom_name(isec);
+        if offset == 0 {
+            format!("'{atom}' ({path})")
+        } else {
+            format!("'{atom}'+0x{offset:X} ({path})")
+        }
+    }
 }

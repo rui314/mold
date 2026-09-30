@@ -349,6 +349,21 @@ impl Target for X86_64 {
             let p = base + r.offset as u64;
 
             match r.r_type {
+                X86_64_RELOC_UNSIGNED if r.size == 4 => {
+                    // A 32-bit pointer (.long sym) can be neither slid
+                    // nor bound, so ld-prime takes one only in an image
+                    // no dyld or kmutil loads, where it must fit
+                    // ("oveflow" sic).
+                    let val = s.wrapping_add_signed(a);
+                    if !ctx.args.static_link {
+                        let at = ctx.atom_ref(isec_id, r.offset);
+                        error!("32-bit pointer used in 64-bit code in {at}");
+                    } else if val > u32::MAX as u64 {
+                        let msg = format_args!("32-bit pointer oveflow");
+                        ctx.fixup_error(isec_id, r.offset, "ptr32", msg);
+                    }
+                    write32(loc, val as u32);
+                }
                 X86_64_RELOC_UNSIGNED => {
                     let imported = ctx
                         .reloc_target_sym(obj, r)
@@ -357,17 +372,6 @@ impl Target for X86_64 {
                         // The slot is filled by dyld.
                     } else if ctx.reloc_target_is_tls(obj, r) {
                         write64(loc, s.wrapping_add_signed(a) - ctx.tls_begin);
-                    } else if r.size == 4 {
-                        // A 32-bit absolute address (.long sym); ld64
-                        // rejects one that does not fit.
-                        let val = s.wrapping_add_signed(a);
-                        if val > u32::MAX as u64 {
-                            fatal!(
-                                "{}: 32-bit absolute address out of range ({val:#x})",
-                                ctx.objs[obj].mf.name.display()
-                            );
-                        }
-                        write32(loc, val as u32);
                     } else {
                         write64(loc, s.wrapping_add_signed(a));
                     }
