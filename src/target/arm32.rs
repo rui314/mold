@@ -274,7 +274,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
 
-    type InputSectionExtra = u32;
+    type InputSectionExtra = ();
 
     const NAME: &'static str = if Self::IS_LITTLE { "arm32" } else { "arm32be" };
     const FAMILY: Family = Family::Arm32;

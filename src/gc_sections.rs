@@ -209,10 +209,10 @@ fn visit_section<'scope, E: Target>(
         }
     }
 
-    if E::FAMILY == Family::Arm32
-        && let Some(exidx) = isec.exidx()
-    {
-        mark(file.section_at(exidx));
+    // SHF_LINK_ORDER sections, such as .ARM.exidx, are metadata for the
+    // sections they are linked to and are alive as long as those are.
+    for shndx in file.link_order_dependents(isec.shndx) {
+        mark(file.section_at(shndx));
     }
 }
 
