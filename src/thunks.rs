@@ -1,36 +1,37 @@
 //! Range-extension thunks.
 //!
-//! An arm64 bl/b reaches +-128 MiB; code larger than that needs
-//! islands of trampolines so any branch can reach its target. ld-prime
-//! makes its branch islands only for the branches that can't reach
-//! their targets, so an image whose code - from its first code section
-//! to the end of its last, __stubs and __objc_stubs included - fits
-//! within a branch's reach gets none. need_thunks bounds that span
-//! before placement and lays the code out without thunks if it fits.
+//! An arm64 b/bl reaches +-128 MiB; code larger than that needs
+//! thunks, trampolines placed among the code that branch anywhere
+//! within 4 GiB, for the branches that can't reach their targets.
+//! ld-prime makes its branch islands only for such branches (one that
+//! spans more than 124 MiB of its layout without islands), so an image
+//! whose code - from its first code section to the end of its last,
+//! __stubs and __objc_stubs included - fits within a branch's reach
+//! gets none. need_thunks bounds that span before placement and lays
+//! the code out without thunks if it fits.
 //!
-//! Otherwise every code section is laid out with thunks as in mold's
-//! thunks.rs: thunks are placed after each batch of code, and a batch
-//! never grows so large that its own thunk would fall out of reach -
-//! the layout cursor and the scan cursor stay within one branch reach
-//! (minus margin) of each other, so placing a thunk can never
-//! invalidate an earlier layout decision.
+//! Otherwise every code section is laid out with thunks as mold does:
+//! a thunk is placed for each batch of code at D, the farthest point
+//! from the batch start that a thunk placed there stays within reach
+//! of the whole batch. The subsections up to D thus have their final
+//! offsets when the batch is scanned, so a branch to one of them needs
+//! an entry only if it really is out of reach; a target beyond D, a
+//! branch reach minus a batch away, is assumed to be. Branches to the
+//! other code sections and the stubs are judged by bounds on the room
+//! the code span takes before and after the section.
 //!
 //! As in mold, a thunk entry belongs to a *symbol*, not to a
-//! relocation: the first pass pessimistically gives every symbol that
-//! some branch of the batch might not reach an entry, deduplicated by
-//! an atomic mark on the symbol inside the parallel scan, and a symbol
-//! keeps its mark - and so gets no second entry - for as long as that
-//! entry stays within reach of the batches that follow, and
+//! relocation: a symbol that some branch of the batch may not reach
+//! gets an entry, deduplicated by an atomic mark on the symbol inside
+//! the parallel scan, and keeps its mark, getting no second entry, for
+//! as long as that entry stays within reach of the batches that follow;
 //! gather_thunk_addresses records each symbol's entry addresses so that
 //! applying an out-of-range branch just picks the one within reach.
-//!
-//! mold additionally trims the pessimistic entries once addresses
-//! are final (remove_redundant_thunks) and lays the section out again.
-//! Ours does not: the first pass already skips targets the section's
-//! size bound proves reachable, so on a debug clang link the trim
-//! recovered 0.07% of __text while the rescan of every branch plus the
-//! second __TEXT placement (which re-encodes __unwind_info) cost 5% of
-//! the link. The extra entries are dead code in the thunk islands.
+//! mold also trims the entries that turn out unneeded
+//! once addresses are final (remove_redundant_thunks) and lays the
+//! section out again; ours does not, as the rescan of every branch and
+//! the second __TEXT placement (which re-encodes __unwind_info) cost 5%
+//! of a debug clang link. The extra entries are dead code.
 
 use rayon::prelude::*;
 
@@ -39,9 +40,20 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
-use crate::symbol::SymbolId;
+use crate::symbol::{NO_IDX, SymbolId};
 use crate::target::{RelocClass, Target};
 use crate::util::align_to;
+
+/// We create a thunk for each 10 MiB batch of code (mold: 32 MiB).
+const BATCH_SIZE: u64 = 10 << 20;
+
+/// We assume that a single thunk is smaller than 1 MiB (mold: 16 MiB).
+const MAX_THUNK_SIZE: u64 = 1 << 20;
+
+const THUNK_ALIGN: u64 = 16;
+
+/// A subsection offset that hasn't been assigned yet.
+const UNPLACED: u32 = u32::MAX;
 
 /// Whether the link needs range-extension thunks: Some(false) if its
 /// code spans no more than a branch reaches, Some(true) if it may span
@@ -58,7 +70,7 @@ pub fn need_thunks<E: Target>(ctx: &Context<E>) -> Option<bool> {
     let segname = ctx.chunk_header(ctx.chunks[first]).segname;
     let span = ctx.chunks[first..=last]
         .iter()
-        .map(|&id| chunk_room(ctx, id, segname))
+        .map(|&id| chunk_room(ctx, id, segname, false))
         .sum::<Option<u64>>()?;
     Some(span > E::BRANCH_RANGE / 2)
 }
@@ -75,7 +87,9 @@ pub fn code_span<E: Target>(ctx: &Context<E>) -> u64 {
     hi.saturating_sub(lo)
 }
 
-/// Lays out every code section with range-extension thunks.
+/// Lays out every code section with range-extension thunks, in output
+/// order, so that the sections before the one being laid out have
+/// their final sizes.
 pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_range_extension_thunks");
     let Some((first, last)) = code_range(ctx) else {
@@ -85,7 +99,8 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
         if let ChunkId::Output(id) = ctx.chunks[pos]
             && is_code(ctx, ctx.chunks[pos])
         {
-            create_thunks(ctx, id);
+            let mut reach = Reach::new(ctx, id, first, pos, last);
+            create_thunks(ctx, &mut reach);
         }
     }
 }
@@ -104,185 +119,222 @@ fn code_range<E: Target>(ctx: &Context<E>) -> Option<(usize, usize)> {
 }
 
 /// An upper bound on the room a chunk takes in the code span: its size
-/// and the padding its alignment may put before it. None for a chunk
-/// outside `segname` or one whose size is only known once it is
+/// and the padding its alignment may put before it, plus, for a code
+/// section still to get its thunks (`grows`), those thunks. None for a
+/// chunk outside `segname` or one whose size is only known once it is
 /// placed.
-fn chunk_room<E: Target>(ctx: &Context<E>, id: ChunkId, segname: &str) -> Option<u64> {
+fn chunk_room<E: Target>(ctx: &Context<E>, id: ChunkId, segname: &str, grows: bool) -> Option<u64> {
     let hdr = ctx.chunk_header(id);
     if hdr.segname != segname || matches!(id, ChunkId::MachHeader | ChunkId::UnwindInfo) {
         return None;
     }
-    Some(hdr.size + (1 << hdr.p2align) - 1)
+    let align = 1 << hdr.p2align;
+    let mut room = hdr.size + align - 1;
+    if let ChunkId::Output(osec) = id
+        && grows
+        && is_code(ctx, id)
+    {
+        // Every two batches cover at least BATCH_SIZE bytes, and each
+        // thunk may shift the member after it to a new alignment.
+        let members = ctx.output_section(osec).members.len() as u64;
+        let thunks = members.min(2 * hdr.size.div_ceil(BATCH_SIZE) + 1);
+        room += thunks * (MAX_THUNK_SIZE + THUNK_ALIGN + align);
+    }
+    Some(room)
 }
 
-/// Lays out the subsections of a code section with range-extension
-/// thunks interleaved.
-fn create_thunks<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
-    let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
-    let isecs = &members[..];
-    const BATCH: u64 = 10 * 1024 * 1024;
-    const MAX_THUNK: u64 = 1024 * 1024;
-    let budget = E::BRANCH_RANGE / 2 - MAX_THUNK - BATCH;
-    // A thunk stays usable by a batch while it is this close to the
-    // batch's end.
-    let reach = E::BRANCH_RANGE / 2 - MAX_THUNK;
+/// Where a code chunk lies relative to the section being laid out:
+/// within the code span before or after it, or outside the span.
+#[derive(Clone, Copy, PartialEq)]
+enum Side {
+    Before,
+    After,
+    Outside,
+}
 
-    // An upper bound on the section's final size: every subsection
-    // with worst-case alignment padding, plus a full thunk per batch.
-    // A forward branch's target can't land beyond this, so if the
-    // bound is within forward reach of a batch, that batch needs no
-    // entries for still-unplaced targets - which is what keeps a
-    // merely-large section (bigger than the trigger, far smaller than
-    // the branch range) from drowning in reserved-but-unused thunk
-    // entries.
-    let total_estimate: u64 = isecs.iter().map(|&id| ctx.isecs[id].size as u64 + 16).sum::<u64>();
-    let total_estimate = total_estimate + (total_estimate / BATCH + 1) * MAX_THUNK;
+/// What a branch from the code section being laid out can reach.
+struct Reach {
+    osec: OutputSectionId,
+    /// The side of each output section, and of the stubs.
+    sides: Vec<Side>,
+    stubs: Side,
+    objc_stubs: Side,
+    /// Upper bounds on the room the code span takes before the section
+    /// and after it, if known.
+    before: Option<u64>,
+    after: Option<u64>,
+    /// Whether all of the code before the current batch's end, and all
+    /// of it after the batch's start, is within reach of the batch.
+    backward: bool,
+    forward: bool,
+}
 
-    let mut thunks: Vec<chunks::Thunk> = Vec::new();
-    // Thunks before this index have fallen out of reach of the current
-    // batch; their symbols are unmarked so they can take a new entry
-    // (mold's cursor A).
-    let mut reachable_from = 0usize;
-    let mut off: u64 = 0;
-    let mut i = 0;
-
-    // Distinguish placed subsections from ones still ahead.
-    for &id in isecs {
-        ctx.isecs[id].offset = u32::MAX;
-    }
-
-    while i < isecs.len() {
-        let batch_start_off = off;
-        let batch_start = i;
-
-        // A single subsection larger than the budget can't have a thunk
-        // after it within reach; its thunk goes in front instead, where
-        // at least branches from its first reach's worth of code can
-        // use it.
-        let first_size = ctx.isecs[isecs[i]].size as u64;
-        if first_size > budget {
-            let monster = isecs[i];
-            let thunk_off = align_to(off, 16);
-            release_out_of_reach(ctx, &thunks, &mut reachable_from, thunk_off, reach);
-            let fwd_ok = total_estimate - off <= E::BRANCH_RANGE / 2 - MAX_THUNK;
-            let n = scan_batch::<E>(ctx, &[monster], thunk_off, fwd_ok, &mut thunks);
-            off = thunk_off + n * E::THUNK_SIZE;
-            let isec = &mut ctx.isecs[monster];
-            off = isec.align_offset(off);
-            isec.offset = off as u32;
-            off += isec.size as u64;
-            i += 1;
-            continue;
+impl Reach {
+    fn new<E: Target>(
+        ctx: &Context<E>,
+        osec: OutputSectionId,
+        first: usize,
+        pos: usize,
+        last: usize,
+    ) -> Self {
+        let side = |i: usize| match i {
+            _ if i < first || last < i => Side::Outside,
+            _ if i < pos => Side::Before,
+            _ => Side::After,
+        };
+        let mut sides = vec![Side::Outside; ctx.output_sections.len()];
+        let (mut stubs, mut objc_stubs) = (Side::Outside, Side::Outside);
+        for (i, &id) in ctx.chunks.iter().enumerate() {
+            match id {
+                ChunkId::Output(id) => sides[id.index()] = side(i),
+                ChunkId::Stubs => stubs = side(i),
+                ChunkId::ObjcStubs => objc_stubs = side(i),
+                _ => {}
+            }
         }
 
-        // Place a batch: bounded by BATCH bytes, and by the thunk after
-        // it staying within reach of the batch start.
-        while i < isecs.len() {
-            let isec = &ctx.isecs[isecs[i]];
-            let aligned = isec.align_offset(off);
-            if i != batch_start
-                && (aligned + isec.size as u64 - batch_start_off > budget
-                    || aligned - batch_start_off >= BATCH)
+        let hdr = ctx.chunk_header(ctx.chunks[pos]);
+        let room = |ids: &[ChunkId], grows| {
+            ids.iter().map(|&id| chunk_room(ctx, id, hdr.segname, grows)).sum::<Option<u64>>()
+        };
+        let before = room(&ctx.chunks[first..pos], false).map(|room| room + (1 << hdr.p2align) - 1);
+        let after = room(&ctx.chunks[pos + 1..=last], true);
+        Self { osec, sides, stubs, objc_stubs, before, after, backward: false, forward: false }
+    }
+}
+
+/// Lays out one code section with range-extension thunks, as mold's
+/// create_range_extension_thunks does. The layout proceeds with four
+/// member indices that only move forward, A <= B <= C <= D: [B, C) is
+/// the current batch, D the first member not yet placed - the thunk
+/// for the batch goes there, the farthest a thunk stays within reach
+/// of B - and A the first member within reach of C, before which
+/// thunks are out of the batch's reach.
+fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
+    let id = reach.osec;
+    let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
+    for &m in &members {
+        ctx.isecs[m].offset = UNPLACED;
+    }
+
+    let distance = E::BRANCH_RANGE / 2;
+    let n = members.len();
+    let mut thunks: Vec<chunks::Thunk> = Vec::new();
+    let (mut a, mut b, mut d) = (0, 0, 0);
+    let mut offset = 0;
+    // The first thunk still within reach of the current batch.
+    let mut t = 0;
+
+    while b < n {
+        // Move D forward as far as a thunk there stays within reach of B.
+        while d < n {
+            let isec = &ctx.isecs[members[d]];
+            let start = isec.align_offset(offset);
+            let end = start + isec.size as u64;
+            if b != d
+                && align_to(end, THUNK_ALIGN) + MAX_THUNK_SIZE
+                    > ctx.isecs[members[b]].offset as u64 + distance
             {
                 break;
             }
-            let isec = &mut ctx.isecs[isecs[i]];
-            isec.offset = aligned as u32;
-            off = aligned + isec.size as u64;
-            i += 1;
+            ctx.isecs[members[d]].offset = start as u32;
+            offset = end;
+            d += 1;
         }
 
-        let thunk_off = align_to(off, 16);
-        // The batch's last branch is just before thunk_off; anything
-        // farther back than a reach from there is unusable by it.
-        release_out_of_reach(ctx, &thunks, &mut reachable_from, thunk_off, reach);
-        let batch: Vec<InputSectionId> = isecs[batch_start..i].to_vec();
-        let fwd_ok = total_estimate - batch_start_off <= E::BRANCH_RANGE / 2 - MAX_THUNK;
-        let n = scan_batch::<E>(ctx, &batch, thunk_off, fwd_ok, &mut thunks);
-        if n > 0 {
-            off = thunk_off + n * E::THUNK_SIZE;
+        let c = batch_end(ctx, &members, b, d);
+
+        // Unmark the symbols of the thunks out of reach of C, so that
+        // they can take new entries.
+        let c_offset = if c == d { offset } else { ctx.isecs[members[c]].offset as u64 };
+        a += members[a..b]
+            .partition_point(|&m| (ctx.isecs[m].offset as u64) < c_offset.saturating_sub(distance));
+        while t < thunks.len() && thunks[t].offset < ctx.isecs[members[a]].offset as u64 {
+            for &sym in &thunks[t].syms {
+                ctx.symbols[sym].unmark();
+            }
+            t += 1;
         }
+
+        // The code after the section is within reach of the batch if
+        // the section's end is known closely enough: once all of it is
+        // placed, only the thunks of the batches left, this one's
+        // included, still go in, at its end.
+        let b_offset = ctx.isecs[members[b]].offset as u64;
+        reach.backward = reach.before.is_some_and(|before| before + c_offset <= distance);
+        reach.forward = d == n
+            && reach.after.is_some_and(|after| {
+                let batches = std::iter::successors(Some(b), |&i| {
+                    (i < n).then(|| batch_end(ctx, &members, i, n))
+                })
+                .count() as u64
+                    - 1;
+                offset + batches * (MAX_THUNK_SIZE + THUNK_ALIGN) + after - b_offset <= distance
+            });
+
+        // Create a thunk for the batch and place it at D.
+        let syms = scan_batch(ctx, &members[b..c], reach);
+        if !syms.is_empty() {
+            offset = align_to(offset, THUNK_ALIGN);
+            let size = syms.len() as u64 * E::THUNK_SIZE;
+            debug_assert!(size <= MAX_THUNK_SIZE);
+            thunks.push(chunks::Thunk { offset, syms });
+            offset += size;
+        }
+        b = c;
     }
 
     // Marks of the thunks still in reach at the end are cleared too.
-    for thunk in &thunks[reachable_from..] {
+    for thunk in &thunks[t..] {
         for &sym in &thunk.syms {
             ctx.symbols[sym].unmark();
         }
     }
     let osec = &mut ctx.output_sections[id.index()];
-    osec.hdr.size = off;
+    osec.hdr.size = offset;
     osec.thunks = thunks;
     osec.members = members;
 }
 
-/// Unmarks the symbols of every thunk that a branch at `from` can no
-/// longer reach, advancing the reachable-thunk cursor past them.
-fn release_out_of_reach<E: Target>(
-    ctx: &Context<E>,
-    thunks: &[chunks::Thunk],
-    reachable_from: &mut usize,
-    from: u64,
-    reach: u64,
-) {
-    while *reachable_from < thunks.len() && thunks[*reachable_from].offset + reach <= from {
-        for &sym in &thunks[*reachable_from].syms {
-            ctx.symbols[sym].unmark();
-        }
-        *reachable_from += 1;
-    }
+/// The end of the batch that starts at member `b`: it takes the members
+/// that end within BATCH_SIZE bytes of it, one at least, and none at D
+/// or beyond.
+fn batch_end<E: Target>(ctx: &Context<E>, members: &[InputSectionId], b: usize, d: usize) -> usize {
+    let limit = ctx.isecs[members[b]].offset as u64 + BATCH_SIZE;
+    b + 1
+        + members[b + 1..d].partition_point(|&m| {
+            let isec = &ctx.isecs[m];
+            (isec.offset as u64 + isec.size as u64) < limit
+        })
 }
 
-/// Scans `batch`'s branch relocations in parallel and, for every target
-/// that may be out of reach and is not already covered by a thunk still
-/// in reach (its symbol is marked), claims the symbol with mark() and
-/// gives it an entry in a new thunk at `thunk_off`. Returns the entry
-/// count. mold scans each batch's members with par_iter and
-/// dedups with the symbol's atomic mark the same way.
+/// Scans `batch`'s branch relocations in parallel and returns the
+/// symbols that need an entry in the batch's thunk: those whose target
+/// may be out of reach and that no thunk still within reach covers (a
+/// symbol claims its entry with mark()). mold scans each batch's
+/// members with par_iter and dedups with the symbol's atomic mark the
+/// same way.
 fn scan_batch<E: Target>(
-    ctx: &mut Context<E>,
+    ctx: &Context<E>,
     batch: &[InputSectionId],
-    thunk_off: u64,
-    forward_reachable: bool,
-    thunks: &mut Vec<chunks::Thunk>,
-) -> u64 {
-    let ctx_ref: &Context<E> = ctx;
+    reach: &Reach,
+) -> Vec<SymbolId> {
     let mut syms: Vec<SymbolId> = batch
         .par_iter()
-        .fold(Vec::new, |mut syms, &isec_id| {
-            let obj = ctx_ref.isecs[isec_id].file as usize;
-            let osec = ctx_ref.isecs[isec_id].output_section();
-            let ro = ctx_ref.isecs[isec_id].rel_offset as usize;
-            let nr = ctx_ref.isecs[isec_id].nrels as usize;
-            for r in 0..nr {
-                let rel = ctx_ref.objs[obj].relocs[ro + r];
+        .fold(Vec::new, |mut syms, &id| {
+            let isec = &ctx.isecs[id];
+            let obj = isec.file as usize;
+            let rels = &ctx.objs[obj].relocs[isec.rel_offset as usize..][..isec.nrels as usize];
+            for rel in rels {
                 if E::classify_reloc(rel.r_type) != RelocClass::Branch {
                     continue;
                 }
-                let Some(sym_id) = ctx_ref.reloc_target_sym(obj, &rel) else {
+                let Some(sym) = ctx.reloc_target_sym(obj, rel) else {
                     continue;
                 };
-                let sym = &ctx_ref.symbols[sym_id];
-                if let (Some(FileId::Obj(_)), Some(target)) = (sym.file(), sym.input_section()) {
-                    let t = &ctx_ref.isecs[ctx_ref.resolve_isec(target as usize)];
-                    // A target in another output section has no offset
-                    // in this section's space; reserve an entry.
-                    if t.output_section() != osec {
-                        // conservative: fall through to the entry below
-                    } else if t.offset != u32::MAX {
-                        let target_off = t.offset as u64 + sym.value;
-                        if thunk_off.saturating_sub(target_off) < E::BRANCH_RANGE / 2 - 1024 * 1024
-                        {
-                            continue;
-                        }
-                    } else if forward_reachable {
-                        // Still unplaced, but the whole section fits
-                        // within forward reach of this batch.
-                        continue;
-                    }
-                }
-                if sym.mark() {
-                    syms.push(sym_id);
+                let p = isec.offset as u64 + rel.offset as u64;
+                if needs_thunk(ctx, reach, p, sym) && ctx.symbols[sym].mark() {
+                    syms.push(sym);
                 }
             }
             syms
@@ -291,15 +343,49 @@ fn scan_batch<E: Target>(
             syms.append(&mut other);
             syms
         });
-    if syms.is_empty() {
-        return 0;
-    }
     // Deterministic entry order regardless of which thread claimed
     // each symbol.
     syms.par_sort_unstable();
-    let n = syms.len() as u64;
-    thunks.push(chunks::Thunk { offset: thunk_off, syms });
-    n
+    syms
+}
+
+/// Whether a branch at offset `p` of the section being laid out may not
+/// reach `sym`, where Context::branch_target_addr takes it: its
+/// subsection, its stub (an import, or a weak definition that may be
+/// interposed) or its _objc_msgSend stub.
+fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
+    let sym = &ctx.symbols[id];
+    let aux = ctx.sym_aux(id);
+    let side = match sym.file() {
+        _ if aux.stub_idx != NO_IDX && ctx.is_weak_coalesced(id) => reach.stubs,
+        Some(FileId::Dylib(_)) if aux.stub_idx != NO_IDX => reach.stubs,
+        Some(FileId::Obj(_)) => match sym.input_section() {
+            Some(target) => {
+                let target = &ctx.isecs[ctx.resolve_isec(target as usize)];
+                match target.output_section() {
+                    Some(ChunkId::Output(osec)) if osec == reach.osec => {
+                        if target.offset == UNPLACED {
+                            Side::After
+                        } else {
+                            let distance = (E::BRANCH_RANGE / 2) as i64;
+                            let t = target.offset as u64 + sym.value;
+                            return !(-distance..distance).contains(&(t.wrapping_sub(p) as i64));
+                        }
+                    }
+                    Some(ChunkId::Output(osec)) => reach.sides[osec.index()],
+                    _ => Side::Outside,
+                }
+            }
+            None if aux.objc_stub_idx != NO_IDX => reach.objc_stubs,
+            None => Side::Outside,
+        },
+        _ => Side::Outside,
+    };
+    match side {
+        Side::Before => !reach.backward,
+        Side::After => !reach.forward,
+        Side::Outside => true,
+    }
 }
 
 /// Records every thunk entry's address on its symbol (SymAux::

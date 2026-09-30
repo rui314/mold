@@ -3,8 +3,9 @@ source "$(dirname "$0")"/common.inc
 
 [ "$ARCH" = arm64 ] || skip
 
-# 140 MiB of code in 1 MiB atoms, twice: main, mid and far are each
-# beyond the +-128 MiB reach of a bl from the one before.
+# 140 MiB of code in 1 MiB atoms, twice: main, far and mid are each
+# beyond the +-128 MiB reach of a bl from the one before, and mid's
+# branch back to far can't reach the island main's bl goes through.
 cat <<'EOF' | $CC -o $t/pad.o -c -xassembler -
 .subsections_via_symbols
 .macro pad
@@ -41,7 +42,7 @@ int mid();
 int main() { printf("%d %d\n", far(), mid()); }
 EOF
 
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/pad.o $t/mid.o $t/pad2.o $t/far.o
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/pad.o $t/far.o $t/pad2.o $t/mid.o
 $t/exe | grep '^42 42$'
 
 # ld-prime names each branch island, a local symbol in the section of
