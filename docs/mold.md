@@ -904,9 +904,10 @@ point symbol in a script.
   attributes so that they do not share the same page.
 
   `separate-code` adds paddings only between executable and non-executable
-  segments. This is the default.
+  segments.
 
-  `noseparate-code` does not add any paddings between segments.
+  `noseparate-code` does not add any paddings between segments. This is the
+  default.
 
 * `-z defs`, `-z undefs`:
   Report undefined symbols (even with `--shared`).
