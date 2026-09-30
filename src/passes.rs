@@ -287,8 +287,11 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
             ctx.file(file).set_reachable(true);
         }
     }
-    let entry = ctx.syms.entry;
-    ctx.symbols[entry].set_gc_root(true);
+    // The ELF header and .dynamic refer to the entry point and the --init
+    // and --fini functions.
+    for id in [ctx.syms.entry, ctx.syms.init, ctx.syms.fini] {
+        ctx.symbols[id].set_gc_root(true);
+    }
 
     if !ctx.args.undefined_glob.is_empty() {
         let roots: Vec<SymbolId> = {
