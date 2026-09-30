@@ -3348,11 +3348,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 
         let osec = &mut ctx.output_sections[osec_id.index()];
         osec.hdr.p2align = osec.hdr.p2align.max(ctx.isecs[i].p2align as u32);
-        // __thread_vars contains pointers but clang emits it with an
-        // alignment of 1, so override.
-        if osec.hdr.flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES {
-            osec.hdr.p2align = osec.hdr.p2align.max(3);
-        }
         // A final image merges the members' attributes; a -r output
         // takes those of the first non-empty member alone, as ld-prime
         // does.
@@ -3599,12 +3594,16 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
             let ((seg, sect), (flags_seg, flags_sect)) =
                 output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
                     .unwrap();
+            // A slot keeps the alignment of the inputs it took over.
+            let p2align = (ctx.objc_stubs.absorbed.iter())
+                .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
+                .fold(3, u32::max);
             let id = tail_section(
                 ctx,
                 seg,
                 sect,
                 output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, false),
-                3,
+                p2align,
                 Tail::ObjcSelrefs,
                 selrefs_size,
             );

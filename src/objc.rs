@@ -512,8 +512,10 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 
 /// Replaces input selector references by the objc stub slots that take
 /// them over: each by a synthetic subsection standing for its stub's
-/// slot, placed once the __objc_selrefs tail is. `absorbed` pairs an
-/// input selector reference with its stub.
+/// slot, placed once the __objc_selrefs tail is, and as aligned as the
+/// most aligned of them (as ld-prime keeps a 2^4 input's alignment for
+/// the slot). `absorbed` pairs an input selector reference with its
+/// stub.
 fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
     if absorbed.is_empty() {
         return;
@@ -536,7 +538,10 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
                 synth
             }
         };
+        let p2align = ctx.isecs[input as usize].p2align;
         ctx.isecs[input as usize].replacement = synth;
+        let s = &mut ctx.isecs[synth as usize];
+        s.p2align = s.p2align.max(p2align);
     }
 }
 

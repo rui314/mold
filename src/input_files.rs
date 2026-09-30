@@ -385,23 +385,31 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
     hdr.flags & S_ATTR_DEBUG != 0 || hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
 }
 
-/// The alignment of every record of a section of fixed-size records,
-/// whatever the section header says, as ld64 gives its atoms (with no
-/// modulus). A literal is aligned to its size: compilers emit
-/// __literal16 with p2align 3 for a 16-byte constant whose type is only
-/// 8-aligned, and rely on the linker to place it where a 16-byte load
-/// can reach it. An initializer or terminator pointer and a CFString
-/// constant are aligned to a pointer, even from a section that claims
-/// less or more, in a -r output as in an image.
-fn record_p2align(hdr: &MachSection) -> Option<u8> {
-    match hdr.section_type() {
-        S_4BYTE_LITERALS => Some(2),
-        S_8BYTE_LITERALS => Some(3),
-        S_16BYTE_LITERALS => Some(4),
-        S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => Some(3),
-        _ if hdr.segname() == "__DATA" && hdr.sectname() == "__cfstring" => Some(3),
-        _ => None,
-    }
+/// The alignment of every record of a section of fixed-size records (see
+/// record_size), as ld-prime gives its atoms: with no modulus, each
+/// record starting at a multiple of it whatever its offset in the
+/// input, and mostly the section's own. A literal is aligned to its
+/// size: compilers emit __literal16 with p2align 3 for a 16-byte
+/// constant whose type is only 8-aligned, and rely on the linker to
+/// place it where a 16-byte load can reach it. An initializer or
+/// terminator pointer, a CFString constant and a pointer-auth slot are
+/// aligned to a pointer, even from a section that claims less or more,
+/// in a -r output as in an image; a thread-local variable descriptor
+/// (from a section clang aligns to a byte) to a pointer in an image,
+/// and in a -r output to at least one.
+fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
+    let size = record_size(hdr)?;
+    let p2align = hdr.p2align as u8;
+    Some(match hdr.section_type() {
+        S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => size.trailing_zeros() as u8,
+        S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => 3,
+        S_THREAD_LOCAL_VARIABLES if relocatable => p2align.max(3),
+        S_THREAD_LOCAL_VARIABLES => 3,
+        _ if hdr.segname() == "__DATA" && matches!(hdr.sectname(), "__cfstring" | "__auth_ptr") => {
+            3
+        }
+        _ => p2align,
+    })
 }
 
 /// The size of each record of a section ld-prime splits into fixed-size
@@ -808,7 +816,7 @@ pub fn stage_object<E: Target>(
     if !obj.subsections_via_symbols {
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
-    let sect_isecs = obj.initialize_sections(&bare);
+    let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
         && obj.read_relocations::<E>(&bare, &sect_isecs);
@@ -901,8 +909,12 @@ impl StagedObject {
     /// content across objects. A bare section's subsections start dead.
     /// Fills `isecs` and `subsecs` and returns each section's subsections
     /// as a range of `isecs`, by section ordinal; a section that is not
-    /// copied through has none.
-    fn initialize_sections(&mut self, bare: &[bool]) -> Vec<std::ops::Range<usize>> {
+    /// copied through has none. `relocatable` is set for a -r link.
+    fn initialize_sections(
+        &mut self,
+        bare: &[bool],
+        relocatable: bool,
+    ) -> Vec<std::ops::Range<usize>> {
         let data = self.mf.data();
         let sect_hdrs = self.sect_hdrs;
         let mut split_points = self.symbol_split_points();
@@ -929,7 +941,7 @@ impl StagedObject {
             points.sort_unstable();
             points.dedup();
 
-            let record_p2align = record_p2align(sect);
+            let record_p2align = record_p2align(sect, relocatable);
             let is_zerofill = matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL);
 
             let first = self.isecs.len();
