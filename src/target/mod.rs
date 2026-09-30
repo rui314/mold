@@ -138,6 +138,32 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 /// Returns the target name for a Mach-O CPU type, if we know it.
 /// The canonical name of a target named on the command line, borrowed
 /// from static storage so that a restart for that target can carry it.
+/// The section a non-extern relocation targets: the one its
+/// r_symbolnum names (a 1-based section ordinal) when the target
+/// address lies in it or one past its end, as ld64 reads it, else the
+/// section containing the address. Only the ordinal tells apart
+/// sections that share an address - an empty one and its successor,
+/// or one section's end and the next one's start.
+pub fn nonextern_target_section(
+    sections: &[MachSection],
+    ordinal: u32,
+    addr: u64,
+) -> Option<usize> {
+    if let Some(i) = (ordinal as usize).checked_sub(1)
+        && let Some(sec) = sections.get(i)
+        && sec.addr <= addr
+        && addr <= sec.addr + sec.size
+    {
+        return Some(i);
+    }
+    // The address may be one past a section's end: a DWARF range end
+    // or high_pc, or a label after the last instruction.
+    sections
+        .iter()
+        .position(|sec| sec.addr <= addr && addr < sec.addr + sec.size)
+        .or_else(|| sections.iter().position(|sec| addr == sec.addr + sec.size))
+}
+
 pub fn canonical_name(name: &str) -> Option<&'static str> {
     [Arm64::NAME, X86_64::NAME].into_iter().find(|&canonical| canonical == name)
 }

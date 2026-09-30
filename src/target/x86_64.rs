@@ -181,13 +181,8 @@ impl Target for X86_64 {
                 } else {
                     addend as u64
                 };
-                // The address may be one past a section's end: a
-                // DWARF range end or high_pc, or a label after the
-                // last instruction.
-                let Some(idx) = sections
-                    .iter()
-                    .position(|sec| sec.addr <= addr && addr < sec.addr + sec.size)
-                    .or_else(|| sections.iter().position(|sec| addr == sec.addr + sec.size))
+                let Some(idx) =
+                    crate::target::nonextern_target_section(sections, r.r_symbolnum(), addr)
                 else {
                     fatal!("{file_name}: bad relocation: {}", r.r_address);
                 };
