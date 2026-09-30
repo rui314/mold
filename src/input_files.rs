@@ -311,6 +311,7 @@ pub fn is_unknown_ld_section(hdr: &MachSection) -> bool {
 /// An object file parsed in isolation: all cross-references are local
 /// indices, so staging runs in parallel across files with no shared
 /// state; `integrate_object` rebases them into the global arenas.
+/// `stage_object` builds it; the fields mean what ObjectFile's do.
 pub struct StagedObject {
     pub mf: &'static MappedFile,
     pub alive: bool,
@@ -321,17 +322,25 @@ pub struct StagedObject {
     pub platform_versions: Vec<PlatformVersion>,
     /// MH_SUBSECTIONS_VIA_SYMBOLS: symbols split sections into atoms.
     pub subsections_via_symbols: bool,
+    /// The object's subsections, in section order and by address
+    /// within a section; the other fields refer to them by their index
+    /// here.
     pub isecs: Vec<InputSection>,
     pub relocs: Vec<crate::input_sections::Reloc>,
+    /// Indices into `isecs`, sorted by input address.
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
     pub nlists: std::borrow::Cow<'static, [NList]>,
     /// Index of the first external nlist, if the table is partitioned
     /// locals-then-externals (see first_global_of).
     pub first_global: Option<u32>,
+    /// Each nlist's name, interned at integration.
     pub sym_names: Vec<&'static str>,
     /// xxh3 of each extern non-stab name (0 otherwise), computed here
     /// so the serial intern path never hashes.
     pub sym_hashes: Vec<u64>,
+    /// The object's unwind info: a record per function (from
+    /// __compact_unwind, or made for a function that has only an FDE),
+    /// and the CIEs and FDEs of its __eh_frame.
     pub unwind: Vec<UnwindRecord>,
     pub cies: Vec<Cie>,
     pub fdes: Vec<Fde>,
@@ -548,8 +557,9 @@ fn read_symtab(
 }
 
 /// Parses one object file without touching any linker state.
-/// `relocatable` is set for a -r link, which keeps a weak symbol's
-/// flags where a final link rewrites them. `keep_all_fdes` keeps the
+/// `relocatable` is set for a -r link, which keeps the flags of a
+/// .weak_def_can_be_hidden symbol that names a whole section (see
+/// unweaken_section_atom_names). `keep_all_fdes` keeps the
 /// FDEs of functions a compact unwind record already covers, for an
 /// output that has no __unwind_info to hold that record (-r, -static).
 pub fn stage_object<E: Target>(
