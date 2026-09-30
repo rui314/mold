@@ -2880,14 +2880,30 @@ fn is_public_location(install_name: &[u8]) -> bool {
 /// file's slice, and its members, by the file's own path.
 pub fn trace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
     if ctx.args.trace {
-        let mut name = name.to_vec();
-        if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
-            && let Some(len) = name[i..].iter().position(|&c| c == b')')
-        {
-            name.drain(i..=i + len);
-        }
-        ctx.traced_files.push(crate::util::display(&name).to_string());
+        ctx.traced_files.push(trace_name(name));
     }
+}
+
+/// Takes back the -t line of a library loaded as another's re-export
+/// that a naming finds at another path (libobjc.tbd for Foundation's
+/// libobjc.A.tbd): ld-prime lists the dylib by the naming's file.
+pub fn untrace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
+    if ctx.args.trace {
+        let name = trace_name(name);
+        if let Some(i) = ctx.traced_files.iter().position(|traced| *traced == name) {
+            ctx.traced_files.remove(i);
+        }
+    }
+}
+
+fn trace_name(name: &[u8]) -> String {
+    let mut name = name.to_vec();
+    if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
+        && let Some(len) = name[i..].iter().position(|&c| c == b')')
+    {
+        name.drain(i..=i + len);
+    }
+    crate::util::display(&name).to_string()
 }
 
 /// Loads the libraries a dylib re-exports: a public one as a dylib of
