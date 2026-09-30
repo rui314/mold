@@ -69,3 +69,13 @@ not grep -q 'cmd LC_SEGMENT_SPLIT_INFO$' $t/lc2
 
 not $mold -arch $ARCH -kernel -e __start $t/a.o -o $t/exe3 2> $t/log
 grep -q -- '-kernel must be used with -static' $t/log
+
+# A kernel has no __PAGEZERO, PIE or not, unless -pagezero_size asks
+# for one.
+segs() { otool -l $1 | awk '$1 == "segname" && !seen[$2]++ { printf "%s ", $2 }'; }
+$mold -arch $ARCH -static -kernel -e __start $t/a.o -o $t/exe4
+[ "$(segs $t/exe4)" = '__TEXT __DATA __DATA_CONST __LINKEDIT ' ]
+$mold -arch $ARCH -static -kernel -e __start -no_pie $t/a.o -o $t/exe5
+[ "$(segs $t/exe5)" = '__TEXT __DATA __DATA_CONST __LINKEDIT ' ]
+$mold -arch $ARCH -static -kernel -e __start -pagezero_size 0x4000 $t/a.o -o $t/exe6
+[ "$(segs $t/exe6)" = '__PAGEZERO __TEXT __DATA __DATA_CONST __LINKEDIT ' ]

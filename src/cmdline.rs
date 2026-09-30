@@ -1496,8 +1496,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // A dylib is loaded at an arbitrary address, and a -preload image
     // copied to wherever its segments say; only a main executable
-    // reserves the low 4 GiB against NULL dereferences.
-    if args.output_type != MH_EXECUTE || args.preload {
+    // reserves the low 4 GiB against NULL dereferences. A -kernel
+    // image, which ld-prime makes position independent for the kernel
+    // collection to slide, has none unless -pagezero_size asks.
+    if args.output_type != MH_EXECUTE || args.preload || (args.kernel && !args.explicit_pagezero) {
         args.pagezero_size = 0;
     }
 
