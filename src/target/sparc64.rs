@@ -90,6 +90,12 @@ fn lox10(val: i64) -> u64 {
     bits(val as u64, 9, 0) | if val < 0 { 0b1_1100_0000_0000 } else { 0 }
 }
 
+/// The rs1, rs2 and rd register fields of the instruction at `loc`.
+fn regs(loc: &[u8]) -> (u32, u32, u32) {
+    let insn = read_ub32(loc);
+    (insn & (0b11111 << 14), insn & 0b11111, insn & (0b11111 << 25))
+}
+
 // Returns the byte offset within .plt of the data pointer for a large SPARC
 // PLT entry. See write_plt_entry below for the block layout this assumes.
 pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
@@ -393,12 +399,6 @@ impl Target for Sparc64 {
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, rel, val, lo, hi);
-
-            // Register fields of the instruction being rewritten.
-            let insn = read_ub32(&buf[off..]);
-            let rs1 = insn & (0b11111 << 14);
-            let rs2 = insn & 0b11111;
-            let rd = insn & (0b11111 << 25);
             let loc = &mut buf[off..];
 
             match rel.r_type() {
@@ -508,6 +508,7 @@ impl Target for Sparc64 {
                     }
                 }
                 R_SPARC_GOTDATA_OP => {
+                    let (rs1, rs2, rd) = regs(loc);
                     if sym.is_absolute() {
                         // ldx [ %rs1 + %rs2 ], %rd  →  mov %rs2, %rd
                         write_ub32(loc, 0x8010_0000 | rs2 | rd);
@@ -547,6 +548,7 @@ impl Target for Sparc64 {
                     }
                 }
                 R_SPARC_TLS_GD_LO10 => {
+                    let (rs1, _, rd) = regs(loc);
                     if sym.has_tlsgd(&ctx.symbols) {
                         or32(
                             loc,
@@ -566,6 +568,7 @@ impl Target for Sparc64 {
                     }
                 }
                 R_SPARC_TLS_GD_ADD => {
+                    let (rs1, rs2, rd) = regs(loc);
                     if sym.has_tlsgd(&ctx.symbols) {
                         // do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
@@ -616,6 +619,7 @@ impl Target for Sparc64 {
                 }
                 R_SPARC_TLS_LDM_ADD => {
                     if !ctx.got.has_tlsld() {
+                        let (_, rs2, rd) = regs(loc);
                         write_ub32(loc, 0x8021_c000 | rs2 | rd); // sub %g7, %rs2, %rd
                     }
                 }
