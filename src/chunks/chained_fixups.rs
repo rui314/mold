@@ -2,6 +2,8 @@
 //! replacement for the rebase and bind opcode streams, with the fixup
 //! chains it describes threaded through the data sections.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::fatal;
@@ -298,8 +300,6 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 pub fn collect_fixups<E: Target>(
     ctx: &Context<E>,
 ) -> Vec<(u64, Option<crate::symbol::SymbolId>, u64)> {
-    use rayon::prelude::*;
-
     // Every subsection's fixups are independent; collect them on all
     // cores and sort the union in parallel, as mold does.
     let mut fixups: Vec<(u64, Option<crate::symbol::SymbolId>, u64)> = ctx

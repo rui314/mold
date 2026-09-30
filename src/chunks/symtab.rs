@@ -1,6 +1,8 @@
 //! The symbol table in __LINKEDIT, and the writer that emits it together
 //! with the string table.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
@@ -55,7 +57,6 @@ impl Default for SymtabSection {
 }
 
 pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    use rayon::prelude::*;
     let off = ctx.symtab.hdr.fileoff as usize;
     let entries = &ctx.symtab.entries;
     // Millions of entries, each wanting a sym_addr lookup for its

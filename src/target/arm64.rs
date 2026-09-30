@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -149,7 +151,6 @@ impl Target for Arm64 {
             opc | ((target.wrapping_sub(pc) as u32 >> 2) & 0x7_ffff) << 5 | rt
         };
 
-        use rayon::prelude::*;
         struct BufPtr(*mut u8);
         unsafe impl Sync for BufPtr {}
         let bufp = BufPtr(buf.as_mut_ptr());

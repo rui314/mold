@@ -1,6 +1,8 @@
 //! LC_FUNCTION_STARTS data: delta-encoded function addresses, used by
 //! debuggers and crash reporters.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::FileId;
@@ -37,7 +39,6 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.function_starts {
         return Vec::new();
     }
-    use rayon::prelude::*;
     let mut addrs: Vec<u64> = ctx
         .symbols
         .syms

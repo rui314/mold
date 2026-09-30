@@ -17,6 +17,8 @@
 
 use std::hash::Hash;
 
+use rayon::prelude::*;
+
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::RelocTarget;
@@ -263,8 +265,6 @@ impl DigestMap {
 }
 
 pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
-
     // Candidates: live, executable, and defined exclusively by weak
     // symbols, so no one may rely on their addresses being distinct.
     // The per-subsection weak-only AND accumulates in parallel as a

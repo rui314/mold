@@ -12,6 +12,8 @@
 
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::fatal;
 use crate::mapped_file::MappedFile;
 
@@ -398,7 +400,6 @@ pub fn parse_cached(mf: &'static MappedFile, arch: &'static str) -> TbdFile {
 
 /// Warms the parse cache on all cores.
 pub fn prefetch(mfs: &[&'static MappedFile], arch: &'static str) -> Vec<TbdFile> {
-    use rayon::prelude::*;
     mfs.par_iter().map(|mf| parse_cached(mf, arch)).collect()
 }
 

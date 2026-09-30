@@ -26,6 +26,8 @@
 //! second __TEXT placement (which re-encodes __unwind_info) cost 5% of
 //! the link. The extra entries are dead code in the thunk islands.
 
+use rayon::prelude::*;
+
 use crate::chunks::{self, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::FileId;
@@ -164,7 +166,6 @@ fn scan_batch<E: Target>(
     forward_reachable: bool,
     thunks: &mut Vec<chunks::Thunk>,
 ) -> u64 {
-    use rayon::prelude::*;
     let ctx_ref: &Context<E> = ctx;
     let mut syms: Vec<SymbolId> = batch
         .par_iter()

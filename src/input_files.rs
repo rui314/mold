@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use crate::context::Context;
 use crate::fatal;
 use crate::input_sections::InputSection;
@@ -754,8 +756,6 @@ pub fn integrate_objects<E: Target>(
     ids: Vec<crate::symbol::SymbolId>,
     counts: Vec<usize>,
 ) {
-    use rayon::prelude::*;
-
     let obj_base = ctx.objs.len();
     let mut isec_base = ctx.isecs.len();
     let mut cie_base = ctx.cies.len();
@@ -888,7 +888,6 @@ pub fn integrate_objects<E: Target>(
     // sized up front, each object owns the exclusive range its prefix
     // sum assigned, and init writes every slot in it.
     {
-        use rayon::prelude::*;
         let total_locals = locals_base - ctx.symbols.syms.len();
         let old_len = ctx.symbols.syms.len();
         ctx.symbols.syms.reserve(total_locals);
@@ -921,7 +920,6 @@ pub fn integrate_objects<E: Target>(
     // same contract as the local symbols above, so hundreds of
     // megabytes of subsections move on all cores instead of one.
     fn par_moves<T: Send>(dst: &mut Vec<T>, parts: Vec<(usize, Vec<T>)>) {
-        use rayon::prelude::*;
         struct RawPtr<T>(*mut T);
         unsafe impl<T> Sync for RawPtr<T> {}
         let add: usize = parts.iter().map(|(_, v)| v.len()).sum();

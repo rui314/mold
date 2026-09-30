@@ -1,6 +1,8 @@
 //! __TEXT,__unwind_info: the compact unwind table, generated from the
 //! objects' __compact_unwind records.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
@@ -63,7 +65,6 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// at offsets 28, 32, ... once the GOT has its address. Everything
 /// else in the encoding is final at sizing time.
 pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId>) {
-    use rayon::prelude::*;
     let mut records: Vec<crate::input_files::UnwindRecord> = ctx
         .unwind_records
         .par_iter()

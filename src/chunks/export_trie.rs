@@ -1,5 +1,7 @@
 //! The export trie in __LINKEDIT: dyld's index of exported symbols.
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::FileId;
@@ -86,7 +88,6 @@ struct TrieNode {
 /// leading bytes alone is useless when every Mach-O symbol starts
 /// with '_'. Construction stays linear in the total name length.
 fn build_trie(names: &[(&'static str, Export)], depth: usize) -> TrieNode {
-    use rayon::prelude::*;
     let mut node = TrieNode::default();
     let mut rest = names;
     if let Some(&(name, export)) = rest.first()
@@ -138,7 +139,6 @@ fn uleb_len(mut val: u64) -> usize {
 /// child nodes by ULEB128 offset within the trie. Since offsets are
 /// variable-length, sizing iterates to a fixed point.
 pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolId]) -> Vec<u8> {
-    use rayon::prelude::*;
     let base = ctx.args.pagezero_size;
 
     // The caller hands over the defined globals already sorted by

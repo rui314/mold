@@ -2,6 +2,8 @@
 //! subsections assigned to it, the range-extension thunks placed among
 //! them, and the linker-synthesized tail after them.
 
+use rayon::prelude::*;
+
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_sections::InputSectionId;
@@ -76,7 +78,6 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     // ever write within their own subsection), so the work distributes
     // freely. A pointer wrapper stands in for the aliasing split rayon
     // can't express directly.
-    use rayon::prelude::*;
     struct BufPtr(*mut u8);
     unsafe impl Sync for BufPtr {}
     let bufp = BufPtr(buf.as_mut_ptr());

@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
@@ -55,7 +57,6 @@ fn push_be64(buf: &mut Vec<u8>, val: u64) {
 /// These are the code directory's page hashes, and the UUID is derived
 /// from them too.
 pub fn page_hashes(data: &[u8]) -> Vec<[u8; SHA256_SIZE]> {
-    use rayon::prelude::*;
     let page = CS_PAGE_SIZE as usize;
     data.par_chunks(page)
         .map(|chunk| {

@@ -5,6 +5,8 @@ use std::ops::Range;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use crate::chunks::sectcreate::SectCreateSection;
 use crate::chunks::symtab::SymtabSection;
 use crate::chunks::{
@@ -247,7 +249,6 @@ fn collect_file<E: Target>(
 /// Stages the queued object files in parallel and integrates them in
 /// input order - the parallel front end of the mold design.
 fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
-    use rayon::prelude::*;
     let relocatable = ctx.args.relocatable;
     let t = ctx.timer("stage");
     let staged: Vec<input_files::StagedObject> = pending
@@ -546,7 +547,6 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
 /// can steal nothing - a full re-resolution would reach exactly this
 /// outcome, at many times the cost.
 pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
-    use rayon::prelude::*;
     struct SymsPtr(*mut crate::symbol::Symbol);
     unsafe impl Sync for SymsPtr {}
     let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
@@ -602,7 +602,6 @@ pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
 /// each gets its definition directly. Relocations reference them by
 /// symbol index just like externals, so they need locations too.
 fn claim_locals<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
     // A local symbol belongs to exactly one object (locals get fresh
     // slots, never interned), so the per-object claims write disjoint
     // symbols and the objects proceed in parallel.
@@ -644,7 +643,6 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
 }
 
 fn clear_claims<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)) | Some(FileId::Dylib(_))) || sym.is_common() {
             sym.clear_file();
@@ -661,7 +659,6 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
 }
 
 fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
-    use rayon::prelude::*;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     // Symbols the command line names (-e, -u) exist even when no
@@ -1250,8 +1247,6 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
 /// Merges identical literal elements across all live inputs: the first
 /// live copy wins and the rest redirect to it.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
-
     // Deduplication follows the symbol table's sharded shape: every
     // element's content hash is computed in parallel, elements bin by
     // hash, and the shards resolve independently - within a shard the
@@ -1319,7 +1314,6 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
 /// unchanged. (Section-relative relocations still resolve through the
 /// chain in isec_addr.)
 fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
     let isecs = &ctx.isecs;
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if let Some(i) = sym.input_section() {
@@ -1526,7 +1520,6 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
     // a symbol seen; bit 1 marks it as having a def that cannot hide.
     // Both bits are monotonic (only ever set), so racing relaxed
     // stores are safe.
-    use rayon::prelude::*;
     use std::sync::atomic::{AtomicU8, Ordering};
     const SEEN: u8 = 1;
     const NOT_HIDABLE: u8 = 2;
@@ -1570,7 +1563,6 @@ pub fn hide_all_exports<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.no_exported_symbols {
         return;
     }
-    use rayon::prelude::*;
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_))) {
             sym.set_is_private_extern(true);
@@ -1601,7 +1593,6 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     // has already set origins, and find_subsec reads stable subsection
     // extents), so each object independently emits its candidate
     // (loser, winner) subsection pairs, unresolved, in nlist order.
-    use rayon::prelude::*;
     let shared = &*ctx;
     let candidates: Vec<Vec<(usize, usize, u64, u64)>> = ctx
         .objs
@@ -1703,7 +1694,6 @@ fn same_shape(
 /// so the messages are deterministic: mold's
 /// check_duplicate_symbols.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
-    use rayon::prelude::*;
     let mut duplicates: Vec<(crate::symbol::SymbolId, usize)> = ctx
         .objs
         .par_iter()
@@ -1956,7 +1946,6 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // Classification reads only; collect it on all cores. The apply
     // loop below stays serial so GOT and stub slots keep their
     // deterministic first-seen order.
-    use rayon::prelude::*;
     let ctx_ref: &Context<E> = ctx;
     let classes: Vec<(crate::symbol::SymbolId, RelocClass)> = ctx_ref
         .isecs
@@ -3890,7 +3879,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // annotates relocations; those (at most one per link in practice)
     // stay on the serial path.
     {
-        use rayon::prelude::*;
         // Branches are not confined to their own section: __text,
         // __StaticInit, the stubs and every other executable section
         // share the __TEXT segment's address space, so once their
@@ -4600,7 +4588,6 @@ pub fn create_output_symtab<E: Target>(
         // Each object's stab run is independent; plan them in
         // parallel and append in object order, the same shape as the
         // per-object locals planning below.
-        use rayon::prelude::*;
         let planned: Vec<StabPlan> = ctx
             .objs
             .par_iter()
@@ -4651,7 +4638,6 @@ pub fn create_output_symtab<E: Target>(
     // Local symbols (-x drops them), planned per object in parallel
     // - mold's plan_symtab per file - and appended in object order.
     if !ctx.args.strip_locals {
-        use rayon::prelude::*;
         let ctx_ref: &Context<E> = ctx;
         let per_obj: Vec<Vec<(&'static str, NList, crate::symbol::SymbolId)>> = ctx_ref
             .objs
@@ -4756,35 +4742,32 @@ pub fn create_output_symtab<E: Target>(
         Pext,
         Undef,
     }
-    let classes: Vec<Class> = {
-        use rayon::prelude::*;
-        (0..ctx.symbols.syms.len())
-            .into_par_iter()
-            .map(|i| {
-                let sym = &ctx.symbols[i];
-                if matches!(sym.file(), Some(FileId::Dylib(_))) {
-                    return Class::Undef;
+    let classes: Vec<Class> = (0..ctx.symbols.syms.len())
+        .into_par_iter()
+        .map(|i| {
+            let sym = &ctx.symbols[i];
+            if matches!(sym.file(), Some(FileId::Dylib(_))) {
+                return Class::Undef;
+            }
+            if sym.is_extern()
+                && sym.is_private_extern()
+                && matches!(sym.file(), Some(FileId::Obj(_)))
+                && sym
+                    .input_section()
+                    .is_some_and(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+            {
+                // A private external becomes a local, and a label
+                // is not emitted (ld-prime keeps clang's
+                // __OBJC_LABEL_PROTOCOL_$_X, demoted, but not an
+                // l_OBJC_LABEL_PROTOCOL_$_X).
+                if !keep_local_symbol(sym.name()) {
+                    return Class::No;
                 }
-                if sym.is_extern()
-                    && sym.is_private_extern()
-                    && matches!(sym.file(), Some(FileId::Obj(_)))
-                    && sym
-                        .input_section()
-                        .is_some_and(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
-                {
-                    // A private external becomes a local, and a label
-                    // is not emitted (ld-prime keeps clang's
-                    // __OBJC_LABEL_PROTOCOL_$_X, demoted, but not an
-                    // l_OBJC_LABEL_PROTOCOL_$_X).
-                    if !keep_local_symbol(sym.name()) {
-                        return Class::No;
-                    }
-                    return Class::Pext;
-                }
-                Class::No
-            })
-            .collect()
-    };
+                return Class::Pext;
+            }
+            Class::No
+        })
+        .collect();
 
     // Private external symbols resolve globally but appear as locals
     // (with N_PEXT still set) in the output.
@@ -4808,7 +4791,6 @@ pub fn create_output_symtab<E: Target>(
 
     // Defined global symbols, sorted by name; the caller sorted them
     // once for this table and the export trie both.
-    use rayon::prelude::*;
     for &i in sorted_globals {
         let sym = &ctx.symbols[i];
         let n_strx = 0;
@@ -4877,7 +4859,6 @@ pub fn create_output_symtab<E: Target>(
     // costs about 1MB of a 154MB string table (still under ld64's),
     // far less than mold, which dedups nothing here at all.
     {
-        use rayon::prelude::*;
         debug_assert_eq!(names.len(), data.entries.len());
         // The bin key must (a) send equal names to one shard, so the
         // pointer-dedup inside the shard sees every copy, and (b) be
@@ -5050,7 +5031,6 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
             let sorted_globals_of = || -> Vec<crate::symbol::SymbolId> {
                 let _t = shared.timer("globals_sort");
                 {
-                    use rayon::prelude::*;
                     let mut v: Vec<crate::symbol::SymbolId> = (0..shared.symbols.syms.len())
                         .into_par_iter()
                         .filter(|&i| {
@@ -5476,8 +5456,6 @@ pub fn copy_chunks<E: Target>(
     buf: &mut [u8],
     out: &crate::output_file::OutputFile,
 ) {
-    use rayon::prelude::*;
-
     let jobs: Vec<(ChunkId, Range<u64>)> = ctx
         .chunks
         .iter()

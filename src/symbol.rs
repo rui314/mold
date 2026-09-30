@@ -1,5 +1,7 @@
 //! Symbols and the global symbol table.
 
+use rayon::prelude::*;
+
 use crate::input_files::FileId;
 
 /// A symbol index, u32 as in mold: every per-symbol and
@@ -414,8 +416,6 @@ impl SymbolTable {
     /// one serial scatter hands the ids back. Ids depend only on
     /// input order and the hash, so links stay deterministic.
     pub fn gather(&mut self, batch: &[(&'static str, u64)]) -> Vec<SymbolId> {
-        use rayon::prelude::*;
-
         let mut bins: Vec<Vec<u32>> = vec![Vec::new(); NUM_SHARDS];
         for (i, &(_, hash)) in batch.iter().enumerate() {
             bins[shard_of(hash)].push(i as u32);

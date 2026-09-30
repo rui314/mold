@@ -8,6 +8,8 @@
 //! liveness walk's section-level counterpart, and mirrors
 //! gc_sections.rs in mold (dead-strip.cc in sold).
 
+use rayon::prelude::*;
+
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::RelocTarget;
@@ -25,10 +27,8 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     let mut pred: Vec<usize> =
         if ctx.args.why_live.is_empty() { Vec::new() } else { vec![usize::MAX; ctx.isecs.len()] };
     let mut stack: Vec<usize> = Vec::new();
-    let redirects: Vec<usize> = {
-        use rayon::prelude::*;
-        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect()
-    };
+    let redirects: Vec<usize> =
+        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
     let redirects = &redirects;
     // Liveness is marked in place, on the section's atomic visited bit
     // (mold's IS_VISITED), rather than in side arrays copied back
@@ -50,29 +50,27 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     // Section-level roots, found on all cores; marking stays serial
     // (it is a handful of sections). Sections of dead archive members
     // are not part of the link at all and must not be resurrected.
-    let root_ids: Vec<usize> = {
-        use rayon::prelude::*;
-        ctx.isecs
-            .par_iter()
-            .enumerate()
-            .filter_map(|(id, isec)| {
-                if !isec.is_alive() {
-                    return None;
-                }
-                let keep_type = matches!(
-                    ctx.hdr_of(isec).section_type(),
-                    S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS
-                );
-                let keep_attr =
-                    ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) != 0;
-                if keep_type || keep_attr || ctx.hdr_of(isec).sectname() == "__objc_imageinfo" {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
+    let root_ids: Vec<usize> = ctx
+        .isecs
+        .par_iter()
+        .enumerate()
+        .filter_map(|(id, isec)| {
+            if !isec.is_alive() {
+                return None;
+            }
+            let keep_type = matches!(
+                ctx.hdr_of(isec).section_type(),
+                S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS
+            );
+            let keep_attr =
+                ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) != 0;
+            if keep_type || keep_attr || ctx.hdr_of(isec).sectname() == "__objc_imageinfo" {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect();
     for id in root_ids {
         mark(ctx, &mut pred, &mut stack, id, usize::MAX);
     }
@@ -84,8 +82,7 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Symbol-level roots, found on all cores like the section roots.
-    let sym_roots: Vec<usize> = {
-        use rayon::prelude::*;
+    let sym_roots: Vec<usize> =
         ctx.symbols
             .syms
             .par_iter()
@@ -102,8 +99,7 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
                             && sym.is_defined());
                 if is_root { sym.input_section().map(|i| i as usize) } else { None }
             })
-            .collect()
-    };
+            .collect();
     for isec in sym_roots {
         mark(ctx, &mut pred, &mut stack, isec, usize::MAX);
     }
@@ -167,7 +163,6 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     };
 
     if ctx.args.why_live.is_empty() {
-        use rayon::prelude::*;
         // mold's gc-sections marks with a work-stealing task pool, not
         // synchronous frontier rounds: each visit follows edges up to
         // three levels inline and banks the rest in small batches that
@@ -305,7 +300,6 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
 /// Refresh symbol usage after atom liveness is known. Undefined references
 /// in removed atoms must neither cause errors nor become dynamic imports.
 pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
-    use rayon::prelude::*;
     ctx.symbols.syms.par_iter().for_each(|sym| sym.unmark());
     ctx.isecs
         .par_iter()
