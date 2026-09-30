@@ -62,8 +62,7 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
                 ctx.hdr_of(isec).section_type(),
                 S_MOD_INIT_FUNC_POINTERS | S_INIT_FUNC_OFFSETS
             );
-            let keep_attr =
-                ctx.hdr_of(isec).flags & (S_ATTR_NO_DEAD_STRIP | S_ATTR_LIVE_SUPPORT) != 0;
+            let keep_attr = ctx.hdr_of(isec).flags & S_ATTR_NO_DEAD_STRIP != 0;
             if keep_type || keep_attr || ctx.hdr_of(isec).sectname() == "__objc_imageinfo" {
                 Some(id)
             } else {
@@ -162,6 +161,18 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
         }
     };
 
+    // The serial walk, for -why_live's stable chains and for what a
+    // live-support atom keeps.
+    let walk = |pred: &mut Vec<usize>, stack: &mut Vec<usize>| {
+        while let Some(id) = stack.pop() {
+            let mut out = Vec::new();
+            edges_of(id, &mut out);
+            for t in out {
+                mark(ctx, pred, stack, t, id);
+            }
+        }
+    };
+
     if ctx.args.why_live.is_empty() {
         // mold's gc-sections marks with a work-stealing task pool, not
         // synchronous frontier rounds: each visit follows edges up to
@@ -249,12 +260,22 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
             roots.par_chunks(GC_BATCH).for_each(|batch| visit_batch(gc, batch.to_vec(), scope));
         });
     } else {
-        while let Some(id) = stack.pop() {
-            let mut out = Vec::new();
-            edges_of(id, &mut out);
-            for t in out {
-                mark(ctx, &mut pred, &mut stack, t, id);
-            }
+        walk(&mut pred, &mut stack);
+    }
+
+    // A live-support atom (S_ATTR_LIVE_SUPPORT) lives only if it
+    // references a live atom, and then keeps what it references. ld64
+    // checks them once, in input order, after what the roots reach is
+    // marked, so one that only a later live-support atom would make
+    // live stays dead.
+    for id in live_support_sections(ctx) {
+        let mut out = Vec::new();
+        edges_of(id, &mut out);
+        if !ctx.isecs[redirects[id]].is_visited()
+            && out.iter().any(|&t| ctx.isecs[redirects[t]].is_visited())
+        {
+            mark(ctx, &mut pred, &mut stack, id, usize::MAX);
+            walk(&mut pred, &mut stack);
         }
     }
 
@@ -295,6 +316,16 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
 
     // The compaction moved the surviving records; refresh the ranges.
     crate::passes::refresh_unwind_ranges(ctx);
+}
+
+/// The subsections of S_ATTR_LIVE_SUPPORT sections, in input order.
+fn live_support_sections<E: Target>(ctx: &Context<E>) -> Vec<usize> {
+    ctx.isecs
+        .par_iter()
+        .enumerate()
+        .filter(|(_, isec)| isec.is_alive() && ctx.hdr_of(isec).flags & S_ATTR_LIVE_SUPPORT != 0)
+        .map(|(id, _)| id)
+        .collect()
 }
 
 /// Refresh symbol usage after atom liveness is known. Undefined references
