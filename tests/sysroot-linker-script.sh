@@ -22,3 +22,6 @@ int main() { foo(); }
 EOF
 
 $CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ $t/foo/bar/b.script
+
+# Without --sysroot, an absolute path is not searched for in library paths.
+not ./mold -o $t/exe -L$t $t/c.o $t/foo/bar/b.script |& grep 'cannot open /foo/bar/libfoo.a'

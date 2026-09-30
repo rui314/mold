@@ -121,6 +121,10 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
 }
 
 fn is_in_sysroot<E: Target>(ctx: &Context<E>, path: &Path) -> bool {
+    // An empty sysroot stands for the root directory, which contains every file.
+    if ctx.args.sysroot.as_os_str().is_empty() {
+        return true;
+    }
     let sysroot = apply_chroot(&ctx.args.chroot, &ctx.args.sysroot);
     let (Ok(path), Ok(sysroot)) = (path.canonicalize(), sysroot.canonicalize()) else {
         return false;
