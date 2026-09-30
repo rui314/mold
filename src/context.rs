@@ -106,6 +106,10 @@ pub struct Context<E: Target> {
     /// The libraries and frameworks auto-link options named that were
     /// not found, as ld-prime reports them if symbols stay undefined.
     pub autolink_misses: Vec<String>,
+    /// The dylibs named on the command line that -dead_strip_dylibs
+    /// dropped, which ld-prime's -map still lists: their positions
+    /// among the inputs and paths.
+    pub stripped_dylibs: Vec<(u32, std::path::PathBuf)>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -211,6 +215,7 @@ impl<E: Target> Context<E> {
             visited_files: std::collections::HashSet::new(),
             processed_linker_options: std::collections::HashSet::new(),
             autolink_misses: Vec::new(),
+            stripped_dylibs: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
             fdes: Vec::new(),

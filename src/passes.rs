@@ -186,7 +186,11 @@ struct PendingObject {
 /// a hint, changes nothing. -needed_* covers the named library only;
 /// the ones its stub re-exports get a load command only if something
 /// binds to them. One -upward_* makes it an upward dependency.
-fn name_dylib(dylib: &mut input_files::DylibFile, rc: ReaderContext) {
+fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: ReaderContext) {
+    if ctx.dylibs[idx].is_implicit {
+        ctx.dylibs[idx].named_at = Some((ctx.next_priority(), mf.name.clone()));
+    }
+    let dylib = &mut ctx.dylibs[idx];
     if dylib.is_implicit && !rc.autolinked {
         dylib.is_weak = rc.weak;
     } else {
@@ -268,8 +272,8 @@ fn collect_file<E: Target>(
     // auto-link options; load each file once, and let a dylib take on
     // what every naming says.
     if !ctx.visited_files.insert(mf.name.clone()) {
-        if let Some(dylib) = ctx.dylibs.iter_mut().find(|d| d.path == mf.name) {
-            name_dylib(dylib, rc);
+        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name) {
+            name_dylib(ctx, idx, mf, rc);
         }
         return;
     }
@@ -308,8 +312,8 @@ fn collect_file<E: Target>(
             for d in &mut ctx.dylibs[first..] {
                 d.is_weak |= rc.weak;
             }
+            name_dylib(ctx, idx, mf, rc);
             let dylib = &mut ctx.dylibs[idx];
-            name_dylib(dylib, rc);
             // Ordered by naming sequence.
             if dylib.load_order == u32::MAX {
                 dylib.load_order = ctx.dylib_load_seq;
@@ -2599,6 +2603,9 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         if used[i] {
             remap[i] = ctx.dylibs.len();
             ctx.dylibs.push(dylib);
+        } else if !dylib.is_implicit && !dylib.is_autolinked {
+            let (priority, path) = dylib.named_at.unwrap_or((dylib.priority, dylib.path));
+            ctx.stripped_dylibs.push((priority, path));
         }
     }
 

@@ -111,24 +111,32 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
 }
 
 /// A line of the map's symbol list: an atom's address and size, the
-/// number of the file it came from, and its name.
+/// number of the file it came from, and its name (the bytes of a
+/// literal, whatever they are).
 struct MapEntry<'a> {
     addr: u64,
     size: u64,
     file: usize,
-    name: Cow<'a, str>,
+    name: Cow<'a, [u8]>,
+}
+
+fn name(s: &str) -> Cow<'_, [u8]> {
+    Cow::Borrowed(s.as_bytes())
 }
 
 /// The files of the link as ld-prime's map numbers them, in the order
 /// it loads them: from 1 in command line order - objects, the archive
 /// members that were loaded, where their archive was named, and dylibs,
-/// used or not -, then by install name the libraries loaded because a
-/// dylib re-exports them that something binds to, and last the dylibs
-/// that auto-link options named. The re-exported libraries include the
-/// private ones a dylib merges (libSystem's libsystem_c), which
-/// ld-prime reads from files of their own and credits with the symbols
-/// they define. Number 0 stands for the linker, which makes the stubs,
-/// the unwind info and such.
+/// used or not (-dead_strip_dylibs or not) -, then by install name the
+/// libraries loaded because a dylib re-exports them that something
+/// binds to, and last the dylibs that auto-link options named and
+/// something binds to, in the order ld-prime acts on the options. A
+/// re-exported library named too is listed where it is named, by the
+/// path given. The re-exported
+/// libraries include the private ones a dylib merges (libSystem's
+/// libsystem_c), which ld-prime reads from files of their own and
+/// credits with the symbols they define. Number 0 stands for the
+/// linker, which makes the stubs, the unwind info and such.
 struct MapFiles<'a> {
     paths: Vec<&'a Path>,
     /// The number of each object (0 for the internal one) and dylib.
@@ -145,6 +153,7 @@ impl<'a> MapFiles<'a> {
             Obj(usize),
             Dylib(usize),
             Merged(&'a MergedFile),
+            Stripped(&'a Path),
         }
         let mut named: Vec<(u32, File)> = Vec::new();
         for (i, obj) in ctx.objs.iter().enumerate() {
@@ -155,10 +164,14 @@ impl<'a> MapFiles<'a> {
         let mut autolinked: Vec<(u32, File)> = Vec::new();
         for (i, dylib) in ctx.dylibs.iter().enumerate() {
             if dylib.is_autolinked {
-                autolinked.push((dylib.priority, File::Dylib(i)));
+                autolinked.push((dylib.load_order, File::Dylib(i)));
             } else if !dylib.is_implicit {
-                named.push((dylib.priority, File::Dylib(i)));
+                let priority = dylib.named_at.as_ref().map_or(dylib.priority, |&(p, _)| p);
+                named.push((priority, File::Dylib(i)));
             }
+        }
+        for (priority, path) in &ctx.stripped_dylibs {
+            named.push((*priority, File::Stripped(path)));
         }
         named.sort_by_key(|(priority, _)| *priority);
         autolinked.sort_by_key(|(priority, _)| *priority);
@@ -221,8 +234,10 @@ impl<'a> MapFiles<'a> {
                 }
                 File::Dylib(i) => {
                     files.dylibs[i] = number;
-                    files.paths.push(&ctx.dylibs[i].path);
+                    let dylib = &ctx.dylibs[i];
+                    files.paths.push(dylib.named_at.as_ref().map_or(&dylib.path, |(_, path)| path));
                 }
+                File::Stripped(path) => files.paths.push(path),
                 File::Merged(file) => {
                     merged_numbers.insert(&file.install_name, number);
                     files.paths.push(&file.path);
@@ -297,6 +312,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 
     let mut entries = symbol_entries(ctx, &files);
     entries.extend(unnamed_entries(ctx, &files, &entries));
+    entries.extend(eh_frame_entries(ctx, &files, &entries));
     entries.extend(synthetic_entries(ctx, &files));
     entries.sort_by_key(|e| (e.addr, e.size));
 
@@ -310,7 +326,9 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
         );
     }
     for e in &entries {
-        let _ = writeln!(out, "0x{:08X}\t0x{:08X}\t[{:3}] {}", e.addr, e.size, e.file, e.name);
+        let _ = write!(out, "0x{:08X}\t0x{:08X}\t[{:3}] ", e.addr, e.size, e.file);
+        let _ = out.write_all(&e.name);
+        let _ = writeln!(out);
     }
 
     // Symbols removed by -dead_strip appear in their own section
@@ -322,7 +340,9 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
         let _ = writeln!(out, "# Dead Stripped Symbols:");
         let _ = writeln!(out, "#        \tSize    \tFile  Name");
         for e in &dead {
-            let _ = writeln!(out, "<<dead>>\t0x{:08X}\t[{:3}] {}", e.size, e.file, e.name);
+            let _ = write!(out, "<<dead>>\t0x{:08X}\t[{:3}] ", e.size, e.file);
+            let _ = out.write_all(&e.name);
+            let _ = writeln!(out);
         }
     }
 }
@@ -332,8 +352,9 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 /// ltmpN label where symbols split the sections (it merely marks where a
 /// section starts). A C string is known by its contents, and the atoms
 /// of the sections ld-prime reads as lists of records - CFStrings,
-/// UTF-16 strings, selector references, Objective-C class and category
-/// lists - by no local symbol: they are "anon", as unnamed atoms are.
+/// UTF-16 strings, selector and class references, Objective-C class and
+/// category lists - by no local symbol: they are "anon", as unnamed
+/// atoms are.
 fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol, obj: usize) -> bool {
     let name = sym.name();
     let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
@@ -349,6 +370,7 @@ fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol, obj: usize
             hdr.sectname(),
             "__cfstring"
                 | "__ustring"
+                | "__objc_classrefs"
                 | "__objc_classlist"
                 | "__objc_nlclslist"
                 | "__objc_catlist"
@@ -380,6 +402,8 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// (Swift's type metadata inside its full metadata). ld-prime counts a
 /// thread-local variable's descriptor, which it rewrites, as its own,
 /// and a common symbol as the object's whose tentative definition won.
+/// It credits itself with an atom it rewrote (a method list in the
+/// relative form).
 fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
     let common_owners = crate::passes::common_owners(ctx);
     let nlists = defining_nlists(ctx);
@@ -396,6 +420,7 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
         let file = match common_owners.get(&(isec as u32)) {
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
+            None if is_rewritten_method_list(ctx, isec) => 0,
             None => files.objs[obj as usize],
         };
         if is_named(ctx, sym, obj as usize) {
@@ -429,34 +454,42 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
             addr: ctx.sym_addr(sym),
             size,
             file,
-            name: Cow::Borrowed(ctx.symbols[sym].name()),
+            name: name(ctx.symbols[sym].name()),
         })
         .collect()
 }
 
+/// Whether a subsection is an Objective-C method list the linker
+/// rewrote in the relative form.
+fn is_rewritten_method_list<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
+    let isec = &ctx.isecs[isec];
+    ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).sectname() == "__objc_methlist"
+}
+
 /// What ld-prime calls a literal no symbol names, wherever it ends up
 /// (fixed-size literals go to __const): a C string by its contents
-/// ("literal string: " and the string, its newlines, tabs, carriage
-/// returns and quotes escaped) - named or not -, a fixed-size literal by
-/// its size.
+/// ("literal string: " and the string's bytes, its newlines, tabs,
+/// carriage returns and quotes escaped) - named or not -, a fixed-size
+/// literal by its size.
 fn literal_name<E: Target>(
     ctx: &Context<E>,
     isec: &crate::input_sections::InputSection,
-) -> Option<Cow<'static, str>> {
+) -> Option<Cow<'static, [u8]>> {
     match ctx.hdr_of(isec).section_type() {
         S_CSTRING_LITERALS => {
-            Some(Cow::Owned(format!("literal string: {}", escape_literal(isec.data()))))
+            let mut name = b"literal string: ".to_vec();
+            escape_literal(&mut name, isec.data());
+            Some(Cow::Owned(name))
         }
-        S_4BYTE_LITERALS => Some(Cow::Borrowed("4-byte-literal")),
-        S_8BYTE_LITERALS => Some(Cow::Borrowed("8-byte-literal")),
-        S_16BYTE_LITERALS => Some(Cow::Borrowed("16-byte-literal")),
+        S_4BYTE_LITERALS => Some(Cow::Borrowed(b"4-byte-literal")),
+        S_8BYTE_LITERALS => Some(Cow::Borrowed(b"8-byte-literal")),
+        S_16BYTE_LITERALS => Some(Cow::Borrowed(b"16-byte-literal")),
         _ => None,
     }
 }
 
-fn escape_literal(data: &[u8]) -> String {
+fn escape_literal(out: &mut Vec<u8>, data: &[u8]) {
     let s = data.strip_suffix(b"\0").unwrap_or(data);
-    let mut out = Vec::with_capacity(s.len());
     for &c in s {
         match c {
             b'\n' => out.extend_from_slice(b"\\n"),
@@ -466,17 +499,22 @@ fn escape_literal(data: &[u8]) -> String {
             _ => out.push(c),
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The atoms of the input files no symbol names, up to the first
-/// symbol in one: literals by what they are, any other "anon".
+/// symbol in one: literals by what they are, any other "anon". The
+/// selector names of Objective-C stubs are file 0's: ld-prime makes
+/// them itself, and an input's copy merges into its own.
 fn unnamed_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
     named: &[MapEntry],
 ) -> Vec<MapEntry<'a>> {
     let named: std::collections::BTreeSet<u64> = named.iter().map(|e| e.addr).collect();
+    let stub_names: hashbrown::HashSet<usize> = (ctx.objc_stubs.name_isec.iter())
+        .filter(|&&isec| isec != u32::MAX)
+        .map(|&isec| ctx.resolve_isec(isec as usize))
+        .collect();
     let mut entries = Vec::new();
     for osec in &ctx.output_sections {
         for &id in &osec.members {
@@ -486,8 +524,12 @@ fn unnamed_entries<'a, E: Target>(
             if ctx.is_internal(isec.file as usize) || size == 0 {
                 continue;
             }
-            let file = files.objs[isec.file as usize];
-            let name = literal_name(ctx, isec).unwrap_or(Cow::Borrowed("anon"));
+            let file = if stub_names.contains(&(id as usize)) {
+                0
+            } else {
+                files.objs[isec.file as usize]
+            };
+            let name = literal_name(ctx, isec).unwrap_or(name("anon"));
             let next = named.range(addr..addr + size).next().copied();
             if next != Some(addr) {
                 let size = next.unwrap_or(addr + size) - addr;
@@ -498,10 +540,48 @@ fn unnamed_entries<'a, E: Target>(
     // The selector names synthesized for Objective-C stubs.
     for (i, (_, sel)) in ctx.objc_stubs.symbols.iter().enumerate() {
         if ctx.objc_stubs.name_isec[i] == u32::MAX {
-            let name = Cow::Owned(format!("literal string: {sel}"));
+            let name = Cow::Owned(format!("literal string: {sel}").into_bytes());
             let size = sel.len() as u64 + 1;
             entries.push(MapEntry { addr: ctx.objc_methname_addr(i), size, file: 0, name });
         }
+    }
+    entries
+}
+
+/// The records of the __eh_frame the linker writes, each credited to
+/// the object it came from: a CIE is "CFI", an FDE "FDE for: " and the
+/// name of the function's atom.
+fn eh_frame_entries<'a, E: Target>(
+    ctx: &'a Context<E>,
+    files: &MapFiles,
+    named: &[MapEntry<'a>],
+) -> Vec<MapEntry<'a>> {
+    if !ctx.chunks.contains(&ChunkId::EhFrame) {
+        return Vec::new();
+    }
+    // Of the symbols at one place, the one listed first names the atom.
+    let mut atoms: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
+    for e in named {
+        let atom = atoms.entry(e.addr).or_insert((e.size, &e.name));
+        if e.size < atom.0 {
+            *atom = (e.size, &e.name);
+        }
+    }
+    let base = ctx.eh_frame.hdr.addr;
+    let mut entries = Vec::new();
+    for cie in ctx.cies.iter().filter(|cie| cie.is_alive) {
+        let addr = base + cie.output_offset as u64;
+        let (size, file) = (cie.data.len() as u64, files.objs[cie.obj as usize]);
+        entries.push(MapEntry { addr, size, file, name: name("CFI") });
+    }
+    for fde in &ctx.fdes {
+        let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
+        let func = atoms.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
+        let mut name = b"FDE for: ".to_vec();
+        name.extend_from_slice(func);
+        let addr = base + fde.output_offset as u64;
+        let (size, file) = (fde.data.len() as u64, files.objs[fde.obj as usize]);
+        entries.push(MapEntry { addr, size, file, name: Cow::Owned(name) });
     }
     entries
 }
@@ -517,9 +597,9 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         addr,
         size,
         file: files.of_symbol(ctx, sym),
-        name: Cow::Owned(format!("{}{suffix}", ctx.symbols[sym].name())),
+        name: Cow::Owned(format!("{}{suffix}", ctx.symbols[sym].name()).into_bytes()),
     };
-    let anon = |addr: u64, size: u64| MapEntry { addr, size, file: 0, name: Cow::Borrowed("anon") };
+    let anon = |addr: u64, size: u64| MapEntry { addr, size, file: 0, name: name("anon") };
 
     let stubs = &ctx.stubs;
     for (i, &sym) in stubs.symbols.iter().enumerate() {
@@ -544,7 +624,7 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     let objc_stubs = &ctx.objc_stubs;
     for (i, &(sym, _)) in objc_stubs.symbols.iter().enumerate() {
         let addr = objc_stubs.hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
-        let name = Cow::Borrowed(ctx.symbols[sym].name());
+        let name = name(ctx.symbols[sym].name());
         entries.push(MapEntry { addr, size: E::OBJC_STUB_SIZE, file: 0, name });
     }
     if objc_stubs.selrefs.is_some() {
@@ -553,27 +633,32 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         }
     }
 
-    for &(name, isec) in &ctx.extra_local_syms {
+    for &(sym, isec) in &ctx.extra_local_syms {
         let size = ctx.isecs[isec as usize].size as u64;
         let addr = ctx.isec_addr(isec as usize);
-        entries.push(MapEntry { addr, size, file: 0, name: Cow::Borrowed(name) });
+        entries.push(MapEntry { addr, size, file: 0, name: name(sym) });
+    }
+    // The branch islands, as the symbol table names them.
+    for (addr, _, island) in crate::thunks::island_symbols(ctx) {
+        let name = Cow::Borrowed(island);
+        entries.push(MapEntry { addr, size: E::THUNK_SIZE, file: 0, name });
     }
     if ctx.chunks.contains(&ChunkId::UnwindInfo) {
         let hdr = &ctx.unwind_info.hdr;
-        let name = Cow::Borrowed("compact unwind info");
+        let name = name("compact unwind info");
         entries.push(MapEntry { addr: hdr.addr, size: hdr.size, file: 0, name });
     }
     let init_offsets = &ctx.init_offsets;
     for i in 0..init_offsets.init_funcs.len() as u64 {
         let addr = init_offsets.hdr.addr + i * 4;
-        entries.push(MapEntry { addr, size: 4, file: 0, name: Cow::Borrowed("init-offset") });
+        entries.push(MapEntry { addr, size: 4, file: 0, name: name("init-offset") });
     }
     if ctx.chunks.contains(&ChunkId::ObjcImageInfo) {
         entries.push(anon(ctx.objc_imageinfo.hdr.addr, ctx.objc_imageinfo.hdr.size));
     }
     if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == "__UNIXSTACK") {
         let (addr, size) = (stack.cmd.vmaddr, stack.cmd.vmsize);
-        entries.push(MapEntry { addr, size, file: 0, name: Cow::Borrowed("l__unixstack") });
+        entries.push(MapEntry { addr, size, file: 0, name: name("l__unixstack") });
     }
     entries
 }
@@ -613,7 +698,7 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
         };
         let file = files.objs[ctx.isecs[isec].file as usize];
         let size = end.saturating_sub(value);
-        let entry = MapEntry { addr: 0, size, file, name: Cow::Borrowed(name) };
+        let entry = MapEntry { addr: 0, size, file, name: name.as_bytes().into() };
         dead.push((file, u64::from(ctx.isecs[isec].input_addr) + value, entry));
     }
 
