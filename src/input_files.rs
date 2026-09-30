@@ -610,6 +610,23 @@ impl LoadCommands {
         }
         cmds
     }
+
+    /// Rejects pointer slots the object names in its indirect symbol
+    /// table (from the section's reserved1 on) rather than by
+    /// relocations, as 32-bit code did with .non_lazy_symbol_pointer:
+    /// ld-prime refuses them in a 64-bit link, and they would be left
+    /// null.
+    fn check_indirect_pointers(&self, mf: &MappedFile) {
+        let nindirect = self.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
+        if self.sect_hdrs.iter().any(|s| {
+            s.section_type() == S_NON_LAZY_SYMBOL_POINTERS && s.size > 0 && s.reserved1 < nindirect
+        }) {
+            fatal!(
+                "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
+                mf.name.display()
+            );
+        }
+    }
 }
 
 /// Reads an object's symbol table: its nlists and string table. The
@@ -656,6 +673,7 @@ pub fn stage_object<E: Target>(
     }
 
     let cmds = LoadCommands::read::<E>(data, &hdr);
+    cmds.check_indirect_pointers(mf);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
