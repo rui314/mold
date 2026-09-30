@@ -1055,7 +1055,7 @@ impl StagedObject {
             points.dedup();
 
             let record_p2align = record_p2align(sect, relocatable);
-            let is_zerofill = matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL);
+            let is_zerofill = sect.is_zerofill();
 
             let first = self.isecs.len();
             for (j, &start) in points.iter().enumerate() {

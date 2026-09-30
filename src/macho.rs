@@ -171,8 +171,11 @@ impl MachSection {
         self.flags & SECTION_TYPE
     }
 
+    /// Whether the section's contents are zeros, whatever the file
+    /// holds: S_GB_ZEROFILL, zero fill a 32-bit image could place past
+    /// 4GB, is zero fill as well.
     pub fn is_zerofill(&self) -> bool {
-        matches!(self.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL)
+        matches!(self.section_type(), S_ZEROFILL | S_GB_ZEROFILL | S_THREAD_LOCAL_ZEROFILL)
     }
 }
 

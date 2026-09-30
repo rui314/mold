@@ -120,6 +120,7 @@ pub const S_MOD_TERM_FUNC_POINTERS: u32 = 0xa;
 pub const S_COALESCED: u32 = 0xb;
 pub const S_GB_ZEROFILL: u32 = 0xc;
 pub const S_16BYTE_LITERALS: u32 = 0xe;
+pub const S_DTRACE_DOF: u32 = 0xf;
 pub const S_THREAD_LOCAL_REGULAR: u32 = 0x11;
 pub const S_THREAD_LOCAL_ZEROFILL: u32 = 0x12;
 pub const S_THREAD_LOCAL_VARIABLES: u32 = 0x13;

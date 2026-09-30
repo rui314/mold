@@ -3248,7 +3248,7 @@ fn output_section_for(
 
 /// The section a final link merges a __TEXT section into, like ld64:
 /// __StaticInit joins __text, and the literal pools join __const.
-fn merged_name(name: SectionName) -> Option<SectionName> {
+fn merged_name(name: (&str, &str)) -> Option<SectionName> {
     match name {
         ("__TEXT", "__StaticInit") => Some(("__TEXT", "__text")),
         ("__TEXT", "__literal4" | "__literal8" | "__literal16") => Some(("__TEXT", "__const")),
@@ -3409,17 +3409,20 @@ impl SectionMap {
 
 /// The flags an output section carries, from the flags ld-prime reads
 /// its first member as having (see input_section_flags). In a final
-/// image ld64 keeps the section type (a coalesced input section
-/// becomes regular; a literal pool folded into __TEXT,__const is
-/// regular), marks code (pure instructions) as having some
-/// instructions, drops every other input attribute - no_dead_strip,
-/// live_support, strip_static_syms and no_toc direct the linker, not
-/// dyld, and some_instructions alone is but the assembler's note that
-/// it emitted an instruction into the section - and marks just the
-/// ObjC list sections the runtime scans as no-dead-strip. A -r output
-/// is input to another link, so ld-prime copies the type and
-/// attributes verbatim. __eh_frame carries the compiler's fixed flags
-/// in both.
+/// image ld-prime keeps only the section types it lays out as such -
+/// zero fill (S_GB_ZEROFILL is plain zero fill there), strings and
+/// literals, initializer and terminator lists, the thread-local kinds,
+/// and DOF, if bare - and makes the rest regular: coalesced data, and
+/// the pointers, stubs, interposing tuples and init offsets only it
+/// makes in an image. It marks code (a regular or coalesced section
+/// of pure instructions) as having some instructions, drops every
+/// other input attribute - no_dead_strip, live_support,
+/// strip_static_syms and no_toc direct the linker, not dyld, and
+/// some_instructions alone is but the assembler's note that it
+/// emitted an instruction into the section - and marks just the ObjC
+/// list sections the runtime scans as no-dead-strip. A -r output is
+/// input to another link, so ld-prime copies the type and attributes
+/// verbatim. __eh_frame carries the compiler's fixed flags in both.
 fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: bool) -> u32 {
     if segname == "__TEXT" && sectname == "__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
@@ -3438,12 +3441,26 @@ fn output_section_flags(segname: &str, sectname: &str, input: u32, relocatable: 
     if segname == "__DATA_CONST" && sectname == "__objc_selrefs" {
         return S_REGULAR;
     }
-    let mut ty = input & SECTION_TYPE;
-    if ty == S_COALESCED || (segname == "__TEXT" && sectname == "__const") {
-        ty = S_REGULAR;
-    }
+    let ty = match input & SECTION_TYPE {
+        S_GB_ZEROFILL => S_ZEROFILL,
+        ty @ (S_ZEROFILL
+        | S_CSTRING_LITERALS
+        | S_4BYTE_LITERALS
+        | S_8BYTE_LITERALS
+        | S_16BYTE_LITERALS
+        | S_MOD_INIT_FUNC_POINTERS
+        | S_MOD_TERM_FUNC_POINTERS
+        | S_THREAD_LOCAL_REGULAR
+        | S_THREAD_LOCAL_ZEROFILL
+        | S_THREAD_LOCAL_VARIABLES) => ty,
+        S_DTRACE_DOF if input == S_DTRACE_DOF => S_DTRACE_DOF,
+        S_LITERAL_POINTERS if sectname == "__objc_selrefs" => S_LITERAL_POINTERS,
+        _ => S_REGULAR,
+    };
     let mut attrs = 0;
-    if input & S_ATTR_PURE_INSTRUCTIONS != 0 {
+    if input & S_ATTR_PURE_INSTRUCTIONS != 0
+        && matches!(input & SECTION_TYPE, S_REGULAR | S_COALESCED)
+    {
         attrs = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     }
     if matches!(
@@ -3645,6 +3662,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
                                 // itself, as code, whatever its members
                                 // (and under its -rename_section name).
                                 S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+                            } else if merged_name((seg, sect)) == Some(flags_name) {
+                                // A literal pool folded into __const is
+                                // constants there, whatever its type.
+                                S_REGULAR
                             } else {
                                 let input = input_section_flags(seg, sect, hdr.flags);
                                 output_section_flags(flags_name.0, flags_name.1, input, relocatable)
