@@ -99,6 +99,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
+    error::install_panic_hook();
 
     // Fork a subprocess unless --no-fork is given.
     if ctx.args.fork {

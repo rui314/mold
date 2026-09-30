@@ -27,4 +27,9 @@ off=$(readelf -SW $t/a.o | sed 's/\[ *[0-9]*\]//' |
 # past the 8-byte section.
 printf '\0\1\0\0\0\0\0\0' | dd of=$t/a.o bs=1 seek=$((16#$off)) conv=notrunc status=none
 
-not $CC -B. -o $t/exe $t/a.o $t/b.o >& /dev/null
+# mold panics on this input. The panic must not leave the temporary
+# output file behind.
+rm -rf $t/out
+mkdir $t/out
+not $CC -B. -o $t/out/exe $t/a.o $t/b.o >& /dev/null
+[ -z "$(ls -A $t/out)" ]
