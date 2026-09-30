@@ -286,11 +286,11 @@ pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -
             OriginValue::None | OriginValue::Symbol(_) => {
                 if sym.is_common() {
                     // Common symbols are converted to .bss unless we are creating a
-                    // relocatable output, in which case they are passed through as-is.
+                    // relocatable output, in which case they remain common symbols.
                     // Their st_value is their alignment.
                     debug_assert!(ctx.args.relocatable);
                     esym.set_st_shndx(SHN_COMMON);
-                    esym.set_st_value(sym.esym(ctx).st_value());
+                    esym.set_st_value(sym.value);
                 } else {
                     // Absolute symbol
                     esym.set_st_shndx(SHN_ABS);

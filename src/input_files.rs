@@ -2455,7 +2455,7 @@ impl<E: Target> ObjectFile<E> {
             let mut shdr = ElfShdr::<E>::default();
             shdr.sh_type.set(SHT_NOBITS);
             shdr.sh_size.set(esym.st_size());
-            shdr.sh_addralign.set(esym.st_value());
+            shdr.sh_addralign.set(sym.value);
             shdr.sh_flags.set(if sym.ty() == STT_TLS {
                 (SHF_ALLOC | SHF_WRITE | SHF_TLS) as u64
             } else {
@@ -3435,13 +3435,31 @@ impl<E: Target> ObjectFile<E> {
 
         let rank = symbol_resolution_rank(esym, false, in_archive, self.base.priority);
         resolver.with_symbol(sym_id, |sym| {
-            if rank < resolver.current_rank(sym) {
+            let current = resolver.current_rank(sym);
+            let mut wins = rank < current;
+            let mut value = esym.st_value();
+
+            // As in GNU ld and lld, common symbols of the same name merge into
+            // the largest one, aligned to the largest alignment among them. The
+            // value of a common symbol is its alignment. Commons in unextracted
+            // archive members don't merge, so that a reference extracts the first
+            // member defining the symbol.
+            if esym.is_common() && !in_archive && rank >> 32 == current >> 32 {
+                let Some(FileId::Obj(owner)) = sym.file() else { unreachable!() };
+                let size =
+                    resolver.objs[owner.index()].base.elf_syms[sym.sym_idx() as usize].st_size();
+                wins = esym.st_size() > size || (esym.st_size() == size && wins);
+                value = value.max(sym.value);
+                sym.value = value;
+            }
+
+            if wins {
                 sym.set_file(FileId::Obj(id));
                 match origin {
                     Some(section) => sym.set_input_section(section),
                     None => sym.clear_origin(),
                 }
-                sym.value = esym.st_value();
+                sym.value = value;
                 sym.set_sym_idx(i as u32);
                 sym.set_esym(esym);
                 sym.ver_idx = resolver.default_version;
