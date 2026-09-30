@@ -3295,7 +3295,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
     }
     if !relocatable {
-        warn_zerofill_conflicts(ctx, &fill_kinds);
+        resolve_zerofill_conflicts(ctx, &fill_kinds);
     }
     place_replacing_blobs(ctx);
 
@@ -4056,40 +4056,63 @@ fn collect_relocations<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// ld-prime's warning for each output section that renames fill with
-/// both zero-fill and file-backed input sections - bits 0 and 1 of
-/// `fill_kinds`, by output section. The section takes the first
-/// member's type, so a zero-fill one drops the contents of the others.
-fn warn_zerofill_conflicts<E: Target>(ctx: &Context<E>, fill_kinds: &[u8]) {
+/// Settles each output section that renames fill with both zero-fill
+/// and file-backed input sections - bits 0 and 1 of `fill_kinds`, by
+/// output section - as ld-prime does, with a warning. The section
+/// takes the type of its first member in ld-prime's order: the
+/// objects' in input order, a common symbol's __common after its
+/// object's own sections. A zero-fill section drops the contents of
+/// the others.
+fn resolve_zerofill_conflicts<E: Target>(ctx: &mut Context<E>, fill_kinds: &[u8]) {
+    if !fill_kinds.contains(&3) {
+        return;
+    }
+    let owners = common_owners(ctx);
     for (i, &kinds) in fill_kinds.iter().enumerate() {
         if kinds == 3 {
-            warn_zerofill_conflict(ctx, ctx.output_section(OutputSectionId::new(i as u32)));
+            resolve_zerofill_conflict(ctx, OutputSectionId::new(i as u32), &owners);
         }
     }
 }
 
-/// The warning names the first file with a zero-fill member, and
-/// those with file-backed ones, the last first.
-fn warn_zerofill_conflict<E: Target>(ctx: &Context<E>, osec: &OutputSection) {
-    let mut defined_in = None;
+fn resolve_zerofill_conflict<E: Target>(
+    ctx: &mut Context<E>,
+    id: OutputSectionId,
+    common_owners: &hashbrown::HashMap<u32, u32>,
+) {
+    // The first file with a zero-fill member, whether that is a
+    // common symbol, and the files with file-backed ones. A common
+    // symbol's subsection, which mold makes in its internal object,
+    // counts as its owner's; the others mold makes come from no file.
+    let mut defined_in: Option<(u32, bool)> = None;
     let mut missing_in = Vec::new();
-    for &member in &osec.members {
-        let isec = &ctx.isecs[member as usize];
-        // (Sections the linker synthesizes come from no file.)
-        if ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        if ctx.hdr_of(isec).is_zerofill() {
-            defined_in.get_or_insert(isec.file);
+    for &member in &ctx.output_section(id).members {
+        let file = ctx.isecs[member as usize].file;
+        let file = if !ctx.is_internal(file as usize) {
+            (file, false)
+        } else if let Some(&owner) = common_owners.get(&member) {
+            (owner, true)
         } else {
-            missing_in.push(isec.file);
+            continue;
+        };
+        if ctx.hdr_of(&ctx.isecs[member as usize]).is_zerofill() {
+            defined_in = Some(defined_in.map_or(file, |first| first.min(file)));
+        } else {
+            missing_in.push(file.0);
         }
     }
-    let Some(defined_in) = defined_in else {
+    let Some((defined_in, is_common)) = defined_in else {
         return;
     };
+    // mold makes common symbols' subsections last; one that comes
+    // first to ld-prime makes the section zero-fill.
+    if is_common && missing_in.iter().all(|&file| defined_in < file) {
+        let hdr = &mut ctx.output_section_mut(id).hdr;
+        hdr.flags = (hdr.flags & !SECTION_TYPE) | S_ZEROFILL;
+    }
     missing_in.sort_unstable_by(|a, b| b.cmp(a));
     missing_in.dedup();
+    let osec = ctx.output_section(id);
     let name = |file: u32| resolved_file_name(ctx.objs[file as usize].mf);
     let mut msg = format!(
         "section {},{} has a conflicting zerofill flag defined in {} but missing in:",
@@ -4101,6 +4124,29 @@ fn warn_zerofill_conflict<E: Target>(ctx: &Context<E>, osec: &OutputSection) {
         msg += &format!("\n  {}", name(file));
     }
     crate::warn!("{msg}");
+}
+
+/// The object each common symbol's subsection stands for the tentative
+/// definition of, by subsection: the one declaring the largest size,
+/// the first of equals, as in ld-prime.
+fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
+    let mut decls: hashbrown::HashMap<crate::symbol::SymbolId, (u64, u32)> =
+        hashbrown::HashMap::new();
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+        let r = obj.global_range();
+        for (nlist, &sym) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !nlist.is_stab() && nlist.n_type() == N_UNDF && nlist.is_common() {
+                let decl = decls.entry(sym).or_insert((nlist.n_value, i as u32));
+                if nlist.n_value > decl.0 {
+                    *decl = (nlist.n_value, i as u32);
+                }
+            }
+        }
+    }
+    decls
+        .into_iter()
+        .filter_map(|(sym, (_, obj))| Some((ctx.symbols[sym].input_section()?, obj)))
+        .collect()
 }
 
 /// ld-prime's warnings for a -segment_order that places __TEXT or
