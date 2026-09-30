@@ -213,6 +213,7 @@ impl MappedFile {
     /// The caller must have exclusive access to `range` while the slice is
     /// alive, and no shared reference to an overlapping range may be used
     /// during that time.
+    #[allow(clippy::mut_from_ref)]
     pub(crate) unsafe fn data_mut(&self, range: Range<usize>) -> &mut [u8] {
         // SAFETY: guaranteed by the caller.
         unsafe { SyncUnsafeCell::as_mut_slice(&self.data[range]) }

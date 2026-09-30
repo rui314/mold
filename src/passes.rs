@@ -471,7 +471,7 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     // Ordinary global signatures already refer to the files' symbols; record
     // the other signatures for interning while each file's metadata is hot.
     let t = ctx.timer("read_section_metadata");
-    let (bins, pending): (Vec<Bins<(ObjId, u32)>>, Vec<Vec<(ObjId, u32)>>) = {
+    let (bins, pending): (Vec<_>, Vec<_>) = {
         let Context { objs, symbols, .. } = ctx;
         // Reuse each worker's buffers across jobs, locking once per file.
         let work = WorkerLocal::new(|| (Bins::new(), Vec::new()));

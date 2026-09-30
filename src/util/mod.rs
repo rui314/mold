@@ -66,6 +66,7 @@ impl<T> SyncUnsafeCell<T> {
     ///
     /// No cell in `cells` may be accessed otherwise while the returned slice
     /// is alive.
+    #[allow(clippy::mut_from_ref)]
     pub(crate) unsafe fn as_mut_slice(cells: &[Self]) -> &mut [T] {
         let ptr = std::cell::UnsafeCell::raw_get(cells.as_ptr().cast());
         // SAFETY: a cell has the same layout as its content; the caller

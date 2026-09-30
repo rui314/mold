@@ -1640,11 +1640,11 @@ impl SymbolTable {
                 }
 
                 for &(start, used) in &blocks {
-                    for index in start + used..start + BLOCK_SIZE {
+                    for slot in &slots[start + used..start + BLOCK_SIZE] {
                         // SAFETY: these are the unused slots in this shard's
                         // exclusive block. Initializing them makes the whole
                         // vector prefix valid while global scans skip them.
-                        unsafe { (*slots[index].get()).write(Symbol::new(BStr::new(b""))) };
+                        unsafe { (*slot.get()).write(Symbol::new(BStr::new(b""))) };
                     }
                 }
                 blocks
