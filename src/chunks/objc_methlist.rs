@@ -3,7 +3,7 @@
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::objc::{ObjcMethList, ObjcRef};
+use crate::objc::{ObjcMethList, objc_ref_addr};
 use crate::target::Target;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in
@@ -30,14 +30,6 @@ impl Default for ObjcMethlistSection {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let addr_of = |r: ObjcRef| -> u64 {
-        match r {
-            ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
-            ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
-            ObjcRef::TailSelref(n) => ctx.objc_selref_addr(n),
-            ObjcRef::Null => 0,
-        }
-    };
     for list in &ctx.objc_methlist.lists {
         let isec = &ctx.isecs[list.isec as usize];
         let base = isec.offset as usize;
@@ -49,7 +41,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             let at = base + 8 + 12 * i;
             let field = addr + 8 + 12 * i as u64;
             for (k, r) in [m.name, m.types, m.imp].into_iter().enumerate() {
-                let target = addr_of(r);
+                let target = objc_ref_addr(ctx, r);
                 let rel =
                     if target == 0 { 0 } else { target.wrapping_sub(field + 4 * k as u64) as i64 };
                 if rel != rel as i32 as i64 {

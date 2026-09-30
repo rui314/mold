@@ -89,7 +89,8 @@ impl DataBlob {
     }
 }
 
-/// The address a synthesized record's reference resolves to.
+/// The address a reference in a synthesized record or a rewritten
+/// method list resolves to, once the output is laid out.
 pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
     match r {
         ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
