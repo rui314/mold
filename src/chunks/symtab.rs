@@ -107,12 +107,13 @@ fn keep_local_symbol(name: &str) -> bool {
 /// ld-prime names no symbol for (Swift's _objc_classes_* in
 /// __objc_classlist: ld-prime's NetNewsWire has none of the 127 ours
 /// carried) but as an alias (`list_alias`, see objc_list_aliases), nor
-/// live in __objc_protolist or __objc_imageinfo. A demoted private
-/// external in those two stays (clang's __OBJC_LABEL_PROTOCOL_$_X
-/// does), as does one an earlier ld -r demoted, a local that kept
-/// N_PEXT (`demoted`). A superclass or protocol reference keeps its
-/// label, unless it is of the literal-pointer type (see
-/// has_unnamed_atoms).
+/// live in a section whose atoms ld-prime names none of (see
+/// has_unnamed_atoms), whatever the symbol was, nor in __objc_protolist
+/// or __objc_imageinfo. A demoted private external in those two stays
+/// (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one an earlier
+/// ld -r demoted, a local that kept N_PEXT (`demoted`). A superclass or
+/// protocol reference keeps its label, unless it is of the
+/// literal-pointer type (see has_unnamed_atoms).
 fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
     name: &str,
@@ -132,12 +133,12 @@ fn keep_local_symbol_in<E: Target>(
     if is_unnamed_objc_list(hdr) {
         return list_alias;
     }
-    if demoted {
-        return true;
+    if has_unnamed_atoms(hdr) {
+        return false;
     }
-    !(hdr.segname_is("__DATA")
-        && (hdr.sectname_is("__objc_protolist") || hdr.sectname_is("__objc_imageinfo"))
-        || has_unnamed_atoms(hdr))
+    demoted
+        || !(hdr.segname_is("__DATA")
+            && (hdr.sectname_is("__objc_protolist") || hdr.sectname_is("__objc_imageinfo")))
 }
 
 /// Whether a symbol names a method list convert_objc_method_lists

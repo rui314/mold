@@ -3836,7 +3836,8 @@ pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
 /// is_unnamed_objc_list) and survive all the same. ld-prime takes one
 /// of an entry's symbols for the name of its atom, which is lost, and
 /// keeps the others as aliases: an external one (a global or a private
-/// external) is the name, else the greatest name; the arm64
+/// external, both demoted by then, see demote_unnamed_atom_names) is
+/// the name, else the greatest name; the arm64
 /// assembler's ltmpN labels don't count. So an entry one label names
 /// has no symbol in the output (clang's l_OBJC_LABEL_CLASS_$, Swift's
 /// _objc_classes_...), but where a private external names it too, the
@@ -3863,7 +3864,8 @@ pub(crate) fn objc_list_aliases<E: Target>(
             }
             let name = ctx.symbols[id].name();
             let place = (nlist.n_sect, nlist.n_value);
-            (!name.starts_with("ltmp")).then_some((place, nlist.is_extern(), name, i))
+            let external = nlist.n_type & (N_EXT | N_PEXT) != 0;
+            (!name.starts_with("ltmp")).then_some((place, external, name, i))
         })
         .collect();
     syms.sort_unstable();

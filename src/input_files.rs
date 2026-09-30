@@ -1024,6 +1024,7 @@ pub fn stage_object<E: Target>(
     if !obj.subsections_via_symbols {
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
+    obj.demote_unnamed_atom_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
@@ -1111,6 +1112,49 @@ impl StagedObject {
                 nlist.n_type |= N_PEXT;
             }
         }
+    }
+
+    /// Demotes the external symbols of the sections whose atoms ld-prime
+    /// makes by content and names none of (see has_unnamed_atoms and
+    /// is_unnamed_objc_list) to locals that were private externals, as
+    /// ld -r does: such a symbol defines nothing, so another object's
+    /// reference to its name is undefined, another definition is no
+    /// duplicate and no output lists it, while its own object's
+    /// relocations still reach the atom. (A __ustring section without
+    /// subsections is one atom, whose names ld-prime keeps.)
+    fn demote_unnamed_atom_names(&mut self) {
+        use crate::passes::{has_unnamed_atoms, is_unnamed_objc_list};
+        let split = self.subsections_via_symbols;
+        let unnamed: Vec<bool> = self
+            .sect_hdrs
+            .iter()
+            .map(|h| {
+                is_unnamed_objc_list(h)
+                    || has_unnamed_atoms(h) && (split || !h.sectname_is("__ustring"))
+            })
+            .collect();
+        if !unnamed.contains(&true) {
+            return;
+        }
+        let names: Vec<usize> = (0..self.nlists.len())
+            .filter(|&i| {
+                let nlist = &self.nlists[i];
+                !nlist.is_stab()
+                    && nlist.is_extern()
+                    && nlist.n_type() == N_SECT
+                    && nlist.n_sect != 0
+                    && unnamed[nlist.n_sect as usize - 1]
+            })
+            .collect();
+        if names.is_empty() {
+            return;
+        }
+        let nlists = self.nlists.to_mut();
+        for i in names {
+            nlists[i].n_type = nlists[i].n_type & !N_EXT | N_PEXT;
+        }
+        // The table no longer runs locals, then externals.
+        self.first_global = None;
     }
 
     /// Splits each section into subsections, the Mach-O linking
