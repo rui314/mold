@@ -37,3 +37,31 @@ fi
 
 not $mold -arch $ARCH -static -e _main $t/a.o -image_base 0x100000 -o $t/exe4 2> $t/log4
 grep -q 'custom segments overlap: __PAGEZERO(0x0-0x100000000) __TEXT(0x100000-' $t/log4
+
+# A zero -image_base means none.
+$mold -arch $ARCH -static -e _main $t/a.o -image_base 0x0 -o $t/exe5
+[ "$(text $t/exe5)" = 0x0000000100000000 ]
+
+# arm64 -static -pie counts its relocation addresses from -image_base
+# plus __PAGEZERO's size in ld-prime, and a pointer that ends up more
+# than 2 GiB away from that fails the link: any nonzero base under the
+# default 4 GiB __PAGEZERO. (mold keeps counting from __TEXT.)
+cat <<EOF2 | $CC -o $t/p.o -c -xassembler -
+.text
+.globl _main
+_main: ret
+.data
+.p2align 3
+.globl _arr
+_arr: .quad 0
+  .quad _main
+EOF2
+$mold -arch $ARCH -static -pie -e _main $t/p.o -pagezero_size 0x4000 -image_base 0x200000000 \
+  -o $t/exe6
+[ "$(text $t/exe6)" = 0x0000000200000000 ]
+if [ $ARCH = arm64 ]; then
+  not $mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7 2> $t/log7
+  grep -q "atom address cannot fit in a fixup at '_arr' (.*/p.o)+8" $t/log7
+else
+  $mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7
+fi

@@ -6018,6 +6018,11 @@ pub fn create_output_symtab<E: Target>(
 /// warning, and rounds a base up to a page.
 pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
     let Some(base) = ctx.args.image_base else { return };
+    // ld-prime takes a zero base as none at all.
+    if base == 0 {
+        ctx.args.image_base = None;
+        return;
+    }
     if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
         crate::warn!("Linking with PIE, -image_base will be ignored");
         ctx.args.image_base = None;

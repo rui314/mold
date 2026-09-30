@@ -35,7 +35,49 @@ impl Default for LocalRelocsSection {
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
     locs.sort_unstable_by_key(|&(atom, addr)| (atom, std::cmp::Reverse(addr)));
+    check_fixup_range(ctx, &locs);
     locs.into_iter().map(|(_, addr)| addr).collect()
+}
+
+/// On arm64, ld-prime counts a -static -pie image's relocation
+/// addresses from -image_base plus the __PAGEZERO size, not from
+/// __TEXT, and rejects the link when one of them overflows the 32-bit
+/// r_address - which, with the default 4 GiB __PAGEZERO, any nonzero
+/// -image_base does. mold counts from __TEXT, which is where the image
+/// starts, but refuses the same links.
+fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
+    let Some(image_base) = ctx.args.image_base else { return };
+    if E::CPUTYPE != CPU_TYPE_ARM64 {
+        return;
+    }
+    let base = image_base.wrapping_add(ctx.args.pagezero_size);
+    let Some(&(atom, addr)) =
+        locs.iter().find(|&&(_, addr)| i32::try_from(addr.wrapping_sub(base) as i64).is_err())
+    else {
+        return;
+    };
+    let (name, file) = atom_name(ctx, atom);
+    crate::error!("atom address cannot fit in a fixup at '{name}' ({file})+{}", addr - atom);
+}
+
+/// The name of the atom starting at `addr`, and its file, for a
+/// diagnostic.
+fn atom_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
+    for (id, isec) in ctx.isecs.iter().enumerate() {
+        if !isec.is_alive() || ctx.isec_addr(id) != addr {
+            continue;
+        }
+        let obj = &ctx.objs[isec.file as usize];
+        let name = obj
+            .symbols
+            .iter()
+            .map(|&sym| &ctx.symbols[sym])
+            .filter(|sym| sym.input_section() == Some(id as u32) && sym.value == 0)
+            .max_by_key(|sym| sym.is_extern())
+            .map_or_else(String::new, |sym| sym.name().to_string());
+        return (name, crate::passes::resolved_file_name(obj.mf));
+    }
+    (String::new(), String::new())
 }
 
 /// Writes the records once the sections are in the buffer. Each is a
