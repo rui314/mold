@@ -203,6 +203,8 @@ fn symbol_size<E: Target>(ctx: &Context<E>, sym: &Symbol) -> u64 {
         && let Some(isec) = sym.input_section_ref(ctx)
         && isec.sh_flags & SHF_EXECINSTR as u64 != 0
     {
+        // Symbols in a section folded by ICF live in its leader.
+        let isec = isec.icf_leader().map_or(isec, |leader| ctx.section(leader));
         let end = esym.st_value() + esym.st_size();
         return (esym.st_size() as i64 + esym.st_value() as i64
             - sym.value as i64

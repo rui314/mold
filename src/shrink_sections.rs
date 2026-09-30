@@ -142,6 +142,13 @@ pub fn shrink_sections<E: Target>(ctx: &mut Context<E>) {
                     if isec.sh_flags & SHF_EXECINSTR as u64 == 0 {
                         return;
                     }
+                    // Symbols in a section folded by ICF are addressed relative to
+                    // its leader, which had the same contents before shrinking, so
+                    // they are shifted by the leader's deltas.
+                    let isec = match isec.icf_leader() {
+                        Some(leader) => objs[leader.file.index()].section_at(leader.shndx),
+                        None => isec,
+                    };
                     let delta = r_delta(isec, sym.value);
                     if delta != 0 {
                         sym.value -= delta as u64;
