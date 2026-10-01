@@ -119,6 +119,7 @@ cat <<EOF2 | $CC -o $t/f.o -c -xc -
 __thread int tv = 1;
 int *get(void) { return &tv; }
 void *gp(void) { return (void *)&puts; }
+__attribute__((constructor)) static void init(void) { puts("x"); }
 int main() {}
 EOF2
 order() {
@@ -131,6 +132,26 @@ grep -q '__DATA_CONST,__const __DATA_CONST,__got __DATA_CONST,__auth_ptr __DATA,
 $CC --ld-path=$mold -o $t/exe5 $t/e.o $t/f.o -Wl,-no_data_const
 order exe5 > $t/order5
 grep -q '__DATA,__const __DATA,__objc_data __DATA,__yy __DATA,__data __DATA,__thread_vars __DATA,__got __DATA,__auth_ptr __DATA,__thread_data ' $t/order5
+
+# A section ranks by its first member, under the name ld-prime knows
+# it by in an input's __TEXT or __DATA, whatever -rename_segment and
+# -rename_section make of it: renamed, __DATA and __TEXT keep their
+# order. The sections of an input's own __DATA_CONST rank by their
+# types alone, in input order here; __DATA,__const joins the first.
+cat <<EOF2 | $CC -o $t/h.o -c -xassembler -
+.section __DATA_CONST,__yy
+.quad 1
+.section __DATA_CONST,__objc_data
+.quad 1
+.section __DATA_CONST,__const
+.quad 1
+EOF2
+$CC --ld-path=$mold -o $t/exe7 $t/h.o $t/e.o $t/f.o \
+  -Wl,-rename_segment,__DATA,__XD -Wl,-rename_segment,__TEXT,__XT
+order exe7 > $t/order7
+grep -q '__DATA_CONST,__yy __DATA_CONST,__objc_data __DATA_CONST,__const __DATA_CONST,__got __DATA_CONST,__auth_ptr ' $t/order7
+grep -q '__XD,__objc_data __XD,__yy __XD,__data __XD,__thread_vars __XD,__thread_data ' $t/order7
+grep -q '__XT,__text __XT,__stubs __XT,__init_offsets __XT,__cstring ' $t/order7
 
 # A -static image, which no dyld loads, has no place of their own for
 # __const and __auth_ptr: they keep input order among the unknown

@@ -23,22 +23,28 @@ use crate::symbol_moves::{Move, MoveOption};
 use crate::target::Target;
 use crate::util::align_to;
 
-/// Where a section sits within its segment in a final image, as
-/// ld-prime 27037 orders them; sections of one rank keep input order.
-/// ld-prime has one order for all segments, which places the read-only
-/// data of __DATA_CONST and the writable data of __DATA alike - so that
-/// under -no_data_const (or in an x86-64 kext) the sections that would
-/// have made __DATA_CONST lead __DATA in their usual order, but for the
-/// GOT and __auth_ptr, which close it. Code comes first in any
-/// segment, __text ahead; a section of initializer or terminator
-/// pointers, or of thread-local data, has the place of its type in any
-/// segment and whatever its name. A -static or -preload image, which
-/// no dyld loads, has no place of their own for the initializer and
-/// terminator lists, __const, __cfstring and __auth_ptr: they keep
-/// input order among the unknown sections there.
-fn output_section_rank(segname: &str, sectname: &str, flags: u32, static_link: bool) -> u32 {
+/// Where a section with `flags` sits within its segment in a final
+/// image, as ld-prime 27037 orders them; sections of one rank keep
+/// input order. ld-prime has one order for all segments, which places
+/// the read-only data of __DATA_CONST and the writable data of __DATA
+/// alike - so that under -no_data_const (or in an x86-64 kext) the
+/// sections that would have made __DATA_CONST lead __DATA in their
+/// usual order, but for the GOT and __auth_ptr, which close it. Code
+/// comes first in any segment, __text ahead; a section of initializer
+/// or terminator pointers, or of thread-local data, has the place of
+/// its type in any segment and whatever its name. A -static or
+/// -preload image, which no dyld loads, has no place of their own for
+/// the initializer and terminator lists, __const, __cfstring and
+/// __auth_ptr: they keep input order among the unknown sections there.
+///
+/// The names that have places are those of ld-prime's standard
+/// sections (and crt1.o's), which it knows in an input's __TEXT and
+/// __DATA alone: `name` is the one a section ranks by (see rank_name),
+/// None for a section that ranks by its type alone.
+fn output_section_rank(name: Option<(&str, &str)>, flags: u32, static_link: bool) -> u32 {
     const UNKNOWN: u32 = 32;
     let dyld = !static_link;
+    let (segname, sectname) = name.unwrap_or_default();
     if (segname, sectname) == ("__TEXT", "__text") {
         return 0;
     }
@@ -783,30 +789,25 @@ fn is_stub_selector_name<E: Target>(
         && stub_sels.contains(cstring_of(isec.data()))
 }
 
-/// The output section named `seg`,`sect` - created if no input made
-/// one - with a synthesized `tail` of `tail_size` bytes appended after
-/// its input subsections, which are placed already.
+/// The output section named `name` - created if no input made one,
+/// with `flags`, ranking by the standard name `rank_name` (see
+/// output_section_rank) - with a synthesized `tail` of `tail_size`
+/// bytes appended after its input subsections, which are placed
+/// already.
 fn tail_section<E: Target>(
     ctx: &mut Context<E>,
-    seg: &'static str,
-    sect: &str,
+    name: SectionName,
+    rank_name: SectionName,
     flags: u32,
     p2align: u32,
     tail: Tail,
     tail_size: u64,
 ) -> OutputSectionId {
-    let id = match ctx
-        .output_sections
-        .iter()
-        .position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
-    {
-        Some(i) => OutputSectionId::new(i as u32),
+    let id = match find_output_section(ctx, name) {
+        Some(id) => id,
         None => {
-            let mut osec = OutputSection::new(seg, sect);
-            osec.hdr.flags = flags;
-            let id = OutputSectionId::new(ctx.output_sections.len() as u32);
-            ctx.output_sections.push(osec);
-            ctx.chunks.push(ChunkId::Output(id));
+            let id = add_output_section(ctx, name.0, name.1, flags);
+            ctx.output_section_mut(id).rank_name = Some(rank_name);
             id
         }
     };
@@ -871,9 +872,9 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     sects.dedup();
     for sect in sects {
         let map = SectionMap::final_link(ctx);
-        let ((seg, out), (flags_seg, flags_sect)) =
+        let ((seg, out), flags_name) =
             output_section_for(&ctx.args, map, "__DATA", sect, 0).unwrap();
-        let flags = output_section_flags(flags_seg, flags_sect, 0, true, false);
+        let flags = output_section_flags(flags_name.0, flags_name.1, 0, true, false);
         // Each record at its own alignment (a pointer's, but for the
         // lazy-load flag words), the tail at the first one's; laid out
         // from where the tail will start, so that the offsets within
@@ -883,11 +884,8 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
             .map(|b| (b.isec, b.size(), ctx.isecs[b.isec as usize].p2align as u32))
             .collect();
         let first = blobs[0].2;
-        let start = ctx
-            .output_sections
-            .iter()
-            .find(|o| o.hdr.segname == seg && o.hdr.sectname == out)
-            .map_or(0, |o| align_to(o.hdr.size, 1 << first));
+        let start = find_output_section(ctx, (seg, out))
+            .map_or(0, |id| align_to(ctx.output_section(id).hdr.size, 1 << first));
         let mut end = start;
         let mut offs = Vec::new();
         for &(isec, size, p2align) in &blobs {
@@ -895,7 +893,8 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
             offs.push((isec, end));
             end += size;
         }
-        let id = tail_section(ctx, seg, out, flags, first, Tail::DataBlobs, end - start);
+        let size = end - start;
+        let id = tail_section(ctx, (seg, out), flags_name, flags, first, Tail::DataBlobs, size);
         let osec = ctx.output_section_mut(id);
         osec.hdr.p2align = blobs.iter().map(|b| b.2).fold(osec.hdr.p2align, u32::max);
         for (isec, off) in offs {
@@ -922,7 +921,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // byte-aligned).
     if !ctx.args.relocatable && find_output_section(ctx, text).is_none() {
         let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-        add_output_section(ctx, text.0, text.1, flags);
+        let id = add_output_section(ctx, text.0, text.1, flags);
+        ctx.output_section_mut(id).rank_name = Some(("__TEXT", "__text"));
     }
 
     set_section_alignments(ctx);
@@ -1053,7 +1053,9 @@ fn assign_input_sections<E: Target>(
                         None => {
                             let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
                             let id = add_output_section(ctx, out.0, out.1, flags);
-                            ctx.output_section_mut(id).moved = moved.map(|(option, _)| option);
+                            let osec = ctx.output_section_mut(id);
+                            osec.moved = moved.map(|(option, _)| option);
+                            osec.rank_name = member_rank_name(&hdr, flags_name);
                             by_out.insert(out, id);
                             id
                         }
@@ -1535,30 +1537,26 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         (ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len()) as u64 * 8;
     let map = SectionMap::final_link(ctx);
     if methname_size > 0 {
-        let ((seg, sect), _) =
+        let (name, flags_name) =
             output_section_for(&ctx.args, map, "__TEXT", "__objc_methname", S_CSTRING_LITERALS)
                 .unwrap();
-        let id =
-            tail_section(ctx, seg, sect, S_CSTRING_LITERALS, 0, Tail::ObjcMethname, methname_size);
+        let flags = S_CSTRING_LITERALS;
+        let tail = Tail::ObjcMethname;
+        let id = tail_section(ctx, name, flags_name, flags, 0, tail, methname_size);
         ctx.objc_stubs.methname = Some(id);
     }
     if selrefs_size > 0 {
-        let ((seg, sect), (flags_seg, flags_sect)) =
+        let (name, flags_name) =
             output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
                 .unwrap();
+        let flags =
+            output_section_flags(flags_name.0, flags_name.1, S_LITERAL_POINTERS, true, false);
         // A slot keeps the alignment of the inputs it took over.
         let p2align = (ctx.objc_stubs.absorbed.iter())
             .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
             .fold(3, u32::max);
-        let id = tail_section(
-            ctx,
-            seg,
-            sect,
-            output_section_flags(flags_seg, flags_sect, S_LITERAL_POINTERS, true, false),
-            p2align,
-            Tail::ObjcSelrefs,
-            selrefs_size,
-        );
+        let tail = Tail::ObjcSelrefs;
+        let id = tail_section(ctx, name, flags_name, flags, p2align, tail, selrefs_size);
         ctx.objc_stubs.selrefs = Some(id);
         let tail_off = ctx.output_section(id).tail_off;
         for i in 0..ctx.objc_stubs.absorbed.len() {
@@ -1815,16 +1813,8 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
-            // ld-prime orders a section a symbol move made among those
-            // of its new segment by what its atoms hold, which they took
-            // along: data as in __DATA (and code first).
-            ChunkId::Output(osec) if ctx.output_section(osec).moved.is_some() => {
-                late_text_rank(ctx, hdr).unwrap_or_else(|| {
-                    1 + output_section_rank("__DATA", &hdr.sectname, hdr.flags, static_link)
-                })
-            }
             _ => late_text_rank(ctx, hdr).unwrap_or_else(|| {
-                1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags, static_link)
+                1 + output_section_rank(rank_name(ctx, id), hdr.flags, static_link)
             }),
         };
         let seen = match id {
@@ -1836,6 +1826,59 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
         (seg_rank, hdr.is_zerofill(), listed_section_rank(ctx, hdr), sect_rank, seen)
     });
     ctx.chunks = order;
+}
+
+/// The name a chunk ranks by among the sections of its segment (see
+/// output_section_rank), whatever -rename_section and -rename_segment
+/// made of its own: an output section's first member's (see
+/// member_rank_name), the standard name of a section the linker makes,
+/// or the name a section$start$ or section$end$ symbol gives one it
+/// makes. -sectcreate's and -add_empty_section's sections, which
+/// ld-prime adds after the inputs', rank by their type alone.
+fn rank_name<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<(&str, &str)> {
+    let name = match id {
+        ChunkId::Output(osec) => return ctx.output_section(osec).rank_name,
+        ChunkId::SectCreate(i) => {
+            let sec = &ctx.sectcreate_sections[i as usize];
+            return (!sec.from_option).then_some((sec.hdr.segname, sec.hdr.sectname.as_str()));
+        }
+        ChunkId::Stubs => ("__TEXT", "__stubs"),
+        ChunkId::StubHelper => ("__TEXT", "__stub_helper"),
+        ChunkId::DelayStubs => ("__TEXT", "__delay_stubs"),
+        ChunkId::DelayHelper => ("__TEXT", "__delay_helper"),
+        ChunkId::LazyHelpers => ("__TEXT", "__lazy_helpers"),
+        ChunkId::ObjcStubs => ("__TEXT", "__objc_stubs"),
+        ChunkId::InitOffsets => ("__TEXT", "__init_offsets"),
+        ChunkId::ObjcMethlist => ("__TEXT", "__objc_methlist"),
+        ChunkId::LazyPtrs => ("__DATA", "__la_symbol_ptr"),
+        ChunkId::LazyLoadGot => ("__DATA", "__lazy_load_got"),
+        ChunkId::Got => ("__DATA", "__got"),
+        ChunkId::WeakGot => ("__DATA", "__weak_got"),
+        ChunkId::ObjcImageInfo => ("__DATA", "__objc_imageinfo"),
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// The name an output section ranks by (see output_section_rank), from
+/// its first member, an input section with header `hdr` whose flags
+/// follow the name `flags_name` (see output_section_for): that name -
+/// which ld-prime's own moves gave, but no rename - for a section of
+/// the input's __TEXT, or one of ld-prime's standard sections (see
+/// is_standard_section), crt1.o's tables or a zero-fill __zerofill in
+/// its __DATA. Another, such as an input's __DATA_CONST,__const, ranks
+/// by its type alone.
+fn member_rank_name(hdr: &MachSection, flags_name: SectionName) -> Option<SectionName> {
+    let (seg, sect) = (hdr.segname(), hdr.sectname());
+    let named = match seg {
+        "__TEXT" => true,
+        "__DATA" => {
+            is_standard_section(seg, sect, hdr.flags)
+                || matches!(flags_name.1, "__dyld" | "__program_vars" | "__zerofill")
+        }
+        _ => false,
+    };
+    named.then_some(flags_name)
 }
 
 /// When ld-prime first sees each output section, by output section: at

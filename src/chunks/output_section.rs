@@ -63,6 +63,11 @@ pub struct OutputSection {
     /// For a section a symbol move made (see symbol_moves), the option
     /// that moved its first member.
     pub moved: Option<MoveOption>,
+    /// The name the section ranks by among those of its segment (see
+    /// output_sections::output_section_rank), which its first member
+    /// took along through moves and renames; None for one that ranks
+    /// by its type alone.
+    pub rank_name: Option<(&'static str, &'static str)>,
 }
 
 impl OutputSection {
@@ -76,6 +81,7 @@ impl OutputSection {
             has_blobs: false,
             has_tlv_data: false,
             moved: None,
+            rank_name: None,
         }
     }
 }
