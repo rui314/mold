@@ -632,6 +632,40 @@ fn names_atom(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bo
     is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with('L'))
 }
 
+/// Whether a defined symbol of an object names its atom in the map:
+/// is_named, and not an ltmpN label another symbol there shadows (see
+/// drop_shadowed_ltmps), its subsection in the output.
+pub(crate) fn names_its_atom<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
+    let sym = &ctx.symbols[id];
+    let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
+        return false;
+    };
+    let isec = ctx.resolve_isec(own as usize);
+    if !ctx.isecs[isec].is_alive()
+        || crate::chunks::symtab::is_coalesced_away(ctx, own as usize)
+        || !is_named(ctx, sym)
+    {
+        return false;
+    }
+    if !sym.name().starts_with("ltmp") {
+        return true;
+    }
+    let mut at: Vec<SymbolId> = ctx.objs[obj as usize]
+        .symbols
+        .iter()
+        .copied()
+        .filter(|&other| {
+            let other = &ctx.symbols[other];
+            other.file() == sym.file()
+                && other.input_section() == sym.input_section()
+                && other.value == sym.value
+                && is_named(ctx, other)
+        })
+        .collect();
+    drop_shadowed_ltmps(ctx, &mut at, |&sym| sym);
+    at.contains(&id)
+}
+
 /// Drops from the map's named symbols each ltmpN label another of them
 /// shares a place with. An arm64 assembler puts the label where each
 /// section starts; where symbols split the sections, an atom there

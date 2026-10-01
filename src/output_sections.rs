@@ -2210,29 +2210,21 @@ fn add_sectcreate<E: Target>(ctx: &mut Context<E>, sec: SectCreateSection) {
     ctx.chunks.push(ChunkId::SectCreate(idx));
 }
 
-/// Reads the -order_file lists and ranks every subsection: the
-/// subsection defining the file's first symbol gets rank 0 and so on;
-/// unlisted subsections rank last. ld64's format is one
-/// [arch:][object:]symbol per line with #-comments; the qualifiers
-/// narrow a match, which this implementation approximates by
-/// matching the bare symbol name.
-fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
-    if ctx.args.order_files.is_empty() {
-        return None;
-    }
+/// A line of the -order_file lists: [arch:][object-file:]symbol. An
+/// arch qualifier gates the whole line; an object qualifier narrows the
+/// match to symbols from that file, by leaf name alone as ld-prime
+/// compares it: m.o, or lib.a(m.o) for an archive member, but no longer
+/// path.
+struct OrderEntry {
+    name: String,
+    file: Option<String>,
+}
 
-    // A line is [arch:][object-file:]symbol. An arch qualifier gates
-    // the whole line; an object qualifier narrows the match to
-    // symbols from that file, by leaf name alone as ld-prime compares
-    // it: m.o, or lib.a(m.o) for an archive member, but no longer path.
-    // A symbol of the object LTO compiled counts as the bitcode file's
-    // it came from, if that is known (see lto::origins), unless
-    // -no_use_lto_filenames_in_order_file_matching says to take the
-    // object's own name, lto.o.
+/// Reads the -order_file lists, #-comments and the lines for other
+/// architectures left out.
+fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
     const ARCHS: [&str; 6] = ["arm64", "arm64e", "x86_64", "i386", "armv7", "ppc"];
-    let mut rank_of: std::collections::HashMap<String, Vec<(Option<String>, u64)>> =
-        std::collections::HashMap::new();
-    let mut next = 0u64;
+    let mut entries = Vec::new();
     for path in &ctx.args.order_files {
         // ld64 links on without the order a missing file would give.
         let text = match std::fs::read_to_string(path) {
@@ -2260,9 +2252,40 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
                 Some((file, name)) => (Some(file.trim().to_string()), name.trim()),
                 None => (None, line),
             };
-            rank_of.entry(name.to_string()).or_default().push((file, next));
-            next += 1;
+            entries.push(OrderEntry { name: name.to_string(), file });
         }
+    }
+    entries
+}
+
+/// Ranks every subsection by the -order_file lists: the subsection of
+/// the atom the first line names gets rank 0 and so on; unlisted
+/// subsections rank last. A line names the atoms a symbol of its name
+/// names (see mapfile::names_its_atom), not a C string's label, say,
+/// and an atom takes the rank of the first line that names it. A
+/// symbol of the object LTO compiled counts as the bitcode file's it
+/// came from, if that is known (see lto::origins), unless
+/// -no_use_lto_filenames_in_order_file_matching says to take the
+/// object's own name, lto.o. -order_file_statistics reports the lines
+/// that order nothing (see report_order_file_statistics).
+fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
+    if ctx.args.order_files.is_empty() {
+        return None;
+    }
+    let entries = read_order_files(ctx);
+    // A line naming an object and a symbol again is dropped, as
+    // ld-prime drops it: it finds no other atom, nor is it reported.
+    let mut rank_of: std::collections::HashMap<&str, Vec<(Option<&str>, u64)>> =
+        std::collections::HashMap::new();
+    let mut repeated = vec![false; entries.len()];
+    for (i, entry) in entries.iter().enumerate() {
+        let lines = rank_of.entry(&entry.name).or_default();
+        let file = entry.file.as_deref();
+        if file.is_some() && lines.iter().any(|&(f, _)| f == file) {
+            repeated[i] = true;
+            continue;
+        }
+        lines.push((file, i as u64));
     }
 
     let origins = match ctx.lto_obj {
@@ -2270,27 +2293,90 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         _ => hashbrown::HashMap::new(),
     };
     let mut ranks = vec![u64::MAX; ctx.isecs.len()];
-    for sym in &ctx.symbols.syms {
+    // The atoms each line names, as (symbol, object) by line.
+    let mut named: Vec<Vec<(crate::symbol::SymbolId, usize)>> = vec![Vec::new(); entries.len()];
+    for id in 0..ctx.symbols.syms.len() as crate::symbol::SymbolId {
+        let sym = &ctx.symbols[id];
         let Some(FileId::Obj(obj)) = sym.file() else {
             continue;
         };
         let mut obj = obj as usize;
-        let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
-        let Some(entries) = rank_of.get(sym.name()) else {
+        let Some(lines) = rank_of.get(sym.name()) else {
             continue;
         };
+        if !crate::mapfile::names_its_atom(ctx, id) {
+            continue;
+        }
         if ctx.lto_obj == Some(obj)
             && let Some(&Some(origin)) = origins.get(sym.name())
         {
             obj = origin;
         }
         let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
-        for (file, r) in entries {
-            if file.as_ref().is_none_or(|f| leaf == f.as_bytes()) {
-                let isec = ctx.resolve_isec(isec);
-                ranks[isec] = ranks[isec].min(*r);
+        let first = lines.iter().find(|(file, _)| file.is_none_or(|f| leaf == f.as_bytes()));
+        if let Some(&(_, rank)) = first {
+            let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
+            ranks[isec] = ranks[isec].min(rank);
+            named[rank as usize].push((id, obj));
+        }
+    }
+    if ctx.args.order_file_statistics {
+        report_order_file_statistics(ctx, &entries, &repeated, &named);
+    }
+    Some(ranks)
+}
+
+/// -order_file_statistics: reports, as ld-prime does, the symbols named
+/// more than once without an object (of which the atoms take the first
+/// line's place), once for each atom so named, then the symbols a line
+/// names without an object that more than one object defines, then the
+/// lines that name no atom another line didn't name first, and how many
+/// of the lines ordered an atom.
+fn report_order_file_statistics<E: Target>(
+    ctx: &Context<E>,
+    entries: &[OrderEntry],
+    repeated: &[bool],
+    named: &[Vec<(crate::symbol::SymbolId, usize)>],
+) {
+    let mut once = hashbrown::HashSet::new();
+    let ambiguous: hashbrown::HashSet<&str> = entries
+        .iter()
+        .filter(|e| e.file.is_none() && !once.insert(e.name.as_str()))
+        .map(|e| e.name.as_str())
+        .collect();
+    for atoms in named {
+        for &(sym, _) in atoms {
+            let name = ctx.symbols[sym].name();
+            if ambiguous.contains(name) {
+                crate::warn!(
+                    "position of '{name}' ambiguous, entry specified multiple times in the order file"
+                );
             }
         }
     }
-    Some(ranks)
+    for (entry, atoms) in entries.iter().zip(named) {
+        if entry.file.is_none()
+            && !ambiguous.contains(entry.name.as_str())
+            && atoms.iter().any(|&(_, obj)| obj != atoms[0].1)
+        {
+            crate::warn!(
+                "{} specified in order_file but it exists in multiple .o files. Prefix symbol with .o filename in order_file to disambiguate",
+                entry.name
+            );
+        }
+    }
+    let mut missing = 0;
+    for (i, entry) in entries.iter().enumerate() {
+        if named[i].is_empty() && !repeated[i] {
+            crate::warn!("can't find function/data for order_file entry: {}", entry.name);
+            missing += 1;
+        }
+    }
+    if missing > 0 {
+        crate::warn!(
+            "only {} out of {} order_file symbols were applicable",
+            entries.len() - missing,
+            entries.len()
+        );
+    }
 }

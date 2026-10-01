@@ -571,6 +571,9 @@ pub struct Args {
     /// -order_file: files of symbol names; matching atoms are placed
     /// first in their output sections, in file order.
     pub order_files: Vec<PathBuf>,
+    /// -order_file_statistics (or LD_PRINT_ORDER_FILE_STATISTICS in the
+    /// environment): report the -order_file lines that order nothing.
+    pub order_file_statistics: bool,
     /// An order file's file:symbol line names a symbol of the object
     /// LTO compiled by the bitcode file it came from, not the object
     /// (-use_lto_filenames_in_order_file_matching, the default).
@@ -881,6 +884,7 @@ impl Default for Args {
             oso_prefix: None,
             export_dynamic: false,
             order_files: Vec::new(),
+            order_file_statistics: false,
             lto_filenames_in_order_file: true,
             object_path_lto: None,
             print_dependencies: false,
@@ -1822,6 +1826,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args = Args {
         zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
         warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
+        order_file_statistics: std::env::var_os("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
         ..Default::default()
     };
     let mut kind = OutputKind::DynamicExecutable;
@@ -2380,6 +2385,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-mark_dead_strippable_dylib" => obsolete.push(format!("{name} is obsolete")),
             b"-export_dynamic" => args.export_dynamic = true,
             b"-order_file" => args.order_files.push(path(next_arg(&mut i, name))),
+            b"-order_file_statistics" => args.order_file_statistics = true,
             b"--print-dependencies" => args.print_dependencies = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
             b"-why_live" => add_patterns(&mut why_live, name, [text(name, next_arg(&mut i, name))]),
@@ -2391,18 +2397,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.trace_symbol_layout_file = Some(path(next_arg(&mut i, name)))
             }
             // ld-prime's reports on its own workings that mold does not
-            // give: the branch islands it inserts, the order file
-            // entries that match nothing, the libraries that re-exports
-            // load (or one of them), a snapshot of the link to replay it
-            // from (in /tmp unless -snapshot_dir says; a replay passes
-            // -no_snapshot not to take another), the atom graph for
-            // Graphviz, the files the link read and the symbols it took
-            // from each, for Apple's build system, and its output
-            // compared to a reference one. -arch_multiple once named the
-            // architecture in ld64's messages, for a link that is one of
-            // several.
+            // give: the branch islands it inserts, the libraries that
+            // re-exports load (or one of them), a snapshot of the link to
+            // replay it from (in /tmp unless -snapshot_dir says; a
+            // replay passes -no_snapshot not to take another), the atom
+            // graph for Graphviz, the files the link read and the
+            // symbols it took from each, for Apple's build system, and
+            // its output compared to a reference one. -arch_multiple
+            // once named the architecture in ld64's messages, for a link
+            // that is one of several.
             b"-verbose_branch_islands"
-            | b"-order_file_statistics"
             | b"-trace_implicit_libraries"
             | b"-no_snapshot"
             | b"-arch_multiple" => {}
