@@ -1216,11 +1216,13 @@ fn add_patterns<'a>(glob: &mut GlobBuilder, opt: &str, pats: impl IntoIterator<I
     }
 }
 
+/// Reads a symbol list file. ld-prime ends its error about one it can't
+/// open, as about a -filelist file, with a blank line.
 fn read_symbol_list(opt: &str, path: &Path) -> Vec<String> {
     match std::fs::read_to_string(path) {
         Ok(text) => symbol_list(&text),
         Err(e) => fatal!(
-            "{opt} file '{}' could not be opened, {}",
+            "{opt} file '{}' could not be opened, {}\n",
             path.display(),
             crate::error::errno_text(&e)
         ),
@@ -1419,7 +1421,7 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
     };
     let text = std::fs::read(path).unwrap_or_else(|e| {
         let errno = crate::error::errno_text(&e);
-        fatal!("-filelist file '{}' could not be opened, {errno}", path.display())
+        fatal!("-filelist file '{}' could not be opened, {errno}\n", path.display())
     });
     text.split(|&b| b == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line))

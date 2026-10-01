@@ -38,6 +38,13 @@ try -Wl,-unexported_symbols_list,$t/nosuch.txt
 grep -q "\-unexported_symbols_list file '$t/nosuch.txt' could not be opened, errno=2" $t/log
 try -Wl,-filelist,$t/nosuch.txt
 grep -q "\-filelist file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+# ld-prime ends these errors with a blank line.
+not $mold -o $t/exe -filelist $t/nosuch.txt 2> $t/log
+grep -v '^+' $t/log | tail -1 > $t/last
+not grep -q . $t/last
+not $mold -o $t/exe $t/a.o -exported_symbols_list $t/nosuch.txt 2> $t/log
+grep -v '^+' $t/log | tail -1 > $t/last
+not grep -q . $t/last
 try -Wl,-sectcreate,__X,__y,$t/nosuch.bin
 grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.bin" $t/log
 
