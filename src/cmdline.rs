@@ -114,6 +114,10 @@ pub enum LibraryKind {
     /// dylib that loads weakly, all of whose imports must be weak
     /// already (see passes::check_weak_assertions).
     AssertWeak,
+    /// -delay-l, -delay_framework, -delay_library: a dylib whose
+    /// initializers run at the first use of one of its symbols (see
+    /// delay_init::create_delay_init). -delay-l looks for a dylib only.
+    Delay,
 }
 
 impl LibraryKind {
@@ -136,6 +140,7 @@ impl LibraryKind {
                 Force => "-force-l",
                 Possible => "-possible-l",
                 AssertWeak => "-assert-weak-l",
+                Delay => "-delay-l",
             },
             LibraryName::Framework(_) => match self {
                 Plain => "-framework ",
@@ -149,6 +154,7 @@ impl LibraryKind {
                 Hidden => "-hidden_framework ",
                 Possible => "-possible_framework ",
                 AssertWeak => "-assert_weak_framework ",
+                Delay => "-delay_framework ",
                 Force => unreachable!(),
             },
             LibraryName::Path(_) => match self {
@@ -163,6 +169,7 @@ impl LibraryKind {
                 Force => "-force_load ",
                 Possible => "-possible_library ",
                 AssertWeak => "-assert_weak_library ",
+                Delay => "-delay_library ",
                 Plain => unreachable!(),
             },
         }
@@ -858,6 +865,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-hidden_framework" => (Hidden, framework),
         b"-possible_framework" => (Possible, framework),
         b"-assert_weak_framework" => (AssertWeak, framework),
+        b"-delay_framework" => (Delay, framework),
         b"-weak_library" => (Weak, path),
         b"-reexport_library" => (Reexport, path),
         b"-needed_library" => (Needed, path),
@@ -868,6 +876,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-load_hidden" => (Hidden, path),
         b"-possible_library" => (Possible, path),
         b"-assert_weak_library" => (AssertWeak, path),
+        b"-delay_library" => (Delay, path),
         b"-force_load" => (Force, path),
         _ => return None,
     })
@@ -876,7 +885,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
 /// The library options with the library's name joined to them
 /// (-weak-lfoo), and the kind of library each names; -l, the others'
 /// prefix, last.
-const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 12] = [
+const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
     ("-reexport-l", LibraryKind::Reexport),
     ("-no_merge-l", LibraryKind::NoMerge),
     ("-merge-l", LibraryKind::Merge),
@@ -888,6 +897,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 12] = [
     ("-force-l", LibraryKind::Force),
     ("-possible-l", LibraryKind::Possible),
     ("-assert-weak-l", LibraryKind::AssertWeak),
+    ("-delay-l", LibraryKind::Delay),
     ("-l", LibraryKind::Plain),
 ];
 
@@ -946,6 +956,29 @@ fn resolve_lazy_load(args: &mut Args) {
     if lazy_load && !args.relocatable {
         args.forced_undefined.push("__dyld_lazy_load".to_string());
     }
+}
+
+/// A dylib -delay-l and the like name keeps its initializers until the
+/// image dlopen()s it, which dyld supports from macOS 15 on: ld-prime
+/// warns of an older or another target (a -preload image included),
+/// but delays the dylib all the same. It wants _dlopen as one of the
+/// command line's initial undefines in any link that names one, -r
+/// included.
+fn resolve_delay_init(args: &mut Args) {
+    let (frameworks, libraries) = libraries_of_kind(&args.inputs, LibraryKind::Delay);
+    if frameworks.is_empty() && libraries.is_empty() {
+        return;
+    }
+    let supported = args.platform == PLATFORM_MACOS
+        && args.platform_minos >= encode_version(15, 0, 0)
+        && !args.preload;
+    for lib in frameworks.iter().chain(&libraries).filter(|_| !supported) {
+        crate::warn!(
+            "delay-init will be ignored for '{}' because deployment target version is too low",
+            display(lib)
+        );
+    }
+    args.forced_undefined.push("_dlopen".to_string());
 }
 
 /// Takes the platform and minimum OS version an option names. The last
@@ -2450,6 +2483,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
 
     resolve_lazy_load(&mut args);
+    resolve_delay_init(&mut args);
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
     if threaded_starts {

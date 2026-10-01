@@ -53,23 +53,25 @@ pub enum SplitRef {
     PcRel32,
 }
 
-/// How a relocation reaches a symbol of a dylib dyld loads lazily
-/// (see passes::create_lazy_loads).
+/// How a relocation reaches a symbol of a dylib dyld loads lazily, or
+/// initializes at its first use (see passes::create_lazy_loads and
+/// delay_init::create_delay_init).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LazyRef {
-    /// A branch: to the symbol's call helper.
+    /// A branch: to the symbol's call helper or stub.
     Call,
     /// The instruction that computes a GOT slot's address for a load
     /// (arm64's adrp, x86-64's movq): it calls a load helper instead.
     Load,
     /// The instruction that loads from the slot the adrp above found
-    /// (arm64's ldr): from the symbol's __lazy_load_got slot.
+    /// (arm64's ldr): from the symbol's __lazy_load_got slot, or a
+    /// delay-init dylib's symbol's __got slot as ever.
     Slot,
     /// x86-64's cmpq $0 of the GOT slot: it calls a compare helper
     /// instead.
     Cmp,
-    /// A reference ld-prime cannot make lazy, by the name its error
-    /// gives the fixup.
+    /// A reference ld-prime cannot make lazy or delay, by the name its
+    /// error gives the fixup.
     Unsupported(&'static str),
 }
 
@@ -175,6 +177,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// from the one its GOT loads read (ld-prime's x86-64 ones do).
     const LAZY_HELPERS_P2ALIGN: u32;
     const LAZY_CALL_OWN_SLOT: bool;
+    /// The size of a __delay_stubs entry and of a dlopen helper, and the
+    /// alignment of __delay_stubs and __delay_helper.
+    const DELAY_STUB_SIZE: u64;
+    const DLOPEN_HELPER_SIZE: u32;
+    const DELAY_P2ALIGN: u32;
     /// The span a branch instruction can cover (both directions
     /// together), and the size of one range-extension thunk entry.
     const BRANCH_RANGE: u64;
@@ -278,6 +285,24 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// The size of a __lazy_helpers entry of a kind.
     fn lazy_helper_size(kind: crate::chunks::lazy_helpers::LazyUse) -> u32;
 
+    /// Writes the __delay_stubs section: each stub of
+    /// `ctx.delay_init.stubs` (see chunks::delay_init).
+    fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]);
+
+    /// Writes the __delay_helper section: the helpers for GOT loads,
+    /// then the dlopen helpers (see chunks::delay_init).
+    fn write_delay_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]);
+
+    /// The size of a __delay_helper entry for GOT loads of a kind.
+    fn delay_helper_size(kind: crate::chunks::delay_init::DelayUse) -> u32;
+
+    /// Where a delay-init stub or helper refers to what, for
+    /// LC_SEGMENT_SPLIT_INFO: offsets in it, with the split-info kind
+    /// of each reference.
+    fn delay_refs(
+        code: crate::chunks::delay_init::DelayCode,
+    ) -> Vec<(u32, u8, crate::chunks::delay_init::DelayTarget)>;
+
     /// Where a __lazy_helpers entry of a kind refers to what, for
     /// LC_SEGMENT_SPLIT_INFO: offsets in the entry, with the split-info
     /// kind of each reference.
@@ -286,7 +311,8 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     ) -> Vec<(u32, u8, crate::chunks::lazy_helpers::LazyTarget)>;
 
     /// How relocation `r`, of a subsection whose contents are `data`,
-    /// reaches a symbol of a dylib dyld loads lazily.
+    /// reaches a symbol of a dylib dyld loads lazily, or a delay-init
+    /// dylib's.
     fn lazy_ref(r: &Reloc, data: &[u8]) -> LazyRef;
 
     /// For a GOT load of such a symbol, the instruction at `offset` of

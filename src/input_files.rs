@@ -431,6 +431,12 @@ pub struct DylibFile {
     /// first use of one of its symbols (LC_LAZY_LOAD_DYLIB_INFO), so it
     /// has no LC_LOAD_DYLIB and no ordinal.
     pub is_lazy: bool,
+    /// -delay-l and the like, or a public library such a dylib
+    /// re-exports: dyld runs its initializers only when the image
+    /// dlopen()s this install name (its own, or the re-exporting
+    /// dylib's), before the first use of one of its symbols (see
+    /// delay_init::create_delay_init).
+    pub delay_init: Option<Vec<u8>>,
     /// For a library loaded as a public re-export that the command line
     /// or an auto-link option names later, where it is named: its
     /// position among the inputs and the path given, by which ld-prime's
@@ -455,6 +461,10 @@ pub struct DylibFile {
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
     pub weak_exports: hashbrown::HashSet<&'static str>,
+    /// Whether the library itself, not one it re-exports, exports weak
+    /// definitions, which ld-prime says keep it from being delayed
+    /// (see passes::name_dylib).
+    pub has_weak_defs: bool,
     /// The subset of exports that are thread-local variables.
     pub tlv_exports: hashbrown::HashSet<&'static str>,
     /// The install names of the private libraries this dylib re-exports,
@@ -3536,6 +3546,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     } = dylib;
     let mut exports: hashbrown::HashSet<&'static str> = exports.into_iter().collect();
     let mut weak_exports: hashbrown::HashSet<&'static str> = weak_exports.into_iter().collect();
+    let has_weak_defs = !weak_exports.is_empty();
     let mut tlv_exports: hashbrown::HashSet<&'static str> = tlv_exports.into_iter().collect();
 
     // Each re-exported library keeps the referencing dylib's directory
@@ -3575,12 +3586,14 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            delay_init: None,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
             exports,
             weak_exports,
+            has_weak_defs,
             tlv_exports,
             merged_reexports,
             merged_files,
@@ -3783,12 +3796,14 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            delay_init: None,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
             exports,
             weak_exports: hashbrown::HashSet::new(),
+            has_weak_defs: false,
             tlv_exports,
             merged_reexports: Vec::new(),
             merged_files: Vec::new(),
@@ -4255,6 +4270,7 @@ fn register_tbd<E: Target>(
     let mut exports: hashbrown::HashSet<&'static str> = tbd.exports.into_iter().collect();
     let mut weak_exports: hashbrown::HashSet<&'static str> =
         tbd.weak_exports.iter().copied().collect();
+    let has_weak_defs = !weak_exports.is_empty();
     exports.extend(tbd.weak_exports);
     let mut tlv_exports: hashbrown::HashSet<&'static str> = tbd.tlv_exports.into_iter().collect();
     exports.extend(tlv_exports.iter().copied());
@@ -4296,12 +4312,14 @@ fn register_tbd<E: Target>(
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            delay_init: None,
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
             load_order: u32::MAX,
             exports,
             weak_exports,
+            has_weak_defs,
             tlv_exports,
             merged_reexports,
             merged_files,
@@ -4348,12 +4366,14 @@ fn add_moved_dylibs<E: Target>(
                     is_needed: false,
                     is_upward: false,
                     is_lazy: false,
+                    delay_init: None,
                     named_at: None,
                     is_autolinked: false,
                     is_implicit: true,
                     load_order: u32::MAX,
                     exports: hashbrown::HashSet::new(),
                     weak_exports: hashbrown::HashSet::new(),
+                    has_weak_defs: false,
                     tlv_exports: hashbrown::HashSet::new(),
                     merged_reexports: Vec::new(),
                     merged_files: Vec::new(),

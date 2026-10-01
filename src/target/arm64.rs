@@ -4,6 +4,7 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
+use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::fatal;
@@ -862,6 +863,78 @@ fn report_got_pageoff(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usiz
     }
 }
 
+/// Encodes the instructions of a delay-init stub or helper at `base`
+/// that refer to other places, by the index of the instruction.
+struct DelayInsn {
+    base: u64,
+}
+
+impl DelayInsn {
+    fn pc(&self, k: usize) -> u64 {
+        self.base + k as u64 * 4
+    }
+
+    /// adrp xRD, target@PAGE
+    fn adrp(&self, k: usize, rd: u32, target: u64) -> u32 {
+        0x9000_0000 | rd | page_offset(target, self.pc(k))
+    }
+
+    /// add xRD, xRD, target@PAGEOFF
+    fn add(&self, rd: u32, target: u64) -> u32 {
+        0x9100_0000 | rd << 5 | rd | (target as u32 & 0xfff) << 10
+    }
+
+    /// b or bl (`op`) target
+    fn branch(&self, k: usize, op: u32, target: u64) -> u32 {
+        op | (target.wrapping_sub(self.pc(k)) >> 2) as u32 & B_IMM
+    }
+}
+
+/// A dlopen helper, but for instructions 16-17 (adrp/add x0 of the
+/// install name), 19 (bl dlopen) and 20-21 (adrp/add x1 of the flag).
+const DLOPEN_HELPER: [u32; 40] = [
+    0xd104_83ff, // sub sp, sp, #0x120
+    0xa900_03e1, // stp x1, x0, [sp]
+    0xa901_0be3, // stp x3, x2, [sp, #0x10]
+    0xa902_13e5,
+    0xa903_1be7,
+    0xa904_23e9,
+    0xa905_2beb,
+    0xa906_33ed,
+    0xa907_3bef,
+    0xa908_43f1, // stp x17, x16, [sp, #0x80]
+    0xad04_83e1, // stp q1, q0, [sp, #0x90]
+    0xad05_8be3,
+    0xad06_93e5,
+    0xad07_9be7, // stp q7, q6, [sp, #0xf0]
+    0xa911_7bfd, // stp x29, x30, [sp, #0x110]
+    0x9104_83fd, // add x29, sp, #0x120
+    0,
+    0,
+    0xd280_0001, // mov x1, #0
+    0,
+    0,
+    0,
+    0x5280_0020, // mov w0, #1
+    0x889f_fc20, // stlr w0, [x1]
+    0xad47_9be7, // ldp q7, q6, [sp, #0xf0]
+    0xad46_93e5,
+    0xad45_8be3,
+    0xad44_83e1,
+    0xa948_43f1, // ldp x17, x16, [sp, #0x80]
+    0xa947_3bef,
+    0xa946_33ed,
+    0xa945_2beb,
+    0xa944_23e9,
+    0xa943_1be7,
+    0xa942_13e5,
+    0xa941_0be3,
+    0xa940_03e1, // ldp x1, x0, [sp]
+    0xa951_7bfd, // ldp x29, x30, [sp, #0x110]
+    0x9104_83ff, // add sp, sp, #0x120
+    0xd65f_03c0, // ret
+];
+
 impl Target for Arm64 {
     const NAME: &'static str = "arm64";
     const CPUTYPE: u32 = CPU_TYPE_ARM64;
@@ -875,6 +948,9 @@ impl Target for Arm64 {
     const OBJC_STUB_SIZE: u64 = 32;
     const LAZY_HELPERS_P2ALIGN: u32 = 2;
     const LAZY_CALL_OWN_SLOT: bool = false;
+    const DELAY_STUB_SIZE: u64 = 40;
+    const DLOPEN_HELPER_SIZE: u32 = 160;
+    const DELAY_P2ALIGN: u32 = 2;
     const BRANCH_RANGE: u64 = 1 << 28;
     const THUNK_SIZE: u64 = 12;
     const RELOC_UNSIGNED: u8 = ARM64_RELOC_UNSIGNED;
@@ -1130,6 +1206,126 @@ impl Target for Arm64 {
 
     fn lazy_helper_size(_kind: LazyUse) -> u32 {
         64
+    }
+
+    //    adrp x16, flag@PAGE; add x16, x16, flag@PAGEOFF; ldar w16, [x16]
+    //    cbnz w16, 1f
+    //    stp x29, x30, [sp, #-16]!; bl dlopen helper; ldp x29, x30, [sp], #16
+    // 1: adrp x16, slot@PAGE; ldr x16, [x16, slot@PAGEOFF]; br x16
+    fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
+            let base = addr + i as u64 * Self::DELAY_STUB_SIZE;
+            let flag = ctx.isec_addr(ctx.delay_init.dlopens[stub.dlopen as usize].flag as usize);
+            let helper = ctx.dlopen_helper_addr(stub.dlopen as usize);
+            let slot = ctx.got.slot_addr(stub.got as usize);
+            let insn = DelayInsn { base };
+            let code = [
+                insn.adrp(0, 16, flag),
+                insn.add(16, flag),
+                0x88df_fe10,
+                0x3500_0090,
+                0xa9bf_7bfd,
+                insn.branch(5, 0x9400_0000, helper),
+                0xa8c1_7bfd,
+                insn.adrp(7, 16, slot),
+                0xf940_0210 | (bits(slot, 11, 3) as u32) << 10,
+                0xd61f_0200,
+            ];
+            for (k, word) in code.into_iter().enumerate() {
+                write32(&mut buf[i * Self::DELAY_STUB_SIZE as usize + k * 4..], word);
+            }
+        }
+    }
+
+    //    adrp xN, flag@PAGE; add xN, xN, flag@PAGEOFF; ldar wN, [xN]
+    //    cbnz wN, 1f
+    //    stp x29, x30, [sp, #-16]!; bl dlopen helper; ldp x29, x30, [sp], #16
+    // 1: adrp xN, slot@PAGE; ret (or b back past the adrp)
+    //
+    // A dlopen helper calls dlopen(install name, 0) with the argument
+    // and scratch registers x0-x17 and q0-q7 saved, then sets the flag
+    // with a store-release.
+    fn write_delay_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let delay = &ctx.delay_init;
+        for h in &delay.helpers {
+            let DelayUse::Load { reg, site } = h.kind else { unreachable!() };
+            let base = addr + h.offset as u64;
+            let flag = ctx.isec_addr(delay.dlopens[h.dlopen as usize].flag as usize);
+            let helper = ctx.dlopen_helper_addr(h.dlopen as usize);
+            let slot = ctx.sym_got_addr(h.sym);
+            let (insn, rd) = (DelayInsn { base }, reg as u32);
+            let back = match site {
+                None => 0xd65f_03c0,
+                Some((isec, off)) => {
+                    let next = ctx.isec_addr(isec as usize) + off as u64 + 4;
+                    insn.branch(8, 0x1400_0000, next)
+                }
+            };
+            let code = [
+                insn.adrp(0, rd, flag),
+                insn.add(rd, flag),
+                0x88df_fc00 | rd << 5 | rd,
+                0x3500_0080 | rd,
+                0xa9bf_7bfd,
+                insn.branch(5, 0x9400_0000, helper),
+                0xa8c1_7bfd,
+                insn.adrp(7, rd, slot),
+                back,
+            ];
+            for (k, word) in code.into_iter().enumerate() {
+                write32(&mut buf[h.offset as usize + k * 4..], word);
+            }
+        }
+        for d in &delay.dlopens {
+            let insn = DelayInsn { base: addr + d.offset as u64 };
+            let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
+            let dlopen = ctx.sym_stub_addr(delay.dlopen_sym.unwrap());
+            let mut code = DLOPEN_HELPER;
+            code[16] = insn.adrp(16, 0, name);
+            code[17] = insn.add(0, name);
+            code[19] = insn.branch(19, 0x9400_0000, dlopen);
+            code[20] = insn.adrp(20, 1, flag);
+            code[21] = insn.add(1, flag);
+            for (k, word) in code.into_iter().enumerate() {
+                write32(&mut buf[d.offset as usize + k * 4..], word);
+            }
+        }
+    }
+
+    fn delay_helper_size(_kind: DelayUse) -> u32 {
+        36
+    }
+
+    fn delay_refs(code: DelayCode) -> Vec<(u32, u8, DelayTarget)> {
+        use DelayTarget::*;
+        let (adrp, off12, br26) = (
+            DYLD_CACHE_ADJ_V2_ARM64_ADRP,
+            DYLD_CACHE_ADJ_V2_ARM64_OFF12,
+            DYLD_CACHE_ADJ_V2_ARM64_BR26,
+        );
+        match code {
+            DelayCode::Stub => vec![
+                (0, adrp, Flag),
+                (4, off12, Flag),
+                (20, br26, DlopenHelper),
+                (28, adrp, Slot),
+                (32, off12, Slot),
+            ],
+            DelayCode::Helper(_) => vec![
+                (0, adrp, Flag),
+                (4, off12, Flag),
+                (20, br26, DlopenHelper),
+                (28, adrp, Slot),
+                (32, br26, Site),
+            ],
+            DelayCode::Dlopen => vec![
+                (64, adrp, Name),
+                (68, off12, Name),
+                (76, br26, Dlopen),
+                (80, adrp, Flag),
+                (84, off12, Flag),
+            ],
+        }
     }
 
     fn lazy_helper_refs(kind: LazyUse) -> Vec<(u32, u8, LazyTarget)> {
@@ -1436,6 +1632,20 @@ impl Target for Arm64 {
                         _ => 0x9400_0000,
                     };
                     let val = ctx.lazy_helper_addr(helper).wrapping_sub(p);
+                    write32(loc, op | bits(val, 27, 2) as u32);
+                }
+                // So does one of a delay-init dylib's symbol, but the
+                // ldr then loads from the symbol's __got slot.
+                ARM64_RELOC_GOT_LOAD_PAGE21
+                    if !ctx.delay_init.sites.is_empty()
+                        && ctx.is_delay_import(ctx.reloc_target_sym(obj, r).unwrap()) =>
+                {
+                    let helper = ctx.delay_init.site_helper(isec_id, r.offset);
+                    let op = match ctx.delay_init.helpers[helper].kind {
+                        DelayUse::Load { site: Some(_), .. } => 0x1400_0000,
+                        _ => 0x9400_0000,
+                    };
+                    let val = ctx.delay_helper_addr(helper).wrapping_sub(p);
                     write32(loc, op | bits(val, 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing

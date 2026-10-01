@@ -93,6 +93,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         .collect();
     places.stub_entries(&mut entries);
     places.lazy_entries(&mut entries);
+    places.delay_entries(&mut entries);
     places.objc_entries(&mut entries);
     places.table_entries(&mut entries);
     places.unwind_entries(&mut entries);
@@ -217,6 +218,9 @@ impl<'a, E: Target> Places<'a, E> {
             FileId::Dylib(_) if aux.lazy_stub_idx != NO_IDX => {
                 Some(self.lazy_helper(aux.lazy_stub_idx))
             }
+            FileId::Dylib(_) if aux.delay_stub_idx != NO_IDX => Some(
+                self.chunk(ChunkId::DelayStubs, aux.delay_stub_idx as u64 * E::DELAY_STUB_SIZE),
+            ),
             FileId::Dylib(_) => (aux.stub_idx != NO_IDX)
                 .then(|| self.chunk(ChunkId::Stubs, aux.stub_idx as u64 * E::STUB_SIZE)),
             FileId::Obj(obj) => {
@@ -358,18 +362,24 @@ impl<'a, E: Target> Places<'a, E> {
                 SplitRef::Pointer if ctx.reloc_target_is_tls(isec.file as usize, r) => {}
                 SplitRef::Pointer => push(out, from, pointer, self.reloc_target(isec, r, true)),
                 split => {
-                    // A GOT load of a lazy dylib's symbol that calls a
-                    // helper instead: an arm64 site is a branch now,
-                    // and ld-prime keeps an x86-64 one at its old
-                    // displacement's place.
-                    let helper = (!ctx.lazy_helpers.sites.is_empty())
-                        .then(|| ctx.lazy_helpers.sites.get(&(id as u32, r.offset)))
-                        .flatten();
-                    let (split, to) = match helper {
-                        Some(&i) if split == SplitRef::Page => {
-                            (SplitRef::Branch26, Some(self.lazy_helper(i)))
+                    // A GOT load of a lazy or delay-init dylib's symbol
+                    // that calls a helper instead: an arm64 site is a
+                    // branch now, and ld-prime keeps an x86-64 one at
+                    // its old displacement's place.
+                    let site = (id as u32, r.offset);
+                    let lazy = (!ctx.lazy_helpers.sites.is_empty())
+                        .then(|| ctx.lazy_helpers.sites.get(&site))
+                        .flatten()
+                        .map(|&i| self.lazy_helper(i));
+                    let delay = (!ctx.delay_init.sites.is_empty())
+                        .then(|| ctx.delay_init.sites.get(&site))
+                        .flatten()
+                        .map(|&i| self.delay_helper(i as usize));
+                    let (split, to) = match lazy.or(delay) {
+                        Some(helper) if split == SplitRef::Page => {
+                            (SplitRef::Branch26, Some(helper))
                         }
-                        Some(&i) => (split, Some(self.lazy_helper(i))),
+                        Some(helper) => (split, Some(helper)),
                         None => (split, self.reloc_target(isec, r, true)),
                     };
                     let kind = match split {
@@ -476,6 +486,66 @@ impl<'a, E: Target> Places<'a, E> {
                 };
                 push(out, (n, at + off as u64), kind, to);
             }
+        }
+    }
+
+    /// Where __delay_helper's load helper `i` lies.
+    fn delay_helper(&self, i: usize) -> Place {
+        let offset = self.ctx.delay_init.helpers[i].offset;
+        self.chunk(ChunkId::DelayHelper, offset as u64)
+    }
+
+    /// The delay-init stubs' and helpers' references to other sections
+    /// (see DelayTarget).
+    fn delay_entries(&self, out: &mut Vec<Entry>) {
+        use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
+        let ctx = self.ctx;
+        let delay = &ctx.delay_init;
+        let Some(dlopen) = delay.dlopen_sym else { return };
+        let dlopen_stub = ctx.sym_aux(dlopen).stub_idx as u64 * E::STUB_SIZE;
+        let dlopen_helper =
+            |i: u32| self.chunk(ChunkId::DelayHelper, delay.dlopens[i as usize].offset as u64);
+        let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {
+            for (off, kind, to) in E::delay_refs(code) {
+                let from = (from.0, from.1 + off as u64);
+                let to: Option<Place> = resolve(to);
+                if to.is_some_and(|to| to.0 != from.0) {
+                    push(out, from, kind, to);
+                }
+            }
+        };
+        for (i, stub) in delay.stubs.iter().enumerate() {
+            let from = self.chunk(ChunkId::DelayStubs, i as u64 * E::DELAY_STUB_SIZE);
+            let flag = delay.dlopens[stub.dlopen as usize].flag;
+            push_refs(from, DelayCode::Stub, &|to| match to {
+                DelayTarget::Flag => self.isec(flag as usize),
+                DelayTarget::Slot => Some(self.got_index(stub.got as usize)),
+                DelayTarget::DlopenHelper => Some(dlopen_helper(stub.dlopen)),
+                _ => None,
+            });
+        }
+        for (i, h) in delay.helpers.iter().enumerate() {
+            let flag = delay.dlopens[h.dlopen as usize].flag;
+            push_refs(self.delay_helper(i), DelayCode::Helper(h.kind), &|to| match to {
+                DelayTarget::Flag => self.isec(flag as usize),
+                DelayTarget::Slot => Some(self.got_slot(h.sym)),
+                DelayTarget::DlopenHelper => Some(dlopen_helper(h.dlopen)),
+                DelayTarget::Site => match h.kind {
+                    DelayUse::Load { site: Some((isec, off)), .. } => {
+                        self.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            });
+        }
+        for (i, d) in delay.dlopens.iter().enumerate() {
+            push_refs(dlopen_helper(i as u32), DelayCode::Dlopen, &|to| match to {
+                DelayTarget::Flag => self.isec(d.flag as usize),
+                DelayTarget::Name => self.isec(d.string as usize),
+                DelayTarget::Dlopen => Some(self.chunk(ChunkId::Stubs, dlopen_stub)),
+                _ => None,
+            });
         }
     }
 

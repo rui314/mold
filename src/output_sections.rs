@@ -34,10 +34,12 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__TEXT", "__text") => 0,
         ("__TEXT", "__stubs") => 2,
         ("__TEXT", "__stub_helper") => 3,
-        ("__TEXT", "__lazy_helpers") => 4,
-        ("__TEXT", "__objc_stubs") => 5,
-        ("__TEXT", "__init_offsets") => 6,
-        ("__TEXT", "__objc_methlist") => 7,
+        ("__TEXT", "__delay_stubs") => 4,
+        ("__TEXT", "__delay_helper") => 5,
+        ("__TEXT", "__lazy_helpers") => 6,
+        ("__TEXT", "__objc_stubs") => 7,
+        ("__TEXT", "__init_offsets") => 8,
+        ("__TEXT", "__objc_methlist") => 9,
         ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
         ("__TEXT", _) => 10,
         ("__DATA_CONST", "__mod_init_func") => 1,
@@ -1743,6 +1745,21 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
         ctx.chunks.push(ChunkId::LazyPtrs);
+    }
+
+    // The delay-init stubs and helpers.
+    let delay = &mut ctx.delay_init;
+    if !delay.stubs.is_empty() {
+        delay.stubs_hdr.segname = ctx.stubs.hdr.segname;
+        delay.stubs_hdr.p2align = E::DELAY_P2ALIGN;
+        delay.stubs_hdr.size = delay.stubs.len() as u64 * E::DELAY_STUB_SIZE;
+        ctx.chunks.push(ChunkId::DelayStubs);
+    }
+    if let Some(last) = delay.dlopens.last() {
+        delay.helper_hdr.segname = ctx.stubs.hdr.segname;
+        delay.helper_hdr.p2align = E::DELAY_P2ALIGN;
+        delay.helper_hdr.size = (last.offset + E::DLOPEN_HELPER_SIZE) as u64;
+        ctx.chunks.push(ChunkId::DelayHelper);
     }
 
     // The lazy-load helpers, and their slots: read-only data in the

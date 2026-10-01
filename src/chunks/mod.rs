@@ -13,6 +13,7 @@ pub mod bind_info;
 pub mod chained_fixups;
 pub mod code_signature;
 pub mod data_in_code;
+pub mod delay_init;
 pub mod eh_frame;
 pub mod export_trie;
 pub mod extern_relocs;
@@ -141,6 +142,8 @@ pub enum ChunkId {
     LazyPtrs,
     Got,
     WeakGot,
+    DelayStubs,
+    DelayHelper,
     LazyHelpers,
     LazyLoadGot,
     ObjcStubs,
@@ -174,13 +177,15 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 30] = [
+    const UNITS: [Self; 32] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
         Self::LazyPtrs,
         Self::Got,
         Self::WeakGot,
+        Self::DelayStubs,
+        Self::DelayHelper,
         Self::LazyHelpers,
         Self::LazyLoadGot,
         Self::ObjcStubs,
@@ -315,6 +320,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::LazyPtrs => lazy_ptrs::copy_buf(ctx, buf),
         ChunkId::Got => got::copy_buf(ctx, false, buf),
         ChunkId::WeakGot => got::copy_buf(ctx, true, buf),
+        ChunkId::DelayStubs => delay_init::copy_stubs(ctx, buf),
+        ChunkId::DelayHelper => delay_init::copy_helper(ctx, buf),
         ChunkId::LazyHelpers => lazy_helpers::copy_buf(ctx, buf),
         ChunkId::LazyLoadGot => lazy_load_got::copy_buf(ctx, buf),
         ChunkId::ObjcStubs => objc_stubs::copy_buf(ctx, buf),
@@ -564,7 +571,8 @@ fn create_source_version_cmd(version: u64) -> Vec<u8> {
 }
 
 fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
-    // A dylib that is two of weak, re-exported and upward takes a
+    // A dylib that is two of weak, re-exported and upward, or one whose
+    // initializers wait for the image to dlopen() it, takes a
     // dylib_use_command, whose flags say all of it: the header grows by
     // them, and a marker stands in the timestamp. ld-prime writes the
     // compatibility version as 1.0.0, which dyld no longer checks.
@@ -573,11 +581,13 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
         (weak, DYLIB_USE_WEAK_LINK),
         (dylib.is_reexported, DYLIB_USE_REEXPORT),
         (dylib.is_upward, DYLIB_USE_UPWARD),
+        (dylib.delay_init.is_some(), DYLIB_USE_DELAYED_INIT),
     ]
     .into_iter()
     .filter(|&(on, _)| on)
     .fold(0, |flags, (_, flag)| flags | flag);
-    let flags = if flags.count_ones() > 1 { flags } else { 0 };
+    let use_command = flags.count_ones() > 1 || flags & DYLIB_USE_DELAYED_INIT != 0;
+    let flags = if use_command { flags } else { 0 };
     let cmd = DylibCommand {
         cmd: if flags & DYLIB_USE_WEAK_LINK != 0 {
             LC_LOAD_WEAK_DYLIB

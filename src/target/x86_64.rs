@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::input_sections::{Reloc, RelocTarget};
@@ -15,6 +16,48 @@ use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
+
+/// The start of a delay-init stub or load helper at `base`, which
+/// makes sure the dylib of dlopen helper `dlopen` is initialized:
+/// cmpl $0, flag(%rip); jne 1f; push %rbp; mov %rsp, %rbp; call the
+/// dlopen helper; pop %rbp; 1:
+fn write_delay_check(ctx: &Context<X86_64>, ent: &mut [u8], base: u64, dlopen: u32) {
+    let flag = ctx.isec_addr(ctx.delay_init.dlopens[dlopen as usize].flag as usize);
+    let helper = ctx.dlopen_helper_addr(dlopen as usize);
+    ent[..19].copy_from_slice(&[
+        0x83, 0x3d, 0, 0, 0, 0, 0, 0x75, 0x0a, 0x55, 0x48, 0x89, 0xe5, 0xe8, 0, 0, 0, 0, 0x5d,
+    ]);
+    write32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
+    write32(&mut ent[14..], helper.wrapping_sub(base + 18) as u32);
+}
+
+/// A dlopen helper, but for the displacements of the leaq of the
+/// install name (at 68), the call of dlopen (75) and the xchgl of the
+/// flag (86).
+const DLOPEN_HELPER: [u8; 153] = [
+    0x55, // push %rbp
+    0x48, 0x89, 0xe5, // mov %rsp, %rbp
+    0x50, 0x51, 0x52, 0x53, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, // push %rax ... %r9
+    0x48, 0x83, 0xc4, 0x80, // add $-0x80, %rsp
+    0xf3, 0x0f, 0x7f, 0x04, 0x24, // movdqu %xmm0, (%rsp)
+    0xf3, 0x0f, 0x7f, 0x4c, 0x24, 0x10, // movdqu %xmm1, 0x10(%rsp)
+    0xf3, 0x0f, 0x7f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x7f, 0x5c, 0x24, 0x30, 0xf3, 0x0f, 0x7f, 0x64,
+    0x24, 0x40, 0xf3, 0x0f, 0x7f, 0x6c, 0x24, 0x50, 0xf3, 0x0f, 0x7f, 0x74, 0x24, 0x60, 0xf3, 0x0f,
+    0x7f, 0x7c, 0x24, 0x70, // movdqu %xmm7, 0x70(%rsp)
+    0x48, 0x8d, 0x3d, 0, 0, 0, 0, // leaq name(%rip), %rdi
+    0x31, 0xf6, // xorl %esi, %esi
+    0xe8, 0, 0, 0, 0, // call dlopen
+    0xb8, 0x01, 0, 0, 0, // movl $1, %eax
+    0x87, 0x05, 0, 0, 0, 0, // xchgl %eax, flag(%rip)
+    0xf3, 0x0f, 0x6f, 0x04, 0x24, // movdqu (%rsp), %xmm0
+    0xf3, 0x0f, 0x6f, 0x4c, 0x24, 0x10, 0xf3, 0x0f, 0x6f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x6f, 0x5c,
+    0x24, 0x30, 0xf3, 0x0f, 0x6f, 0x64, 0x24, 0x40, 0xf3, 0x0f, 0x6f, 0x6c, 0x24, 0x50, 0xf3, 0x0f,
+    0x6f, 0x74, 0x24, 0x60, 0xf3, 0x0f, 0x6f, 0x7c, 0x24, 0x70, // movdqu 0x70(%rsp), %xmm7
+    0x48, 0x83, 0xec, 0x80, // sub $-0x80, %rsp
+    0x41, 0x59, 0x41, 0x58, 0x5f, 0x5e, 0x5b, 0x5a, 0x59, 0x58, // pop %r9 ... %rax
+    0x5d, // pop %rbp
+    0xc3, // ret
+];
 
 fn write32(loc: &mut [u8], val: u32) {
     loc[..4].copy_from_slice(&val.to_le_bytes());
@@ -158,6 +201,9 @@ impl Target for X86_64 {
     const OBJC_STUB_SIZE: u64 = 16;
     const LAZY_HELPERS_P2ALIGN: u32 = 0;
     const LAZY_CALL_OWN_SLOT: bool = true;
+    const DELAY_STUB_SIZE: u64 = 25;
+    const DLOPEN_HELPER_SIZE: u32 = DLOPEN_HELPER.len() as u32;
+    const DELAY_P2ALIGN: u32 = 0;
     // A 32-bit pcrel branch covers 4 GiB; x86-64 outputs never need
     // thunks.
     const BRANCH_RANGE: u64 = 1 << 32;
@@ -349,6 +395,80 @@ impl Target for X86_64 {
         if kind == LazyUse::Cmp { 46 } else { 45 }
     }
 
+    // cmpl $0, flag(%rip); jne 1f
+    // push %rbp; mov %rsp, %rbp; call dlopen helper; pop %rbp
+    // 1: jmp *slot(%rip)
+    fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
+            let at = i * Self::DELAY_STUB_SIZE as usize;
+            let ent = &mut buf[at..at + Self::DELAY_STUB_SIZE as usize];
+            let base = addr + at as u64;
+            write_delay_check(ctx, ent, base, stub.dlopen);
+            ent[19..21].copy_from_slice(&[0xff, 0x25]);
+            let slot = ctx.got.slot_addr(stub.got as usize);
+            write32(&mut ent[21..], slot.wrapping_sub(base + 25) as u32);
+        }
+    }
+
+    // (the check as a stub's) 1: movq slot(%rip), %reg; ret, or
+    // cmpq $0, slot(%rip); ret.
+    //
+    // A dlopen helper calls dlopen(install name, 0) with the argument
+    // registers saved, then sets the flag by an xchgl. ld-prime's saves
+    // the general-purpose ones alone, which lets dlopen() clobber the
+    // floating-point arguments of the call that first reaches the
+    // dylib (addf(1.0, 2.0, 3.0, 4.0) returns 0.5): this one saves
+    // xmm0-xmm7 too.
+    fn write_delay_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let delay = &ctx.delay_init;
+        for h in &delay.helpers {
+            let size = Self::delay_helper_size(h.kind) as usize;
+            let ent = &mut buf[h.offset as usize..h.offset as usize + size];
+            let base = addr + h.offset as u64;
+            write_delay_check(ctx, ent, base, h.dlopen);
+            let slot = ctx.sym_got_addr(h.sym);
+            match h.kind {
+                DelayUse::Load { reg, .. } => {
+                    let rex = 0x48 | (reg >> 3) << 2;
+                    ent[19..22].copy_from_slice(&[rex, 0x8b, 0x05 | (reg & 7) << 3]);
+                    write32(&mut ent[22..], slot.wrapping_sub(base + 26) as u32);
+                    ent[26] = 0xc3;
+                }
+                DelayUse::Cmp => {
+                    ent[19..22].copy_from_slice(&[0x48, 0x83, 0x3d]);
+                    write32(&mut ent[22..], slot.wrapping_sub(base + 27) as u32);
+                    ent[26..28].copy_from_slice(&[0, 0xc3]);
+                }
+            }
+        }
+        let dlopen = ctx.sym_stub_addr(delay.dlopen_sym.unwrap());
+        for d in &delay.dlopens {
+            let size = Self::DLOPEN_HELPER_SIZE as usize;
+            let ent = &mut buf[d.offset as usize..d.offset as usize + size];
+            let base = addr + d.offset as u64;
+            ent.copy_from_slice(&DLOPEN_HELPER);
+            let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
+            write32(&mut ent[68..], name.wrapping_sub(base + 72) as u32);
+            write32(&mut ent[75..], dlopen.wrapping_sub(base + 79) as u32);
+            write32(&mut ent[86..], flag.wrapping_sub(base + 90) as u32);
+        }
+    }
+
+    fn delay_helper_size(kind: DelayUse) -> u32 {
+        if kind == DelayUse::Cmp { 28 } else { 27 }
+    }
+
+    // Each a 32-bit displacement.
+    fn delay_refs(code: DelayCode) -> Vec<(u32, u8, DelayTarget)> {
+        use DelayTarget::*;
+        let refs = match code {
+            DelayCode::Stub => vec![(2, Flag), (14, DlopenHelper), (21, Slot)],
+            DelayCode::Helper(_) => vec![(2, Flag), (14, DlopenHelper), (22, Slot)],
+            DelayCode::Dlopen => vec![(68, Name), (75, Dlopen), (86, Flag)],
+        };
+        refs.into_iter().map(|(off, to)| (off, DYLD_CACHE_ADJ_V2_DELTA_32, to)).collect()
+    }
+
     // Each a 32-bit displacement: the flag's in the cmpl, the lea's of
     // the call's arguments and the call's; and the jmp's or the final
     // movq's or cmpq's of the slot.
@@ -518,6 +638,22 @@ impl Target for X86_64 {
                     }
                 }
             }
+            // So does one of a delay-init dylib's symbol (see
+            // DelayUse).
+            if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
+                && !ctx.delay_init.sites.is_empty()
+                && let Some(&helper) = ctx.delay_init.sites.get(&(isec_id as u32, r.offset))
+            {
+                let at = r.offset as usize - 3;
+                let disp =
+                    ctx.delay_helper_addr(helper as usize).wrapping_sub(base + at as u64 + 5);
+                buf[at] = 0xe8;
+                write32(&mut buf[at + 1..], disp as u32);
+                let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };
+                buf[at + 5..end].fill(0x90);
+                i += 1;
+                continue;
+            }
             // A GOT load or compare of a lazy dylib's symbol becomes a
             // call of its helper, nops filling the rest of the movq or
             // cmpq (see LazyUse).
@@ -593,6 +729,7 @@ impl Target for X86_64 {
                         ctx.symbols[id].is_imported()
                             && aux.stub_idx == crate::symbol::NO_IDX
                             && aux.lazy_stub_idx == crate::symbol::NO_IDX
+                            && aux.delay_stub_idx == crate::symbol::NO_IDX
                     }) =>
                 {
                     write32(loc, a as u32);

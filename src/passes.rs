@@ -261,12 +261,23 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
     }
     let lazy = rc.lazy && ctx.args.lazy_load;
     let dylib = &mut ctx.dylibs[idx];
+    let delay_init = rc.delay.then(|| dylib.install_name.clone());
     if dylib.is_implicit && !rc.autolinked {
         dylib.is_weak = rc.weak;
         dylib.is_lazy = lazy;
+        dylib.delay_init = delay_init;
     } else {
         dylib.is_weak |= rc.weak;
         dylib.is_lazy |= lazy;
+        if dylib.delay_init.is_none() {
+            dylib.delay_init = delay_init;
+        }
+    }
+    if rc.delay && dylib.has_weak_defs {
+        crate::warn!(
+            "delay-init link with '{}' will be ignored because it has weak-def exports",
+            crate::util::display(&dylib.install_name)
+        );
     }
     dylib.is_reexported |= rc.reexport;
     dylib.is_weak_asserted |= rc.assert_weak;
@@ -305,6 +316,9 @@ struct ReaderContext {
     sdk: bool,
     /// -assert-weak-l, -assert_weak_library, -assert_weak_framework.
     assert_weak: bool,
+    /// -delay-l, -delay_library, -delay_framework: the dylib's
+    /// initializers run at the first use of one of its symbols.
+    delay: bool,
 }
 
 impl ReaderContext {
@@ -321,6 +335,7 @@ impl ReaderContext {
         autolinked: true,
         sdk: false,
         assert_weak: false,
+        delay: false,
     };
 
     /// What two namings of one library say together.
@@ -337,6 +352,7 @@ impl ReaderContext {
             autolinked: self.autolinked && other.autolinked,
             sdk: self.sdk || other.sdk,
             assert_weak: self.assert_weak || other.assert_weak,
+            delay: self.delay || other.delay,
         }
     }
 }
@@ -459,13 +475,18 @@ fn collect_file<E: Target>(
             let Some(idx) = idx else { return };
             // The dylibs loaded during the parse beyond this one are the
             // public libraries it re-exports; a weak parent's are weak,
-            // and a lazy one's lazy. (Those standing for libraries its
-            // exports moved to load weakly only as their imports say;
-            // see weaken_moved_imports.)
+            // a lazy one's lazy, and a delayed one's initialized when it
+            // is. (Those standing for libraries its exports moved to
+            // load weakly only as their imports say; see
+            // weaken_moved_imports.)
             let lazy = rc.lazy && ctx.args.lazy_load;
+            let delay_init = rc.delay.then(|| ctx.dylibs[idx].install_name.clone());
             for d in &mut ctx.dylibs[first..] {
                 d.is_weak |= rc.weak && d.name_source != input_files::NameSource::Moved;
                 d.is_lazy |= lazy;
+                if d.delay_init.is_none() {
+                    d.delay_init.clone_from(&delay_init);
+                }
             }
             // One named before by another path keeps what that said.
             if idx >= first || ctx.dylibs[idx].is_implicit {
@@ -837,7 +858,7 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         InputArg::BundleLoader(path) | InputArg::Library(_, LibraryName::Path(path)) => {
             find_file(ctx, path, true)
         }
-        InputArg::Library(Upward | Reexport | NoMerge, LibraryName::Lib(name)) => {
+        InputArg::Library(Upward | Reexport | NoMerge | Delay, LibraryName::Lib(name)) => {
             find_dylib(ctx, name)
         }
         InputArg::Library(Merge, LibraryName::Lib(name)) => find_mergeable_dylib(ctx, name),
@@ -914,6 +935,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         merge: kind == Merge,
         autolinked: kind == Possible,
         assert_weak: kind == AssertWeak,
+        delay: kind == Delay,
         ..Default::default()
     };
     Some((rc, matches!(name, LibraryName::Framework(_)), name.as_os_str()))
@@ -999,10 +1021,13 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
         true => format!("'-{opt}_framework {}'", name.display()),
         false => format!("'-{opt}-l{}'", name.display()),
     };
-    for (on, opt) in [(rc.weak, "weak"), (rc.lazy, "lazy")] {
+    for (on, opt) in [(rc.weak, "weak"), (rc.lazy, "lazy"), (rc.delay, "delay")] {
         if on && rc.reexport {
             fatal!("{} and {} cannot be used together", spell(opt), spell("reexport"));
         }
+    }
+    if rc.delay && rc.lazy {
+        fatal!("{} and {} cannot be used together", spell("delay"), spell("lazy"));
     }
     let load_command =
         [(rc.reexport, "reexport"), (rc.weak, "weak"), (rc.upward, "upward"), (rc.lazy, "lazy")];
@@ -3075,9 +3100,10 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
 /// such dylib, each symbol, and the files that refer to it strongly
 /// from what the output keeps - by leaf name, an archive member as
 /// "libfoo.a[2](foo.o)" - and last its own file of GOT slots if the
-/// symbol has one: "stubs-got-file". A lazy dylib's symbols it names
-/// alone. (ld-prime lists the symbols in no fixed order; here they go
-/// by name.)
+/// symbol has one: "stubs-got-file", or "deferred-dylib-file" for a
+/// delay-init dylib's, whose stubs and helpers each one has. A lazy
+/// dylib's symbols it names alone. (ld-prime lists the symbols in no
+/// fixed order; here they go by name.)
 pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
     use crate::symbol::{NO_IDX, SymbolId};
     let asserted = |id: SymbolId| match ctx.symbols[id].file() {
@@ -3142,7 +3168,9 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         for &file in files {
             msg += &format!("\n      {}", leaf_file_name(ctx.objs[file as usize].mf));
         }
-        if ctx.sym_aux(*id).got_idx != NO_IDX {
+        if dylib.delay_init.is_some() {
+            msg += "\n      deferred-dylib-file";
+        } else if ctx.sym_aux(*id).got_idx != NO_IDX {
             msg += "\n      stubs-got-file";
         }
     }
@@ -3531,10 +3559,15 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         .collect();
 
     // A lazily loaded dylib's symbols take no stub or GOT slot; the
-    // image reaches them through create_lazy_loads's helpers.
+    // image reaches them through create_lazy_loads's helpers. Calls of
+    // a delay-init dylib's go to stubs of create_delay_init's.
     let has_lazy = ctx.dylibs.iter().any(|d| d.is_lazy);
+    let has_delay = ctx.dylibs.iter().any(|d| d.delay_init.is_some());
     for (id, class) in classes {
         if has_lazy && ctx.is_lazy_import(id) {
+            continue;
+        }
+        if has_delay && class == RelocClass::Branch && ctx.is_delay_import(id) {
             continue;
         }
         let sym = &ctx.symbols[id];
@@ -3614,7 +3647,7 @@ pub fn scan_unwind_personalities<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-fn add_stub<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
+pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
     if ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX {
         ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
         ctx.stubs.symbols.push(id);
@@ -4006,24 +4039,34 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     ctx.stubs.symbols = stubs;
 
     // The objc stubs' own _objc_msgSend slot goes before the one other
-    // references share. In the shared region the weak-lookup slots,
-    // which form __weak_got, go last.
+    // references share, and a delay-init stub's own slot after it. In
+    // the shared region the weak-lookup slots, which form __weak_got,
+    // go last.
     let got = std::mem::take(&mut ctx.got.got_syms);
     let objc = ctx.objc_stubs.msgsend_got_idx as usize;
+    let delay_own: hashbrown::HashSet<usize> = (ctx.delay_init.stubs.iter())
+        .filter(|s| s.got != ctx.sym_aux(s.sym).got_idx)
+        .map(|s| s.got as usize)
+        .collect();
     let in_weak_got = |id| ctx.args.shared_region && ctx.binds_weak_lookup(id);
     let mut order: Vec<usize> = (0..got.len()).collect();
     order.par_sort_by_key(|&i| {
         let id = got[i];
         let name = crate::util::name_sort_key(ctx.symbols[id].name());
-        (in_weak_got(id), got_rank(ctx, id), name, i != objc)
+        (in_weak_got(id), got_rank(ctx, id), name, i != objc, delay_own.contains(&i))
     });
     ctx.got.weak_start = order.iter().position(|&i| in_weak_got(got[i])).unwrap_or(order.len());
+    let mut slot_of = vec![0; got.len()];
     for (slot, &i) in order.iter().enumerate() {
+        slot_of[i] = slot as u32;
         if i == objc {
             ctx.objc_stubs.msgsend_got_idx = slot as u32;
-        } else {
+        } else if !delay_own.contains(&i) {
             ctx.sym_aux_mut(got[i]).got_idx = slot as u32;
         }
+    }
+    for stub in &mut ctx.delay_init.stubs {
+        stub.got = slot_of[stub.got as usize];
     }
     ctx.got.got_syms = order.iter().map(|&i| got[i]).collect();
 }
@@ -5230,7 +5273,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 /// loaded dylib exports it, given a GOT slot, and __dyld_private (the
 /// word dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
 /// synthesized. Once, on the first stub.
-fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
+pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.stub_helper.dyld_stub_binder.is_some() {
         return;
     }
@@ -5251,7 +5294,7 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
 
 /// Synthesizes a zero word of `size` bytes, aligned to its size, in
 /// __DATA,__data (after the inputs'), and returns its subsection.
-fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
+pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
     let p2align = size.trailing_zeros() as u8;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
         sectname: str_to_name("__data"),

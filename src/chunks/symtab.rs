@@ -827,6 +827,23 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
         let addr = hdr.addr + i as u64 * 8;
         ents.push((addr, RANK_LOCAL, name.as_bytes(), local_nlist(hdr.n_sect, addr), None));
     }
+    // The delay-init stubs, like selector stubs with N_PEXT set, and
+    // the helpers. (The dlopen helpers' flags are extra_local_syms.)
+    let delay = &ctx.delay_init;
+    for (i, stub) in delay.stubs.iter().enumerate() {
+        let addr = ctx.delay_stub_addr(i);
+        let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(delay.stubs_hdr.n_sect, addr) };
+        ents.push((addr, RANK_PEXT, stub.name.as_bytes(), ent, None));
+    }
+    let n_sect = delay.helper_hdr.n_sect;
+    for (i, h) in delay.helpers.iter().enumerate() {
+        let addr = ctx.delay_helper_addr(i);
+        ents.push((addr, RANK_LOCAL, h.name.as_bytes(), local_nlist(n_sect, addr), None));
+    }
+    for (i, d) in delay.dlopens.iter().enumerate() {
+        let addr = ctx.dlopen_helper_addr(i);
+        ents.push((addr, RANK_LOCAL, d.name.as_bytes(), local_nlist(n_sect, addr), None));
+    }
     // The range-extension thunks' entries, named as ld-prime names
     // its branch islands.
     for (addr, n_sect, name) in crate::thunks::island_symbols(ctx) {

@@ -689,6 +689,27 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         let (addr, file) = (ctx.lazy_load_got.slot_addr(i as u32), files.of_symbol(ctx, sym));
         entries.push(MapEntry { addr, size: 8, file, name: name(slot) });
     }
+    // The delay-init stubs and load helpers count as their symbols'
+    // files, the dlopen helpers and their C strings as file 0.
+    let delay = &ctx.delay_init;
+    for (i, stub) in delay.stubs.iter().enumerate() {
+        let (addr, file) = (ctx.delay_stub_addr(i), files.of_symbol(ctx, stub.sym));
+        entries.push(MapEntry { addr, size: E::DELAY_STUB_SIZE, file, name: name(stub.name) });
+    }
+    for (i, h) in delay.helpers.iter().enumerate() {
+        let (addr, size) = (ctx.delay_helper_addr(i), E::delay_helper_size(h.kind) as u64);
+        let file = files.of_symbol(ctx, h.sym);
+        entries.push(MapEntry { addr, size, file, name: name(h.name) });
+    }
+    for (i, d) in delay.dlopens.iter().enumerate() {
+        let (addr, size) = (ctx.dlopen_helper_addr(i), E::DLOPEN_HELPER_SIZE as u64);
+        entries.push(MapEntry { addr, size, file: 0, name: name(d.name) });
+        let string = &ctx.isecs[d.string as usize];
+        let mut label = b"literal string: ".to_vec();
+        escape_literal(&mut label, string.data());
+        let (addr, size) = (ctx.isec_addr(d.string as usize), string.size as u64);
+        entries.push(MapEntry { addr, size, file: 0, name: Cow::Owned(label) });
+    }
     for &(sym, isec) in &ctx.extra_local_syms {
         let size = ctx.isecs[isec as usize].size as u64;
         let addr = ctx.isec_addr(isec as usize);

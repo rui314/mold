@@ -276,6 +276,8 @@ pub struct SymAux {
     /// ctx.lazy_helpers) and its __lazy_load_got slot.
     pub lazy_stub_idx: u32,
     pub lazy_got_idx: u32,
+    /// A delay-init import's __delay_stubs entry.
+    pub delay_stub_idx: u32,
     /// The addresses of this symbol's range-extension thunk entries,
     /// sorted, so that applying an out-of-range branch can find the one
     /// within reach - mold's SymbolAux::thunk_addrs.
@@ -289,6 +291,7 @@ impl SymAux {
         objc_stub_idx: NO_IDX,
         lazy_stub_idx: NO_IDX,
         lazy_got_idx: NO_IDX,
+        delay_stub_idx: NO_IDX,
         thunk_addrs: Vec::new(),
     };
 }

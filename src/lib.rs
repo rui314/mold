@@ -5,6 +5,7 @@ pub(crate) mod chunks;
 pub(crate) mod cmdline;
 pub(crate) mod context;
 pub(crate) mod dead_strip;
+pub(crate) mod delay_init;
 pub mod driver;
 pub(crate) mod dwarf;
 pub(crate) mod error;

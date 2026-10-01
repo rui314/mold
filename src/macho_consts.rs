@@ -71,6 +71,7 @@ pub const DYLIB_USE_MARKER: u32 = 0x1a74_1800;
 pub const DYLIB_USE_WEAK_LINK: u32 = 0x1;
 pub const DYLIB_USE_REEXPORT: u32 = 0x2;
 pub const DYLIB_USE_UPWARD: u32 = 0x4;
+pub const DYLIB_USE_DELAYED_INIT: u32 = 0x8;
 pub const LC_DYLD_INFO: u32 = 0x22;
 pub const LC_DYLD_INFO_ONLY: u32 = 0x22 | LC_REQ_DYLD;
 pub const LC_VERSION_MIN_MACOSX: u32 = 0x24;

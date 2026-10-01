@@ -7,6 +7,7 @@ use crate::chunks::bind_info::BindInfoSection;
 use crate::chunks::chained_fixups::ChainedFixupsSection;
 use crate::chunks::code_signature::CodeSignatureSection;
 use crate::chunks::data_in_code::DataInCodeSection;
+use crate::chunks::delay_init::DelayInit;
 use crate::chunks::eh_frame::EhFrameSection;
 use crate::chunks::export_trie::ExportTrieSection;
 use crate::chunks::extern_relocs::ExternRelocsSection;
@@ -55,6 +56,8 @@ macro_rules! chunk_header {
             ChunkId::LazyPtrs => &$($mutable)? $ctx.lazy_ptrs.hdr,
             ChunkId::Got => &$($mutable)? $ctx.got.hdr,
             ChunkId::WeakGot => &$($mutable)? $ctx.got.weak_hdr,
+            ChunkId::DelayStubs => &$($mutable)? $ctx.delay_init.stubs_hdr,
+            ChunkId::DelayHelper => &$($mutable)? $ctx.delay_init.helper_hdr,
             ChunkId::LazyHelpers => &$($mutable)? $ctx.lazy_helpers.hdr,
             ChunkId::LazyLoadGot => &$($mutable)? $ctx.lazy_load_got.hdr,
             ChunkId::ObjcStubs => &$($mutable)? $ctx.objc_stubs.hdr,
@@ -138,6 +141,7 @@ pub struct Context<E: Target> {
     pub stub_helper: StubHelperSection,
     pub lazy_ptrs: LazyPtrsSection,
     pub got: GotSection,
+    pub delay_init: DelayInit,
     pub lazy_helpers: LazyHelpersSection,
     pub lazy_load_got: LazyLoadGotSection,
     pub objc_stubs: ObjcStubsSection,
@@ -249,6 +253,7 @@ impl<E: Target> Context<E> {
             stub_helper: StubHelperSection::new(),
             lazy_ptrs: LazyPtrsSection::new(),
             got: GotSection::new(),
+            delay_init: DelayInit::new(),
             lazy_helpers: LazyHelpersSection::new(),
             lazy_load_got: LazyLoadGotSection::new(),
             objc_stubs: ObjcStubsSection::new(),
@@ -536,6 +541,8 @@ impl<E: Target> Context<E> {
                     self.sym_stub_addr(id)
                 } else if aux.lazy_stub_idx != crate::symbol::NO_IDX {
                     self.lazy_helper_addr(aux.lazy_stub_idx as usize)
+                } else if aux.delay_stub_idx != crate::symbol::NO_IDX {
+                    self.delay_stub_addr(aux.delay_stub_idx as usize)
                 } else {
                     0
                 }
@@ -551,6 +558,30 @@ impl<E: Target> Context<E> {
     /// Returns the address of __lazy_helpers entry `i`.
     pub fn lazy_helper_addr(&self, i: usize) -> u64 {
         self.lazy_helpers.hdr.addr + self.lazy_helpers.helpers[i].offset as u64
+    }
+
+    /// Returns the address of __delay_stubs entry `i`.
+    pub fn delay_stub_addr(&self, i: usize) -> u64 {
+        self.delay_init.stubs_hdr.addr + i as u64 * E::DELAY_STUB_SIZE
+    }
+
+    /// Returns the address of __delay_helper's load helper `i`.
+    pub fn delay_helper_addr(&self, i: usize) -> u64 {
+        self.delay_init.helper_hdr.addr + self.delay_init.helpers[i].offset as u64
+    }
+
+    /// Returns the address of __delay_helper's dlopen helper `i`.
+    pub fn dlopen_helper_addr(&self, i: usize) -> u64 {
+        self.delay_init.helper_hdr.addr + self.delay_init.dlopens[i].offset as u64
+    }
+
+    /// True for a symbol of a dylib whose initializers wait for the
+    /// image's first use of it (see delay_init::create_delay_init).
+    pub fn is_delay_import(&self, id: SymbolId) -> bool {
+        match self.symbols[id].file() {
+            Some(FileId::Dylib(d)) => d != u32::MAX && self.dylibs[d as usize].delay_init.is_some(),
+            _ => false,
+        }
     }
 
     /// True for a symbol of a dylib dyld loads lazily (see
