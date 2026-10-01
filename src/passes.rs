@@ -2348,14 +2348,12 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         let name = sym.name();
         if flags[i].load(Ordering::Relaxed) & outside != 0
             || lto_exports(ctx, sym)
+            || (ctx.args.has_entry_point() && name == ctx.args.entry)
             || ctx.args.forced_undefined.iter().any(|n| n == name)
             || ctx.args.aliases.iter().any(|(existing, _)| existing == name)
         {
             roots.push(name);
         }
-    }
-    if ctx.args.has_entry_point() {
-        roots.push(&ctx.args.entry);
     }
 
     // A bitcode definition a native object has one of too survives, as
