@@ -1551,11 +1551,6 @@ fn parse_triple(triple: &str) -> (&str, u32, u32) {
     (arch, platform, minos)
 }
 
-/// Parses a symbol list file: one symbol per line, '#' starts a
-/// comment.
-/// Reads a symbol-list file for an option, fatal on I/O error.
-/// Adds symbol-list patterns to a matcher. ld64's lists accept `*`, `?`
-/// and `[...]` wildcards.
 /// The three ways to choose the exports: an export list, an unexport
 /// list, or -no_exported_symbols.
 #[derive(Clone, Copy, PartialEq)]
@@ -1608,19 +1603,16 @@ fn exact_name(entry: &str) -> Option<String> {
 /// Makes the names among a symbol list's entries initial undefines: an
 /// object need not mention them for them to pull in an archive member,
 /// and each must resolve. Patterns only match symbols already there.
-fn add_initial_undefines<'a>(undefs: &mut Vec<String>, entries: impl IntoIterator<Item = &'a str>) {
-    undefs.extend(entries.into_iter().filter_map(exact_name));
+fn add_initial_undefines(undefs: &mut Vec<String>, entries: impl IntoIterator<Item: AsRef<str>>) {
+    undefs.extend(entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())));
 }
 
 /// Adds a symbol list's entries to `glob` with `value`: the names they
 /// spell (see exact_name), and the patterns - a malformed one, such as
 /// `_a[`, matching nothing, as ld-prime takes it without a word.
-fn add_patterns<'a>(
-    glob: &mut GlobBuilder,
-    entries: impl IntoIterator<Item = &'a str>,
-    value: i64,
-) {
+fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<str>>, value: i64) {
     for entry in entries {
+        let entry = entry.as_ref();
         match exact_name(entry) {
             Some(name) => glob.add_literal(name.as_bytes(), value),
             None => {
@@ -1658,6 +1650,7 @@ fn symbol_move(opt: &str, segment: &[u8], path: &Path) -> SymbolMove {
     SymbolMove { segment: segment.to_vec(), symbols: symbols.build() }
 }
 
+/// The entries of a symbol list: one per line, '#' starting a comment.
 fn symbol_list(text: &str) -> Vec<String> {
     text.lines()
         .map(|line| line.split('#').next().unwrap_or("").trim())
@@ -2217,6 +2210,11 @@ impl<'a> ArgCursor<'a> {
         self.next_arg(opt).as_bytes().to_vec()
     }
 
+    /// The entries of the symbol list file an option names.
+    fn next_symbol_list(&mut self, opt: &str) -> Vec<String> {
+        read_symbol_list(opt, &self.next_path(opt))
+    }
+
     /// An operand of -rename_section or -rename_segment: ld-prime
     /// reports a missing or empty one with the option's usage.
     fn rename_operand(&mut self, opt: &str, usage: &str) -> &'a [u8] {
@@ -2646,13 +2644,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-exported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
-                let names = read_symbol_list(name, &cur.next_path(name));
-                add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
-                add_patterns(
-                    st.lists.exported_symbols.get_or_insert_default(),
-                    names.iter().map(String::as_str),
-                    0,
-                );
+                let names = cur.next_symbol_list(name);
+                add_initial_undefines(&mut args.forced_undefined, &names);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), &names, 0);
             }
             b"-unexported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
@@ -2660,18 +2654,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut st.lists.unexported_symbols, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.unexported_symbols, cur.next_symbol_list(name), 0);
             }
             b"-reexported_symbols_list" => {
                 st.reexports_listed = true;
-                let names = read_symbol_list(name, &cur.next_path(name));
+                let names = cur.next_symbol_list(name);
                 // Exact names force a reference even if no object
                 // mentions them, so one nothing defines is reported as
                 // wanted by ld-prime's "<initial-undefines>", as a -u
                 // name is. Patterns only match existing symbols.
-                add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
-                add_patterns(&mut st.lists.reexported_symbols, names.iter().map(String::as_str), 0);
+                add_initial_undefines(&mut args.forced_undefined, &names);
+                add_patterns(&mut st.lists.reexported_symbols, &names, 0);
             }
             // The -dylib_ spellings are the older names ld64 still
             // accepts; Xcode passes -dylib_compatibility_version.
@@ -2786,16 +2779,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
             b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
             b"-non_global_symbols_strip_list" => {
-                let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut st.lists.local_strip_list, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.local_strip_list, cur.next_symbol_list(name), 0);
             }
             b"-non_global_symbols_no_strip_list" => {
-                let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(
-                    st.lists.local_keep_list.get_or_insert_default(),
-                    names.iter().map(String::as_str),
-                    0,
-                );
+                let names = cur.next_symbol_list(name);
+                add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names, 0);
             }
             // ld64 takes the largest power of two that divides the
             // alignment (1 for 0), and the first -sectalign given for a
@@ -3022,20 +3010,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.max_default_common_align = Some(align.max(1).ilog2() as u8);
             }
             b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
-                let names = read_symbol_list(name, &cur.next_path(name));
+                let names = cur.next_symbol_list(name);
                 let glob = match name {
                     "-force_symbols_weak_list" => &mut st.lists.force_weak,
                     _ => &mut st.lists.force_not_weak,
                 };
-                add_patterns(glob, names.iter().map(String::as_str), 0);
+                add_patterns(glob, &names, 0);
                 st.force_weakness_listed = true;
             }
             b"-keep_duplicate" => {
                 add_patterns(&mut st.lists.keep_duplicates, [cur.next_text(name)], 0);
             }
             b"-keep_duplicates_list" => {
-                let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut st.lists.keep_duplicates, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name), 0);
             }
             b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
             b"-deployment_target_mismatches" => {
@@ -3048,9 +3035,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_encryption" => args.encryptable = false,
             b"-interposable" => st.lists.interposable_all = true,
             b"-interposable_list" => {
-                let names = read_symbol_list(name, &cur.next_path(name));
-                let glob = st.lists.interposable_list.get_or_insert_default();
-                add_patterns(glob, names.iter().map(String::as_str), 0);
+                let names = cur.next_symbol_list(name);
+                add_patterns(st.lists.interposable_list.get_or_insert_default(), &names, 0);
             }
             b"-unaligned_pointers" => {
                 st.unaligned_pointers = Some(parse_treatment(name, cur.next_arg(name), true));
@@ -3064,7 +3050,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.lists.poisoned.add(cur.next_arg(name).as_bytes(), 0);
             }
             b"-poison_symbols_list" => {
-                for pat in read_symbol_list(name, &cur.next_path(name)) {
+                for pat in cur.next_symbol_list(name) {
                     st.lists.poisoned.add(pat.as_bytes(), 0);
                 }
             }
