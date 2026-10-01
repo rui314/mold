@@ -118,6 +118,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::hide_all_exports(&mut ctx);
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
+        passes::check_weak_exports(&ctx);
         let t = ctx.timer("merge_literals");
         passes::merge_literals(&mut ctx);
         objc::coalesce_objc_refs(&mut ctx);
@@ -170,6 +171,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
     crate::error::checkpoint();
     passes::check_duplicate_symbols(&ctx);
+    crate::error::checkpoint();
+    passes::check_weak_exports(&ctx);
     crate::error::checkpoint();
     if ctx.args.deduplicate {
         timed!("compute_address_significance", passes::compute_address_significance(&mut ctx));

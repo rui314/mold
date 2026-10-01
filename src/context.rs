@@ -630,6 +630,18 @@ impl<E: Target> Context<E> {
             && !sym.is_private_extern()
     }
 
+    /// True for a live weak definition the image exports, which another
+    /// image's copy may replace at load time (and so for which ld-prime
+    /// sets MH_WEAK_DEFINES): not an auto-hidden or private extern one,
+    /// nor one -dead_strip removed.
+    pub fn exports_weak_def(&self, id: SymbolId) -> bool {
+        let sym = &self.symbols[id];
+        sym.is_weak_def()
+            && sym.is_extern()
+            && !sym.is_private_extern()
+            && sym.input_section().is_some_and(|isec| self.isecs[isec as usize].is_alive())
+    }
+
     /// A weak reference to an overlay's __swift_FORCE_LOAD_$_ marker.
     /// The Swift compiler emits one per module to keep the overlay
     /// loaded; ld-prime keeps the dylib as a dependency but writes no

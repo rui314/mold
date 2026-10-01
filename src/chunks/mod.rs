@@ -1004,15 +1004,7 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // ld-prime's eyes, referenced from within the image or not (a
     // dylib whose only weak definition nothing calls still gets
     // 0x118085), since another image's copy may replace it.
-    if ctx.symbols.syms.par_iter().any(|sym| {
-        sym.is_weak_def()
-            && sym.is_extern()
-            && !sym.is_private_extern()
-            && sym
-                .input_section()
-                .map(|i| i as usize)
-                .is_some_and(|isec| ctx.isecs[isec].is_alive())
-    }) {
+    if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.exports_weak_def(i as u32)) {
         hdr.flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
     }
     if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.overrides_weak_export(i as u32)) {

@@ -357,6 +357,11 @@ pub struct Args {
     /// its symbols with dlsym() (MH_NOFIXPREBINDING), for a dynamic main
     /// executable or a dylib (see check_output_kind).
     pub no_dynamic_access: bool,
+    /// -warn_weak_exports / -no_weak_exports: warn of, or refuse, the
+    /// weak definitions a final image exports (and the definitions that
+    /// override a dylib's weak one), which dyld coalesces at launch.
+    pub warn_weak_exports: bool,
+    pub no_weak_exports: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -644,6 +649,8 @@ impl Default for Args {
             uuid: true,
             random_uuid: false,
             no_dynamic_access: false,
+            warn_weak_exports: false,
+            no_weak_exports: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -2233,6 +2240,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.not_for_dyld_shared_cache = true;
                 args.shared_cache_marker = true;
             }
+            b"-warn_weak_exports" => args.warn_weak_exports = true,
+            b"-no_weak_exports" => args.no_weak_exports = true,
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();

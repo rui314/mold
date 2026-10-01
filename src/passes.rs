@@ -2808,6 +2808,42 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// -warn_weak_exports names, by name, each weak definition the output
+/// exports and each definition that overrides a dylib's weak one -
+/// what makes dyld coalesce symbols at launch (MH_WEAK_DEFINES) - and
+/// -no_weak_exports refuses a final image with any. ld-prime looks
+/// once it has found no undefined or duplicate symbol.
+pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.warn_weak_exports && !ctx.args.no_weak_exports {
+        return;
+    }
+    let mut found: Vec<(&str, bool)> = (0..ctx.symbols.syms.len() as u32)
+        .into_par_iter()
+        .filter_map(|id| {
+            let defined_here = matches!(ctx.symbols[id].file(), Some(FileId::Obj(_)));
+            if defined_here && ctx.exports_weak_def(id) {
+                Some((ctx.symbols[id].name(), false))
+            } else if ctx.overrides_weak_export(id) {
+                Some((ctx.symbols[id].name(), true))
+            } else {
+                None
+            }
+        })
+        .collect();
+    found.par_sort_unstable();
+    if ctx.args.warn_weak_exports {
+        for (name, overrides) in &found {
+            match overrides {
+                true => crate::warn!("overrides weak external symbol: {name}"),
+                false => crate::warn!("weak external symbol: {name}"),
+            }
+        }
+    }
+    if ctx.args.no_weak_exports && !found.is_empty() && !ctx.args.relocatable {
+        error!("output has external weak-def symbols, but -no_weak_exports used");
+    }
+}
+
 pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     use std::sync::atomic::Ordering;
     // An alive object may name a symbol undefined that nothing refers
