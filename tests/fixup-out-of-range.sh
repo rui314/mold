@@ -38,6 +38,26 @@ if [ $ARCH = arm64 ]; then
   fixup adrp2 '  adrp x0, _y@PAGE+16'
   grep -Eq "fixup error \(kind=arm64_adrp_addend\) at 'start' from adrp2.o, ADRP out of range, from $hex to 0x200000018 \('_y'\)" $t/adrp2.log
 
+  # Back less than 4 GiB, which the immediate would also hold.
+  for abs in 0xfff 0x1000; do
+    cat <<EOF | $CC -o $t/abs.o -c -xassembler -
+.globl _main
+.p2align 2
+_main:
+  adrp x0, _abs@PAGE
+  add x0, x0, _abs@PAGEOFF
+  ret
+.globl _abs
+_abs = $abs
+EOF
+    if [ $abs = 0x1000 ]; then
+      $CC --ld-path=$mold -o $t/abs $t/abs.o
+    else
+      not $CC --ld-path=$mold -o $t/abs $t/abs.o 2> $t/abs.log
+      grep -Eq "fixup error \(kind=arm64_adrp_lo12\) at '_main' from abs.o, ADRP out of range, from 0x100000[0-9A-F]{3} to 0x00000FFF \('_abs'\)" $t/abs.log
+    fi
+  done
+
   fixup bl '  bl _far'
   grep -Eq "fixup error \(kind=arm64_b26\) at 'start' from bl.o, B/BL out of range \(displacement=[0-9]+, max is \+/-128MB\), from $hex to 0x300000000 \('_far'\)" $t/bl.log
 else
