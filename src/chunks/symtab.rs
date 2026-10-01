@@ -410,10 +410,13 @@ fn plan_object_stabs<E: Target>(
     for (i, (nlist, &sym_id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
         let sym = &ctx.symbols[sym_id];
         // A tentative definition gets its note in the first object that
-        // declares it.
+        // declares it. A global with an assembler-local name (Swift's
+        // l_OBJC_PROTOCOL_SYMREF_$_*, weak private externals) gets none,
+        // as no local of that name does.
         let common = nlist.is_common() && commons.get(&sym_id) == Some(&obj_idx);
         if nlist.is_stab()
             || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
+            || !keep_local_symbol(sym.name())
             || (!nlist.is_extern()
                 && !keep_local_symbol_in(
                     ctx,

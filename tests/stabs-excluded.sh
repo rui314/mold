@@ -28,7 +28,8 @@ EOF
 # terminator pointers, and the Objective-C lists and references, such
 # as the weak private externals clang names a protocol's entries in
 # __objc_protolist and __objc_protorefs by (__OBJC_LABEL_PROTOCOL_$_P,
-# __OBJC_PROTOCOL_REFERENCE_$_P).
+# __OBJC_PROTOCOL_REFERENCE_$_P). Nor a global with an assembler-local
+# name, as Swift's weak private l_OBJC_PROTOCOL_SYMREF_$_* are.
 if [ $ARCH = arm64 ]; then ret=ret; else ret=retq; fi
 cat <<EOF | $CC -o $t/c.o -c -g -xassembler -
   .text
@@ -55,6 +56,13 @@ _term:
   .const
 _kept:
   .long 1
+  .globl l_pext, l_ext
+  .private_extern l_pext
+  .weak_definition l_pext
+l_pext:
+  .quad 2
+l_ext:
+  .quad 3
 .subsections_via_symbols
 EOF
 
@@ -69,3 +77,4 @@ grep -Eq ' GSYM _kept$' $t/stabs
 not grep -Eq ' (STSYM|GSYM) (GCC_except_table|_OBJC_IVAR_)' $t/stabs
 not grep -Eq ' (STSYM|GSYM) __OBJC_(LABEL_PROTOCOL|PROTOCOL_REFERENCE)_' $t/stabs
 not grep -Eq ' (STSYM|GSYM) _(cstr|mystr|lit8|ustr|term)$' $t/stabs
+not grep -Eq ' (STSYM|GSYM) l_(pext|ext)$' $t/stabs
