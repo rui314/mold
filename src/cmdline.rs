@@ -169,7 +169,8 @@ pub struct Args {
     /// The libLTO to load for bitcode inputs (-lto_library).
     pub lto_library: Option<PathBuf>,
     /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
-    /// or reserved as a static executable's __UNIXSTACK segment.
+    /// or reserved as the __UNIXSTACK segment of an executable that
+    /// starts from LC_UNIXTHREAD.
     pub stack_size: u64,
     /// -sectcreate: sections to synthesize from files:
     /// (segment, section, path).
@@ -204,6 +205,9 @@ pub struct Args {
     /// Emit LC_SOURCE_VERSION (from macOS 10.8 on; -add_source_version
     /// and -no_source_version say otherwise).
     pub source_version: bool,
+    /// The image starts from LC_UNIXTHREAD's thread state rather than
+    /// from LC_MAIN, through which dyld calls main (see parse_args).
+    pub unixthread: bool,
     /// -add_split_seg_info: emit LC_SEGMENT_SPLIT_INFO, which lets a
     /// dyld shared cache or kernel collection builder slide the
     /// segments apart. ld64 and ld-prime have no negative form.
@@ -468,6 +472,7 @@ impl Default for Args {
             data_in_code_info: true,
             version_load_command: false,
             source_version: true,
+            unixthread: false,
             add_split_seg_info: false,
             init_offsets: false,
             init: None,
@@ -1962,8 +1967,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // An image no dyld loads, and dyld, which the kernel loads, start
     // from LC_UNIXTHREAD at "start", crt1.o's entry point, as every
-    // executable did before LC_MAIN had dyld call _main.
-    if (args.static_link || args.is_dylinker()) && !explicit_entry {
+    // executable did before LC_MAIN had dyld call _main (from macOS
+    // 10.8 on): ld-prime starts an x86-64 one for an older macOS so.
+    let old_x86_64_executable = target.name == "x86_64"
+        && args.output_type == MH_EXECUTE
+        && !args.relocatable
+        && args.platform == PLATFORM_MACOS
+        && args.platform_minos < encode_version(10, 8, 0);
+    args.unixthread = args.static_link || args.is_dylinker() || old_x86_64_executable;
+    if args.unixthread && !explicit_entry {
         args.entry = "start".to_string();
     }
 
@@ -2274,16 +2286,16 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     }
 }
 
-/// -stack_size and -stack_addr. No dyld starts a static executable with
-/// LC_MAIN's stack size: its stack is a segment of its own, __UNIXSTACK,
-/// which ld64 pins as -segaddr would (unless one pins it elsewhere)
-/// below a top of stack, -stack_addr's or a fixed one; LC_UNIXTHREAD's
-/// stack pointer starts at its end. ld-prime checks -stack_addr for a
-/// multiple of the page size (the segment alignment, but 4 KiB in an
-/// object file) and a size to go with it, then the size against the
-/// most a stack may take on the target and for a main executable, a
-/// static one if it has an address, then for a multiple of the page
-/// size and smaller than the address.
+/// -stack_size and -stack_addr. No dyld starts an executable that starts
+/// from LC_UNIXTHREAD with LC_MAIN's stack size: its stack is a segment
+/// of its own, __UNIXSTACK, which ld64 pins as -segaddr would (unless
+/// one pins it elsewhere) below a top of stack, -stack_addr's or a fixed
+/// one; LC_UNIXTHREAD's stack pointer starts at its end. ld-prime checks
+/// -stack_addr for a multiple of the page size (the segment alignment,
+/// but 4 KiB in an object file) and a size to go with it, then the size
+/// against the most a stack may take on the target and for a main
+/// executable, one that starts from LC_UNIXTHREAD if it has an address,
+/// then for a multiple of the page size and smaller than the address.
 fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
     if addr == Some(0) {
         crate::warn!("-stack_addr 0x0 has no effect");
@@ -2313,7 +2325,7 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
     if args.output_type != MH_EXECUTE || args.relocatable || args.preload {
         fatal!("-stack_size option can only be used when linking a main executable");
     }
-    if addr.is_some() && !args.static_link {
+    if addr.is_some() && !args.unixthread {
         fatal!("-stack_addr can't be used with modern executables");
     }
     let page = args.segment_align;
@@ -2326,7 +2338,7 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
         fatal!("-stack_size (0x{size:08X}) must be smaller than -stack_addr (0x{top:08X})");
     }
     args.stack_size = size;
-    if args.static_link && args.segaddr("__UNIXSTACK").is_none() {
+    if args.unixthread && args.segaddr("__UNIXSTACK").is_none() {
         args.segaddrs.push(("__UNIXSTACK".to_string(), top - size));
     }
 }

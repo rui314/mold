@@ -685,7 +685,9 @@ fn create_routines_cmd<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<u8> {
 /// A -static image has no dyld to read LC_MAIN, nor has dyld itself;
 /// the kernel (or a boot loader) starts its thread from LC_UNIXTHREAD's
 /// register state, all zero but the program counter at the entry
-/// point, and the stack pointer at the top of a -stack_size stack.
+/// point, and the stack pointer at the top of a -stack_size stack. dyld
+/// before macOS 10.8 jumped to an executable's entry point so, once it
+/// had loaded the libraries.
 fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let size = 16 + E::THREAD_STATE_COUNT as usize * 4;
     let mut buf = Vec::with_capacity(size);
@@ -789,7 +791,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.args.source_version {
         vec.push(create_source_version_cmd(ctx));
     }
-    if ctx.args.is_dylinker() || (ctx.args.output_type == MH_EXECUTE && ctx.args.static_link) {
+    if ctx.args.unixthread {
         vec.push(create_unixthread_cmd(ctx));
     } else if ctx.args.output_type == MH_EXECUTE {
         vec.push(create_main_cmd(ctx));

@@ -1682,10 +1682,11 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
     ctx.segments.splice(linkedit..linkedit, missing.into_iter().map(OutputSegment::new));
 }
 
-/// A static executable's -stack_size stack: a segment of address space
-/// alone before __LINKEDIT, pinned where resolve_stack_size says.
+/// The -stack_size stack of an executable that starts from
+/// LC_UNIXTHREAD: a segment of address space alone before __LINKEDIT,
+/// pinned where resolve_stack says.
 fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.static_link && ctx.args.stack_size != 0 {
+    if ctx.args.unixthread && ctx.args.stack_size != 0 {
         let linkedit = ctx.segments.len() - 1;
         ctx.segments.insert(linkedit, OutputSegment::new("__UNIXSTACK"));
     }
