@@ -201,6 +201,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::error::checkpoint();
     passes::report_common_conflict(&ctx);
     crate::error::checkpoint();
+    passes::warn_redundant_reexports(&ctx);
     passes::check_weak_exports(&ctx);
     crate::error::checkpoint();
     if ctx.args.deduplicate {

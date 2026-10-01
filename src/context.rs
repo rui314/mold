@@ -221,6 +221,10 @@ pub struct Context<E: Target> {
     /// -alias and selective reexports: (alias, imported target).
     /// Emitted as N_INDR symbols and re-export trie entries.
     pub indirect_aliases: Vec<(SymbolId, SymbolId)>,
+    /// The symbols export lists would re-export that a library the
+    /// image re-exports whole exports already (see
+    /// passes::warn_redundant_reexports).
+    pub redundant_reexports: Vec<SymbolId>,
     /// section$start/end and segment$start/end symbols to resolve
     /// after layout: (symbol, is_start, segment, section).
     pub boundary_syms: Vec<(SymbolId, bool, String, Option<String>)>,
@@ -338,6 +342,7 @@ impl<E: Target> Context<E> {
             dylib_load_seq: 0,
             autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),
+            redundant_reexports: Vec::new(),
             boundary_syms: Vec::new(),
             why_load: std::collections::HashMap::new(),
             force_loaded: std::collections::HashSet::new(),

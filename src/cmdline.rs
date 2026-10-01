@@ -588,6 +588,13 @@ pub struct Args {
     /// -why_live: for each matching symbol, print the reference chain
     /// that kept it alive through -dead_strip ("*" wildcards allowed).
     pub why_live: Glob,
+    /// Whether the link notes the files of the private libraries a
+    /// dylib re-exports and merges (DylibFile::merged_files), which
+    /// gathering costs: -map and -why_live list them, and the
+    /// diagnostics of tentative definitions a dylib defines too, and of
+    /// re-exports a library the image re-exports whole makes redundant,
+    /// name them.
+    pub merged_files: bool,
     /// -alias/-alias_list: (existing, new) symbol aliases to define.
     pub aliases: Vec<(String, String)>,
     /// -sectalign: (segment, section, p2align), the alignment of an
@@ -898,6 +905,7 @@ impl Default for Args {
             print_dependencies: false,
             why_load: false,
             why_live: Glob::new(),
+            merged_files: false,
             aliases: Vec::new(),
             sectalign: Vec::new(),
             allowable_clients: Vec::new(),
@@ -3062,6 +3070,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         interposable_list.get_or_insert_default().add(b"*", 0);
     }
     args.interposable = interposable_list.map(GlobBuilder::build);
+    let lists_reexports = args.exported_symbols.is_some() || !args.reexported_symbols.is_empty();
+    let reexports_library = !args.sub_libraries.is_empty()
+        || !args.sub_umbrellas.is_empty()
+        || args.inputs.iter().any(|input| {
+            matches!(input, InputArg::Library(LibraryKind::Reexport | LibraryKind::NoMerge, _))
+        });
+    args.merged_files = args.map.is_some()
+        || !args.why_live.is_empty()
+        || args.warn_commons
+        || args.commons == CommonsMode::Error
+        || (lists_reexports && reexports_library);
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks

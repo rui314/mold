@@ -42,3 +42,21 @@ not $mold -arch $ARCH -r $t/a.o -o $t/r.o -reexported_symbols_list $t/list 2> $t
 grep -qF -- "$msg" $t/log4
 $CC --ld-path=$mold $t/main.o -Wl,-reexport_library,$t/libouter.dylib -o $t/exe3
 otool -l $t/exe3 | grep -q LC_REEXPORT_DYLIB
+
+# A symbol of a library the image re-exports whole is exported already:
+# ld-prime warns of each such name an export list or the re-export
+# list gives, naming the file that defines it - a private library the
+# re-exported one re-exports in turn - and adds no entry.
+echo 'int baz() { return 3; }' |
+  $CC --ld-path=$mold -dynamiclib -xc - -o $t/libbaz.dylib -install_name $PWD/$t/libbaz.dylib
+echo 'int foo() { return 42; }' |
+  $CC --ld-path=$mold -dynamiclib -xc - -o $t/libbar.dylib -install_name $PWD/$t/libbar.dylib \
+    -Wl,-reexport_library,$t/libbaz.dylib
+printf '_foo\n_baz\n' > $t/list5
+$CC --ld-path=$mold -dynamiclib $t/a.o -o $t/libredundant.dylib \
+  -Wl,-reexport_library,$t/libbar.dylib -Wl,-reexported_symbols_list,$t/list5 2> $t/log5
+real=$(cd $t && pwd -P)
+grep -qF "warning: explicit re-export for symbol '_baz' is redundant because it is already re-exported from dylib '$real/libbaz.dylib'" $t/log5
+grep -qF "warning: explicit re-export for symbol '_foo' is redundant because it is already re-exported from dylib '$real/libbar.dylib'" $t/log5
+dyld_info -exports $t/libredundant.dylib > $t/exports5
+not grep -q re-export $t/exports5

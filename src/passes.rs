@@ -3594,19 +3594,6 @@ fn common_conflicts<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, String, Vec<S
         })
         .collect();
     found.par_sort_unstable_by_key(|&(id, _)| ctx.symbols[id].name());
-    // The file that defines the symbol: a private library the dylib
-    // re-exports and merges, or for a library a stub inlines as a
-    // public re-export, the file ld-prime would find for it, if any.
-    let real = |dylib: &input_files::DylibFile, name: &str| {
-        let merged = dylib.merged_files.iter().find(|file| file.exports.contains(&name));
-        let file = match (merged, dylib.is_implicit) {
-            (Some(file), _) => Some(&file.path),
-            (None, true) => input_files::find_reexport(ctx, &dylib.install_name).map(|mf| &mf.name),
-            (None, false) => None,
-        };
-        let path = file.unwrap_or(&dylib.path);
-        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-    };
     found
         .into_iter()
         .map(|(id, dylibs)| {
@@ -3621,12 +3608,32 @@ fn common_conflicts<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, String, Vec<S
             let dylibs = dylibs
                 .into_iter()
                 .map(|i| {
-                    real(&ctx.dylibs[i], ctx.symbols[id].name()).to_string_lossy().into_owned()
+                    let file = defining_file(ctx, &ctx.dylibs[i], ctx.symbols[id].name());
+                    file.to_string_lossy().into_owned()
                 })
                 .collect();
             (id, obj, dylibs)
         })
         .collect()
+}
+
+/// The file, by its real path, that defines a dylib's export, as
+/// ld-prime names it: a private library the dylib re-exports and
+/// merges, or for a library a stub inlines as a public re-export, the
+/// file ld-prime would find for it, if any; else the dylib's own.
+fn defining_file<E: Target>(
+    ctx: &Context<E>,
+    dylib: &input_files::DylibFile,
+    name: &str,
+) -> PathBuf {
+    let merged = dylib.merged_files.iter().find(|file| file.exports.contains(&name));
+    let file = match (merged, dylib.is_implicit) {
+        (Some(file), _) => Some(&file.path),
+        (None, true) => input_files::find_reexport(ctx, &dylib.install_name).map(|mf| &mf.name),
+        (None, false) => None,
+    };
+    let path = file.unwrap_or(&dylib.path);
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// -warn_commons: ld-prime warns, as it resolves symbols, of each
@@ -5272,6 +5279,14 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         })
         .map(|(i, _)| i as u32)
         .collect();
+    // A symbol of a library the image re-exports whole (to which it
+    // binds, so not one only that library re-exports in turn from a
+    // public location) is exported already.
+    let (redundant, targets): (Vec<u32>, Vec<u32>) = targets.into_iter().partition(|&id| {
+        matches!(ctx.symbols[id].file(),
+            Some(FileId::Dylib(d)) if ctx.dylibs.get(d as usize).is_some_and(|d| d.is_reexported))
+    });
+    ctx.redundant_reexports = redundant;
     let internal = ctx.internal_obj.unwrap() as u32;
     for target in targets {
         let name = ctx.symbols[target].name();
@@ -5284,6 +5299,28 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         sym.set_is_extern(true);
         ctx.indirect_aliases.push((alias, target));
         ctx.args.forced_undefined.push(name.to_string());
+    }
+}
+
+/// ld-prime adds nothing to the exports for a symbol an export list
+/// would re-export that a library the image re-exports whole exports
+/// already, but warns of each, naming the file that defines it - once
+/// the link has turned out to be sound. It groups the warnings by file;
+/// here the files come in path order and each one's symbols by name.
+pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
+    let mut found: Vec<(PathBuf, &str)> = (ctx.redundant_reexports.iter())
+        .filter_map(|&id| {
+            let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { return None };
+            let name = ctx.symbols[id].name();
+            Some((defining_file(ctx, &ctx.dylibs[d as usize], name), name))
+        })
+        .collect();
+    found.sort();
+    for (file, name) in found {
+        crate::warn!(
+            "explicit re-export for symbol '{name}' is redundant because it is already re-exported from dylib '{}'",
+            file.display()
+        );
     }
 }
 
