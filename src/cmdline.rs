@@ -2545,15 +2545,10 @@ fn input_file(path: &OsStr) -> InputArg {
     }
 }
 
-/// Parses all options. `cmdline` includes the program name.
-///
-/// Options are matched as bytes and their arguments keep the bytes they
-/// were given in: paths, install names and rpaths pass through to the
-/// file system and the load commands unchanged. Arguments that are text
-/// by nature (symbol and section names, versions, the -undefined
-/// treatment) must be UTF-8.
-pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
-    let mut args = Args {
+/// The Args the environment variables ld-prime reads in place of
+/// options make, which the options may then change.
+fn env_defaults() -> Args {
+    Args {
         zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
         warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
         warn_swift_abi_mismatches: std::env::var_os("LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES")
@@ -2566,7 +2561,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             .any(|var| std::env::var_os(var).is_some()),
         uuid_salt: std::env::var_os("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
         ..Default::default()
-    };
+    }
+}
+
+/// Parses all options. `cmdline` includes the program name.
+///
+/// Options are matched as bytes and their arguments keep the bytes they
+/// were given in: paths, install names and rpaths pass through to the
+/// file system and the load commands unchanged. Arguments that are text
+/// by nature (symbol and section names, versions, the -undefined
+/// treatment) must be UTF-8.
+pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
+    let mut args = env_defaults();
     let mut st = ParseState::default();
 
     crate::error::set_color(std::io::stderr().is_terminal());
