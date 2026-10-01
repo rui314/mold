@@ -106,6 +106,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
     drop(t);
+    passes::remove_swift_reflection_metadata(&mut ctx);
     macro_rules! timed {
         ($name:literal, $e:expr) => {{
             let t = ctx.timer($name);
@@ -115,6 +116,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     }
     if ctx.args.relocatable {
         passes::check_duplicate_symbols(&ctx);
+        passes::check_removed_swift_metadata_refs(&ctx);
         crate::error::checkpoint();
         passes::check_poisoned_symbols(&ctx);
         crate::error::checkpoint();
@@ -213,6 +215,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));
     passes::fix_synthetic_symbols(&mut ctx);
     passes::resolve_entry(&mut ctx);
+    passes::check_removed_swift_metadata_refs(&ctx);
     passes::print_final_layout(&ctx);
     crate::error::checkpoint();
     crate::mapfile::print_map(&ctx);

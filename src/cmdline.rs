@@ -711,6 +711,9 @@ pub struct Args {
     /// offsets (-fixup_chains_section), 2 for VM offsets
     /// (-fixup_chains_section_vm). ld-prime writes VM offsets either way.
     pub chain_starts_kind: u32,
+    /// -remove_swift_reflection_metadata_sections: drop the Swift
+    /// reflection metadata (see passes::remove_swift_reflection_metadata).
+    pub remove_swift_reflection_metadata_sections: bool,
 }
 
 impl Default for Args {
@@ -880,6 +883,7 @@ impl Default for Args {
             merge_zero_fill_sections: false,
             fixup_chains_section: false,
             chain_starts_kind: 0,
+            remove_swift_reflection_metadata_sections: false,
         }
     }
 }
@@ -2731,6 +2735,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
             b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
             b"-merge_zero_fill_sections" => args.merge_zero_fill_sections = true,
+            b"-remove_swift_reflection_metadata_sections" => {
+                args.remove_swift_reflection_metadata_sections = true
+            }
             // ld64's order file for one section, -sectorder <segment>
             // <section> <path>, ld-prime takes for an -order_file
             // whatever the section names, empty ones too.
