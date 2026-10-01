@@ -108,10 +108,17 @@ fn symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<Root> {
 }
 
 /// The symbols that are roots by name, in ld-prime's order: the -u ones
-/// as the command line gives them, then the entry point.
+/// as the command line gives them, then the entry point; and the bases
+/// of -alias, which ld-prime keeps as initial undefines too.
 fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
-    ctx.args.forced_undefined.iter().chain(entry).filter_map(|name| ctx.symbols.get(name))
+    let aliased = ctx.args.aliases.iter().map(|(base, _)| base);
+    ctx.args
+        .forced_undefined
+        .iter()
+        .chain(entry)
+        .chain(aliased)
+        .filter_map(|name| ctx.symbols.get(name))
 }
 
 /// Sections the format keeps regardless of references: initializers

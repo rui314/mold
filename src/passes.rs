@@ -5582,12 +5582,22 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // at the same address and is exported alongside it. Apple uses
     // aliases to publish compatibility names (e.g. libSystem's dozens
     // of $VARIANT names) without touching the source. An undefined
-    // base is reported with the other undefined symbols.
+    // base is reported with the other undefined symbols. Dead
+    // stripping keeps the base (see dead_strip::initial_undefines) but
+    // drops an alias nothing exports or refers to.
     let aliases = std::mem::take(&mut ctx.args.aliases);
     for (existing, new) in &aliases {
         let Some(src) = ctx.symbols.get(existing).filter(|&id| ctx.symbols[id].is_defined()) else {
             continue;
         };
+        let referenced = ctx.symbols.get(new).is_some_and(|id| ctx.symbols[id].is_used());
+        if ctx.strips_dead_code()
+            && !referenced
+            && !(crate::dead_strip::keeps_export(ctx, new)
+                && ctx.args.unexported_symbols.find(new.as_bytes()) == -1)
+        {
+            continue;
+        }
         let dst = ctx.symbols.intern(String::leak(new.clone()));
         if ctx.symbols[src].is_imported() {
             // An alias of a dylib symbol is an indirect symbol
