@@ -434,6 +434,10 @@ pub struct Args {
     /// -deployment_target_mismatches: what to make of an object built
     /// for a newer OS version than the link's (a warning unless given).
     pub deployment_target_mismatches: Treatment,
+    /// What to make of a pointer dyld fixes up that is not 8-aligned:
+    /// -unaligned_pointers, resolved for the image at the end of
+    /// parsing (see resolve_unaligned_pointers).
+    pub unaligned_pointers: Treatment,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -734,6 +738,7 @@ impl Default for Args {
             allow_dead_duplicates: false,
             poisoned: Glob::new(),
             deployment_target_mismatches: Treatment::Warning,
+            unaligned_pointers: Treatment::Suppress,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1589,6 +1594,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-arch_variant_lto_cache_mismatch"
         | "-duplicate_symbols"
         | "-deployment_target_mismatches"
+        | "-unaligned_pointers"
         | "-objc_class_ro_signing_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -1663,6 +1669,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut force_weakness_listed = false;
     let mut keep_duplicates = GlobBuilder::default();
     let mut poisoned = GlobBuilder::default();
+    let mut unaligned_pointers: Option<Treatment> = None;
     let mut export_choice: Option<ExportChoice> = None;
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
@@ -2430,6 +2437,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.deployment_target_mismatches =
                     parse_treatment(name, next_arg(&mut i, name), true);
             }
+            b"-unaligned_pointers" => {
+                unaligned_pointers = Some(parse_treatment(name, next_arg(&mut i, name), true));
+            }
             // Whether objects may disagree on signing class_ro_t
             // pointers, which only arm64e signs: nothing to check here.
             b"-objc_class_ro_signing_mismatch" => {
@@ -2865,6 +2875,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
+    args.unaligned_pointers = resolve_unaligned_pointers(target, &args, unaligned_pointers);
     args.warn_unused_dylibs =
         warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
@@ -2946,6 +2957,39 @@ fn shared_region_eligible(target: &TargetTraits, args: &Args) -> bool {
             || (args.is_kext() && target.name == "arm64")
             || args.is_dylinker()
             || (is_dylib && in_shared_cache_path(args.output_install_name())))
+}
+
+/// What ld-prime makes of a pointer dyld fixes up that is not 8-aligned
+/// (see chunks::chained_fixups::check_pointer_alignment), in an image
+/// dyld loads: what -unaligned_pointers says, else a warning where the
+/// image has chained fixups or its deployment target would, else
+/// nothing. An arm64 image with chained fixups, or bound for the shared
+/// region, fails on one whatever the option says, with a warning if it
+/// says warning. (An x86-64 one gives chained fixups up instead.)
+fn resolve_unaligned_pointers(
+    target: &TargetTraits,
+    args: &Args,
+    treatment: Option<Treatment>,
+) -> Treatment {
+    if args.relocatable || args.without_dyld() {
+        return Treatment::Suppress;
+    }
+    if target.name == "arm64" && (args.fixup_chains || args.shared_region) {
+        if treatment == Some(Treatment::Warning) {
+            match args.fixup_chains {
+                true => {
+                    crate::warn!("unaligned pointer errors are fatal when using chained fixups")
+                }
+                false => crate::warn!("unaligned pointer errors are fatal in OS binaries"),
+            }
+        }
+        return Treatment::Error;
+    }
+    let new_os = is_new_os(target.name, args.output_type, args.platform, args.platform_minos);
+    treatment.unwrap_or(match args.fixup_chains || new_os {
+        true => Treatment::Warning,
+        false => Treatment::Suppress,
+    })
 }
 
 /// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the

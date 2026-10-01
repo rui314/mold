@@ -112,3 +112,31 @@ ar rcs $t/lib.a $t/f.o
 echo 'int main() { return 0; }' | $CC -o $t/h.o -c -xc -
 $CC --ld-path=$mold -o $t/exe7 $t/h.o $t/lib.a 2> $t/log7
 grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/lib.a\[2\](f.o)$" $t/log7
+
+# -unaligned_pointers turns those warnings into an error, which stops at
+# the first unaligned pointer, or silences them (x86-64 still gives
+# chained fixups up, saying so). An arm64 image with chained fixups
+# fails all the same, with a warning if the option says warning.
+$CC --ld-path=$mold -o $t/exe8 $t/a.o $t/b.o -Wl,-no_fixup_chains \
+  -Wl,-unaligned_pointers,suppress 2> $t/log8
+not grep -q aligned $t/log8
+not $CC --ld-path=$mold -o $t/exe9 $t/a.o $t/b.o -Wl,-no_fixup_chains \
+  -Wl,-unaligned_pointers,error 2> $t/log9
+grep -q "warning: alignment (1) of atom '_r1' $a is too small" $t/log9
+grep -q "pointer not aligned in '_r1' $a$" $t/log9
+not grep -q 'warning: pointer not aligned' $t/log9
+[ "$(grep -c 'pointer not aligned' $t/log9)" = 1 ]
+$CC --ld-path=$mold -o $t/exe10 $t/c.o $t/e.o -mmacosx-version-min=11.0 \
+  -Wl,-unaligned_pointers,warn 2> $t/log10
+grep -q "pointer not aligned in '_r1' (" $t/log10
+if [ $ARCH = arm64 ]; then
+  not $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,warning 2> $t/log11
+  grep -q 'warning: unaligned pointer errors are fatal when using chained fixups' $t/log11
+  grep -q "pointer not aligned in '_r1'+0x8 $a$" $t/log11
+else
+  $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,suppress 2> $t/log11
+  grep -v '^+' $t/log11 | sed -E 's/^(ld|mold): //' > $t/msgs11
+  [ "$(cat $t/msgs11)" = 'warning: disabling chained fixups because of unaligned pointers' ]
+fi
+not $mold -o $t/exe12 $t/a.o -unaligned_pointers foo 2> $t/log12
+grep -q -- '-unaligned_pointers invalid option (warning | error | suppress)' $t/log12

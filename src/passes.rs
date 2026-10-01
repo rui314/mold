@@ -5748,7 +5748,7 @@ pub fn copy_chunks<E: Target>(
     print_final_layout(ctx);
     report_text_relocs(ctx);
     crate::error::checkpoint();
-    chunks::chained_fixups::warn_unaligned_pointers(ctx);
+    chunks::chained_fixups::report_unaligned_pointers(ctx);
 
     if ctx.use_chained_fixups() {
         let _t = ctx.timer("write_fixup_chains");
