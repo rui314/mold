@@ -1124,7 +1124,11 @@ fn eh_frame_contents<E: Target>(
 /// tables, each subsection's on a core of its own. ld-prime writes each
 /// atom's relocations by descending offset whatever the input's order,
 /// keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64 ADDEND and
-/// its PAGE21 or PAGEOFF12 - in order.
+/// its PAGE21 or PAGEOFF12 - in order. A section of fixed-size records
+/// it splits into one subsection per record, so a subsection mold
+/// keeps whole (__objc_clsrolist's, see
+/// ObjectFile::pointer_without_target) has its records' relocations in
+/// ascending order, each record's descending.
 fn section_relocs<E: Target>(
     targets: &RelocTargets<E>,
     chunk_idx: OutputSectionId,
@@ -1150,7 +1154,11 @@ fn section_relocs<E: Target>(
             let ends = starts.iter().skip(1).copied().chain([rels.len()]);
             let mut groups: Vec<std::ops::Range<usize>> =
                 starts.iter().zip(ends).map(|(&start, end)| start..end).collect();
-            groups.sort_by_key(|g| Reverse(rels[g.start].r_address));
+            let record = crate::input_files::record_size(ctx.hdr_of(isec)).unwrap_or(u64::MAX);
+            groups.sort_by_key(|g| {
+                let addr = rels[g.start].r_address;
+                ((addr - isec.offset) as u64 / record, Reverse(addr))
+            });
             let mut out = Vec::with_capacity(rels.len());
             for g in groups {
                 out.extend_from_slice(&rels[g]);
