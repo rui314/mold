@@ -491,7 +491,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
     let docs = yaml_documents(text);
     check_yaml(mf, text, &docs);
 
-    for (doc, fields) in docs.iter().enumerate() {
+    for (doc, YamlDoc { fields, .. }) in docs.iter().enumerate() {
         let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
         let (target, platforms) = select_target(arch, platform, &yaml_targets(top()));
         let doc_active = yaml_matches(top(), target);
@@ -600,8 +600,9 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
 struct YamlField {
     indent: usize,
     item: bool,
-    /// The key, unquoted.
+    /// The key, unquoted, and as written.
     key: &'static str,
+    raw_key: &'static str,
     /// The value: a scalar, a flow sequence ("[ a, b ]", perhaps over
     /// several lines), the lines of a block sequence of scalars ("- a"
     /// and on) or empty, for a nested mapping or a block sequence of
@@ -616,7 +617,7 @@ impl YamlField {
 
     /// The items of a sequence as written, with any blanks after one.
     fn raw_items(&self) -> impl Iterator<Item = &'static str> {
-        let block = self.value.starts_with('-');
+        let block = self.value.starts_with("- ");
         let (body, sep) = match block {
             true => (self.value, '\n'),
             false => (self.value.trim_start_matches('[').trim_end_matches(']'), ','),
@@ -670,28 +671,311 @@ fn scalar_len(item: &str) -> usize {
     }
 }
 
-/// Stops the link on a .tbd TAPI refuses: one naming a target of a
-/// platform it doesn't know anywhere (it refuses an architecture it
-/// doesn't know too, but those come and go with SDKs - arm64e.x1 - and
-/// one unknown here is merely one the link can't use), or a version 1-3
-/// document without a platform of those it knows.
-fn check_yaml(mf: &MappedFile, text: &str, docs: &[Vec<YamlField>]) {
-    for field in docs.iter().flatten().filter(|f| f.key == "targets") {
-        if let Some(item) =
-            field.raw_items().find(|&item| !item.is_empty() && target(unquote(item)).is_none())
-        {
-            malformed(mf, text, item, scalar_len(item), "unknown target");
+/// Stops the link on a .tbd TAPI's YAML reader refuses, with its
+/// diagnostic for the first fault (see malformed). It reads a document
+/// by the schema of the version its tag names, key by key in the
+/// schema's order, a nested mapping wholly as it comes to one: a key
+/// missing that must be there; a value that should be a sequence (or
+/// one of mappings) but isn't; a target of a platform TAPI doesn't know
+/// (it refuses an architecture it doesn't know too, but those come and
+/// go with SDKs - arm64e.x1 - and one unknown here is merely one the
+/// link can't use) or a version 1-3 platform it doesn't; and then the
+/// first by name of the keys the schema doesn't have. A key given twice
+/// in one mapping it refuses before all that, as it reads the document.
+fn check_yaml(mf: &MappedFile, text: &str, docs: &[YamlDoc]) {
+    for doc in docs.iter().filter(|doc| !doc.fields.is_empty()) {
+        let cx = YamlCheck { mf, text, fields: &doc.fields };
+        cx.check_duplicates(0);
+        let schema = match doc.tag {
+            "" | "!tapi-tbd-v1" => TOP_V1,
+            "!tapi-tbd-v2" => TOP_V2,
+            "!tapi-tbd-v3" => TOP_V3,
+            "!tapi-tbd" => TOP_V4,
+            _ => cx.fail(doc.fields[0].raw_key, 1, "unsupported file type"),
+        };
+        cx.check_mapping(0, schema);
+    }
+}
+
+/// A key of a mapping in a .tbd, as TAPI's YAML schema for a version has
+/// it: whether it must be there, and what its value is.
+struct SchemaKey {
+    name: &'static str,
+    required: bool,
+    value: SchemaValue,
+}
+
+#[derive(Clone, Copy)]
+enum SchemaValue {
+    Scalar,
+    Sequence,
+    /// A sequence of mappings of these keys.
+    Mappings(&'static [SchemaKey]),
+}
+
+use SchemaValue::{Mappings, Scalar, Sequence};
+
+const fn key(name: &'static str, value: SchemaValue) -> SchemaKey {
+    SchemaKey { name, required: false, value }
+}
+
+const fn required(name: &'static str, value: SchemaValue) -> SchemaKey {
+    SchemaKey { name, required: true, value }
+}
+
+const TOP_V1: &[SchemaKey] = &[
+    required("archs", Sequence),
+    required("platform", Scalar),
+    required("install-name", Scalar),
+    key("current-version", Scalar),
+    key("compatibility-version", Scalar),
+    key("swift-version", Scalar),
+    key("objc-constraint", Scalar),
+    key("exports", Mappings(EXPORTS_V1)),
+];
+
+const EXPORTS_V1: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("allowed-clients", Sequence),
+    key("re-exports", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-def-symbols", Sequence),
+    key("thread-local-symbols", Sequence),
+];
+
+const TOP_V2: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("uuids", Sequence),
+    required("platform", Scalar),
+    key("flags", Sequence),
+    required("install-name", Scalar),
+    key("current-version", Scalar),
+    key("compatibility-version", Scalar),
+    key("swift-version", Scalar),
+    key("objc-constraint", Scalar),
+    key("parent-umbrella", Scalar),
+    key("exports", Mappings(EXPORTS_V2)),
+    key("undefineds", Mappings(UNDEFINEDS_V2)),
+];
+
+const EXPORTS_V2: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("allowable-clients", Sequence),
+    key("re-exports", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-def-symbols", Sequence),
+    key("thread-local-symbols", Sequence),
+];
+
+const UNDEFINEDS_V2: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-ref-symbols", Sequence),
+];
+
+const TOP_V3: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("uuids", Sequence),
+    required("platform", Scalar),
+    key("flags", Sequence),
+    required("install-name", Scalar),
+    key("current-version", Scalar),
+    key("compatibility-version", Scalar),
+    key("swift-abi-version", Scalar),
+    key("objc-constraint", Scalar),
+    key("parent-umbrella", Scalar),
+    key("exports", Mappings(EXPORTS_V3)),
+    key("undefineds", Mappings(UNDEFINEDS_V3)),
+];
+
+const EXPORTS_V3: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("allowable-clients", Sequence),
+    key("re-exports", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-eh-types", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-def-symbols", Sequence),
+    key("thread-local-symbols", Sequence),
+];
+
+const UNDEFINEDS_V3: &[SchemaKey] = &[
+    required("archs", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-eh-types", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-ref-symbols", Sequence),
+];
+
+const TOP_V4: &[SchemaKey] = &[
+    required("tbd-version", Scalar),
+    required("targets", Sequence),
+    key("uuids", Mappings(&[required("target", Scalar), required("value", Scalar)])),
+    key("flags", Sequence),
+    required("install-name", Scalar),
+    key("current-version", Scalar),
+    key("compatibility-version", Scalar),
+    key("swift-abi-version", Scalar),
+    key(
+        "parent-umbrella",
+        Mappings(&[required("targets", Sequence), required("umbrella", Scalar)]),
+    ),
+    key(
+        "allowable-clients",
+        Mappings(&[required("targets", Sequence), required("clients", Sequence)]),
+    ),
+    key(
+        "reexported-libraries",
+        Mappings(&[required("targets", Sequence), required("libraries", Sequence)]),
+    ),
+    key("exports", Mappings(SYMBOLS_V4)),
+    key("reexports", Mappings(SYMBOLS_V4)),
+    key("undefineds", Mappings(SYMBOLS_V4)),
+];
+
+const SYMBOLS_V4: &[SchemaKey] = &[
+    required("targets", Sequence),
+    key("symbols", Sequence),
+    key("objc-classes", Sequence),
+    key("objc-eh-types", Sequence),
+    key("objc-ivars", Sequence),
+    key("weak-symbols", Sequence),
+    key("thread-local-symbols", Sequence),
+];
+
+/// A YAML document's fields under check_yaml. A mapping is known by
+/// the index of its first key.
+struct YamlCheck<'a> {
+    mf: &'a MappedFile,
+    text: &'a str,
+    fields: &'a [YamlField],
+}
+
+impl YamlCheck<'_> {
+    fn fail(&self, item: &str, len: usize, what: &str) -> ! {
+        malformed(self.mf, self.text, item, len, what)
+    }
+
+    /// The column the key at `i` starts at: an item's after its "- ".
+    fn column(&self, i: usize) -> usize {
+        self.fields[i].indent + if self.fields[i].item { 2 } else { 0 }
+    }
+
+    /// Where the fields of the value of the key at `i` end: those of a
+    /// mapping deeper than it, or of a block sequence's items, whose
+    /// "- " may start at its own column.
+    fn value_end(&self, i: usize) -> usize {
+        let col = self.column(i);
+        let rest = &self.fields[i + 1..];
+        i + 1 + rest.iter().take_while(|f| f.indent > col || (f.item && f.indent == col)).count()
+    }
+
+    /// The keys of a mapping.
+    fn mapping_keys(&self, first: usize) -> Vec<usize> {
+        let col = self.column(first);
+        let mut keys = vec![first];
+        let mut i = self.value_end(first);
+        while i < self.fields.len() && !self.fields[i].item && self.fields[i].indent == col {
+            keys.push(i);
+            i = self.value_end(i);
+        }
+        keys
+    }
+
+    /// The mappings the key at `i` has for its value: a block sequence's
+    /// or a nested one.
+    fn nested_mappings(&self, i: usize) -> Vec<usize> {
+        let end = self.value_end(i);
+        if i + 1 == end {
+            return Vec::new();
+        }
+        let first = &self.fields[i + 1];
+        if !first.item {
+            return vec![i + 1];
+        }
+        (i + 1..end)
+            .filter(|&j| self.fields[j].item && self.fields[j].indent == first.indent)
+            .collect()
+    }
+
+    fn check_duplicates(&self, first: usize) {
+        let keys = self.mapping_keys(first);
+        for (n, &i) in keys.iter().enumerate() {
+            let field = &self.fields[i];
+            if keys[..n].iter().any(|&j| self.fields[j].key == field.key) {
+                let what = format!("duplicated mapping key '{}'", field.key);
+                self.fail(field.raw_key, field.raw_key.len(), &what);
+            }
+            for nested in self.nested_mappings(i) {
+                self.check_duplicates(nested);
+            }
         }
     }
-    for fields in docs {
-        let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
-        if !top().any(|f| f.key == "archs") {
-            continue;
+
+    fn check_mapping(&self, first: usize, schema: &[SchemaKey]) {
+        let keys = self.mapping_keys(first);
+        for key in schema {
+            match keys.iter().find(|&&i| self.fields[i].key == key.name) {
+                Some(&i) => self.check_value(i, key),
+                None if key.required => {
+                    let what = format!("missing required key '{}'", key.name);
+                    self.fail(self.fields[first].raw_key, 1, &what);
+                }
+                None => {}
+            }
         }
-        match top().find(|f| f.key == "platform") {
-            Some(f) if !legacy_platforms(unquote(f.value)).is_empty() => {}
-            Some(f) => malformed(mf, text, f.value, scalar_len(f.value), "unknown platform"),
-            None => malformed(mf, text, fields[0].key, 1, "missing required key 'platform'"),
+        let unknown = (keys.iter().map(|&i| &self.fields[i]))
+            .filter(|f| !schema.iter().any(|key| key.name == f.key))
+            .min_by_key(|f| f.key);
+        if let Some(f) = unknown {
+            self.fail(f.raw_key, f.raw_key.len(), &format!("unknown key '{}'", f.key));
+        }
+    }
+
+    fn check_value(&self, i: usize, key: &SchemaKey) {
+        let field = &self.fields[i];
+        let value = field.value;
+        let is_scalar = !value.is_empty()
+            && !value.starts_with('[')
+            && !value.starts_with("- ")
+            && !matches!(value, "~" | "null" | "Null" | "NULL");
+        match key.value {
+            Scalar => {
+                if key.name == "platform" && legacy_platforms(unquote(value)).is_empty() {
+                    self.fail(value, scalar_len(value), "unknown platform");
+                }
+            }
+            Sequence => {
+                if is_scalar {
+                    self.fail(value, scalar_len(value), "not a sequence");
+                }
+                let unknown =
+                    |item: &&'static str| !item.is_empty() && target(unquote(item)).is_none();
+                if key.name == "targets"
+                    && let Some(item) = field.raw_items().find(unknown)
+                {
+                    self.fail(item, scalar_len(item), "unknown target");
+                }
+            }
+            Mappings(schema) => {
+                if is_scalar {
+                    self.fail(value, scalar_len(value), "not a sequence");
+                }
+                if let Some(item) = field.raw_items().find(|item| !item.is_empty()) {
+                    self.fail(item, scalar_len(item), "not a mapping");
+                }
+                for nested in self.nested_mappings(i) {
+                    self.check_mapping(nested, schema);
+                }
+            }
         }
     }
 }
@@ -721,25 +1005,35 @@ fn yaml_matches<'a>(fields: impl Iterator<Item = &'a YamlField>, want: Target) -
     })
 }
 
-fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
+/// A YAML document of a .tbd: the tag its "---" line gives it (which
+/// says the version of the format), and its fields.
+struct YamlDoc {
+    tag: &'static str,
+    fields: Vec<YamlField>,
+}
+
+fn yaml_documents(text: &'static str) -> Vec<YamlDoc> {
     let bytes = text.as_bytes();
-    let mut docs: Vec<Vec<YamlField>> = vec![Vec::new()];
+    let mut docs = vec![YamlDoc { tag: "", fields: Vec::new() }];
     let mut pos = 0;
     while pos < bytes.len() {
         let eol = memchr_from(bytes, b'\n', pos).unwrap_or(bytes.len());
         let raw = &text[pos..eol];
         let line = raw.trim_start();
         let mut next = eol + 1;
-        if line.starts_with("---") && !docs.last().unwrap().is_empty() {
-            docs.push(Vec::new());
+        if let Some(tag) = line.strip_prefix("---") {
+            if !docs.last().unwrap().fields.is_empty() {
+                docs.push(YamlDoc { tag: "", fields: Vec::new() });
+            }
+            docs.last_mut().unwrap().tag = tag.trim();
         }
-        let fields = docs.last_mut().unwrap();
+        let fields = &mut docs.last_mut().unwrap().fields;
         if line.starts_with("---") || line.starts_with('#') {
         } else if let Some(item) = block_scalar(line) {
             // A block sequence's scalars are its key's value, from the
             // first one to the last.
             if let Some(last) = fields.last_mut()
-                && (last.value.is_empty() || last.value.starts_with('-'))
+                && (last.value.is_empty() || last.value.starts_with("- "))
                 && !item.is_empty()
             {
                 let start = match last.value.is_empty() {
@@ -761,10 +1055,12 @@ fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
                 let end = value.as_ptr() as usize - text.as_ptr() as usize + value.len();
                 next = memchr_from(bytes, b'\n', end).map_or(bytes.len(), |i| i + 1);
             }
+            let raw_key = key.trim_end();
             fields.push(YamlField {
                 indent: raw.len() - line.len(),
                 item: line.starts_with("- "),
-                key: unquote(key),
+                key: unquote(raw_key),
+                raw_key,
                 value,
             });
         }
@@ -861,6 +1157,7 @@ mod tests {
     fn yaml_target_groups_and_cache() {
         let mf = mapped(
             r#"--- !tapi-tbd
+tbd-version: 4
 targets: [ arm64-macos, x86_64-macos ]
 install-name: /libtest
 exports:
@@ -896,6 +1193,7 @@ reexported-libraries:
     fn arm64e_fallback_prefers_exact_architecture() {
         let mf = mapped(
             r#"--- !tapi-tbd
+tbd-version: 4
 targets: [ arm64-macos, arm64e-macos ]
 install-name: /libtest
 exports:
@@ -904,6 +1202,7 @@ exports:
   - targets: [ arm64e-macos ]
     symbols: [ _arme ]
 --- !tapi-tbd
+tbd-version: 4
 targets: [ arm64e-macos ]
 install-name: /inline
 exports:
