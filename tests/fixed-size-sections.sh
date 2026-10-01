@@ -88,3 +88,26 @@ cat <<EOF | $CC -o $t/c.o -c -xassembler -
 _h: ret
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/c.o
+
+# A CFString constant must have just two relocations, the class pointer
+# at offset 0 and the string's at 16; ld-prime refuses another as it
+# reads the object, in -r too.
+cfstring() {
+  printf '.cstring\nL_s: .asciz "hi"\n.section __DATA,__cfstring\n.p2align 3\n'
+  printf '.quad %s\n.long 0x7c8\n.long 0\n.quad %s\n.quad %s\n' "$@"
+}
+check_cf() {
+  cfstring $1 $2 $3 | $CC -o $t/cf.o -c -xassembler - &&
+    not $CC --ld-path=$mold -o $t/exe $t/main.o $t/cf.o -framework CoreFoundation 2> $t/log &&
+    grep -qF "$4 in '/" $t/log &&
+    not $mold -r -arch $ARCH -o $t/r.o $t/cf.o 2> $t/log &&
+    grep -qF "$4 in '/" $t/log
+}
+check_cf ___CFConstantStringClassReference 0 2 'cfstring constant does not have two fixups'
+check_cf 0 L_s 2 'cfstring constant does not have two fixups'
+check_cf ___CFConstantStringClassReference L_s _h 'cfstring constant does not have two fixups'
+check_cf 0 L_s _h 'cfstring constant isa not at offset 0 in cfstring object'
+check_cf ___CFConstantStringClassReference 0 _h \
+  'cfstring constant string-data not at offset 16 in cfstring object'
+cfstring ___CFConstantStringClassReference L_s 2 | $CC -o $t/cf.o -c -xassembler -
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/cf.o -framework CoreFoundation

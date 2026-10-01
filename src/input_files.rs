@@ -1145,6 +1145,11 @@ pub fn stage_object<E: Target>(
             None => relocs_ok = false,
         }
     }
+    if relocs_ok && let Some((shndx, why)) = obj.bad_cfstring() {
+        crate::error!("{why} in '{}'", crate::passes::resolved_file_name(mf));
+        obj.failed_at = Some(shndx);
+        relocs_ok = false;
+    }
     if !relocs_ok {
         obj.failed_at.get_or_insert(sect_hdrs.len());
     }
@@ -2763,6 +2768,36 @@ impl StagedObject {
             })
             .collect();
         UnwindCheck { warnings, data_fde: self.data_fde.then_some(file) }
+    }
+
+    /// The first CFString constant ld-prime refuses as it reads the
+    /// object, by its section and what is wrong: one of a
+    /// __DATA,__cfstring section's 32-byte records must have just two
+    /// relocations, one setting its class pointer at offset 0 and one
+    /// its string's at 16.
+    fn bad_cfstring(&self) -> Option<(usize, &'static str)> {
+        self.isecs.iter().find_map(|isec| {
+            let shndx = isec.shndx as usize;
+            let hdr = &self.sect_hdrs[shndx];
+            if (hdr.segname(), hdr.sectname()) != ("__DATA", "__cfstring")
+                || hdr.section_type() != S_REGULAR
+                || isec.size == 0
+            {
+                return None;
+            }
+            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
+            let at = |off| rels.iter().any(|r| r.offset == off);
+            let why = if rels.len() != 2 {
+                "cfstring constant does not have two fixups"
+            } else if !at(0) {
+                "cfstring constant isa not at offset 0 in cfstring object"
+            } else if !at(16) {
+                "cfstring constant string-data not at offset 16 in cfstring object"
+            } else {
+                return None;
+            };
+            Some((shndx, why))
+        })
     }
 
     /// The first pointer, an atom of ld-prime's own, that has no
