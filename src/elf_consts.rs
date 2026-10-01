@@ -333,15 +333,24 @@ pub const DW_EH_PE_datarel: u32 = 0x30;
 pub const DW_EH_PE_funcrel: u32 = 0x40;
 pub const DW_EH_PE_aligned: u32 = 0x50;
 
+pub const DW_AT_name: u32 = 0x03;
 pub const DW_AT_low_pc: u32 = 0x11;
 pub const DW_AT_high_pc: u32 = 0x12;
+pub const DW_AT_language: u32 = 0x13;
 pub const DW_AT_producer: u32 = 0x25;
+pub const DW_AT_specification: u32 = 0x47;
 pub const DW_AT_ranges: u32 = 0x55;
+pub const DW_AT_str_offsets_base: u32 = 0x72;
 pub const DW_AT_addr_base: u32 = 0x73;
 pub const DW_AT_rnglists_base: u32 = 0x74;
 
 pub const DW_TAG_compile_unit: u32 = 0x11;
+pub const DW_TAG_namespace: u32 = 0x39;
 pub const DW_TAG_skeleton_unit: u32 = 0x4a;
+
+pub const DW_LANG_C_plus_plus: u32 = 0x04;
+pub const DW_LANG_C_plus_plus_11: u32 = 0x1a;
+pub const DW_LANG_C_plus_plus_14: u32 = 0x21;
 
 pub const DW_UT_compile: u32 = 0x01;
 pub const DW_UT_type: u32 = 0x02;

@@ -8,6 +8,7 @@ on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
 command -v gdb >& /dev/null || skip
 command -v ${GCC%% *} >& /dev/null || skip
+command -v ${GXX%% *} >& /dev/null || skip
 
 # Regression test for https://github.com/rui314/mold/issues/1634.
 cat <<EOF > $t/shared.h
@@ -47,6 +48,11 @@ DEBUGINFOD_URLS= gdb $t/exe-noindex -nx -batch -ex 'ptype struct Shape' \
   -ex quit >& $t/log-noindex || skip
 grep -Fq 'type = struct Shape {' $t/log-noindex || skip
 
+# Prints the symbol table entries of a name in a readelf dump of an index.
+symbol_entries() {
+  awk -v name="$2" '/^\[/ { p = index($0, "] " name ":") } p' $1
+}
+
 check_index() {
   readelf --debug-dump=gdb_index $1 > $2 || true
   grep -F 'Version 9' $2 || return 1
@@ -56,6 +62,10 @@ check_index() {
   if grep -q '^TU table:' $2; then
     grep -A4 '^TU table:' $2 | grep -E '^\[ *0\]' || return 1
     grep -A4 '^TU table:' $2 | grep -E '^\[ *1\]' || return 1
+
+    # GCC emits no pubnames for type units, but GDB 18 finds a type only
+    # if the index lists it for the type unit defining it.
+    symbol_entries $2 Shape | grep -E 'T[0-9]+ \[static, type\]' || return 1
   fi
 }
 
@@ -80,4 +90,23 @@ if $GCC -g -ggnu-pubnames -gdwarf-5 -gdwarf64 -fdebug-types-section \
     -c $t/b.c -o $t/b64.o
   $GCC -B. -Wl,--gdb-index $t/a64.o $t/b64.o -o $t/exe64
   check_index $t/exe64 $t/index64
+fi
+
+# C++ types are global symbols qualified with their enclosing scopes. GCC
+# defines a nested class outside of the class declaring it.
+cat <<EOF > $t/c.cc
+namespace ns { struct Foo { int x; }; }
+namespace { struct Bar { int y; }; }
+struct Outer { struct Inner { int z; }; };
+int main() { ns::Foo a{}; Bar b{}; Outer::Inner c{}; return a.x + b.y + c.z; }
+EOF
+
+$GXX -g -ggnu-pubnames -gdwarf-5 -fdebug-types-section -c $t/c.cc -o $t/c.o
+$GXX -B. -Wl,--gdb-index $t/c.o -o $t/exe-cc
+readelf --debug-dump=gdb_index $t/exe-cc > $t/index-cc
+
+if grep -q '^TU table:' $t/index-cc; then
+  for name in ns::Foo '(anonymous namespace)::Bar' Outer::Inner; do
+    symbol_entries $t/index-cc "$name" | grep -E 'T[0-9]+ \[global, type\]'
+  done
 fi

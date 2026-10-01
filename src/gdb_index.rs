@@ -40,6 +40,11 @@
 //! Besides names, these sections contain attributes for each name so
 //! that gdb can distinguish type names from function names, for example.
 //!
+//! GCC emits no pubnames for type units. GDB 18 does not follow a
+//! compilation unit's reference to a type unit when it looks up a type
+//! through the index, so we read the name of the type that each type
+//! unit defines from the unit's DIEs and add it to the index as well.
+//!
 //! A compunit contains one or more function address ranges. If an
 //! object file is compiled without -ffunction-sections, it contains
 //! only one .text section and therefore contains a single address range.
@@ -69,7 +74,7 @@ use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
-use crate::input_files::display_file;
+use crate::input_files::{ObjectFile, display_file};
 use crate::output_file::{OutputFile, split_at_offsets};
 use crate::target::Target;
 use std::borrow::Cow;
@@ -80,7 +85,7 @@ use crate::util::SyncUnsafeCell;
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
 use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Timer;
-use crate::util::read_uleb;
+use crate::util::{leak_bytes, read_sleb, read_uleb};
 
 /// A public name and its GNU kind before the name is interned in GdbNameMap.
 #[derive(Clone, Copy)]
@@ -302,6 +307,14 @@ impl<'a, E: Target> Reader<'a, E> {
         val
     }
 
+    fn sleb(&mut self) -> i64 {
+        let mut rest = &self.data[self.pos..];
+        let before = rest.len();
+        let val = read_sleb(&mut rest);
+        self.pos += before - rest.len();
+        val
+    }
+
     fn cstr(&mut self) -> &'a [u8] {
         let rest = &self.data[self.pos..];
         let len = memchr::memchr(0, rest)
@@ -373,35 +386,20 @@ struct RangeSections<'a> {
     rnglists: &'a [u8],
 }
 
-/// The first DIE refers to an abbreviation by its ULEB128 code. Walk the
-/// unit's abbreviation table to find the attribute forms for that DIE.
-fn find_cu_abbrev<'a, E: Target>(
-    die: &mut Reader<'a, E>,
-    abbrev_section: &'a [u8],
-    hdr: &UnitHeader,
-) -> Reader<'a, E> {
-    if hdr.address_size as usize != E::WORD_SIZE {
-        fatal!("--gdb-index: unsupported address size {}", hdr.address_size);
-    }
-    let abbrev_code = die.uleb();
-    let mut abbrev = Reader::<E>::new(abbrev_section, hdr.abbrev_offset as usize);
+/// A DIE refers to an abbreviation by its ULEB128 code. Walk the abbreviation
+/// table at `offset` to find it, and return its tag, whether the DIE has
+/// children, and a reader positioned at its attribute forms.
+fn find_abbrev<E: Target>(section: &[u8], offset: u64, code: u64) -> (u64, bool, Reader<'_, E>) {
+    let mut abbrev = Reader::<E>::new(section, offset as usize);
     loop {
-        let code = abbrev.uleb();
-        if code == 0 {
-            fatal!(
-                "--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record"
-            );
+        let abbrev_code = abbrev.uleb();
+        if abbrev_code == 0 {
+            fatal!("--gdb-index: .debug_abbrev does not contain a record for a .debug_info record");
         }
-        let tag = abbrev.uleb(); // tag
-        abbrev.u8(); // skip has_children byte
-        if code == abbrev_code {
-            // Found a record
-            if tag != DW_TAG_compile_unit as u64 && tag != DW_TAG_skeleton_unit as u64 {
-                fatal!(
-                    "--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}"
-                );
-            }
-            return abbrev;
+        let tag = abbrev.uleb();
+        let has_children = abbrev.u8() != 0;
+        if abbrev_code == code {
+            return (tag, has_children, abbrev);
         }
         // Skip an uninteresting record
         loop {
@@ -419,7 +417,9 @@ fn find_cu_abbrev<'a, E: Target>(
 
 /// .debug_info contains variable-length fields. `offset_size` is four or eight
 /// bytes according to the DWARF32/DWARF64 format; Word<E> is instead the
-/// target's address width. This function advances over one scalar value.
+/// target's address width. This function advances over one attribute value
+/// and returns it, or zero if the value is a string, a block or a 16-byte
+/// constant.
 fn read_scalar<E: Target>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
     match form as u32 {
         DW_FORM_flag_present => 0,
@@ -429,13 +429,28 @@ fn read_scalar<E: Target>(r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 
         DW_FORM_data2 | DW_FORM_strx2 | DW_FORM_addrx2 | DW_FORM_ref2 => r.u16() as u64,
         DW_FORM_strx3 | DW_FORM_addrx3 => r.uint(3),
         DW_FORM_data4 | DW_FORM_strx4 | DW_FORM_addrx4 | DW_FORM_ref4 => r.u32() as u64,
-        DW_FORM_data8 | DW_FORM_ref8 => r.u64(),
+        DW_FORM_data8 | DW_FORM_ref8 | DW_FORM_ref_sig8 => r.u64(),
         DW_FORM_strp | DW_FORM_sec_offset | DW_FORM_line_strp => r.offset(offset_size),
         DW_FORM_addr | DW_FORM_ref_addr => r.uint(E::WORD_SIZE),
         DW_FORM_strx | DW_FORM_addrx | DW_FORM_udata | DW_FORM_ref_udata | DW_FORM_loclistx
         | DW_FORM_rnglistx => r.uleb(),
+        DW_FORM_sdata => r.sleb() as u64,
         DW_FORM_string => {
             r.cstr();
+            0
+        }
+        DW_FORM_data16 => {
+            r.take(16);
+            0
+        }
+        DW_FORM_block1 | DW_FORM_block2 | DW_FORM_block4 | DW_FORM_block | DW_FORM_exprloc => {
+            let len = match form as u32 {
+                DW_FORM_block1 => r.u8() as usize,
+                DW_FORM_block2 => r.u16() as usize,
+                DW_FORM_block4 => r.u32() as usize,
+                _ => r.uleb() as usize,
+            };
+            r.take(len);
             0
         }
         _ => fatal!("--gdb-index: unhandled debug info form: {form:#x}"),
@@ -513,8 +528,16 @@ fn read_rnglist<E: Target>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Ve
 fn read_address_ranges<E: Target>(secs: &RangeSections, cu: &Compunit) -> Vec<(u64, u64)> {
     // Read .debug_info to find the record at a given offset.
     let hdr = parse_unit_header::<E>(secs.info, cu.offset as usize);
+    if hdr.address_size as usize != E::WORD_SIZE {
+        fatal!("--gdb-index: unsupported address size {}", hdr.address_size);
+    }
     let mut die = Reader::<E>::new(secs.info, (cu.offset + hdr.header_size) as usize);
-    let mut abbrev = find_cu_abbrev::<E>(&mut die, secs.abbrev, &hdr);
+    let (tag, _, mut abbrev) = find_abbrev::<E>(secs.abbrev, hdr.abbrev_offset, die.uleb());
+    if tag != DW_TAG_compile_unit as u64 && tag != DW_TAG_skeleton_unit as u64 {
+        fatal!(
+            "--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}"
+        );
+    }
 
     // Now, read debug info records.
     let mut low_pc: Option<(u64, u64)> = None;
@@ -600,19 +623,31 @@ struct FileUnits {
 struct DebugInfoInput {
     shndx: u32,
     contents: &'static [u8],
+    /// Empty unless the contribution contains a type unit.
+    relocations: Vec<Relocation>,
 }
 
-/// A relocated `.debug_gnu_pubnames` header field and the unit it names.
-struct PubnamesRelocation {
+/// A section offset at `offset` in a debug section, which an object file
+/// leaves to a relocation. It refers to `value` in section `shndx`.
+struct Relocation {
     offset: u64,
-    target_shndx: u32,
-    unit_offset: u64,
+    shndx: u32,
+    value: u64,
 }
 
 /// One GNU pubnames or pubtypes contribution needed by the background reader.
 struct PubnamesInput {
     contents: &'static [u8],
-    relocations: Vec<PubnamesRelocation>,
+    relocations: Vec<Relocation>,
+}
+
+/// The sections that DIEs of type units refer to by offset.
+#[derive(Default)]
+struct TypeUnitSections {
+    abbrev: &'static [u8],
+    str: &'static [u8],
+    str_offsets: &'static [u8],
+    str_offsets_relocations: Vec<Relocation>,
 }
 
 /// Immutable input owned by the background `.gdb_index` reader. The section
@@ -624,10 +659,11 @@ pub struct GdbInputFile {
     archive_name: &'static Path,
     debug_info: Vec<DebugInfoInput>,
     pubnames: Vec<PubnamesInput>,
+    type_unit_sections: TypeUnitSections,
 }
 
 /// Prepares immutable views of the debug sections before foreground and
-/// `.gdb_index` work diverge. Relocations are reduced to the unit associations
+/// `.gdb_index` work diverge. Relocations are reduced to the section offsets
 /// the reader needs, so the background task never aliases an ObjectFile.
 pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
     ctx.objs
@@ -637,6 +673,7 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
             let filename = file.base.filename.clone();
             let archive_name = file.archive_name;
             let mut debug_info = Vec::new();
+            let mut has_type_units = false;
             for i in 0..file.debug_info_sections.len() {
                 let shndx = file.debug_info_sections[i];
                 let Some(section_name) = file.section(shndx as usize).map(|isec| isec.name(file))
@@ -653,7 +690,18 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                     continue;
                 }
                 isec.uncompress(&display_file(&filename, archive_name), section_name, input);
-                debug_info.push(DebugInfoInput { shndx, contents: isec.contents() });
+                let contents = isec.contents();
+                let mut relocations = Vec::new();
+                if has_type_unit::<E>(contents) {
+                    has_type_units = true;
+                    relocations = read_relocations(file, shndx);
+                }
+                debug_info.push(DebugInfoInput { shndx, contents, relocations });
+            }
+
+            let mut type_unit_sections = TypeUnitSections::default();
+            if has_type_units {
+                type_unit_sections = read_type_unit_sections(file, &filename, archive_name);
             }
 
             let mut pubnames = Vec::new();
@@ -667,29 +715,244 @@ pub fn prepare_inputs<E: Target>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
                     continue;
                 };
                 isec.uncompress(&display_file(&filename, archive_name), section_name, input);
-
-                let isec = file.section_at(shndx);
-                let mut relocations = Vec::new();
-                for rel in file.relocation_iter(isec.relsec_idx()) {
-                    let esym = &file.base.elf_syms[rel.r_sym() as usize];
-                    if let Some(target) = file.symbol_section(rel.r_sym() as usize) {
-                        relocations.push(PubnamesRelocation {
-                            offset: rel.r_offset(),
-                            target_shndx: target.shndx,
-                            unit_offset: esym.st_value().wrapping_add(isec.rel_addend(&rel) as u64),
-                        });
-                    }
-                }
-                pubnames.push(PubnamesInput { contents: isec.contents(), relocations });
+                let contents = isec.contents();
+                let relocations = read_relocations(file, shndx);
+                pubnames.push(PubnamesInput { contents, relocations });
             }
 
             if debug_info.is_empty() && pubnames.is_empty() {
                 return None;
             }
 
-            Some(GdbInputFile { file: file_id, filename, archive_name, debug_info, pubnames })
+            Some(GdbInputFile {
+                file: file_id,
+                filename,
+                archive_name,
+                debug_info,
+                pubnames,
+                type_unit_sections,
+            })
         })
         .collect()
+}
+
+/// Returns true if a `.debug_info` contribution contains a DWARF 5 type unit.
+fn has_type_unit<E: Target>(contents: &[u8]) -> bool {
+    let mut pos = 0;
+    while pos < contents.len() {
+        let unit = parse_unit_header::<E>(contents, pos);
+        if unit.unit_type as u32 == DW_UT_type {
+            return true;
+        }
+        pos += unit.size as usize;
+    }
+    false
+}
+
+/// Returns the relocated section offsets in a debug section.
+fn read_relocations<E: Target>(file: &ObjectFile<E>, shndx: u32) -> Vec<Relocation> {
+    let isec = file.section_at(shndx);
+    let mut relocations = Vec::new();
+    for rel in file.relocation_iter(isec.relsec_idx()) {
+        let esym = &file.base.elf_syms[rel.r_sym() as usize];
+        if let Some(target) = file.symbol_section(rel.r_sym() as usize) {
+            relocations.push(Relocation {
+                offset: rel.r_offset(),
+                shndx: target.shndx,
+                value: esym.st_value().wrapping_add(isec.rel_addend(&rel) as u64),
+            });
+        }
+    }
+    relocations
+}
+
+/// Returns the relocation at `offset`, if any.
+fn find_relocation(relocations: &[Relocation], offset: u64) -> Option<&Relocation> {
+    let i = relocations.partition_point(|rel| rel.offset < offset);
+    relocations.get(i).filter(|rel| rel.offset == offset)
+}
+
+/// Collects the sections that DIEs of type units refer to by offset. An object
+/// file has at most one of each.
+fn read_type_unit_sections<E: Target>(
+    file: &mut ObjectFile<E>,
+    filename: &str,
+    archive_name: &Path,
+) -> TypeUnitSections {
+    let mut secs = TypeUnitSections::default();
+    for shndx in 0..file.base.shdrs.len() {
+        let Some(name) = file.section(shndx).map(|isec| isec.name(file)) else {
+            continue;
+        };
+        if !matches!(&**name, b".debug_abbrev" | b".debug_str" | b".debug_str_offsets") {
+            continue;
+        }
+        let input = file.base.section_contents_from_shdr(file.shdr(shndx));
+        let isec = file.section_mut(shndx).unwrap();
+        isec.uncompress(&display_file(filename, archive_name), name, input);
+        let contents = isec.contents();
+        match &**name {
+            b".debug_abbrev" => secs.abbrev = contents,
+            b".debug_str" => secs.str = contents,
+            _ => {
+                secs.str_offsets = contents;
+                secs.str_offsets_relocations = read_relocations(file, shndx as u32);
+            }
+        }
+    }
+    secs
+}
+
+/// A DIE on the path from the root of a type unit to the type it defines.
+#[derive(Default)]
+struct Die {
+    tag: u64,
+    name: Option<&'static [u8]>,
+    /// The unit-relative offset of the declaration this DIE defines.
+    specification: Option<u64>,
+    /// The language of the unit, which is an attribute of its root.
+    language: u64,
+}
+
+/// Returns the DIE at a unit-relative offset in the DWARF 5 type unit at
+/// `start` in an input `.debug_info` contribution, and the DIEs enclosing it
+/// from the root of the unit.
+fn find_die<E: Target>(
+    secs: &TypeUnitSections,
+    input: &DebugInfoInput,
+    start: usize,
+    hdr: &UnitHeader,
+    offset: u64,
+) -> Option<(Die, Vec<Die>)> {
+    // A value read at `pos` is a section offset left to a relocation, if any.
+    let relocated = |relocations: &[Relocation], pos: usize, val: u64| {
+        find_relocation(relocations, pos as u64).map_or(val, |rel| rel.value)
+    };
+
+    // The abbreviation offset follows the unit length, the version, the unit
+    // type and the address size.
+    let abbrev_pos = start + if hdr.offset_size == 8 { 16 } else { 8 };
+    let abbrev_offset = relocated(&input.relocations, abbrev_pos, hdr.abbrev_offset);
+    let mut str_offsets_base = 0;
+
+    let mut r = Reader::<E>::new(input.contents, start + hdr.header_size as usize);
+    let mut parents = Vec::new();
+    loop {
+        let die_offset = (r.pos - start) as u64;
+        let code = r.uleb();
+        if code == 0 {
+            // The end of the root's children is the end of the unit.
+            parents.pop();
+            if parents.is_empty() {
+                return None;
+            }
+            continue;
+        }
+
+        let (tag, has_children, mut abbrev) = find_abbrev::<E>(secs.abbrev, abbrev_offset, code);
+        let mut die = Die { tag, ..Default::default() };
+        let mut name_attr = None;
+        loop {
+            let name = abbrev.uleb();
+            let form = abbrev.uleb();
+            if name == 0 && form == 0 {
+                break;
+            }
+            let pos = r.pos;
+            // An implicit constant is stored in the abbreviation.
+            let val = if form == DW_FORM_implicit_const as u64 {
+                abbrev.sleb() as u64
+            } else {
+                relocated(&input.relocations, pos, read_scalar::<E>(&mut r, form, hdr.offset_size))
+            };
+            match name as u32 {
+                DW_AT_name => name_attr = Some((form as u32, pos, val)),
+                DW_AT_specification => die.specification = Some(val),
+                DW_AT_language => die.language = val,
+                DW_AT_str_offsets_base => str_offsets_base = val,
+                _ => {}
+            }
+        }
+
+        // A name is inline or in .debug_str, at an offset given directly or
+        // by the string offsets table.
+        die.name = match name_attr {
+            Some((DW_FORM_string, pos, _)) => Some(Reader::<E>::new(input.contents, pos).cstr()),
+            Some((DW_FORM_strp, _, offset)) => {
+                Some(Reader::<E>::new(secs.str, offset as usize).cstr())
+            }
+            Some((DW_FORM_strx | DW_FORM_strx1..=DW_FORM_strx4, _, index)) => {
+                let entry = (str_offsets_base + index * hdr.offset_size as u64) as usize;
+                let offset = Reader::<E>::new(secs.str_offsets, entry).offset(hdr.offset_size);
+                let offset = relocated(&secs.str_offsets_relocations, entry, offset);
+                Some(Reader::<E>::new(secs.str, offset as usize).cstr())
+            }
+            _ => None,
+        };
+
+        if die_offset == offset {
+            return Some((die, parents));
+        }
+        if has_children {
+            parents.push(die);
+        }
+    }
+}
+
+/// Returns the index symbol for the type that the DWARF 5 type unit at `start`
+/// in an input `.debug_info` contribution defines. Its name is qualified with
+/// enclosing namespaces and classes, as GDB spells it.
+fn read_type_name<E: Target>(
+    file: &GdbInputFile,
+    input: &DebugInfoInput,
+    start: usize,
+    hdr: &UnitHeader,
+) -> Option<NameRecord> {
+    // The strings of a split type unit are in its .dwo file.
+    if hdr.unit_type as u32 != DW_UT_type {
+        return None;
+    }
+
+    // GCC defines a type in a namespace or class at the top level of the
+    // unit, referring to its declaration in the enclosing scope.
+    let secs = &file.type_unit_sections;
+    let (die, mut parents) = find_die::<E>(secs, input, start, hdr, hdr.type_die_offset)?;
+    if let Some(offset) = die.specification {
+        parents = find_die::<E>(secs, input, start, hdr, offset)?.1;
+    }
+
+    // Qualify the name with the scopes below the root.
+    let (root, scopes) = parents.split_first()?;
+    let mut buf = Vec::new();
+    for parent in scopes {
+        match parent.name {
+            Some(name) => buf.extend_from_slice(name),
+            None if parent.tag == DW_TAG_namespace as u64 => {
+                buf.extend_from_slice(b"(anonymous namespace)")
+            }
+            // Clang refers to an enclosing class only by the signature of the
+            // type unit defining it, so the class is nameless here.
+            None => return None,
+        }
+        buf.extend_from_slice(b"::");
+    }
+
+    // Like names in debug sections, the name must be NUL-terminated and live
+    // for the complete link.
+    buf.extend_from_slice(die.name?);
+    buf.push(0);
+    let buf = leak_bytes(buf);
+    let name = &buf[..buf.len() - 1];
+
+    // GDB and GCC's pubnames make C++ classes global symbols and the types of
+    // other languages static ones. Bits 4-6 of a GNU pubnames kind are 1 for a
+    // type, and bit 7 marks a static symbol.
+    let is_cxx = matches!(
+        root.language as u32,
+        DW_LANG_C_plus_plus | DW_LANG_C_plus_plus_11 | DW_LANG_C_plus_plus_14
+    );
+    let kind = if is_cxx { 0x10 } else { 0x90 };
+    Some(NameRecord::new(xxhash_rust::xxh3::xxh3_64(name), kind, name))
 }
 
 /// Reads the units of every live `.debug_info` section of a file.
@@ -719,7 +982,7 @@ fn read_debug_units<E: Target>(file: &GdbInputFile, file_idx: u32) -> FileUnits 
                     signature: unit.signature,
                     file: file_idx,
                     shndx: input.shndx,
-                    names: Vec::new(),
+                    names: Vec::from_iter(read_type_name::<E>(file, input, pos, &unit)),
                 }),
                 kind => fatal!("--gdb-index: unknown unit type: {kind:#x}"),
             }
@@ -738,10 +1001,8 @@ fn pubnames_unit<'a>(
     field_offset: u64,
     units: &'a mut FileUnits,
 ) -> Option<&'a mut Vec<NameRecord>> {
-    let rels = &input.relocations;
-    let i = rels.partition_point(|r| r.offset < field_offset);
-    let rel = rels.get(i).filter(|r| r.offset == field_offset)?;
-    let key = (rel.target_shndx, rel.unit_offset);
+    let rel = find_relocation(&input.relocations, field_offset)?;
+    let key = (rel.shndx, rel.value);
 
     // Units are appended in input section and contribution offset order, so both
     // the CU and TU vectors are sorted by this key.
