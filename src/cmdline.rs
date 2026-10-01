@@ -3326,10 +3326,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // follows -fixup_chains or the deployment target even when
     // -undefined dynamic_lookup sends the fixups themselves back to
     // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
-    // Not so for a -static image, whose initializers dyld never runs
-    // (XNU runs the kernel's __mod_init_func itself): it converts only
-    // with -init_offsets.
-    args.init_offsets |= !args.static_link
+    // Not so for an image whose initializers dyld never runs, a
+    // -static one or a kext (XNU runs the kernel's __mod_init_func
+    // itself, and a kext's): it converts only with -init_offsets.
+    args.init_offsets |= !args.without_dyld()
         && fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, &args));
     args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     check_fixup_sections(&args, fixup_chains, chain_starts.is_some(), rebase_section);

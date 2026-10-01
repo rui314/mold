@@ -92,3 +92,17 @@ otool -l $t/kext4 | awk '$1 == "sectname" { s = $2 } s == "__data" && $1 == "add
 read addr align < $t/data4
 [ $align = '2^3' ]
 [ $((addr % 8)) = 0 ]
+
+# Its constructors stay pointers in __mod_init_func, which the kernel
+# runs: ld-prime makes them __init_offsets only with -init_offsets.
+cat <<EOF | $CC -o $t/c.o -c -xc -mkernel -
+__attribute__((constructor)) static void init(void) {}
+int kext_start(void) { return 0; }
+EOF
+$mold -arch $ARCH -kext $t/c.o -o $t/kext5
+otool -l $t/kext5 > $t/lc5
+grep -q 'sectname __mod_init_func' $t/lc5
+not grep -q 'sectname __init_offsets' $t/lc5
+$mold -arch $ARCH -kext -init_offsets $t/c.o -o $t/kext6
+otool -l $t/kext6 > $t/lc6
+grep -q 'sectname __init_offsets' $t/lc6
