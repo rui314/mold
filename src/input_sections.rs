@@ -275,7 +275,9 @@ impl InputSection {
     /// compiler meant, and a 16-byte load through a scaled PAGEOFF12
     /// immediate can only address a 16-aligned slot.
     pub fn align_offset(&self, off: u64) -> u64 {
-        let align = 1u64 << self.p2align;
+        // An alignment of 2^32 or more wraps around (see
+        // input_files::section_p2align).
+        let align = 1u64 << (self.p2align % 32);
         if self.flags.load(std::sync::atomic::Ordering::Relaxed) & NO_MODULUS != 0 {
             return crate::util::align_to(off, align);
         }
@@ -289,7 +291,7 @@ impl InputSection {
     /// 8-aligned). ld64 keeps the most aligned of two copies of a weak
     /// definition or a literal.
     pub fn p2align_at(&self, addr: u64) -> u8 {
-        let modulus = addr & ((1 << self.p2align) - 1);
+        let modulus = addr & ((1 << (self.p2align % 32)) - 1);
         if self.is_record() || modulus == 0 { self.p2align } else { modulus.trailing_zeros() as u8 }
     }
 

@@ -1435,12 +1435,15 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
                     "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
                     hdr.segname,
                     hdr.sectname,
-                    1u64 << hdr.p2align,
+                    1u64 << (hdr.p2align % 32),
                     1u64 << max
                 );
             }
             hdr.p2align = max;
         }
+        // An alignment of 2^32 or more an object gave wraps around (see
+        // input_files::section_p2align).
+        hdr.p2align %= 32;
     }
 
     // dyld wants its code at a stable address, whatever its load

@@ -430,7 +430,7 @@ impl<'a, E: Target> Builder<'a, E> {
         entry.size = isec.size;
         entry.p2align = isec.p2align;
         if !isec.is_record() {
-            entry.modulus = (isec.input_addr & ((1 << isec.p2align) - 1)) as u16;
+            entry.modulus = (isec.input_addr & ((1u32 << (isec.p2align % 32)) - 1)) as u16;
         }
         let placed = if got_slot { &ctx.isecs[isec.replacement] } else { isec };
         entry.content = self.isec_content(placed, ctx.hdr_of(placed));
