@@ -4,6 +4,7 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
+use crate::branch_shims;
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
@@ -71,7 +72,12 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, p: u6
             .iter()
             .any(|q| q.r_type == r_type && q.target == r.target && q.addend == r.addend)
     };
-    let relaxed = || ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id));
+    let relaxed = || {
+        ctx.reloc_target_sym(obj, r).is_some_and(|id| match r.r_type {
+            ARM64_RELOC_GOT_LOAD_PAGE21 => relaxes_got_load(ctx, isec, id),
+            _ => ctx.can_relax_got(id),
+        })
+    };
     let (kind, name) = match r.r_type {
         ARM64_RELOC_PAGE21 => {
             let kind = match (lo12(ARM64_RELOC_PAGEOFF12), r.addend != 0) {
@@ -93,6 +99,13 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, p: u6
     };
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
     ctx.fixup_error(isec, r.offset, kind, msg);
+}
+
+/// Whether a GOT load from subsection `isec` of symbol `id` relaxes to
+/// computing the symbol's address, as ld-prime relaxes one unless dyld
+/// fills the slot or the symbol is 4 GiB away (see branch_shims).
+fn relaxes_got_load(ctx: &Context<Arm64>, isec: usize, id: crate::symbol::SymbolId) -> bool {
+    ctx.can_relax_got(id) && !branch_shims::is_far(ctx, isec, id)
 }
 
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
@@ -1554,9 +1567,16 @@ impl Target for Arm64 {
                     }
                 }
                 ARM64_RELOC_BRANCH26 => {
-                    let s = match ctx.reloc_target_sym(obj, r) {
-                        Some(id) => ctx.branch_target_addr(id),
-                        None => s,
+                    // A branch from 4 GiB away goes through its target's
+                    // shim (see branch_shims).
+                    let sym = ctx.reloc_target_sym(obj, r);
+                    let shim = sym.filter(|&id| {
+                        a == 0 && ctx.has_branch_shim(id) && branch_shims::is_far(ctx, isec_id, id)
+                    });
+                    let s = match (shim, sym) {
+                        (Some(id), _) => ctx.sym_stub_addr(id),
+                        (None, Some(id)) => ctx.branch_target_addr(id),
+                        (None, None) => s,
                     };
                     let t = s.wrapping_add_signed(a);
                     let mut val = t.wrapping_sub(p) as i64;
@@ -1569,17 +1589,20 @@ impl Target for Arm64 {
                         // entry jumps to its symbol, so a branch with an
                         // addend can't take one (ld-prime's branches to
                         // its island plus the addend, past the island).
-                        let thunk =
-                            ctx.reloc_target_sym(obj, r).filter(|_| a == 0).and_then(|sym| {
-                                crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
-                            });
+                        let thunk = sym.filter(|_| a == 0 && shim.is_none()).and_then(|sym| {
+                            crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
+                        });
                         match thunk {
                             Some(thunk) if adrp_reaches(t, thunk) => {
                                 val = thunk.wrapping_sub(p) as i64
                             }
                             _ => {
                                 let kind = if a != 0 { "arm64_b26_addend" } else { "arm64_b26" };
-                                let name = ctx.branch_target_name(obj, r);
+                                // A shim is a stub, named ''.
+                                let name = match shim {
+                                    Some(_) => "",
+                                    None => ctx.branch_target_name(obj, r),
+                                };
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"
@@ -1666,19 +1689,21 @@ impl Target for Arm64 {
                     write32(loc, op | bits(val, 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing
-                // the address directly: the adrp retargets from the
-                // slot's page to the symbol's, and the ldr becomes
-                // "add Xn, Xm, #pageoff". ld-prime takes a 64-bit add
-                // as one already, and refuses any other instruction.
+                // the address directly (see relaxes_got_load): the adrp
+                // retargets from the slot's page to the symbol's, and
+                // the ldr becomes "add Xn, Xm, #pageoff". ld-prime takes
+                // a 64-bit add as one already, and refuses any other
+                // instruction.
                 ARM64_RELOC_GOT_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let target = if !ctx.can_relax_got(id) { ctx.sym_got_addr(id) } else { s };
+                    let target =
+                        if relaxes_got_load(ctx, isec_id, id) { s } else { ctx.sym_got_addr(id) };
                     check_adrp(ctx, isec_id, rels, i, p, target.wrapping_add_signed(a));
                     write_adrp(loc, target.wrapping_add_signed(a), p);
                 }
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !ctx.can_relax_got(id) {
+                    if !relaxes_got_load(ctx, isec_id, id) {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             let kind = "arm64_was_ld12_got_load_got";

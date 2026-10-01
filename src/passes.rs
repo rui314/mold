@@ -5094,7 +5094,10 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     }
     if ctx.args.lazy_binding {
         ctx.stubs.lazy = (0..stubs.len() as u32)
-            .filter(|&i| !ctx.binds_weak_lookup(stubs[i as usize]))
+            .filter(|&i| {
+                let id = stubs[i as usize];
+                !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id)
+            })
             .collect();
     }
     ctx.stubs.symbols = stubs;

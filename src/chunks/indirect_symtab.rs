@@ -46,14 +46,16 @@ pub fn sections<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = ChunkId> + 
 }
 
 /// A section's slots: the symbol each holds, or None for
-/// INDIRECT_SYMBOL_LOCAL (a GOT slot filled in here).
+/// INDIRECT_SYMBOL_LOCAL (a GOT slot filled in here, or a branch shim
+/// jumping through one).
 fn entries<E: Target>(ctx: &Context<E>, id: ChunkId) -> Vec<Option<SymbolId>> {
     let got = &ctx.got;
     let got_slots = |syms: &[SymbolId]| -> Vec<Option<SymbolId>> {
         syms.iter().map(|&id| Some(id).filter(|&id| ctx.binds_at_runtime(id))).collect()
     };
+    let stub = |id: SymbolId| Some(id).filter(|&id| !ctx.has_branch_shim(id));
     match id {
-        ChunkId::Stubs => ctx.stubs.symbols.iter().map(|&id| Some(id)).collect(),
+        ChunkId::Stubs => ctx.stubs.symbols.iter().map(|&id| stub(id)).collect(),
         ChunkId::LazyPtrs => {
             ctx.stubs.lazy.iter().map(|&i| Some(ctx.stubs.symbols[i as usize])).collect()
         }
