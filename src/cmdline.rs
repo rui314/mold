@@ -1763,6 +1763,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-function_starts" => function_starts = Some(true),
             b"-add_source_version" => source_version = Some(true),
             b"-no_source_version" => source_version = Some(false),
+            // ld64 kept the FDEs of functions with compact unwind
+            // records for a target before macOS 10.9 (iOS 7), or as
+            // these said. ld-prime goes by the target alone.
+            b"-keep_dwarf_unwind" => obsolete.push("-keep_dwarf_unwind"),
+            b"-no_keep_dwarf_unwind" => obsolete.push("-no_keep_dwarf_unwind"),
             b"-init_offsets" => args.init_offsets = true,
             b"-init" => args.init = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-data_const" => data_const = Some(true),
@@ -2239,6 +2244,16 @@ impl Args {
     /// their __eh_frame alone and so keep every FDE.
     pub fn unwind_info(&self) -> bool {
         !self.relocatable && !self.without_dyld() && !self.no_compact_unwind
+    }
+
+    /// Whether the FDEs of the functions that have compact unwind
+    /// records reach the output too: in an image without __unwind_info
+    /// for the records, and, as ld-prime keeps them, in one for a macOS
+    /// before 10.9, whose unwinders ld64 still gave the FDEs (its
+    /// -keep_dwarf_unwind default).
+    pub fn keeps_all_fdes(&self) -> bool {
+        !self.unwind_info()
+            || (self.platform == PLATFORM_MACOS && self.platform_minos < encode_version(10, 9, 0))
     }
 
     /// The output's install name: -install_name, else -final_output,

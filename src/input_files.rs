@@ -1908,7 +1908,7 @@ pub fn parse_object<E: Target>(
     alive: bool,
 ) -> usize {
     let priority = ctx.next_priority();
-    let keep_all_fdes = !ctx.args.unwind_info();
+    let keep_all_fdes = ctx.args.keeps_all_fdes();
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
     staged.check_unwind_sections();
     integrate_object(ctx, staged)
@@ -2421,8 +2421,9 @@ impl StagedObject {
     /// -r output carries every input CIE and FDE through, as ld64's
     /// does, and a -static image or one linked with -no_compact_unwind
     /// has no __unwind_info for the compact record (which ld-prime
-    /// drops, turning none into an FDE); any other final image has no
-    /// use for them.
+    /// drops, turning none into an FDE), and one for a macOS before
+    /// 10.9 keeps them for its old unwinders (see Args::keeps_all_fdes);
+    /// any other final image has no use for them.
     ///
     /// ld-prime unwinds only code. An FDE for a function in a section
     /// of data it refuses: returns true for that. One in a section of
