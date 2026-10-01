@@ -1100,7 +1100,7 @@ fn report_error<E: Target>(
     if action == Action::AbsError {
         let kind = if sym.is_undef() { "undefined" } else { "absolute" };
         error!(
-            "{isec}: {ty} relocation at offset 0x{offset:x} against {kind} symbol `{sym}' can not be used when making a position-independent output"
+            "{isec}: {ty} relocation at offset 0x{offset:x} against {kind} symbol `{sym}' can not be used when making a position-independent output; recompile with -fPIC"
         );
     } else if action == Action::PreemptError && sym.is_exported() {
         // An exported symbol is defined in the shared object being created,
