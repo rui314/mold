@@ -2291,10 +2291,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-final_output" => args.final_output = Some(bytes(next_arg(&mut i, name))),
             b"-keep_private_externs" => args.keep_private_externs = true,
-            // ld-prime only warns about a missing (or empty) path.
+            // ld-prime only warns about a missing path, or an empty
+            // one or an option's name, which it takes all the same.
             b"-rpath" => match cmdline.get(i + 1) {
                 Some(arg) => {
-                    if arg.is_empty() {
+                    if arg.is_empty() || arg.as_bytes().starts_with(b"-") {
                         warnings.warn("-rpath missing <path>");
                     } else {
                         args.rpaths.push(bytes(arg));

@@ -53,6 +53,13 @@ missing '-seg_page_size needs <segname> <size>' -seg_page_size '' 4000
 $mold -r -arch $ARCH -o $t/d.o $t/a.o -rpath '' -current_version '' 2> $t/log
 grep -Fq -- 'warning: -rpath missing <path>' $t/log
 
+# It takes an option's name for -rpath's path, with the warning, and
+# the image gets no such run path.
+$CC --ld-path=$mold -shared -o $t/e.dylib $t/a.o -Wl,-rpath,-dead_strip 2> $t/log
+grep -Fq -- 'warning: -rpath missing <path>' $t/log
+otool -l $t/e.dylib > $t/load
+not grep -F LC_RPATH $t/load
+
 # An architecture ld-prime doesn't know is reported as such.
 not $mold -arch foo -o $t/exe $t/a.o 2> $t/log
 grep -Fq -- 'unknown -arch name: foo' $t/log
