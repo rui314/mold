@@ -661,7 +661,7 @@ fn collect_file<E: Target>(
                 }
                 name_dylib(ctx, idx, mf, rc);
             } else if !rc.autolinked {
-                ctx.dylib_renamings.push((ctx.priority_counter, idx));
+                ctx.dylib_renamings.push((ctx.priority_counter, idx, &mf.name));
             }
             note_naming(ctx, first, idx, mf, rc.autolinked);
         }
@@ -735,7 +735,7 @@ fn name_again<E: Target>(
         && !rc.autolinked
     {
         let priority = ctx.next_priority();
-        ctx.dylib_renamings.push((priority, idx));
+        ctx.dylib_renamings.push((priority, idx, &mf.name));
     }
 }
 
@@ -3207,7 +3207,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
     };
     let renamings = ctx.dylib_renamings[checked.renamings..]
         .iter()
-        .map(|&(priority, idx)| (priority, &ctx.dylibs[idx]));
+        .map(|&(priority, idx, _)| (priority, &ctx.dylibs[idx]));
     let mut dylibs: Vec<(u32, String, bool)> = ctx.dylibs[checked.dylibs..]
         .iter()
         .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))

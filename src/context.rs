@@ -121,9 +121,10 @@ pub struct Context<E: Target> {
     pub foreign_platform_dylibs: Vec<(u32, String)>,
     /// The inputs that name a dylib loaded before, by another input -
     /// the same file by path, or another with its install name - by
-    /// priority, with the dylib's index: ld-prime checks the dylib's
-    /// version again for each (see passes::check_input_versions).
-    pub dylib_renamings: Vec<(u32, usize)>,
+    /// priority, with the dylib's index and the path they name it by:
+    /// ld-prime checks the dylib's version again for each (see
+    /// passes::check_input_versions), and -map lists each as a file.
+    pub dylib_renamings: Vec<(u32, usize, &'static std::path::Path)>,
     /// Files already loaded, so a library named twice (command line
     /// plus auto-link) is read once.
     pub visited_files: std::collections::HashSet<std::path::PathBuf>,

@@ -555,7 +555,9 @@ fn name(s: &str) -> Cow<'_, [u8]> {
 /// The files of the link as ld-prime's map numbers them, in the order
 /// it loads them: from 1 in command line order - objects, the archive
 /// members that were loaded, where their archive was named, and dylibs,
-/// used or not (-dead_strip_dylibs or not) -, then by install name the
+/// used or not (-dead_strip_dylibs or not), once for each input naming
+/// one, by another path (libc.tbd, an alias of libSystem.tbd) or not
+/// (the symbols bound to it are the first one's) -, then by install name the
 /// libraries loaded because a dylib re-exports them that something
 /// binds to, and last the files auto-link options named that something
 /// binds to or loads from, in the order ld-prime acts on the options -
@@ -601,7 +603,7 @@ impl<'a> MapFiles<'a> {
             Obj(usize),
             Dylib(usize),
             Merged(&'a MergedFile),
-            Stripped(&'a Path),
+            Named(&'a Path),
             SectCreate(usize),
         }
         // A dylib that stands for a library exports moved to is no file:
@@ -633,7 +635,10 @@ impl<'a> MapFiles<'a> {
             }
         }
         for (priority, path) in &ctx.stripped_dylibs {
-            named.push((*priority, File::Stripped(path)));
+            named.push((*priority, File::Named(path)));
+        }
+        for &(priority, _, path) in &ctx.dylib_renamings {
+            named.push((priority, File::Named(path)));
         }
         for (i, &priority) in ctx.sectcreate_priority.iter().enumerate().skip(1) {
             named.push((priority, File::SectCreate(i)));
@@ -697,7 +702,7 @@ impl<'a> MapFiles<'a> {
                     files.dylibs[i] = number;
                     files.paths.push(dylib.named_at.as_ref().map_or(&dylib.path, |(_, path)| path));
                 }
-                File::Stripped(path) => files.paths.push(path),
+                File::Named(path) => files.paths.push(path),
                 File::SectCreate(i) => {
                     files.sectcreate[i] = number;
                     let path = ctx.args.sectcreate[i].path.as_deref();

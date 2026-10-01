@@ -43,3 +43,22 @@ $CC --ld-path=$mold -o $t/exe4 $t/d.o -mmacosx-version-min=11.0 -Wl,-bind_at_loa
   -Wl,-map,$t/map4
 not grep -q libdyld $t/map4
 not grep -q libdyld $t/map
+
+# ld-prime lists a dylib once for each input naming it, by the path it
+# gives - another file with its install name (libgcc_s.1.tbd, an alias
+# of libSystem.tbd) or the same file again -, used or not; the symbols
+# bound to it are the first one's.
+echo 'int foo(void) { return 1; }' | $CC -shared -xc - -o $t/libfoo.dylib
+ln -sf libfoo.dylib $t/libbar.dylib
+cat <<EOF2 | $CC -o $t/e.o -c -xc -
+int foo(void);
+int main() { return foo(); }
+EOF2
+$CC --ld-path=$mold -o $t/exe5 $t/e.o $t/libbar.dylib $t/libfoo.dylib $t/libfoo.dylib \
+  -lgcc_s.1 -Wl,-dead_strip_dylibs -Wl,-map,$t/map5
+sed -n '/^# Object files:/,/^# Sections:/p' $t/map5 > $t/files5
+grep -Fq "[  2] $t/libbar.dylib" $t/files5
+grep -Fq "[  3] $t/libfoo.dylib" $t/files5
+grep -Fq "[  4] $t/libfoo.dylib" $t/files5
+grep -Eq '^\[  [0-9]\] .*/usr/lib/libgcc_s.1.tbd$' $t/files5
+grep -Eq $'\t\\[  2\\] _foo.stub$' $t/map5
