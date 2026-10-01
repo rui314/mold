@@ -2,7 +2,7 @@
 source "$(dirname "$0")"/common.inc
 
 # The x86_64 assembler leaves a difference of two labels to the linker
-# when a named label separates them, as the atoms may move apart, and
+# when a named label separates them, as the two may move apart, and
 # writes a SUBTRACTOR/UNSIGNED pair for it. A label that no named
 # label precedes in its section has no symbol to name, so its half of
 # the pair is non-extern: it names the section, and the label's address

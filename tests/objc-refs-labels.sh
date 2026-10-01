@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime cuts __objc_superrefs and __objc_protorefs one atom per
-# pointer. One a symbol names stays apart and keeps its label, in an
-# image's symbol table too; the others merge by target, and a -r output
-# names each of them l<nnn> on arm64, whose relocations name what they
-# refer to.
+# ld-prime cuts __objc_superrefs and __objc_protorefs into a subsection
+# per pointer. One a symbol names stays apart and keeps its label, in
+# an image's symbol table too; the others merge by target, and a -r
+# output names each of them l<nnn> on arm64, whose relocations name
+# what they refer to.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .section __DATA,__objc_data
 .p2align 3

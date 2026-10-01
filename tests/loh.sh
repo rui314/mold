@@ -203,9 +203,10 @@ $CC --ld-path=$mold -o $t/libloh.dylib -shared $t/a.o $t/b.o $t/ext.o \
 objdump -d --no-show-raw-insn $t/libloh.dylib > $t/dis
 [ "$(insns add)" = 'adr nop ret ' ]
 
-# Without .subsections_via_symbols a section is still cut into atoms at
-# every symbol, and a hint whose instructions lie in two of them is
-# dropped: the adrp in main stays, the one within second goes.
+# Without .subsections_via_symbols a section is still cut into
+# subsections at every symbol, and a hint whose instructions lie in two
+# of them is dropped: the adrp in main stays, the one within second
+# goes.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .text
 .globl _main

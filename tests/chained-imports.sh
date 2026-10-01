@@ -3,11 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # A chained-fixups image lists its imports in a table the bind words
 # index. ld-prime numbers an import as it first meets it, walking the
-# binds atom by atom in address order and, within an atom, from the
-# highest offset down; one entry per symbol and table addend (addends
-# up to 255 ride in the bind word). Each import names itself in a pool
-# after a leading NUL, repeating a name imported twice, padded to 8 -
-# 8 zero bytes for no imports at all.
+# binds subsection by subsection in address order and, within a
+# subsection, from the highest offset down; one entry per symbol and
+# table addend (addends up to 255 ride in the bind word). Each import
+# names itself in a pool after a leading NUL, repeating a name imported
+# twice, padded to 8 - 8 zero bytes for no imports at all.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .data
 .p2align 3

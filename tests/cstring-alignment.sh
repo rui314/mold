@@ -2,12 +2,12 @@
 source "$(dirname "$0")"/common.inc
 
 # A C string keeps its input offset modulo its section's alignment, as
-# any atom does, and of identical strings ld-prime keeps the copy that
-# alignment favors most (an atom at 16 mod 32 is 16-aligned), the first
-# of equals. Swift pads the strings of its 16-aligned __objc_methname
-# and __objc_classname with NULs so that many start at a multiple of
-# 16; its copy of a name then wins over clang's unaligned one, whose
-# object comes first here.
+# any subsection does, and of identical strings ld-prime keeps the copy
+# that alignment favors most (a string at 16 mod 32 is 16-aligned), the
+# first of equals. Swift pads the strings of its 16-aligned
+# __objc_methname and __objc_classname with NULs so that many start at
+# a multiple of 16; its copy of a name then wins over clang's unaligned
+# one, whose object comes first here.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __TEXT,__objc_classname,cstring_literals
 L5: .asciz "q"

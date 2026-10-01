@@ -3,13 +3,14 @@ source "$(dirname "$0")"/common.inc
 source "$(dirname "$0")"/dtrace.inc
 
 # Each provider gets a DOF section of its own. A probe has an instance
-# per function it has sites in, named after the function's atom less
-# its leading underscore: the static functions of one name in two files
-# share one. The instances come newest first, a probe's sites before
-# its is-enabled tests. A section is named after the provider, cut to
-# 15 bytes; one that would have an earlier one's name has its last
-# byte replaced by '0', '1' and so on. (ld-prime orders the sections by
-# a hash table of the providers; the test leaves their order out.)
+# per function it has sites in, named after the name of the function's
+# subsection less its leading underscore: the static functions of one
+# name in two files share one. The instances come newest first, a
+# probe's sites before its is-enabled tests. A section is named after
+# the provider, cut to 15 bytes; one that would have an earlier one's
+# name has its last byte replaced by '0', '1' and so on. (ld-prime
+# orders the sections by a hash table of the providers; the test leaves
+# their order out.)
 cat > $t/p.d <<EOF
 provider zeta {
   probe start(int);

@@ -2,11 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # A -r link writes a map as a final link does: of the output's
-# sections, at the addresses they have from zero, and of their atoms.
-# Those of the sections it makes itself are its objects': each record
-# of __compact_unwind, named by the label at it if any (an arm64
-# assembler's ltmpN at the section's start), and of __eh_frame, a CIE
-# "CFI" and an FDE "FDE for: " and its function's name.
+# sections, at the addresses they have from zero, and of their
+# subsections. Those of the sections it makes itself are its objects':
+# each record of __compact_unwind, named by the label at it if any (an
+# arm64 assembler's ltmpN at the section's start), and of __eh_frame, a
+# CIE "CFI" and an FDE "FDE for: " and its function's name.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 static int sfn(void) { return 3; }

@@ -1,15 +1,16 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld64 places each atom at an offset congruent, modulo its section's
-# alignment, to the offset it had in its input section - an 8-byte
-# atom at offset 8 of a 16-aligned section stays 8 mod 16 - instead of
-# rounding every atom up to the section's alignment. The two differ
-# once an atom's predecessor is gone (dead-stripped here): ld64 pads 8
-# bytes to keep _b at 8 mod 16 after the 16-byte _a, and never pads
-# when the predecessor is present. Rounding every atom up costs half
-# the alignment per atom on average: NetNewsWire's __TEXT,__const came
-# out 11KB (12%) larger than ld-prime's.
+# ld64 places each subsection at an offset congruent, modulo its
+# section's alignment, to the offset it had in its input section - an
+# 8-byte subsection at offset 8 of a 16-aligned section stays 8 mod 16
+# - instead of rounding every subsection up to the section's alignment.
+# The two differ once a subsection's predecessor is gone (dead-stripped
+# here): ld64 pads 8 bytes to keep _b at 8 mod 16 after the 16-byte _a,
+# and never pads when the predecessor is present. Rounding every
+# subsection up costs half the alignment per subsection on average:
+# NetNewsWire's __TEXT,__const came out 11KB (12%) larger than
+# ld-prime's.
 cat <<EOF2 | $CC -o $t/a.o -c -xassembler -
 .subsections_via_symbols
 .section __TEXT,__const

@@ -36,8 +36,8 @@ grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t\[  1\] _hello$' $t/map
 grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t\[  2\] _main$' $t/map
 not grep -q ltmp $t/map
 
-# The linker's own atoms are file 0's, but for a symbol's stub or GOT
-# slot, which counts as the file defining the symbol. A C string is
+# The linker's own subsections are file 0's, but for a symbol's stub or
+# GOT slot, which counts as the file defining the symbol. A C string is
 # known by its contents, and a common symbol belongs to the first object
 # that declared it at its size.
 grep -Fq $'\t[  4] _printf.stub' $t/map
@@ -72,8 +72,8 @@ $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/e.o -Wl,-map,$t/map3
 grep -Fq $'\t[  2] _big_common.got' $t/map3
 grep -Eq $'\t\\[  2\\] _big_common$' $t/map3
 
-# With -dead_strip, removed atoms are reported in their own section,
-# after a blank line, with "<<dead>>" in the address column.
+# With -dead_strip, removed subsections are reported in their own
+# section, after a blank line, with "<<dead>>" in the address column.
 cat <<EOF | $CC -o $t/c.o -c -xc -
 void unused_func() {}
 const char *unused_str() { return "gone"; }

@@ -1,13 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes each record of a section of fixed-size records an atom
-# of its own, as each pointer of an Objective-C class list: its -map
-# lists them one by one, "anon". Category merging rebuilds a category
-# list without the categories it merged into their classes; ld-prime
-# keeps the other entries, each its file's, and credits itself with
-# the __objc_nlclslist entry it adds for a class a category's +load
-# makes non-lazy. The merged categories' entries are dead.
+# ld-prime makes each record of a section of fixed-size records a
+# subsection of its own, as each pointer of an Objective-C class list:
+# its -map lists them one by one, "anon". Category merging rebuilds a
+# category list without the categories it merged into their classes;
+# ld-prime keeps the other entries, each its file's, and credits itself
+# with the __objc_nlclslist entry it adds for a class a category's
+# +load makes non-lazy. The merged categories' entries are dead.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject - (int)a; + (void)cm; @end
@@ -23,7 +23,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -Wl,-dead_strip -Wl,-map,$t/map
 
-# The map's rows for a section's atoms, without their addresses.
+# The map's rows for a section, without their addresses.
 rows() {
   local sect start end addr size rest
   sect=$(grep $'\t'"$1"'$' $t/map)
@@ -48,10 +48,10 @@ grep $'\t__objc_nlcatlist$' $t/map > $t/nlcatlist || true
 
 # Merging gives a class lists of kinds it had none of: instance and
 # class methods, a protocol list (the class's and the metaclass's) and
-# an instance property list. ld-prime lists a dead pointer-sized atom
-# of the class's file for each list pointer so set, after the file's
-# other dead atoms, and the merged property list, which no symbol
-# names, as an atom of its own.
+# an instance property list. ld-prime lists a dead pointer-sized
+# subsection of the class's file for each list pointer so set, after
+# the file's other dead subsections, and the merged property list,
+# which no symbol names, as a subsection of its own.
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @protocol P - (int)a; @end

@@ -3,12 +3,12 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime wants every pointer dyld fixes up 8-aligned, as the links of
 # a fixup chain are words. For a deployment target it gives chained
-# fixups by default, it warns of each atom aligned less than a pointer
-# that holds one, and then of each unaligned pointer if the image has
-# classic dyld info. With chained fixups, an arm64 link fails at one
-# (in a section, the last of the first atom that has one); an x86-64
-# image gets classic dyld info instead. For an older target it says
-# nothing.
+# fixups by default, it warns of each subsection aligned less than a
+# pointer that holds one, and then of each unaligned pointer if the
+# image has classic dyld info. With chained fixups, an arm64 link fails
+# at one (in a section, the last of the first subsection that has one);
+# an x86-64 image gets classic dyld info instead. For an older target
+# it says nothing.
 
 # _r0 puts the pointers of _r1 and _r2 off 8-byte boundaries.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
@@ -167,11 +167,11 @@ fi
 not $mold -o $t/exe12 $t/a.o -unaligned_pointers foo 2> $t/log12
 grep -q -- '-unaligned_pointers invalid option (warning | error | suppress)' $t/log12
 
-# ld-prime warns of the atoms as it reads each object, knowing nothing
-# of the other inputs yet: of an atom dead stripping drops, of an
-# archive member the link doesn't load, of a pointer to an absolute
-# symbol another object defines (not of one to its own), and before
-# the link fails on an undefined symbol.
+# ld-prime warns of the subsections as it reads each object, knowing
+# nothing of the other inputs yet: of a subsection dead stripping drops,
+# of an archive member the link doesn't load, of a pointer to an
+# absolute symbol another object defines (not of one to its own), and
+# before the link fails on an undefined symbol.
 cat <<EOF | $CC -o $t/u.o -c -xassembler -
 .data
 .globl _u0, _u1, _u2, _u3, _u4

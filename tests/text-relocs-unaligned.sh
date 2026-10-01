@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # Unaligned pointers are diagnosed after the text relocations: ld-prime
-# lists those as it applies relocations, each atom's in address order
-# where it encodes rebase opcodes and from the last to the first
+# lists those as it applies relocations, each subsection's in address
+# order where it encodes rebase opcodes and from the last to the first
 # otherwise. An unaligned pointer of an arm64 chain then fails the link
 # in place of the text relocations (a text relocation is in no chain);
 # an x86-64 image gives chains up for classic dyld info first. The

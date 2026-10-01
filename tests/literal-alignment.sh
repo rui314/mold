@@ -8,10 +8,10 @@ source "$(dirname "$0")"/common.inc
 # 8-aligned into __literal16 with p2align 3 (rustc's (1, 0) splitn
 # initializer), then load it with ldr q, whose PAGEOFF12 immediate is
 # scaled by 16 and cannot address an 8-mod-16 slot. ld64 gives every
-# __literal4/8/16 atom Alignment(2/3/4) with no modulus, so the linker
-# is what makes the load sound. Placing such a literal at its input
-# offset modulo 16 (as every other atom is placed) silently loads the
-# neighboring slot: rustc libtest parsed --list as "ist".
+# __literal4/8/16 literal Alignment(2/3/4) with no modulus, so the
+# linker is what makes the load sound. Placing such a literal at its
+# input offset modulo 16 (as every other subsection is placed) silently
+# loads the neighboring slot: rustc libtest parsed --list as "ist".
 #
 # a.o starts __literal16 at 8 mod 16, after an 8-byte __const. b.o has
 # a 16-aligned copy of the same bytes and loads it through a private

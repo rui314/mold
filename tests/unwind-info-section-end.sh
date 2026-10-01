@@ -3,8 +3,8 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime looks for a compact unwind record's function in the section
 # its relocation names, as for a label: one at the section's end is the
-# last atom's (here _f's, which then gets no entry of encoding 0 of its
-# own), or that of a label there, and not the next section's.
+# last subsection's (here _f's, which then gets no entry of encoding 0
+# of its own), or that of a label there, and not the next section's.
 if [ $ARCH = arm64 ]; then ret=ret; n=4; else ret=retq; n=1; fi
 rec() { printf '.quad %s\n.long 0\n.long %s\n.quad 0\n.quad 0\n' $1 $2; }
 

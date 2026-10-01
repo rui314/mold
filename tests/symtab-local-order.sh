@@ -3,11 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # A final image lists its local symbols - the non-external ones it
 # keeps and the private externals it demotes - by address, across all
-# objects. Names at one address are aliases of one atom, named by its
-# highest-ranked symbol: a strong external, then a private external, a
-# local, a weak definition, each rank by descending name. ld-prime
-# lists the other names in that order before the atom's own name (a
-# strong external's goes with the externals).
+# objects. Names at one address are aliases of one subsection, named by
+# its highest-ranked symbol: a strong external, then a private external,
+# a local, a weak definition, each rank by descending name. ld-prime
+# lists the other names in that order before the subsection's own name
+# (a strong external's goes with the externals).
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .p2align 2

@@ -5,7 +5,7 @@ source "$(dirname "$0")"/common.inc
 # the functions folded away and their size, out of every function of
 # __TEXT,__text that is in the output (those dead-stripped not counted)
 # before folding. Each function here is a 12-byte (arm64) or 16-byte
-# (x86-64, padded) atom; f2, f3 and g2 fold into f1 and g1.
+# (x86-64, padded) subsection; f2, f3 and g2 fold into f1 and g1.
 cat <<EOF | $CC -o $t/a.o -c -xc - -O2
 #define H __attribute__((visibility("hidden"), noinline))
 H int f1(int x) { return x * 3 + 1; }

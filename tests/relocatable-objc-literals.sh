@@ -1,12 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes the atoms of the Objective-C constant literals
-# (__objc_intobj, __objc_doubleobj, __objc_arraydata, __objc_arrayobj,
-# __objc_dictobj ...), __cfstring and __ustring by content, and names
+# ld-prime splits the Objective-C constant literals (__objc_intobj,
+# __objc_doubleobj, __objc_arraydata, __objc_arrayobj, __objc_dictobj
+# ...), __cfstring and __ustring into subsections by content, and names
 # none of them: their labels, linker-private or not (clang's
 # __unnamed_array_storage), are in no output's symbol table. A -r
-# output names the atoms itself on arm64, l<nnn> with N_PEXT, since
+# output names the literals itself on arm64, l<nnn> with N_PEXT, since
 # arm64 relocations must name what they refer to; x86-64 relocations
 # refer to them section-relatively, and they get no symbol at all.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -

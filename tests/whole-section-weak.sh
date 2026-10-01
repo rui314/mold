@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Without .subsections_via_symbols a section is one atom, named by one
-# symbol at the section's start (not the arm64 assembler's ltmpN): a
-# non-weak one if there is any, else the last weak one. Only a weak
-# symbol that names the atom stops being weak.
+# Without .subsections_via_symbols a section is a single subsection,
+# named by one symbol at the section's start (not the arm64 assembler's
+# ltmpN): a non-weak one if there is any, else the last weak one. Only
+# a weak symbol that names the subsection stops being weak.
 
 cat <<EOF | $CC -o $t/main.o -c -xc -
 #include <stdio.h>
@@ -12,7 +12,7 @@ extern long w;
 int main() { printf("%ld\n", w); }
 EOF
 
-# _w alone at the start names the atom.
+# _w alone at the start names the subsection.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .data
 .globl _w
@@ -21,7 +21,7 @@ cat <<EOF | $CC -o $t/a.o -c -xassembler -
 _w: .quad 1
 EOF
 
-# A local label at the start names the atom.
+# A local label at the start names the subsection.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .data
 .p2align 3
@@ -52,7 +52,7 @@ cat <<EOF | $CC -o $t/d.o -c -xassembler -
 _w: .quad 4
 EOF
 
-# All weak: the last one, _w, names the atom.
+# All weak: the last one, _w, names the subsection.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
 .data
 .p2align 3
@@ -71,8 +71,8 @@ $CC --ld-path=$mold -o $t/exe-a $t/main.o $t/a.o
 nm -m $t/exe-a > $t/syms-a
 grep -q ') external _w$' $t/syms-a
 
-# In b, c and d, _w is a weak label into the atom: alone it stays
-# weak, and a's plain _w overrides it.
+# In b, c and d, _w is a weak label into the subsection: alone it
+# stays weak, and a's plain _w overrides it.
 for o in b c d; do
   $CC --ld-path=$mold -o $t/exe-$o $t/main.o $t/$o.o
   nm -m $t/exe-$o > $t/syms-$o

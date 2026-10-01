@@ -2,10 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # -make_mergeable makes a dylib that a later link may merge into its
-# image (-merge_*): ld-prime records the dylib's atoms in LC_ATOM_INFO,
-# in a format of its own. -add_mergeable_debug_hook gives a debug build
-# of such a dylib, which nothing merges, the hook for its classes that
-# merged libraries get. Both are for a dylib only, and not together.
+# image (-merge_*): ld-prime records the dylib's subsections in a
+# mergeable record of its own format, which LC_ATOM_INFO points at.
+# -add_mergeable_debug_hook gives a debug build of such a dylib, which
+# nothing merges, the hook for its classes that merged libraries get.
+# Both are for a dylib only, and not together.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo(void) { return 3; }
 EOF
@@ -20,7 +21,7 @@ not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-add_mergeable_debug_hook 2> $t/log3
 grep -q -- '-add_mergeable_debug_hook cannot be used with -make_mergeable' $t/log3
 
-# A mergeable dylib's atoms are bound by name in two levels.
+# A mergeable dylib's imports are bound by name in two levels.
 not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-flat_namespace 2> $t/log4
 grep -q -- '-flat_namespace cannot be used with -make_mergeable' $t/log4
@@ -48,14 +49,14 @@ not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-flat_namespace -Wl,-install_name,/usr/lib/liba.dylib 2> $t/log11
 grep -q "Shared cache eligible dylibs cannot use '-flat_namespace'" $t/log11
 
-# The atoms are in a table at the start of __LINKEDIT after the
+# The mergeable record is at the start of __LINKEDIT after the
 # function starts and data in code, and its load command follows
 # theirs.
 $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable
 otool -l $t/a.dylib > $t/cmds
-grep -A3 LC_ATOM_INFO $t/cmds > $t/atom-info
+grep -A3 LC_ATOM_INFO $t/cmds > $t/record-cmd
 grep -B5 LC_ATOM_INFO $t/cmds | grep -q LC_DATA_IN_CODE
-dataoff=$(grep dataoff $t/atom-info | awk '{print $2}')
+dataoff=$(grep dataoff $t/record-cmd | awk '{print $2}')
 dice=$(grep -A3 LC_DATA_IN_CODE $t/cmds | grep dataoff | awk '{print $2}')
 dicesize=$(grep -A3 LC_DATA_IN_CODE $t/cmds | grep datasize | awk '{print $2}')
 [ $dataoff = $((dice + dicesize)) ]

@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# -trace_symbol_layout reports on stdout where each symbol of an atom
-# goes: where -move_to_rw_segment, -move_to_ro_segment and
-# -dirty_data_list put the atoms they move, and the renames that then
-# apply to its section; -trace_symbol_layout_file writes the report into
-# a file instead.
+# -trace_symbol_layout reports on stdout where each symbol of a
+# subsection goes: where -move_to_rw_segment, -move_to_ro_segment and
+# -dirty_data_list put the subsections they move, and the renames that
+# then apply to its section; -trace_symbol_layout_file writes the report
+# into a file instead.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int data1 = 1;
 int data2 = 2;
@@ -43,9 +43,9 @@ not grep -q symbol $t/log3
 
 # The other symbols get the default mapping, or ld-prime's own moves
 # and the renames - both as one step, -rename_segment's if it applied.
-# The atoms ld-prime makes itself, such as the thread-local variables'
-# descriptors, come last, and the symbols at one place last-defined
-# first. A -r link reports nothing.
+# The subsections ld-prime makes itself, such as the thread-local
+# variables' descriptors, come last, and the symbols at one place
+# last-defined first. A -r link reports nothing.
 cat <<EOF | $CC -o $t/b.o -c -xc -
 int gdata = 1;
 int *const cptr = &gdata;

@@ -23,7 +23,7 @@ int main(void) { Foo *f = [Foo new]; f->x = 3; return f->x - 3 + !@protocol(P); 
 EOF
 
 # Nor does it note a symbol in a section whose contents it takes apart
-# into atoms of its own: literals - by the section type, as for C
+# into subsections of its own: literals - by the section type, as for C
 # strings in any section - and UTF-16 strings in __TEXT,__ustring,
 # terminator pointers, and the Objective-C lists and references, such
 # as the weak private externals clang names a protocol's entries in

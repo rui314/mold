@@ -2,15 +2,16 @@
 source "$(dirname "$0")"/common.inc
 
 # ld64 -r writes each object's local symbols in the order of its
-# sections, and on arm64 names some atoms itself with one counter
+# sections, and on arm64 names some subsections itself with one counter
 # running in that order: each cstring literal is LC<n> with N_PEXT
 # set ("was a private external" in nm -m), and the records of
 # __cfstring, __objc_selrefs and __objc_classrefs are l<nnn> with
 # N_PEXT. Their original labels vanish, as do those of the entries of
 # the __objc_*list sections, which get no symbol at all (ld-prime).
-# x86-64 relocations refer to those atoms section-relatively instead,
-# and only the literals of __TEXT,__cstring get names (LC<n>). Other
-# assembler labels survive only when they name an atom of their own.
+# x86-64 relocations refer to those literals and records
+# section-relatively instead, and only the literals of __TEXT,__cstring
+# get names (LC<n>). Other assembler labels survive only when they name
+# a subsection of their own.
 cat <<EOF2 | $CC -O2 -fobjc-arc -fno-asynchronous-unwind-tables -fno-exceptions -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject @end
@@ -53,7 +54,7 @@ else
 fi
 # The ltmp aliases go.
 not grep -q ltmp $t/locals
-# The relocations that referred to the literals now name the atoms.
+# The relocations that referred to the literals now name them (LC<n>).
 otool -rv $t/r.o > $t/relocs
 grep -q ' LC[0-9]' $t/relocs
 not grep -q 'l_.str\|l_OBJC_METH_VAR_NAME' $t/relocs

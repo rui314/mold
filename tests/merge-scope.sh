@@ -1,9 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Both objects use subsections: without them a section is one atom
-# whose first symbol ld64 never treats as weak, and two such _foo
-# definitions are a duplicate-symbol error (ld-prime rejects them).
+# Both objects use subsections: without them a section is one
+# subsection whose first symbol ld64 never treats as weak, and two such
+# _foo definitions are a duplicate-symbol error (ld-prime rejects them).
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl _foo
 .weak_def_can_be_hidden _foo

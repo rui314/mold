@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# How ld-prime's -map names atoms. A linker-private label (l...) names
-# its atom, but not in a section ld-prime reads as records (selector
-# references here), whose atoms are "anon" like any no symbol names; a
-# fixed-size literal no symbol names is known by its size, and every C
-# string by its contents, named or not.
+# How ld-prime's -map names subsections. A linker-private label (l...)
+# names its subsection, but not in a section ld-prime reads as records
+# (selector references here), whose records are "anon" like any no
+# symbol names; a fixed-size literal no symbol names is known by its
+# size, and every C string by its contents, named or not.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -30,9 +30,10 @@ l_selref: .quad l_meth
 EOF
 
 # Without .subsections_via_symbols, symbols still split sections into
-# atoms, and of symbols at one place the first in the symbol table has
-# the size while the others alias it with none: on arm64, that is the
-# ltmpN label the assembler puts at the start of each section.
+# subsections, and of symbols at one place the first in the symbol
+# table has the size while the others alias it with none: on arm64,
+# that is the ltmpN label the assembler puts at the start of each
+# section.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .data
 .p2align 3
@@ -43,7 +44,7 @@ _second:
 EOF
 
 # An alternate entry point, such as Swift's type metadata inside its
-# full metadata, aliases a place inside another symbol's atom.
+# full metadata, aliases a place inside another symbol's subsection.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .data
 .p2align 3
@@ -56,8 +57,9 @@ EOF
 
 # ld64 names no literal after a linker-private label: a fixed-size
 # literal the compiler labels lCPI0_0 is known by its size all the same.
-# With subsections, an arm64 section's ltmpN label names the atom at the
-# section's start only if nothing else does (here the first of __const).
+# With subsections, an arm64 section's ltmpN label names the subsection
+# at the section's start only if nothing else does (here the first of
+# __const).
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
 .section __TEXT,__const
 .p2align 3
@@ -112,7 +114,8 @@ grep -Fq $'\t[  0] __dyld_private' $t/map2
 [ "$(grep -Fc $'\t[  0] anon' $t/map2)" = 2 ]
 
 # A static executable's -stack_size stack shows as ld-prime models it:
-# a zero-fill __UNIXSTACK,__stack section holding an l__unixstack atom.
+# a zero-fill __UNIXSTACK,__stack section holding an l__unixstack
+# subsection.
 $mold -arch $ARCH -static -stack_size 0x8000 -e _main $t/a.o -o $t/exe3 -map $t/map3
 grep -Eq $'^0x[0-9A-F]+\t0x00008000\t__UNIXSTACK\t__stack$' $t/map3
 grep -Fq $'\t0x00008000\t[  0] l__unixstack' $t/map3

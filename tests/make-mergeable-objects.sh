@@ -1,13 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A mergeable dylib records the atoms of its objects (LC_ATOM_INFO) as
-# ld-prime records them, and an image that merges it, linked by the
-# linker or by ld-prime, gets them as it would the objects: code, data
-# and its zero fill, tentative definitions, thread-local variables,
-# initializers, weak definitions, literals, compact unwind records and
-# absolute symbols. mold, which applies optimization hints as ld64
-# did, is compared without them.
+# A mergeable dylib records the subsections of its objects
+# (LC_ATOM_INFO) as ld-prime records them, and an image that merges it,
+# linked by the linker or by ld-prime, gets them as it would the
+# objects: code, data and its zero fill, tentative definitions,
+# thread-local variables, initializers, weak definitions, literals,
+# compact unwind records and absolute symbols. mold, which applies
+# optimization hints as ld64 did, is compared without them.
 cat <<EOF | $CC -o $t/a.o -c -O1 -xc -
 #include <stdio.h>
 asm(".globl _abs_val\n_abs_val = 0x1234");

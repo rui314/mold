@@ -36,10 +36,11 @@ int main() {
 EOF
 
 # _fn2 sits 4 bytes into a 16-aligned section; ld64 keeps it at
-# 4 mod 16 in the output (an atom keeps its offset modulo its section's
-# alignment), so the two functions stay 4 bytes apart - not 16, which
-# rounding each atom up to the section alignment would give. (This is
-# sold's test, whose expectation of 16 came from that rounding.)
+# 4 mod 16 in the output (a subsection keeps its offset modulo its
+# section's alignment), so the two functions stay 4 bytes apart - not
+# 16, which rounding each subsection up to the section alignment would
+# give. (This is sold's test, whose expectation of 16 came from that
+# rounding.)
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o 2> $t/log
 # b.o's .align 16 asks for a 64KB-aligned __text, beyond the page;
 # ld64 reduces it with a warning, and dyld_info rejects an unreduced one.

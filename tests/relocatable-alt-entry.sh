@@ -31,8 +31,8 @@ _use_weak:
 .weak_reference _maybe
 $(if [ $ARCH = arm64 ]; then echo 'adrp x0, _maybe@GOTPAGE'; echo 'ldr x0, [x0, _maybe@GOTPAGEOFF]'; echo 'ret'; else echo 'movq _maybe@GOTPCREL(%rip), %rax'; echo 'ret'; fi)
 EOF
-# Without subsections a section is one atom ld64 keeps whole (below);
-# the flags are kept as such only with subsections.
+# Without subsections a section is one subsection ld64 keeps whole
+# (below); the flags are kept as such only with subsections.
 $CC -o $t/whole.o -c $t/a.s
 echo .subsections_via_symbols >> $t/a.s
 $CC -o $t/a.o -c $t/a.s
@@ -66,7 +66,7 @@ $t/exe | grep '^3 4 4 9$'
 
 # The whole-section object: ld-prime marks every symbol no-dead-strip,
 # drops the alt-entry marker (meaningless without subsections) and
-# keeps the arm64 assembler's ltmp labels, which name the atoms.
+# keeps the arm64 assembler's ltmp labels, which name the subsections.
 $mold -r -arch $ARCH -o $t/whole_r.o $t/whole.o
 nm -m $t/whole_r.o > $t/nm_whole
 not grep -q 'alt entry' $t/nm_whole

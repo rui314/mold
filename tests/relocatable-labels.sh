@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime -r keeps every label an object defines, linker-private
 # (l...) ones too: aliases of a global or of each other, labels of
-# their own atoms and one on an empty section, those at one place
+# their own subsections and one on an empty section, those at one place
 # listed by descending name. The ltmpN labels the arm64 assembler puts
 # at each section's start go wherever another symbol names the place,
 # and stay where none does.

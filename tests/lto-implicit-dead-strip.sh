@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # A final image of code LTO compiled is dead-stripped, -dead_strip or
-# not: ld-prime walks the atoms as dead stripping does to find what
-# libLTO must preserve, every bitcode file's code a root, and then
+# not: ld-prime walks the references as dead stripping does to find
+# what libLTO must preserve, every bitcode file's code a root, and then
 # strips what the walk didn't reach. So native code nothing live calls
 # is gone, and with it its references - to an undefined symbol, which
 # is then no error, or to a hidden bitcode function, which LTO need not

@@ -55,8 +55,8 @@ _pad2: .quad 2
 EOF2
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/a8.o $t/c.o
 $t/exe3 | grep '^copy-C-whole-section 1 2 0$'
-# That whole-section atom is not weak in ld64's eyes: the symbol at
-# its start loses its weak flag, so the image exports a plain _w and
+# That whole section is not weak in ld64's eyes: the symbol at its
+# start loses its weak flag, so the image exports a plain _w and
 # claims neither WEAK_DEFINES nor BINDS_TO_WEAK.
 dyld_info -exports $t/exe3 > $t/exports3
 grep ' _w$' $t/exports3
@@ -65,11 +65,12 @@ grep '(__TEXT,__const) external _w$' $t/nm3
 otool -h $t/exe3 > $t/hdr3
 grep ' 0x00200085$' $t/hdr3
 
-# An atom keeps its address modulo its section's alignment, and that is
-# the alignment the copies compare by: a copy at 8 mod 16 of a 16-aligned
-# section loses to one at 0 mod 16. Before alignment come the kinds of
-# copy: one that can't be hidden beats a .weak_def_can_be_hidden one,
-# and a global beats a private extern, however aligned.
+# A subsection keeps its address modulo its section's alignment, and
+# that is the alignment the copies compare by: a copy at 8 mod 16 of a
+# 16-aligned section loses to one at 0 mod 16. Before alignment come
+# the kinds of copy: one that can't be hidden beats a
+# .weak_def_can_be_hidden one, and a global beats a private extern,
+# however aligned.
 copy() {
   cat <<EOF2 | $CC -o $t/$1.o -c -xassembler -
 .data

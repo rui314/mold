@@ -50,8 +50,8 @@ grep -q "$(entry _main 0x00000000)" $t/unwind
 grep -q "$(entry _g 0x02001000)" $t/unwind
 grep -q "$(entry _h 0x02002000)" $t/unwind
 
-# Reading an object, ld-prime warns of its atoms aligned less than the
-# pointers they hold before it warns of its unwind info.
+# Reading an object, ld-prime warns of its subsections aligned less
+# than the pointers they hold before it warns of its unwind info.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .text
 .globl _main

@@ -30,8 +30,8 @@ not grep -q 'initial-undef' $t/log
 
 # ld-prime walks from each root in turn, the -u symbols and then the
 # entry point first, and prints a chain each time a reference reaches a
-# matching atom, and a reason each time a root is one; an initializer
-# pointer is a mod-init-ptr.
+# matching subsection, and a reason each time a root is one; an
+# initializer pointer is a mod-init-ptr.
 cat <<EOF | $CC -o $t/b.o -c -xc -
 int leaf(void) { return 1; }
 int middle(void) { return leaf() + 1; }
@@ -94,10 +94,10 @@ _leaf from b.o
 EOF
 diff $t/log7.expected $t/log7
 
-# In an object without subsections a section is one atom, named by the
-# symbol at its start, and every other symbol in it an atom that refers
-# to that one (an arm64 ltmpN label as "none"). An executable's header
-# is a root of its own.
+# In an object without subsections a section is one subsection, named
+# by the symbol at its start, and every other symbol in it one of its
+# own that refers to that one (an arm64 ltmpN label as "none"). An
+# executable's header is a root of its own.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .text
 .globl _main

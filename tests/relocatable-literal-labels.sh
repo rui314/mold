@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A literal record a symbol labels stays an atom of its own, as in
+# A literal record a symbol labels stays a subsection of its own, as in
 # ld-prime: it merges with no identical record, labeled or not, and a
 # -r output keeps its label, a plain local, where it names the other
 # records LC<n> or l<nnn>. A linker-private (l) or temporary (L)

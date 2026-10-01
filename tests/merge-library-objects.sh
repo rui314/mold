@@ -1,9 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A mergeable dylib carries the atoms of the objects it was linked
-# from (LC_ATOM_INFO), and an image that merges it gets them as it
-# would the objects: code, data and its zero fill, tentative
+# A mergeable dylib carries the subsections of the objects it was
+# linked from (LC_ATOM_INFO), and an image that merges it gets them as
+# it would the objects: code, data and its zero fill, tentative
 # definitions, thread-local variables, initializers, weak definitions,
 # literals and the compact unwind records, all at the place in the
 # layout the objects would have. Their optimization hints aren't among

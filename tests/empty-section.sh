@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# An input section with no bytes that defines no symbol naming an atom
-# makes no output section and takes no part in ordering, in a final
-# link and in -r (ld-prime). In an object with subsections the arm64
-# assembler's ltmpN labels name no atom, so they don't keep one.
+# An input section with no bytes that defines no symbol naming a
+# subsection makes no output section and takes no part in ordering, in a
+# final link and in -r (ld-prime). In an object with subsections the
+# arm64 assembler's ltmpN labels name no subsection, so they don't keep
+# one.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA,__zero_one
 .section __DATA,__zero_two

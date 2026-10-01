@@ -2,11 +2,12 @@
 source "$(dirname "$0")"/common.inc
 
 # ld-prime's -map lists the symbols it defines once something refers
-# to them, as atoms of its own of no size: ___dso_handle (C++ static
-# destructors pass it to __cxa_atexit), a dylib's __mh_dylib_header and
-# section boundaries, but no segment's. A section -sectcreate makes is
-# an atom "l<sect-create>" and the section's name, one only a boundary
-# symbol makes is one named by the section alone.
+# to them, as subsections of its own of no size: ___dso_handle (C++
+# static destructors pass it to __cxa_atexit), a dylib's
+# __mh_dylib_header and section boundaries, but no segment's. A section
+# -sectcreate makes is a subsection "l<sect-create>" and the section's
+# name, one only a boundary symbol makes is one named by the section
+# alone.
 cat <<EOF | $CXX -o $t/a.o -c -xc++ -
 struct A { ~A(); };
 A::~A() {}

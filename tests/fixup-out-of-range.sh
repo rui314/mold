@@ -5,7 +5,7 @@ source "$(dirname "$0")"/common.inc
 # not a wrapped-around displacement: an arm64 ADRP reaches 4 GiB of
 # pages either way and a B/BL 128 MiB, an x86-64 rip-relative field
 # 2 GiB. ld-prime names the fixup's kind after what it makes of the
-# instructions, the atom and offset of the field, and where the
+# instructions, the subsection and offset of the field, and where the
 # reference goes from and to, naming the target.
 fixup() {
   cat <<EOF | $CC -o $t/$1.o -c -xassembler -
@@ -116,7 +116,7 @@ not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" -dyli
   -segaddr __DATA_CONST 0x200000000 -segaddr __DATA 0x210000000 2> $t/got.log
 grep -Eq "fixup error \(kind=$kind\) at '_f'(\+0x3)? from got.o, .* to 0x200000000 \(''\)" $t/got.log
 
-# So is a stub's, which ld-prime reports as an atom of its own
+# So is a stub's, which ld-prime reports as a subsection of its own
 # stubs-got-file, the first stub's only.
 cat <<EOF | $CC -o $t/ext2.o -c -xassembler -
 .text

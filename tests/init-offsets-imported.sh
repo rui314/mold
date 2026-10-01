@@ -4,10 +4,10 @@ source "$(dirname "$0")"/common.inc
 # An initializer that dyld binds - a library's function, or one left
 # to dynamic lookup - has no offset in the image, so __init_offsets
 # can't hold it: ld-prime fails the link as it writes the offsets, with
-# a fixup error of the first such in its "inits-file", whose atoms name
-# the k-th initializer's offset anon-(2k+1), and prints the layout.
-# __mod_init_func's absolute pointers (-no_fixup_chains) bind such an
-# initializer.
+# a fixup error of the first such in its "inits-file", where the k-th
+# initializer's offset is subsection anon-(2k+1), and prints the
+# layout. __mod_init_func's absolute pointers (-no_fixup_chains) bind
+# such an initializer.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA,__mod_init_func,mod_init_funcs
 .p2align 3

@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Under -dead_strip, an atom of an S_ATTR_LIVE_SUPPORT section lives
-# only if it references a live atom, and then keeps what it references.
-# ld-prime checks them once, in input order, after what the roots reach
-# is marked: _lvE, whose only target _lvF is made live by that check
-# after _lvE's turn, stays dead, while _lvG, checked after _lvF, lives.
+# Under -dead_strip, a subsection of an S_ATTR_LIVE_SUPPORT section
+# lives only if it references a live subsection, and then keeps what it
+# references. ld-prime checks them once, in input order, after what the
+# roots reach is marked: _lvE, whose only target _lvF is made live by
+# that check after _lvE's turn, stays dead, while _lvG, checked after
+# _lvF, lives.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main

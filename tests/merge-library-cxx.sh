@@ -4,8 +4,8 @@ source "$(dirname "$0")"/common.inc
 # Merged C++ code keeps its exceptions (the LSDA, the personality and
 # the unwind records), its vtables and type information, and its weak
 # definitions coalesce with the image's. A weak definition the
-# mergeable dylib hid is a plain one in its atoms, which ld-prime
-# records so.
+# mergeable dylib hid is a plain one in its mergeable record, which
+# ld-prime records so.
 cat <<EOF | $CXX -o $t/a.o -c -O1 -xc++ -
 #include <stdexcept>
 #include <string>

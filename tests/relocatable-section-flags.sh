@@ -35,9 +35,9 @@ $CC --ld-path=$mold -o $t/exe $t/r.o -Wl,-dead_strip
 otool -l $t/exe > $t/lc
 grep -q 'sectname __keep' $t/lc
 
-# The first member decides. An empty one counts if a symbol names an
-# atom there - a label, or an arm64 assembler's ltmpN in an object
-# without subsections - and ld-prime ignores it otherwise.
+# The first member decides. An empty one counts if a symbol names a
+# subsection there - a label, or an arm64 assembler's ltmpN in an
+# object without subsections - and ld-prime ignores it otherwise.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .section __DATA,__keep,regular
 .quad 5

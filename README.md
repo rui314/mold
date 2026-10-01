@@ -29,7 +29,7 @@ Build with `cargo build --release`. The binary is `target/release/mold`;
 - Classic dyld info and chained fixups (the default for deployment
   targets of macOS 13+), ad-hoc code signing, export tries, and
   content-hash UUIDs
-- Subsections-via-symbols atoms, `-dead_strip`, identical code folding
+- Subsections via symbols, `-dead_strip`, identical code folding
   (on by default, like ld64's deduplication), literal merging
 - `__unwind_info` synthesis from compact unwind, `__eh_frame`
   re-synthesis for DWARF-only unwind, range-extension thunks

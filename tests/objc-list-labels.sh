@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime names no entry of __objc_classlist and the other class and
 # category lists, nor of __objc_clsrolist: of the symbols naming an
-# entry it takes one for the name of its atom, which is lost - an
+# entry it takes one for the name of its subsection, which is lost - an
 # external (global or private external) one if any, else the greatest
 # name - and keeps the others as aliases, but for the arm64
 # assembler's ltmpN labels. So clang's l_OBJC_LABEL_CLASS_$ alone

@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A method list rewritten in the relative form is an atom of ld-prime's
-# own in __TEXT,__objc_methlist: the input list's symbol names it as a
-# plain local, not a private external as Swift's protocol method lists
-# are, and no debug-map entry notes it. (An x86-64 executable keeps its
-# lists absolute, a dylib doesn't.)
+# A method list rewritten in the relative form is a subsection of
+# ld-prime's own in __TEXT,__objc_methlist: the input list's symbol
+# names it as a plain local, not a private external as Swift's protocol
+# method lists are, and no debug-map entry notes it. (An x86-64
+# executable keeps its lists absolute, a dylib doesn't.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __TEXT,__objc_methname,cstring_literals
 Lsel: .asciz "foo"

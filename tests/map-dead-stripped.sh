@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Under -dead_strip, ld-prime's -map lists every atom of the input files
-# that the output doesn't have, whatever took it out, by file and in
-# the order they were in it. A tentative definition (a common symbol)
-# is an atom of its file's, of the size it gives, listed after the
+# Under -dead_strip, ld-prime's -map lists every subsection of the input
+# files that the output doesn't have, whatever took it out, by file and
+# in the order they were in it. A tentative definition (a common symbol)
+# is a subsection of its file's, of the size it gives, listed after the
 # file's others: all are dead but the one whose symbol the output
 # defines (here b.o's larger _aa), and a real definition (c.o's _zz)
 # takes the place of all.
@@ -34,9 +34,10 @@ _zz: .long 7
 .subsections_via_symbols
 EOF
 
-# Coalescing leaves atoms out too: a C string equal to another file's,
-# a weak definition another file's won. ld-prime makes a C string an
-# atom per label at its start, merging all but one into that one.
+# Coalescing leaves subsections out too: a C string equal to another
+# file's, a weak definition another file's won. ld-prime makes a C
+# string a subsection per label at its start, merging all but one into
+# that one.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .cstring
 l_.a:

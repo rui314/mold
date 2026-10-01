@@ -6,11 +6,11 @@ source "$(dirname "$0")"/common.inc
 # section-relative relocation - ld-prime names the symbol there: of
 # several at one place, the first by non-weak before weak, then
 # global, private external and local, each by descending name, an
-# arm64 ltmpN label last. Past the place, into the atom's bytes, it
-# names the first too, plus the offset, as the names are aliases of
-# one atom - except in an object without subsections away from a
-# section's start, where each name is an atom of its own, all empty
-# but the last, which holds the bytes and is named.
+# arm64 ltmpN label last. Past the place, into the subsection's bytes,
+# it names the first too, plus the offset, as the names are aliases of
+# one subsection - except in an object without subsections away from a
+# section's start, where each name is a subsection of its own, all
+# empty but the last, which holds the bytes and is named.
 for subs in '' .subsections_via_symbols; do
   if [ $ARCH = arm64 ]; then
     cat <<EOF | $CC -o $t/a.o -c -xassembler -

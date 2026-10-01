@@ -2,9 +2,10 @@
 source "$(dirname "$0")"/common.inc
 
 # __TEXT,__ustring holds the UTF-16 strings of CFString constants that
-# aren't ASCII, and C's u"" literals. ld-prime cuts it at its symbols
-# and merges each atom with identical ones, whatever labels it; a
-# CFString of each object that spells the same string then merges too.
+# aren't ASCII, and C's u"" literals. ld-prime cuts it into subsections
+# at its symbols and merges each with identical ones, whatever labels
+# it; a CFString of each object that spells the same string then merges
+# too.
 for n in 1 2; do
   cat <<EOF | $CC -o $t/a$n.o -c -xc -
 #include <CoreFoundation/CoreFoundation.h>
@@ -37,7 +38,7 @@ $mold -r -arch $ARCH -o $t/r.o $t/a1.o $t/a2.o
 [ "$(size $t/r.o __ustring)" = 0x0000000000000030 ]
 [ "$(size $t/r.o __cfstring)" = 0x0000000000000020 ]
 
-# So does an atom a symbol other than an l-label names, or one of
+# So does a subsection a symbol other than an l-label names, or one of
 # several strings.
 for n in 1 2; do
   cat <<EOF | $CC -o $t/b$n.o -c -xassembler -

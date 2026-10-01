@@ -4,8 +4,8 @@ source "$(dirname "$0")"/common.inc
 # ld-prime splits a section of fixed-size records - literals, pointers
 # to initializers and terminators, thread-local variable descriptors,
 # CFString constants, Objective-C lists and __LD,__compact_unwind - into
-# an atom per record, and rejects the object if the section's size is
-# no multiple of the record's. It reads every object so, an archive
+# a subsection per record, and rejects the object if the section's size
+# is no multiple of the record's. It reads every object so, an archive
 # member the link doesn't use too, and names only an object's first
 # such section. (A 9-byte __mod_init_func used to crash an arm64 link.)
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -

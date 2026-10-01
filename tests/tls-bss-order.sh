@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime lays out a final image's __thread_bss by atom size, smallest
-# first and in input order among equals, whatever the command line or
-# -order_file says; -r keeps the input order. An atom's size runs to
-# the next atom of its object, padding included, so b.o's c and a.o's
-# y count as 2 and 4 bytes, and the section comes to 0x18 bytes.
+# ld-prime lays out a final image's __thread_bss by subsection size,
+# smallest first and in input order among equals, whatever the command
+# line or -order_file says; -r keeps the input order. A subsection's
+# size runs to the next subsection of its object, padding included, so
+# b.o's c and a.o's y count as 2 and 4 bytes, and the section comes to
+# 0x18 bytes.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 __thread int y;

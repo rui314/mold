@@ -25,11 +25,11 @@ grep -q '\[no dead strip\] init_ptr$' $t/nm
 grep -q '\[no dead strip\] term_ptr$' $t/nm
 not grep -q 'dead strip\] dd$' $t/nm
 
-# Only the name of each list entry's atom is marked, though: of several
-# labels at one place the one naming the atom (the highest ranked, an
-# external over locals, then by descending name), not its aliases -
-# in an object without subsections too, where every other symbol is
-# marked, the assembler's ltmpN labels included.
+# Only the name of each list entry's subsection is marked, though: of
+# several labels at one place the one naming the subsection (the highest
+# ranked, an external over locals, then by descending name), not its
+# aliases - in an object without subsections too, where every other
+# symbol is marked, the assembler's ltmpN labels included.
 cat > $t/b.s <<EOF
 .text
 .globl _i1

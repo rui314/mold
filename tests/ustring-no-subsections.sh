@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes the atoms of UTF-16 literals by content and names none
-# of them, but in an object without subsections the __ustring section
-# is one atom, whose labels it keeps as those of any other section: in
-# the symbol table and the map of a final image, and in a -r output
-# (which marks the names of such a whole-section atom no-dead-strip).
+# ld-prime splits UTF-16 literals into subsections by content and names
+# none of them, but in an object without subsections the __ustring
+# section is one subsection, whose labels it keeps as those of any other
+# section: in the symbol table and the map of a final image, and in a -r
+# output (which marks the names of such a whole-section subsection
+# no-dead-strip).
 cat <<'EOF' > $t/a.s
 .text
 .globl _main

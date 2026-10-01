@@ -7,8 +7,8 @@ source "$(dirname "$0")"/common.inc
 # output type: a -static executable gets them like any other image, but
 # a branch in the code of another segment - a kext's __TEXT_EXEC among
 # them - gets none and is a fixup error if it is out of reach. Nor does
-# an atom there get the warning about atoms too large for the island
-# clusters.
+# a subsection there get the warning about subsections too large for
+# the island clusters.
 objs() {
   cat <<EOF | $CC -o $t/main.o -c -xassembler -
 .subsections_via_symbols

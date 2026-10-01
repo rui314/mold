@@ -2,7 +2,7 @@
 source "$(dirname "$0")"/common.inc
 
 # ld-prime carries a CIE no FDE points at into __eh_frame like any
-# other atom, in its place among the records and with a GOT slot for
+# other record, in its place among them and with a GOT slot for
 # its personality to point at, in a final image unless -dead_strip
 # drops it, and in a -r output. A CIE whose FDEs all go - here _g's,
 # which has a compact unwind record - goes with them.

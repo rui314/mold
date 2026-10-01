@@ -2,12 +2,12 @@
 . $(dirname $0)/common.inc
 
 # Swift promises no function an address of its own, so ld-prime folds a
-# function whose atom a Swift-mangled symbol ("_$s...") names even if
-# its address is taken (a coroutine's resume function, a value witness)
-# or it is exported. It goes by the name the atom is known by: of the
-# labels at its start, an exported one before a local one, and among
-# locals the greatest. ld-prime deduplicates at -O1 and up or with
-# -deduplicate.
+# function whose subsection a Swift-mangled symbol ("_$s...") names even
+# if its address is taken (a coroutine's resume function, a value
+# witness) or it is exported. It goes by the name the subsection is
+# known by: of the labels at its start, an exported one before a local
+# one, and among locals the greatest. ld-prime deduplicates at -O1 and
+# up or with -deduplicate.
 if [ $ARCH = arm64 ]; then
   body() { echo "mov w0, #$1"; echo ret; }
 else

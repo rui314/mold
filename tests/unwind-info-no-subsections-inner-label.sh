@@ -1,14 +1,14 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Without .subsections_via_symbols, ld-prime cuts a code section into
-# atoms at its labels for __unwind_info, and gives a label inside a
-# function - within the length of the function's compact unwind record
-# or FDE - an entry of encoding 0 like any label without a record of
-# its own. The code past it then can't be unwound: a backtrace from
-# _f's call, which follows the label _inner, stops at it. mold leaves
-# such a label no entry, so the record covers the whole function.
-# ld-prime fails this test.
+# Without .subsections_via_symbols, ld-prime cuts a code section at its
+# labels for __unwind_info, and gives a label inside a function -
+# within the length of the function's compact unwind record or FDE -
+# an entry of encoding 0 like any label without a record of its own.
+# The code past it then can't be unwound: a backtrace from _f's call,
+# which follows the label _inner, stops at it. mold leaves such a label
+# no entry, so the record covers the whole function. ld-prime fails
+# this test.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <dlfcn.h>
 #include <stdio.h>

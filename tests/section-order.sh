@@ -29,9 +29,9 @@ otool -l $t/exe | awk '$1 == "sectname" { s = $2; next }
 grep -q '__TEXT,__text __TEXT,__zcode __TEXT,__zz ' $t/order
 grep -q '__DATA,__objc_data __DATA,__yy __DATA,__data ' $t/order
 
-# A section is placed by the first atom the output keeps: a copy of a
-# string merged into another object's, more aligned one places nothing,
-# nor does the losing copy of a weak definition.
+# A section is placed by the first subsection the output keeps: a copy
+# of a string merged into another object's, more aligned one places
+# nothing, nor does the losing copy of a weak definition.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .section __TEXT,__aaa
 .quad 1

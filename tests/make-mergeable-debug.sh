@@ -2,9 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # A mergeable dylib records the debug notes of the objects it was made
-# of (each with its N_SO and N_OSO), and which atom came from which, so
-# that an image that merges it, linked by either linker, points a
-# debugger at those objects.
+# of (each with its N_SO and N_OSO), and which subsection came from
+# which, so that an image that merges it, linked by either linker,
+# points a debugger at those objects.
 cat <<EOF | $CC -o $t/a.o -c -g -O1 -xc -
 int counter = 5;
 static int hidden;

@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A mergeable dylib's Swift atoms keep their metadata - type
+# A mergeable dylib's Swift subsections keep their metadata - type
 # descriptors with their relative pointers, direct and through GOT
 # slots, conformances, the class metadata (whose class_ro_t records
 # get placeholders for the lists a merging link may add), aliases

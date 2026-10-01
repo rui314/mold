@@ -2,9 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # Clang splits a function's rarely-run part into foo.cold.1 and marks
-# both parts N_COLD_FUNC. ld64 lays cold atoms out after every other
-# atom of their section, in final images and -r outputs alike, so hot
-# code stays dense; we kept them in input order.
+# both parts N_COLD_FUNC. ld64 lays cold subsections out after every
+# other subsection of their section, in final images and -r outputs
+# alike, so hot code stays dense; we kept them in input order.
 cat <<EOF2 | $CXX -O2 -o $t/a.o -c -xc++ -
 struct S { virtual ~S(); virtual int g(); };
 S::~S() {}

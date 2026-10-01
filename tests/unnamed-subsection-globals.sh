@@ -1,8 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes the atoms of UTF-16 literals, selector references
-# and the like by content and names none of them, so an external
+# ld-prime splits UTF-16 literals, selector references and the like
+# into subsections by content and names none of them, so an external
 # symbol that labels one defines nothing: the object's own references
 # reach it, but no output lists it, another object's reference to it
 # is undefined, and another definition of the name is no duplicate.
@@ -90,7 +90,7 @@ nm -m $t/exe3 | grep -q '(__DATA,__data) external _selref'
 not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-u,_ustr 2> $t/log4
 grep -q '_ustr' $t/log4
 
-# ld -r names such atoms itself.
+# ld -r names such subsections itself.
 $CC --ld-path=$mold -r -o $t/d.o $t/a.o
 nm $t/d.o > $t/log5
 not grep -q '_ustr\|_selref' $t/log5

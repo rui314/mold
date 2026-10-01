@@ -1,8 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# -move_to_rw_segment and -move_to_ro_segment move the atoms of the
-# symbols a list file names to another segment, each into the section
+# -move_to_rw_segment and -move_to_ro_segment move the subsections of
+# the symbols a list file names to another segment, each into the section
 # of its name there; -dirty_data_list moves data to __DATA_DIRTY, which
 # follows __DATA. The rw option leaves code (and the strings and
 # literals that go with it) where it is, the ro one data written at run
@@ -109,9 +109,9 @@ nm -m $t/libb.dylib | grep -q '(__FOO,__data) external _ptr$'
 $CC --ld-path=$mold -o $t/exe5 $t/c.o $t/libb.dylib
 [ "$($t/exe5)" = hello ]
 
-# The warnings follow ld-prime's walk over the atoms: file by file the
-# atoms of an object's sections, common symbols and absolute symbols,
-# then those of the thread-local variables' descriptors it makes.
+# The warnings follow ld-prime's walk: file by file an object's
+# subsections, common symbols and absolute symbols, then the
+# thread-local variables' descriptors it makes.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
 .data
 .globl _f1
@@ -132,9 +132,10 @@ $CC --ld-path=$mold -o $t/exe10 $t/e.o $t/f.o -Wl,-move_to_ro_segment,__BAR,$t/o
 sed -n "s/.*cannot move symbol '\([^']*\)'.*/\1/p" $t/log10 | tr '\n' ' ' > $t/order10
 [ "$(cat $t/order10)" = '_f1 _c1 _absf _e1 _tv1 ' ]
 
-# An -alias name stands for its base's atom, which ld-prime makes in its
-# command-line-aliases-file (after the objects' atoms): a list naming
-# either name moves the atom, and the base's own list wins.
+# An -alias name stands for its base's subsection; ld-prime defines the
+# alias in its command-line-aliases-file (after the objects'
+# subsections): a list naming either name moves the subsection, and the
+# base's own list wins.
 cat <<EOF | $CC -o $t/g.o -c -xc -
 int real1 = 1, real2 = 2, real3 = 3;
 int rfunc(void) { return real1 + real2 + real3; }

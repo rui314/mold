@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# LC_FUNCTION_STARTS lists the start of every atom of every section of
-# pure instructions, not only of __text: a subsection with no symbol
-# at its start, each label inside one, an alt entry too, but no label
-# at a section's end and nothing in a data section, stubs included.
+# LC_FUNCTION_STARTS lists the start of every subsection ld-prime cuts
+# a section of pure instructions into, not only __text: a subsection
+# with no symbol at its start, each label inside one, an alt entry too,
+# but no label at a section's end and nothing in a data section, stubs
+# included.
 starts() {
   dyld_info -function_starts $1 | awk '$1 ~ /^0x/ { print tolower($1) }'
 }
@@ -28,8 +29,8 @@ grep -qx $(addr $t/exe ___cxx_global_var_init) $t/starts
 grep -qx $(addr $t/exe _main) $t/starts
 not grep -qx $(sect_addr $t/exe __stubs) $t/starts
 
-# An object without subsections: a section is one atom, its labels
-# inside it.
+# An object without subsections: a section is one subsection, its
+# labels inside it.
 cat <<EOF | $CC -c -o $t/b.o -xassembler -
 .text
   nop

@@ -2,9 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # __unwind_info entries have no length: each covers the code up to the
-# next. So ld-prime gives every atom of an instruction section an entry,
-# and one without unwind information of its own gets encoding 0 ("no
-# unwind info") instead of falling under the function before it.
+# next. So ld-prime gives every subsection of an instruction section an
+# entry, and one without unwind information of its own gets encoding 0
+# ("no unwind info") instead of falling under the function before it.
 echo 'int f(void) { return 1; }' | $CC -o $t/a.o -c -xc -
 printf '.text\n.globl _g\n_g:\n ret\n.subsections_via_symbols\n' | $CC -o $t/b.o -c -xassembler -
 echo 'int f(void); int main() { return f() - 1; }' | $CC -o $t/c.o -c -xc -
@@ -56,8 +56,8 @@ unwind_entries $t/exe2 > $t/entries2
 grep -q "^$(addr $t/exe2 _f) " $t/entries2
 not grep -q "^$(addr $t/exe2 _main) " $t/entries2
 
-# An empty atom gets an entry too: the empty __text of an object of
-# only data without .subsections_via_symbols, which the arm64
+# An empty subsection gets an entry too: the empty __text of an object
+# of only data without .subsections_via_symbols, which the arm64
 # assembler labels (ltmp0), at the end of the code or ahead of the
 # function that shares its address.
 if [ $ARCH = arm64 ]; then

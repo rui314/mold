@@ -3,8 +3,9 @@ source "$(dirname "$0")"/common.inc
 
 # -merge-l, -merge_framework and -merge_library link a mergeable dylib
 # into the image in place of a load command: one -make_mergeable made,
-# which carries its atoms (LC_ATOM_INFO) for the purpose. ld-prime
-# refuses any other dylib, also in an image that would ignore it.
+# which carries its subsections (LC_ATOM_INFO) for the purpose.
+# ld-prime refuses any other dylib, also in an image that would ignore
+# it.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo(void) { return 3; }
 EOF

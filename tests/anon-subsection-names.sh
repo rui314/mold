@@ -1,16 +1,16 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime names an unnamed atom "anon-N" in its diagnostics, for the
-# object's Nth atom: section by section in section header order, by
-# address within one. A label that names no atom is an atom of its
-# own: a second label at a place (numbered before the one with the
-# bytes, which on a literal a private L or l label takes), an alternate
-# entry point, any label past a section's start in an object without
-# subsections - and on arm64 there, the ltmpN label of a literal. The
-# private labels name no literal, which ld-prime merges by content.
-# A __compact_unwind record is an atom; an empty section, an __LLVM one
-# and __eh_frame have none.
+# ld-prime names an unnamed subsection "anon-N" in its diagnostics, for
+# the object's Nth subsection: section by section in section header
+# order, by address within one. A label that names no subsection is a
+# subsection of its own: a second label at a place (numbered before the
+# one with the bytes, which on a literal a private L or l label takes),
+# an alternate entry point, any label past a section's start in an
+# object without subsections - and on arm64 there, the ltmpN label of a
+# literal. The private labels name no literal, which ld-prime merges by
+# content. Each __compact_unwind record is a subsection; an empty
+# section, an __LLVM one and __eh_frame have none.
 cat <<EOF | $CC -o $t/main.o -c -xc -
 int main() { return 0; }
 EOF

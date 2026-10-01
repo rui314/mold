@@ -1,8 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A mergeable dylib's C++ atoms keep their exceptions (the LSDA, with
-# its type information through GOT slots, the personality and the
+# A mergeable dylib's C++ subsections keep their exceptions (the LSDA,
+# with its type information through GOT slots, the personality and the
 # unwind records), vtables and weak definitions, so that the code runs
 # merged by either linker.
 cat <<EOF | $CXX -o $t/a.o -c -O1 -xc++ -

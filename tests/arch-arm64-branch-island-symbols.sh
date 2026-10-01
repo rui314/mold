@@ -3,10 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 [ "$ARCH" = arm64 ] || skip
 
-# 140 MiB of code in 1 MiB atoms, twice: main, far and mid are each
-# beyond the +-128 MiB reach of a bl from the one before, and mid's
-# branch back to far can't reach the island main's bl goes through.
-# (The atoms differ, or they would be folded into one.)
+# 140 MiB of code in 1 MiB subsections, twice: main, far and mid are
+# each beyond the +-128 MiB reach of a bl from the one before, and
+# mid's branch back to far can't reach the island main's bl goes
+# through. (The subsections differ, or they would be folded into one.)
 pad() {
   cat <<EOF | $CC -o $t/$1 -c -xassembler -
 .subsections_via_symbols

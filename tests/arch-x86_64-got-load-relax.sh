@@ -6,7 +6,7 @@ source "$(dirname "$0")"/common.inc
 # A GOT_LOAD (movq sym@GOTPCREL(%rip)) of a symbol defined in the image
 # relaxes: ld-prime rewrites the movq into a leaq of the symbol and
 # takes a leaq as one already, neither keeping a GOT slot, but refuses
-# any other instruction, naming the fixup's kind, the atom and the
+# any other instruction, naming the fixup's kind, the subsection and the
 # object's leaf name. A thread-local's TLV load relaxes the same way.
 # A load of a dylib's symbol keeps its slot, whatever the instruction.
 

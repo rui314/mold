@@ -28,7 +28,7 @@ else
   retq'
 fi
 
-# l_pair is one atom of two slots, the second as unreferenced as
+# l_pair is one subsection of two slots, the second as unreferenced as
 # l_date, its copy.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .text

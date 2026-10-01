@@ -1,9 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A mergeable dylib records which object each atom came from and what
-# its debug notes said, so the merging image's notes (N_SO, N_OSO and
-# the symbols') point a debugger at those objects, as a link of the
+# A mergeable dylib records which object each subsection came from and
+# what its debug notes said, so the merging image's notes (N_SO, N_OSO
+# and the symbols') point a debugger at those objects, as a link of the
 # objects would.
 cat <<EOF | $CC -o $t/a.o -c -g -O1 -xc -
 int counter = 5;

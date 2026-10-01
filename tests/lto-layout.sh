@@ -21,9 +21,10 @@ $t/exe
 nm -n $t/exe | awk '$3 ~ /^_(main|[bn][12]|st)$/ {print $3}' > $t/order
 printf '_main\n_b1\n_n1\n_b2\n_n2\n_st\n_st\n' | diff - $t/order
 
-# The output sections come in the order of their first atoms so laid
-# out: a ThinLTO module's exception tables have no names and stay its
-# object's, after a class's type name credited to the bitcode file.
+# The output sections come in the order of their first subsections so
+# laid out: a ThinLTO module's exception tables have no names and stay
+# its object's, after a class's type name credited to the bitcode
+# file.
 cat <<EOF | $CXX -O2 -flto=thin -c -xc++ - -o $t/c.o
 #include <stdexcept>
 struct Base { virtual ~Base(); };

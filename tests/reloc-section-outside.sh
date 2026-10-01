@@ -4,7 +4,8 @@ source "$(dirname "$0")"/common.inc
 # A non-extern relocation names its target section by ordinal and holds
 # the target's address. ld-prime takes the named section whatever the
 # address: one before its start or beyond its end is its first or last
-# atom's, with a warning, and one just past its end its last atom's.
+# subsection's, with a warning, and one just past its end its last
+# subsection's.
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text

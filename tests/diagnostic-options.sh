@@ -3,10 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 # The options that have ld-prime report on its own workings (its branch
 # islands, order file statistics, the libraries re-exports load, the
-# section each symbol goes to, a link snapshot, the atom graph, the
-# files and symbols it used) leave the output as it is. Those that name
-# a file or a name want one; -debug_snapshot takes a mode after its
-# name, and -max_code_deduplicate_passes a decimal number.
+# section each symbol goes to, a link snapshot, the reference graph,
+# the files and symbols it used) leave the output as it is. Those that
+# name a file or a name want one; -debug_snapshot takes a mode after
+# its name, and -max_code_deduplicate_passes a decimal number.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 sdk=$(xcrun --show-sdk-path)
 link() {

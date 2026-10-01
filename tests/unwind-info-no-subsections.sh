@@ -1,9 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Without .subsections_via_symbols a section is one atom to dead-strip
-# and to order, but ld-prime still cuts it into atoms at its labels for
-# __unwind_info, and each one without a compact unwind record of its
+# Without .subsections_via_symbols a section is one subsection to
+# dead-strip and to order, but ld-prime still cuts it at its labels for
+# __unwind_info, and each piece without a compact unwind record of its
 # own gets an entry of encoding 0 ("no unwind info"), so that it does
 # not fall under the record of the function before it. Here _g lies
 # between the records of _f and _h: unwound by _f's frame rules, its
@@ -95,9 +95,9 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 [ "$($t/exe)" = 'trace f main ' ]
 [ "$($t/exe g)" = 'trace ' ]
 
-# Each label starts an atom, an alternate entry point's too; of two
-# labels at one place the first names an empty atom, as does one at the
-# section's end. A record anywhere in an atom is the atom's, so the
+# Each label starts a piece, an alternate entry point's too; of two
+# labels at one place the first names an empty piece, as does one at
+# the section's end. A record anywhere in a piece is the piece's, so the
 # start of _a, whose record is past it, gets no entry. Encoding 0 is
 # used often enough to be a common encoding.
 if [ $ARCH = arm64 ]; then ret=ret; n=4; else ret=retq; n=1; fi

@@ -48,8 +48,8 @@ nm $t/exe > $t/syms
 not grep -q island $t/syms
 
 # -no_branch_islands makes none at all, even for a branch out of reach,
-# which is then an error. Nor is a code atom too large for ld-prime's
-# island clusters worth a warning.
+# which is then an error. Nor is a code subsection too large for
+# ld-prime's island clusters worth a warning.
 cat <<'EOF' | $CC -o $t/pad2.o -c -xassembler -
 .subsections_via_symbols
 _pad2:

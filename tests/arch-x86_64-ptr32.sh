@@ -46,8 +46,8 @@ grep -qF "fixup error (kind=ptr32) at '_g'+0x8 from a.o, 32-bit pointer oveflow"
 # One where any pointer would be a text relocation ld-prime lists as
 # one. With chained fixups a 32-bit pointer elsewhere then fails the
 # link in place of the text relocations: the last section's (its first
-# atom's last). With classic dyld info the text relocations fail it
-# first, and only without them does a 32-bit pointer, the first.
+# subsection's last). With classic dyld info the text relocations fail
+# it first, and only without them does a 32-bit pointer, the first.
 cat <<EOF2 | $CC -o $t/h.o -c -xassembler -
 .section __TEXT,__const
 .p2align 3

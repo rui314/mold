@@ -5,7 +5,7 @@ source "$(dirname "$0")"/dtrace.inc
 # The DOF is made before dead stripping, of the probe sites of all
 # functions, and is a root that refers to each: -dead_strip keeps every
 # function with a site, and what it calls. -why_live names the DOF's
-# atom after the provider, the linker's "dtrace-file" its file.
+# subsection after the provider, the linker's "dtrace-file" its file.
 cat > $t/p.d <<EOF
 provider stab {
   probe x(int);

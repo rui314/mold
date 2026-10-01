@@ -2,10 +2,10 @@
 source "$(dirname "$0")"/common.inc
 
 # Of the labels of a fixed-size literal, ld-prime's -map names the
-# atom by the one best to name an atom - a global before a local, then
-# the later name - unless that one is linker-private (lCPI0_0), which
-# leaves the literal known by its size; each other label follows the
-# atom's row with no size, the better first.
+# literal by the one best to name a subsection - a global before a
+# local, then the later name - unless that one is linker-private
+# (lCPI0_0), which leaves the literal known by its size; each other
+# label follows the literal's row with no size, the better first.
 cat <<'EOF' | $CC -o $t/a.o -c -xc -
 __asm__(".section __TEXT,__literal8,8byte_literals\n"
         "ka:\nkb:\n.quad 42\n"

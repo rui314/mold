@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Of the labels at an atom's start, ld-prime's -map names the atom
-# after the best - an exported one before a local, the greatest name
-# of equals -, which has the atom's size; the others alias it with
-# none.
+# Of the labels at a subsection's start, ld-prime's -map names the
+# subsection after the best - an exported one before a local, the
+# greatest name of equals -, which has the subsection's size; the
+# others alias it with none.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -22,7 +22,7 @@ EOF
 
 # An arm64 assembler labels an empty __text with an ltmpN label at the
 # address where the next section, a C string here, starts; the string
-# is no less an atom of its own.
+# is no less a subsection of its own.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .cstring
 L_.a: .asciz "after empty text"

@@ -4,8 +4,9 @@ source "$(dirname "$0")"/common.inc
 # A pointer in a segment mapped without write permission that needs a
 # fixup (a rebase or a bind) is a text relocation: the loader would
 # have to make the segment writable to apply it. ld-prime lists every
-# one, output section by section and each atom's from the last to the
-# first, then fails. An unnamed atom is "anon-N", the object's Nth.
+# one, output section by section and each subsection's from the last
+# to the first, then fails. An unnamed subsection is "anon-N", the
+# object's Nth.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _site
@@ -62,7 +63,7 @@ grep -E '^(Illegal|  text-relocation)' $t/log2 > $t/list2
 diff $t/expected $t/list2
 
 # Encoding rebase opcodes (without chained fixups), ld-prime lists
-# each atom's in address order, and the first section's only.
+# each subsection's in address order, and the first section's only.
 cat > $t/expected5 <<EOF
 Illegal text-relocations:
   text-relocation in '_site'+0x8 ($dir/a.o) to '_ext'
@@ -78,7 +79,7 @@ diff $t/expected5 $t/list5
 not $CC --ld-path=$mold -shared -o $t/c.dylib $t/b.o $t/ext.o 2> $t/log3
 grep -qF "  text-relocation in '_bsite' ($dir/b.o) to '_ext'" $t/log3
 
-# A section-relative pointer names the atom it points into.
+# A section-relative pointer names the subsection it points into.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .text
 .globl _d
@@ -93,8 +94,9 @@ EOF
 not $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/d.o 2> $t/log4
 grep -qF "  text-relocation in '_d' ($dir/d.o) to '_d1'" $t/log4
 
-# A literal's linker-private label names no atom (ld64 ignores it), so
-# a pointer to it names the literal as the object's Nth atom.
+# A literal's linker-private label names no subsection (ld64 ignores
+# it), so a pointer to it names the literal as the object's Nth
+# subsection.
 cat <<EOF | $CC -o $t/g.o -c -xassembler -
 .text
 .globl _g
@@ -140,8 +142,9 @@ grep -q 'Found illegal text-relocations' $t/log12
 # ld-prime allows them by default in an x86-64 kext and non-PIE
 # executable, not in an arm64 kext, where it also ignores the option.
 if [ $ARCH = x86_64 ]; then
-  # Atoms count in address order, each C string one (arm64 objects
-  # name a section's first atom by an ltmp symbol instead).
+  # Subsections count in address order, each C string one (arm64
+  # objects name a section's first subsection by an ltmp symbol
+  # instead).
   cat <<EOF | $CC -o $t/f.o -c -xassembler -
 .text
 .p2align 3

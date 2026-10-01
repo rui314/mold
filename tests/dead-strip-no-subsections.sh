@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Without .subsections_via_symbols, ld64 cannot tell where one atom's
-# code ends and the next one's begins, so it keeps every atom that it
-# cuts at the object's symbols, referenced or not, in any section. It
-# still strips an unused literal, which it cuts by content.
+# Without .subsections_via_symbols, ld64 cannot tell where one
+# subsection's code ends and the next one's begins, so it keeps every
+# subsection that it cuts at the object's symbols, referenced or not, in
+# any section. It still strips an unused literal, which it cuts by
+# content.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl _main
 .text
@@ -54,7 +55,7 @@ grep -q ' _b_used$' $t/syms
 not grep -q ' _b_unused$' $t/syms
 not grep -q ' _b_unused_data$' $t/syms
 
-# -why_live names the reason such an atom is a root.
+# -why_live names the reason such a subsection is a root.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip \
   -Wl,-why_live,_unused_text2 2> $t/log
 grep -q '^_unused_text2 from .*/a.o$' $t/log

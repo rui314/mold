@@ -4,7 +4,7 @@ source "$(dirname "$0")"/common.inc
 # arm64 compilers emit compact unwind for every frame, and a DWARF FDE
 # beside it only at -O0 under -fasynchronous-unwind-tables (Swift's closure
 # thunks get them; NetNewsWire's RSCore prelink carries 119 such
-# atoms). A final link needs only the compact records, but ld-prime -r
+# FDEs). A final link needs only the compact records, but ld-prime -r
 # carries every input CIE and FDE through, unnamed, with the FDE fields
 # recomputed as self-relative values and only the personality's GOT
 # reference as a relocation.

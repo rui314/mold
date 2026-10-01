@@ -3,10 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 # A non-extern relocation names its target by section and address. A
 # -r link re-targets one at the symbol at or before that address in its
-# atom - an alt entry too - with the rest as the addend; where names
-# share a place, the first as ld-prime ranks them: non-weak before weak,
-# then external, private external and local, by descending name. A
-# target no symbol precedes stays section-relative, as x86-64 objects
+# subsection - an alt entry too - with the rest as the addend; where
+# names share a place, the first as ld-prime ranks them: non-weak before
+# weak, then external, private external and local, by descending name.
+# A target no symbol precedes stays section-relative, as x86-64 objects
 # refer to a label before a section's first symbol; on arm64 an ltmpN
 # label names that place.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -

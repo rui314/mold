@@ -6,8 +6,8 @@ source "$(dirname "$0")"/common.inc
 # the object at the first one it doesn't take: a type the target
 # doesn't define, pcrel, length or extern bits the type doesn't take, a
 # SUBTRACTOR or ADDEND without its partner, a field that runs out of
-# its atom, a symbol or section index out of range, and on arm64 an
-# instruction the type can't patch, or one that embeds an addend.
+# its subsection, a symbol or section index out of range, and on arm64
+# an instruction the type can't patch, or one that embeds an addend.
 
 # Rewrites relocation record IDX (in table order; an assembler lists a
 # section's from the last to the first) of section SECT in the copy OUT
@@ -99,8 +99,8 @@ patch_reloc $t/a.o $t/a8.o __data 1 length=2
 check $t/a8.o "relocation in '_e2' is not supported: r_address=0x10, r_type="
 
 # __LD,__compact_unwind's relocations are checked the same way, each
-# 32-byte record being an atom. (mold used to index the symbol table
-# with an out-of-range r_symbolnum there.)
+# 32-byte record being a subsection. (mold used to index the symbol
+# table with an out-of-range r_symbolnum there.)
 cat <<EOF | $CC -o $t/u.o -c -xc -
 void f() {}
 EOF

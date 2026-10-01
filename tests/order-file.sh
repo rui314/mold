@@ -56,8 +56,9 @@ EOF
 $CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-order_file,$t/order5
 $t/exe5 | grep '^1$'
 
-# A line names an atom by a symbol that names it in the map: a C string
-# is known by its contents, not by a label of it, which orders nothing.
+# A line names a subsection by a symbol that names it in the map: a C
+# string is known by its contents, not by a label of it, which orders
+# nothing.
 cat <<EOF2 | $CC -o $t/s.o -c -xassembler -
 .globl _main
 .p2align 2

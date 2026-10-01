@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes each initializer or terminator pointer an atom of its
-# own: its diagnostics name the atom (anon-N, the Nth of the object's
-# atoms), a relocation must lie within one, and a -r output lists each
-# atom's relocation in atom order.
+# ld-prime makes each initializer or terminator pointer a subsection of
+# its own: its diagnostics name the pointer's subsection (anon-N, the
+# Nth of the object's subsections), a relocation must lie within one,
+# and a -r output lists the pointers' relocations in their order.
 cat <<EOF | $CC -o $t/main.o -c -xc -
 int main() { return 0; }
 EOF

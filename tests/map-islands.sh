@@ -3,10 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 [ $ARCH = arm64 ] || skip
 
-# ld-prime's map lists the branch islands among the linker's own atoms,
-# as the symbol table names them: after their target. (Its islands go
-# between atoms, so the code between the branch and its target comes
-# in atoms of 2 MiB.)
+# ld-prime's map lists the branch islands among the linker's own
+# subsections, as the symbol table names them: after their target. (Its
+# islands go between subsections, so the code between the branch and
+# its target comes in subsections of 2 MiB.)
 {
   echo '.subsections_via_symbols'
   echo '.globl _main'

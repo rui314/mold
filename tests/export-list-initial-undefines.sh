@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # A name an export list gives without wildcards is an "initial
 # undefine", as a -u name is: it pulls in the archive member defining
-# it, keeps its atom under -dead_strip (a hidden one stays, as a
+# it, keeps its subsection under -dead_strip (a hidden one stays, as a
 # local), and must resolve - ld-prime reports it even under -undefined
 # dynamic_lookup, and so a -u name too. A -r output keeps it as an
 # undefined symbol.

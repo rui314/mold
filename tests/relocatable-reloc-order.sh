@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A -r output lists each section's relocations atom by atom, and each
-# atom's by descending offset - the order compilers write them - with
-# a SUBTRACTOR and its UNSIGNED, or an arm64 ADDEND and the PAGE21 or
-# PAGEOFF12 it goes with, kept together in order (ld-prime).
+# A -r output lists each section's relocations subsection by
+# subsection, and each subsection's by descending offset - the order
+# compilers write them - with a SUBTRACTOR and its UNSIGNED, or an arm64
+# ADDEND and the PAGE21 or PAGEOFF12 it goes with, kept together in
+# order (ld-prime).
 if [ $ARCH = arm64 ]; then
   cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text

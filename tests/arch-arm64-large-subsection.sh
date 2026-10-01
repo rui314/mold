@@ -4,9 +4,10 @@ source "$(dirname "$0")"/common.inc
 [ "$ARCH" = arm64 ] || skip
 
 # ld-prime puts its branch islands in clusters at most 124 MiB of code
-# apart, each island a b to the next, so a code atom of that size is one
-# no branch can cross that way; it warns about each. (Our thunks reach
-# 4 GiB, so we can still link a branch across one; ld-prime fails.)
+# apart, each island a b to the next, so a code subsection of that size
+# is one no branch can cross that way; it warns about each. (Our thunks
+# reach 4 GiB, so we can still link a branch across one; ld-prime
+# fails.)
 cat <<'EOF' | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
