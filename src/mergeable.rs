@@ -263,6 +263,7 @@ pub const FLAG_HAS_CLASSES: u64 = 1 << 31;
 pub(crate) const FLAG_HAS_OBJC_INFO: u64 = 1 << 26;
 pub(crate) const FLAG_SIGNED_CLASS_RO: u64 = 1 << 28;
 pub(crate) const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
+pub(crate) const FLAG_HAS_SWIFT_OR_OBJC: u64 = 1 << 30;
 
 /// A symbol name as the linker keeps one.
 fn symbol_str(name: &'static [u8]) -> &'static str {

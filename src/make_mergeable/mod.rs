@@ -1291,12 +1291,16 @@ fn own_record<E: Target>(ctx: &Context<E>) -> DylibRecord {
 /// ld-prime's AtomFileFlags: whether every input was split into atoms
 /// by its symbols (bit 24: every object has
 /// MH_SUBSECTIONS_VIA_SYMBOLS, and no dylib was read from a Mach-O
-/// file, which never does), and what the Objective-C image info says:
+/// file, which never does); whether an object has Swift metadata (a
+/// __TEXT,__swift* section) or Objective-C classes or categories (bit
+/// 30, image info or not); and what the Objective-C image info says:
 /// that there was one (26), with the Swift versions (bits 0-23) and
-/// category class properties (29); Objective-C or Swift metadata (30)
-/// and classes (31).
+/// category class properties (29), and classes (31).
 fn atom_file_flags<E: Target>(ctx: &Context<E>) -> u64 {
-    use crate::mergeable::{FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_CLASSES, FLAG_HAS_OBJC_INFO};
+    use crate::mergeable::{
+        FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_CLASSES, FLAG_HAS_OBJC_INFO,
+        FLAG_HAS_SWIFT_OR_OBJC,
+    };
     let live_objs = || {
         ctx.objs
             .iter()
@@ -1304,25 +1308,29 @@ fn atom_file_flags<E: Target>(ctx: &Context<E>) -> u64 {
             .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
             .map(|(_, o)| o)
     };
+    let has_section = |names: &[&str]| {
+        live_objs().any(|o| o.sect_hdrs.iter().any(|h| h.size > 0 && names.contains(&h.sectname())))
+    };
     let mut flags = 0u64;
     if live_objs().all(|o| o.subsections_via_symbols) && !ctx.dylibs.iter().any(|d| d.from_binary) {
         flags |= 1 << 24;
+    }
+    let swift = live_objs().any(|o| {
+        o.sect_hdrs.iter().any(|h| h.segname() == "__TEXT" && h.sectname().starts_with("__swift"))
+    });
+    let has_classes = has_section(&["__objc_classlist", "__objc_nlclslist"]);
+    if swift || has_classes || has_section(&["__objc_catlist", "__objc_nlcatlist"]) {
+        flags |= FLAG_HAS_SWIFT_OR_OBJC;
     }
     if !ctx.chunks.contains(&crate::chunks::ChunkId::ObjcImageInfo) {
         return flags;
     }
     let info = ctx.objc_imageinfo.flags as u64;
-    flags |= FLAG_HAS_OBJC_INFO | 1 << 30;
+    flags |= FLAG_HAS_OBJC_INFO;
     flags |= (info >> 8) & 0xff | ((info >> 16) & 0xffff) << 8;
     if info & 0x40 != 0 {
         flags |= FLAG_CATEGORY_CLASS_PROPERTIES;
     }
-    let has_classes = live_objs().any(|o| {
-        o.sect_hdrs.iter().any(|h| {
-            h.sectname() == "__objc_classlist" && h.size > 0
-                || h.sectname() == "__objc_nlclslist" && h.size > 0
-        })
-    });
     if has_classes {
         flags |= FLAG_HAS_CLASSES;
     }
