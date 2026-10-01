@@ -263,8 +263,12 @@ impl StabPlan {
                 }
                 ent.n_value = addr.1;
             }
+            // The N_OSO of a nameless ThinLTO object gets the string
+            // table's first byte, a space, from ld-prime; other nameless
+            // entries the empty string after it.
             ent.n_strx = match stab.shared_strx(strx_of) {
                 Some(strx) => strx,
+                None if stab.name.is_empty() && ent.n_type == N_OSO => 0,
                 None if stab.name.is_empty() => 1,
                 None => block.add_string(stab.name),
             };
