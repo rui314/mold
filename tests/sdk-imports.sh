@@ -27,3 +27,34 @@ EOF
 # A -r link takes the option, and writes no report.
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -sdk_imports $t/r.json
 [ ! -e $t/r.json ]
+
+# -sdk_imports_api_list names the APIs the report lists, of the imports,
+# in a JSON object ld-prime reads as it reads the option: the version,
+# which the report records, and the APIs. An image with none to report
+# has no input in the report.
+echo '{"version": 7, "apis": ["_puts", "_nosuch"]}' > $t/apis.json
+$CC --ld-path=$mold $t/a.o $t/libfoo.dylib -o $t/exe2 \
+  -Wl,-sdk_imports,$t/imports2.json,-sdk_imports_api_list,$t/apis.json
+python3 - $t/imports2.json <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d['apiListVersion'] == 7
+imports = {x['installName']: set(x['symbols']) for x in d['inputs'][0]['sdkImports']}
+assert imports == {'/usr/lib/libSystem.B.dylib': {'_puts'}}
+EOF
+
+echo '{"version": "3", "apis": ["_nosuch"]}' > $t/apis2.json
+$CC --ld-path=$mold $t/a.o $t/libfoo.dylib -o $t/exe3 \
+  -Wl,-sdk_imports,$t/imports3.json,-sdk_imports_api_list,$t/apis2.json
+python3 - $t/imports3.json <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d['apiListVersion'] == 3 and d['inputs'] == []
+EOF
+
+echo '{"apis": ["_puts"]}' > $t/apis3.json
+not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis3.json 2> $t/log
+grep -q "invalid list at $t/apis3.json: Map node doesn't have element for key 'version'" $t/log
+echo '{"version": 1}' > $t/apis4.json
+not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis4.json 2> $t/log
+grep -q "invalid list at $t/apis4.json: API symbol list $t/apis4.json can't be empty" $t/log

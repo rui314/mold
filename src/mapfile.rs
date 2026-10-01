@@ -31,13 +31,20 @@ fn json_string(s: &str) -> String {
 }
 
 /// Xcode's version-1 API import report. Despite its name, sdkImports
-/// includes imports from non-SDK dylibs too, grouped by install name.
+/// includes imports from non-SDK dylibs too, grouped by install name -
+/// those an -sdk_imports_api_list lists only, if there is one, whose
+/// version the report records. An image with none to report has no
+/// input in the report.
 pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
     use crate::macho::{format_version, platform_name};
     let Some(path) = &ctx.args.sdk_imports else { return };
+    let api_list = ctx.args.sdk_imports_api_list.as_ref();
     let mut imports = std::collections::BTreeMap::<&[u8], Vec<&str>>::new();
     for sym in &ctx.symbols.syms {
         if !sym.is_imported() || !sym.is_used() {
+            continue;
+        }
+        if api_list.is_some_and(|list| !list.apis.contains(sym.name().as_bytes())) {
             continue;
         }
         let Some(FileId::Dylib(idx)) = sym.file() else { continue };
@@ -60,16 +67,19 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         .collect();
     // JSON is text: a path or install name outside UTF-8 is spelled lossily.
     let output = json_string(&ctx.args.output.to_string_lossy());
+    let inputs = match libraries.is_empty() {
+        true => String::new(),
+        false => format!("{{\"path\":{output},\"sdkImports\":[{}]}}", libraries.join(",")),
+    };
     let report = format!(
-        "{{\"version\":1,\"output\":{output},\"arch\":{},\"linker\":{},\"apiListVersion\":0,\
-         \"platform\":{},\"deploymentVersion\":{},\"sdkVersion\":{},\
-         \"inputs\":[{{\"path\":{output},\"sdkImports\":[{}]}}]}}\n",
+        "{{\"version\":1,\"output\":{output},\"arch\":{},\"linker\":{},\"apiListVersion\":{},\
+         \"platform\":{},\"deploymentVersion\":{},\"sdkVersion\":{},\"inputs\":[{inputs}]}}\n",
         json_string(E::NAME),
         json_string(concat!("mold-macho-", env!("CARGO_PKG_VERSION"))),
+        api_list.map_or(0, |list| list.version),
         json_string(&platform_name(ctx.args.platform)),
         json_string(&format_version(ctx.args.platform_minos)),
         json_string(&format_version(ctx.args.platform_sdk)),
-        libraries.join(",")
     );
     if std::fs::write(path, report).is_err() {
         crate::warn!("can't open SDK imports file for writing at '{}'", path.display());

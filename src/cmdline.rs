@@ -318,6 +318,9 @@ pub struct Args {
     pub filelists: Vec<PathBuf>,
     /// -sdk_imports: Xcode's JSON report of imported APIs.
     pub sdk_imports: Option<PathBuf>,
+    /// -sdk_imports_api_list: the APIs the report lists, of all the
+    /// imports, and the list's version, which it records.
+    pub sdk_imports_api_list: Option<crate::api_list::ApiList>,
     /// Whether the image is laid out for chained fixups rather than
     /// classic dyld info (its imports bound by no lazy pointer):
     /// -fixup_chains / -no_fixup_chains, resolved for the deployment
@@ -824,6 +827,7 @@ impl Default for Args {
             dependency_info: None,
             filelists: Vec::new(),
             sdk_imports: None,
+            sdk_imports_api_list: None,
             fixup_chains: false,
             no_fixup_chains: false,
             lto_library: None,
@@ -2128,6 +2132,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-map" => args.map = Some(path(next_arg(&mut i, name))),
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
+            // ld-prime reads the list as it reads the option.
+            b"-sdk_imports_api_list" => {
+                let list = crate::api_list::read(&path(next_arg(&mut i, name)));
+                args.sdk_imports_api_list = Some(list);
+            }
             b"-fixup_chains" | b"-no_fixup_chains" => {
                 fixup_chains = Some(name == "-fixup_chains");
                 chain_starts = None;
