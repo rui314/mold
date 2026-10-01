@@ -30,7 +30,7 @@ impl Default for LazyPtrsSection {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Each lazy pointer starts at its stub helper entry.
-    let helper = ctx.stub_helper.hdr.addr + E::STUB_HELPER_HEADER_SIZE;
+    let helper = ctx.stub_helper.hdr.addr + ctx.stub_helper_header_size();
     for i in 0..ctx.stubs.lazy.len() {
         let val = helper + i as u64 * E::STUB_HELPER_ENTRY_SIZE;
         buf[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());

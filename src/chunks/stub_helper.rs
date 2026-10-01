@@ -1,6 +1,7 @@
 //! __TEXT,__stub_helper: with classic dyld info, the code a lazy pointer
 //! initially points at, which enters dyld_stub_binder with the pointer's
-//! lazy-bind record.
+//! lazy-bind record - or, in legacy LINKEDIT, dyld_stub_binding_helper
+//! with the pointer's address.
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
@@ -10,7 +11,8 @@ use crate::target::Target;
 
 /// __TEXT,__stub_helper: with classic dyld info, the code a lazy
 /// pointer initially points at, which enters dyld_stub_binder with the
-/// pointer's lazy-bind record.
+/// pointer's lazy-bind record - or, in legacy LINKEDIT,
+/// dyld_stub_binding_helper with the pointer's address.
 #[derive(Debug)]
 pub struct StubHelperSection {
     pub hdr: ChunkHeader,
@@ -19,6 +21,12 @@ pub struct StubHelperSection {
     /// hands it (a synthesized record in __DATA,__data).
     pub dyld_stub_binder: Option<SymbolId>,
     pub dyld_private_isec: u32,
+    /// In legacy LINKEDIT (Args::legacy_linkedit), what the entries
+    /// jump to instead: crt1.o's dyld_stub_binding_helper, if defined.
+    pub binding_helper: Option<SymbolId>,
+    /// N of 'anon-N', ld-prime's name for the first entry in the error
+    /// for a missing dyld_stub_binding_helper (see sort_stubs_and_got).
+    pub first_entry_anon: usize,
 }
 
 impl StubHelperSection {
@@ -26,7 +34,13 @@ impl StubHelperSection {
         let mut hdr = ChunkHeader::new("__TEXT", "__stub_helper");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         hdr.p2align = 2;
-        Self { hdr, dyld_stub_binder: None, dyld_private_isec: u32::MAX }
+        Self {
+            hdr,
+            dyld_stub_binder: None,
+            dyld_private_isec: u32::MAX,
+            binding_helper: None,
+            first_entry_anon: 0,
+        }
     }
 }
 

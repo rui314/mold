@@ -75,9 +75,15 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, weak: bool, buf: &mut [u8]) {
     let got = &ctx.got;
     let syms = if weak { &got.got_syms[got.weak_start..] } else { &got.got_syms[..got.weak_start] };
     // Slots for imported symbols stay zero; dyld fills them via
-    // the bind stream.
+    // the bind stream. Legacy LINKEDIT's slot of an interposable
+    // export, which dyld binds by name too, starts out with its
+    // address all the same, as ld-prime writes it.
+    let binds = |id: crate::symbol::SymbolId| match ctx.args.legacy_linkedit {
+        true => ctx.symbols[id].is_imported(),
+        false => ctx.binds_as_import(id),
+    };
     for (i, &id) in syms.iter().enumerate() {
-        if !ctx.binds_as_import(id) {
+        if !binds(id) {
             buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
         }
     }

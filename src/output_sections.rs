@@ -2473,9 +2473,9 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     // (A stub bound by weak lookup goes through the GOT; only lazily
     // bound stubs need the helper and lazy pointers.)
     if !ctx.stubs.lazy.is_empty() {
-        ctx.stub_helper.hdr.size = E::STUB_HELPER_HEADER_SIZE
+        ctx.stub_helper.hdr.size = ctx.stub_helper_header_size()
             + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
-            - E::STUB_HELPER_ENTRY_PADDING;
+            - ctx.stub_helper_entry_padding();
         ctx.chunks.push(ChunkId::StubHelper);
         // In the shared region, dyld binds them all at load, and the
         // section joins the read-only data.
@@ -2557,8 +2557,15 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     // one has only the fixups -fixup_chains or -no_fixup_chains asks
     // for (chains, or rebase and weak-bind opcodes, never an export
     // trie), or under -pie local relocations to slide by; a kext has
-    // its relocations, by which kmutil links it.
-    if !ctx.args.without_dyld() {
+    // its relocations, by which kmutil links it. Legacy LINKEDIT has
+    // dyld slide an image that slides by its local relocations; ld-prime
+    // writes an export trie after them, which no load command names.
+    if ctx.args.legacy_linkedit {
+        if !chunks::rebase_info::is_never_slid(ctx) {
+            ctx.chunks.push(ChunkId::LocalRelocs);
+        }
+        ctx.chunks.push(ChunkId::ExportTrie);
+    } else if !ctx.args.without_dyld() {
         ctx.chunks.push(ChunkId::ChainedFixups);
         ctx.chunks.push(ChunkId::RebaseInfo);
         ctx.chunks.push(ChunkId::BindInfo);
@@ -2591,7 +2598,7 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::MergeableRecord);
     }
     ctx.chunks.push(ChunkId::Symtab);
-    if ctx.args.is_kext() {
+    if ctx.args.is_kext() || ctx.args.legacy_linkedit {
         ctx.chunks.push(ChunkId::ExternRelocs);
     }
     // (Sized once the sections are in order, see assign_indices.)

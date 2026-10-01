@@ -24,8 +24,11 @@ void foo();
 void bar() { foo(); }
 EOF
 
+# (An x86-64 dylib for a macOS before 10.6 binds lazily through
+# dylib1.o's dyld_stub_binding_helper, which this one lacks: it binds
+# at load instead.)
 $CC --ld-path=$mold -shared -o $t/b.dylib $t/libfoo.tbd $t/a.o \
-  -Wl,-platform_version,macos,9.0,9.0 2> /dev/null
+  -Wl,-platform_version,macos,9.0,9.0,-bind_at_load 2> /dev/null
 
 otool -L $t/b.dylib | grep /foo
 

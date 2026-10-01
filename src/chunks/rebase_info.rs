@@ -39,7 +39,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// it: the pointers written for absolute relocations to local targets,
 /// then the synthesized ones (each a subsection of its own). Unsorted.
 /// The rebase stream describes them to dyld, a -static -pie image's
-/// local relocations to whatever loads it.
+/// local relocations to whatever loads it, and legacy LINKEDIT's to
+/// dyld.
 pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     let mut locs: Vec<(u64, u64)> = Vec::new();
 
@@ -62,7 +63,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
             // offsets, not addresses, so they are not rebased.
             let imported = ctx
                 .reloc_target_sym(isec.file as usize, rel)
-                .is_some_and(|id| ctx.binds_as_import(id));
+                .is_some_and(|id| ctx.binds_pointer(id));
             let absolute = ctx
                 .reloc_target_sym(isec.file as usize, rel)
                 .is_some_and(|id| ctx.is_absolute_symbol(id));
@@ -89,8 +90,10 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
         synthesized.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
     }
 
-    // GOT slots that hold local addresses.
-    {
+    // GOT slots that hold local addresses. (Legacy LINKEDIT's dyld
+    // slides those the indirect symbol table marks local itself, and
+    // binds the others by name.)
+    if !ctx.args.legacy_linkedit {
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
             if !ctx.binds_as_import(id) && !ctx.is_absolute_symbol(id) {
                 synthesized.push(ctx.got.slot_addr(i));

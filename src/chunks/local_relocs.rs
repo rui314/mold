@@ -1,7 +1,8 @@
 //! The local relocations of a -static -pie image or a kext
 //! (LC_DYSYMTAB's locreloff): one per pointer a loader must slide, the
 //! job dyld's rebase info does for a dynamic image. A kernel slides
-//! itself by them, kmutil a kext. mold's reldyn.rs holds the ELF
+//! itself by them, kmutil a kext, and dyld an image with legacy
+//! LINKEDIT (Args::legacy_linkedit). mold's reldyn.rs holds the ELF
 //! relative relocations they stand in for.
 
 use crate::chunks::{ChunkHeader, segment_and_offset, segment_prot};
@@ -80,7 +81,7 @@ fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
 /// x86-64 the first writable one, as ld64 bases x86-64 relocations, but
 /// for a kext's. A pointer below it (in a segment -segaddr pins lower,
 /// like XNU's __HIB) gets a negative address.
-fn relocation_base<E: Target>(ctx: &Context<E>) -> u64 {
+pub(crate) fn relocation_base<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.segments
         .iter()
         .filter(|seg| seg.name != "__PAGEZERO")

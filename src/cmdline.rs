@@ -586,6 +586,11 @@ pub struct Args {
     /// bound on first use (classic dyld info's __la_symbol_ptr and
     /// __stub_helper): resolved at the end of parsing.
     pub lazy_binding: bool,
+    /// Whether dyld learns what to bind and slide from relocations and
+    /// the indirect symbol table, as before LC_DYLD_INFO came with
+    /// macOS 10.6 (ld64's legacy LINKEDIT): resolved at the end of
+    /// parsing (see resolve_legacy_linkedit).
+    pub legacy_linkedit: bool,
     /// -application_extension: mark a dylib safe for app extensions. Set
     /// $LD_APPLICATION_EXTENSION_SAFE or $LD_NO_ENCRYPT (ld64's iOS
     /// variable, which marks it too) makes that the default, which
@@ -967,6 +972,7 @@ impl Default for Args {
             warn_eh_frame_too_large: true,
             bind_at_load: false,
             lazy_binding: false,
+            legacy_linkedit: false,
             application_extension: false,
             simulator_support: false,
             add_ast_paths: Vec::new(),
@@ -3423,6 +3429,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // unless -bind_at_load.
     args.lazy_binding =
         !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
+    args.legacy_linkedit = resolve_legacy_linkedit(target, &args);
     // ld-prime emits initializers as offsets implicitly with chained
     // fixups: the point of chains is a fixup-free __DATA_CONST, and
     // absolute initializer pointers would drag rebases back in. It
@@ -3950,6 +3957,22 @@ fn is_before_x86_64_macos_10_6(target: &TargetTraits, args: &Args) -> bool {
     target.name == "x86_64"
         && args.platform == PLATFORM_MACOS
         && args.platform_minos < encode_version(10, 6, 0)
+}
+
+/// Whether an image dyld loads goes without LC_DYLD_INFO, the opcode
+/// streams that came with macOS 10.6, as ld-prime links one for x86-64
+/// macOS before that (arm64 macOS has none so old). Its legacy LINKEDIT
+/// gives dyld the same facts as older dyld read them: what each GOT
+/// slot and lazy pointer binds to by the indirect symbol table, what
+/// data pointers bind to by external relocations, and what pointers
+/// slide by local relocations. dyld binds a lazy pointer on the first
+/// call through it, entering dyld_stub_binding_helper, which crt1.o
+/// (dylib1.o, bundle1.o) defines, from the pointer's stub helper entry.
+fn resolve_legacy_linkedit(target: &TargetTraits, args: &Args) -> bool {
+    is_before_x86_64_macos_10_6(target, args)
+        && !args.relocatable
+        && !args.without_dyld()
+        && !args.fixup_chains
 }
 
 /// Whether the image is laid out for chained fixups (see

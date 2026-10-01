@@ -1646,10 +1646,13 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     }
     if !stubs.lazy.is_empty() {
         let helper = ctx.stub_helper.hdr.addr;
-        entries.push(anon(helper, E::STUB_HELPER_HEADER_SIZE));
+        let header = ctx.stub_helper_header_size();
+        if header > 0 {
+            entries.push(anon(helper, header));
+        }
         for i in 0..stubs.lazy.len() as u64 {
-            let addr = helper + E::STUB_HELPER_HEADER_SIZE + i * E::STUB_HELPER_ENTRY_SIZE;
-            entries.push(anon(addr, E::STUB_HELPER_ENTRY_SIZE - E::STUB_HELPER_ENTRY_PADDING));
+            let addr = helper + header + i * E::STUB_HELPER_ENTRY_SIZE;
+            entries.push(anon(addr, E::STUB_HELPER_ENTRY_SIZE - ctx.stub_helper_entry_padding()));
         }
     }
 

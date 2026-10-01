@@ -822,7 +822,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // -fixup_chains or -no_fixup_chains asks for, and has a dynamic
     // symbol table only under -pie, for the local relocations that
     // slide it without them (with them, it lists none). A kext has
-    // only its relocations.
+    // only its relocations, and so, for dyld, has an image with legacy
+    // LINKEDIT (see Args::legacy_linkedit).
     // (Decided by the options, not by the tables' sizes: the layout
     // sizes the header before the tables exist.)
     // (A -preload image under -fixup_chains gets its chains, and their
@@ -838,7 +839,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         if !ctx.args.without_dyld() {
             vec.push(create_linkedit_data_cmd(LC_DYLD_EXPORTS_TRIE, &ctx.export_trie.hdr));
         }
-    } else if !ctx.args.without_dyld() || ctx.args.no_fixup_chains {
+    } else if !ctx.args.legacy_linkedit && (!ctx.args.without_dyld() || ctx.args.no_fixup_chains) {
         vec.push(create_dyld_info_cmd(ctx));
     }
     vec.push(create_symtab_cmd(ctx));

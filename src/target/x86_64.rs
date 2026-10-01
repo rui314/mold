@@ -204,6 +204,31 @@ fn write_branch8(
     loc[0] = val as u8;
 }
 
+/// Writes legacy LINKEDIT's stub helper (see Args::legacy_linkedit),
+/// which has no header: each entry hands dyld_stub_binding_helper the
+/// address of its lazy pointer, which dyld binds by the indirect symbol
+/// table.
+///   lea  lazy_ptr(%rip), %r11
+///   jmp  dyld_stub_binding_helper
+fn write_legacy_stub_helper(ctx: &Context<X86_64>, addr: u64, buf: &mut [u8]) {
+    let helper = ctx.stub_helper.binding_helper.map(|id| ctx.sym_addr(id));
+    if helper.is_none() {
+        let anon = ctx.stub_helper.first_entry_anon;
+        let msg = format_args!("target 'dyld_stub_binding_helper' does not have address");
+        let fileoff = ctx.stub_helper.hdr.fileoff;
+        ctx.synthetic_fixup_error("stubs-got-file", anon, fileoff, 8, "x86_64_call", msg);
+    }
+    for i in 0..ctx.stubs.lazy.len() {
+        let ent = &mut buf[i * 12..];
+        let ent_addr = addr + i as u64 * 12;
+        let ptr = ctx.lazy_ptrs.hdr.addr + i as u64 * 8;
+        ent[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
+        write32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
+        ent[7] = 0xe9;
+        write32(&mut ent[8..], helper.unwrap_or(0).wrapping_sub(ent_addr + 12) as u32);
+    }
+}
+
 impl Target for X86_64 {
     const NAME: &'static str = "x86_64";
     const CPUTYPE: u32 = CPU_TYPE_X86_64;
@@ -310,6 +335,10 @@ impl Target for X86_64 {
     }
 
     fn write_stub_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        if ctx.args.legacy_linkedit {
+            write_legacy_stub_helper(ctx, addr, buf);
+            return;
+        }
         // The header, as ld64 emits it:
         //   lea  __dyld_private(%rip), %r11
         //   push %r11
@@ -729,9 +758,11 @@ impl Target for X86_64 {
                 X86_64_RELOC_UNSIGNED => {
                     ctx.check_text_reloc(isec_id, rels, i, p);
                     let imported =
-                        ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.binds_as_import(id));
+                        ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.binds_pointer(id));
                     if imported {
-                        // The slot is filled by dyld.
+                        // The slot is filled by dyld. It keeps the
+                        // addend, to which a legacy LINKEDIT external
+                        // relocation has dyld add the symbol's address.
                     } else if ctx.reloc_target_is_tls(obj, r) {
                         write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {

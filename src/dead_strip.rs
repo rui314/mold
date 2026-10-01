@@ -217,6 +217,17 @@ fn collect_root_set<E: Target>(
             enqueue(isec as usize);
         }
     }
+
+    // Legacy LINKEDIT's stub helper entries jump to crt1.o's
+    // dyld_stub_binding_helper, which ld-prime keeps wherever imports
+    // bind lazily, whether any stub needs it or not.
+    if ctx.args.legacy_linkedit
+        && ctx.args.lazy_binding
+        && let Some(id) = ctx.symbols.get("dyld_stub_binding_helper")
+        && let Some(isec) = ctx.symbols[id].input_section()
+    {
+        enqueue(isec as usize);
+    }
     roots
 }
 

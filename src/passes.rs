@@ -5665,6 +5665,16 @@ fn create_lazy_helpers<E: Target>(
 /// within each. Runs once the dylib ordinals are final.
 pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     let mut stubs = std::mem::take(&mut ctx.stubs.symbols);
+    // ld-prime names what it makes for each symbol called through a
+    // stub - the stub, the lazy pointer and the helper entry - 'anon-N',
+    // three in a row, in the order the link first calls the symbols. An
+    // error at the first helper entry names the third of its symbol's.
+    if ctx.args.legacy_linkedit && ctx.stub_helper.binding_helper.is_none() {
+        let lazy = |id| !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id);
+        let first = (stubs.iter().enumerate().filter(|&(_, &id)| lazy(id)))
+            .min_by_key(|&(_, &id)| crate::util::name_sort_key(ctx.symbols[id].name()));
+        ctx.stub_helper.first_entry_anon = first.map_or(0, |(i, _)| 3 * i + 2);
+    }
     stubs.par_sort_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));
     for (i, &id) in stubs.iter().enumerate() {
         ctx.sym_aux_mut(id).stub_idx = i as u32;
@@ -7079,7 +7089,9 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 /// dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
 /// synthesized. Once, on the first stub.
 pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    if ctx.stub_helper.dyld_stub_binder.is_some() {
+    // Legacy LINKEDIT's helper enters dyld through crt1.o's
+    // dyld_stub_binding_helper instead (see resolve_stub_binder).
+    if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
         return;
     }
     let Some(id) = bind_stub_binder(ctx).or_else(|| look_up_stub_binder(ctx)) else {
@@ -7170,7 +7182,14 @@ fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol:
 /// exporting it (libSystem's libdyld) counts as used then, and -map
 /// lists it. Nothing refers to the symbol until a stub does.
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.lazy_binding {
+    // Legacy LINKEDIT binds no dyld_stub_binder: its stub helper
+    // entries jump to dyld_stub_binding_helper, which crt1.o, dylib1.o
+    // or bundle1.o defines; no dylib exports it.
+    if ctx.args.legacy_linkedit {
+        let id = ctx.symbols.get("dyld_stub_binding_helper");
+        let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
+        ctx.stub_helper.binding_helper = id;
+    } else if ctx.args.lazy_binding {
         bind_stub_binder(ctx);
     }
 }

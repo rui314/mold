@@ -776,6 +776,20 @@ impl<E: Target> Context<E> {
         }
     }
 
+    /// The size of __stub_helper's header, the code its entries jump to
+    /// that enters dyld_stub_binder. Legacy LINKEDIT's entries go to
+    /// crt1.o's dyld_stub_binding_helper instead, and its helper has no
+    /// header.
+    pub fn stub_helper_header_size(&self) -> u64 {
+        if self.args.legacy_linkedit { 0 } else { E::STUB_HELPER_HEADER_SIZE }
+    }
+
+    /// The padding after each __stub_helper entry but the last. (Legacy
+    /// LINKEDIT's x86-64 entries fill their 12 bytes.)
+    pub fn stub_helper_entry_padding(&self) -> u64 {
+        if self.args.legacy_linkedit { 0 } else { E::STUB_HELPER_ENTRY_PADDING }
+    }
+
     /// The address of the pointer slot stub `i` (for symbol `id`)
     /// jumps through: its lazy pointer, or its GOT slot. A weak
     /// definition of this image always goes through its GOT slot (the
@@ -871,6 +885,15 @@ impl<E: Target> Context<E> {
     /// interposable export.
     pub fn binds_as_import(&self, id: SymbolId) -> bool {
         self.symbols[id].is_imported() || self.is_interposable_export(id)
+    }
+
+    /// True if dyld binds a pointer in data to this symbol rather than
+    /// sliding it: one to an import's (see binds_as_import), or, in
+    /// legacy LINKEDIT (Args::legacy_linkedit), to one of the image's
+    /// coalescable weak definitions, which an external relocation
+    /// binds by name. LC_DYLD_INFO slides that one and weak-binds it.
+    pub fn binds_pointer(&self, id: SymbolId) -> bool {
+        self.binds_as_import(id) || (self.args.legacy_linkedit && self.is_weak_coalesced(id))
     }
 
     /// The library ordinal a bind of this symbol names: its dylib's, or
