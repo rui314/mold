@@ -23,6 +23,12 @@ use crate::util::{display, os_str};
 /// number (Xcode 26.6 ships ld-1267).
 pub const LD64_COMPAT_VERSION: &str = "1267";
 
+/// Prints the -v banner. ld-prime gives its own on stderr; mold's goes
+/// to stdout, as mold's does on ELF.
+pub fn print_version() {
+    println!("mold-macho {} (compatible with Apple ld64)", env!("CARGO_PKG_VERSION"));
+}
+
 /// An input in command line order. Paths keep the bytes they were given
 /// in; library and framework names are OS strings, since they become
 /// path components.
@@ -101,6 +107,8 @@ pub struct Args {
     pub platform_minos: u32,
     pub platform_sdk: u32,
     pub syslibroot: Vec<PathBuf>,
+    /// The -L and -F directories, and once passes::set_search_paths has
+    /// settled them, the library and framework search paths.
     pub library_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
     pub inputs: Vec<InputArg>,
@@ -162,6 +170,8 @@ pub struct Args {
     /// -Z: do not search the standard library and framework
     /// directories.
     pub no_standard_dirs: bool,
+    /// -v: print the version and the search paths.
+    pub verbose: bool,
     /// -x: strip non-global symbols from the output symbol table.
     pub strip_locals: bool,
     /// Fold identical functions (on by default; -no_deduplicate turns
@@ -421,6 +431,7 @@ impl Default for Args {
             relocatable: false,
             flat_namespace: false,
             no_standard_dirs: false,
+            verbose: false,
             strip_locals: false,
             deduplicate: true,
             function_starts: true,
@@ -1110,7 +1121,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
-    let mut version_shown = false;
 
     // Symbol name patterns are collected here and compiled into
     // matchers once the whole command line is known.
@@ -1566,12 +1576,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let version = text(name, arg_or_empty(&mut i, name));
                 args.compatibility_version = parse_dylib_version(name, version, &mut warnings);
             }
-            // ld64 prints its version banner to stdout and continues
-            // with the link.
-            b"-v" => {
-                println!("mold-macho {} (compatible with Apple ld64)", env!("CARGO_PKG_VERSION"));
-                version_shown = true;
-            }
+            b"-v" => args.verbose = true,
             // Xcode's build system runs `ld -version_details` before the
             // first link and refuses to build if the output is not JSON.
             // It decodes two keys: "version", an ld64 version it compares
@@ -1842,7 +1847,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // `ld -v` with nothing to link just reports the version; build
     // systems and configure scripts probe the linker that way. mold
     // does the same for -v/--version with no inputs.
-    if version_shown && args.inputs.is_empty() {
+    if args.verbose && args.inputs.is_empty() {
+        print_version();
         std::process::exit(0);
     }
     if args.inputs.is_empty() {

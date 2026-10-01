@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{self, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
-use crate::cmdline::InputArg;
+use crate::cmdline::{Args, InputArg};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -34,23 +34,44 @@ const STANDARD_LIBRARY_DIRS: &[&str] = &["/usr/lib", "/usr/lib/swift", "/usr/loc
 /// The default framework search path, as ld64's.
 const STANDARD_FRAMEWORK_DIRS: &[&str] = &["/Library/Frameworks", "/System/Library/Frameworks"];
 
-/// Returns the directories to search for `-l` libraries, in order: the
-/// -L directories, then, unless -Z, the default ones (see search_dirs).
-pub(crate) fn library_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
-    search_dirs(ctx, &ctx.args.library_paths, STANDARD_LIBRARY_DIRS)
+/// Settles the library and framework search paths, once the options
+/// are checked, as ld-prime does: the -L (-F) directories, then, unless
+/// -Z, the default ones (see search_dirs). -v prints the banner here,
+/// then the paths on stderr, as ld-prime does.
+pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
+    let args = &mut ctx.args;
+    if args.verbose {
+        crate::cmdline::print_version();
+    }
+    args.library_paths = search_dirs(args, &args.library_paths, STANDARD_LIBRARY_DIRS);
+    args.framework_paths = search_dirs(args, &args.framework_paths, STANDARD_FRAMEWORK_DIRS);
+    if args.verbose {
+        let mut out = Vec::new();
+        for (title, dirs) in
+            [("Library", &args.library_paths), ("Framework", &args.framework_paths)]
+        {
+            out.extend_from_slice(format!("{title} search paths:\n").as_bytes());
+            for dir in dirs {
+                out.push(b'\t');
+                out.extend_from_slice(path_bytes(dir));
+                out.push(b'\n');
+            }
+        }
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), &out);
+    }
 }
 
 /// The directories `dirs` given on the command line, then, unless -Z,
 /// the default ones, each looked up under the syslibroots as ld64 does
 /// (see push_search_dir) - but a default directory missing from the
 /// only SDK is not searched at all, not even outside it.
-fn search_dirs<E: Target>(ctx: &Context<E>, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
-    let syslibroot = &ctx.args.syslibroot;
+fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
+    let syslibroot = &args.syslibroot;
     let mut out = Vec::new();
     for dir in dirs {
         push_search_dir(syslibroot, &mut out, dir);
     }
-    if !ctx.args.no_standard_dirs {
+    if !args.no_standard_dirs {
         for dir in standard {
             if let [root] = syslibroot.as_slice() {
                 let dir = under_root(root, Path::new(dir));
@@ -92,19 +113,13 @@ fn under_root(root: &Path, dir: &Path) -> PathBuf {
     root.join(crate::util::os_str(relative))
 }
 
-/// Returns the directories to search for `-framework`, in order,
-/// mirroring the library search rules.
-fn framework_search_dirs<E: Target>(ctx: &Context<E>) -> Vec<PathBuf> {
-    search_dirs(ctx, &ctx.args.framework_paths, STANDARD_FRAMEWORK_DIRS)
-}
-
 fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     let with_suffix = |suffix: &str| {
         let mut file = name.to_os_string();
         file.push(suffix);
         file
     };
-    for dir in framework_search_dirs(ctx) {
+    for dir in &ctx.args.framework_paths {
         let fw = dir.join(with_suffix(".framework"));
         for file in [with_suffix(".tbd"), name.to_os_string()] {
             let path = fw.join(file);
@@ -150,7 +165,7 @@ fn search_library<E: Target>(
     passes: &[&[&str]],
 ) -> Option<PathBuf> {
     for exts in passes {
-        for dir in library_search_dirs(ctx) {
+        for dir in &ctx.args.library_paths {
             for ext in *exts {
                 let mut file = OsString::from("lib");
                 file.push(name);

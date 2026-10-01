@@ -3938,7 +3938,7 @@ fn find_reexport_by_leaf<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'s
         return None;
     }
     let stem = Path::new(leaf).with_extension("").into_os_string();
-    for dir in crate::passes::library_search_dirs(ctx) {
+    for dir in &ctx.args.library_paths {
         for ext in [".tbd", ".dylib"] {
             let mut file = stem.clone();
             file.push(ext);

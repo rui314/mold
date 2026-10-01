@@ -63,6 +63,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::resolve_pagezero_size(&mut ctx);
     passes::check_segaddrs(&ctx);
     passes::resolve_image_base(&mut ctx);
+    passes::set_search_paths(&mut ctx);
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
