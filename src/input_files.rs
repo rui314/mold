@@ -3397,18 +3397,22 @@ pub fn warn_fat_missing_arch<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
 /// libSystem component is not, and its symbols bind to the dylib that
 /// re-exports it (AppKit re-exports Foundation, public, and
 /// UIFoundation, private: ld-prime binds NSHomeDirectory to Foundation
-/// and NSAttachmentAttributeName to AppKit).
+/// and NSAttachmentAttributeName to AppKit). A framework's binary is
+/// told by its name: the path must end in the name before the first dot
+/// after /System/Library/Frameworks/ (Foo for Foo.framework/Versions/A/
+/// Foo), so a library inside one is not public either (OpenGL
+/// re-exports Libraries/libGL.dylib, whose symbols bind to OpenGL).
 pub fn is_public_location(install_name: &[u8]) -> bool {
     if let Some(rest) = install_name.strip_prefix(b"/usr/lib/") {
         return !rest.contains(&b'/');
     }
-    if let Some(rest) = install_name.strip_prefix(b"/System/Library/Frameworks/") {
-        // Only a top-level framework: X.framework/... with no further
-        // Frameworks directory in the path.
-        if let Some(dot) = memchr::memmem::find(rest, b".framework/") {
-            return memchr::memmem::find(&rest[dot + ".framework/".len()..], b".framework/")
-                .is_none();
-        }
+    if let Some(rest) = install_name.strip_prefix(b"/System/Library/Frameworks/")
+        && let Some(dot) = memchr::memchr(b'.', rest)
+    {
+        let name = &rest[..dot];
+        return install_name.len() > name.len()
+            && install_name[install_name.len() - name.len() - 1] == b'/'
+            && install_name.ends_with(name);
     }
     false
 }

@@ -48,3 +48,44 @@ grep -q '^AppKit/_CFRelease$' $t/binds2
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -framework AppKit -framework Foundation
 $t/exe3
 [ "$(otool -L $t/exe3 | tail -n +2 | awk '{print $1}' | sed 's|.*/||' | tr '\n' ' ')" = "AppKit Foundation libSystem.B.dylib CoreFoundation " ]
+
+# A framework's binary is told by its name: the path must end in the
+# name before the first dot after /System/Library/Frameworks/, so a
+# library inside a framework is no public one (OpenGL re-exports
+# Libraries/libGL.dylib, whose symbols bind to OpenGL), nor a binary
+# named otherwise.
+cat <<EOF2 | $CC -o $t/gl.o -c -xc -
+void glClear(unsigned);
+int main() { glClear(0); return 0; }
+EOF2
+$CC --ld-path=$mold -o $t/exe4 $t/gl.o -framework OpenGL
+otool -L $t/exe4 > $t/loads4
+not grep -q libGL $t/loads4
+dyld_info -fixups $t/exe4 | grep -q 'OpenGL/_glClear$'
+
+mkdir -p $t/lib
+for name in Bar.framework/Versions/A/XBar Foo.framework/Libraries/Bar; do
+  cat > $t/lib/libfoo.tbd <<EOF2
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ $ARCH-macos ]
+install-name:    '/usr/lib/libfoo.dylib'
+reexported-libraries:
+  - targets:         [ $ARCH-macos ]
+    libraries:       [ '/System/Library/Frameworks/$name' ]
+exports:
+  - targets:         [ $ARCH-macos ]
+    symbols:         [ _foo ]
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ $ARCH-macos ]
+install-name:    '/System/Library/Frameworks/$name'
+exports:
+  - targets:         [ $ARCH-macos ]
+    symbols:         [ _bar ]
+...
+EOF2
+  echo 'void bar(void); int main() { bar(); return 0; }' | $CC -o $t/b.o -c -xc -
+  $CC --ld-path=$mold -o $t/exe5 $t/b.o -L$t/lib -lfoo
+  dyld_info -fixups $t/exe5 | grep -q 'libfoo/_bar$'
+done
