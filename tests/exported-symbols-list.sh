@@ -61,3 +61,29 @@ not grep -q weak-def-coalesce $t/fixups
 $mold -arch $ARCH -r $t/b.o -exported_symbol _g -o $t/c.o
 nm -m $t/c.o > $t/syms
 grep -q 'non-external (was a private external) _h' $t/syms
+
+# ld-prime's patterns: a bracket expression knows no negation and ends
+# at the first ], a backslash escapes the character after it, and a
+# malformed pattern such as _x[ matches nothing, without a word. An
+# entry whose wildcards are all escaped names a symbol, which must
+# exist, as any name the list gives.
+cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
+.data
+.globl "_x[", _xa, "_k!", _ka, _kb, "_k*"
+"_x[": .quad 1
+_xa: .quad 1
+"_k!": .quad 1
+_ka: .quad 1
+_kb: .quad 1
+"_k*": .quad 1
+.text
+.globl _main
+_main: ret
+EOF2
+printf '_main\n_x[\n_k[!a]\n_k\\*\n' > $t/list3
+$CC --ld-path=$mold -o $t/exe3 $t/c.o -Wl,-exported_symbols_list,$t/list3
+nm -gU $t/exe3 | awk '{print $3}' | sort | tr '\n' ' ' > $t/syms3
+[ "$(cat $t/syms3)" = '_k! _k* _ka _main ' ]
+printf '_main\n_nothere\\*\n' > $t/list4
+not $CC --ld-path=$mold -o $t/exe4 $t/c.o -Wl,-exported_symbols_list,$t/list4 2> $t/log4
+grep -q '_nothere\*' $t/log4

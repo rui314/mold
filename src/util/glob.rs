@@ -46,68 +46,9 @@ impl Pattern {
             pat = rest;
             match c {
                 b'[' => {
-                    // Here are a few bracket pattern examples:
-                    //
-                    // [abc]: a, b or c
-                    // [$\]!]: $, ] or !
-                    // [a-czg-i]: a, b, c, z, g, h, or i
-                    // [!a-z]: Any character except lowercase letters
-                    //
-                    // Both `!` and `^` are accepted as negation markers. `!` is the
-                    // POSIX/shell convention used by other linkers. `^` was mold's
-                    // original syntax and is kept for backward compatibility.
-                    let mut chars = Box::new([false; 256]);
-                    let mut negate = false;
-                    let mut closed = false;
-
-                    if let Some((&b'!' | &b'^', rest)) = pat.split_first() {
-                        negate = true;
-                        pat = rest;
-                    }
-
-                    while let Some((&c, rest)) = pat.split_first() {
-                        if c == b']' {
-                            pat = rest;
-                            closed = true;
-                            break;
-                        }
-
-                        if c == b'\\' {
-                            pat = rest;
-                            if pat.is_empty() {
-                                return None;
-                            }
-                        }
-
-                        if pat.len() >= 3 && pat[1] == b'-' {
-                            let start = pat[0];
-                            let mut end = pat[2];
-                            pat = &pat[3..];
-                            if end == b'\\' {
-                                end = *pat.first()?;
-                                pat = &pat[1..];
-                            }
-                            if end < start {
-                                return None;
-                            }
-                            for i in start..=end {
-                                chars[i as usize] = true;
-                            }
-                        } else {
-                            chars[pat[0] as usize] = true;
-                            pat = &pat[1..];
-                        }
-                    }
-
-                    if !closed {
-                        return None;
-                    }
-                    if negate {
-                        for flag in chars.iter_mut() {
-                            *flag = !*flag;
-                        }
-                    }
-                    tokens.push(Token::Bracket(chars));
+                    let end = pat.iter().position(|&c| c == b']')?;
+                    tokens.push(Token::Bracket(bracket(&pat[..end])?));
+                    pat = &pat[end + 1..];
                 }
                 b'?' => tokens.push(Token::Question),
                 b'*' => {
@@ -115,11 +56,15 @@ impl Pattern {
                         tokens.push(Token::Star);
                     }
                 }
-                b'\\' => {
-                    let (&escaped, rest) = pat.split_first()?;
-                    pat = rest;
-                    push_char(&mut tokens, escaped);
-                }
+                // A backslash takes the next character as itself, or is
+                // itself at the end.
+                b'\\' => match pat.split_first() {
+                    Some((&escaped, rest)) => {
+                        pat = rest;
+                        push_char(&mut tokens, escaped);
+                    }
+                    None => push_char(&mut tokens, c),
+                },
                 _ => push_char(&mut tokens, c),
             }
         }
@@ -190,6 +135,37 @@ impl Pattern {
         }
         true
     }
+}
+
+/// The characters a bracket expression matches, given what is between
+/// its brackets, as ld-prime reads one: it ends at the first `]` (so
+/// `[]` matches nothing) and knows no negation or escapes - `[!a]`
+/// matches `!` or `a`, `[\a]` `\` or `a`. A `-` between two characters
+/// makes a range from the one before it, which after a range is that
+/// `-` itself (`[a-b-d]` is `a`-`b` and `-`-`d`), to the one after it;
+/// a reversed range is empty. A `-` first or last makes the expression,
+/// and so its pattern, malformed (None): it matches nothing.
+fn bracket(class: &[u8]) -> Option<Box<[bool; 256]>> {
+    let mut chars = Box::new([false; 256]);
+    let mut prev = None;
+    let mut i = 0;
+    while i < class.len() {
+        let c = class[i];
+        if c == b'-' {
+            let (Some(start), Some(&end)) = (prev, class.get(i + 1)) else {
+                return None;
+            };
+            for x in start..=end {
+                chars[x as usize] = true;
+            }
+            i += 1;
+        } else {
+            chars[c as usize] = true;
+        }
+        prev = Some(c);
+        i += 1;
+    }
+    Some(chars)
 }
 
 fn push_char(tokens: &mut Vec<Token>, c: u8) {
@@ -701,8 +677,36 @@ mod tests {
         assert_eq!(g.find(b"bd"), 2);
         assert_eq!(g.find(b"dd"), -1);
         assert_eq!(g.find(b"leftmidright"), 3);
-        assert_eq!(g.find(b"ay"), 4);
-        assert_eq!(g.find(b"xy"), -1);
+        assert_eq!(g.find(b"!y"), 4);
+        assert_eq!(g.find(b"xy"), 4);
+        assert_eq!(g.find(b"ay"), -1);
+    }
+
+    #[test]
+    fn ld_prime_brackets() {
+        let g = glob(&["a[a-b-d]", "b[c-a]", "c[\\a]", "d[]x", "e\\*", "f\\"]);
+        for (name, expected) in [
+            ("ab", 0),
+            ("a-", 0),
+            ("aA", 0),
+            ("ac", 0),
+            ("a,", -1),
+            ("bc", 1),
+            ("bb", -1),
+            ("c\\", 2),
+            ("ca", 2),
+            ("d]x", -1),
+            ("dx", -1),
+            ("e*", 4),
+            ("ex", -1),
+            ("f\\", 5),
+        ] {
+            assert_eq!(g.find(name.as_bytes()), expected, "{name}");
+        }
+        let mut g = GlobBuilder::default();
+        for pat in ["x[", "y[a-]", "z[-a]"] {
+            assert!(!g.add(pat.as_bytes(), 0));
+        }
     }
 
     #[test]
