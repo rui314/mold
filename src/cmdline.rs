@@ -2623,6 +2623,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // x86-64's pass for zero-fill sections out of reach of
             // 32-bit displacements. ld-prime takes them silently.
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
+            // ld64 took the D script of the image's probes from this;
+            // ld-prime neither opens the file nor needs one, in a -r
+            // link either.
+            b"-dtrace" => {
+                next_arg(&mut i, name);
+            }
+            // The DOF that describes the image's USDT probe sites
+            // (__TEXT,__dof_<provider>), which ld-prime makes unless
+            // told not to - and then fails to link the sites. mold
+            // makes none.
+            b"-no_dtrace_dof" => {}
 
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
