@@ -343,6 +343,9 @@ pub struct Args {
     /// -save-temps: keep LTO's merged bitcode and its object beside the
     /// output.
     pub save_temps: bool,
+    /// -mllvm: options for LLVM's optimizer and code generator, which
+    /// libLTO parses as its own command line.
+    pub mllvm: Vec<Vec<u8>>,
     /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
     /// or reserved as the __UNIXSTACK segment of an executable that
     /// starts from LC_UNIXTHREAD.
@@ -834,6 +837,7 @@ impl Default for Args {
             lto_cpu: None,
             lto_softload: false,
             save_temps: false,
+            mllvm: Vec::new(),
             stack_size: 0,
             sectcreate: Vec::new(),
             relocatable: false,
@@ -2915,6 +2919,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-lto_library" => lto_libraries.push(path(next_arg(&mut i, name))),
             b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),
+            b"-mllvm" => args.mllvm.push(bytes(next_arg(&mut i, name))),
             b"-save-temps" => args.save_temps = true,
             // The ThinLTO cache, which mold, compiling all bitcode as one
             // module, has no use for, and the variant architectures'
@@ -2948,13 +2953,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-dependency_info" => args.dependency_info = Some(path(next_arg(&mut i, name))),
 
-            // Ignored options with an argument
             b"-object_path_lto" => args.object_path_lto = Some(path(next_arg(&mut i, name))),
-
-            // Ignored options with an argument
-            b"-mllvm" => {
-                next_arg(&mut i, name);
-            }
 
             b"-objc_stubs_fast" => objc_stubs_small = Some(false),
             b"-objc_stubs_small" => objc_stubs_small = Some(true),

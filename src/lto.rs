@@ -7,7 +7,7 @@
 //! them all into one Mach-O object that then joins the link like any
 //! other input.
 
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
@@ -40,6 +40,7 @@ pub struct Plugin {
     pub codegen_set_pic_model: unsafe extern "C" fn(*mut c_void, u32) -> bool,
     pub codegen_add_must_preserve_symbol: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub codegen_set_cpu: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub codegen_debug_options_array: unsafe extern "C" fn(*mut c_void, *const *const c_char, c_int),
     pub codegen_set_should_embed_uselists: unsafe extern "C" fn(*mut c_void, bool),
     pub codegen_write_merged_modules: unsafe extern "C" fn(*mut c_void, *const c_char) -> bool,
     pub codegen_optimize: unsafe extern "C" fn(*mut c_void) -> bool,
@@ -132,6 +133,7 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
                 c"lto_codegen_add_must_preserve_symbol",
             ),
             codegen_set_cpu: dlsym(handle, c"lto_codegen_set_cpu"),
+            codegen_debug_options_array: dlsym(handle, c"lto_codegen_debug_options_array"),
             codegen_set_should_embed_uselists: dlsym(
                 handle,
                 c"lto_codegen_set_should_embed_uselists",
@@ -141,6 +143,25 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             codegen_compile_optimized: dlsym(handle, c"lto_codegen_compile_optimized"),
         }
     }
+}
+
+/// Hands the code generator the -mllvm options, which libLTO parses as
+/// LLVM's command line when it optimizes (an unknown one ends the
+/// process there, as it ends ld-prime).
+///
+/// # Safety
+///
+/// `cg` must be a live code generator of the plugin's library.
+pub unsafe fn set_debug_options(plugin: &Plugin, cg: *mut c_void, options: &[Vec<u8>]) {
+    if options.is_empty() {
+        return;
+    }
+    let options: Vec<CString> =
+        options.iter().map(|o| CString::new(o.as_slice()).unwrap_or_default()).collect();
+    let ptrs: Vec<*const c_char> = options.iter().map(|o| o.as_ptr()).collect();
+    // SAFETY: the generator is live per the caller; libLTO copies the
+    // strings.
+    unsafe { (plugin.codegen_debug_options_array)(cg, ptrs.as_ptr(), ptrs.len() as c_int) };
 }
 
 /// What the command line asks of libLTO's code generator: the CPU to

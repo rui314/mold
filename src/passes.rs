@@ -2266,6 +2266,7 @@ unsafe fn create_lto_codegen<E: Target>(
             fatal!("lto_codegen_create failed: {}", plugin.error_message());
         }
         (plugin.codegen_set_pic_model)(cg, crate::lto::LTO_CODEGEN_PIC_MODEL_DYNAMIC);
+        crate::lto::set_debug_options(plugin, cg, &ctx.args.mllvm);
         for module in &ctx.lto_modules {
             if ctx.objs[module.obj].is_alive
                 && (plugin.codegen_add_module)(cg, module.handle as *mut _)

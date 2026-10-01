@@ -35,6 +35,13 @@ grep -q -- '-mcpu missing <cpu>' $t/log
 link() { $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o "$@"; }
 link -Wl,-cache_path_lto,$t/cache,-prune_interval_lto,10,-prune_after_lto,3600 \
   -Wl,-max_relative_cache_size_lto,100,-arch_variant_lto_cache_mismatch,suppress
+# -mllvm options go to libLTO, which parses them as LLVM's command line
+# (clang passes one of its own): an unknown one ends the link.
+not link -Wl,-mllvm,-bogus-option 2> $t/log
+grep -q "Unknown command line argument '-bogus-option'" $t/log
+link -Wl,-mllvm,-inline-threshold=100
+$t/exe | grep -q '^42$'
+
 for opt in -prune_interval_lto -prune_after_lto -max_relative_cache_size_lto; do
   not link -Wl,$opt,0x10 2> $t/log
   grep -q "invalid argument for $opt" $t/log
