@@ -166,6 +166,328 @@ fn dependency_path(path: &Path) -> Vec<u8> {
     path_bytes(path).to_vec()
 }
 
+/// -trace_file, -trace_file_shared_cache and -trace_symbols_file: the
+/// records Apple's build system has a final link append to these files,
+/// a line of JSON each, as ld-prime writes them, naming the output by
+/// its leaf name and UUID. -trace_file lists the files of the dylibs it
+/// loads, by kind - "dynamic" (weak ones too), "upward-dynamic",
+/// "re-exports", "weak", "delay-init" -, in load command order, and the
+/// archives a member loads from; -trace_file_shared_cache the same
+/// dylibs by install name, but for the archives and the weak ones among
+/// the "dynamic", and the output by its path (a dylib by its install
+/// name). -trace_symbols_file
+/// gives more: a dylib's exports, the symbols each dylib provides (and
+/// a re-exported one exports), and the global symbols the members
+/// loaded from each archive define, with the archives one isn't loaded
+/// from. A library dyld loads lazily is in that one alone. Without a
+/// UUID (-no_uuid) ld-prime writes no trace but that last, which then
+/// lacks its "uuid" (and has a stray comma, that mold leaves out). A
+/// file it can't write fails the link.
+pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
+    let args = &ctx.args;
+    if args.trace_file.is_none()
+        && args.trace_file_shared_cache.is_none()
+        && args.trace_symbols_file.is_none()
+    {
+        return;
+    }
+    let uuid = args.uuid.then(|| {
+        let u = *ctx.uuid.lock().unwrap();
+        let hex = |r: std::ops::Range<usize>| -> String {
+            u[r].iter().map(|b| format!("{b:02X}")).collect()
+        };
+        format!("{}-{}-{}-{}-{}", hex(0..4), hex(4..6), hex(6..8), hex(8..10), hex(10..16))
+    });
+    let traces = TraceInputs::new(ctx);
+    if let Some(uuid) = &uuid {
+        if let Some(path) = &args.trace_file {
+            append_trace(path, &traces.dylibs_json(ctx, uuid, false));
+        }
+        if let Some(path) = &args.trace_file_shared_cache {
+            append_trace(path, &traces.dylibs_json(ctx, uuid, true));
+        }
+    }
+    if let Some(path) = &args.trace_symbols_file {
+        append_trace(path, &traces.symbols_json(ctx, uuid.as_deref()));
+    }
+}
+
+fn append_trace(path: &Path, record: &str) {
+    let file = std::fs::OpenOptions::new().append(true).create(true).open(path);
+    match file {
+        Ok(mut file) => {
+            let _ = file.write_all(format!("{record}\n").as_bytes());
+        }
+        Err(e) => crate::error!(
+            "Could not open or create trace file (errno={}): {}",
+            e.raw_os_error().unwrap_or(0),
+            path.display()
+        ),
+    }
+}
+
+/// What the traces list (see write_trace_files): the dylibs with load
+/// commands, in their order, and those dyld loads lazily; the archives
+/// a member loads from, with the global symbols the loaded members
+/// define, and those with a member that doesn't load, by path.
+struct TraceInputs<'a> {
+    dylibs: Vec<(usize, &'a DylibFile)>,
+    lazy: Vec<(usize, &'a DylibFile)>,
+    archives: Vec<(String, Vec<&'a str>)>,
+    unused_archives: Vec<String>,
+}
+
+impl<'a> TraceInputs<'a> {
+    fn new<E: Target>(ctx: &'a Context<E>) -> Self {
+        let mut dylibs: Vec<(usize, &DylibFile)> = ctx.dylibs.iter().enumerate().collect();
+        dylibs.retain(|(_, d)| !d.is_bundle_loader);
+        dylibs.sort_by_key(|(_, d)| d.dylib_idx);
+        let (lazy, dylibs) = dylibs.into_iter().partition(|(_, d)| d.is_lazy);
+
+        // By archive: whether a member loads, whether one doesn't, and
+        // the global symbols the loaded ones define.
+        let mut members: hashbrown::HashMap<&Path, (bool, bool, Vec<&str>)> =
+            hashbrown::HashMap::new();
+        for obj in &ctx.objs {
+            let Some(archive) = obj.mf.parent else { continue };
+            let entry = members.entry(archive.name.as_path()).or_default();
+            if !obj.is_alive {
+                entry.1 = true;
+                continue;
+            }
+            entry.0 = true;
+            for (nlist, &sym) in obj.nlists.iter().zip(&obj.symbols) {
+                if nlist.is_extern() && !nlist.is_stab() && matches!(nlist.n_type(), N_SECT | N_ABS)
+                {
+                    entry.2.push(ctx.symbols[sym].name());
+                }
+            }
+        }
+        let mut archives = Vec::new();
+        let mut unused_archives = Vec::new();
+        for (path, (used, unused, mut syms)) in members {
+            let path = trace_path(path);
+            if unused {
+                unused_archives.push(path.clone());
+            }
+            if used {
+                syms.sort_unstable();
+                syms.dedup();
+                archives.push((path, syms));
+            }
+        }
+        archives.sort_unstable();
+        unused_archives.sort_unstable();
+        Self { dylibs, lazy, archives, unused_archives }
+    }
+
+    /// The record of -trace_file, or with `shared_cache` of
+    /// -trace_file_shared_cache.
+    fn dylibs_json<E: Target>(&self, ctx: &Context<E>, uuid: &str, shared_cache: bool) -> String {
+        let name = match ctx.args.output_type {
+            MH_DYLIB if shared_cache => {
+                crate::util::display(ctx.args.output_install_name()).to_string()
+            }
+            _ if shared_cache => ctx.args.output.to_string_lossy().into_owned(),
+            _ => output_leaf(ctx),
+        };
+        let mut out = format!(
+            "{{\"uuid\":\"{uuid}\",\"name\":{},\"arch\":\"{}\"",
+            json_string(&name),
+            E::NAME
+        );
+        let id = |d: &DylibFile| match shared_cache {
+            true => json_string(&crate::util::display(&d.install_name)),
+            false => json_string(&trace_path(&d.path)),
+        };
+        let weak = |d: &DylibFile| d.is_weak || d.is_weak_asserted;
+        // The list a dylib is in, but for "weak", which takes the weak
+        // ones besides.
+        let list_of = |d: &DylibFile| match () {
+            _ if d.is_reexported => "re-exports",
+            _ if d.is_upward => "upward-dynamic",
+            _ if d.delay_init.is_some() => "delay-init",
+            _ if shared_cache && weak(d) => "",
+            _ => "dynamic",
+        };
+        for key in ["dynamic", "upward-dynamic", "re-exports", "weak", "delay-init"] {
+            let items: Vec<String> = (self.dylibs.iter())
+                .filter(|(_, d)| if key == "weak" { weak(d) } else { list_of(d) == key })
+                .map(|(_, d)| id(d))
+                .collect();
+            if !items.is_empty() {
+                out.push_str(&format!(",\"{key}\":[{}]", items.join(",")));
+            }
+        }
+        if !shared_cache && !self.archives.is_empty() {
+            let items: Vec<String> =
+                self.archives.iter().map(|(path, _)| json_string(path)).collect();
+            out.push_str(&format!(",\"archives\":[{}]", items.join(",")));
+        }
+        out.push('}');
+        out
+    }
+
+    /// The record of -trace_symbols_file.
+    fn symbols_json<E: Target>(&self, ctx: &Context<E>, uuid: Option<&str>) -> String {
+        use std::fmt::Write;
+        let args = &ctx.args;
+        let mut out = format!(
+            "{{ \"version\":\"2\", \"minor-version\":1, \"name\":{}",
+            json_string(&output_leaf(ctx))
+        );
+        if args.output_type == MH_DYLIB {
+            let eligible = if args.shared_region { "yes" } else { "no" };
+            let _ = write!(
+                out,
+                ", \"install-name\":{}, \"shared-cache-eligible\":\"{eligible}\"",
+                json_string(&crate::util::display(args.output_install_name()))
+            );
+        }
+        if let Some(uuid) = uuid {
+            let _ = write!(out, ", \"uuid\":\"{uuid}\"");
+        }
+        let version = args.platform_minos;
+        let _ = write!(
+            out,
+            ", \"arch\":\"{}\", \"platforms\": [ {{ \"name\" : \"{}\", \"min-version\" : {{ \"major\": \"{}\", \"minor\": \"{}\" }} }} ]",
+            E::NAME,
+            crate::macho::platform_name(args.platform),
+            version >> 16,
+            (version >> 8) & 0xff
+        );
+        let spaced = |items: &[&str]| -> String {
+            items.iter().map(|s| format!(" {}", json_string(s))).collect::<Vec<_>>().join(",")
+        };
+        let _ = write!(out, ", \"exports\": [{} ]", spaced(&own_exports(ctx)));
+
+        let imports = dylib_imports(ctx);
+        let list = |syms: &[&str]| -> String {
+            let syms: Vec<String> = syms.iter().map(|s| json_string(s)).collect();
+            format!("[ {} ]", syms.join(", "))
+        };
+        let mut entries = Vec::new();
+        for &(i, d) in &self.dylibs {
+            let mut attrs = Vec::new();
+            if d.is_reexported {
+                attrs.push("\"re-export\"");
+            }
+            if d.is_weak || d.is_weak_asserted {
+                attrs.push("\"weak\"");
+            }
+            if d.is_upward {
+                attrs.push("\"upward\"");
+            }
+            if d.delay_init.is_some() {
+                attrs.push("\"delay-init\"");
+            }
+            let mut entry = format!(
+                " {{ \"path\": {}, \"install-name\": {}, \"arch\": \"{}\", \"attributes\": [{} ], \"imported-symbols\": {}",
+                json_string(&trace_path(&d.path)),
+                json_string(&crate::util::display(&d.install_name)),
+                E::NAME,
+                attrs.join(", "),
+                list(&imports[i])
+            );
+            if d.is_reexported {
+                let mut exports: Vec<&str> = d.exports.iter().copied().collect();
+                exports.sort_unstable();
+                let _ = write!(entry, ",  \"exported-symbols\": {}", list(&exports));
+            }
+            entry.push_str(" }");
+            entries.push(entry);
+        }
+        for &(i, d) in &self.lazy {
+            entries.push(format!(
+                " {{ \"arch\": \"{}\", \"path\": {}, \"install-name\": {}, \"attributes\": [ \"lazy-load\" ], \"imported-symbols\": {} }}",
+                E::NAME,
+                json_string(&trace_path(&d.path)),
+                json_string(&crate::util::display(&d.install_name)),
+                list(&imports[i])
+            ));
+        }
+        let _ = write!(out, ", \"linked-dylibs\":[{} ]", entries.join(","));
+
+        let archives: Vec<&str> = self.archives.iter().map(|(path, _)| path.as_str()).collect();
+        let unused: Vec<&str> = self.unused_archives.iter().map(String::as_str).collect();
+        let _ = write!(out, ", \"archives\": [{} ]", spaced(&archives));
+        let _ = write!(out, ", \"unused-archives\": [{} ]", spaced(&unused));
+        let linked: Vec<String> = self
+            .archives
+            .iter()
+            .map(|(path, syms)| {
+                let syms: Vec<String> = syms.iter().map(|s| json_string(s)).collect();
+                format!(
+                    "{{ \"arch\": \"{}\", \"path\": {},\"imported-symbols\":[{}]}}",
+                    E::NAME,
+                    json_string(path),
+                    syms.join(",")
+                )
+            })
+            .collect();
+        let _ = write!(out, ",\"linked-archives\":[{}] }}", linked.join(","));
+        out
+    }
+}
+
+/// The output's name in the traces: its leaf name, a dylib's install
+/// name's.
+fn output_leaf<E: Target>(ctx: &Context<E>) -> String {
+    let path = match ctx.args.output_type {
+        MH_DYLIB => Path::new(crate::util::os_str(ctx.args.output_install_name())),
+        _ => ctx.args.output.as_path(),
+    };
+    path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned()
+}
+
+/// A file's path as the traces give it: its real path, a fat file's
+/// slice by the file's.
+fn trace_path(path: &Path) -> String {
+    crate::passes::real_path(path).0.to_string_lossy().into_owned()
+}
+
+/// The symbols a dylib output exports of its own definitions, sorted:
+/// what its export trie lists but for re-exports.
+fn own_exports<E: Target>(ctx: &Context<E>) -> Vec<&'static str> {
+    if ctx.args.output_type != MH_DYLIB {
+        return Vec::new();
+    }
+    let mut names: Vec<&str> = (0..ctx.symbols.syms.len() as SymbolId)
+        .filter(|&id| {
+            let sym = &ctx.symbols[id];
+            matches!(sym.file(), Some(FileId::Obj(obj)) if !ctx.is_internal(obj as usize))
+                && sym.is_extern()
+                && !sym.is_private_extern()
+                && sym
+                    .input_section()
+                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+                && !ctx.indirect_aliases.iter().any(|&(alias, _)| alias == id)
+        })
+        .map(|id| ctx.symbols[id].name())
+        .collect();
+    names.sort_unstable();
+    names
+}
+
+/// The symbols the output imports from each dylib, sorted, by dylib.
+fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static str>> {
+    let mut imports: Vec<Vec<&str>> = vec![Vec::new(); ctx.dylibs.len()];
+    for sym in &ctx.symbols.syms {
+        if let Some(FileId::Dylib(i)) = sym.file()
+            && sym.is_imported()
+            && sym.is_used()
+            && let Some(list) = imports.get_mut(i as usize)
+        {
+            list.push(sym.name());
+        }
+    }
+    for list in &mut imports {
+        list.sort_unstable();
+        list.dedup();
+    }
+    imports
+}
+
 /// A line of the map's symbol list: an atom's address and size, the
 /// number of the file it came from, and its name (the bytes of a
 /// literal, whatever they are).

@@ -607,6 +607,12 @@ pub struct Args {
     /// the symbol moves put symbols, on stdout or into this file.
     pub trace_symbol_layout: bool,
     pub trace_symbol_layout_file: Option<PathBuf>,
+    /// -trace_file, -trace_file_shared_cache, -trace_symbols_file: the
+    /// files Apple's build system has the link append a JSON record of
+    /// what it linked to (see mapfile::write_trace_files).
+    pub trace_file: Option<PathBuf>,
+    pub trace_file_shared_cache: Option<PathBuf>,
+    pub trace_symbols_file: Option<PathBuf>,
     /// -trace_implicit_libraries: print the libraries auto-link options
     /// and re-exports bring in, or with -trace_implicit_library only
     /// those whose names hold one of these.
@@ -902,6 +908,9 @@ impl Default for Args {
             trace: false,
             trace_symbol_layout: false,
             trace_symbol_layout_file: None,
+            trace_file: None,
+            trace_file_shared_cache: None,
+            trace_symbols_file: None,
             trace_implicit_libraries: false,
             trace_implicit_library: Vec::new(),
             arch_errors_fatal: false,
@@ -2404,6 +2413,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.trace_symbol_layout_file = Some(path(next_arg(&mut i, name)))
             }
             b"-trace_implicit_libraries" => args.trace_implicit_libraries = true,
+            b"-trace_file" => args.trace_file = Some(path(next_arg(&mut i, name))),
+            b"-trace_file_shared_cache" => {
+                args.trace_file_shared_cache = Some(path(next_arg(&mut i, name)));
+            }
+            b"-trace_symbols_file" => args.trace_symbols_file = Some(path(next_arg(&mut i, name))),
             b"-trace_implicit_library" => {
                 args.trace_implicit_library.push(bytes(next_arg(&mut i, name)));
             }
@@ -2411,18 +2425,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // give: the branch islands it inserts, a snapshot of the link to
             // replay it from (in /tmp unless -snapshot_dir says; a
             // replay passes -no_snapshot not to take another), the atom
-            // graph for Graphviz, the files the link read and the
-            // symbols it took from each, for Apple's build system, and
-            // its output compared to a reference one. -arch_multiple
+            // graph for Graphviz, and its output compared to a reference
+            // one. -arch_multiple
             // once named the architecture in ld64's messages, for a link
             // that is one of several.
             b"-verbose_branch_islands" | b"-no_snapshot" | b"-arch_multiple" => {}
-            b"-snapshot_dir"
-            | b"-dot"
-            | b"-trace_file"
-            | b"-trace_file_shared_cache"
-            | b"-trace_symbols_file"
-            | b"-reference_output" => {
+            b"-snapshot_dir" | b"-dot" | b"-reference_output" => {
                 next_arg(&mut i, name);
             }
             b"-no_warn_eh_frame_too_large" => args.warn_eh_frame_too_large = false,

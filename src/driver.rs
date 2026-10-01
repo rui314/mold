@@ -254,6 +254,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let out = output_file::OutputFile::create(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
     passes::copy_chunks(&ctx, &mut buf, &out);
     crate::error::checkpoint();
+    // The traces name the output by its UUID; one that can't be written
+    // fails the link, which leaves no output.
+    crate::mapfile::write_trace_files(&ctx);
+    crate::error::checkpoint();
     let t = ctx.timer("close_file");
     out.finish();
     drop(t);
