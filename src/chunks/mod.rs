@@ -1088,10 +1088,10 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
     // -bind_at_load makes the stubs bind through the GOT instead of
     // lazily; ld-prime does not set MH_BINDATLOAD for it (dyld binds
-    // everything at load anyway). MH_APP_EXTENSION_SAFE is for dyld
-    // too, and ld-prime leaves it out of an image no dyld loads and out
-    // of dyld itself.
-    if ctx.args.application_extension && !ctx.args.static_link && !ctx.args.is_dylinker() {
+    // everything at load anyway). MH_APP_EXTENSION_SAFE says a dylib
+    // may be linked into an app extension; ld-prime sets it on dylibs
+    // only, not on an executable or a bundle.
+    if ctx.args.application_extension && ctx.args.output_type == MH_DYLIB {
         hdr.flags |= MH_APP_EXTENSION_SAFE;
     }
     if ctx.args.no_dynamic_access {
