@@ -1,13 +1,14 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime names an atom by the best label at its start that is not an
-# alternate entry point, and makes an atom of no size of each other
-# label. In the symbol table it lists those first - object by object in
-# input order, each object's by rank (private extern, local, weak) and
-# descending name, its alternate entry points last -, then the aliases
-# of the functions -deduplicate folded into the atom, in input order,
-# and the atom's own name last.
+# ld-prime names a subsection by the best label at its start that is not
+# an alternate entry point. In the symbol table it lists the other
+# labels there first - object by object in input order, each object's
+# by rank (private extern, local, weak) and descending name, its
+# alternate entry points last -, then the aliases of the functions
+# -deduplicate folded into the subsection, in input order, and the
+# subsection's own name last; -map lists that name first and the rest
+# in that order.
 if [ $ARCH = arm64 ]; then
   body() { echo 'mov w0, #7'; echo ret; }
   jump() { echo "b $1"; }
@@ -48,15 +49,18 @@ int main() { return call_a() + call_b() + call_c() + call_d() != 28; }
 EOF
 
 order() { nm -p $1 | sed -n 's/.* _\([a-z][0-9]\)$/\1/p' | tr '\n' ' '; }
+maporder() { sed -n 's/.*\] _\([a-z][0-9]\)$/\1/p' $1 | tr '\n' ' '; }
 
 # Without folding.
 echo 'int call_d(void); int main() { return call_d() != 7; }' | $CC -o $t/main1.o -c -xc -
-$CC --ld-path=$mold -o $t/exe1 $t/main1.o $t/d.o
+$CC --ld-path=$mold -o $t/exe1 $t/main1.o $t/d.o -Wl,-map,$t/map1
 $t/exe1
 [ "$(order $t/exe1)" = "z1 y1 a1 b1 x1 " ]
+[ "$(maporder $t/map1)" = "x1 z1 y1 a1 b1 " ]
 
 # With b's, c's and d's functions folded into a's.
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/c.o $t/d.o \
-  -Wl,-deduplicate
+  -Wl,-deduplicate -Wl,-map,$t/map2
 $t/exe2
 [ "$(order $t/exe2)" = "j1 b7 c7 w6 z1 y1 a1 b1 x7 x6 x1 k1 " ]
+[ "$(maporder $t/map2)" = "k1 j1 b7 c7 w6 z1 y1 a1 b1 x7 x6 x1 " ]

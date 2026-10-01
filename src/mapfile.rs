@@ -823,17 +823,48 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     let mut entries = linker_symbol_entries(ctx, &files);
     let linker_symbols = entries.len();
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
-    entries.extend(named);
+    entries.extend(named.entries);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
     entries.extend(synthetic_entries(ctx, &files));
-    entries.sort_by_key(|e| (e.addr, e.size));
+    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
     insert_literal_aliases(&mut entries, literal_aliases);
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let addr = ctx.mach_header.hdr.addr;
         entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name("__mh_execute_header") });
     }
     write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
+}
+
+/// The rows of the defined symbols (see symbol_entries), with the
+/// symbols of those but the fixed-size literals', which follow.
+struct NamedEntries<'a> {
+    entries: Vec<MapEntry<'a>>,
+    ids: Vec<SymbolId>,
+}
+
+/// Sorts the map's rows by address: the linker's symbols first of those
+/// at one place (the first `linker_symbols` rows), then the row with
+/// the size, then the labels of no size that alias it, in the symbol
+/// table's order (see symtab::put_atom_names_last); `ids` are the
+/// symbols of the rows after the linker's.
+fn sort_entries<'a, E: Target>(
+    ctx: &Context<E>,
+    entries: Vec<MapEntry<'a>>,
+    linker_symbols: usize,
+    ids: &[SymbolId],
+) -> Vec<MapEntry<'a>> {
+    let indices = &ctx.symtab.output_sym_indices;
+    let place = |i: usize, e: &MapEntry| match ids.get(i.wrapping_sub(linker_symbols)) {
+        _ if i < linker_symbols => (e.addr, 0, 0),
+        _ if e.size > 0 => (e.addr, 1, e.size),
+        Some(&id) => (e.addr, 2, indices.get(id as usize).copied().unwrap_or(u32::MAX) as u64),
+        None => (e.addr, 2, 0),
+    };
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    order.sort_by_key(|&i| place(i, &entries[i]));
+    let mut entries: Vec<Option<MapEntry>> = entries.into_iter().map(Some).collect();
+    order.into_iter().filter_map(|i| entries[i].take()).collect()
 }
 
 /// Puts each of a literal's other labels right after the literal's own
@@ -873,11 +904,11 @@ pub fn print_relocatable_map<E: Target>(
     let mut entries = linker_symbol_entries(ctx, &files);
     let linker_symbols = entries.len();
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
-    entries.extend(named);
+    entries.extend(named.entries);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     let synthetic = relocatable_atom_entries(ctx, &files, &entries[linker_symbols..], atoms);
     entries.extend(synthetic);
-    entries.sort_by_key(|e| (e.addr, e.size));
+    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
     insert_literal_aliases(&mut entries, literal_aliases);
     write_map(ctx, path, &files, &sections, &entries, &[]);
 }
@@ -1151,13 +1182,14 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// (a method list in the relative form), and with the alias it makes
 /// of a function folded into an identical one (-deduplicate), which
 /// has no size; an ltmpN label of a weak definition another file's won
-/// names nothing. Also returns where in its subsection the first
-/// symbol is, by subsection, and the rows of the labels of fixed-size
-/// literals that follow their atoms' (see literal_labels).
+/// names nothing. Also returns the symbols of the entries but those
+/// of fixed-size literals, which come last, where in its subsection the
+/// first symbol is, by subsection, and the rows of the labels of
+/// fixed-size literals that follow the literals' own (see literal_labels).
 fn symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
-) -> (Vec<MapEntry<'a>>, hashbrown::HashMap<usize, u64>, Vec<MapEntry<'a>>) {
+) -> (NamedEntries<'a>, hashbrown::HashMap<usize, u64>, Vec<MapEntry<'a>>) {
     use crate::chunks::symtab::is_coalesced_away;
     let nlists = defining_nlists(ctx);
     let mut syms: Vec<(SymbolId, usize)> = Vec::new();
@@ -1237,9 +1269,10 @@ fn symbol_entries<'a, E: Target>(
             name: name(ctx.symbols[sym].name()),
         })
         .collect();
+    let ids = syms.iter().map(|&(sym, _)| sym).collect();
     let aliases =
         literal_labels(ctx, files, &nlists, literal_syms, &mut entries, &mut first_labels);
-    (entries, first_labels, aliases)
+    (NamedEntries { entries, ids }, first_labels, aliases)
 }
 
 /// Whether a subsection is a fixed-size literal (4, 8 or 16 bytes) of an
