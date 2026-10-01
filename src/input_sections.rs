@@ -139,6 +139,21 @@ const NO_FDE: u32 = u32::MAX;
 
 /// Target-specific state embedded in an input section.
 pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
+    /// Creates empty metadata before target-specific parsing.
+    #[inline]
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    fn exidx(&self) -> Option<u32> {
+        None
+    }
+
+    fn set_exidx(&mut self, _exidx: u32) {
+        unreachable!("only ARM32 input sections have exidx metadata")
+    }
+
     #[inline]
     fn r_deltas(&self) -> &[RelocDelta] {
         &[]
@@ -150,6 +165,27 @@ pub trait InputSectionExtra: fmt::Debug + Default + Send + Sync + 'static {
 }
 
 impl InputSectionExtra for () {}
+
+/// ARM32's link from a code section to its `.ARM.exidx` section.
+/// `u32::MAX` means that there is no associated section.
+impl InputSectionExtra for u32 {
+    #[inline]
+    fn empty() -> Self {
+        Self::MAX
+    }
+
+    #[inline]
+    fn exidx(&self) -> Option<u32> {
+        (*self != Self::MAX).then_some(*self)
+    }
+
+    #[inline]
+    fn set_exidx(&mut self, exidx: u32) {
+        debug_assert_ne!(exidx, 0);
+        debug_assert_ne!(exidx, Self::MAX);
+        *self = exidx;
+    }
+}
 
 /// Relaxation bookkeeping embedded only for RISC-V and LoongArch.
 impl InputSectionExtra for Box<[RelocDelta]> {
@@ -280,7 +316,7 @@ impl<E: Target> InputSection<E> {
             relsec_idx: NO_RELSEC,
             fde_begin: NO_FDE,
             flags: AtomicU8::new(IS_ALIVE),
-            extra: E::InputSectionExtra::default(),
+            extra: E::InputSectionExtra::empty(),
         };
 
         // Sections may have been compressed. We usually uncompress them
@@ -679,6 +715,15 @@ impl<E: Target> InputSection<E> {
     #[inline]
     pub fn set_icf_leader(&self, leader: SectionRef) {
         self.set_offset(leader.encode());
+    }
+
+    #[inline]
+    pub fn exidx(&self) -> Option<u32> {
+        self.extra.exidx()
+    }
+
+    pub fn set_exidx(&mut self, exidx: u32) {
+        self.extra.set_exidx(exidx);
     }
 
     #[inline]

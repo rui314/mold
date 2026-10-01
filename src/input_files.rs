@@ -731,10 +731,6 @@ pub struct ObjectFile<E: Target> {
     pub sframe_sections: Vec<u32>,
     pub sframe_fdes: Vec<SFrameFde>,
 
-    /// SHF_LINK_ORDER sections as pairs of sh_link and section index,
-    /// sorted by sh_link.
-    link_order_sections: Vec<(u32, u32)>,
-
     pub exclude_libs: bool,
     pub gnu_properties: BTreeMap<u32, u32>,
     pub needs_executable_stack: bool,
@@ -1039,7 +1035,6 @@ impl<E: Target> ObjectFile<E> {
             eh_frame_sections: Vec::new(),
             sframe_sections: Vec::new(),
             sframe_fdes: Vec::new(),
-            link_order_sections: Vec::new(),
             exclude_libs: false,
             gnu_properties: BTreeMap::new(),
             needs_executable_stack: false,
@@ -1150,16 +1145,6 @@ impl<E: Target> ObjectFile<E> {
     #[inline]
     pub fn section_at(&self, shndx: u32) -> &InputSection<E> {
         self.section(shndx as usize).expect("no such input section")
-    }
-
-    /// The indices of the SHF_LINK_ORDER sections linked to the section
-    /// at `shndx`.
-    pub fn link_order_dependents(&self, shndx: u32) -> impl Iterator<Item = u32> + '_ {
-        let begin = self.link_order_sections.partition_point(|&(link, _)| link < shndx);
-        self.link_order_sections[begin..]
-            .iter()
-            .take_while(move |&&(link, _)| link == shndx)
-            .map(|&(_, i)| i)
     }
 
     /// Iterates over relocations without materializing a deferred CREL table.
@@ -1724,9 +1709,6 @@ impl<E: Target> ObjectFile<E> {
                     if E::FAMILY == Family::Ppc32 && name == b".got2" {
                         self.got2 = Some(i as u32);
                     }
-                    if flags & SHF_LINK_ORDER as u64 != 0 {
-                        self.link_order_sections.push((shdr.sh_link.get(), i as u32));
-                    }
 
                     if args.gdb_index {
                         // Save debug sections for --gdb-index.
@@ -1786,7 +1768,24 @@ impl<E: Target> ObjectFile<E> {
             isec.set_relsec(i as u32, has_relocs);
         }
 
-        self.link_order_sections.sort_unstable();
+        // Attach .arm.exidx sections to their corresponding sections
+        if E::FAMILY == Family::Arm32 {
+            let pairs: Vec<(usize, usize)> = self
+                .input_sections()
+                .filter(|isec| isec.sh_type(self) == SHT_ARM_EXIDX)
+                .map(|isec| {
+                    (
+                        self.base.shdrs[isec.shndx as usize].sh_link.get() as usize,
+                        isec.shndx as usize,
+                    )
+                })
+                .collect();
+            for (target, exidx) in pairs {
+                if let Some(isec) = self.section_mut(target) {
+                    isec.set_exidx(exidx as u32);
+                }
+            }
+        }
     }
 
     // Relocations are usually sorted by r_offset in relocation tables,

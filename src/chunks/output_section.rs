@@ -90,11 +90,13 @@ pub fn link_order_target<E: Target>(
     file.section(file.shdr(isec.shndx as usize).sh_link.get() as usize)?.output_section
 }
 
-/// An SHF_LINK_ORDER output section's sh_link refers to the output section
-/// of the sections its members are linked to.
+/// In a relocatable output, an SHF_LINK_ORDER section's sh_link refers to
+/// the output section of the sections its members are linked to. We don't
+/// support SHF_LINK_ORDER otherwise but just preserve it for -r.
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let osec = &ctx.output_sections[id.index()];
-    if osec.hdr.shdr.sh_flags.get() & SHF_LINK_ORDER as u64 != 0
+    if ctx.args.relocatable
+        && osec.hdr.shdr.sh_flags.get() & SHF_LINK_ORDER as u64 != 0
         && let Some(link) = osec.members.iter().find_map(|&m| link_order_target(ctx, m))
     {
         let shndx = ctx.output_sections[link.index()].hdr.shndx;
