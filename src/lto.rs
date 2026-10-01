@@ -210,6 +210,18 @@ pub unsafe fn write_merged_modules(
     Ok(())
 }
 
+/// A bitcode file registered for LTO.
+pub struct BitcodeModule {
+    /// The placeholder object that claims the module's symbols until
+    /// LTO compiles it.
+    pub obj: usize,
+    /// libLTO's lto_module_t.
+    pub handle: usize,
+    /// The names the module defines, internal ones included (which the
+    /// placeholder doesn't claim).
+    pub defined: Vec<&'static str>,
+}
+
 /// A bitcode file LTO compiled, as the passes after LTO still see it
 /// once its placeholder object is retired.
 pub struct LtoInput {
@@ -217,6 +229,29 @@ pub struct LtoInput {
     pub obj: usize,
     /// The external symbols the file defines, other than weakly.
     pub strong_defs: Vec<crate::symbol::SymbolId>,
+    /// The names the module defined, internal ones included.
+    pub defined: Vec<&'static str>,
+}
+
+/// The bitcode file each symbol of the object LTO compiled comes from,
+/// by name, as ld-prime credits the compiled code: to the one file
+/// whose module defined a symbol of that name, internal or not. A name
+/// that two did (static functions alike), or none (literals, or a
+/// static LTO renamed to keep it apart), stays the compiled object's.
+pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static str, Option<usize>> {
+    let mut map = hashbrown::HashMap::new();
+    for input in inputs {
+        for &name in &input.defined {
+            map.entry(name)
+                .and_modify(|origin: &mut Option<usize>| {
+                    if *origin != Some(input.obj) {
+                        *origin = None;
+                    }
+                })
+                .or_insert(Some(input.obj));
+        }
+    }
+    map
 }
 
 /// A parsed bitcode module's symbol, in linker terms.

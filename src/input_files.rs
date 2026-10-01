@@ -2046,11 +2046,15 @@ pub fn parse_bitcode<E: Target>(
 
     // Symbols are expressed as synthesized nlists so that the regular
     // resolution pass handles bitcode like any object.
+    let mut defined = Vec::new();
     for ls in lsyms {
+        let name: &'static str = String::leak(ls.name);
+        if ls.is_defined {
+            defined.push(name);
+        }
         if !ls.is_extern && ls.is_defined {
             continue;
         }
-        let name: &'static str = String::leak(ls.name);
         let id = ctx.symbols.intern(name);
         let mut nlist = NList::default();
         if ls.is_defined {
@@ -2088,7 +2092,7 @@ pub fn parse_bitcode<E: Target>(
         dice: Vec::new(),
         loh: Vec::new(),
     });
-    ctx.lto_modules.push((obj_idx, module));
+    ctx.lto_modules.push(crate::lto::BitcodeModule { obj: obj_idx, handle: module, defined });
     obj_idx
 }
 

@@ -141,7 +141,10 @@ fn name(s: &str) -> Cow<'_, [u8]> {
 /// libraries include the private ones a dylib merges (libSystem's
 /// libsystem_c), which ld-prime reads from files of their own and
 /// credits with the symbols they define. Number 0 stands for the
-/// linker, which makes the stubs, the unwind info and such.
+/// linker, which makes the stubs, the unwind info and such. A bitcode
+/// file is listed as any object, and the object LTO compiled last of
+/// all; ld-prime credits each of the latter's symbols to the bitcode
+/// file it came from, when it can tell (see lto::origins).
 struct MapFiles<'a> {
     paths: Vec<&'a Path>,
     /// The number of each object (0 for the internal one) and dylib.
@@ -153,6 +156,10 @@ struct MapFiles<'a> {
     /// The object whose tentative definition each common symbol's
     /// subsection stands for, by subsection.
     commons: hashbrown::HashMap<u32, u32>,
+    /// The object LTO compiled, and the bitcode file each of its
+    /// symbols comes from, by name.
+    lto_obj: Option<usize>,
+    lto_origins: hashbrown::HashMap<&'static str, Option<usize>>,
 }
 
 impl<'a> MapFiles<'a> {
@@ -165,9 +172,12 @@ impl<'a> MapFiles<'a> {
         }
         let mut named: Vec<(u32, File)> = Vec::new();
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if obj.is_alive && !ctx.is_internal(i) {
+            if obj.is_alive && !ctx.is_internal(i) && ctx.lto_obj != Some(i) {
                 named.push((obj.priority, File::Obj(i)));
             }
+        }
+        for input in &ctx.lto_inputs {
+            named.push((ctx.objs[input.obj].priority, File::Obj(input.obj)));
         }
         let mut autolinked: Vec<(u32, File)> = Vec::new();
         for (i, dylib) in ctx.dylibs.iter().enumerate() {
@@ -232,12 +242,15 @@ impl<'a> MapFiles<'a> {
             dylibs: vec![0; ctx.dylibs.len()],
             merged: hashbrown::HashMap::new(),
             commons: crate::output_sections::common_owners(ctx),
+            lto_obj: ctx.lto_obj,
+            lto_origins: crate::lto::origins(&ctx.lto_inputs),
         };
         let mut merged_numbers: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
         let named = named.into_iter().map(|(_, file)| file);
         let implicit = implicit.into_iter().map(|(_, file)| file);
         let autolinked = autolinked.into_iter().map(|(_, file)| file);
-        for file in named.chain(implicit).chain(autolinked) {
+        let lto = ctx.lto_obj.map(File::Obj);
+        for file in named.chain(implicit).chain(autolinked).chain(lto) {
             let number = files.paths.len() + 1;
             match file {
                 File::Obj(i) => {
@@ -276,12 +289,21 @@ impl<'a> MapFiles<'a> {
         }
         let sym = &ctx.symbols[sym];
         match sym.file() {
-            Some(FileId::Obj(i)) => {
-                let owner = sym.input_section().and_then(|isec| self.commons.get(&isec));
-                self.objs[owner.copied().unwrap_or(i) as usize]
-            }
+            Some(FileId::Obj(i)) => match sym.input_section().and_then(|i| self.commons.get(&i)) {
+                Some(&owner) => self.objs[owner as usize],
+                None => self.of_object(i as usize, sym.name()),
+            },
             Some(FileId::Dylib(i)) => self.dylibs.get(i as usize).copied().unwrap_or(0),
             None => 0,
+        }
+    }
+
+    /// The number of the file a symbol of an object comes from: the
+    /// object's own, or for the object LTO compiled, the bitcode file's.
+    fn of_object(&self, obj: usize, name: &str) -> usize {
+        match self.lto_origins.get(name) {
+            Some(&Some(origin)) if self.lto_obj == Some(obj) => self.objs[origin],
+            _ => self.objs[obj],
         }
     }
 }
@@ -470,7 +492,7 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
             None if is_rewritten_method_list(ctx, isec) => 0,
-            None => files.objs[obj as usize],
+            None => files.of_object(obj as usize, sym.name()),
         };
         if is_named(ctx, sym) {
             syms.push((i, file));

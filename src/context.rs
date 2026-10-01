@@ -109,9 +109,8 @@ pub struct Context<E: Target> {
     pub visited_files: std::collections::HashSet<std::path::PathBuf>,
     /// The loaded libLTO, once a bitcode input has been seen.
     pub lto_plugin: Option<crate::lto::Plugin>,
-    /// Bitcode modules registered for LTO: the pseudo object index and
-    /// the lto_module handle.
-    pub lto_modules: Vec<(usize, usize)>,
+    /// Bitcode modules registered for LTO.
+    pub lto_modules: Vec<crate::lto::BitcodeModule>,
     /// The object LTO compiled the live bitcode modules to.
     pub lto_obj: Option<usize>,
     /// The bitcode files LTO compiled, in input order.

@@ -2000,7 +2000,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 /// object, so that the final link still optimizes them as a whole. A
 /// Mach-O object of any content makes it compile them instead.
 pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive)
+    ctx.lto_modules.iter().any(|module| ctx.objs[module.obj].is_alive)
         && ctx
             .objs
             .iter()
@@ -2040,8 +2040,10 @@ unsafe fn create_lto_codegen<E: Target>(
             fatal!("lto_codegen_create failed: {}", plugin.error_message());
         }
         (plugin.codegen_set_pic_model)(cg, crate::lto::LTO_CODEGEN_PIC_MODEL_DYNAMIC);
-        for &(obj, module) in &ctx.lto_modules {
-            if ctx.objs[obj].is_alive && (plugin.codegen_add_module)(cg, module as *mut _) {
+        for module in &ctx.lto_modules {
+            if ctx.objs[module.obj].is_alive
+                && (plugin.codegen_add_module)(cg, module.handle as *mut _)
+            {
                 fatal!("lto_codegen_add_module failed: {}", plugin.error_message());
             }
         }
@@ -2122,11 +2124,12 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     // module's callers in place of the strong native definition that
     // wins, and a strong one would vanish rather than be reported as a
     // duplicate (ld-prime lists it in the compiled object).
-    for &(obj, _) in &ctx.lto_modules {
-        if !ctx.objs[obj].is_alive {
+    for module in &ctx.lto_modules {
+        let obj = &ctx.objs[module.obj];
+        if !obj.is_alive {
             continue;
         }
-        for (nlist, &id) in ctx.objs[obj].nlists.iter().zip(&ctx.objs[obj].symbols) {
+        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
             if nlist.n_type() == N_ABS && native[id as usize].load(Ordering::Relaxed) & DEFINED != 0
             {
                 roots.push(ctx.symbols[id].name());
@@ -2148,8 +2151,8 @@ fn relocatable_lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
             && ctx.args.unexported_symbols.find(name.as_bytes()) == -1
     };
     let mut roots = Vec::new();
-    for &(obj, _) in &ctx.lto_modules {
-        let obj = &ctx.objs[obj];
+    for module in &ctx.lto_modules {
+        let obj = &ctx.objs[module.obj];
         if !obj.is_alive {
             continue;
         }
@@ -2166,7 +2169,7 @@ fn relocatable_lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
 /// Compiles live bitcode modules into one Mach-O object and
 /// replaces the placeholder objects' symbol claims with the real ones.
 pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
-    if !ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive) {
+    if !ctx.lto_modules.iter().any(|module| ctx.objs[module.obj].is_alive) {
         return false;
     }
     // ld-prime compiles nothing for a link that already failed, say on
@@ -2199,8 +2202,8 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     // definitions, so they must neither claim nor reference anything in
     // the next resolution round. What diagnostics still need to know of
     // the files compiled is kept aside.
-    let modules = std::mem::take(&mut ctx.lto_modules);
-    for &(obj_idx, _) in &modules {
+    for module in std::mem::take(&mut ctx.lto_modules) {
+        let obj_idx = module.obj;
         let obj = &ctx.objs[obj_idx];
         if obj.is_alive {
             let strong_defs = obj
@@ -2210,7 +2213,8 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
                 .filter(|(nlist, _)| nlist.n_type() == N_ABS && nlist.n_desc & N_WEAK_DEF == 0)
                 .map(|(_, &id)| id)
                 .collect();
-            ctx.lto_inputs.push(crate::lto::LtoInput { obj: obj_idx, strong_defs });
+            let defined = module.defined;
+            ctx.lto_inputs.push(crate::lto::LtoInput { obj: obj_idx, strong_defs, defined });
         }
         let ids = ctx.objs[obj_idx].symbols.clone();
         for id in ids {
