@@ -355,9 +355,13 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
         }
     }
 
-    let (mut entries, first_labels) = symbol_entries(ctx, &files);
+    // The linker's symbols go first of those at one place.
+    let mut entries = linker_symbol_entries(ctx);
+    let linker_symbols = entries.len();
+    let (named, first_labels) = symbol_entries(ctx, &files);
+    entries.extend(named);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    entries.extend(eh_frame_entries(ctx, &files, &entries));
+    entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
     entries.extend(synthetic_entries(ctx, &files));
     entries.sort_by_key(|e| (e.addr, e.size));
 
@@ -759,6 +763,49 @@ fn eh_frame_entries<'a, E: Target>(
         let addr = base + fde.output_offset as u64;
         let (size, file) = (fde.data.len() as u64, files.objs[fde.obj as usize]);
         entries.push(MapEntry { addr, size, file, name: Cow::Owned(name) });
+    }
+    entries
+}
+
+/// The symbols the linker defines, as ld-prime lists them once
+/// something refers to them, file 0's and of no size: ___dso_handle and
+/// the header's name for the kind of image (a dylib's
+/// __mh_dylib_header) - the lazy-load helpers pass ___dso_handle to
+/// __dyld_lazy_load -, and the bounds of sections
+/// (section$start$__TEXT$__text), but not of segments. An executable's
+/// __mh_execute_header comes first whether or not anything does. A
+/// section -sectcreate or -add_empty_section makes is an atom named
+/// "l<sect-create>" and the section's name, one a boundary symbol makes
+/// by the name alone.
+fn linker_symbol_entries<'a, E: Target>(ctx: &'a Context<E>) -> Vec<MapEntry<'a>> {
+    let headers =
+        ["___dso_handle", "__mh_dylib_header", "__mh_bundle_header", "__mh_dylinker_header"];
+    let mut ids: Vec<SymbolId> = headers
+        .iter()
+        .filter_map(|&name| ctx.symbols.get(name))
+        .filter(|&id| {
+            let sym = &ctx.symbols[id];
+            let is_ours = matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.is_internal(obj as usize))
+                && sym.input_section().is_none();
+            let lazy_load = sym.name() == "___dso_handle" && !ctx.lazy_helpers.helpers.is_empty();
+            is_ours && (sym.is_used() || lazy_load)
+        })
+        .collect();
+    ids.extend(ctx.boundary_syms.iter().filter(|(.., sect)| sect.is_some()).map(|&(id, ..)| id));
+    let mut entries: Vec<MapEntry> = ids
+        .into_iter()
+        .map(|id| MapEntry {
+            addr: ctx.sym_addr(id),
+            size: 0,
+            file: 0,
+            name: name(ctx.symbols[id].name()),
+        })
+        .collect();
+    for sec in &ctx.sectcreate_sections {
+        let (hdr, size) = (&sec.hdr, sec.contents.len() as u64);
+        let prefix = if sec.from_option { "l<sect-create>" } else { "" };
+        let name = format!("{prefix}{},{}", hdr.segname, hdr.sectname).into_bytes();
+        entries.push(MapEntry { addr: hdr.addr, size, file: 0, name: Cow::Owned(name) });
     }
     entries
 }
