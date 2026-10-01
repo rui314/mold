@@ -63,10 +63,11 @@ pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
 
 /// The directories `dirs` given on the command line, then, unless -Z,
 /// the default ones, each looked up under the syslibroots as ld64 does
-/// (see push_search_dir). A -syslibroot of / anywhere, which configure
-/// scripts pass, puts none under a root (ld64 drops the roots only for
-/// a last one); the roots still hold the files the options naming a
-/// library's path look up (find_file).
+/// (see push_search_dir). A directory given again, spelled the same, is
+/// taken the first time only. A -syslibroot of / anywhere, which
+/// configure scripts pass, puts none under a root (ld64 drops the roots
+/// only for a last one); the roots still hold the files the options
+/// naming a library's path look up (find_file).
 fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
     let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
         &[]
@@ -74,7 +75,8 @@ fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf>
         &args.syslibroot
     };
     let mut out = Vec::new();
-    for dir in dirs {
+    let mut seen = std::collections::HashSet::new();
+    for dir in dirs.iter().filter(|dir| seen.insert(dir.as_os_str())) {
         push_search_dir(syslibroot, &mut out, dir, true);
     }
     if !args.no_standard_dirs {
