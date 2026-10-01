@@ -78,6 +78,18 @@ EOF
 not $CC --ld-path=$mold -o $t/exe2 $t/b.o -L$t -Wl,-lazy-lfoo -mmacosx-version-min=27.0 2> $t/log
 grep -q "ptr64 use of '_fdata' in '_p' cannot be lazy loaded." $t/log
 
+# ld-prime refuses them all in one error, a line each.
+cat <<EOF | $CC -o $t/b2.o -c -xc -
+extern int fdata;
+int foo(void);
+int *p = &fdata;
+void *q = (void *)foo;
+int main() { return *p; }
+EOF
+not $CC --ld-path=$mold -o $t/exe2 $t/b2.o -L$t -Wl,-lazy-lfoo -mmacosx-version-min=27.0 2> $t/log
+grep -A1 "ptr64 use of '_fdata' in '_p' cannot be lazy loaded.$" $t/log | \
+  grep -q "^ptr64 use of '_foo' in '_q' cannot be lazy loaded.$"
+
 # A dylib can load one lazily too.
 cat <<EOF | $CC -o $t/c.o -c -xc -
 int foo(void);

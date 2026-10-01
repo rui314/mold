@@ -11,7 +11,6 @@ use rayon::prelude::*;
 
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
-use crate::error;
 use crate::input_files::{self, FileId};
 use crate::macho::*;
 use crate::symbol::{NO_IDX, SymbolId};
@@ -95,19 +94,9 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         };
         errors.push(format!("{kind} use of '{sym}' in '{atom}' cannot be delayed."));
     }
-    report_errors(errors);
-    uses
-}
-
-/// Reports what ld-prime refuses of a pass in one error, a line each,
-/// as it does.
-pub(crate) fn report_errors(errors: Vec<String>) {
-    match errors.len() {
-        0 => return,
-        1 => error!("{}", errors[0]),
-        _ => error!("{}\n", errors.join("\n")),
-    }
+    crate::error::errors_together(&errors);
     crate::error::checkpoint();
+    uses
 }
 
 /// The install name of the dylib a delay-init dylib's dlopen helper

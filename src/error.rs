@@ -209,6 +209,16 @@ pub fn check_fatal_warnings() {
     }
 }
 
+/// Reports the errors of one check of ld-prime's as one, as it does: a
+/// line each, every line ending with a newline when there are several.
+pub fn errors_together(errors: &[String]) {
+    match errors {
+        [] => {}
+        [one] => error(format_args!("{one}")),
+        _ => error(format_args!("{}\n", errors.join("\n"))),
+    }
+}
+
 /// Exits with a failure status if any error has been reported.
 pub fn checkpoint() {
     if HAS_ERROR.load(Ordering::Relaxed) || HAS_LAYOUT_ERROR.load(Ordering::Relaxed) {
