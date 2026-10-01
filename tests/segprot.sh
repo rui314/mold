@@ -50,9 +50,13 @@ else
   [ "$(prot $t/exe5 __MYSEG)" = '3 1' ]
 fi
 
-# It warns about each byte of a non-ASCII letter.
-$CC --ld-path=$mold -o $t/exe6 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,$'r\xc3\xa9',r 2> $t/log6
-[ "$(grep -c "unknown -segprot letter" $t/log6)" = 2 ]
+# It warns about each byte of a non-ASCII letter, printing the byte as
+# it is, UTF-8 or not.
+$CC --ld-path=$mold -o $t/exe6 $t/main.o $t/a.o -Wl,-segprot,__MYSEG,$'r\xc3\xa9',$'r\xff' 2> $t/log6
+[ "$(grep -c "unknown -segprot letter" $t/log6)" = 3 ]
+grep -q $'letter \'\xc3\'$' $t/log6
+grep -q $'letter \'\xa9\'$' $t/log6
+grep -q $'letter \'\xff\'$' $t/log6
 
 # An empty or missing argument is an error.
 not $CC --ld-path=$mold -o $t/exe7 $t/main.o $t/a.o -Xlinker -segprot -Xlinker __MYSEG \

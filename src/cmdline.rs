@@ -5,11 +5,12 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::io::IsTerminal;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
-use crate::error::Held;
+use crate::error::{Held, raw};
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files::PlatformVersion;
@@ -1710,7 +1711,7 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
 /// Parses a -segprot protection: the letters r, w and x in either
 /// case, and '-' for none. ld-prime warns about any other byte and
 /// ignores it, so a non-ASCII letter draws a warning for each of its
-/// bytes (which the warnings spell lossily).
+/// bytes, which it prints as they are.
 fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
     let mut prot = 0u8;
     for &c in val {
@@ -1719,7 +1720,7 @@ fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
             b'w' => prot |= 2,
             b'x' => prot |= 4,
             b'-' => {}
-            _ => warnings.warn(format!("unknown -segprot letter '{}'", display(&[c]))),
+            _ => warnings.warn(format_args!("unknown -segprot letter '{}'", raw(&[c]))),
         }
     }
     prot
@@ -1934,16 +1935,16 @@ struct OptionWarnings {
 }
 
 impl OptionWarnings {
-    fn warn(&mut self, msg: impl Into<String>) {
+    fn warn(&mut self, msg: impl fmt::Display) {
         if self.quiet {
             self.hidden = true;
         } else {
-            crate::error::hold(Held::Warning(msg.into()));
+            crate::error::hold(Held::Warning(crate::error::render(format_args!("{msg}"))));
         }
     }
 
-    fn notice(&mut self, msg: impl Into<String>) {
-        crate::error::hold(Held::Notice(msg.into()));
+    fn notice(&mut self, msg: impl fmt::Display) {
+        crate::error::hold(Held::Notice(crate::error::render(format_args!("{msg}"))));
     }
 
     /// Gives the messages, once the parse is known to be the last.

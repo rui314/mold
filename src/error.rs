@@ -55,24 +55,90 @@ pub fn set_suppress_warnings(on: bool) {
     SUPPRESS_WARNINGS.store(on, Ordering::Relaxed);
 }
 
+/// A byte string that a diagnostic prints as it is (see raw).
+pub struct Raw<'a>(&'a [u8]);
+
+/// Prints a byte string in a diagnostic as it is, as ld-prime prints
+/// the names it reads - a segment's or a section's, which need not be
+/// UTF-8 - byte for byte. Formatted anywhere but into a diagnostic,
+/// each byte that isn't UTF-8 comes out as U+FFFD.
+pub fn raw(bytes: &[u8]) -> Raw<'_> {
+    Raw(bytes)
+}
+
+impl fmt::Display for Raw<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for chunk in self.0.utf8_chunks() {
+            f.write_str(chunk.valid())?;
+            for &byte in chunk.invalid() {
+                f.write_str(byte_mark(byte))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A U+FFFD for each byte from 0x80 up, the bytes that can be invalid
+/// in UTF-8: a Raw writes such a byte as the copy for it, which render
+/// knows by its address and writes the byte for. (No character could
+/// mark the byte in the text: a name may hold any.)
+static BYTE_MARKS: [u8; 3 * 128] = {
+    let mut marks = [0; 3 * 128];
+    let mut i = 0;
+    while i < marks.len() {
+        (marks[i], marks[i + 1], marks[i + 2]) = (0xef, 0xbf, 0xbd);
+        i += 3;
+    }
+    marks
+};
+
+fn byte_mark(byte: u8) -> &'static str {
+    let i = usize::from(byte - 0x80) * 3;
+    std::str::from_utf8(&BYTE_MARKS[i..i + 3]).unwrap()
+}
+
+/// A diagnostic as the bytes to print.
+pub type Message = Vec<u8>;
+
+/// Formats a message into the bytes to print, with the bytes a Raw
+/// marked put back.
+pub(crate) fn render(msg: fmt::Arguments) -> Message {
+    struct Sink(Message);
+    impl fmt::Write for Sink {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            let marks = BYTE_MARKS.as_ptr_range();
+            if marks.contains(&s.as_ptr()) {
+                let offset = s.as_ptr() as usize - marks.start as usize;
+                self.0.push(0x80 + (offset / 3) as u8);
+            } else {
+                self.0.extend_from_slice(s.as_bytes());
+            }
+            Ok(())
+        }
+    }
+    let mut sink = Sink(Vec::new());
+    let _ = fmt::write(&mut sink, msg);
+    sink.0
+}
+
 /// The messages given from the worker threads of a parallel pass, which
 /// would come out in whatever order the threads happened to run. They
 /// wait here and come out sorted, the same in every run, before the
 /// next message the link's own thread gives, or as the link ends.
-static PARALLEL: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PARALLEL: Mutex<Vec<Message>> = Mutex::new(Vec::new());
 
 // Format each message before taking the lock so diagnostics from different
 // threads cannot interleave.
 fn emit(prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
     let prefix = if COLOR.load(Ordering::Relaxed) { prefix_color } else { prefix_mono };
-    let text = format!("{prefix}{msg}\n");
+    let text = render(format_args!("{prefix}{msg}\n"));
     if rayon::current_thread_index().is_some() {
         PARALLEL.lock().unwrap_or_else(|e| e.into_inner()).push(text);
         return;
     }
     release_parallel();
     let _guard = OUTPUT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let _ = io::stderr().write_all(text.as_bytes());
+    let _ = io::stderr().write_all(&text);
 }
 
 /// Gives the messages of parallel passes held back so far, sorted.
@@ -84,7 +150,7 @@ fn release_parallel() {
     msgs.sort_unstable();
     let _guard = OUTPUT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     for text in msgs {
-        let _ = io::stderr().write_all(text.as_bytes());
+        let _ = io::stderr().write_all(&text);
     }
 }
 
@@ -104,7 +170,7 @@ pub fn fatal(msg: fmt::Arguments) -> ! {
 
 /// The errors in the input files found so far while they are read, and
 /// whether each came from a worker thread (see hold_input_errors).
-static INPUT_ERRORS: Mutex<Option<Vec<(bool, String)>>> = Mutex::new(None);
+static INPUT_ERRORS: Mutex<Option<Vec<(bool, Message)>>> = Mutex::new(None);
 
 /// Holds back the errors from here on, as ld-prime does those it finds
 /// in the input files as it reads them all (in parallel), until
@@ -118,7 +184,7 @@ pub fn hold_input_errors() {
 fn hold_input_error(msg: fmt::Arguments) -> bool {
     let mut held = INPUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(errors) = held.as_mut() else { return false };
-    errors.push((rayon::current_thread_index().is_some(), msg.to_string()));
+    errors.push((rayon::current_thread_index().is_some(), render(msg)));
     true
 }
 
@@ -134,22 +200,24 @@ pub fn report_input_errors() {
         (true, true) => m1.cmp(m2),
         _ => p1.cmp(p2),
     });
-    let msgs: Vec<String> = errors.into_iter().map(|(_, msg)| msg).collect();
+    let msgs: Vec<Message> = errors.into_iter().map(|(_, msg)| msg).collect();
     match msgs.as_slice() {
         [] => {}
-        [one] => emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{one}")),
+        [one] => {
+            emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{}", raw(one)))
+        }
         _ => emit(
             "mold: error: ",
             "mold: \x1b[0;1;31merror:\x1b[0m ",
-            format_args!("multiple errors: {}", msgs.join("; ")),
+            format_args!("multiple errors: {}", raw(&msgs.join(&b"; "[..]))),
         ),
     }
 }
 
 /// A message held back: a warning, or a notice printed bare.
 pub enum Held {
-    Warning(String),
-    Notice(String),
+    Warning(Message),
+    Notice(Message),
 }
 
 /// The messages ld-prime gives as it reads the options, which wait
@@ -167,8 +235,8 @@ pub fn release_held() {
     let held = std::mem::take(&mut *HELD.lock().unwrap_or_else(|e| e.into_inner()));
     for msg in held {
         match msg {
-            Held::Warning(msg) => warn(format_args!("{msg}")),
-            Held::Notice(msg) => notice(format_args!("{msg}")),
+            Held::Warning(msg) => warn(format_args!("{}", raw(&msg))),
+            Held::Notice(msg) => notice(format_args!("{}", raw(&msg))),
         }
     }
 }
@@ -190,7 +258,7 @@ pub fn error(msg: fmt::Arguments) {
 
 /// The layout error to give, with where in the output file it is (see
 /// layout_error_at), until it is given.
-static LAYOUT_ERROR: Mutex<Option<(u64, String)>> = Mutex::new(None);
+static LAYOUT_ERROR: Mutex<Option<(u64, Message)>> = Mutex::new(None);
 
 /// Reports an error in the output's layout: a thread-local section it
 /// can't place, say. ld-prime lays the output out to the end all the
@@ -209,7 +277,7 @@ pub fn layout_error(msg: fmt::Arguments) {
 pub fn layout_error_at(fileoff: u64, msg: fmt::Arguments) {
     let mut first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner());
     if first.as_ref().is_none_or(|&(at, _)| fileoff < at) {
-        *first = Some((fileoff, msg.to_string()));
+        *first = Some((fileoff, render(msg)));
     }
     HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
 }
@@ -218,7 +286,7 @@ pub fn layout_error_at(fileoff: u64, msg: fmt::Arguments) {
 pub fn release_layout_error() {
     let first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner()).take();
     if let Some((_, msg)) = first {
-        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{msg}"));
+        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{}", raw(&msg)));
     }
 }
 
