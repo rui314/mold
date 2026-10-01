@@ -447,6 +447,10 @@ pub struct Args {
     /// re-export, which no other naming of them may make weak.
     pub sub_libraries: Vec<Vec<u8>>,
     pub sub_umbrellas: Vec<Vec<u8>>,
+    /// -image_suffix: suffixes (_debug, _profile) of the library and
+    /// framework variants -l and -framework look for before the plain
+    /// one, in order.
+    pub image_suffixes: Vec<OsString>,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -751,6 +755,7 @@ impl Default for Args {
             interposable: None,
             sub_libraries: Vec::new(),
             sub_umbrellas: Vec::new(),
+            image_suffixes: Vec::new(),
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1596,6 +1601,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
         "-undefined" => "missing <dynamic_lookup>",
         "-dyld_env" => "missing <arg>",
+        "-image_suffix" => "missing <suffix>",
         "-weak_reference_mismatches" => "missing [ error | weak | non-weak ]",
         "-max_default_common_align" => "missing <align-value>",
         // (ld-prime names the other list.)
@@ -2453,6 +2459,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-sub_library" => args.sub_libraries.push(bytes(next_arg(&mut i, name))),
             b"-sub_umbrella" => args.sub_umbrellas.push(bytes(next_arg(&mut i, name))),
+            b"-image_suffix" => args.image_suffixes.push(next_arg(&mut i, name).to_owned()),
             b"-interposable" => interposable_all = true,
             b"-interposable_list" => {
                 let names = read_symbol_list(name, &path(next_arg(&mut i, name)));

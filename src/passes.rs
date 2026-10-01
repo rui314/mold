@@ -142,26 +142,39 @@ fn under_root(root: &Path, path: &Path) -> PathBuf {
     root.join(crate::util::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
 }
 
-/// Looks for a framework's stub, then its dylib, in each framework
-/// directory in turn; for its dylib only if `stubs` is false, as for a
-/// framework to merge. A sparse framework, one that has only its
-/// Versions/Current without the symlinks at its top, is found there in
-/// a second pass over the directories if -search_in_sparse_frameworks
-/// asks.
-fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr, stubs: bool) -> Option<PathBuf> {
-    let with_suffix = |suffix: &str| {
-        let mut file = name.to_os_string();
-        file.push(suffix);
-        file
+/// Finds -framework Name[,suffix]: Name.framework/Name (its stub
+/// first, unless `stubs` is false, as for a framework to merge) in each
+/// framework directory, as ld64 does. A suffix names a variant of the
+/// binary the framework's Name symlink points to (Name in Versions/A
+/// when Name links there) with the suffix appended, which is looked for
+/// in every directory before the framework itself. -image_suffix's
+/// suffixes are tried before the name without. A sparse framework, one
+/// that has only its Versions/Current without the symlinks at its top,
+/// is found there in a second pass over the directories if
+/// -search_in_sparse_frameworks asks.
+fn find_framework<E: Target>(ctx: &Context<E>, arg: &OsStr, stubs: bool) -> Option<PathBuf> {
+    let (name, suffix) = match memchr::memchr(b',', arg.as_bytes()) {
+        Some(comma) => (&arg.as_bytes()[..comma], Some(&arg.as_bytes()[comma + 1..])),
+        None => (arg.as_bytes(), None),
     };
+    let name = crate::util::os_str(name);
+    let mut framework = name.to_os_string();
+    framework.push(".framework");
     let search = |subdir: &str| {
-        for dir in &ctx.args.framework_paths {
-            let fw = dir.join(with_suffix(".framework")).join(subdir);
-            let stub = stubs.then(|| with_suffix(".tbd"));
-            for file in stub.into_iter().chain([name.to_os_string()]) {
-                let path = fw.join(file);
-                if path.exists() {
-                    return Some(path);
+        for suffix in [suffix, None].into_iter().take(1 + suffix.is_some() as usize) {
+            for dir in &ctx.args.framework_paths {
+                let mut path = dir.join(&framework).join(subdir).join(name);
+                if let Some(suffix) = suffix {
+                    path = std::fs::canonicalize(&path).unwrap_or(path);
+                    path.as_mut_os_string().push(crate::util::os_str(suffix));
+                }
+                for path in with_image_suffixes(ctx, &path) {
+                    let stub = stubs.then(|| path.with_extension("tbd"));
+                    for path in stub.into_iter().chain([path]) {
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
                 }
             }
         }
@@ -170,6 +183,27 @@ fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr, stubs: bool) -> Opt
     search("").or_else(|| {
         ctx.args.search_in_sparse_frameworks.then(|| search("Versions/Current")).flatten()
     })
+}
+
+/// A library path with each -image_suffix suffix (put before its
+/// extension: libfoo_debug.dylib), then as it is.
+fn with_image_suffixes<E: Target>(ctx: &Context<E>, path: &Path) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = ctx
+        .args
+        .image_suffixes
+        .iter()
+        .map(|suffix| {
+            let mut stem = path.file_stem().unwrap_or_default().to_os_string();
+            stem.push(suffix);
+            if let Some(ext) = path.extension() {
+                stem.push(".");
+                stem.push(ext);
+            }
+            path.with_file_name(stem)
+        })
+        .collect();
+    paths.push(path.to_path_buf());
+    paths
 }
 
 fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
@@ -220,15 +254,21 @@ fn search_library<E: Target>(
     if name.as_bytes().ends_with(b".o") {
         return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| p.exists());
     }
+    // In a directory, ld-prime looks for each -image_suffix variant
+    // of the library, of any extension, before the library itself.
     for exts in passes {
         for dir in &ctx.args.library_paths {
-            for ext in *exts {
-                let mut file = OsString::from("lib");
-                file.push(name);
-                file.push(format!(".{ext}"));
-                let path = dir.join(file);
-                if path.exists() {
-                    return Some(path);
+            let suffixes = ctx.args.image_suffixes.iter().map(OsString::as_os_str);
+            for suffix in suffixes.chain([OsStr::new("")]) {
+                for ext in *exts {
+                    let mut file = OsString::from("lib");
+                    file.push(name);
+                    file.push(suffix);
+                    file.push(format!(".{ext}"));
+                    let path = dir.join(file);
+                    if path.exists() {
+                        return Some(path);
+                    }
                 }
             }
         }
