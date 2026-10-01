@@ -578,7 +578,7 @@ fn memchr_from(bytes: &[u8], needle: u8, from: usize) -> Option<usize> {
     if p.is_null() { None } else { Some(p as usize - bytes.as_ptr() as usize) }
 }
 
-pub fn parse_version(val: &str) -> u32 {
+fn parse_version(val: &str) -> u32 {
     let mut nums = val.split('.').map(|s| s.parse().unwrap_or(0));
     let major = nums.next().unwrap_or(1);
     let minor = nums.next().unwrap_or(0);

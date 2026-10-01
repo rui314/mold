@@ -4248,6 +4248,10 @@ fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
             add(name, weak, tlv);
         }
     }
+    // Both the symbol table and the export trie name each directive;
+    // ld-prime reads them by name.
+    dylib.ld_symbols.sort_unstable();
+    dylib.ld_symbols.dedup();
     dylib
 }
 
@@ -4407,26 +4411,35 @@ struct LdDirectives {
 /// change shape per deployment target without a file format change:
 /// $ld$add$os<ver>$<sym> exports <sym> only when the target equals
 /// <ver>, $ld$hide$os<ver>$<sym> hides one, $ld$install_name$os<ver>$
-/// <name> substitutes the recorded install name, and
-/// $ld$previous$<name>$<compat>$<platform>$<lo>$<hi>$<sym>$ applies
-/// <name> (at version <compat>, if given) when the target platform
-/// matches and lo <= minos < hi: to the whole library if <sym> is
-/// empty, else to that export alone. Apple uses these when symbols
+/// <name> substitutes the recorded install name,
+/// $ld$compatibility_version$os<ver>$<version> the compatibility
+/// version, and $ld$previous$<name>$<compat>$<platform>$<lo>$<hi>$<sym>$
+/// applies <name> (at version <compat>, if given) when the target
+/// platform matches and lo <= minos < hi: to the whole library if <sym>
+/// is empty, else to that export alone. Apple uses these when symbols
 /// move between libraries: old targets keep binding them where they
 /// used to live (AppKit's Swift overlay functions in libswiftAppKit
 /// before macOS 14). A stub lists them among its exports, and a binary
-/// dylib exports them as absolute symbols; ld-prime obeys both.
+/// dylib exports them as absolute symbols; ld-prime obeys both, and
+/// passes over one it can't read without a word. Of several directives
+/// of a kind that apply, it takes the one with the first $ld$previous
+/// install name, the last $ld$install_name one and the first
+/// $ld$compatibility_version directive by name; a library's
+/// $ld$previous beats its $ld$install_name.
 struct LdSymbols {
     added: Vec<&'static str>,
     hidden: hashbrown::HashSet<&'static str>,
-    install_name: Option<(&'static str, Option<u32>)>,
+    /// The install name an $ld$install_name directive gives.
+    install_name: Option<&'static str>,
+    /// The install name a whole-library $ld$previous directive gives,
+    /// with the version it gives, if any.
+    previous: Option<(&'static str, Option<u32>)>,
+    /// The $ld$compatibility_version directive that applies: its name
+    /// and version.
+    compatibility_version: Option<(&'static str, u32)>,
     /// The exports that move: each with the install name it moves to
     /// and the version the directive gives, if any.
     moved: Vec<(&'static str, &'static str, Option<u32>)>,
-    /// The $ld$previous names it can't read, which `finish` warns of:
-    /// a library's directives may be read again (see exported_class),
-    /// but only loading it warns.
-    malformed: Vec<&'static str>,
 }
 
 impl LdSymbols {
@@ -4437,46 +4450,51 @@ impl LdSymbols {
             added: Vec::new(),
             hidden: hashbrown::HashSet::new(),
             install_name: None,
+            previous: None,
+            compatibility_version: None,
             moved: Vec::new(),
-            malformed: Vec::new(),
         };
-        for name in names {
-            if let Some(rest) = name.strip_prefix("$ld$previous$") {
-                // A symbol name may contain '$' (Swift's do): it is what
-                // follows the fifth separator, less the final '$'.
-                let f: Vec<&'static str> = rest.splitn(6, '$').collect();
-                let Some(sym) = f.get(5).and_then(|s| s.strip_suffix('$')) else {
-                    ld.malformed.push(name);
+        for &name in names {
+            let Some(rest) = name.strip_prefix("$ld$") else { continue };
+            if let Some(rest) = rest.strip_prefix("previous$") {
+                let Some(p) = PreviousDirective::parse(rest) else { continue };
+                if p.platform != ctx.args.platform || minos < p.lo || p.hi <= minos {
                     continue;
-                };
-                if f[2].parse::<u32>() == Ok(ctx.args.platform)
-                    && tapi::parse_version(f[3]) <= minos
-                    && minos < tapi::parse_version(f[4])
-                {
-                    let version = (!f[1].is_empty()).then(|| tapi::parse_version(f[1]));
-                    if sym.is_empty() {
-                        ld.install_name = Some((f[0], version));
-                    } else {
-                        ld.moved.push((sym, f[0], version));
+                }
+                let moved = (p.sym, p.install_name, p.version);
+                match ld.moved.iter_mut().find(|(sym, ..)| *sym == p.sym) {
+                    _ if p.sym.is_empty() => {
+                        if ld.previous.is_none_or(|(first, _)| p.install_name < first) {
+                            ld.previous = Some((p.install_name, p.version));
+                        }
                     }
+                    Some(old) if p.install_name < old.1 => *old = moved,
+                    Some(_) => {}
+                    None => ld.moved.push(moved),
                 }
-            } else if let Some(rest) = name.strip_prefix("$ld$add$os") {
-                if let Some((ver, sym)) = rest.split_once('$')
-                    && tapi::parse_version(ver) == minos
+                continue;
+            }
+            // $ld$<action>$os<version>$<arg>, for the target's version.
+            let Some((action, rest)) = rest.split_once('$') else { continue };
+            let Some((version, arg)) = rest.strip_prefix("os").and_then(|r| r.split_once('$'))
+            else {
+                continue;
+            };
+            if arg.is_empty() || directive_version(version) != Some(minos) {
+                continue;
+            }
+            match action {
+                "add" => ld.added.push(arg),
+                "hide" => _ = ld.hidden.insert(arg),
+                "install_name" if ld.install_name.is_none_or(|last| last < arg) => {
+                    ld.install_name = Some(arg);
+                }
+                "compatibility_version"
+                    if ld.compatibility_version.is_none_or(|(first, _)| name < first) =>
                 {
-                    ld.added.push(sym);
+                    ld.compatibility_version = Some((name, directive_version(arg).unwrap_or(0)));
                 }
-            } else if let Some(rest) = name.strip_prefix("$ld$hide$os") {
-                if let Some((ver, sym)) = rest.split_once('$')
-                    && tapi::parse_version(ver) == minos
-                {
-                    ld.hidden.insert(sym);
-                }
-            } else if let Some(rest) = name.strip_prefix("$ld$install_name$os")
-                && let Some((ver, new_name)) = rest.split_once('$')
-                && tapi::parse_version(ver) == minos
-            {
-                ld.install_name = Some((new_name, None));
+                _ => {}
             }
         }
         ld
@@ -4488,18 +4506,21 @@ impl LdSymbols {
         !name.starts_with("$ld$") && !self.hidden.contains(name)
     }
 
+    /// The install name the library takes from a directive, if any.
+    fn renamed_install_name(&self) -> Option<&'static str> {
+        self.previous.map(|(name, _)| name).or(self.install_name)
+    }
+
     /// The version the library takes with an older one's install name,
     /// if the directive gives one.
     fn renamed_version(&self) -> Option<u32> {
-        self.install_name.and_then(|(_, version)| version)
+        self.previous.and_then(|(_, version)| version)
     }
 
     /// The directives' effect beyond the exports, for a library at
     /// `current_version` and `compatibility_version` (after renaming).
     fn finish(self, current_version: u32, compatibility_version: u32) -> LdDirectives {
-        for name in &self.malformed {
-            crate::warn!("malformed linker directive: {name}");
-        }
+        let renamed = self.renamed_install_name().is_some();
         let moved = self
             .moved
             .into_iter()
@@ -4510,7 +4531,7 @@ impl LdSymbols {
                 compatibility_version: version.unwrap_or(compatibility_version),
             })
             .collect();
-        LdDirectives { renamed: self.install_name.is_some(), moved }
+        LdDirectives { renamed, moved }
     }
 }
 
@@ -4520,8 +4541,11 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) ->
     tbd.exports.retain(|n| ld.keeps(n));
     tbd.weak_exports.retain(|n| ld.keeps(n));
     tbd.exports.extend(&ld.added);
-    if let Some((name, _)) = ld.install_name {
+    if let Some(name) = ld.renamed_install_name() {
         tbd.install_name = name.to_string();
+    }
+    if let Some((_, version)) = ld.compatibility_version {
+        tbd.compatibility_version = version;
     }
     if let Some(version) = ld.renamed_version() {
         tbd.current_version = version;
@@ -4531,16 +4555,25 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) ->
 }
 
 /// Applies a dylib binary's "$ld$..." names (see LdSymbols) to it.
+/// ld-prime knows fewer kinds of directive in a binary than TAPI does
+/// in a stub - not $ld$compatibility_version - and warns of each name
+/// of another kind, by name, each time it reads the file.
 fn interpret_binary_ld_symbols<E: Target>(
     ctx: &Context<E>,
     dylib: &mut DylibBinary,
 ) -> LdDirectives {
+    for name in &dylib.ld_symbols {
+        let kind = name["$ld$".len()..].split('$').next().unwrap();
+        if !matches!(kind, "previous" | "add" | "hide" | "install_name" | "weak") {
+            crate::warn!("unknown link constraint kind: {kind}");
+        }
+    }
     let ld = LdSymbols::read(ctx, &dylib.ld_symbols);
     dylib.exports.retain(|n| ld.keeps(n));
     dylib.weak_exports.retain(|n| ld.keeps(n));
     dylib.tlv_exports.retain(|n| ld.keeps(n));
     dylib.exports.extend(&ld.added);
-    if let Some((name, _)) = ld.install_name {
+    if let Some(name) = ld.renamed_install_name() {
         dylib.install_name = name.as_bytes().to_vec();
     }
     if let Some(version) = ld.renamed_version() {
@@ -4548,6 +4581,93 @@ fn interpret_binary_ld_symbols<E: Target>(
         dylib.compatibility_version = version;
     }
     ld.finish(dylib.current_version, dylib.compatibility_version)
+}
+
+/// An $ld$previous directive, as ld-prime reads one:
+/// <install name>$<compat>$<platform>$<lo>$<hi>[$[<sym>[$]]], the
+/// symbol - which may itself contain '$', as Swift's do - less a final
+/// '$'. A field it can't read makes it ignore the directive.
+struct PreviousDirective {
+    install_name: &'static str,
+    version: Option<u32>,
+    platform: u32,
+    lo: u32,
+    hi: u32,
+    sym: &'static str,
+}
+
+impl PreviousDirective {
+    fn parse(rest: &'static str) -> Option<Self> {
+        let mut f = rest.splitn(6, '$');
+        let (install_name, compat, platform) = (f.next()?, f.next()?, f.next()?);
+        let (lo, hi) = (f.next()?, f.next()?);
+        let sym = f.next().unwrap_or("");
+        let version = |s: &str| if s.is_empty() { Some(0) } else { previous_version(s) };
+        if install_name.is_empty()
+            || platform.is_empty()
+            || !platform.bytes().all(|c| c.is_ascii_digit())
+        {
+            return None;
+        }
+        Some(Self {
+            install_name,
+            version: if compat.is_empty() { None } else { Some(previous_version(compat)?) },
+            platform: strtoul32(platform)?,
+            lo: version(lo)?,
+            hi: version(hi)?,
+            sym: sym.strip_suffix('$').unwrap_or(sym),
+        })
+    }
+}
+
+/// A number of a directive's version, as strtoul reads one into 32
+/// bits: digits only, none for 0.
+fn strtoul32(s: &str) -> Option<u32> {
+    if !s.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(if s.is_empty() { 0 } else { s.parse::<u64>().map_or(u32::MAX, |n| n as u32) })
+}
+
+/// A version in an $ld$previous directive, as ld-prime reads one, packed
+/// as a Mach-O version: up to five dot-separated numbers, of which the
+/// fourth and fifth must be 0, the first below 65536 and the others
+/// below 256. An empty number is 0, but not as the last of the first
+/// four ("1..2" is 1.0.2, "1." no version).
+fn previous_version(s: &str) -> Option<u32> {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() > 5 {
+        return None;
+    }
+    let mut nums = [0; 5];
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() && i + 1 == parts.len() && i < 4 {
+            return None;
+        }
+        nums[i] = strtoul32(part)?;
+    }
+    (nums[0] <= 0xffff && nums[1] <= 0xff && nums[2] <= 0xff && nums[3] == 0 && nums[4] == 0)
+        .then(|| (nums[0] << 16) | (nums[1] << 8) | nums[2])
+}
+
+/// The OS version of a directive, or the version of an
+/// $ld$compatibility_version one, as ld-prime reads it: the first three
+/// numbers of those separated by dots (empty ones skipped), the first
+/// below 65536 and the others below 256.
+fn directive_version(s: &str) -> Option<u32> {
+    let mut version = 0;
+    for (i, part) in s.split('.').filter(|p| !p.is_empty()).take(3).enumerate() {
+        let n = if part.bytes().all(|c| c.is_ascii_digit()) {
+            part.parse::<u32>().ok()?
+        } else {
+            return None;
+        };
+        if n > if i == 0 { 0xffff } else { 0xff } {
+            return None;
+        }
+        version |= n << (16 - 8 * i);
+    }
+    Some(version)
 }
 
 /// A stub's library, read for the link's architecture and platform;
