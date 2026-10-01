@@ -251,10 +251,9 @@ fn output_section_traced(
     }
     let input = (static_name(segname), static_name(sectname));
     let name = map.zero_fill_name(input, flags);
-    if name != input {
-        note("-merge_zero_fill_sections", name);
-    }
+    let mut step = (name != input).then_some("-merge_zero_fill_sections");
     if map.relocatable {
+        step.inspect(|&how| note(how, name));
         return Some((renamed(args, name), name));
     }
     if name == ("__DATA", "__objc_clsrolist") {
@@ -262,10 +261,11 @@ fn output_section_traced(
     }
     let moved = map.builtin_name(name, flags);
     if moved != name {
-        note(if moved.0 == "__TEXT_EXEC" { "-text_exec" } else { "-data_const" }, moved);
+        step.inspect(|&how| note(how, name));
+        step = Some(if moved.0 == "__TEXT_EXEC" { "-text_exec" } else { "-data_const" });
     }
     let name = moved;
-    let out = traced_renames(args, name, map.renamed_section(args, name), note);
+    let out = traced_renames(args, step, name, map.renamed_section(args, name), note);
     Some(match merged_name(name) {
         Some(merged) if out == name && is_standard_section(segname, sectname, flags) => {
             (renamed(args, merged), merged)
@@ -279,13 +279,20 @@ fn output_section_traced(
 /// `note` of the renames as ld-prime does: as one step, -rename_section's
 /// unless -rename_segment applied - ld-prime counts its renames of
 /// legacy names and of the interposing tuples as -rename_section's.
+/// The `step` that put the section at `name`, a move, comes first, in
+/// the segment -rename_section gave it if -rename_segment then moves it
+/// on: ld-prime renames the segment in place before it tells of it.
 fn traced_renames(
     args: &crate::cmdline::Args,
+    step: Option<&'static str>,
     name: SectionName,
     section: SectionName,
     note: &mut dyn FnMut(&'static str, SectionName),
 ) -> SectionName {
     let out = (renamed_segment(args, section.0), section.1);
+    if let Some(how) = step {
+        note(how, if out.0 != section.0 { (section.0, name.1) } else { name });
+    }
     if out != name {
         note(if out.0 != section.0 { "-rename_segment" } else { "-rename_section" }, out);
     }
@@ -1194,11 +1201,10 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let mut stubs = ("__TEXT", "__objc_stubs");
     if args.text_exec {
         stubs.0 = "__TEXT_EXEC";
-        steps.push(("-text_exec", stubs));
     }
-    let to = traced_renames(args, stubs, map.renamed_section(args, stubs), &mut |how, to| {
-        steps.push((how, to));
-    });
+    let step = args.text_exec.then_some("-text_exec");
+    let section = map.renamed_section(args, stubs);
+    let to = traced_renames(args, step, stubs, section, &mut |how, to| steps.push((how, to)));
     for &(sym, _) in &ctx.objc_stubs.symbols {
         write(ctx.symbols[sym].name(), steps.clone(), to);
     }
@@ -1281,8 +1287,8 @@ fn atom_mapping<E: Target>(
     let mut note = |how, to| steps.push((how, to));
     let to = match moved.and_then(|m| Some((m, map.moved_name(m, seg, sect, flags)?.0))) {
         Some((m, name)) => {
-            note(m.option.name(), name);
-            traced_renames(&ctx.args, name, section_renamed(&ctx.args, name), &mut note)
+            let section = section_renamed(&ctx.args, name);
+            traced_renames(&ctx.args, Some(m.option.name()), name, section, &mut note)
         }
         None => match output_section_traced(&ctx.args, map, seg, sect, flags, &mut note) {
             Some((to, _)) => to,

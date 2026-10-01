@@ -76,3 +76,19 @@ $CC --ld-path=$mold -o $t/exe5 $t/c.o -Wl,-trace_symbol_layout > $t/log5 2> /dev
 
 $mold -r -arch $ARCH -o $t/r.o $t/b.o -trace_symbol_layout > $t/log6
 [ ! -s $t/log6 ]
+
+# Where -rename_section takes a section to another segment and
+# -rename_segment then moves that one on, ld-prime gives the line of
+# the move before them the segment -rename_section named (it renames
+# the segment in place first), and then the renames as one step.
+$CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-move_to_rw_segment,__FOO,$t/rw.txt \
+  -Wl,-rename_section,__FOO,__data,__BAR,__d2 -Wl,-rename_segment,__BAR,__QUX \
+  -Wl,-trace_symbol_layout > $t/log7 2> /dev/null
+grep -qx "symbol '_data1', -move_to_rw_segment mapped it to __BAR/__data" $t/log7
+grep -qx "symbol '_data1', -rename_segment mapped it to __QUX/__d2" $t/log7
+grep -qx "symbol '_const1', -move_to_rw_segment mapped it to __FOO/__const" $t/log7
+
+$CC --ld-path=$mold -o $t/exe8 $t/b.o -Wl,-rename_section,__DATA_CONST,__const,__X,__c \
+  -Wl,-rename_segment,__X,__Y -Wl,-trace_symbol_layout > $t/log8 2> /dev/null
+grep -qx "symbol '_cptr', -data_const mapped it to __X/__const" $t/log8
+grep -qx "symbol '_cptr', -rename_segment mapped it to __Y/__c" $t/log8
