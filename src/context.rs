@@ -902,6 +902,7 @@ impl<E: Target> Context<E> {
     pub fn sym_bind_ordinal(&self, id: SymbolId) -> i32 {
         match self.symbols[id].file() {
             Some(FileId::Dylib(dylib)) => self.bind_ordinal(dylib),
+            _ if self.is_dtrace_pointer_target(id) => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
             _ => self.export_bind_ordinal(),
         }
     }
@@ -920,6 +921,14 @@ impl<E: Target> Context<E> {
     /// definition subject to coalescing, or an interposable export.
     pub fn is_interposable(&self, id: SymbolId) -> bool {
         self.is_weak_coalesced(id) || self.is_interposable_export(id)
+    }
+
+    /// True for a DTrace symbol (see dtrace), never defined, which a
+    /// pointer in data binds by flat lookup, as ld-prime has it: no
+    /// import, it takes no stub, GOT slot or symbol table entry.
+    pub fn is_dtrace_pointer_target(&self, id: SymbolId) -> bool {
+        let sym = &self.symbols[id];
+        sym.file().is_none() && crate::dtrace::is_dtrace_symbol(sym.name())
     }
 
     /// True if dyld fills the references to this symbol: an import, or

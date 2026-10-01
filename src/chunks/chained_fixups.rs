@@ -269,6 +269,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
                 _ if ctx.is_interposable_export(sym) && !ctx.binds_weak_lookup(sym) => {
                     special(ctx.export_bind_ordinal())
                 }
+                _ if ctx.is_dtrace_pointer_target(sym) => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
                 _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
             }
         };
@@ -458,7 +459,11 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                 let addr = base + rel.offset as u64;
                 let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
                     Some(id) if ctx.is_swift_force_load_ref(id) => None,
-                    Some(id) if ctx.binds_at_runtime(id) || ctx.binds_to_self(id) => {
+                    Some(id)
+                        if ctx.binds_at_runtime(id)
+                            || ctx.binds_to_self(id)
+                            || ctx.is_dtrace_pointer_target(id) =>
+                    {
                         Some((addr, Some(id), rel.addend as u64, base))
                     }
                     _ => {

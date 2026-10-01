@@ -63,7 +63,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
             // offsets, not addresses, so they are not rebased.
             let imported = ctx
                 .reloc_target_sym(isec.file as usize, rel)
-                .is_some_and(|id| ctx.binds_pointer(id));
+                .is_some_and(|id| ctx.binds_pointer(id) || ctx.is_dtrace_pointer_target(id));
             let absolute = ctx
                 .reloc_target_sym(isec.file as usize, rel)
                 .is_some_and(|id| ctx.is_absolute_symbol(id));
