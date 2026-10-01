@@ -1895,8 +1895,10 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     }
     let seg = data_seg(ctx);
     // A kext's are plain data to ld-prime (indexed into the indirect
-    // symbol table all the same).
-    let flags = if ctx.args.is_kext() { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
+    // symbol table all the same), and so are a -static image's, but for
+    // a PIE's - one that has an indirect symbol table.
+    let plain = ctx.args.is_kext() || (ctx.args.static_link && !ctx.args.pie);
+    let flags = if plain { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
     for (id, len) in [(ChunkId::Got, slots), (ChunkId::WeakGot, weak)] {
         if len > 0 {
             let hdr = ctx.chunk_header_mut(id);
