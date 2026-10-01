@@ -5669,7 +5669,8 @@ fn create_lazy_helpers<E: Target>(
 /// sort by name across all libraries. GOT slots sort by what fills
 /// them: the image's own addresses first, then the -bundle_loader
 /// executable's symbols, each library's in load-command order, the
-/// weak-lookup binds, and flat lookups no library provides; by name
+/// weak definitions - those bound by weak lookup and the image's own
+/// the link hid alike - and flat lookups no library provides; by name
 /// within each. Runs once the dylib ordinals are final.
 pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     let mut stubs = std::mem::take(&mut ctx.stubs.symbols);
@@ -5722,7 +5723,10 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
 
 /// A GOT slot's group in ld-prime's order (see sort_stubs_and_got).
 fn got_rank<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> i64 {
-    if ctx.binds_weak_lookup(id) {
+    let sym = &ctx.symbols[id];
+    if ctx.binds_weak_lookup(id)
+        || (sym.is_weak_def() && matches!(sym.file(), Some(FileId::Obj(_))))
+    {
         return i64::MAX - 1;
     }
     match ctx.symbols[id].file() {
