@@ -308,6 +308,7 @@ struct SectionMap {
     data_const: bool,
     objc_const_refs: bool,
     const_interpose: bool,
+    const_selrefs: bool,
     shared_region: bool,
     relative_methods: bool,
     text_exec: bool,
@@ -341,15 +342,16 @@ impl SectionMap {
     /// A standard __DATA section's name in a final image when it needs
     /// no writes after dyld's fixups: the same section in __DATA_CONST,
     /// unless -no_data_const - in the shared region, where dyld fixes
-    /// them up for good, the selector references and the Objective-C
-    /// runtime's class data too. ld-prime treats this move as a
-    /// renaming, which boundary symbols follow as well (unlike
-    /// -text_exec's: section$start$__TEXT$__text stays in __TEXT).
+    /// them up for good, the Objective-C runtime's class data too; and
+    /// the selector references as Args::const_selrefs says. ld-prime
+    /// treats this move as a renaming, which boundary symbols follow as
+    /// well (unlike -text_exec's: section$start$__TEXT$__text stays in
+    /// __TEXT).
     fn const_name(self, name: SectionName) -> SectionName {
         let (seg, sect) = name;
         let is_const = match sect {
             "__objc_classrefs" | "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
-            "__objc_selrefs" => self.shared_region,
+            "__objc_selrefs" => self.const_selrefs,
             // Unless it holds absolute method lists, which the runtime
             // sorts in place.
             "__objc_const" => self.shared_region && self.relative_methods,
@@ -395,6 +397,7 @@ impl SectionMap {
             data_const: ctx.args.data_const,
             objc_const_refs: objc_refs_are_const(ctx),
             const_interpose: interpose_is_const(ctx),
+            const_selrefs: ctx.args.const_selrefs,
             shared_region: ctx.args.shared_region,
             relative_methods: ctx.args.objc_relative_method_lists,
             text_exec: ctx.args.text_exec,

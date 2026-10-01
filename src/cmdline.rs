@@ -681,6 +681,11 @@ pub struct Args {
     /// slot of its own (-objc_stubs_fast, the default). ld-prime makes
     /// x86-64's stubs the same either way.
     pub objc_stubs_small: bool,
+    /// Whether __objc_selrefs goes in __DATA_CONST (with -data_const):
+    /// -const_selrefs / -no_const_selrefs, the last one given, or by
+    /// default only in an image bound for the shared region, whatever
+    /// the deployment target (unlike ld64's, from macOS 13 on).
+    pub const_selrefs: bool,
 }
 
 impl Default for Args {
@@ -842,6 +847,7 @@ impl Default for Args {
             add_mergeable_debug_hook: false,
             dyld_envs: Vec::new(),
             objc_stubs_small: false,
+            const_selrefs: false,
         }
     }
 }
@@ -1685,6 +1691,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut target_triple: Option<&str> = None;
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut objc_stubs_small: Option<bool> = None;
+    let mut const_selrefs: Option<bool> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
 
@@ -2608,6 +2615,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-objc_stubs_fast" => objc_stubs_small = Some(false),
             b"-objc_stubs_small" => objc_stubs_small = Some(true),
+            b"-const_selrefs" => const_selrefs = Some(true),
+            b"-no_const_selrefs" => const_selrefs = Some(false),
 
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
@@ -2939,6 +2948,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     resolve_shared_region(target, &mut args);
     args.unaligned_pointers = resolve_unaligned_pointers(target, &args, unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
+    args.const_selrefs = const_selrefs.unwrap_or(args.shared_region);
     args.warn_unused_dylibs =
         warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
