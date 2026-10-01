@@ -1888,11 +1888,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         fatal!("no object files specified");
     }
 
-    // Without -arch, the first Mach-O input names the target. A parse
+    // Without -arch, the first object file names the target. A parse
     // for another target than this one is redone by the driver, so
     // what depends on the target is left to that parse.
     if args.arch.is_none() {
-        args.arch = Some(detect_target(&args.inputs));
+        args.arch = Some(detect_target(&args));
     }
     if args.arch != Some(target.name) {
         crate::error::drop_held();
@@ -2664,18 +2664,42 @@ fn resolve_image_base(args: &mut Args) {
     }
 }
 
-/// The target of the first Mach-O input file named on the command line;
-/// the host's if there is none.
-fn detect_target(inputs: &[InputArg]) -> &'static str {
-    for input in inputs {
-        if let InputArg::File(path) = input
-            && let Some(mf) = MappedFile::open(path)
-            && let Some(name) = crate::filetype::get_macho_target(mf.data())
-        {
-            return name;
+/// Without -arch, ld-prime links for the target of the first object
+/// file named on the command line: a Mach-O object's CPU type, or a
+/// bitcode file's target triple. Archives, dylibs and universal files
+/// don't count, and without such an object there is no target.
+fn detect_target(args: &Args) -> &'static str {
+    for input in &args.inputs {
+        let InputArg::File(path) = input else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                if let Some(name) = crate::filetype::get_macho_target(mf.data()) {
+                    return name;
+                }
+            }
+            FileType::LlvmBitcode => {
+                let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+                let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+                let arch = triple.split('-').next().unwrap_or_default();
+                return target_arch(arch)
+                    .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"));
+            }
+            _ => {}
         }
     }
-    if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" }
+    fatal!("Missing -arch option");
+}
+
+/// An input file ld-prime reads before the link proper to work out the
+/// target (see detect_target and infer_platform): None for an empty
+/// one, which says nothing. A file it can't map stops it, in words that
+/// name no input.
+fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
+    match MappedFile::try_open(path) {
+        Ok(mf) => (mf.size() > 0).then_some(mf),
+        Err(e) => fatal!("{}", crate::passes::unreadable_file(path, &e)),
+    }
 }
 
 /// Without -platform_version (or -macos_version_min or -target),
@@ -2691,7 +2715,7 @@ fn infer_platform(args: &mut Args) {
     let mut bitcode = None;
     for input in &args.inputs {
         let InputArg::File(path) = input else { continue };
-        let Some(mf) = MappedFile::open(path) else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
         match get_file_type(mf) {
             FileType::Object => {
                 let Some(v) = PlatformVersion::of_object(mf.data()) else {

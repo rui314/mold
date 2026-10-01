@@ -702,21 +702,25 @@ fn collect_indirect_files<E: Target>(ctx: &mut Context<E>, out: &mut Vec<Pending
 }
 
 /// ld-prime's words for an input file MappedFile::try_open failed on
-/// with `e`. ld-prime maps every input whole, and refuses an empty one,
-/// so a file that is there but no regular one (which MappedFile takes
-/// for none) is one it can't map - a directory - or an empty one.
+/// with `e`: unreadable_file's, then the input's name.
 pub fn unreadable_input(path: &Path, e: &std::io::Error) -> String {
+    format!("{} in '{}'", unreadable_file(path, e), path.display())
+}
+
+/// ld-prime's words for a file MappedFile::try_open failed on with `e`.
+/// ld-prime maps every input whole, and refuses an empty one, so a file
+/// that is there but no regular one (which MappedFile takes for none)
+/// is one it can't map - a directory - or an empty one.
+pub fn unreadable_file(path: &Path, e: &std::io::Error) -> String {
     let p = path.display();
     let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
     match found {
-        Some(md) if md.len() == 0 => format!("file is empty in '{p}'"),
+        Some(md) if md.len() == 0 => "file is empty".to_string(),
         Some(_) => {
             let e = std::io::Error::from_raw_os_error(libc::EINVAL);
-            format!("file cannot be mmap()ed, {} path={p} in '{p}'", crate::error::errno_text(&e))
+            format!("file cannot be mmap()ed, {} path={p}", crate::error::errno_text(&e))
         }
-        None => {
-            format!("file cannot be open()ed, {} path={p} in '{p}'", crate::error::errno_text(e))
-        }
+        None => format!("file cannot be open()ed, {} path={p}", crate::error::errno_text(e)),
     }
 }
 
