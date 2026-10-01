@@ -110,6 +110,10 @@ pub enum LibraryKind {
     /// as an auto-link option names one, a hint (see
     /// passes::load_autolink_deps).
     Possible,
+    /// -assert-weak-l, -assert_weak_framework, -assert_weak_library: a
+    /// dylib that loads weakly, all of whose imports must be weak
+    /// already (see passes::check_weak_assertions).
+    AssertWeak,
 }
 
 impl LibraryKind {
@@ -131,6 +135,7 @@ impl LibraryKind {
                 Merge => "-merge-l",
                 Force => "-force-l",
                 Possible => "-possible-l",
+                AssertWeak => "-assert-weak-l",
             },
             LibraryName::Framework(_) => match self {
                 Plain => "-framework ",
@@ -143,6 +148,7 @@ impl LibraryKind {
                 Merge => "-merge_framework ",
                 Hidden => "-hidden_framework ",
                 Possible => "-possible_framework ",
+                AssertWeak => "-assert_weak_framework ",
                 Force => unreachable!(),
             },
             LibraryName::Path(_) => match self {
@@ -156,6 +162,7 @@ impl LibraryKind {
                 Hidden => "-load_hidden ",
                 Force => "-force_load ",
                 Possible => "-possible_library ",
+                AssertWeak => "-assert_weak_library ",
                 Plain => unreachable!(),
             },
         }
@@ -850,6 +857,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-merge_framework" => (Merge, framework),
         b"-hidden_framework" => (Hidden, framework),
         b"-possible_framework" => (Possible, framework),
+        b"-assert_weak_framework" => (AssertWeak, framework),
         b"-weak_library" => (Weak, path),
         b"-reexport_library" => (Reexport, path),
         b"-needed_library" => (Needed, path),
@@ -859,6 +867,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-merge_library" => (Merge, path),
         b"-load_hidden" => (Hidden, path),
         b"-possible_library" => (Possible, path),
+        b"-assert_weak_library" => (AssertWeak, path),
         b"-force_load" => (Force, path),
         _ => return None,
     })
@@ -867,7 +876,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
 /// The library options with the library's name joined to them
 /// (-weak-lfoo), and the kind of library each names; -l, the others'
 /// prefix, last.
-const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 11] = [
+const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 12] = [
     ("-reexport-l", LibraryKind::Reexport),
     ("-no_merge-l", LibraryKind::NoMerge),
     ("-merge-l", LibraryKind::Merge),
@@ -878,6 +887,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 11] = [
     ("-weak-l", LibraryKind::Weak),
     ("-force-l", LibraryKind::Force),
     ("-possible-l", LibraryKind::Possible),
+    ("-assert-weak-l", LibraryKind::AssertWeak),
     ("-l", LibraryKind::Plain),
 ];
 

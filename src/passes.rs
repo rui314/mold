@@ -269,6 +269,7 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
         dylib.is_lazy |= lazy;
     }
     dylib.is_reexported |= rc.reexport;
+    dylib.is_weak_asserted |= rc.assert_weak;
     dylib.is_needed |= rc.needed;
     dylib.is_upward |= rc.upward;
     dylib.in_sdk = rc.sdk;
@@ -297,10 +298,13 @@ struct ReaderContext {
     /// -merge_library, -merge-l, -merge_framework: the dylib's content
     /// goes into the image.
     merge: bool,
-    /// Named by an object's auto-link option: a hint.
+    /// Named by an object's auto-link option, or only by -possible-l
+    /// and the like: a hint.
     autolinked: bool,
     /// Found in the SDK (see found_in_sdk).
     sdk: bool,
+    /// -assert-weak-l, -assert_weak_library, -assert_weak_framework.
+    assert_weak: bool,
 }
 
 impl ReaderContext {
@@ -316,6 +320,7 @@ impl ReaderContext {
         merge: false,
         autolinked: true,
         sdk: false,
+        assert_weak: false,
     };
 
     /// What two namings of one library say together.
@@ -331,6 +336,7 @@ impl ReaderContext {
             merge: self.merge || other.merge,
             autolinked: self.autolinked && other.autolinked,
             sdk: self.sdk || other.sdk,
+            assert_weak: self.assert_weak || other.assert_weak,
         }
     }
 }
@@ -907,6 +913,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         lazy: kind == Lazy,
         merge: kind == Merge,
         autolinked: kind == Possible,
+        assert_weak: kind == AssertWeak,
         ..Default::default()
     };
     Some((rc, matches!(name, LibraryName::Framework(_)), name.as_os_str()))
@@ -3060,6 +3067,105 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
         return format!("{}[{index}]({})", real(&ar.name).display(), crate::util::display(member));
     }
     real(&mf.name).display().to_string()
+}
+
+/// -assert-weak-l and the like load a dylib weakly but leave its
+/// imports as the references make them, where -weak-l makes them all
+/// weak: ld-prime refuses the link if one isn't weak, naming the first
+/// such dylib, each symbol, and the files that refer to it strongly
+/// from what the output keeps - by leaf name, an archive member as
+/// "libfoo.a[2](foo.o)" - and last its own file of GOT slots if the
+/// symbol has one: "stubs-got-file". A lazy dylib's symbols it names
+/// alone. (ld-prime lists the symbols in no fixed order; here they go
+/// by name.)
+pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
+    use crate::symbol::{NO_IDX, SymbolId};
+    let asserted = |id: SymbolId| match ctx.symbols[id].file() {
+        Some(FileId::Dylib(d)) if d != u32::MAX => {
+            let dylib = &ctx.dylibs[d as usize];
+            (dylib.is_weak_asserted && !ctx.symbols[id].is_weak_ref()).then_some(dylib)
+        }
+        _ => None,
+    };
+    if !ctx.dylibs.iter().any(|d| d.is_weak_asserted) {
+        return;
+    }
+    // The strong references, by the file making them.
+    let refs: Vec<(SymbolId, u32)> = (0..ctx.isecs.len())
+        .into_par_iter()
+        .filter(|&i| {
+            let isec = &ctx.isecs[i];
+            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        })
+        .flat_map_iter(|i| {
+            let file = ctx.isecs[i].file;
+            let obj = &ctx.objs[file as usize];
+            ctx.isec_relocs(i).iter().filter_map(move |r| {
+                let crate::input_sections::RelocTarget::Sym(idx) = r.target() else {
+                    return None;
+                };
+                let id = obj.symbols[idx as usize];
+                let strong = obj.nlists[idx as usize].n_desc & N_WEAK_REF == 0;
+                (strong && asserted(id).is_some()).then_some((id, file))
+            })
+        })
+        .collect();
+    let mut by_sym: std::collections::BTreeMap<&str, (SymbolId, std::collections::BTreeSet<u32>)> =
+        Default::default();
+    for (id, file) in refs {
+        by_sym.entry(ctx.symbols[id].name()).or_insert((id, Default::default())).1.insert(file);
+    }
+    let Some(dylib) =
+        by_sym.values().filter_map(|&(id, _)| asserted(id)).min_by_key(|d| d.dylib_idx)
+    else {
+        return;
+    };
+    let install_name = crate::util::display(&dylib.install_name);
+    let mut msg = if dylib.is_lazy {
+        format!(
+            "building lazy load dylibs: Found non-weak-imported symbol(s) preventing '{install_name}' from being weak-lazy-linked:"
+        )
+    } else {
+        format!(
+            "Found non-weak-imported symbol(s) preventing {install_name} from being weak-linked:"
+        )
+    };
+    for (name, (id, files)) in &by_sym {
+        if !std::ptr::eq(asserted(*id).unwrap(), dylib) {
+            continue;
+        }
+        if dylib.is_lazy {
+            msg += &format!("\n  \"{name}\"");
+            continue;
+        }
+        msg += &format!("\n  \"{name}\" imported from:");
+        for &file in files {
+            msg += &format!("\n      {}", leaf_file_name(ctx.objs[file as usize].mf));
+        }
+        if ctx.sym_aux(*id).got_idx != NO_IDX {
+            msg += "\n      stubs-got-file";
+        }
+    }
+    error!("{msg}");
+}
+
+/// A file's name as ld-prime gives it in a few diagnostics: its leaf
+/// name, or for an archive member the archive's leaf name, the member's
+/// position among the archive's entries and its name.
+fn leaf_file_name(mf: &MappedFile) -> String {
+    let leaf = |path: &Path| path.file_name().unwrap_or(path.as_os_str()).display().to_string();
+    if let Some(ar) = mf.parent
+        && let Some(index) = crate::archive_file::member_index(mf)
+    {
+        let full = path_bytes(&mf.name);
+        let member = full
+            .strip_prefix(path_bytes(&ar.name))
+            .and_then(|rest| rest.strip_prefix(b"("))
+            .and_then(|rest| rest.strip_suffix(b")"))
+            .unwrap_or(full);
+        return format!("{}[{index}]({})", leaf(&ar.name), crate::util::display(member));
+    }
+    leaf(&mf.name)
 }
 
 /// An image bound for the dyld shared cache may link only libraries

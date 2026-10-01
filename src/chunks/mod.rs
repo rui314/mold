@@ -564,17 +564,20 @@ fn create_source_version_cmd(version: u64) -> Vec<u8> {
 }
 
 fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
-    // An upward dylib that is also weak or re-exported takes a
+    // A dylib that is two of weak, re-exported and upward takes a
     // dylib_use_command, whose flags say all of it: the header grows by
     // them, and a marker stands in the timestamp. ld-prime writes the
     // compatibility version as 1.0.0, which dyld no longer checks.
-    let flags = if dylib.is_upward && (dylib.is_weak || dylib.is_reexported) {
-        DYLIB_USE_UPWARD
-            | if dylib.is_weak { DYLIB_USE_WEAK_LINK } else { 0 }
-            | if dylib.is_reexported { DYLIB_USE_REEXPORT } else { 0 }
-    } else {
-        0
-    };
+    let weak = dylib.is_weak || dylib.is_weak_asserted;
+    let flags = [
+        (weak, DYLIB_USE_WEAK_LINK),
+        (dylib.is_reexported, DYLIB_USE_REEXPORT),
+        (dylib.is_upward, DYLIB_USE_UPWARD),
+    ]
+    .into_iter()
+    .filter(|&(on, _)| on)
+    .fold(0, |flags, (_, flag)| flags | flag);
+    let flags = if flags.count_ones() > 1 { flags } else { 0 };
     let cmd = DylibCommand {
         cmd: if flags & DYLIB_USE_WEAK_LINK != 0 {
             LC_LOAD_WEAK_DYLIB
@@ -582,7 +585,7 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
             LC_LOAD_DYLIB
         } else if dylib.is_reexported {
             LC_REEXPORT_DYLIB
-        } else if dylib.is_weak {
+        } else if weak {
             LC_LOAD_WEAK_DYLIB
         } else if dylib.is_upward {
             LC_LOAD_UPWARD_DYLIB

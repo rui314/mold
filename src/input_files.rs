@@ -413,6 +413,10 @@ pub struct DylibFile {
     /// True if loaded with LC_LOAD_WEAK_DYLIB: dyld tolerates the
     /// library missing at load time.
     pub is_weak: bool,
+    /// -assert-weak-l and the like: loaded with LC_LOAD_WEAK_DYLIB, but
+    /// its imports are weak only as the references say, and must all
+    /// be (see passes::check_weak_assertions).
+    pub is_weak_asserted: bool,
     /// True if re-exported (LC_REEXPORT_DYLIB): this image's clients
     /// resolve the library's exports through this image.
     pub is_reexported: bool,
@@ -3566,6 +3570,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_bundle_loader: false,
             priority,
             is_weak: false,
+            is_weak_asserted: false,
             is_reexported: false,
             is_needed: false,
             is_upward: false,
@@ -3773,6 +3778,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_bundle_loader: true,
             priority,
             is_weak: false,
+            is_weak_asserted: false,
             is_reexported: false,
             is_needed: false,
             is_upward: false,
@@ -4285,6 +4291,7 @@ fn register_tbd<E: Target>(
             is_bundle_loader: false,
             priority,
             is_weak: false,
+            is_weak_asserted: false,
             is_reexported: false,
             is_needed: false,
             is_upward: false,
@@ -4336,6 +4343,7 @@ fn add_moved_dylibs<E: Target>(
                     is_bundle_loader: false,
                     priority,
                     is_weak: false,
+                    is_weak_asserted: false,
                     is_reexported: false,
                     is_needed: false,
                     is_upward: false,
