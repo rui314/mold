@@ -1036,6 +1036,7 @@ pub fn stage_object<E: Target>(
     obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
+    obj.warn_referenced_dynamically();
     let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
         && obj.read_relocations::<E>(&bare, &sect_isecs);
 
@@ -1083,6 +1084,8 @@ impl StagedObject {
     /// are labels into the atom and keep their flags. A
     /// .weak_def_can_be_hidden name becomes a hidden non-weak
     /// definition, except in a -r output, which keeps it as is.
+    /// REFERENCED_DYNAMICALLY, which ld-prime ignores on a weak
+    /// definition, stays ignored.
     fn unweaken_section_atom_names(&mut self, strtab: &'static [u8], relocatable: bool) {
         let sect_hdrs = self.sect_hdrs;
         let mut named_by_strong = vec![false; sect_hdrs.len()];
@@ -1115,9 +1118,9 @@ impl StagedObject {
         for i in names {
             let nlist = &mut nlists[i];
             if nlist.n_desc & N_WEAK_REF == 0 {
-                nlist.n_desc &= !N_WEAK_DEF;
+                nlist.n_desc &= !(N_WEAK_DEF | REFERENCED_DYNAMICALLY);
             } else if !relocatable {
-                nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
+                nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF | REFERENCED_DYNAMICALLY);
                 nlist.n_type |= N_PEXT;
             }
         }
@@ -1515,6 +1518,23 @@ impl StagedObject {
     /// Records each symbol's name, and for an external symbol the hash
     /// its name is interned by; the interning itself happens at
     /// integration, in one batch for all objects.
+    /// ld-prime warns about REFERENCED_DYNAMICALLY, the flag that has
+    /// strip(1) keep a symbol dyld looks up by name, on each exported
+    /// non-weak definition in a section, as it reads the object (an
+    /// archive member it never loads too). The output still carries it.
+    fn warn_referenced_dynamically(&self) {
+        let r = self.global_range();
+        for (nlist, name) in self.nlists[r.clone()].iter().zip(&self.sym_names[r]) {
+            if !nlist.is_stab()
+                && nlist.n_type & (N_EXT | N_PEXT) == N_EXT
+                && nlist.n_type() == N_SECT
+                && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY
+            {
+                crate::warn!("REFERENCED_DYNAMICALLY flag on symbol '{name}' is deprecated");
+            }
+        }
+    }
+
     fn read_symbol_names(&mut self, strtab: &'static [u8]) {
         self.sym_names = self.nlists.iter().map(|nlist| symbol_name(strtab, nlist)).collect();
         self.sym_hashes = self

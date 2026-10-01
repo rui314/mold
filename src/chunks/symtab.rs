@@ -1223,6 +1223,9 @@ fn global_entry<E: Target>(
     if sym.is_weak_def() {
         n_desc |= N_WEAK_DEF;
     }
+    if sym.is_referenced_dynamically() {
+        n_desc |= REFERENCED_DYNAMICALLY;
+    }
     let ent = NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 };
     (sym.name().as_bytes(), ent, Some(i))
 }

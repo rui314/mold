@@ -1373,6 +1373,7 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
             sym.set_is_common(false);
             sym.common_p2align = 0;
             sym.set_no_dead_strip(false);
+            sym.set_is_referenced_dynamically(false);
         }
     });
 }
@@ -1569,6 +1570,11 @@ fn claim_definitions<E: Target>(
                 sym.set_is_private_extern(nlist.n_type & N_PEXT != 0 || obj.hidden);
                 sym.set_no_dead_strip(
                     nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
+                );
+                sym.set_is_referenced_dynamically(
+                    nlist.n_type() == N_SECT
+                        && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF)
+                            == REFERENCED_DYNAMICALLY,
                 );
 
                 match nlist.n_type() {

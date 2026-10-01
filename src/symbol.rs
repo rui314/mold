@@ -143,6 +143,9 @@ const F_MARK: u16 = 1 << 8;
 /// -weak_reference_mismatches non-weak, that makes the import strong
 /// whatever other references say.
 const F_STRONG_REF: u16 = 1 << 9;
+/// Defined, non-weak, in a section, with REFERENCED_DYNAMICALLY in its
+/// object, which the output's entry keeps.
+const F_REFERENCED_DYNAMICALLY: u16 = 1 << 10;
 
 macro_rules! sym_flag {
     ($get:ident, $set:ident, $bit:expr, $doc:expr) => {
@@ -201,6 +204,12 @@ impl Symbol {
         set_no_dead_strip,
         F_NO_DEAD_STRIP,
         "The symbol must survive dead-stripping."
+    );
+    sym_flag!(
+        is_referenced_dynamically,
+        set_is_referenced_dynamically,
+        F_REFERENCED_DYNAMICALLY,
+        "Defined with REFERENCED_DYNAMICALLY (see F_REFERENCED_DYNAMICALLY)."
     );
     sym_flag!(
         is_common,
