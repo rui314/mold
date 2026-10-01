@@ -87,7 +87,7 @@ fn provider_of(name: &str) -> &str {
 pub struct DofSection {
     pub isec: u32,
     pub sites: Vec<u32>,
-    pub atom_name: String,
+    pub subsec_name: String,
 }
 
 /// Whether a branch to symbol `sym` from subsection `isec` is a probe
@@ -135,7 +135,7 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         crate::error!("Unexpected call to dtrace provider undef");
         return;
     };
-    let names = atom_names(ctx, &sites);
+    let names = subsec_names(ctx, &sites);
     let infos: Vec<&str> = (syms.iter())
         .map(|&id| ctx.symbols[id].name())
         .filter(|&name| site_kind_of(name).is_none())
@@ -241,9 +241,9 @@ fn sites_by_provider<'a, E: Target>(
 
 /// The name of each site's subsection's atom, by subsection, which a
 /// site goes by as the function it is in: its label (see
-/// Context::atom_label), or "" if it has none. Each object's symbols
+/// Context::subsec_label), or "" if it has none. Each object's symbols
 /// are looked through once.
-fn atom_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static str> {
+fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static str> {
     let mut starts: HashMap<u32, HashMap<(u32, u64), u32>> = HashMap::new();
     for site in sites {
         let isec = &ctx.isecs[site.isec as usize];
@@ -261,7 +261,7 @@ fn atom_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'sta
                 continue;
             };
             let name = ctx.symbols[id].name();
-            let key = (crate::input_files::atom_name_rank(nlist, name), name, i);
+            let key = (crate::input_files::subsec_name_rank(nlist, name), name, i);
             best.entry(isec).and_modify(|b| *b = (*b).max(key)).or_insert(key);
         }
     }
@@ -342,7 +342,7 @@ fn add_dof_section<E: Target>(
     ctx.dof_sections.push(DofSection {
         isec: id,
         sites: sites.iter().map(|s| s.isec).collect(),
-        atom_name: format!("l__dtrace_dof_for_provider_{provider}"),
+        subsec_name: format!("l__dtrace_dof_for_provider_{provider}"),
     });
 }
 

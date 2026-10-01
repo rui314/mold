@@ -528,7 +528,7 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 /// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
 /// chain's links are words: it warns of every atom aligned less than a
 /// pointer that holds one as it reads the objects (see
-/// small_pointer_atoms), then, once relocations are applied,
+/// small_pointer_subsecs), then, once relocations are applied,
 /// reports the unaligned pointers where the image has classic dyld info
 /// (as -unaligned_pointers says). With chained fixups, arm64 fails the link
 /// at an unaligned pointer of a chain: of the last section that has
@@ -594,7 +594,7 @@ fn check_pointer_alignment<E: Target>(
 /// __compact_unwind or of __eh_frame. The atoms come in section order,
 /// by address within a section, as the object's subsections are
 /// numbered.
-pub fn small_pointer_atoms<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> {
+pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> {
     if ctx.args.unaligned_pointers == Treatment::Suppress {
         return Vec::new();
     }
@@ -625,8 +625,8 @@ pub fn small_pointer_atoms<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> 
     atoms
 }
 
-/// Warns of an atom small_pointer_atoms found.
-pub fn warn_small_pointer_atom<E: Target>(ctx: &Context<E>, id: u32) {
+/// Warns of an atom small_pointer_subsecs found.
+pub fn warn_small_pointer_subsec<E: Target>(ctx: &Context<E>, id: u32) {
     crate::warn!(
         "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
         1 << ctx.isecs[id].p2align,
@@ -730,5 +730,5 @@ fn offset_in_segment<E: Target>(ctx: &Context<E>, addr: u64) -> u64 {
 /// start, an exported one first.
 fn atom_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
     let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
-    ctx.atom_ref(isec as usize, off as u32)
+    ctx.subsec_ref(isec as usize, off as u32)
 }

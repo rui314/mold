@@ -169,7 +169,7 @@ pub enum ChunkId {
     FunctionStarts,
     DataInCode,
     /// LC_ATOM_INFO's record of a -make_mergeable dylib's atoms.
-    AtomInfo,
+    MergeableRecord,
     SplitInfo,
     LazyLoadInfo,
     IndirectSymtab,
@@ -210,7 +210,7 @@ impl ChunkId {
         Self::ExternRelocs,
         Self::FunctionStarts,
         Self::DataInCode,
-        Self::AtomInfo,
+        Self::MergeableRecord,
         Self::SplitInfo,
         Self::LazyLoadInfo,
         Self::IndirectSymtab,
@@ -347,7 +347,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ExportTrie => export_trie::copy_buf(ctx, buf),
         ChunkId::FunctionStarts => function_starts::copy_buf(ctx, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
-        ChunkId::AtomInfo => crate::make_mergeable::copy_buf(ctx, buf),
+        ChunkId::MergeableRecord => crate::make_mergeable::copy_buf(ctx, buf),
         ChunkId::SplitInfo => split_info::copy_buf(ctx, buf),
         ChunkId::LazyLoadInfo => lazy_load_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
@@ -928,8 +928,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     if ctx.chunks.contains(&ChunkId::DataInCode) {
         vec.push(create_linkedit_data_cmd(LC_DATA_IN_CODE, &ctx.data_in_code.hdr));
     }
-    if ctx.chunks.contains(&ChunkId::AtomInfo) {
-        vec.push(create_linkedit_data_cmd(LC_ATOM_INFO, &ctx.atom_info.hdr));
+    if ctx.chunks.contains(&ChunkId::MergeableRecord) {
+        vec.push(create_linkedit_data_cmd(LC_ATOM_INFO, &ctx.mergeable_record.hdr));
     }
     if ctx.chunks.contains(&ChunkId::CodeSignature) {
         vec.push(create_code_signature_cmd(ctx));

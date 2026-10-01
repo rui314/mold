@@ -30,7 +30,7 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::mapfile::RelocatableAtom;
+use crate::mapfile::RelocatableRecord;
 use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -524,7 +524,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     if ctx.args.map.is_some() {
         let headers: Vec<&ChunkHeader> =
             sects.iter().map(|&s| sect_hdr(ctx, &synthetic, s)).collect();
-        crate::mapfile::print_relocatable_map(ctx, &headers, &synthetic_atoms(&synthetic));
+        crate::mapfile::print_relocatable_map(ctx, &headers, &synthetic_records(&synthetic));
     }
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
@@ -557,22 +557,22 @@ fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
 
 /// The atoms of the sections the output makes itself, by address, as
 /// the map lists them.
-fn synthetic_atoms(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableAtom)> {
+fn synthetic_records(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableRecord)> {
     let mut atoms = Vec::new();
     for sec in synthetic {
         let addr = sec.hdr.addr;
         match &sec.kind {
-            SyntheticKind::ObjcImageInfo => atoms.push((addr, RelocatableAtom::ImageInfo)),
+            SyntheticKind::ObjcImageInfo => atoms.push((addr, RelocatableRecord::ImageInfo)),
             SyntheticKind::CompactUnwind(records) => {
                 for (j, &rec) in records.iter().enumerate() {
-                    atoms.push((addr + 32 * j as u64, RelocatableAtom::Unwind(rec)));
+                    atoms.push((addr + 32 * j as u64, RelocatableRecord::Unwind(rec)));
                 }
             }
             SyntheticKind::EhFrame(records) => {
                 for &(rec, off) in records {
                     let atom = match rec {
-                        EhRec::Cie(c) => RelocatableAtom::Cie(c),
-                        EhRec::Fde(f) => RelocatableAtom::Fde(f),
+                        EhRec::Cie(c) => RelocatableRecord::Cie(c),
+                        EhRec::Fde(f) => RelocatableRecord::Fde(f),
                     };
                     atoms.push((addr + off as u64, atom));
                 }
@@ -1848,7 +1848,7 @@ impl<T: Copy> LiteralAtoms<T> {
 /// The local symbols of a -r output, in ld64's form, as they are
 /// gathered. ld-prime makes the literals - the strings of a
 /// cstring-literal section, the records of a fixed-size literal section
-/// and the atoms has_unnamed_atoms names (CFStrings, selector and class
+/// and the atoms has_unnamed_subsecs names (CFStrings, selector and class
 /// references, UTF-16 and ObjC constant literals) - by content: their
 /// labels vanish, all but those of the cstring and fixed-size literals a
 /// symbol names (labeled, kept apart). arm64 relocations must name what
@@ -1893,7 +1893,7 @@ type AtomLabel = (usize, SymbolId);
 /// makes by content, 0 for one record per subsection (as C string
 /// literals are split), or None for any other subsection: that of a
 /// section of another kind, or of a __ustring section without
-/// subsections, which is one atom (see has_unnamed_atoms).
+/// subsections, which is one atom (see has_unnamed_subsecs).
 fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
     let h = ctx.hdr_of(&ctx.isecs[isec]);
     match h.section_type() {
@@ -1904,7 +1904,7 @@ fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
         _ => {}
     }
     let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
-    if !crate::passes::has_unnamed_atoms(h, split) {
+    if !crate::passes::has_unnamed_subsecs(h, split) {
         // Superclass and protocol references are cut one per pointer
         // too; on arm64 ld-prime names those no label names (a labeled
         // one keeps its label).

@@ -90,7 +90,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         let atom = if input_files::is_record_list(hdr, split) {
             "anon".into()
         } else {
-            ctx.atom_name(isec as usize)
+            ctx.subsec_name(isec as usize)
         };
         errors.push(format!("{kind} use of '{sym}' in '{atom}' cannot be delayed."));
     }
@@ -274,7 +274,7 @@ fn create_delay_helpers<E: Target>(
                 DelayUse::Load { reg, site: Some(_) } => format!(
                     "{sym}$loadHelper_{}$for${}+{offset}",
                     E::lazy_register_name(reg),
-                    ctx.atom_name(isec as usize)
+                    ctx.subsec_name(isec as usize)
                 ),
             };
             let name = String::leak(name);

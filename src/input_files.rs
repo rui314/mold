@@ -296,7 +296,7 @@ pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
 /// How ld-prime prefers a symbol at an atom's start to name the atom in
 /// a diagnostic: an exported one before a private extern, a local, a
 /// weak definition and an ltmpN label; among equals, the greatest name.
-pub fn atom_name_rank(nlist: &NList, name: &str) -> u8 {
+pub fn subsec_name_rank(nlist: &NList, name: &str) -> u8 {
     if name.starts_with("ltmp") {
         0
     } else if nlist.n_desc & N_WEAK_DEF != 0 {
@@ -1150,7 +1150,7 @@ pub fn stage_object<E: Target>(
     if !obj.subsections_via_symbols {
         obj.unweaken_section_atom_names(strtab, relocatable);
     }
-    obj.demote_unnamed_atom_names();
+    obj.demote_unnamed_subsec_names();
     obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
@@ -1256,19 +1256,19 @@ impl StagedObject {
     }
 
     /// Demotes the external symbols of the sections whose atoms ld-prime
-    /// makes by content and names none of (see has_unnamed_atoms and
+    /// makes by content and names none of (see has_unnamed_subsecs and
     /// is_unnamed_objc_list) to locals that were private externals, as
     /// ld -r does: such a symbol defines nothing, so another object's
     /// reference to its name is undefined, another definition is no
     /// duplicate and no output lists it, while its own object's
     /// relocations still reach the atom.
-    fn demote_unnamed_atom_names(&mut self) {
-        use crate::passes::{has_unnamed_atoms, is_unnamed_objc_list};
+    fn demote_unnamed_subsec_names(&mut self) {
+        use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list};
         let split = self.subsections_via_symbols;
         let unnamed: Vec<bool> = self
             .sect_hdrs
             .iter()
-            .map(|h| is_unnamed_objc_list(h) || has_unnamed_atoms(h, split))
+            .map(|h| is_unnamed_objc_list(h) || has_unnamed_subsecs(h, split))
             .collect();
         for nlist in self.demote_externals_in(&unnamed) {
             nlist.n_type = nlist.n_type & !N_EXT | N_PEXT;
@@ -1539,7 +1539,7 @@ impl StagedObject {
             Err(bad) => bad,
         };
         let bounds = atom_at(bad.rel.r_address);
-        let name = self.atom_name(i + 1, sect.addr + bounds.0 as u64);
+        let name = self.subsec_name(i + 1, sect.addr + bounds.0 as u64);
         report_bad_reloc(&mf.name, self.sect_hdrs.len(), &bad, name, bounds);
         None
     }
@@ -1559,9 +1559,9 @@ impl StagedObject {
     }
 
     /// The name ld-prime gives the atom at `addr` in section `n_sect` in
-    /// a diagnostic: that of a symbol there, ranked by atom_name_rank,
+    /// a diagnostic: that of a symbol there, ranked by subsec_name_rank,
     /// or none.
-    fn atom_name(&self, n_sect: usize, addr: u64) -> &'static str {
+    fn subsec_name(&self, n_sect: usize, addr: u64) -> &'static str {
         self.nlists
             .iter()
             .zip(&self.sym_names)
@@ -1571,7 +1571,7 @@ impl StagedObject {
                     && n.n_sect as usize == n_sect
                     && n.n_value == addr
             })
-            .map(|(n, &name)| (atom_name_rank(n, name), name))
+            .map(|(n, &name)| (subsec_name_rank(n, name), name))
             .max()
             .map_or("", |(_, name)| name)
     }
@@ -1701,8 +1701,8 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
 /// Whether ld-prime merges a section's atoms by their content - the
 /// literal pools, C strings, selector references and CFStrings, not the
 /// pointer lists it takes one by one - which the labels an assembler
-/// makes for itself name none of (see Context::atom_label).
-pub fn has_merged_atoms(sect: &MachSection) -> bool {
+/// makes for itself name none of (see Context::subsec_label).
+pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == "__DATA" && is_pointer_list(sect))
 }
 

@@ -311,7 +311,7 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 
 /// Coalesces the Objective-C reference records the compiler emits
 /// once per object: __objc_selrefs entries naming the same selector
-/// (of the literal-pointer type, see has_unnamed_atoms),
+/// (of the literal-pointer type, see has_unnamed_subsecs),
 /// __objc_classrefs entries naming the same class, and identical
 /// __cfstring constants. ld64 keeps one of each, in a -r output as in
 /// a final link (NetNewsWire's RSCore prelink had 56 class references

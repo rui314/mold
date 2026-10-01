@@ -59,19 +59,19 @@ fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
     else {
         return;
     };
-    let (name, file) = atom_name(ctx, atom);
+    let (name, file) = subsec_name(ctx, atom);
     crate::error!("atom address cannot fit in a fixup at '{name}' ({file})+{}", addr - atom);
 }
 
 /// The name of the atom starting at `addr`, and its file, for a
 /// diagnostic.
-fn atom_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
+fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
     for (id, isec) in ctx.isecs.iter().enumerate() {
         if !isec.is_alive() || ctx.isec_addr(id) != addr {
             continue;
         }
         let obj = &ctx.objs[isec.file as usize];
-        return (ctx.atom_name(id).into_owned(), crate::passes::resolved_file_name(obj.mf));
+        return (ctx.subsec_name(id).into_owned(), crate::passes::resolved_file_name(obj.mf));
     }
     (String::new(), String::new())
 }

@@ -849,7 +849,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
             }
             Atom::Import(sym) | Atom::Dtrace(sym) => Some(ctx.symbols[sym].name()),
             Atom::Boundary(name) => Some(name),
-            Atom::Dof(i) => Some(&ctx.dof_sections[i].atom_name),
+            Atom::Dof(i) => Some(&ctx.dof_sections[i].subsec_name),
             Atom::Isec(id) => {
                 let hdr = ctx.hdr_of(&ctx.isecs[id]);
                 if in_chain && hdr.section_type() == S_MOD_INIT_FUNC_POINTERS {

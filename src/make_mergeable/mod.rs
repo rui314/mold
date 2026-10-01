@@ -45,7 +45,7 @@ const CT_THREAD_VARS: u8 = 57;
 /// LC_ATOM_INFO's data in __LINKEDIT: the record, but for what depends
 /// on where it lands in the file, filled in as it is copied out.
 #[derive(Debug)]
-pub struct AtomInfoSection {
+pub struct MergeableRecordSection {
     pub hdr: ChunkHeader,
     /// The record, with the content offsets of the atoms whose bytes
     /// are the image's left to fill.
@@ -57,7 +57,7 @@ pub struct AtomInfoSection {
     pub pool_offset: u32,
 }
 
-impl AtomInfoSection {
+impl MergeableRecordSection {
     pub fn new() -> Self {
         Self {
             hdr: ChunkHeader::linkedit(),
@@ -68,7 +68,7 @@ impl AtomInfoSection {
     }
 }
 
-impl Default for AtomInfoSection {
+impl Default for MergeableRecordSection {
     fn default() -> Self {
         Self::new()
     }
@@ -78,7 +78,7 @@ impl Default for AtomInfoSection {
 /// the record has its place: by offsets back from the content pool, and
 /// the whole file by one back from the record.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let sec = &ctx.atom_info;
+    let sec = &ctx.mergeable_record;
     buf[..sec.contents.len()].copy_from_slice(&sec.contents);
     let pool = sec.hdr.fileoff as i64 + sec.pool_offset as i64;
     for &(at, fileoff) in &sec.image_contents {
@@ -102,7 +102,7 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
     b.add_compact_unwind_atoms();
     let file = b.finish();
     let out = file.serialize::<E>(ctx);
-    let sec = &mut ctx.atom_info;
+    let sec = &mut ctx.mergeable_record;
     sec.hdr.size = out.bytes.len() as u64;
     sec.contents = out.bytes;
     sec.image_contents = out.image_contents;
@@ -234,7 +234,7 @@ struct DebugRecord {
 }
 
 /// The atoms and tables, in their final order.
-struct AtomFile {
+struct MergeableRecord {
     atoms: Vec<OutAtom>,
     /// Each fixup with its target and subtracted atom numbered.
     fixups: Vec<(OutFixup, u32, u32)>,
@@ -404,11 +404,11 @@ impl<'a, E: Target> Builder<'a, E> {
             return;
         }
         // A list record's labels name nothing, nor do a literal's but a
-        // symbol's of its own (see Context::atom_label); neither has
+        // symbol's of its own (see Context::subsec_label); neither has
         // aliases.
         let literal = merges_by_content(hdr);
         let record = crate::input_files::is_record_list(hdr, obj.subsections_via_symbols);
-        let label = if record { None } else { ctx.atom_label_index(id as usize) };
+        let label = if record { None } else { ctx.subsec_label_index(id as usize) };
         let (content_type, custom) = self.content_type(hdr);
         let mut atom = match label {
             Some(i) => named_atom(ctx, obj, i, hdr, content_type, debug),
@@ -455,11 +455,11 @@ impl<'a, E: Target> Builder<'a, E> {
     /// (see final_order), its target filled in once every entry is made.
     fn add_folded_function(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
         let ctx = self.ctx;
-        let Some(label) = ctx.atom_label_index(id as usize) else { return };
+        let Some(label) = ctx.subsec_label_index(id as usize) else { return };
         let sym_id = obj.symbols[label];
         // (A losing copy of a weak definition, whose symbol is the
         // winner's, which may be the folded one, has no entry at all.)
-        if !ctx.folded_atom_names.contains_key(&sym_id)
+        if !ctx.folded_subsec_names.contains_key(&sym_id)
             || ctx.symbols[sym_id].input_section() != Some(id)
         {
             return;
@@ -1007,7 +1007,7 @@ impl<'a, E: Target> Builder<'a, E> {
     /// Puts the atoms in their final order - the objects', then those of
     /// the symbols they leave to the linker or import, then the
     /// linker's - and numbers the fixups' targets.
-    fn finish(self) -> AtomFile {
+    fn finish(self) -> MergeableRecord {
         let ctx = self.ctx;
         let deps = dependencies(ctx);
         let mut sym_atoms: Vec<OutAtom> = Vec::new();
@@ -1044,7 +1044,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 fixups.push((*f, number(f.target, i as u32), from));
             }
         }
-        AtomFile {
+        MergeableRecord {
             atoms,
             fixups,
             first_fixup,

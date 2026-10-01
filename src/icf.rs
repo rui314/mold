@@ -28,7 +28,7 @@ use rayon::prelude::*;
 
 use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
-use crate::input_files::{FileId, ObjectFile, atom_name_rank};
+use crate::input_files::{FileId, ObjectFile, subsec_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -307,7 +307,7 @@ fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, fla
 }
 
 /// Marks the Swift functions of object `i`: those whose atom ld-prime
-/// names (see Context::atom_label) by a symbol Swift mangled, "_$s...".
+/// names (see Context::subsec_label) by a symbol Swift mangled, "_$s...".
 /// Swift promises no function an address of its own, so ld-prime folds
 /// one even where its address is taken (a coroutine's resume function,
 /// a value witness) or it is exported; it goes by the atom's name only,
@@ -324,7 +324,7 @@ fn mark_swift_functions<E: Target>(
 ) {
     // Only a function whose address is taken needs to be one.
     let is_swift = |name: &str| name.starts_with("_$s") && !name.ends_with("To");
-    for (isec, sym) in atom_names(ctx, i, obj, |isec| ctx.isecs[isec].is_address_taken()) {
+    for (isec, sym) in subsec_names(ctx, i, obj, |isec| ctx.isecs[isec].is_address_taken()) {
         if is_swift(ctx.symbols[sym].name()) {
             flags[isec as usize].store(true, Ordering::Relaxed);
         }
@@ -349,14 +349,14 @@ fn start_labels<'a, E: Target>(
             && nlist.n_type() == N_SECT
             && sym.value == 0
             && sym.file() == Some(FileId::Obj(i as u32)))
-        .then(|| (isec, entry << 4 | atom_name_rank(nlist, sym.name()), sym.name(), id))
+        .then(|| (isec, entry << 4 | subsec_name_rank(nlist, sym.name()), sym.name(), id))
     })
 }
 
 /// The symbol naming the atom of each of object `i`'s subsections that
-/// a label starts (see Context::atom_label) and `wanted` takes, by
+/// a label starts (see Context::subsec_label) and `wanted` takes, by
 /// subsection.
-fn atom_names<E: Target>(
+fn subsec_names<E: Target>(
     ctx: &Context<E>,
     i: usize,
     obj: &ObjectFile,
@@ -378,7 +378,7 @@ fn atom_names<E: Target>(
 /// at all after a local of another name folded in first. `folded`
 /// pairs each folded subsection, in input order, with the one it folded
 /// into.
-fn folded_atom_names<E: Target>(
+fn folded_subsec_names<E: Target>(
     ctx: &Context<E>,
     folded: &[(usize, usize)],
 ) -> hashbrown::HashMap<SymbolId, bool> {
@@ -393,7 +393,7 @@ fn folded_atom_names<E: Target>(
     objs.dedup();
     let names: hashbrown::HashMap<u32, SymbolId> = objs
         .par_iter()
-        .flat_map_iter(|&i| atom_names(ctx, i as usize, &ctx.objs[i as usize], |j| involved[j]))
+        .flat_map_iter(|&i| subsec_names(ctx, i as usize, &ctx.objs[i as usize], |j| involved[j]))
         .collect::<Vec<_>>()
         .into_iter()
         .collect();
@@ -780,5 +780,5 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
             folded.push((member, leader));
         }
     }
-    ctx.folded_atom_names = folded_atom_names(ctx, &folded);
+    ctx.folded_subsec_names = folded_subsec_names(ctx, &folded);
 }

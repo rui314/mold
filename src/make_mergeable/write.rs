@@ -1,6 +1,6 @@
 //! The record's bytes: ld-prime's AtomFileWriter layout.
 
-use super::{AtomFile, Content, DylibRecord, OutFixup};
+use super::{Content, DylibRecord, MergeableRecord, OutFixup};
 use crate::context::Context;
 use crate::macho::*;
 use crate::target::Target;
@@ -186,7 +186,7 @@ pub(super) struct Serialized {
     pub pool_offset: u32,
 }
 
-impl AtomFile {
+impl MergeableRecord {
     /// The record's bytes in ld-prime's AtomFileWriter layout: the
     /// header, the atoms, then each 8-aligned after the one before the
     /// fixups, large addends, custom sections, linker options (none),

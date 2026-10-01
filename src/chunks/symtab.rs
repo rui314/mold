@@ -12,7 +12,7 @@ use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
 use crate::objc::{DataField, ObjcRef};
-use crate::passes::{has_unnamed_atoms, is_unnamed_objc_list, objc_list_aliases};
+use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list, objc_list_aliases};
 use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::{leak_bytes, path_bytes};
@@ -168,12 +168,12 @@ fn keep_local_symbol(name: &str) -> bool {
 /// __objc_classlist: ld-prime's NetNewsWire has none of the 127 ours
 /// carried) but as an alias (`list_alias`, see objc_list_aliases), nor
 /// live in a section whose atoms ld-prime names none of (see
-/// has_unnamed_atoms), whatever the symbol was, nor in __objc_protolist
+/// has_unnamed_subsecs), whatever the symbol was, nor in __objc_protolist
 /// or __objc_imageinfo. A demoted private external in those two stays
 /// (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one an earlier
 /// ld -r demoted, a local that kept N_PEXT (`demoted`). A superclass or
 /// protocol reference keeps its label, unless it is of the
-/// literal-pointer type (see has_unnamed_atoms).
+/// literal-pointer type (see has_unnamed_subsecs).
 pub(crate) fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
     name: &str,
@@ -195,7 +195,7 @@ pub(crate) fn keep_local_symbol_in<E: Target>(
         return true;
     }
     let hdr = ctx.hdr_of(isec);
-    if has_unnamed_atoms(hdr, ctx.objs[isec.file as usize].subsections_via_symbols) {
+    if has_unnamed_subsecs(hdr, ctx.objs[isec.file as usize].subsections_via_symbols) {
         return false;
     }
     demoted
@@ -773,7 +773,7 @@ pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
         || init_term
         || text
         || objc
-        || has_unnamed_atoms(hdr, false)
+        || has_unnamed_subsecs(hdr, false)
         || is_unnamed_objc_list(hdr))
 }
 
@@ -886,7 +886,7 @@ fn plan_local_symbols<E: Target>(
         })
     });
     let nsect = ents.partition_point(|e| !is_abs(e));
-    put_atom_names_last(ctx, &mut ents[..nsect], sorted_globals);
+    put_subsec_names_last(ctx, &mut ents[..nsect], sorted_globals);
     ents
 }
 
@@ -1014,11 +1014,11 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             continue;
         };
         // A folded function's name goes with it if the function it
-        // folded into has the same (see icf::folded_atom_names).
+        // folded into has the same (see icf::folded_subsec_names).
         let kept = ctx.resolve_isec(isec);
         if !matches!(sym.file(), Some(FileId::Obj(_)))
             || !ctx.isecs[kept].is_alive()
-            || (kept != isec && ctx.folded_atom_names.get(&sym_id) == Some(&true))
+            || (kept != isec && ctx.folded_subsec_names.get(&sym_id) == Some(&true))
         {
             continue;
         }
@@ -1038,10 +1038,10 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
 /// size of its own, object by object in input order and each object's
 /// alternate entry points last; then the aliases it makes of the
 /// functions -deduplicate folded into the subsection, in input order
-/// (see icf::folded_atom_names); and the subsection's own name last.
+/// (see icf::folded_subsec_names); and the subsection's own name last.
 /// Few subsections have aliases, so those are found first, and only
 /// their addresses are looked for among the externals.
-fn put_atom_names_last<E: Target>(
+fn put_subsec_names_last<E: Target>(
     ctx: &Context<E>,
     ents: &mut [LocalEnt],
     sorted_globals: &[SymbolId],
@@ -1076,7 +1076,7 @@ fn put_atom_names_last<E: Target>(
     }
 }
 
-/// The keys by which put_atom_names_last orders the names `run` has at
+/// The keys by which put_subsec_names_last orders the names `run` has at
 /// one place: (0, object, alternate entry point) for a label naming no
 /// subsection, (1, object, subsection) for the alias of a folded
 /// function and (2, 0, 0) for the subsection's own name, each with the
@@ -1101,7 +1101,7 @@ fn name_order_keys<E: Target>(
         };
         let own = sym.input_section().unwrap_or(crate::symbol::NONE);
         let folded = own != crate::symbol::NONE && ctx.resolve_isec(own as usize) != own as usize;
-        let key = if folded && ctx.folded_atom_names.contains_key(&id) {
+        let key = if folded && ctx.folded_subsec_names.contains_key(&id) {
             (1, obj, own, pos)
         } else if !folded && !sym.is_alt_entry() && !named {
             named = true;

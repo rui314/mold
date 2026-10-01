@@ -117,7 +117,7 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
 /// -no_branch_islands): its islands branch to one another by b, so no
 /// branch can cross such an atom, and it fails the link if one must.
 /// Our thunks jump anywhere within 4 GiB, so we link it all the same.
-pub fn warn_large_atoms<E: Target>(ctx: &Context<E>) {
+pub fn warn_large_subsecs<E: Target>(ctx: &Context<E>) {
     if E::THUNK_SIZE == 0 || ctx.args.no_branch_islands {
         return;
     }
@@ -134,7 +134,7 @@ pub fn warn_large_atoms<E: Target>(ctx: &Context<E>) {
                 crate::warn!(
                     "atom {} is larger than the max code size between branch island clusters, \
                      this may lead to unreachable branches",
-                    ctx.atom_ref(isec as usize, 0)
+                    ctx.subsec_ref(isec as usize, 0)
                 );
             }
         }

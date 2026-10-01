@@ -77,7 +77,7 @@ macro_rules! chunk_header {
             ChunkId::ExportTrie => &$($mutable)? $ctx.export_trie.hdr,
             ChunkId::FunctionStarts => &$($mutable)? $ctx.function_starts.hdr,
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
-            ChunkId::AtomInfo => &$($mutable)? $ctx.atom_info.hdr,
+            ChunkId::MergeableRecord => &$($mutable)? $ctx.mergeable_record.hdr,
             ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
             ChunkId::LazyLoadInfo => &$($mutable)? $ctx.lazy_load_info.hdr,
             ChunkId::LocalRelocs => &$($mutable)? $ctx.local_relocs.hdr,
@@ -234,7 +234,7 @@ pub struct Context<E: Target> {
     pub export_trie: ExportTrieSection,
     pub function_starts: FunctionStartsSection,
     pub data_in_code: DataInCodeSection,
-    pub atom_info: crate::make_mergeable::AtomInfoSection,
+    pub mergeable_record: crate::make_mergeable::MergeableRecordSection,
     pub split_info: SplitInfoSection,
     pub lazy_load_info: LazyLoadInfoSection,
     pub local_relocs: LocalRelocsSection,
@@ -263,8 +263,8 @@ pub struct Context<E: Target> {
     /// order from it, as ld64's does.
     pub common_first_obj: Option<u32>,
     /// The symbols naming the atoms of the functions icf folded, each
-    /// with whether the output drops it (see icf::folded_atom_names).
-    pub folded_atom_names: hashbrown::HashMap<SymbolId, bool>,
+    /// with whether the output drops it (see icf::folded_subsec_names).
+    pub folded_subsec_names: hashbrown::HashMap<SymbolId, bool>,
     /// A DOF section for each provider of DTrace probes the image has
     /// sites of (see dtrace::create_dof_sections).
     pub dof_sections: Vec<crate::dtrace::DofSection>,
@@ -396,7 +396,7 @@ impl<E: Target> Context<E> {
             export_trie: ExportTrieSection::new(),
             function_starts: FunctionStartsSection::new(),
             data_in_code: DataInCodeSection::new(),
-            atom_info: crate::make_mergeable::AtomInfoSection::new(),
+            mergeable_record: crate::make_mergeable::MergeableRecordSection::new(),
             split_info: SplitInfoSection::new(),
             lazy_load_info: LazyLoadInfoSection::new(),
             local_relocs: LocalRelocsSection::new(),
@@ -408,7 +408,7 @@ impl<E: Target> Context<E> {
             data_blobs: Vec::new(),
             extra_local_syms: Vec::new(),
             common_first_obj: None,
-            folded_atom_names: hashbrown::HashMap::new(),
+            folded_subsec_names: hashbrown::HashMap::new(),
             dof_sections: Vec::new(),
             dylib_load_seq: 0,
             autolinked_archives: hashbrown::HashMap::new(),
@@ -1057,25 +1057,25 @@ impl<E: Target> Context<E> {
 
     /// The symbol that names the atom (subsection) `id` in ld-prime's
     /// diagnostics: of those at its start, the one
-    /// input_files::atom_name_rank ranks first. ld-prime merges a
-    /// literal by its content (see input_files::has_merged_atoms): the
+    /// input_files::subsec_name_rank ranks first. ld-prime merges a
+    /// literal by its content (see input_files::has_merged_subsecs): the
     /// labels a compiler or assembler makes for itself (see
     /// input_files::is_private_label) name none, and but for an ltmpN,
     /// one takes the literal's bytes from a symbol beside it, leaving it
-    /// unnamed (see atom_ordinal).
-    pub fn atom_label(&self, id: usize) -> Option<&'static str> {
+    /// unnamed (see subsec_ordinal).
+    pub fn subsec_label(&self, id: usize) -> Option<&'static str> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
-        self.atom_label_index(id).map(|i| self.symbols[obj.symbols[i]].name())
+        self.subsec_label_index(id).map(|i| self.symbols[obj.symbols[i]].name())
     }
 
     /// The index in its object's symbol table of the symbol that names
-    /// the atom (subsection) `id` (see atom_label).
-    pub fn atom_label_index(&self, id: usize) -> Option<usize> {
+    /// the atom (subsection) `id` (see subsec_label).
+    pub fn subsec_label_index(&self, id: usize) -> Option<usize> {
         use crate::input_files::is_private_label;
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
-        let merged = crate::input_files::has_merged_atoms(self.hdr_of(isec));
+        let merged = crate::input_files::has_merged_subsecs(self.hdr_of(isec));
         let labels = obj
             .nlists
             .iter()
@@ -1097,17 +1097,17 @@ impl<E: Target> Context<E> {
         }
         labels
             .filter(|(_, _, name)| !(merged && is_private_label(name)))
-            .max_by_key(|&(i, n, name)| (crate::input_files::atom_name_rank(n, name), name, i))
+            .max_by_key(|&(i, n, name)| (crate::input_files::subsec_name_rank(n, name), name, i))
             .map(|(i, _, _)| i)
     }
 
     /// The name ld-prime gives the atom (subsection) `id` in a
     /// diagnostic: its label, or else "anon-N" for the object's Nth atom
-    /// (see atom_ordinal).
-    pub fn atom_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
-        match self.atom_label(id) {
+    /// (see subsec_ordinal).
+    pub fn subsec_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
+        match self.subsec_label(id) {
             Some(name) => name.into(),
-            None => format!("anon-{}", self.atom_ordinal(id)).into(),
+            None => format!("anon-{}", self.subsec_ordinal(id)).into(),
         }
     }
 
@@ -1127,8 +1127,8 @@ impl<E: Target> Context<E> {
     /// fixed-size record's. An arm64 assembler's ltmpN counts only in an
     /// object without subsections, and after a literal's atom or a class
     /// reference's, which ld-prime coalesces by content too.
-    pub fn atom_ordinal(&self, id: usize) -> usize {
-        use crate::input_files::{has_merged_atoms, is_record_section};
+    pub fn subsec_ordinal(&self, id: usize) -> usize {
+        use crate::input_files::{has_merged_subsecs, is_record_section};
         let obj = &self.objs[self.isecs[id].file as usize];
         let split = obj.subsections_via_symbols;
 
@@ -1172,7 +1172,7 @@ impl<E: Target> Context<E> {
             let lo = labels.partition_point(|l| l.0 < shndx);
             let hi = labels.partition_point(|l| l.0 <= shndx);
             let sect_labels = &labels[lo..hi];
-            let merged = has_merged_atoms(hdr) || hdr.sectname() == "__objc_classrefs";
+            let merged = has_merged_subsecs(hdr) || hdr.sectname() == "__objc_classrefs";
             let records = is_record_section(hdr);
             for (j, &sub) in sect_subs.iter().enumerate() {
                 let isec = &self.isecs[sub];
@@ -1245,10 +1245,10 @@ impl<E: Target> Context<E> {
     /// itself on a literal (see literal_label_target).
     pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
         match self.literal_label_target(obj, rel) {
-            Some(isec) => self.atom_label(isec).unwrap_or(""),
+            Some(isec) => self.subsec_label(isec).unwrap_or(""),
             None => match rel.target() {
                 RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
-                RelocTarget::Section(idx) => self.atom_label(idx as usize).unwrap_or(""),
+                RelocTarget::Section(idx) => self.subsec_label(idx as usize).unwrap_or(""),
             },
         }
     }
@@ -1289,15 +1289,15 @@ impl<E: Target> Context<E> {
         if let Some(isec) = self.reloc_target_isec(obj, rel)
             && self.hdr_of(&self.isecs[isec]).sectname() == "__objc_classrefs"
         {
-            return format!("anon-{}", self.atom_ordinal(self.resolve_isec(isec))).into();
+            return format!("anon-{}", self.subsec_ordinal(self.resolve_isec(isec))).into();
         }
         match self.literal_label_target(obj, rel) {
-            Some(isec) => self.atom_name(isec),
+            Some(isec) => self.subsec_name(isec),
             None => match rel.target() {
                 RelocTarget::Sym(idx) => {
                     self.symbols[self.objs[obj].symbols[idx as usize]].name().into()
                 }
-                RelocTarget::Section(idx) => self.atom_name(idx as usize),
+                RelocTarget::Section(idx) => self.subsec_name(idx as usize),
             },
         }
     }
@@ -1387,7 +1387,7 @@ impl<E: Target> Context<E> {
         if nlist.is_stab()
             || nlist.n_type() != crate::macho::N_SECT
             || !crate::input_files::is_private_label(name)
-            || !crate::input_files::has_merged_atoms(&obj.sect_hdrs[nlist.n_sect as usize - 1])
+            || !crate::input_files::has_merged_subsecs(&obj.sect_hdrs[nlist.n_sect as usize - 1])
         {
             return None;
         }
@@ -1404,7 +1404,7 @@ impl<E: Target> Context<E> {
         let obj = &self.objs[sec.file as usize];
         let path = crate::passes::resolved_file_name(obj.mf);
         let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
-        let atom = self.atom_name(isec);
+        let atom = self.subsec_name(isec);
         let osec = self.chunk_header(sec.output_section().unwrap());
         let at = osec.fileoff + sec.offset as u64 + offset as u64;
         if offset == 0 {
@@ -1448,9 +1448,9 @@ impl<E: Target> Context<E> {
     /// Names the place `offset` bytes into atom `isec` as ld-prime's
     /// other diagnostics do: "'atom'+0xOFF (path)", with the object's
     /// full path.
-    pub fn atom_ref(&self, isec: usize, offset: u32) -> String {
+    pub fn subsec_ref(&self, isec: usize, offset: u32) -> String {
         let path = crate::passes::resolved_file_name(self.objs[self.isecs[isec].file as usize].mf);
-        let atom = self.atom_name(isec);
+        let atom = self.subsec_name(isec);
         if offset == 0 {
             format!("'{atom}' ({path})")
         } else {

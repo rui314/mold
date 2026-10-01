@@ -177,11 +177,11 @@ pub struct Atom {
     pub size: u32,
     /// The bytes, or none for zero fill (or what the linker made).
     pub content: Option<&'static [u8]>,
-    /// An import's library, by index into AtomFile::dylibs.
+    /// An import's library, by index into MergeableRecord::dylibs.
     pub dylib: Option<usize>,
     pub p2align: u8,
     pub modulus: u16,
-    /// 1-based index into AtomFile::debug_infos, 0 for none.
+    /// 1-based index into MergeableRecord::debug_infos, 0 for none.
     pub debug: u16,
     pub fixups: std::ops::Range<usize>,
 }
@@ -227,7 +227,7 @@ pub struct DebugInfo {
 }
 
 /// A mergeable dylib's atoms, as LC_ATOM_INFO records them.
-pub struct AtomFile {
+pub struct MergeableRecord {
     pub cputype: u32,
     pub cpusubtype: u32,
     pub platform: u32,
@@ -304,7 +304,7 @@ fn atom_info_range(data: &[u8]) -> Option<(usize, usize)> {
     None
 }
 
-impl AtomFile {
+impl MergeableRecord {
     /// Reads a dylib's LC_ATOM_INFO; an error says what is wrong with
     /// it, in ld-prime's words where it has some.
     pub fn read(mf: &'static MappedFile) -> Result<Self, String> {
@@ -781,7 +781,7 @@ struct Symbol {
 
 /// The object an atom file stands for, under construction.
 struct Synth<'a, E: Target> {
-    af: &'a AtomFile,
+    af: &'a MergeableRecord,
     sections: Vec<Section>,
     /// The section each section key is being filled into.
     open: hashbrown::HashMap<SectionKey, usize>,
@@ -797,7 +797,7 @@ struct Synth<'a, E: Target> {
 }
 
 /// Makes the object file a mergeable dylib's atoms stand for.
-pub fn synthesize_object<E: Target>(af: &AtomFile, path: &Path) -> Vec<u8> {
+pub fn synthesize_object<E: Target>(af: &MergeableRecord, path: &Path) -> Vec<u8> {
     let mut s = Synth::<E> {
         af,
         sections: Vec::new(),
@@ -830,7 +830,7 @@ pub fn synthesize_object<E: Target>(af: &AtomFile, path: &Path) -> Vec<u8> {
 /// in the relative form, which go as the dylib has them - in the order
 /// the linker's conversion writes them, by class, category and
 /// protocol, which ld-prime's atom list doesn't keep.
-fn placement_order(af: &AtomFile) -> Vec<usize> {
+fn placement_order(af: &MergeableRecord) -> Vec<usize> {
     let is_list = |i: &usize| af.atoms[*i].content_type == ctype::OBJC_METHOD_LIST;
     let mut lists: Vec<usize> = (0..af.atoms.len()).filter(is_list).collect();
     lists.sort_by_key(|&i| af.atoms[i].content.map(|c| c.as_ptr() as usize));

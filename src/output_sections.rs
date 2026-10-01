@@ -668,7 +668,7 @@ fn output_section_flags(
 /// check_sections); but neither is ever split into strings or
 /// literals. Superclass and protocol references keep the
 /// literal-pointer type, whose references all merge (see
-/// has_unnamed_atoms), though the output has the table's flags. Its
+/// has_unnamed_subsecs), though the output has the table's flags. Its
 /// own flags otherwise.
 pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
     if (segname, sectname) == ("__TEXT", "__constructor") {
@@ -1214,7 +1214,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     }
     for dof in &ctx.dof_sections {
         let (steps, to) = atom_mapping(ctx, map, dof.isec as usize, None);
-        write(&dof.atom_name, steps, to);
+        write(&dof.subsec_name, steps, to);
     }
     // An -alias name maps as its base's atom (see symbol_moves), as
     // does a method list, which a symbol move may take too.
@@ -1240,7 +1240,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
 }
 
 /// The symbols -trace_symbol_layout reports, of the atoms of the inputs
-/// they name as the map does (see mapfile::names_its_atom) - a common
+/// they name as the map does (see mapfile::names_its_subsec) - a common
 /// symbol of the object whose tentative definition won -, in the order
 /// ld-prime comes to them, with where that is: an input subsection's
 /// index, or u32::MAX for a thread-local variable's descriptor, which
@@ -1264,7 +1264,7 @@ fn traced_atom_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u32, crate::symbol::
             } else if !nlist.is_stab()
                 && nlist.n_type() == N_SECT
                 && sym.file() == Some(FileId::Obj(i as u32))
-                && crate::mapfile::names_its_atom(ctx, id)
+                && crate::mapfile::names_its_subsec(ctx, id)
             {
                 match ctx.hdr_of(&ctx.isecs[isec as usize]).section_type() {
                     S_THREAD_LOCAL_VARIABLES => u32::MAX,
@@ -1937,7 +1937,7 @@ pub(crate) fn keeps_folded_fde<E: Target>(ctx: &Context<E>, isec: usize) -> bool
     let leader = ctx.isecs[isec].replacement as usize;
     crate::chunks::symtab::is_coalesced_away(ctx, isec)
         && ctx.isecs[leader].file == ctx.isecs[isec].file
-        && ctx.atom_label(isec).is_some_and(|name| ctx.atom_label(leader) == Some(name))
+        && ctx.subsec_label(isec).is_some_and(|name| ctx.subsec_label(leader) == Some(name))
 }
 
 /// Points the unwind records of a function and of the copies folded
@@ -2587,7 +2587,7 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::DataInCode);
     }
     if ctx.args.make_mergeable {
-        ctx.chunks.push(ChunkId::AtomInfo);
+        ctx.chunks.push(ChunkId::MergeableRecord);
     }
     ctx.chunks.push(ChunkId::Symtab);
     if ctx.args.is_kext() {
@@ -2788,7 +2788,7 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
 /// Ranks every subsection by the -order_file lists: the subsection of
 /// the atom the first line names gets rank 0 and so on; unlisted
 /// subsections rank last. A line names the atoms a symbol of its name
-/// names (see mapfile::names_its_atom), not a C string's label, say,
+/// names (see mapfile::names_its_subsec), not a C string's label, say,
 /// and an atom takes the rank of the first line that names it. A
 /// symbol of the object LTO compiled counts as the bitcode file's it
 /// came from, if that is known (see lto::origins), unless
@@ -2832,7 +2832,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         let Some(lines) = rank_of.get(sym.name()) else {
             continue;
         };
-        if !crate::mapfile::names_its_atom(ctx, id) {
+        if !crate::mapfile::names_its_subsec(ctx, id) {
             continue;
         }
         if ctx.is_lto_obj(obj)

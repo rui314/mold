@@ -850,7 +850,7 @@ struct NamedEntries<'a> {
 /// Sorts the map's rows by address: the linker's symbols first of those
 /// at one place (the first `linker_symbols` rows), then the row with
 /// the size, then the labels of no size that alias it, in the symbol
-/// table's order (see symtab::put_atom_names_last); `ids` are the
+/// table's order (see symtab::put_subsec_names_last); `ids` are the
 /// symbols of the rows after the linker's.
 fn sort_entries<'a, E: Target>(
     ctx: &Context<E>,
@@ -881,7 +881,7 @@ fn insert_literal_aliases<'a>(entries: &mut Vec<MapEntry<'a>>, aliases: Vec<MapE
 }
 
 /// An atom of a section a -r output makes itself, as its map lists it.
-pub enum RelocatableAtom {
+pub enum RelocatableRecord {
     /// A record of __LD,__compact_unwind: unwind record `i`'s.
     Unwind(usize),
     /// A record of __TEXT,__eh_frame: CIE or FDE `i`.
@@ -900,7 +900,7 @@ pub enum RelocatableAtom {
 pub fn print_relocatable_map<E: Target>(
     ctx: &Context<E>,
     sections: &[&crate::chunks::ChunkHeader],
-    atoms: &[(u64, RelocatableAtom)],
+    atoms: &[(u64, RelocatableRecord)],
 ) {
     let Some(path) = &ctx.args.map else { return };
     let sections: Vec<MapSection> = sections.iter().map(|hdr| MapSection::of(hdr)).collect();
@@ -910,7 +910,7 @@ pub fn print_relocatable_map<E: Target>(
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named.entries);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    let synthetic = relocatable_atom_entries(ctx, &files, &entries[linker_symbols..], atoms);
+    let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], atoms);
     entries.extend(synthetic);
     let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
     insert_literal_aliases(&mut entries, literal_aliases);
@@ -920,33 +920,33 @@ pub fn print_relocatable_map<E: Target>(
 /// The map's entries of the atoms of the sections a -r output makes
 /// itself (see print_relocatable_map), whose FDEs are named after the
 /// `named` symbols.
-fn relocatable_atom_entries<E: Target>(
+fn relocatable_record_entries<E: Target>(
     ctx: &Context<E>,
     files: &MapFiles,
     named: &[MapEntry],
-    atoms: &[(u64, RelocatableAtom)],
+    atoms: &[(u64, RelocatableRecord)],
 ) -> Vec<MapEntry<'static>> {
     let fde_names = FdeNames::new(named);
     let labels = unwind_labels(ctx);
     let mut entries = Vec::new();
     for &(addr, ref atom) in atoms {
         let (size, obj, name) = match *atom {
-            RelocatableAtom::Unwind(i) => {
+            RelocatableRecord::Unwind(i) => {
                 let rec = &ctx.unwind_records[i];
                 let label = labels.get(&(rec.isec, rec.input_offset)).copied();
                 let obj = ctx.isecs[rec.isec as usize].file as usize;
                 (32, Some(obj), Cow::Borrowed(label.unwrap_or("anon").as_bytes()))
             }
-            RelocatableAtom::Cie(i) => {
+            RelocatableRecord::Cie(i) => {
                 let cie = &ctx.cies[i];
                 (cie.data.len() as u64, Some(cie.obj as usize), name("CFI"))
             }
-            RelocatableAtom::Fde(i) => {
+            RelocatableRecord::Fde(i) => {
                 let fde = &ctx.fdes[i];
                 let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
                 (fde.data.len() as u64, Some(fde.obj as usize), fde_names.name(func))
             }
-            RelocatableAtom::ImageInfo => (8, None, name("anon")),
+            RelocatableRecord::ImageInfo => (8, None, name("anon")),
         };
         let file = obj.map_or(0, |obj| files.objs[obj]);
         entries.push(MapEntry { addr, size, file, name });
@@ -1048,12 +1048,12 @@ fn write_map<E: Target>(
 fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
     let isec = &ctx.isecs[ctx.resolve_isec(sym.input_section().unwrap() as usize)];
     let split = ctx.objs[isec.file as usize].subsections_via_symbols;
-    names_atom(ctx.hdr_of(isec), split, sym.is_extern(), sym.name())
+    names_subsec(ctx.hdr_of(isec), split, sym.is_extern(), sym.name())
 }
 
 /// is_named for a label of a section with header `hdr`, of an object
 /// with subsections or not (`split`).
-fn names_atom(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bool {
+fn names_subsec(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bool {
     if name.is_empty()
         || hdr.section_type() == S_CSTRING_LITERALS
         || crate::input_files::is_ignored_literal_label(hdr.section_type(), name)
@@ -1066,7 +1066,7 @@ fn names_atom(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bo
 /// Whether a defined symbol of an object names its atom in the map:
 /// is_named, and not an ltmpN label another symbol there shadows (see
 /// drop_shadowed_ltmps), its subsection in the output.
-pub(crate) fn names_its_atom<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
+pub(crate) fn names_its_subsec<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
     let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
         return false;
@@ -1132,7 +1132,7 @@ fn drop_shadowed_ltmps<E: Target, T>(
 
 /// How a symbol ranks to name its atom among the symbols at its place,
 /// lowest first: as ld-prime ranks the labels at an atom's start (see
-/// atom_name_rank) - _zb names the atom of `_zb: _ab: lc:`, _loc5 that
+/// subsec_name_rank) - _zb names the atom of `_zb: _ab: lc:`, _loc5 that
 /// of a weak definition _wd it labels too -, but in an object without
 /// subsections, where the first in the symbol table names it (an ltmpN
 /// label before an exported function).
@@ -1153,9 +1153,9 @@ fn naming_rank<E: Target>(
 type LabelRank = (u8, &'static str, std::cmp::Reverse<u32>);
 
 fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static str) -> LabelRank {
-    use crate::input_files::atom_name_rank;
+    use crate::input_files::subsec_name_rank;
     match obj.subsections_via_symbols {
-        true => (atom_name_rank(&obj.nlists[k as usize], name), name, std::cmp::Reverse(k)),
+        true => (subsec_name_rank(&obj.nlists[k as usize], name), name, std::cmp::Reverse(k)),
         false => (0, "", std::cmp::Reverse(k)),
     }
 }
@@ -1224,17 +1224,17 @@ fn symbol_entries<'a, E: Target>(
             continue;
         }
         // Of the name of the function a folded one folded into, ld-prime
-        // lists one of each scope (see icf::folded_atom_names).
+        // lists one of each scope (see icf::folded_subsec_names).
         let folded = is_coalesced_away(ctx, own as usize);
         if folded
-            && (sym.name().starts_with("ltmp") || ctx.folded_atom_names.get(&i) == Some(&true))
+            && (sym.name().starts_with("ltmp") || ctx.folded_subsec_names.get(&i) == Some(&true))
         {
             continue;
         }
         // The alias ld-prime makes of a folded function is its own, but
         // the function's other labels stay their file's.
         let file = match files.commons.get(&(isec as u32)) {
-            _ if folded && ctx.folded_atom_names.contains_key(&i) => 0,
+            _ if folded && ctx.folded_subsec_names.contains_key(&i) => 0,
             _ if !aliases.is_empty() && is_alias_name(obj, i) => 0,
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
@@ -1709,7 +1709,7 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     // doesn't name.
     for dof in &ctx.dof_sections {
         let (addr, size) = (ctx.isec_addr(dof.isec as usize), ctx.isecs[dof.isec].size as u64);
-        entries.push(MapEntry { addr, size, file: 0, name: name(&dof.atom_name) });
+        entries.push(MapEntry { addr, size, file: 0, name: name(&dof.subsec_name) });
     }
     if ctx.chunks.contains(&ChunkId::UnwindInfo) {
         let hdr = &ctx.unwind_info.hdr;
@@ -1892,7 +1892,7 @@ fn gone_labels<E: Target>(
             *cstring_labels.entry(isec).or_default() += 1;
         }
         if !gone.contains(ctx, isec)
-            || !names_atom(hdr, split, nlist.is_extern(), name)
+            || !names_subsec(hdr, split, nlist.is_extern(), name)
             || (is_ltmp(name) && hdr.size == 0)
         {
             continue;
@@ -1908,7 +1908,7 @@ fn gone_labels<E: Target>(
 /// The dead atoms of object `obj_idx` (see dead_entries), the `file`th
 /// of the map, keyed by where they were. An atom is named by the best
 /// of the labels at its start, as ld-prime ranks them (see
-/// atom_name_rank) - in an object without subsections, by the first
+/// subsec_name_rank) - in an object without subsections, by the first
 /// in its symbol table -, which has the atom's size; the others are
 /// aliases of none, but for linker-private ones (l...), which the list
 /// leaves out. ld-prime makes a C string an atom per label at its

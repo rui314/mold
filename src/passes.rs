@@ -775,7 +775,7 @@ fn merge_dylib<E: Target>(
     mf: &'static MappedFile,
     out: &mut Vec<PendingObject>,
 ) {
-    let af = match crate::mergeable::AtomFile::read(mf) {
+    let af = match crate::mergeable::MergeableRecord::read(mf) {
         Ok(af) => af,
         Err(e) => return error!("{e} in '{}'", mf.name.display()),
     };
@@ -935,7 +935,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
 /// atoms, those of `ctx.objs` from `first` on, by what `checks` says of
 /// each: whether it read the object whole and the link loads it from
 /// the start, and its unwind info. It warns of the atoms of one it read
-/// whole (see small_pointer_atoms), then of its unwind info, then of the
+/// whole (see small_pointer_subsecs), then of its unwind info, then of the
 /// auto-link options of one the link loads from the start (see
 /// warn_linker_options).
 fn warn_about_objects<E: Target>(
@@ -947,13 +947,13 @@ fn warn_about_objects<E: Target>(
         .par_iter()
         .enumerate()
         .map(|(i, &(read, ..))| match read {
-            true => chunks::chained_fixups::small_pointer_atoms(ctx, first + i),
+            true => chunks::chained_fixups::small_pointer_subsecs(ctx, first + i),
             false => Vec::new(),
         })
         .collect();
     for (i, ((read, alive, unwind), atoms)) in checks.into_iter().zip(small_atoms).enumerate() {
         for id in atoms {
-            chunks::chained_fixups::warn_small_pointer_atom(ctx, id);
+            chunks::chained_fixups::warn_small_pointer_subsec(ctx, id);
         }
         unwind.report();
         if read && alive && !ctx.args.ignore_auto_link {
@@ -4028,7 +4028,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         for &(_, isec) in group {
             let file = resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf);
             let leaf = file.rsplit('/').next().unwrap_or(&file);
-            let atom = ctx.atom_name(isec);
+            let atom = ctx.subsec_name(isec);
             let atom = crate::util::demangle::display_name(&atom);
             msg += &format!("      {atom} in {leaf}\n");
         }
@@ -5393,7 +5393,7 @@ pub(crate) fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u3
 /// to bind at launch; the error names the fixup as it does.
 pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.lazy_load {
-        ctx.lazy_helpers.keep_alive = add_keep_alive_atom(ctx);
+        ctx.lazy_helpers.keep_alive = add_keep_alive_subsec(ctx);
     }
     if !ctx.dylibs.iter().any(|d| d.is_lazy) {
         return;
@@ -5426,7 +5426,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
 /// lazy dylib, by a reference from an empty atom it appends to __text:
 /// it has an entry of its own in __unwind_info (encoding 0), and in
 /// -map. Returns its subsection.
-fn add_keep_alive_atom<E: Target>(ctx: &mut Context<E>) -> u32 {
+fn add_keep_alive_subsec<E: Target>(ctx: &mut Context<E>) -> u32 {
     let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
         sectname: str_to_name("__text"),
@@ -5487,7 +5487,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             let atom = if input_files::is_record_list(ctx.hdr_of(sec), split) {
                 "anon".into()
             } else {
-                ctx.atom_name(isec as usize)
+                ctx.subsec_name(isec as usize)
             };
             errors.push(format!("{kind} use of '{sym}' in '{atom}' cannot be lazy loaded."));
         }
@@ -5624,7 +5624,7 @@ fn create_lazy_helpers<E: Target>(
                 LazyUse::Load { reg, site: Some(_) } => format!(
                     "{sym}$lazyGOT$loadHelper_{}$for${}+{offset}",
                     E::lazy_register_name(reg),
-                    ctx.atom_name(isec as usize)
+                    ctx.subsec_name(isec as usize)
                 ),
             };
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { unreachable!() };
@@ -6022,7 +6022,7 @@ pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
 /// is_unnamed_objc_list) and survive all the same. ld-prime takes one
 /// of an entry's symbols for the name of its atom, which is lost, and
 /// keeps the others as aliases: an external one (a global or a private
-/// external, both demoted by then, see demote_unnamed_atom_names) is
+/// external, both demoted by then, see demote_unnamed_subsec_names) is
 /// the name, else the greatest name; the arm64
 /// assembler's ltmpN labels don't count. So an entry one label names
 /// has no symbol in the output (clang's l_OBJC_LABEL_CLASS_$, Swift's
@@ -6075,7 +6075,7 @@ pub(crate) fn objc_list_aliases<E: Target>(
 /// which merge whatever labels them (see is_class_or_protocol_ref). In
 /// an object without subsections (`split` false) the UTF-16 literals'
 /// section is one atom, whose labels ld-prime keeps as any other's.
-pub(crate) fn has_unnamed_atoms(hdr: &MachSection, split: bool) -> bool {
+pub(crate) fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
     if hdr.segname_is("__TEXT") {
         return split && hdr.sectname_is("__ustring");
     }
@@ -6104,7 +6104,7 @@ pub(crate) fn has_unnamed_atoms(hdr: &MachSection, split: bool) -> bool {
 /// per pointer and merges the unlabeled ones of one target; one a
 /// symbol names stays apart and keeps its label (see
 /// mark_labeled_literals), unless the section has the literal-pointer
-/// type, which merges them all (see has_unnamed_atoms).
+/// type, which merges them all (see has_unnamed_subsecs).
 pub(crate) fn is_class_or_protocol_ref(hdr: &MachSection) -> bool {
     hdr.segname_is("__DATA") && is_class_or_protocol_ref_name(hdr.sectname())
 }
@@ -6129,7 +6129,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     // Range-extension thunks go in before the first placement, unless
     // only the placement can tell whether a branch may be out of reach;
     // the code is then placed again with them if it turns out so.
-    crate::thunks::warn_large_atoms(ctx);
+    crate::thunks::warn_large_subsecs(ctx);
     let need_thunks = crate::thunks::need_thunks(ctx);
     if need_thunks == Some(true) {
         crate::thunks::create_range_extension_thunks(ctx);
@@ -6250,7 +6250,7 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
         let target = ctx.text_reloc_target_name(isec.file as usize, rel);
         crate::error::notice(format_args!(
             "  text-relocation in {} to '{target}'",
-            ctx.atom_ref(id as usize, rel.offset)
+            ctx.subsec_ref(id as usize, rel.offset)
         ));
     }
     if report_32bit_pointer(ctx, osec.is_some())
@@ -6288,7 +6288,7 @@ fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool 
         found.iter().min_by_key(|p| addr(p))
     };
     let Some(&(isec, off)) = pick else { return false };
-    error!("32-bit pointer used in 64-bit code in {}", ctx.atom_ref(isec as usize, off));
+    error!("32-bit pointer used in 64-bit code in {}", ctx.subsec_ref(isec as usize, off));
     true
 }
 
@@ -6510,7 +6510,7 @@ fn layout_segment<E: Target>(
             | ChunkId::ExportTrie
             | ChunkId::FunctionStarts
             | ChunkId::DataInCode
-            | ChunkId::AtomInfo
+            | ChunkId::MergeableRecord
             | ChunkId::SplitInfo
             | ChunkId::ExternRelocs => 3,
             ChunkId::IndirectSymtab => 2,
@@ -7024,8 +7024,8 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     ctx.export_trie.hdr.size = trie.len() as u64;
     ctx.export_trie.contents = trie;
     collect_relocations(ctx);
-    if ctx.chunks.contains(&ChunkId::AtomInfo) {
-        let _t = ctx.timer("atom_info");
+    if ctx.chunks.contains(&ChunkId::MergeableRecord) {
+        let _t = ctx.timer("mergeable_record");
         crate::make_mergeable::build(ctx);
     }
 }
