@@ -186,9 +186,9 @@ pub struct Context<E: Target> {
     /// their recorded identities, to add after the command line's (see
     /// passes::add_merged_dependencies).
     pub merged_dependencies: Vec<crate::mergeable::Dependency>,
-    /// The install names of the mergeable dylibs merged into the
-    /// image, which are none of its dependencies.
-    pub merged_libraries: Vec<Vec<u8>>,
+    /// The mergeable dylibs merged into the image, which are none of
+    /// its dependencies, in input order.
+    pub merged_libraries: Vec<crate::mergeable::MergedLibrary>,
     /// The hook for the classes of the mergeable libraries merged or
     /// re-exported, and the classes it is for.
     pub bundle_hook: crate::bundle_hook::BundleHook,

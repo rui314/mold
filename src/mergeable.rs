@@ -260,6 +260,14 @@ pub struct Dependency {
     pub weak_exports: Vec<&'static str>,
 }
 
+/// A mergeable dylib merged into the image: its install name, the OS
+/// version it was built for, and the object its record makes.
+pub struct MergedLibrary {
+    pub install_name: Vec<u8>,
+    pub minos: u32,
+    pub obj: &'static crate::mapped_file::MappedFile,
+}
+
 /// Bit 31 of the record's flags: the dylib defines Objective-C or
 /// Swift classes, for which ld-prime adds its hook to a merging image.
 pub const FLAG_HAS_CLASSES: u64 = 1 << 31;

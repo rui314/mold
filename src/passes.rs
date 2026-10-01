@@ -19,6 +19,7 @@ use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
+use crate::mergeable::MergedLibrary;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::{data_seg, header_segment};
 use crate::symbol::SymbolId;
@@ -789,7 +790,9 @@ fn merge_dylib<E: Target>(
     let deps = record.dependencies(&mf.name);
     ctx.merged_imports.extend(deps.iter().flat_map(|d| d.exports.iter().copied()));
     ctx.merged_dependencies.extend(deps);
-    ctx.merged_libraries.push(record.own.install_name);
+    let lib =
+        MergedLibrary { install_name: record.own.install_name, minos: record.minos, obj: synth };
+    ctx.merged_libraries.push(lib);
 }
 
 /// Loads the dylibs the merged mergeable dylibs link, after the command
@@ -800,9 +803,8 @@ fn merge_dylib<E: Target>(
 /// A library merged as well is none: what one merged library imports
 /// from another, the other's merged code defines.
 fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
-    let merged = std::mem::take(&mut ctx.merged_libraries);
     for dep in std::mem::take(&mut ctx.merged_dependencies) {
-        if !merged.contains(&dep.info.install_name) {
+        if !ctx.merged_libraries.iter().any(|lib| lib.install_name == dep.info.install_name) {
             input_files::add_merged_dependency(ctx, dep);
         }
     }
@@ -3140,6 +3142,25 @@ pub struct CheckedInputs {
     renamings: usize,
 }
 
+/// The warning for a dylib with install name `install_name` built for
+/// OS version `built_for`, if that is newer than the link's.
+fn newer_dylib_warning<E: Target>(
+    ctx: &Context<E>,
+    install_name: &[u8],
+    built_for: u32,
+) -> Option<String> {
+    let minos = ctx.args.platform_minos;
+    (minos != 0 && built_for > minos).then(|| {
+        format!(
+            "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
+            platform_name(ctx.args.platform),
+            format_version(minos),
+            crate::util::display(install_name),
+            format_version(built_for)
+        )
+    })
+}
+
 /// Validates only objects selected by resolution, not those `checked`
 /// covers. Unused archive members must not cause errors or warnings.
 /// ld-prime checks the dylibs the link names along with them, in input
@@ -3148,9 +3169,10 @@ pub struct CheckedInputs {
 /// first stops the link; one built for a newer OS version gets a
 /// warning, for each input that names it, but not those it re-exports,
 /// nor those of the SDK, built for newer OS versions as a matter of
-/// course. It checks bitcode files by their target triples before LTO,
-/// and the object LTO makes (with what it pulls in) after: the driver
-/// calls this twice.
+/// course. A merged mergeable dylib is a dylib to these checks (see
+/// warn_merged_library_versions). It checks bitcode files by their
+/// target triples before LTO, and the object LTO makes (with what it
+/// pulls in) after: the driver calls this twice.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
     let now = CheckedInputs {
         objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
@@ -3160,16 +3182,9 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
     };
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
     let newer = |d: &input_files::DylibFile| {
-        (!d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos).then(|| {
-            format!(
-                "building for {}-{}, but linking with dylib '{}' which was built for newer \
-                 version {}",
-                platform_name(platform),
-                format_version(minos),
-                crate::util::display(&d.install_name),
-                format_version(d.minos)
-            )
-        })
+        (!d.is_implicit && !d.in_sdk)
+            .then(|| newer_dylib_warning(ctx, &d.install_name, d.minos))
+            .flatten()
     };
     let renamings = ctx.dylib_renamings[checked.renamings..]
         .iter()
@@ -3240,6 +3255,14 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
             );
         };
 
+        let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
+        if let Some(lib) = merged {
+            if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
+                crate::warn!("{msg}");
+            }
+            continue;
+        }
+
         // The SDK version used to compile an input does not constrain
         // its use. -deployment_target_mismatches error makes the first
         // object for a newer OS fail the link, and suppress keeps quiet.
@@ -3260,6 +3283,19 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
     }
     dylibs.for_each(report_dylib);
     now
+}
+
+/// ld-prime checks a merged mergeable dylib's OS version again as it
+/// merges the dylib's code, once it has resolved the symbols and
+/// checked the inputs (with what LTO made): a dylib built for a newer
+/// version than the link's gets its warning a second time, in input
+/// order.
+pub fn warn_merged_library_versions<E: Target>(ctx: &Context<E>) {
+    for lib in &ctx.merged_libraries {
+        if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
+            crate::warn!("{msg}");
+        }
+    }
 }
 
 /// Whether -remove_swift_reflection_metadata_sections drops an input

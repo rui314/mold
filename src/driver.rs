@@ -123,6 +123,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::warn_linker_options(&mut ctx);
         passes::keep_bitcode_imports(&mut ctx);
     }
+    passes::warn_merged_library_versions(&ctx);
     passes::report_bitcode_duplicates(&ctx);
     crate::error::checkpoint();
     t.stop();
