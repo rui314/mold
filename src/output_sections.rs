@@ -1149,7 +1149,8 @@ fn assign_input_sections<E: Target>(
 /// mapped it to __DATA_CONST/__const". The subsections come in the
 /// order ld-prime comes to them (see traced_subsec_symbols), then those
 /// it makes itself: the Objective-C stubs, the DOFs of DTrace probes
-/// (named as -map names them), the -alias names, the method lists it
+/// (named as -map names them), the -alias names, the lists category
+/// merging makes (see objc::is_merged_list_name), the method lists it
 /// rewrites in the relative form, __dyld_private and the thread-local
 /// variables' descriptors. ld-prime warns about a file it can't write,
 /// ending the warning with a blank line, and reports nothing then. A -r
@@ -1221,11 +1222,15 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let aliases = crate::symbol_moves::object_aliases(ctx);
     let aliases =
         aliases.filter_map(|(base, alias)| Some((alias, ctx.symbols[base].input_section()?)));
-    let lists = method_lists.into_iter().map(|id| (id, ctx.symbols[id].input_section().unwrap()));
-    for (id, isec) in aliases.chain(lists) {
+    let aliases = aliases.map(|(id, isec)| (ctx.symbols[id].name(), isec));
+    let merged = (ctx.extra_local_syms.iter().copied())
+        .filter(|&(name, _)| crate::objc::is_merged_list_name(name));
+    let lists = (method_lists.into_iter())
+        .map(|id| (ctx.symbols[id].name(), ctx.symbols[id].input_section().unwrap()));
+    for (name, isec) in aliases.chain(merged).chain(lists) {
         let isec = ctx.resolve_isec(isec as usize);
         let (steps, to) = subsec_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
-        write(ctx.symbols[id].name(), steps, to);
+        write(name, steps, to);
     }
     let private = ctx.stub_helper.dyld_private_isec;
     if private != u32::MAX {

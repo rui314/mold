@@ -1737,6 +1737,15 @@ fn ro_rewritable<E: Target>(ctx: &Context<E>, class: &DefinedClass) -> bool {
         && long_enough(class.meta_ro)
 }
 
+/// Whether `name` is one category merging gives a list it makes (see
+/// MergedListWriter::write): a method or protocol list named after the
+/// class and its categories.
+pub(crate) fn is_merged_list_name(name: &str) -> bool {
+    ["__OBJC_$_INSTANCE_METHODS_", "__OBJC_$_CLASS_METHODS_", "__OBJC_CLASS_PROTOCOLS_$_"]
+        .iter()
+        .any(|prefix| name.strip_prefix(prefix).is_some_and(|rest| rest.ends_with(')')))
+}
+
 /// Writes merged lists out: relative method lists after
 /// convert_objc_method_lists's in __TEXT,__objc_methlist (in a section
 /// of their own, made on first use), or classic ones as records like
@@ -1760,7 +1769,7 @@ impl MergedListWriter {
     /// Writes a class's merged lists and returns references to them.
     /// ld64 names the method and protocol lists after the class and its
     /// categories, __OBJC_$_INSTANCE_METHODS_Foo(A|B), `suffix` being
-    /// "Foo(A|B)".
+    /// "Foo(A|B)" (see is_merged_list_name).
     fn write<E: Target>(
         &mut self,
         ctx: &mut Context<E>,
