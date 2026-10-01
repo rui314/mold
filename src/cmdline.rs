@@ -3342,6 +3342,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     check_dylib_use(target, &args);
     args.objc_stubs_small = objc_stubs_small == Some(true);
     resolve_shared_region(target, &mut args);
+    resolve_dirty_data(&mut args);
 
     args.segment_align = resolve_segment_align(target, &args, segalign);
     resolve_encryptable(&mut args);
@@ -3449,6 +3450,38 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     if args.objc_stubs_small {
         fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
     }
+}
+
+/// The data an OS dylib bound for the shared cache dirties, which
+/// ld-prime moves to __DATA_DIRTY (see symbol_moves) when no
+/// -dirty_data_list gives any: an Apple-internal SDK's list for the
+/// dylib, AppleInternal/DirtyDataFiles/<the install name's leaf>.dirty
+/// under the first -syslibroot, if there is one. Its lines name symbols
+/// alone, a pattern's characters as any others.
+fn resolve_dirty_data(args: &mut Args) {
+    let install_name = args.output_install_name();
+    if !args.dirty_data.is_empty()
+        || !args.shared_region
+        || args.output_type != MH_DYLIB
+        || !in_shared_cache_path(install_name)
+    {
+        return;
+    }
+    let Some(root) = args.syslibroot.first() else {
+        return;
+    };
+    let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or_default();
+    let file = [leaf, b".dirty"].concat();
+    let path = root.join("AppleInternal/DirtyDataFiles").join(std::ffi::OsStr::from_bytes(&file));
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let mut symbols = GlobBuilder::default();
+    for sym in symbol_list(&text) {
+        symbols.add_literal(sym.as_bytes(), 1);
+    }
+    let segment = "__DATA_DIRTY".to_string();
+    args.dirty_data.push(SymbolMove { segment, symbols: symbols.build() });
 }
 
 /// ld-prime's checks of -U and -undefined dynamic_lookup, among the last

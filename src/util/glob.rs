@@ -558,6 +558,13 @@ impl GlobBuilder {
         }
     }
 
+    /// Adds a string that matches itself alone, wildcards and all.
+    pub fn add_literal(&mut self, s: &[u8], value: i64) {
+        debug_assert!(value >= 0);
+        self.glob.max_value = self.glob.max_value.max(value);
+        self.glob.exacts.push(Literal { pat: s.to_vec(), value });
+    }
+
     /// Consumes the construction state. The result supports parallel queries.
     pub fn build(self) -> Glob {
         let mut glob = self.glob;
