@@ -3,7 +3,7 @@
 
 # R_SPARC_OLO10 has a second addend in the upper bits of its type field.
 
-cat <<EOF | $CC -c -o $t/a.o -xassembler -
+cat <<EOF | $CC -fno-PIC -c -o $t/a.o -xassembler -
   .globl get
 get:
   sethi %hi(var), %g1
