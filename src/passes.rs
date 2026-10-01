@@ -4912,8 +4912,10 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 /// shared cache gets by default (see Args::warn_unused_dylibs). A
 /// -needed_* or -reexport_* library is linked on purpose, and
 /// libSystem, libc++ and Foundation, which compiler drivers and project
-/// templates link by habit, are let off.
-fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
+/// templates link by habit, are let off. ld-prime warns once the link
+/// has turned out to be sound, before it warns of redundant re-exports
+/// and weak exports.
+pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     if !ctx.args.warn_unused_dylibs {
         return;
     }
@@ -5082,7 +5084,6 @@ fn assign_dylib_ordinals<E: Target>(
 /// load-command ordinal, so surviving dylibs are renumbered and symbol
 /// origins remapped.
 pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
-    warn_unused_dylibs(ctx);
     // An auto-linked dylib is stripped even without -dead_strip_dylibs,
     // as ld64 treats its option as a hint: NetNewsWire's auto-link
     // options name 43 frameworks and Swift overlays nothing in it binds

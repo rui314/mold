@@ -40,3 +40,14 @@ $CC --ld-path=$mold -o $t/exe $t/m.o -lz 2> $t/log
 not grep -q 'not using any symbols' $t/log
 $CC --ld-path=$mold -o $t/exe $t/m.o -lz -Wl,-warn_unused_dylibs 2> $t/log
 grep -qF "$msg" $t/log
+
+# ld-prime warns of the unused libraries once the link has turned out to
+# be sound, before the weak exports (and their -no_weak_exports error).
+echo '__attribute__((weak)) int w(void) { return 1; }' | $CC -o $t/w.o -c -xc -
+$CC --ld-path=$mold -shared -o $t/w.dylib $t/w.o -lz -Wl,-warn_unused_dylibs \
+  -Wl,-warn_weak_exports 2> $t/log
+grep -v '^+' $t/log | grep -o 'linking with\|weak external symbol' > $t/order
+[ "$(tr '\n' , < $t/order)" = 'linking with,weak external symbol,' ]
+not $CC --ld-path=$mold -shared -o $t/w.dylib $t/w.o -lz -Wl,-warn_unused_dylibs \
+  -Wl,-no_weak_exports 2> $t/log
+grep -qF "$msg" $t/log
