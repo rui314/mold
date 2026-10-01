@@ -42,6 +42,9 @@ pub enum Tail {
     /// class_ro_t records, protocol and property lists, classic method
     /// lists) in the section of that name.
     DataBlobs,
+    /// Relative method lists -move_to_ro_segment took out of
+    /// __TEXT,__objc_methlist (see chunks::objc_methlist).
+    ObjcMethlists,
 }
 
 #[derive(Debug)]
@@ -120,6 +123,10 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     if osec.tail == Tail::DataBlobs || osec.has_blobs {
         write_data_blobs(ctx, id, buf);
     }
+    if osec.tail == Tail::ObjcMethlists {
+        let chunk = ChunkId::Output(id);
+        crate::chunks::objc_methlist::write_lists(ctx, chunk, osec.hdr.addr, buf);
+    }
 
     // The linker-synthesized tail after the inputs.
     let tail = &mut buf[osec.tail_off as usize..];
@@ -129,8 +136,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             let data = &ctx.objc_stubs.methname_data;
             tail[..data.len()].copy_from_slice(data);
         }
-        // Written above with the records placed among the members.
-        Tail::DataBlobs => {}
+        // Written above, each record at its offset in the section.
+        Tail::DataBlobs | Tail::ObjcMethlists => {}
         Tail::ObjcSelrefs => {
             let stubs = &ctx.objc_stubs;
             for i in 0..stubs.symbols.len() {

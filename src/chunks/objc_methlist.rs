@@ -1,7 +1,7 @@
 //! __TEXT,__objc_methlist: the Objective-C method lists rewritten in the
 //! relative (12-byte entry) form, which needs no fixups.
 
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::objc::{ObjcMethList, objc_ref_addr};
 use crate::target::Target;
@@ -30,10 +30,19 @@ impl Default for ObjcMethlistSection {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    for list in &ctx.objc_methlist.lists {
+    write_lists(ctx, ChunkId::ObjcMethlist, ctx.objc_methlist.hdr.addr, buf);
+}
+
+/// Writes the lists laid out in the chunk `chunk` at `chunk_addr` - this
+/// section, or another segment's __objc_methlist a symbol move took
+/// some to (see output_sections::lay_out_objc_method_lists) - each at
+/// its offset in `buf`, the chunk's contents.
+pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64, buf: &mut [u8]) {
+    let lists = ctx.objc_methlist.lists.iter();
+    for list in lists.filter(|l| ctx.isecs[l.isec as usize].output_section() == Some(chunk)) {
         let isec = &ctx.isecs[list.isec as usize];
         let base = isec.offset as usize;
-        let addr = ctx.objc_methlist.hdr.addr + base as u64;
+        let addr = chunk_addr + base as u64;
         let count = list.methods.len() as u32;
         buf[base..base + 4].copy_from_slice(&(12u32 | 0x8000_0000).to_le_bytes());
         buf[base + 4..base + 8].copy_from_slice(&count.to_le_bytes());

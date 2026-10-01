@@ -66,13 +66,16 @@ enum Content {
 /// in, what it holds and what ld-prime calls that in its warnings.
 struct Atom<'a> {
     /// The subsection the link kept of the atom (see
-    /// Context::resolve_isec); none for an absolute symbol, or for a
-    /// record the linker made anew (data category merging rewrote,
-    /// which mold doesn't move).
+    /// Context::resolve_isec) - a record the linker rewrote in place of
+    /// the input's too (see rewritten_records); none for an absolute
+    /// symbol, or for another subsection the linker places itself (an
+    /// input class reference folded into the GOT).
     isec: Option<u32>,
     /// Where ld-prime comes to the atom: at its input subsection, or
     /// after every input's for an absolute symbol or a thread-local
-    /// variable's descriptor, which ld-prime makes anew.
+    /// variable's descriptor, which ld-prime makes anew, and for a
+    /// method list rewritten in the relative form, in the order the
+    /// lists were rewritten.
     place: u32,
     segment: &'a str,
     content: Content,
@@ -151,9 +154,11 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     let (mut rw_warnings, mut ro_warnings) = (Vec::new(), Vec::new());
     let warning = |obj: usize, id: SymbolId, atom: &Atom, list: &SymbolMove| {
         let place = (atom.place, ctx.symbols[id].value);
-        // ld-prime makes the thread-local variables' descriptors itself.
+        // ld-prime makes the thread-local variables' descriptors and
+        // the relative method lists itself.
         let file = match atom.kind {
             "thread-vars" => "tlv-file".to_string(),
+            "objc-method-list" => "objc-file".to_string(),
             _ => resolved_file_name(ctx.objs[obj].mf),
         };
         let what = if atom.content == Content::Code { "code" } else { "not code" };
@@ -227,26 +232,41 @@ fn for_each_atom_symbol<'a, E: Target>(
     mut f: impl FnMut(usize, SymbolId, Atom<'a>),
 ) {
     let commons = common_owners(ctx);
+    let rewritten = rewritten_records(ctx);
     for (i, obj) in ctx.objs.iter().enumerate() {
         if !obj.is_alive || ctx.is_internal(i) {
             continue;
         }
         for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if let Some(atom) = atom_named(ctx, &commons, i, nlist, id) {
+            if let Some(atom) = atom_named(ctx, &commons, &rewritten, i, nlist, id) {
                 f(i, id, atom);
             }
         }
     }
 }
 
+/// The records the linker rewrote in place of input subsections, which
+/// the input's symbols name and a symbol move takes along as ld-prime
+/// does its own: the Objective-C data category merging rebuilt (see
+/// objc::merge_objc_categories), false, and the method lists rewritten
+/// in the relative form (see objc::convert_objc_method_lists), true.
+fn rewritten_records<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, bool> {
+    let blobs = ctx.data_blobs.iter().map(|b| (b.isec, false));
+    let lists = ctx.objc_methlist.lists.iter().map(|l| (l.isec, true));
+    blobs.chain(lists).collect()
+}
+
 /// The atom ld-prime names by the symbol `id` of object `obj`, whose
 /// entry is `nlist`: a definition the link kept, external or local but
 /// no assembler label (see symtab::keep_local_symbol_in), in a section
 /// or absolute; or a common symbol, if the object's tentative definition
-/// is the one its subsection stands for (see common_owners).
+/// is the one its subsection stands for (see common_owners). A method
+/// list ld-prime rewrote in the relative form (see rewritten_records)
+/// is code to it, which its own objc-file holds.
 fn atom_named<'a, E: Target>(
     ctx: &'a Context<E>,
     commons: &hashbrown::HashMap<u32, u32>,
+    rewritten: &hashbrown::HashMap<u32, bool>,
     obj: usize,
     nlist: &NList,
     id: SymbolId,
@@ -277,9 +297,14 @@ fn atom_named<'a, E: Target>(
         return None;
     }
     let hdr = ctx.hdr_of(&ctx.isecs[isec as usize]);
-    let (content, kind) = content_of(hdr.segname(), hdr.sectname(), hdr.flags);
+    let rewritten = rewritten.get(&(kept as u32));
+    let (content, kind) = match rewritten {
+        Some(true) => (Content::Code, "objc-method-list"),
+        _ => content_of(hdr.segname(), hdr.sectname(), hdr.flags),
+    };
+    let movable = rewritten.is_some() || !ctx.isecs[kept].is_placed();
     Some(Atom {
-        isec: (!ctx.isecs[kept].is_placed()).then_some(kept as u32),
+        isec: movable.then_some(kept as u32),
         place: if kind == "thread-vars" { u32::MAX } else { isec },
         segment: hdr.segname(),
         content,

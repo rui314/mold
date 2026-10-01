@@ -109,6 +109,48 @@ nm -m $t/libb.dylib | grep -q '(__FOO,__data) external _ptr$'
 $CC --ld-path=$mold -o $t/exe5 $t/c.o $t/libb.dylib
 [ "$($t/exe5)" = hello ]
 
+# The Objective-C records the linker rewrites move as the input's would:
+# the class data category merging rebuilt, and the method lists in the
+# relative form, which ld-prime makes in its own objc-file and counts
+# as code - -move_to_rw_segment leaves them with a warning, and
+# -move_to_ro_segment takes them to an __objc_methlist of its segment.
+cat <<EOF | $CC -o $t/d.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+#include <stdio.h>
+@interface A : NSObject
+- (int)a;
+@end
+@implementation A
+- (int)a { return 1; }
++ (int)ca { return 3; }
+@end
+@interface A (Cat)
+- (int)b;
+@end
+@implementation A (Cat)
+- (int)b { return 2; }
+@end
+int main() {
+  A *a = [A new];
+  printf("%d %d %d\n", [a a], [a b], [A ca]);
+}
+EOF
+printf '__OBJC_CLASS_RO_$_A\n__OBJC_$_CLASS_METHODS_A\n' > $t/objc.txt
+$CC --ld-path=$mold -o $t/exe8 $t/d.o -framework Foundation -Wl,-objc_relative_method_lists \
+  -Wl,-move_to_rw_segment,__FOO,$t/objc.txt 2> $t/log8
+grep -q "warning: cannot move symbol '__OBJC_\$_CLASS_METHODS_A' (objc-file) to segment '__FOO' because symbol is code (is objc-method-list)" $t/log8
+nm -m $t/exe8 > $t/nm8
+grep -q '(__FOO,__objc_const) non-external __OBJC_CLASS_RO_\$_A$' $t/nm8
+grep -q '(__TEXT,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm8
+[ "$($t/exe8)" = '1 2 3' ]
+$CC --ld-path=$mold -o $t/exe9 $t/d.o -framework Foundation -Wl,-objc_relative_method_lists \
+  -Wl,-move_to_ro_segment,__FOO,$t/objc.txt -Wl,-trace_symbol_layout > $t/trace9 2> $t/log9
+grep -q "warning: cannot move symbol '__OBJC_CLASS_RO_\$_A' (.*/d.o) to segment '__FOO' because symbol is not code (is objc-const)" $t/log9
+nm -m $t/exe9 > $t/nm9
+grep -q '(__FOO,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm9
+grep -q "^symbol '__OBJC_\$_CLASS_METHODS_A', -move_to_ro_segment mapped it to __FOO/__objc_methlist$" $t/trace9
+[ "$($t/exe9)" = '1 2 3' ]
+
 # Only a final link lays out segments: ld-prime refuses the two options
 # in a -r link (-move_to_rw_segment's first), and ignores
 # -dirty_data_list there.

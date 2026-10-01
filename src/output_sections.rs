@@ -811,21 +811,63 @@ fn tail_section<E: Target>(
             id
         }
     };
-    let osec = ctx.output_section_mut(id);
+    append_tail(ctx.output_section_mut(id), p2align, tail, tail_size);
+    id
+}
+
+/// Appends a synthesized `tail` of `tail_size` bytes aligned to
+/// 2^`p2align` to an output section, after its input subsections.
+fn append_tail(osec: &mut OutputSection, p2align: u32, tail: Tail, tail_size: u64) {
     osec.hdr.p2align = osec.hdr.p2align.max(p2align);
     osec.tail = tail;
     osec.tail_off = align_to(osec.hdr.size, 1 << p2align);
     osec.hdr.size = osec.tail_off + tail_size;
-    id
+}
+
+/// The output section of a record the linker rewrote in place of a
+/// subsection of the input section `hdr`, as the input's would go: to
+/// the section the symbol move `m` takes it to (see
+/// SectionMap::moved_name), if one does. The section is made here if
+/// no input subsection went there, or every one was replaced.
+fn record_section<E: Target>(
+    ctx: &mut Context<E>,
+    hdr: &MachSection,
+    text: SectionName,
+    m: Option<Move>,
+) -> Option<OutputSectionId> {
+    let map = SectionMap::final_link(ctx);
+    let (seg, sect) = (hdr.segname(), hdr.sectname());
+    let moved = m.and_then(|m| {
+        let (moved, from) = map.moved_name(m, seg, sect, hdr.flags)?;
+        Some((m.option, (renamed(&ctx.args, moved), from)))
+    });
+    let (out, flags_name) = match moved {
+        Some((_, names)) => names,
+        None => output_section_for(&ctx.args, map, seg, sect, hdr.flags)?,
+    };
+    if let Some(id) = find_output_section(ctx, out) {
+        return Some(id);
+    }
+    let flags = first_member_flags(ctx, hdr, text, out, flags_name);
+    let id = add_output_section(ctx, out.0, out.1, flags);
+    let osec = ctx.output_section_mut(id);
+    osec.moved = moved.map(|(option, _)| option);
+    osec.rank_name = member_rank_name(hdr, flags_name);
+    Some(id)
 }
 
 /// A record category merging rewrites in place of an input subsection,
 /// such as a class's ro data, takes that subsection's position among
 /// its output section's members, as ld-prime keeps
-/// __OBJC_CLASS_RO_$_Foo where the input had it. Runs while the members
-/// are still in input order; the other synthesized records go in the
-/// section's tail.
-fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+/// __OBJC_CLASS_RO_$_Foo where the input had it - in the section a
+/// symbol move takes it to, if one does (see symbol_moves). Runs while
+/// the members are still in input order; the other synthesized records
+/// go in the section's tail.
+fn place_replacing_blobs<E: Target>(
+    ctx: &mut Context<E>,
+    text: SectionName,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
     let blobs: hashbrown::HashSet<u32> = ctx.data_blobs.iter().map(|b| b.isec).collect();
     let mut anchors: Vec<(u32, u32)> = (0..ctx.isecs.len())
         .filter(|&i| blobs.contains(&ctx.isecs[i].replacement))
@@ -837,27 +879,16 @@ fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     // sits after the members the next, lower anchor is searched among.
     for (replaced, blob) in anchors.into_iter().rev() {
         let hdr = *ctx.hdr_of(&ctx.isecs[replaced as usize]);
-        let map = SectionMap::final_link(ctx);
-        let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname(), hdr.flags);
-        let Some((out, flags_name)) = out else { continue };
-        // The section is made here if every input member was replaced.
-        let pos = match (ctx.output_sections.iter())
-            .position(|o| o.hdr.segname == out.0 && o.hdr.sectname == out.1)
-        {
-            Some(pos) => pos,
-            None => {
-                let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
-                add_output_section(ctx, out.0, out.1, flags).index()
-            }
+        let Some(id) = record_section(ctx, &hdr, text, moves.get(&blob).copied()) else {
+            continue;
         };
         let p2align = ctx.isecs[blob as usize].p2align as u32;
-        let osec = &mut ctx.output_sections[pos];
+        let osec = ctx.output_section_mut(id);
         let at = osec.members.partition_point(|&m| m < replaced);
         osec.members.insert(at, blob);
         osec.has_blobs = true;
         osec.hdr.p2align = osec.hdr.p2align.max(p2align);
-        ctx.isecs[blob as usize]
-            .set_output_section(ChunkId::Output(OutputSectionId::new(pos as u32)));
+        ctx.isecs[blob as usize].set_output_section(ChunkId::Output(id));
     }
 }
 
@@ -914,7 +945,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let lto_ranks = lto_layout_ranks(ctx);
     assign_input_sections(ctx, text, &moves, lto_ranks.as_deref());
     trace_symbol_layout(ctx, &moves);
-    place_replacing_blobs(ctx, text);
+    place_replacing_blobs(ctx, text, &moves);
 
     // A final image always has a __text section, empty if no code
     // reached it (a dylib of only data; ld-prime writes one of size 0,
@@ -938,7 +969,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     add_objc_stubs(ctx);
     place_tail_blobs(ctx);
-    lay_out_objc_method_lists(ctx);
+    lay_out_objc_method_lists(ctx, text, &moves);
     add_sectcreate_sections(ctx);
     merge_objc_image_info(ctx);
     if ctx.args.fixup_chains_section {
@@ -1167,9 +1198,10 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     for &(sym, _) in &ctx.objc_stubs.symbols {
         write(ctx.symbols[sym].name(), steps.clone(), to);
     }
+    // A method list, which a symbol move may take too.
     for id in method_lists {
         let isec = ctx.resolve_isec(ctx.symbols[id].input_section().unwrap() as usize);
-        let (steps, to) = atom_mapping(ctx, map, isec, None);
+        let (steps, to) = atom_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
         write(ctx.symbols[id].name(), steps, to);
     }
     let private = ctx.stub_helper.dyld_private_isec;
@@ -1571,8 +1603,14 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 /// Lays out __objc_methlist, the method lists rewritten in the relative
 /// form (see convert_objc_method_lists). ld64 lays the lists out sorted
 /// by their symbol's name, each 8-byte aligned; category merging also
-/// retires some after their first placement.
-fn lay_out_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
+/// retires some after their first placement. ld-prime lays out the
+/// lists -move_to_ro_segment takes to another segment (see
+/// symbol_moves) alike, in an __objc_methlist there.
+fn lay_out_objc_method_lists<E: Target>(
+    ctx: &mut Context<E>,
+    text: SectionName,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
     if ctx.objc_methlist.lists.is_empty() {
         return;
     }
@@ -1586,22 +1624,46 @@ fn lay_out_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
             *e = name;
         }
     }
-    let mut order: Vec<usize> = (0..ctx.objc_methlist.lists.len()).collect();
-    order.sort_by_key(|&i| {
-        (name_of.get(&ctx.objc_methlist.lists[i].isec).copied().unwrap_or(""), i)
-    });
-    let mut off = 0u64;
-    for i in order {
-        let isec = ctx.objc_methlist.lists[i].isec as usize;
-        off = align_to(off, 8);
-        ctx.isecs[isec].offset = off as u32;
-        off += ctx.isecs[isec].size as u64;
+    let mut order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
+    order.sort_by_key(|&isec| (name_of.get(&isec).copied().unwrap_or(""), isec));
+
+    // The lists of each section, by the section: None for
+    // __TEXT,__objc_methlist. (Of the symbol moves, only
+    // -move_to_ro_segment's takes code.)
+    let mut groups: Vec<(Option<OutputSectionId>, Vec<u32>)> = Vec::new();
+    for isec in order {
+        let hdr = *ctx.hdr_of(&ctx.isecs[isec as usize]);
+        let m = moves.get(&isec).filter(|m| m.option == MoveOption::Ro);
+        let dest = m.and_then(|&m| record_section(ctx, &hdr, text, Some(m)));
+        match groups.iter_mut().find(|(d, _)| *d == dest) {
+            Some((_, lists)) => lists.push(isec),
+            None => groups.push((dest, vec![isec])),
+        }
     }
-    ctx.objc_methlist.hdr.size = off;
-    ctx.chunks.push(ChunkId::ObjcMethlist);
-    for i in 0..ctx.objc_methlist.lists.len() {
-        let isec = ctx.objc_methlist.lists[i].isec as usize;
-        ctx.isecs[isec].set_output_section(ChunkId::ObjcMethlist);
+    for (dest, lists) in groups {
+        let mut off = 0u64;
+        for &isec in &lists {
+            off = align_to(off, 8);
+            ctx.isecs[isec as usize].offset = off as u32;
+            off += ctx.isecs[isec as usize].size as u64;
+        }
+        let (chunk, base) = match dest {
+            None => {
+                ctx.objc_methlist.hdr.size = off;
+                ctx.chunks.push(ChunkId::ObjcMethlist);
+                (ChunkId::ObjcMethlist, 0)
+            }
+            Some(id) => {
+                let osec = ctx.output_section_mut(id);
+                append_tail(osec, 3, Tail::ObjcMethlists, off);
+                (ChunkId::Output(id), osec.tail_off)
+            }
+        };
+        for isec in lists {
+            let isec = &mut ctx.isecs[isec as usize];
+            isec.offset += base as u32;
+            isec.set_output_section(chunk);
+        }
     }
 }
 
