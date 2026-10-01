@@ -2687,7 +2687,12 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         let data = Vec::leak(data);
         let mf =
             crate::mapped_file::MappedFile { name, data, parent: None, mtime, is_lto_output: true };
-        input_files::parse_object(ctx, Box::leak(Box::new(mf)), true);
+        // An output of x86_64h bitcode is an x86_64h object: ld-prime
+        // warns of it in an x86_64 link as of an input.
+        let mf = Box::leak(Box::new(mf));
+        if !is_foreign(ctx, mf) {
+            input_files::parse_object(ctx, mf, true);
+        }
     }
     ctx.lto_objs = first..ctx.objs.len();
     ctx.merged_lto_obj = merged_any.then(|| ctx.objs.len() - 1);
@@ -3115,15 +3120,19 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
 /// -allow_sub_type_mismatches had it take (see is_foreign) once it
 /// knows the link uses it: an archive member it loads, or a file on the
 /// command line.
-pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
+pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>, objs: Range<usize>) {
     if !ctx.args.allow_sub_type_mismatches {
         return;
     }
-    for (i, obj) in ctx.objs.iter().enumerate() {
-        if obj.is_alive
-            && !ctx.is_internal(i)
-            && let Some(arch) = input_files::foreign_arch::<E>(&ctx.args, obj.mf)
-        {
+    for i in objs.filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i)) {
+        let obj = &ctx.objs[i];
+        let arch = match obj.lto_module {
+            Some(module) => {
+                input_files::foreign_bitcode_arch::<E>(&ctx.lto_plugin.unwrap(), module)
+            }
+            None => input_files::foreign_arch::<E>(&ctx.args, obj.mf).map(str::to_string),
+        };
+        if let Some(arch) = arch {
             let name = input_files::without_fat_arch(path_bytes(&obj.mf.name));
             crate::warn!(
                 "linking {arch} file '{}' into {} link",

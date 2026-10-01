@@ -667,6 +667,12 @@ pub fn target_triple(plugin: &Plugin, data: &[u8], name: &Path) -> String {
     triple
 }
 
+/// Frees a module parse_module created that the link doesn't take.
+pub fn dispose_module(plugin: &Plugin, module: usize) {
+    // SAFETY: the module handle is valid and no longer used.
+    unsafe { (plugin.module_dispose)(module as *mut c_void) };
+}
+
 /// The target triple of a module parse_module created.
 pub fn module_triple(plugin: &Plugin, module: usize) -> String {
     // SAFETY: the module handle is valid, and the triple is a

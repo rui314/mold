@@ -65,8 +65,10 @@ pub fn get_file_type(mf: &MappedFile) -> FileType {
         return FileType::Tapi;
     }
 
-    // Raw LLVM bitcode, or the bitcode wrapper header.
-    if data.starts_with(b"BC\xc0\xde") || data.starts_with(&0x0b17_c0deu32.to_le_bytes()) {
+    // LLVM bitcode in the wrapper Apple's compilers put it in. ld-prime
+    // knows no raw bitcode ("BC\xc0\xde"), whatever its target: a file
+    // of it is of an unknown type, an archive member none it loads.
+    if data.starts_with(&0x0b17_c0deu32.to_le_bytes()) {
         return FileType::LlvmBitcode;
     }
 

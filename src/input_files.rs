@@ -2150,14 +2150,31 @@ pub fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> crate::lto::Plugin 
 
 /// Registers a bitcode input: a placeholder object that claims the
 /// module's symbols so resolution works, compiled for real by LTO once
-/// all inputs are known.
+/// all inputs are known. One for another architecture than the link's
+/// is ignored, as ld-prime ignores a Mach-O object (see
+/// passes::is_foreign): None.
 pub fn parse_bitcode<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
     alive: bool,
-) -> usize {
+) -> Option<usize> {
     let plugin = ensure_lto_plugin(ctx);
     let (module, lsyms) = crate::lto::parse_module(&plugin, mf.data(), &mf.name);
+    if let Some(arch) = foreign_bitcode_arch::<E>(&plugin, module) {
+        if ctx.args.allow_sub_type_mismatches && is_bitcode_subtype_mismatch::<E>(&arch) {
+            let name = without_fat_arch(crate::util::path_bytes(&mf.name));
+            crate::warn!(
+                "linking {arch} file '{}' into {} link",
+                crate::util::display(&name),
+                E::NAME
+            );
+        } else {
+            let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
+            ignore_foreign_file(ctx, mf, &why);
+            crate::lto::dispose_module(&plugin, module);
+            return None;
+        }
+    }
     // ld-prime checks the target triple's OS and version as it checks
     // a Mach-O object's platform load command.
     let triple = crate::lto::module_triple(&plugin, module);
@@ -2226,7 +2243,35 @@ pub fn parse_bitcode<E: Target>(
         defined,
         is_thin,
     });
-    obj_idx
+    Some(obj_idx)
+}
+
+/// The architecture a bitcode module was compiled for, from its target
+/// triple (x86_64h-apple-macosx14.0.0), if the link doesn't take it -
+/// named as for a Mach-O file, a Thumb one (thumbv7-apple-ios9.0.0) by
+/// its ARM architecture.
+pub fn foreign_bitcode_arch<E: Target>(
+    plugin: &crate::lto::Plugin,
+    module: usize,
+) -> Option<String> {
+    let triple = crate::lto::module_triple(plugin, module);
+    let arch = match triple.split('-').next().unwrap_or_default() {
+        "aarch64" => "arm64".to_string(),
+        arch => match arch.strip_prefix("thumb") {
+            Some(version) => format!("arm{version}"),
+            None => arch.to_string(),
+        },
+    };
+    (arch != E::NAME).then_some(arch)
+}
+
+/// Whether a bitcode module of architecture `arch` is of the link's CPU
+/// type all the same (see is_subtype_mismatch).
+fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
+    match E::NAME {
+        "x86_64" => arch == "x86_64h",
+        _ => false,
+    }
 }
 
 /// Extracts one NUL-terminated name from a string table already
