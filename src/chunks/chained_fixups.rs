@@ -520,9 +520,11 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 /// pointer that holds one, then, once relocations are applied, reports
 /// the unaligned pointers where the image has classic dyld info (as
 /// -unaligned_pointers says). With chained fixups, arm64 fails the link
-/// at the first unaligned pointer of a chain (of the atoms in address
-/// order, each one's from the last, the order of an assembler's
-/// relocations), and x86-64 gives chains up for classic dyld info
+/// at an unaligned pointer of a chain: of the last section that has
+/// one, the first atom's (in address order), from its last pointer
+/// (the order of an assembler's relocations) - ld-prime checks the
+/// sections in parallel and keeps the last one's error, but stops a
+/// section at its first. x86-64 gives chains up for classic dyld info
 /// instead - with a warning, whatever -unaligned_pointers says - whose
 /// header the load commands fit in as laid out (see header_pad), on an
 /// unaligned pointer of its own too (`unaligned`: a GOT slot a
@@ -564,7 +566,9 @@ fn check_pointer_alignment<E: Target>(
         // pages fail the link then (see build_chained_fixups).
         suspects.retain(|&(_, addr)| !ctx.text_reloc_ranges.iter().any(|r| r.contains(&addr)));
         suspects.retain(|&(_, addr)| !offset_in_segment(ctx, addr).is_multiple_of(8));
-        if let Some(&(first, _)) = suspects.first() {
+        if let Some(&(id, _)) = suspects.last() {
+            let osec = |id: u32| ctx.isecs[id as usize].output_section();
+            let (first, _) = *suspects.iter().find(|&&(i, _)| osec(i) == osec(id)).unwrap();
             let &last = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
             ctx.chained_fixups.unaligned.lock().unwrap().push(last);
         }

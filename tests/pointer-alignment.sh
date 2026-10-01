@@ -5,9 +5,10 @@ source "$(dirname "$0")"/common.inc
 # a fixup chain are words. For a deployment target it gives chained
 # fixups by default, it warns of each atom aligned less than a pointer
 # that holds one, and then of each unaligned pointer if the image has
-# classic dyld info. With chained fixups, an arm64 link fails at the
-# first one (the last of the first atom that has one); an x86-64 image
-# gets classic dyld info instead. For an older target it says nothing.
+# classic dyld info. With chained fixups, an arm64 link fails at one
+# (in a section, the last of the first atom that has one); an x86-64
+# image gets classic dyld info instead. For an older target it says
+# nothing.
 
 # _r0 puts the pointers of _r1 and _r2 off 8-byte boundaries.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
@@ -54,6 +55,31 @@ else
   grep -q LC_DYLD_INFO_ONLY $t/lc
   not grep -q LC_DYLD_CHAINED_FIXUPS $t/lc
   $t/exe
+fi
+
+# Of several sections with one, an arm64 chain fails at the last
+# section's: ld-prime checks the sections in parallel and keeps the last
+# one's error, though it stops each at its first.
+cat <<EOF | $CC -o $t/d.o -c -xassembler -
+.section __DATA,__const
+.globl _c0
+_c0: .byte 1
+.globl _c1
+_c1: .quad _bar
+.data
+.globl _d0
+_d0: .byte 1
+.globl _d1
+_d1: .quad _bar
+.quad _bar
+.globl _d2
+_d2: .quad _bar
+.subsections_via_symbols
+EOF
+echo 'int bar = 3; int main() { return 0; }' | $CC -o $t/m.o -c -xc -
+if [ $ARCH = arm64 ]; then
+  not $CC --ld-path=$mold -o $t/exe1 $t/d.o $t/m.o 2> $t/log1
+  grep -q "pointer not aligned in '_d1'+0x8 (/.*/$t/d.o)$" $t/log1
 fi
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_fixup_chains 2> $t/log2
