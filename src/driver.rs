@@ -170,6 +170,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     }
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
     crate::error::checkpoint();
+    passes::check_weak_imports(&ctx);
+    crate::error::checkpoint();
     passes::check_duplicate_symbols(&ctx);
     crate::error::checkpoint();
     passes::check_weak_exports(&ctx);

@@ -186,6 +186,15 @@ impl LibraryName {
     }
 }
 
+/// -weak_reference_mismatches: an import referenced both weakly and not
+/// is a strong one (the default), a weak one, or an error.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WeakRefMismatches {
+    NonWeak,
+    Weak,
+    Error,
+}
+
 /// Parsed command line arguments.
 #[derive(Debug)]
 pub struct Args {
@@ -362,6 +371,12 @@ pub struct Args {
     /// override a dylib's weak one), which dyld coalesces at launch.
     pub warn_weak_exports: bool,
     pub no_weak_exports: bool,
+    /// -no_weak_imports: a final image may not import a symbol any
+    /// object references weakly (weak_import).
+    pub no_weak_imports: bool,
+    /// -weak_reference_mismatches: what a final image makes of a symbol
+    /// it imports that some objects reference weakly and others not.
+    pub weak_reference_mismatches: WeakRefMismatches,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -651,6 +666,8 @@ impl Default for Args {
             no_dynamic_access: false,
             warn_weak_exports: false,
             no_weak_exports: false,
+            no_weak_imports: false,
+            weak_reference_mismatches: WeakRefMismatches::NonWeak,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1480,6 +1497,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
         "-undefined" => "missing <dynamic_lookup>",
         "-dyld_env" => "missing <arg>",
+        "-weak_reference_mismatches" => "missing [ error | weak | non-weak ]",
         "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -2242,6 +2260,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-warn_weak_exports" => args.warn_weak_exports = true,
             b"-no_weak_exports" => args.no_weak_exports = true,
+            b"-no_weak_imports" => args.no_weak_imports = true,
+            b"-weak_reference_mismatches" => {
+                args.weak_reference_mismatches = match next_arg(&mut i, name).as_bytes() {
+                    b"non-weak" => WeakRefMismatches::NonWeak,
+                    b"weak" => WeakRefMismatches::Weak,
+                    b"error" => WeakRefMismatches::Error,
+                    _ => fatal!(
+                        "invalid option to -weak_reference_mismatches [ error | weak | non-weak ]"
+                    ),
+                }
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();
