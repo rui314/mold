@@ -4854,20 +4854,27 @@ fn weaken_moved_imports<E: Target>(ctx: &mut Context<E>) {
 /// ld-prime binds AppKit's moved exports to libswiftAppKit 1.0.0 for
 /// macOS 13, but to 2775.10.103 if -lswiftAppKit names the SDK's stub
 /// as well, while an auto-link option's stub with nothing bound to it
-/// has no load command and changes nothing.
+/// has no load command and changes nothing. Failing that, the first one
+/// with a load command that stands for the library too, exports of
+/// another library having moved there at another version: SwiftUI's
+/// load command is at DeveloperToolsSupport's version if exports of
+/// both it and SwiftUICore that moved to SwiftUI bind, at SwiftUICore's
+/// if only those of SwiftUICore do.
 fn moved_dylib_twins<E: Target>(ctx: &Context<E>, used: &[bool]) -> Vec<Option<usize>> {
     use crate::input_files::NameSource;
     let dylibs = &ctx.dylibs;
+    let moved = |i: usize| dylibs[i].name_source == NameSource::Moved;
+    let twin = |i: usize, moved_too: bool| {
+        (0..dylibs.len()).find(|&j| {
+            used[j] && moved(j) == moved_too && dylibs[j].install_name == dylibs[i].install_name
+        })
+    };
     (0..dylibs.len())
         .map(|i| {
-            if !used[i] || dylibs[i].name_source != NameSource::Moved {
+            if !used[i] || !moved(i) {
                 return None;
             }
-            (0..dylibs.len()).find(|&j| {
-                used[j]
-                    && dylibs[j].name_source != NameSource::Moved
-                    && dylibs[j].install_name == dylibs[i].install_name
-            })
+            twin(i, false).or_else(|| twin(i, true).filter(|&j| j != i))
         })
         .collect()
 }

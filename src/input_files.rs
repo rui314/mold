@@ -5082,11 +5082,12 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
 /// exports moved to stays apart from the others (see add_moved_dylibs).
 fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
     let is_moved = |d: &DylibFile| d.name_source == NameSource::Moved;
-    if let Some(idx) = ctx
-        .dylibs
-        .iter()
-        .position(|d| d.install_name == dylib.install_name && is_moved(d) == is_moved(&dylib))
-    {
+    let versions = |d: &DylibFile| (d.current_version, d.compatibility_version);
+    if let Some(idx) = ctx.dylibs.iter().position(|d| {
+        d.install_name == dylib.install_name
+            && is_moved(d) == is_moved(&dylib)
+            && (!is_moved(d) || versions(d) == versions(&dylib))
+    }) {
         let existing = &mut ctx.dylibs[idx];
         if dylib.name_source < existing.name_source {
             existing.current_version = dylib.current_version;
