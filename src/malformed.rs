@@ -48,6 +48,27 @@ pub fn check_object(data: &[u8], cputype: u32) -> Result<(), Malformed> {
     check_section_contents(data, &cmds).map_err(Malformed::Layout)
 }
 
+/// What ld-prime refuses of an image the link reads - a dylib, the
+/// executable -bundle_loader names - before it reads it: one without
+/// its one LC_UUID. (It checks much else of an image's layout too.)
+pub fn check_image(data: &[u8]) -> Result<(), String> {
+    let mut uuids = 0;
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..u32_at(data, 16) {
+        let size = u32_at(data, off + 4) as usize;
+        if size < 8 || off + size > data.len() {
+            break;
+        }
+        uuids += (u32_at(data, off) == LC_UUID) as u32;
+        off += size;
+    }
+    match uuids {
+        0 => Err("missing LC_UUID load command".to_string()),
+        1 => Ok(()),
+        _ => Err("too many LC_UUID load commands".to_string()),
+    }
+}
+
 fn u32_at(data: &[u8], off: usize) -> u32 {
     data.get(off..off + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()))
 }

@@ -630,6 +630,9 @@ fn collect_file<E: Target>(
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
+        FileType::Dylib if let Err(why) = crate::malformed::check_image(mf.data()) => {
+            refuse_image(mf, &why);
+        }
         FileType::Tapi | FileType::Dylib => {
             let first = ctx.dylibs.len();
             let idx = if get_file_type(mf) == FileType::Tapi {
@@ -753,6 +756,12 @@ fn check_object(mf: &MappedFile) -> Result<(), crate::malformed::Malformed> {
     crate::malformed::check_object(data, MachHeader::read_from(data).cputype)
 }
 
+/// Refuses an image the link reads (see malformed::check_image), by the
+/// path of its file.
+fn refuse_image(mf: &MappedFile, why: &str) {
+    let name = input_files::trace_name(path_bytes(&mf.name));
+    error!("{why} in '{name}' in '{name}'");
+}
 
 /// Refuses a malformed object, naming it twice as ld-prime does.
 fn refuse_malformed(mf: &MappedFile, why: &crate::malformed::Malformed) {
@@ -1448,7 +1457,10 @@ fn load_bundle_loader<E: Target>(
     match exe.filter(|exe| crate::filetype::get_macho_filetype(exe.data()) == Some(MH_EXECUTE)) {
         Some(exe) => {
             input_files::trace_file(ctx, path_bytes(&mf.name));
-            input_files::parse_bundle_loader(ctx, exe);
+            match crate::malformed::check_image(exe.data()) {
+                Ok(()) => _ = input_files::parse_bundle_loader(ctx, exe),
+                Err(why) => refuse_image(exe, &why),
+            }
         }
         None => collect_file(ctx, mf, rc, out),
     }

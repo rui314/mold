@@ -103,3 +103,13 @@ grep -qF "unknown file type in '$t/x.c'" $t/log6
 not $CC --ld-path=$mold -bundle -o $t/d5.bundle $t/plugin.o \
   -Wl,-bundle_loader,$t/plugin.bundle 2> $t/log7
 grep -qF "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '$t/plugin.bundle'" $t/log7
+
+# ld-prime refuses an image without its LC_UUID, as a bundle loader or a
+# dylib to link with.
+$CC --ld-path=$mold -o $t/host-nouuid $t/host.o -Wl,-export_dynamic,-no_uuid
+not $CC --ld-path=$mold -bundle -o $t/d6.bundle $t/plugin.o \
+  -Wl,-bundle_loader,$t/host-nouuid 2> $t/log8
+grep -qF "missing LC_UUID load command in '$t/host-nouuid' in '$t/host-nouuid'" $t/log8
+$CC --ld-path=$mold -o $t/libnouuid.dylib -shared $t/h.o -Wl,-no_uuid
+not $CC --ld-path=$mold -bundle -o $t/d7.bundle $t/plugin.o $t/libnouuid.dylib 2> $t/log9
+grep -qF "missing LC_UUID load command in '$t/libnouuid.dylib' in '$t/libnouuid.dylib'" $t/log9
