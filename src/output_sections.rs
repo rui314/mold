@@ -69,7 +69,11 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         // Without __DATA_CONST (-no_data_const, an x86-64 kext),
         // ld-prime's __DATA starts with the lazy pointers and the
         // initializer and terminator lists, and the GOT follows the
-        // input sections.
+        // input sections. Ahead of all come crt1.o's tables for dyld
+        // and the C runtime, __dyld and __program_vars, in input order
+        // (the lazy pointers, which the linker makes, follow those of
+        // their rank).
+        ("__DATA", "__dyld" | "__program_vars") => 0,
         ("__DATA", "__la_symbol_ptr") => 0,
         ("__DATA", "__mod_init_func" | "__mod_term_func") => 1,
         ("__DATA", "__got") => 25,
