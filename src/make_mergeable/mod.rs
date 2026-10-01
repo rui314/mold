@@ -262,6 +262,9 @@ struct Builder<'a, E: Target> {
     /// The atoms that symbols name but for their subsection's (aliases,
     /// tentative definitions).
     sym_atom: HashMap<SymbolId, To>,
+    /// The aliases standing for the functions identical code folding
+    /// folded, each with its subsection (see add_folded_function).
+    folded: Vec<(u32, u32)>,
     sections: Vec<CustomSection>,
     debug: Vec<DebugRecord>,
     /// Each object's debug notes, by its 1-based index, 0 for none.
@@ -278,6 +281,7 @@ impl<'a, E: Target> Builder<'a, E> {
             isec_atom: HashMap::new(),
             isec_split: HashMap::new(),
             sym_atom: HashMap::new(),
+            folded: Vec::new(),
             sections: Vec::new(),
             debug: Vec::new(),
             obj_debug: vec![0; ctx.objs.len()],
@@ -349,6 +353,15 @@ impl<'a, E: Target> Builder<'a, E> {
             self.add_absolute_atoms(obj_idx);
             self.add_tentative_defs(obj_idx, debug);
         }
+        // Each folded function's alias is of the function kept, which
+        // may come later.
+        for k in 0..self.folded.len() {
+            let (alias, id) = self.folded[k];
+            if let Some(kept) = self.isec_target(id) {
+                let fixup = OutFixup::new(0, kept, fk::ALIAS_OF, 0);
+                self.atoms[alias as usize].fixups.push(fixup);
+            }
+        }
     }
 
     /// The debug notes of an object with DWARF, as a final link would
@@ -376,8 +389,11 @@ impl<'a, E: Target> Builder<'a, E> {
     fn add_isec_atom(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
         let ctx = self.ctx;
         let isec = &ctx.isecs[id];
-        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
+        if !isec.is_alive() {
             return;
+        }
+        if isec.replacement != NO_REPLACEMENT {
+            return self.add_folded_function(obj, id, debug);
         }
         let hdr = ctx.hdr_of(isec);
         if !has_atoms(hdr) {
@@ -420,6 +436,30 @@ impl<'a, E: Target> Builder<'a, E> {
         if !record && !literal {
             self.add_aliases(obj, id, label, atom_idx, debug);
         }
+    }
+
+    /// A function identical code folding folded into another, which
+    /// has no bytes of its own: an alias of the kept function's entry,
+    /// by the name its own subsection had, as ld-prime records the
+    /// functions its deduplication folds - so that a merging link finds
+    /// an exported Swift function folded so. Its other symbols are
+    /// aliases of that alias, in its place; it goes after the imports
+    /// (see final_order), its target filled in once every entry is made.
+    fn add_folded_function(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
+        let ctx = self.ctx;
+        let Some(label) = ctx.atom_label_index(id as usize) else { return };
+        let sym_id = obj.symbols[label];
+        if !ctx.folded_atom_names.contains_key(&sym_id) {
+            return;
+        }
+        let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
+        let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
+        let mut alias = OutAtom::new(scope, kind, CT_NONE);
+        alias.name = Some(ctx.symbols[sym_id].name().as_bytes());
+        let idx = self.push_atom(alias, None);
+        self.folded.push((idx, id));
+        self.sym_atom.insert(sym_id, To::Atom(idx));
+        self.add_aliases(obj, id, Some(label), idx, debug);
     }
 
     /// The bytes of a subsection: the image's where the link put it
@@ -1049,14 +1089,18 @@ impl<'a, E: Target> Builder<'a, E> {
 
     /// The atoms' final order, as (list, index) pairs of the objects'
     /// atoms (0), the linker's (1) and the symbols' (2): the objects'
-    /// but the thread-local variables, the symbols', the thread-local
-    /// variables, and the linker's.
+    /// but the folded functions and the thread-local variables, the
+    /// symbols', the folded functions, the thread-local variables, and
+    /// the linker's.
     fn final_order(&self, nsyms: usize) -> Vec<(usize, usize)> {
         let is_tlv = |i: &usize| self.atoms[*i].content_type == CT_THREAD_VARS;
+        let folded: hashbrown::HashSet<usize> =
+            self.folded.iter().map(|&(alias, _)| alias as usize).collect();
         let objs = 0..self.atoms.len();
         let mut order: Vec<(usize, usize)> =
-            objs.clone().filter(|i| !is_tlv(i)).map(|i| (0, i)).collect();
+            (objs.clone()).filter(|i| !is_tlv(i) && !folded.contains(i)).map(|i| (0, i)).collect();
         order.extend((0..nsyms).map(|i| (2, i)));
+        order.extend(self.folded.iter().map(|&(alias, _)| (0, alias as usize)));
         order.extend(objs.filter(is_tlv).map(|i| (0, i)));
         order.extend((0..self.tail.len()).map(|i| (1, i)));
         order
