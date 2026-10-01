@@ -28,8 +28,8 @@ grep -q '^_main from .*/a.o' $t/log4
 grep -q '^  initial-undef$' $t/log4
 not grep -q 'initial-undef' $t/log
 
-# ld-prime walks from each root in turn, the entry point and the -u
-# symbols first, and prints a chain each time a reference reaches a
+# ld-prime walks from each root in turn, the -u symbols and then the
+# entry point first, and prints a chain each time a reference reaches a
 # matching atom, and a reason each time a root is one; an initializer
 # pointer is a mod-init-ptr.
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -72,6 +72,16 @@ _main from b.o
   global-dont-strip
 EOF
 diff $t/log6.expected $t/log6
+
+why_live -Wl,-why_live,_leaf,-u,_other > $t/log9
+cat > $t/log9.expected <<EOF
+_leaf from b.o
+  _other from b.o
+_leaf from b.o
+  _middle from b.o
+    _main from b.o
+EOF
+diff $t/log9.expected $t/log9
 
 why_live -shared -Wl,-why_live,_leaf > $t/log7
 cat > $t/log7.expected <<EOF

@@ -85,11 +85,11 @@ fn symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<Root> {
     }
 }
 
-/// The symbols that are roots by name: the -u ones and the entry point,
-/// in ld-prime's order.
+/// The symbols that are roots by name, in ld-prime's order: the -u ones
+/// as the command line gives them, then the entry point.
 fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
-    entry.into_iter().chain(&ctx.args.forced_undefined).filter_map(|name| ctx.symbols.get(name))
+    ctx.args.forced_undefined.iter().chain(entry).filter_map(|name| ctx.symbols.get(name))
 }
 
 /// Sections the format keeps regardless of references: initializers
@@ -457,7 +457,7 @@ struct Frame {
 /// -why_live prints, for each atom whose name matches a -why_live
 /// pattern ("*" wildcards), every chain of references that keeps it
 /// alive, on stderr, as ld-prime does. Its walk goes from each root in
-/// turn - the entry point and the -u symbols, then every root atom in
+/// turn - the -u symbols and the entry point, then every root atom in
 /// input order - and when a reference reaches a matching atom, prints
 /// "name from file" and the referencing atoms back to the root, one to
 /// a line and indented a step further each; for a root itself, why it
