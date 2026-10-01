@@ -15,6 +15,13 @@ pub fn align_to(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
 }
 
+/// Rounds `value` up to a multiple of the page size `page` as ld-prime
+/// does, which rounds anything to 0 under a -segalign of 0.
+pub fn page_align(value: u64, page: u64) -> u64 {
+    let mask = page.wrapping_sub(1);
+    value.wrapping_add(mask) & !mask
+}
+
 /// Rounds `val` up to the next value congruent to `modulus` modulo
 /// `align`: the smallest x >= val with x % align == modulus. ld64
 /// places every atom this way, keeping the offset it had within its

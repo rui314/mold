@@ -24,7 +24,7 @@ use crate::output_sections::{data_seg, header_segment};
 use crate::tapi;
 use crate::target::RelocClass;
 use crate::target::Target;
-use crate::util::{align_to, path_bytes};
+use crate::util::{align_to, page_align, path_bytes};
 
 /// The default library search path: ld64's /usr/lib and /usr/local/lib,
 /// and between them ld-prime's /usr/lib/swift, which it searches for
@@ -4079,113 +4079,6 @@ pub(crate) fn is_class_or_protocol_ref_name(sectname: &str) -> bool {
     matches!(sectname, "__objc_superrefs" | "__objc_protorefs")
 }
 
-/// -pagezero_size, as ld-prime takes it: rounded up to a page (past the
-/// top, to 0), and no more than 4 GiB in an executable with chained
-/// fixups.
-pub fn resolve_pagezero_size<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable {
-        return;
-    }
-    let size = ctx.args.pagezero_size;
-    let page = ctx.segment_align();
-    if !size.is_multiple_of(page) {
-        let aligned = page_align(size, page);
-        // (As printf's %#llx spells it.)
-        let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
-        crate::warn!(
-            "-pagezero_size not aligned, rounded up to: {shown}, use -segalign to change the alignment"
-        );
-        ctx.args.pagezero_size = aligned;
-    }
-    if ctx.args.output_type == MH_EXECUTE
-        && ctx.use_chained_fixups()
-        && ctx.args.pagezero_size > 0x1_0000_0000
-    {
-        crate::warn!("-pagezero_size is too large, setting it to 4GB");
-        ctx.args.pagezero_size = 0x1_0000_0000;
-    }
-}
-
-/// ld-prime's checks of the -segaddr pins, one pin at a time: a pin may
-/// not lie in __PAGEZERO, share its address with another one, or be off
-/// a page boundary - even one for a segment the image does not have.
-pub fn check_segaddrs<E: Target>(ctx: &Context<E>) {
-    if ctx.args.relocatable {
-        return;
-    }
-    let segaddrs = &ctx.args.segaddrs;
-    for (i, (name, addr)) in segaddrs.iter().enumerate() {
-        if *addr < ctx.args.pagezero_size {
-            fatal!("-segaddr {name} 0x{addr:X} conflicts with -pagezero_size");
-        }
-        if let Some((other, _)) = segaddrs[i + 1..].iter().find(|(_, a)| a == addr) {
-            fatal!("duplicate -segaddr addresses for {name} and {other}");
-        }
-        if !addr.is_multiple_of(ctx.segment_align()) {
-            fatal!(
-                "-segaddr {name} 0x{addr:X} is not aligned to the page size ({:#x}), use -segalign to change it",
-                ctx.segment_align()
-            );
-        }
-    }
-}
-
-/// -image_base (or -seg1addr) sets __TEXT's address, for an image that
-/// stays where it was linked. A -segaddr for __TEXT names the same
-/// address, and the two must agree (a non-PIE -static image takes the
-/// -segaddr's, with a warning). dyld slides a PIE executable wherever
-/// it likes, and ld-prime ignores the base for one with a warning; it
-/// ignores it too for any other image dyld loads with chained fixups (a
-/// non-PIE executable only when -fixup_chains asks for them). A pinned
-/// __TEXT stays where it is even then: in a dylib the other segments
-/// still follow it, while in a PIE executable they go from __PAGEZERO's
-/// end and so below it, out of order (place_segments).
-pub fn resolve_image_base<E: Target>(ctx: &mut Context<E>) {
-    // Before anything else looks at it, ld-prime rounds a base up to a
-    // page (past the top, to 0): 4 KiB in an object file, which is
-    // loaded nowhere.
-    let align = if ctx.args.relocatable { 0x1000 } else { ctx.segment_align() };
-    if let Some(base) = ctx.args.image_base
-        && !base.is_multiple_of(align)
-    {
-        let aligned = page_align(base, align);
-        crate::warn!(
-            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
-        );
-        ctx.args.image_base = Some(aligned);
-    }
-    // It takes a zero base as none at all.
-    if ctx.args.image_base == Some(0) {
-        ctx.args.image_base = None;
-    }
-    if ctx.args.relocatable {
-        ctx.args.image_base = None;
-        return;
-    }
-
-    let text = ctx.args.segaddr("__TEXT");
-    if let (Some(base), Some(text)) = (ctx.args.image_base, text)
-        && base != text
-    {
-        if !ctx.args.static_link || ctx.args.pie {
-            fatal!("-image_base and -segaddr __TEXT must match");
-        }
-        crate::warn!(
-            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
-        );
-    }
-    let Some(base) = text.or(ctx.args.image_base) else { return };
-    ctx.args.image_base = Some(base);
-
-    if ctx.args.output_type == MH_EXECUTE && ctx.args.pie && !ctx.args.static_link {
-        crate::warn!("Linking with PIE, -image_base will be ignored");
-        ctx.args.image_base = None;
-    } else if !ctx.args.static_link && ctx.use_chained_fixups() {
-        crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
-        ctx.args.image_base = text;
-    }
-}
-
 /// Lays out the output: each segment's contents in file order, and the
 /// segments in the address space. Where ld-prime puts a segment can
 /// depend on the size of any other one (place_segments), so a segment
@@ -4579,13 +4472,6 @@ fn layout_segment<E: Target>(
     seg.cmd.filesize = page_align(filesize, page);
     seg.cmd.vmsize = page_align(vm_end - vmaddr, page).max(seg.cmd.filesize);
     seg_fileoff + page_align(seg.cmd.filesize, seg_page)
-}
-
-/// Rounds `value` up to a multiple of the page size `page` as ld-prime
-/// does, which rounds anything to 0 under a -segalign of 0.
-fn page_align(value: u64, page: u64) -> u64 {
-    let mask = page.wrapping_sub(1);
-    value.wrapping_add(mask) & !mask
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:

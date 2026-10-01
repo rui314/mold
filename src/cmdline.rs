@@ -16,7 +16,7 @@ use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::{display, os_str};
+use crate::util::{display, os_str, page_align};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -2080,6 +2080,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.undefined_dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
     }
+    resolve_pagezero_size(&mut args);
+    check_segaddrs(&args);
+    resolve_image_base(&mut args);
 
     args
 }
@@ -2544,6 +2547,110 @@ fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(String, u64)>) -> Vec<(String
         }
     }
     out
+}
+
+/// -pagezero_size, as ld-prime takes it: rounded up to a page (past the
+/// top, to 0), and no more than 4 GiB in an executable with chained
+/// fixups.
+fn resolve_pagezero_size(args: &mut Args) {
+    if args.relocatable {
+        return;
+    }
+    let size = args.pagezero_size;
+    let page = args.segment_align;
+    if !size.is_multiple_of(page) {
+        let aligned = page_align(size, page);
+        // (As printf's %#llx spells it.)
+        let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
+        crate::warn!(
+            "-pagezero_size not aligned, rounded up to: {shown}, use -segalign to change the alignment"
+        );
+        args.pagezero_size = aligned;
+    }
+    if args.output_type == MH_EXECUTE && args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
+        crate::warn!("-pagezero_size is too large, setting it to 4GB");
+        args.pagezero_size = 0x1_0000_0000;
+    }
+}
+
+/// ld-prime's checks of the -segaddr pins, one pin at a time: a pin may
+/// not lie in __PAGEZERO, share its address with another one, or be off
+/// a page boundary - even one for a segment the image does not have.
+fn check_segaddrs(args: &Args) {
+    if args.relocatable {
+        return;
+    }
+    let segaddrs = &args.segaddrs;
+    for (i, (name, addr)) in segaddrs.iter().enumerate() {
+        if *addr < args.pagezero_size {
+            fatal!("-segaddr {name} 0x{addr:X} conflicts with -pagezero_size");
+        }
+        if let Some((other, _)) = segaddrs[i + 1..].iter().find(|(_, a)| a == addr) {
+            fatal!("duplicate -segaddr addresses for {name} and {other}");
+        }
+        if !addr.is_multiple_of(args.segment_align) {
+            fatal!(
+                "-segaddr {name} 0x{addr:X} is not aligned to the page size ({:#x}), use -segalign to change it",
+                args.segment_align
+            );
+        }
+    }
+}
+
+/// -image_base (or -seg1addr) sets __TEXT's address, for an image that
+/// stays where it was linked. A -segaddr for __TEXT names the same
+/// address, and the two must agree (a non-PIE -static image takes the
+/// -segaddr's, with a warning). dyld slides a PIE executable wherever
+/// it likes, and ld-prime ignores the base for one with a warning; it
+/// ignores it too for any other image dyld loads with chained fixups (a
+/// non-PIE executable only when -fixup_chains asks for them). A pinned
+/// __TEXT stays where it is even then: in a dylib the other segments
+/// still follow it, while in a PIE executable they go from __PAGEZERO's
+/// end and so below it, out of order (passes::place_segments).
+fn resolve_image_base(args: &mut Args) {
+    // Before anything else looks at it, ld-prime rounds a base up to a
+    // page (past the top, to 0): 4 KiB in an object file, which is
+    // loaded nowhere.
+    let align = if args.relocatable { 0x1000 } else { args.segment_align };
+    if let Some(base) = args.image_base
+        && !base.is_multiple_of(align)
+    {
+        let aligned = page_align(base, align);
+        crate::warn!(
+            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
+        );
+        args.image_base = Some(aligned);
+    }
+    // It takes a zero base as none at all.
+    if args.image_base == Some(0) {
+        args.image_base = None;
+    }
+    if args.relocatable {
+        args.image_base = None;
+        return;
+    }
+
+    let text = args.segaddr("__TEXT");
+    if let (Some(base), Some(text)) = (args.image_base, text)
+        && base != text
+    {
+        if !args.static_link || args.pie {
+            fatal!("-image_base and -segaddr __TEXT must match");
+        }
+        crate::warn!(
+            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
+        );
+    }
+    let Some(base) = text.or(args.image_base) else { return };
+    args.image_base = Some(base);
+
+    if args.output_type == MH_EXECUTE && args.pie && !args.static_link {
+        crate::warn!("Linking with PIE, -image_base will be ignored");
+        args.image_base = None;
+    } else if !args.static_link && args.fixup_chains {
+        crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
+        args.image_base = text;
+    }
 }
 
 /// The target of the first Mach-O input file named on the command line;
