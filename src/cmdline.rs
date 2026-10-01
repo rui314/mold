@@ -699,6 +699,10 @@ pub struct Args {
     /// -force_load_swift_libs: load every member of an archive an
     /// auto-link option finds whose file name starts with "libswift".
     pub force_load_swift_libs: bool,
+    /// -merge_zero_fill_sections: each segment's zero-fill sections, the
+    /// commons too, form one __zerofill section (see
+    /// output_sections::SectionMap::zero_fill_name).
+    pub merge_zero_fill_sections: bool,
 }
 
 impl Default for Args {
@@ -865,6 +869,7 @@ impl Default for Args {
             ignore_auto_link: false,
             linker_options: Vec::new(),
             force_load_swift_libs: false,
+            merge_zero_fill_sections: false,
         }
     }
 }
@@ -2664,6 +2669,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // 32-bit displacements. ld-prime takes them silently.
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
             b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
+            b"-merge_zero_fill_sections" => args.merge_zero_fill_sections = true,
             b"-ignore_auto_link" => args.ignore_auto_link = true,
             b"-force_load_swift_libs" => args.force_load_swift_libs = true,
             b"-add_linker_option" => {

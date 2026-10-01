@@ -96,6 +96,9 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES => 30,
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_REGULAR => 31,
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL => 0,
+        // ld-prime keeps a place for -merge_zero_fill_sections's
+        // __zerofill, whether or not given, ahead of the rest.
+        ("__DATA", "__zerofill") if flags & SECTION_TYPE == S_ZEROFILL => 1,
         // The other zero-fill sections, __bss and __common too, go in
         // first-seen order: the synthesized __common counts from the
         // first object with a common symbol.
@@ -220,7 +223,7 @@ fn output_section_for(
     if segname == "__LLVM" {
         return None;
     }
-    let name = (static_name(segname), static_name(sectname));
+    let name = map.zero_fill_name((static_name(segname), static_name(sectname)), flags);
     if map.relocatable {
         return Some((renamed(args, name), name));
     }
@@ -311,6 +314,7 @@ struct SectionMap {
     shared_region: bool,
     relative_methods: bool,
     text_exec: bool,
+    merge_zero_fill: bool,
 }
 
 impl SectionMap {
@@ -359,6 +363,20 @@ impl SectionMap {
         if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
     }
 
+    /// The name of a section with the type in `flags` under
+    /// -merge_zero_fill_sections, which merges every zero-fill section
+    /// of a segment into its __zerofill, in a final image and a -r
+    /// output alike, before any rename. (ld-prime merges the
+    /// thread-local ones too, and then crashes laying out the
+    /// thread-local template.)
+    fn zero_fill_name(self, name: SectionName, flags: u32) -> SectionName {
+        if self.merge_zero_fill && matches!(flags & SECTION_TYPE, S_ZEROFILL | S_GB_ZEROFILL) {
+            (name.0, "__zerofill")
+        } else {
+            name
+        }
+    }
+
     /// The section a section$start$ or section$end$ symbol names: the
     /// one an input section of that name lands in - or, for a pointer
     /// section only the linker makes, where ld-prime puts it: its GOTs
@@ -400,6 +418,7 @@ impl SectionMap {
             shared_region: ctx.args.shared_region,
             relative_methods: ctx.args.objc_relative_method_lists,
             text_exec: ctx.args.text_exec,
+            merge_zero_fill: ctx.args.merge_zero_fill_sections,
         }
     }
 
@@ -1664,7 +1683,8 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             continue;
         };
         let flags = boundary_section_flags(seg, sect);
-        let name = map.boundary_name((static_name(seg), static_name(sect)));
+        let name = map.zero_fill_name((static_name(seg), static_name(sect)), flags);
+        let name = map.boundary_name(name);
         let (seg, sect) = map.renamed(&ctx.args, name);
         ctx.boundary_syms[i].2 = seg.to_string();
         ctx.boundary_syms[i].3 = Some(sect.to_string());
@@ -1719,6 +1739,8 @@ fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
 fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
     match (segname, sectname) {
         ("__DATA", "__mod_init_func" | "__mod_term_func") => S_REGULAR,
+        // -merge_zero_fill_sections's section, whether or not given.
+        ("__DATA", "__zerofill") => S_ZEROFILL,
         _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
     }
 }
