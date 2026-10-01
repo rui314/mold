@@ -39,6 +39,24 @@ not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
   -Wl,/opt/lib/libqux.dylib 2> $t/log
 grep -q 'file cannot be open()ed' $t/log
 
+# But for an archive's: ld-prime looks a bare path ending in .a up as
+# -force_load's path, under the syslibroot first, even when the path
+# names a file of its own, and merges what the options naming the file
+# say of it.
+mkdir -p $t/root$PWD/$t/ar $t/ar
+echo 'int qux_a(void) { return 3; }' | $CC -o $t/qa.o -c -xc -
+echo 'int qux_b(void) { return 4; }' | $CC -o $t/qb.o -c -xc -
+rm -f $t/root$PWD/$t/ar/libqa.a $t/ar/libqa.a
+ar rcs $t/root$PWD/$t/ar/libqa.a $t/qa.o
+ar rcs $t/ar/libqa.a $t/qb.o
+echo 'int qux_a(void); int g(void) { return qux_a(); }' | $CC -o $t/g.o -c -xc -
+$CC --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-syslibroot,$t/root \
+  -Wl,$PWD/$t/ar/libqa.a
+nm -m $t/g.dylib | grep -q 'external _qux_a'
+$CC --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-syslibroot,$t/root \
+  -Wl,$PWD/$t/ar/libqa.a -Wl,-load_hidden,$PWD/$t/ar/libqa.a
+nm -m $t/g.dylib | grep -q 'non-external (was a private external) _qux_a'
+
 # A last -syslibroot of / drops the roots, those before it too.
 not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
   -Wl,-syslibroot,/ -Wl,-weak_library,/opt/lib/libqux.dylib 2> $t/log

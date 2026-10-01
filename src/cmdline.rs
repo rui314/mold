@@ -75,7 +75,10 @@ pub enum LibraryName {
 /// LibraryName), but for those that say otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LibraryKind {
-    /// -l, -framework: a library like any other.
+    /// -l, -framework: a library like any other. ld-prime also takes
+    /// a path ending in .a on the command line for one, looked up as a
+    /// -force_load path is, under a -syslibroot first, and not found as
+    /// a library.
     Plain,
     /// -weak-l, -weak_framework, -weak_library: a dylib whose absence
     /// is tolerated at load time.
@@ -178,7 +181,7 @@ impl LibraryKind {
                 Possible => "-possible_library ",
                 AssertWeak => "-assert_weak_library ",
                 Delay => "-delay_library ",
-                Plain => unreachable!(),
+                Plain => "",
             },
         }
     }
@@ -3184,6 +3187,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 } else if raw.starts_with(b"-") {
                     unknown.push_str(name);
                     unknown.push(' ');
+                } else if raw.ends_with(b".a") {
+                    // ld-prime takes a path to an archive on the
+                    // command line, though not in a -filelist, for a
+                    // library option's (see LibraryKind::Plain).
+                    let lib = LibraryName::Path(PathBuf::from(opt));
+                    args.inputs.push(InputArg::Library(LibraryKind::Plain, lib));
                 } else {
                     args.inputs.push(InputArg::File(PathBuf::from(opt)));
                 }

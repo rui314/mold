@@ -69,6 +69,16 @@ grep -v '^+' $t/log > $t/msgs
 [ "$(grep -c 'not found' $t/msgs)" = 1 ]
 grep -q "framework 'NoSuch1' not found" $t/msgs
 
+# A bare path ending in .a is a library's, though one in a -filelist is
+# a file's like any other.
+try -framework NoSuch -Wl,$t/nosuch2.o -Wl,$t/nosuch.a
+grep -q "library '$t/nosuch.a' not found" $t/log
+try -Wl,$t/nosuch.a -lnosuch
+grep -q "library '$t/nosuch.a' not found" $t/log
+echo $t/nosuch.a > $t/list
+try -framework NoSuch -Wl,-filelist,$t/list
+grep -q "framework 'NoSuch' not found" $t/log
+
 # A library search finds what is there, a directory too, which ld-prime
 # then fails to map.
 mkdir -p $t/libdir/libdir.dylib $t/fwdir/Dir.framework/Dir
