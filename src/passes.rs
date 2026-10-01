@@ -991,7 +991,8 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     }
 
     let mut queue: Vec<PendingObject> = Vec::new();
-    for ((arg, path), rc) in inputs.iter().zip(paths).zip(namings) {
+    for (i, ((arg, path), rc)) in inputs.iter().zip(paths).zip(namings).enumerate() {
+        place_sectcreate_files(ctx, i);
         let (Some(path), Some(mut rc)) = (path, rc) else { continue };
         // A library only -possible-l and the like name is a hint, which
         // loads with the auto-linked ones.
@@ -1009,10 +1010,22 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             Err(e) => error!("{}", unreadable_input(&path, &e)),
         }
     }
+    place_sectcreate_files(ctx, inputs.len());
     ctx.args.inputs = inputs;
     add_merged_dependencies(ctx);
     collect_indirect_files(ctx, &mut queue);
     load_pending(ctx, queue);
+}
+
+/// Gives the files of the -sectcreate and -add_empty_section options
+/// before input `i` their priorities, in their places among the
+/// inputs (see cmdline::SectCreate).
+fn place_sectcreate_files<E: Target>(ctx: &mut Context<E>, i: usize) {
+    let placed = |ctx: &Context<E>| ctx.sectcreate_priority.len();
+    while ctx.args.sectcreate.get(placed(ctx)).is_some_and(|sc| sc.position <= i) {
+        let priority = ctx.next_priority();
+        ctx.sectcreate_priority.push(priority);
+    }
 }
 
 /// Refuses what ld-prime does for mergeable libraries that mold can't

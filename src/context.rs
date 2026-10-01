@@ -26,7 +26,7 @@ use crate::chunks::objc_imageinfo::ObjcImageInfoSection;
 use crate::chunks::objc_methlist::ObjcMethlistSection;
 use crate::chunks::objc_stubs::ObjcStubsSection;
 use crate::chunks::rebase_info::RebaseInfoSection;
-use crate::chunks::sectcreate::SectCreateSection;
+use crate::chunks::sectcreate::{SectCreateInput, SectCreateSection};
 use crate::chunks::split_info::SplitInfoSection;
 use crate::chunks::strtab::StrtabSection;
 use crate::chunks::stub_helper::StubHelperSection;
@@ -105,6 +105,10 @@ pub struct Context<E: Target> {
     pub sym_aux: Vec<crate::symbol::SymAux>,
     /// Input-order counter for resolution tie-breaking.
     pub priority_counter: u32,
+    /// The input-order priority of the file each -sectcreate or
+    /// -add_empty_section option stands for, from its place among the
+    /// inputs (see cmdline::SectCreate).
+    pub sectcreate_priority: Vec<u32>,
     /// The dylibs built for another platform than the link's, by the
     /// priority of the input they came with and with ld-prime's message,
     /// which it gives as it checks the inputs' versions (see
@@ -204,6 +208,9 @@ pub struct Context<E: Target> {
     pub objc_methlist: ObjcMethlistSection,
     pub objc_imageinfo: ObjcImageInfoSection,
     pub sectcreate_sections: Vec<SectCreateSection>,
+    /// The input section of each -sectcreate or -add_empty_section
+    /// option.
+    pub sectcreate_inputs: Vec<SectCreateInput>,
     pub init_offsets: InitOffsetsSection,
     pub chain_starts: ChainStartsSection,
     pub unwind_info: UnwindInfoSection,
@@ -317,6 +324,7 @@ impl<E: Target> Context<E> {
             internal_obj: None,
             sym_aux: Vec::new(),
             priority_counter: 0,
+            sectcreate_priority: Vec::new(),
             foreign_platform_dylibs: Vec::new(),
             dylib_renamings: Vec::new(),
             lto_plugin: None,
@@ -358,6 +366,7 @@ impl<E: Target> Context<E> {
             objc_methlist: ObjcMethlistSection::new(),
             objc_imageinfo: ObjcImageInfoSection::new(),
             sectcreate_sections: Vec::new(),
+            sectcreate_inputs: Vec::new(),
             init_offsets: InitOffsetsSection::new(),
             chain_starts: ChainStartsSection::new(),
             unwind_info: UnwindInfoSection::new(),

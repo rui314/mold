@@ -4,6 +4,7 @@
 use rayon::prelude::*;
 
 use crate::chunks::ChunkHeader;
+use crate::chunks::sectcreate::InputPlace;
 use crate::context::Context;
 use crate::input_files::UnwindRecord;
 use crate::input_sections::InputSection;
@@ -550,15 +551,19 @@ fn unsplit_bare_atoms(
 
 /// Whether an atom is one of a code section, which ld-prime gives an
 /// entry whatever its unwind info (see bare_code_records): an input's,
-/// or the empty one it keeps __dyld_lazy_load alive from.
+/// a -sectcreate option's, or the empty one it keeps __dyld_lazy_load
+/// alive from.
 fn is_code_atom<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
+    let is_own = |id: u32| ctx.isecs.get(id as usize).is_some_and(|k| std::ptr::eq(k, isec));
+    let is_sectcreate = || {
+        (ctx.sectcreate_inputs.iter())
+            .any(|a| matches!(a.place, InputPlace::Isec(id) if is_own(id)))
+    };
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
         && (!ctx.is_internal(isec.file as usize)
-            || ctx
-                .isecs
-                .get(ctx.lazy_helpers.keep_alive as usize)
-                .is_some_and(|k| std::ptr::eq(k, isec)))
+            || is_own(ctx.lazy_helpers.keep_alive)
+            || is_sectcreate())
         && isec
             .output_section()
             .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)

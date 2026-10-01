@@ -245,6 +245,19 @@ pub struct SymbolMove {
     pub symbols: Glob,
 }
 
+/// A section -sectcreate makes from a file, or -add_empty_section
+/// empty. ld-prime makes each a file of its own, of one section, which
+/// takes its place among the inputs.
+#[derive(Debug)]
+pub struct SectCreate {
+    pub segname: String,
+    pub sectname: String,
+    /// The file of the contents; None for an empty section.
+    pub path: Option<PathBuf>,
+    /// How many inputs come before the option on the command line.
+    pub position: usize,
+}
+
 /// Parsed command line arguments.
 #[derive(Debug)]
 pub struct Args {
@@ -365,9 +378,8 @@ pub struct Args {
     /// starts from LC_UNIXTHREAD.
     pub stack_size: u64,
     /// -sectcreate and -add_empty_section, in command-line order: the
-    /// sections to synthesize, (segment, section, file) - from the
-    /// file's contents, or empty for -add_empty_section.
-    pub sectcreate: Vec<(String, String, Option<PathBuf>)>,
+    /// sections to synthesize.
+    pub sectcreate: Vec<SectCreate>,
     /// -r: produce a relocatable object instead of a final image.
     pub relocatable: bool,
     /// -flat_namespace: bind imports by name across all loaded images
@@ -2394,12 +2406,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let sect = text(name, next_arg(&mut i, name));
                 let sect = sectcreate_name("section", sect, &mut warnings);
                 let file = path(next_arg(&mut i, name));
-                args.sectcreate.push((seg, sect, Some(file)));
+                args.sectcreate.push(SectCreate {
+                    segname: seg,
+                    sectname: sect,
+                    path: Some(file),
+                    position: args.inputs.len(),
+                });
             }
             b"-add_empty_section" => {
                 let seg = section_name(text(name, next_arg(&mut i, name)));
                 let sect = section_name(text(name, next_arg(&mut i, name)));
-                args.sectcreate.push((seg, sect, None));
+                args.sectcreate.push(SectCreate {
+                    segname: seg,
+                    sectname: sect,
+                    path: None,
+                    position: args.inputs.len(),
+                });
             }
             b"-x" => args.strip_locals = true,
             b"-Z" => args.no_standard_dirs = true,

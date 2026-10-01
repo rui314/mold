@@ -145,7 +145,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
         _ => None,
     }));
     named.extend(ctx.args.filelists.iter().map(PathBuf::as_path));
-    named.extend(ctx.args.sectcreate.iter().filter_map(|(_, _, path)| path.as_deref()));
+    named.extend(ctx.args.sectcreate.iter().filter_map(|sc| sc.path.as_deref()));
     // A fat file's slice is the file's.
     let mut named: Vec<Vec<u8>> = named
         .into_iter()
@@ -536,6 +536,12 @@ struct MapFiles<'a> {
     /// The number of each object (0 for the internal one) and dylib.
     objs: Vec<usize>,
     dylibs: Vec<usize>,
+    /// The number of the file each -sectcreate or -add_empty_section
+    /// option stands for: ld-prime makes each a file of its own, named
+    /// by the option's path ("(null)" for an empty section), in its
+    /// place on the command line - but the first, whose section it
+    /// takes for its own (file 0).
+    sectcreate: Vec<usize>,
     /// The number of the merged library each symbol a dylib provides
     /// through one comes from.
     merged: hashbrown::HashMap<SymbolId, usize>,
@@ -555,6 +561,7 @@ impl<'a> MapFiles<'a> {
             Dylib(usize),
             Merged(&'a MergedFile),
             Stripped(&'a Path),
+            SectCreate(usize),
         }
         // A dylib that stands for a library exports moved to is no file:
         // its symbols count as the file's that moved them, which an
@@ -586,6 +593,9 @@ impl<'a> MapFiles<'a> {
         }
         for (priority, path) in &ctx.stripped_dylibs {
             named.push((*priority, File::Stripped(path)));
+        }
+        for (i, &priority) in ctx.sectcreate_priority.iter().enumerate().skip(1) {
+            named.push((priority, File::SectCreate(i)));
         }
 
         let mut implicit: Vec<(&[u8], File)> = Vec::new();
@@ -620,6 +630,7 @@ impl<'a> MapFiles<'a> {
             paths: Vec::new(),
             objs: vec![0; ctx.objs.len()],
             dylibs: vec![0; ctx.dylibs.len()],
+            sectcreate: vec![0; ctx.args.sectcreate.len()],
             merged: hashbrown::HashMap::new(),
             commons: crate::output_sections::common_owners(ctx),
             lto_objs: ctx.lto_objs.clone(),
@@ -646,6 +657,11 @@ impl<'a> MapFiles<'a> {
                     files.paths.push(dylib.named_at.as_ref().map_or(&dylib.path, |(_, path)| path));
                 }
                 File::Stripped(path) => files.paths.push(path),
+                File::SectCreate(i) => {
+                    files.sectcreate[i] = number;
+                    let path = ctx.args.sectcreate[i].path.as_deref();
+                    files.paths.push(path.unwrap_or(Path::new("(null)")));
+                }
                 File::Merged(file) => {
                     merged_numbers.insert(&file.install_name, number);
                     files.paths.push(&file.path);
@@ -767,7 +783,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     // The linker's symbols go first of those at one place, and an
     // executable's header first of all.
     let files = MapFiles::new(ctx);
-    let mut entries = linker_symbol_entries(ctx);
+    let mut entries = linker_symbol_entries(ctx, &files);
     let linker_symbols = entries.len();
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named);
@@ -817,7 +833,7 @@ pub fn print_relocatable_map<E: Target>(
     let Some(path) = &ctx.args.map else { return };
     let sections: Vec<MapSection> = sections.iter().map(|hdr| MapSection::of(hdr)).collect();
     let files = MapFiles::new(ctx);
-    let mut entries = linker_symbol_entries(ctx);
+    let mut entries = linker_symbol_entries(ctx, &files);
     let linker_symbols = entries.len();
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named);
@@ -1450,11 +1466,14 @@ impl<'a> FdeNames<'a> {
 /// __mh_dylib_header) - the lazy-load helpers pass ___dso_handle to
 /// __dyld_lazy_load -, and the bounds of sections
 /// (section$start$__TEXT$__text), but not of segments. An executable's
-/// __mh_execute_header comes first whether or not anything does. A
-/// section -sectcreate or -add_empty_section makes is an atom named
-/// "l<sect-create>" and the section's name, one a boundary symbol makes
-/// by the name alone.
-fn linker_symbol_entries<'a, E: Target>(ctx: &'a Context<E>) -> Vec<MapEntry<'a>> {
+/// __mh_execute_header comes first whether or not anything does. Each
+/// -sectcreate or -add_empty_section option's input section is listed
+/// (see sectcreate_entries); the empty section a boundary symbol makes
+/// is named by the section's name alone.
+fn linker_symbol_entries<'a, E: Target>(
+    ctx: &'a Context<E>,
+    files: &MapFiles,
+) -> Vec<MapEntry<'a>> {
     let headers =
         ["___dso_handle", "__mh_dylib_header", "__mh_bundle_header", "__mh_dylinker_header"];
     let mut ids: Vec<SymbolId> = headers
@@ -1478,13 +1497,35 @@ fn linker_symbol_entries<'a, E: Target>(ctx: &'a Context<E>) -> Vec<MapEntry<'a>
             name: name(ctx.symbols[id].name()),
         })
         .collect();
-    for sec in &ctx.sectcreate_sections {
-        let (hdr, size) = (&sec.hdr, sec.contents.len() as u64);
-        let prefix = if sec.from_option { "l<sect-create>" } else { "" };
-        let name = format!("{prefix}{},{}", hdr.segname, hdr.sectname).into_bytes();
-        entries.push(MapEntry { addr: hdr.addr, size, file: 0, name: Cow::Owned(name) });
+    entries.extend(sectcreate_entries(ctx, files));
+    for sec in ctx.sectcreate_sections.iter().filter(|sec| !sec.from_option) {
+        let hdr = &sec.hdr;
+        let name = format!("{},{}", hdr.segname, hdr.sectname).into_bytes();
+        entries.push(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) });
     }
     entries
+}
+
+/// The input sections of -sectcreate and -add_empty_section, each
+/// named "l<sect-create>" and its section's name as the option spelled
+/// it, of the file the option stands for - empty ones at one address
+/// in section and file order.
+fn sectcreate_entries<E: Target>(ctx: &Context<E>, files: &MapFiles) -> Vec<MapEntry<'static>> {
+    let mut inputs: Vec<(u64, u8, u32, usize)> = (ctx.sectcreate_inputs.iter().enumerate())
+        .map(|(i, input)| {
+            let (addr, n_sect) = input.place(ctx);
+            (addr, n_sect, crate::chunks::sectcreate::file_priority(ctx, i), i)
+        })
+        .collect();
+    inputs.sort_unstable();
+    (inputs.into_iter())
+        .map(|(addr, .., i)| {
+            let sc = &ctx.args.sectcreate[i];
+            let name = format!("l<sect-create>{},{}", sc.segname, sc.sectname).into_bytes();
+            let (size, file) = (ctx.sectcreate_inputs[i].size, files.sectcreate[i]);
+            MapEntry { addr, size, file, name: Cow::Owned(name) }
+        })
+        .collect()
 }
 
 /// The atoms the linker makes, file 0's but for the stubs and pointers
