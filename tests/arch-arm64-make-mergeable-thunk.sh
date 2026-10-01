@@ -40,7 +40,7 @@ EOF
 
 $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-install_name,@rpath/libfoo.dylib
-otool -tv $t/libfoo.dylib | grep -A2 '^_far_call:' > $t/disasm
+objdump -d --disassemble-symbols=_far_call $t/libfoo.dylib > $t/disasm
 grep -q 'bl.*_target\.island' $t/disasm
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
