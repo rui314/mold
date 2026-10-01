@@ -1177,6 +1177,10 @@ fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
 fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if !ctx.objc_stubs.symbols.is_empty() {
         ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * ctx.objc_stub_size();
+        // Code, which -text_exec moves as it does __stubs.
+        if ctx.args.text_exec {
+            ctx.objc_stubs.hdr.segname = "__TEXT_EXEC";
+        }
         // 32-byte stubs on arm64, small ones word-aligned; ld-prime
         // leaves x86-64's byte-aligned.
         if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {

@@ -34,3 +34,17 @@ grep -q '(__TEXT_EXEC,__text) external _kext_start$' $t/nm
 grep -q '(__TEXT,__some) external _so$' $t/nm
 otool -l $t/kext > $t/lc
 not grep -q 'sectname __mycode\|sectname __dcode\|segname __BAR' $t/lc
+
+# The selector stubs are code too, and move along with __stubs.
+cat <<EOF | $CC -o $t/c.o -c -xassembler -
+.text
+.globl _kext_start
+.p2align 2
+_kext_start:
+  b "_objc_msgSend\$foo"
+.globl _objc_msgSend
+_objc_msgSend:
+  ret
+EOF
+$mold -arch $ARCH -kext $t/c.o -o $t/kext2
+otool -l $t/kext2 | grep -A1 'sectname __objc_stubs' | grep -q 'segname __TEXT_EXEC'
