@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 
 use crate::chunks::ChunkId;
 use crate::context::Context;
-use crate::fatal;
 use crate::input_files::{DylibFile, FileId, MergedFile, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -72,7 +71,9 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         json_string(&format_version(ctx.args.platform_sdk)),
         libraries.join(",")
     );
-    std::fs::write(path, report).unwrap_or_else(|e| fatal!("cannot write {}: {e}", path.display()));
+    if std::fs::write(path, report).is_err() {
+        crate::warn!("can't open SDK imports file for writing at '{}'", path.display());
+    }
 }
 
 /// Writes the -dependency_info file: Xcode's incremental build system
@@ -84,8 +85,10 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.dependency_info else {
         return;
     };
-    let file = std::fs::File::create(path)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
+    let Ok(file) = std::fs::File::create(path) else {
+        crate::warn!("Could not open or create -dependency_info file: {}", path.display());
+        return;
+    };
     let mut out = std::io::BufWriter::new(file);
     let mut emit = |op: u8, s: &[u8]| {
         let _ = out.write_all(&[op]);
@@ -283,8 +286,10 @@ impl<'a> MapFiles<'a> {
 
 pub fn print_map<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.map else { return };
-    let file = std::fs::File::create(path)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()));
+    let Ok(file) = std::fs::File::create(path) else {
+        crate::warn!("could not write map file: {}", path.display());
+        return;
+    };
     let mut out = std::io::BufWriter::new(file);
 
     let _ = write!(out, "# Path: ");

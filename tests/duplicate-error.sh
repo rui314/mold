@@ -34,6 +34,9 @@ for no_fork in no yes; do
   test ! -e $t/merged.o
 done
 
-# Required output work must finish before the parent reports success.
-! $mold -r -arch $ARCH -o $t/merged.o $t/a.o -dependency_info $t/missing/dep 2> $t/log || false
-grep -q 'cannot open .*missing/dep' $t/log
+# Required output work must finish before the parent reports success:
+# a -dependency_info file that can't be created is only a warning, but
+# -fatal_warnings makes it fail the link.
+! $mold -r -arch $ARCH -o $t/merged.o $t/a.o -dependency_info $t/missing/dep -fatal_warnings \
+  2> $t/log || false
+grep -q 'Could not open or create -dependency_info file: .*missing/dep' $t/log

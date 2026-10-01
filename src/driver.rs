@@ -219,8 +219,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::check_removed_swift_metadata_refs(&ctx);
     passes::print_final_layout(&ctx);
     crate::error::checkpoint();
-    crate::mapfile::print_map(&ctx);
+    // The reports, in ld-prime's order (that of its warnings about one
+    // it can't write).
     crate::mapfile::write_dependency_info(&ctx);
+    crate::mapfile::print_map(&ctx);
     crate::mapfile::write_sdk_imports(&ctx);
 
     // Write the output. The file is created up front, executable, and
