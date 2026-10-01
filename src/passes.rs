@@ -6482,6 +6482,7 @@ pub fn copy_chunks<E: Target>(
     drop(t);
     // Relocations that failed to apply fail the link before the fixups
     // are written.
+    chunks::chained_fixups::report_bad_page_size(ctx);
     print_final_layout(ctx);
     report_text_relocs(ctx);
     crate::error::checkpoint();

@@ -33,6 +33,9 @@ pub struct ChainedFixupsSection {
     /// once relocations are applied (report_unaligned_chain_pointer,
     /// report_unaligned_pointers).
     pub unaligned: std::sync::Mutex<Vec<(u32, u64)>>,
+    /// The first segment whose chain pages dyld can't read, for a
+    /// -segalign below 4 KiB (see report_bad_page_size).
+    pub bad_page_size: std::sync::Mutex<Option<usize>>,
 }
 
 /// Each import's index in the table, by (symbol, table addend).
@@ -48,6 +51,7 @@ impl ChainedFixupsSection {
             ordinals: std::collections::HashMap::new(),
             disabled: false,
             unaligned: std::sync::Mutex::new(Vec::new()),
+            bad_page_size: std::sync::Mutex::new(None),
         }
     }
 }
@@ -195,14 +199,13 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
 
         // A -segalign below 4KB makes arm64 chain pages no dyld reads:
         // ld-prime lays the image out to the end all the same, and
-        // reports the first segment, unless an unaligned pointer in a
-        // chain fails the link first (see check_pointer_alignment).
+        // reports the first segment (see report_bad_page_size), unless
+        // an unaligned pointer in a chain fails the link first (see
+        // check_pointer_alignment).
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
             if ctx.chained_fixups.unaligned.lock().unwrap().is_empty() {
-                crate::layout_error!(
-                    "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
-                );
+                *ctx.chained_fixups.bad_page_size.lock().unwrap() = Some(seg_idx);
             }
             break;
         }
@@ -622,6 +625,19 @@ pub fn warn_small_pointer_atom<E: Target>(ctx: &Context<E>, id: u32) {
         1 << ctx.isecs[id].p2align,
         atom_location(ctx, id, None)
     );
+}
+
+/// Fails the link on chain pages dyld can't read (see
+/// build_chained_fixups), as an error in the layout. ld-prime writes the
+/// chains after it has applied the relocations, so a relocation it
+/// can't apply fails the link first.
+pub fn report_bad_page_size<E: Target>(ctx: &Context<E>) {
+    if let Some(seg_idx) = *ctx.chained_fixups.bad_page_size.lock().unwrap() {
+        crate::layout_error_at!(
+            u64::MAX,
+            "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
+        );
+    }
 }
 
 /// Fails the link on the unaligned pointer check_pointer_alignment found

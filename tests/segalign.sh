@@ -91,3 +91,20 @@ fi
 not grep -q 'pointer not aligned' $t/log
 grep -o 'reducing alignment of section [^ ]*' $t/log | cut -d' ' -f5 | tr '\n' ' ' > $t/sects
 [ "$(cat $t/sects)" = '__TEXT,__text __TEXT,__stubs __TEXT,__unwind_info __DATA_CONST,__got __DATA,__data ' ]
+
+# ld-prime writes the chains after it has applied the relocations: one
+# it can't apply, as a load from an address the reduced alignment left
+# unaligned, fails the link first.
+cat <<EOF | $CC -o $t/e.o -c -xc -
+#include <stdio.h>
+#include <stdlib.h>
+int x = 5;
+int *p = &x;
+__thread int tv = 3;
+int main() { printf("%d %d\n", x, tv); exit(*p); }
+EOF
+if [ $ARCH = arm64 ]; then
+  not $CC --ld-path=$mold -o $t/exe10 $t/e.o -Wl,-segalign,0x1 2> $t/log
+  grep -q "fixup error (kind=arm64_lo12) at '_main'+0x30 from e.o, target '_x' not 4-byte aligned" $t/log
+  not grep -q 'page_size not 4KB' $t/log
+fi
