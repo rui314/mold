@@ -629,6 +629,12 @@ pub struct Args {
     /// -allow_sub_type_mismatches: an object of another subtype of the
     /// link's CPU type is linked, with a warning, rather than ignored.
     pub allow_sub_type_mismatches: bool,
+    /// The link takes a fat dylib's slice of its own CPU subtype only,
+    /// not one of another subtype of its CPU type (an arm64e slice in
+    /// an arm64 link): -no_allow_dylib_sub_type_mismatches, or else
+    /// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH, names an architecture of its
+    /// CPU type.
+    pub dylib_subtypes_must_match: bool,
     /// -ignore_optimization_hints: skip LC_LINKER_OPTIMIZATION_HINT
     /// processing.
     pub ignore_optimization_hints: bool,
@@ -920,6 +926,7 @@ impl Default for Args {
             trace_implicit_library: Vec::new(),
             arch_errors_fatal: false,
             allow_sub_type_mismatches: false,
+            dylib_subtypes_must_match: false,
             ignore_optimization_hints: false,
             perf: false,
             warn_duplicate_libraries: true,
@@ -1298,6 +1305,79 @@ fn apply_target_triple(args: &mut Args, triple: &str) {
         target_arch(arch)
             .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'")),
     );
+}
+
+/// The CPU family - "arm64", "x86_64" or another - of an architecture
+/// name ld-prime knows, as $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH takes
+/// them (and -arch, for the targets mold links for); None for one it
+/// doesn't.
+fn arch_cpu_family(name: &[u8]) -> Option<&'static str> {
+    const ARM64: [&str; 14] = [
+        "arm64",
+        "arm64e",
+        "arm64.x1",
+        "arm64.x2",
+        "arm64e.x1",
+        "arm64e.x2",
+        "arm64e.v1",
+        "arm64e.old",
+        "arm64e.x1.old",
+        "arm64e.kernel",
+        "arm64e.kernel.v1",
+        "arm64e.kernel.v2",
+        "arm64e.x1.kernel",
+        "arm64e.x2.kernel",
+    ];
+    const OTHER: [&str; 18] = [
+        "armv4t",
+        "armv6",
+        "armv7",
+        "armv7k",
+        "armv7s",
+        "armv6m",
+        "armv7m",
+        "armv7em",
+        "armv8m.main",
+        "armv8.1m.main",
+        "thumbv6m",
+        "thumbv7",
+        "thumbv7k",
+        "thumbv7s",
+        "thumbv7m",
+        "thumbv7em",
+        "thumbv8m.main",
+        "thumbv8.1m.main",
+    ];
+    let is = |names: &[&str]| names.iter().any(|n| n.as_bytes() == name);
+    match name {
+        _ if is(&ARM64) => Some("arm64"),
+        b"x86_64" | b"x86_64h" => Some("x86_64"),
+        b"arm64_32" | b"i386" | b"ppc" => Some("other"),
+        _ if is(&OTHER) => Some("other"),
+        _ => None,
+    }
+}
+
+/// Whether a ':'-separated list of architecture names, as
+/// -no_allow_dylib_sub_type_mismatches and
+/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of CPU family
+/// `family`. ld-prime warns of each name it doesn't know (and passes
+/// over a list of just "1").
+fn names_cpu_family(list: &[u8], family: &str) -> bool {
+    if list == b"1" {
+        return false;
+    }
+    let mut found = false;
+    for name in list.split(|&c| c == b':').filter(|name| !name.is_empty()) {
+        match arch_cpu_family(name) {
+            Some(f) => found |= f == family,
+            None => crate::warn!(
+                "unknown architecture name '{}' in LD_DYLIB_CPU_SUBTYPES_MUST_MATCH",
+                display(name)
+            ),
+        }
+    }
+    found
 }
 
 /// The target an architecture name ld-prime knows stands for, None for
@@ -1715,6 +1795,7 @@ impl OptionWarnings {
 pub(crate) fn missing_argument(opt: &str) -> String {
     let usage = match opt {
         "-arch" => "missing <arch>",
+        "-no_allow_dylib_sub_type_mismatches" => "missing <arch_list>",
         "-e"
         | "-init"
         | "-u"
@@ -1898,6 +1979,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut force_weak = GlobBuilder::default();
     let mut force_not_weak = GlobBuilder::default();
     let mut force_weakness_listed = false;
+    let mut dylib_subtype_list: Option<&[u8]> = None;
     let mut keep_duplicates = GlobBuilder::default();
     let mut poisoned = GlobBuilder::default();
     let mut unaligned_pointers: Option<Treatment> = None;
@@ -2444,6 +2526,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-x86_64_layout_emulation" => x86_64_layout_emulation = true,
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
+            b"-no_allow_dylib_sub_type_mismatches" => {
+                dylib_subtype_list = Some(next_arg(&mut i, name).as_bytes());
+            }
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
@@ -3088,6 +3173,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_fatal_warnings(args.fatal_warnings);
     warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
+    if let Some(list) = dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
+        args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
+    }
     // The build system's source version stands in for -source_version
     // unless -no_source_version says there is none (ld-prime reads it
     // even where there is none anyway).

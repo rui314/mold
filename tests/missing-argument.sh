@@ -15,6 +15,8 @@ missing() {
 missing '-o missing <path>' -o
 missing '-L missing <path>' -L
 missing '-arch missing <arch>' -arch
+missing '-no_allow_dylib_sub_type_mismatches missing <arch_list>' \
+  -no_allow_dylib_sub_type_mismatches
 missing '-e missing <name>' -e
 missing '-headerpad missing <size>' -headerpad
 missing '-image_base missing <address>' -image_base
