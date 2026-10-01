@@ -39,3 +39,13 @@ otool -l $t/exe5 > $t/lc5
 not grep -q LC_UUID $t/lc5
 $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-no_uuid,-random_uuid
 otool -l $t/exe6 | grep -A2 LC_UUID | grep -v '00000000-0000'
+
+# $RC_UUID_SALT, from Apple's build system, is hashed in: the UUID
+# changes with it, and stays the same for one salt. An empty one is none.
+RC_UUID_SALT=train1 $CC --ld-path=$mold -o $t/exe1 $t/a.o
+u7=$(otool -l $t/exe1 | grep uuid)
+[ "$u7" != "$u1" ]
+RC_UUID_SALT=train1 $CC --ld-path=$mold -o $t/exe1 $t/a.o
+[ "$u7" = "$(otool -l $t/exe1 | grep uuid)" ]
+RC_UUID_SALT= $CC --ld-path=$mold -o $t/exe1 $t/a.o
+[ "$u1" = "$(otool -l $t/exe1 | grep uuid)" ]

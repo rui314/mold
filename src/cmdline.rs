@@ -451,6 +451,11 @@ pub struct Args {
     /// -random_uuid: a random LC_UUID in place of the content hash,
     /// which saves hashing a large output.
     pub random_uuid: bool,
+    /// $RC_UUID_SALT: what Apple's build system has hashed into the
+    /// content-hash LC_UUID with the output, so that one build's image
+    /// differs in UUID from another build's of the same contents; empty
+    /// for none.
+    pub uuid_salt: Vec<u8>,
     /// -no_dynamic_access: dyld may neither dlopen() the image nor find
     /// its symbols with dlsym() (MH_NOFIXPREBINDING), for a dynamic main
     /// executable or a dylib (see check_output_kind).
@@ -905,6 +910,7 @@ impl Default for Args {
             objc_category_merging: true,
             uuid: true,
             random_uuid: false,
+            uuid_salt: Vec::new(),
             no_dynamic_access: false,
             warn_weak_exports: false,
             no_weak_exports: false,
@@ -2036,6 +2042,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         application_extension: ["LD_APPLICATION_EXTENSION_SAFE", "LD_NO_ENCRYPT"]
             .iter()
             .any(|var| std::env::var_os(var).is_some()),
+        uuid_salt: std::env::var_os("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
         ..Default::default()
     };
     let mut kind = OutputKind::DynamicExecutable;

@@ -7158,7 +7158,9 @@ pub fn copy_chunks<E: Target>(
     }
     if content_uuid {
         let _t = ctx.timer("uuid");
-        let flat: Vec<u8> = hashes.concat();
+        // The build system's salt goes in first (see Args::uuid_salt).
+        let mut flat: Vec<u8> = ctx.args.uuid_salt.clone();
+        flat.extend(hashes.concat());
         let mut hash = [0; 32];
         crate::util::sha256(&flat, &mut hash);
         set_uuid(&hash, buf);
