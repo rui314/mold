@@ -96,10 +96,9 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES => 30,
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_REGULAR => 31,
         ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL => 0,
-        // __bss and __common in first-seen order: the synthesized
-        // __common counts from the first object with a common symbol.
-        ("__DATA", "__bss") => 3,
-        ("__DATA", "__common") => 3,
+        // The other zero-fill sections, __bss and __common too, go in
+        // first-seen order: the synthesized __common counts from the
+        // first object with a common symbol.
         _ => 10,
     }
 }

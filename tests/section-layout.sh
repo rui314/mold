@@ -46,6 +46,15 @@ $CXX --ld-path=$mold -o $t/exe2 $t/d.o $t/a.o $t/b.o $t/c.o
 sections $t/exe2 > $t/order2
 grep -Eq '__data __common __bss' $t/order2
 
+# __bss and __common take no precedence over other zero-fill sections
+# (but __thread_bss): they all follow the order they were first seen.
+cat <<EOF | $CC -o $t/f.o -c -xassembler -
+.zerofill __DATA,__zz,_zz,8,3
+EOF
+$CXX --ld-path=$mold -o $t/exe5 $t/f.o $t/d.o $t/a.o $t/b.o $t/c.o
+sections $t/exe5 > $t/order5
+grep -Eq '__data __zz __common __bss' $t/order5
+
 # A common symbol without an alignment of its own is aligned to its
 # size rounded up to a power of two: up to the page on arm64, 16
 # bytes on x86-64.
