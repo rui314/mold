@@ -135,6 +135,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         }};
     }
     if ctx.args.relocatable {
+        passes::print_implicit_trace(&ctx);
         passes::check_duplicate_symbols(&ctx);
         passes::check_removed_swift_metadata_refs(&ctx);
         crate::error::checkpoint();
@@ -182,6 +183,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
     passes::print_dependencies(&ctx);
     passes::print_trace(&ctx);
+    passes::print_implicit_trace(&ctx);
     crate::error::checkpoint();
     if ctx.args.dead_strip {
         let t = ctx.timer("dead_strip");

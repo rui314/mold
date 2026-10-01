@@ -3422,15 +3422,54 @@ fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
     }
 }
 
+/// A dylib whose re-exports load_reexports loads: its install name,
+/// its file, and how many platforms it has for the target (one for a
+/// binary; see trace_reexports).
+struct ReexportParent<'a> {
+    install_name: &'a [u8],
+    path: &'a Path,
+    platforms: usize,
+}
+
+/// Notes for -trace_implicit_libraries the libraries `names` that
+/// `parent` re-exports: a stub's once for each platform it has for the
+/// target (a zippered one's for macOS and Mac Catalyst alike), a
+/// binary's once.
+fn trace_reexports<'a, E: Target>(
+    ctx: &mut Context<E>,
+    parent: &ReexportParent,
+    names: impl Iterator<Item = &'a [u8]>,
+) {
+    use crate::passes::ImplicitTrace;
+    let args = &ctx.args;
+    if !args.trace_implicit_libraries && args.trace_implicit_library.is_empty() {
+        return;
+    }
+    let file = crate::passes::real_path(parent.path).0;
+    for name in names.filter(|name| crate::passes::traces_implicit(args, name)) {
+        let line = format!(
+            "indirect library '{}' from file '{}'",
+            crate::util::display(name),
+            file.display()
+        );
+        for _ in 0..parent.platforms {
+            let (parent, name) = (parent.install_name.to_vec(), name.to_vec());
+            ctx.implicit_trace.push(ImplicitTrace::Reexport { parent, name, line: line.clone() });
+        }
+    }
+}
+
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
-    parent: &Path,
+    parent: ReexportParent,
     documents: Vec<tapi::TbdFile>,
     exports: &mut hashbrown::HashSet<&'static str>,
     tlv_exports: &mut hashbrown::HashSet<&'static str>,
     weak_exports: &mut hashbrown::HashSet<&'static str>,
 ) -> (Vec<Vec<u8>>, Vec<MergedFile>, Vec<MovedExport>) {
+    trace_reexports(ctx, &parent, reexports.iter().map(|(name, ..)| name.as_slice()));
+    let parent = parent.path;
     let mut walk = ReexportWalk {
         queue: reexports,
         pool: documents,
@@ -3832,10 +3871,11 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // relative to the referrer.
     let reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)> =
         reexports.into_iter().map(|name| (name, dir_of(&mf.name), rpaths.clone())).collect();
+    let parent = ReexportParent { install_name: &install_name, path: &mf.name, platforms: 1 };
     let (merged_reexports, merged_files, mut moved) = load_reexports(
         ctx,
         reexports,
-        &mf.name,
+        parent,
         Vec::new(),
         &mut exports,
         &mut tlv_exports,
@@ -4621,10 +4661,15 @@ fn register_tbd<E: Target>(
         .into_iter()
         .map(|name| (name.as_bytes().to_vec(), dir_of(path), Vec::new()))
         .collect();
+    let parent = ReexportParent {
+        install_name: tbd.install_name.as_bytes(),
+        path,
+        platforms: tbd.platforms.len(),
+    };
     let (merged_reexports, merged_files, mut moved) = load_reexports(
         ctx,
         reexports,
-        path,
+        parent,
         documents,
         &mut exports,
         &mut tlv_exports,

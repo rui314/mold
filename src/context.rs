@@ -232,6 +232,10 @@ pub struct Context<E: Target> {
     /// For -t: every input file as it is loaded, by the path it was
     /// found at (a library inlined in a stub by its install name).
     pub traced_files: Vec<String>,
+    /// -trace_implicit_libraries' lines of the libraries re-exports and
+    /// archive members' auto-link options bring in, in the order they
+    /// do (see passes::print_implicit_trace).
+    pub implicit_trace: Vec<crate::passes::ImplicitTrace>,
     /// The address of the first thread-local data section. Thread
     /// pointers are encoded relative to it.
     pub tls_begin: u64,
@@ -338,6 +342,7 @@ impl<E: Target> Context<E> {
             why_load: std::collections::HashMap::new(),
             force_loaded: std::collections::HashSet::new(),
             traced_files: Vec::new(),
+            implicit_trace: Vec::new(),
             tls_begin: 0,
             text_reloc_ranges: Vec::new(),
             text_relocs: std::sync::Mutex::new(Vec::new()),

@@ -607,6 +607,11 @@ pub struct Args {
     /// the symbol moves put symbols, on stdout or into this file.
     pub trace_symbol_layout: bool,
     pub trace_symbol_layout_file: Option<PathBuf>,
+    /// -trace_implicit_libraries: print the libraries auto-link options
+    /// and re-exports bring in, or with -trace_implicit_library only
+    /// those whose names hold one of these.
+    pub trace_implicit_libraries: bool,
+    pub trace_implicit_library: Vec<Vec<u8>>,
     /// -arch_errors_fatal: an input file without the link's
     /// architecture is an error rather than ignored with a warning.
     pub arch_errors_fatal: bool,
@@ -897,6 +902,8 @@ impl Default for Args {
             trace: false,
             trace_symbol_layout: false,
             trace_symbol_layout_file: None,
+            trace_implicit_libraries: false,
+            trace_implicit_library: Vec::new(),
             arch_errors_fatal: false,
             allow_sub_type_mismatches: false,
             ignore_optimization_hints: false,
@@ -2396,9 +2403,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-trace_symbol_layout_file" => {
                 args.trace_symbol_layout_file = Some(path(next_arg(&mut i, name)))
             }
+            b"-trace_implicit_libraries" => args.trace_implicit_libraries = true,
+            b"-trace_implicit_library" => {
+                args.trace_implicit_library.push(bytes(next_arg(&mut i, name)));
+            }
             // ld-prime's reports on its own workings that mold does not
-            // give: the branch islands it inserts, the libraries that
-            // re-exports load (or one of them), a snapshot of the link to
+            // give: the branch islands it inserts, a snapshot of the link to
             // replay it from (in /tmp unless -snapshot_dir says; a
             // replay passes -no_snapshot not to take another), the atom
             // graph for Graphviz, the files the link read and the
@@ -2406,12 +2416,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // its output compared to a reference one. -arch_multiple
             // once named the architecture in ld64's messages, for a link
             // that is one of several.
-            b"-verbose_branch_islands"
-            | b"-trace_implicit_libraries"
-            | b"-no_snapshot"
-            | b"-arch_multiple" => {}
-            b"-trace_implicit_library"
-            | b"-snapshot_dir"
+            b"-verbose_branch_islands" | b"-no_snapshot" | b"-arch_multiple" => {}
+            b"-snapshot_dir"
             | b"-dot"
             | b"-trace_file"
             | b"-trace_file_shared_cache"
