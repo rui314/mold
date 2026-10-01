@@ -184,6 +184,8 @@ pub struct Context<E: Target> {
     /// For -why_load: the symbol that made each object live, refreshed
     /// each resolution round.
     pub why_load: std::collections::HashMap<usize, &'static str>,
+    /// For -why_load: the archives -force_load or -force-l loads whole.
+    pub force_loaded: std::collections::HashSet<std::path::PathBuf>,
     /// For -t: every input file as it is loaded, by the path it was
     /// found at (a library inlined in a stub by its install name).
     pub traced_files: Vec<String>,
@@ -275,6 +277,7 @@ impl<E: Target> Context<E> {
             indirect_aliases: Vec::new(),
             boundary_syms: Vec::new(),
             why_load: std::collections::HashMap::new(),
+            force_loaded: std::collections::HashSet::new(),
             traced_files: Vec::new(),
             tls_begin: 0,
             text_reloc_ranges: Vec::new(),

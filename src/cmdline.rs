@@ -76,8 +76,8 @@ pub enum LibraryKind {
     /// -sub_library, a name): a dylib whose exports this dylib
     /// re-exports as its own. -reexport-l looks for a dylib only.
     Reexport,
-    /// -hidden-l: an archive whose external symbols are demoted to
-    /// private externals.
+    /// -hidden-l, -hidden_framework, -load_hidden: an archive whose
+    /// external symbols are demoted to private externals.
     Hidden,
     /// -needed-l, -needed_framework, -needed_library: always keep the
     /// dylib's load command.
@@ -103,7 +103,8 @@ pub enum LibraryKind {
     /// of a load command. Only a dylib can be found for one, never a
     /// stub; an object or archive the path names links as ever.
     Merge,
-    /// -force_load path: an archive all of whose members are linked.
+    /// -force-l, -force_load: an archive all of whose members are
+    /// linked.
     Force,
 }
 
@@ -124,7 +125,7 @@ impl LibraryKind {
                 Lazy => "-lazy-l",
                 NoMerge => "-no_merge-l",
                 Merge => "-merge-l",
-                Force => unreachable!(),
+                Force => "-force-l",
             },
             LibraryName::Framework(_) => match self {
                 Plain => "-framework ",
@@ -135,7 +136,8 @@ impl LibraryKind {
                 Lazy => "-lazy_framework ",
                 NoMerge => "-no_merge_framework ",
                 Merge => "-merge_framework ",
-                Hidden | Force => unreachable!(),
+                Hidden => "-hidden_framework ",
+                Force => unreachable!(),
             },
             LibraryName::Path(_) => match self {
                 Weak => "-weak_library ",
@@ -145,8 +147,9 @@ impl LibraryKind {
                 Lazy => "-lazy_library ",
                 NoMerge => "-no_merge_library ",
                 Merge => "-merge_library ",
+                Hidden => "-load_hidden ",
                 Force => "-force_load ",
-                Plain | Hidden => unreachable!(),
+                Plain => unreachable!(),
             },
         }
     }
@@ -838,6 +841,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-lazy_framework" => (Lazy, framework),
         b"-no_merge_framework" => (NoMerge, framework),
         b"-merge_framework" => (Merge, framework),
+        b"-hidden_framework" => (Hidden, framework),
         b"-weak_library" => (Weak, path),
         b"-reexport_library" => (Reexport, path),
         b"-needed_library" => (Needed, path),
@@ -845,6 +849,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-lazy_library" => (Lazy, path),
         b"-no_merge_library" => (NoMerge, path),
         b"-merge_library" => (Merge, path),
+        b"-load_hidden" => (Hidden, path),
         b"-force_load" => (Force, path),
         _ => return None,
     })
@@ -853,7 +858,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
 /// The library options with the library's name joined to them
 /// (-weak-lfoo), and the kind of library each names; -l, the others'
 /// prefix, last.
-const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 9] = [
+const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 10] = [
     ("-reexport-l", LibraryKind::Reexport),
     ("-no_merge-l", LibraryKind::NoMerge),
     ("-merge-l", LibraryKind::Merge),
@@ -862,6 +867,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 9] = [
     ("-upward-l", LibraryKind::Upward),
     ("-lazy-l", LibraryKind::Lazy),
     ("-weak-l", LibraryKind::Weak),
+    ("-force-l", LibraryKind::Force),
     ("-l", LibraryKind::Plain),
 ];
 

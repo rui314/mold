@@ -474,6 +474,9 @@ fn collect_file<E: Target>(
             // are wanted only when referenced.
             let all_load = ctx.args.all_load
                 && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
+            if rc.force_load {
+                ctx.force_loaded.insert(mf.name.clone());
+            }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
                 let alive = rc.force_load
@@ -861,13 +864,10 @@ fn searched_in_sdk(args: &Args, found: &Path) -> bool {
 /// the option gives it (a path, for the options that take one).
 fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
     use LibraryKind::*;
-    // -force_load loads its archive apart from the other namings.
     let InputArg::Library(kind, name) = arg else { return None };
     let kind = *kind;
-    if kind == Force {
-        return None;
-    }
     let rc = ReaderContext {
+        force_load: kind == Force,
         weak: kind == Weak,
         reexport: matches!(kind, Reexport | NoMerge),
         hidden: kind == Hidden,
@@ -907,10 +907,7 @@ fn library_namings(
             }
             (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
             (None, None) => match arg {
-                InputArg::Library(LibraryKind::Force, LibraryName::Path(path))
-                | InputArg::BundleLoader(path) => {
-                    fatal!("library '{}' not found", path.display())
-                }
+                InputArg::BundleLoader(path) => fatal!("library '{}' not found", path.display()),
                 _ => None,
             },
             (Some((rc, framework, name)), Some(path)) => {
@@ -945,14 +942,11 @@ fn library_namings(
     }
     // The options naming one library make one input, where it is first
     // named; each other input is one of its own.
-    let naming = |(arg, key): (&InputArg, Option<_>)| match key {
+    let naming = |key: Option<_>| match key {
         Some(key) => merged.remove(&key),
-        None => Some(ReaderContext {
-            force_load: matches!(arg, InputArg::Library(LibraryKind::Force, _)),
-            ..Default::default()
-        }),
+        None => Some(ReaderContext::default()),
     };
-    inputs.iter().zip(keys).map(naming).collect()
+    keys.into_iter().map(naming).collect()
 }
 
 /// ld-prime refuses to re-export a library that it links weakly or
@@ -2953,22 +2947,13 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     // parsed in parallel interleave - before resolution names the ones
     // a symbol pulled in. -all_load counts as -force_load; -ObjC names
     // itself.
-    let force_loaded: std::collections::HashSet<&Path> = ctx
-        .args
-        .inputs
-        .iter()
-        .filter_map(|arg| match arg {
-            InputArg::Library(LibraryKind::Force, LibraryName::Path(path)) => Some(path.as_path()),
-            _ => None,
-        })
-        .collect();
     let members =
         || ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive && obj.mf.parent.is_some());
     let forced: Vec<&input_files::ObjectFile> =
         members().filter(|(idx, _)| !ctx.why_load.contains_key(idx)).map(|(_, obj)| obj).collect();
     for run in forced.chunk_by(|a, b| std::ptr::eq(a.mf.parent.unwrap(), b.mf.parent.unwrap())) {
         let archive = run[0].mf.parent.unwrap();
-        let option = if ctx.args.all_load || force_loaded.contains(archive.name.as_path()) {
+        let option = if ctx.args.all_load || ctx.force_loaded.contains(&archive.name) {
             "-force_load"
         } else {
             "-ObjC"
