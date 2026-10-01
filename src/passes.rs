@@ -827,9 +827,10 @@ fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
 /// doesn't know, aligns the constants of a __DATA,__cfstring to a
 /// pointer whatever the section says, reads a __DATA,__objc_imageinfo record
 /// only if it has its 8 bytes and no more than their worth, and ignores
-/// a label at the end of a section of fixed-size records. It fails the
+/// a label at the end of a section of fixed-size records, a symbol
+/// outside its section and a data-in-code entry in none. It fails the
 /// link on an initializer, terminator or __objc_clsrolist pointer with
-/// no relocation. It warns of none past the section where it gave up
+/// no relocation. It warns of no section past the one where it gave up
 /// reading an object (see StagedObject::failed_at).
 /// Staging runs in parallel, so the diagnostics come here, in input
 /// order.
@@ -868,6 +869,18 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     resolved_file_name(obj.mf)
                 );
             }
+        }
+        // A data-in-code entry belongs to the subsection it lies in.
+        for &(off, ..) in &obj.dice {
+            if input_files::find_subsec(&obj.isecs, &obj.subsecs, off as u64).is_none() {
+                crate::warn!("atom not found for data-in-code at offset 0x{off:08X}");
+            }
+        }
+        for &i in &obj.misplaced_symbols {
+            crate::warn!(
+                "{} symbol is ignored, because its address isn't in its designated section",
+                obj.sym_names[i as usize]
+            );
         }
         for &i in &obj.extraneous_labels {
             let nlist = &obj.nlists[i as usize];

@@ -841,6 +841,13 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
     /// The labels ld-prime ignores (see extraneous_labels), sorted.
     pub extraneous_labels: Vec<u32>,
+    /// The other symbols it ignores, sorted: those named outside the
+    /// string table, the indirect ones and the misplaced ones (see
+    /// check_symbol_sections).
+    pub ignored_symbols: Vec<u32>,
+    /// The symbols with an address outside their section, sorted, which
+    /// ld-prime ignores with a warning.
+    pub misplaced_symbols: Vec<u32>,
     /// Where ld-prime gave up reading the object, if it did: at the
     /// section check_sections refused, or past the sections at a bad
     /// relocation. It reads (and warns of) no section after it.
@@ -1201,6 +1208,8 @@ pub fn stage_object<E: Target>(
         dice: cmds.dice,
         loh: cmds.loh,
         extraneous_labels: Vec::new(),
+        ignored_symbols: Vec::new(),
+        misplaced_symbols: Vec::new(),
         failed_at: None,
     };
 
@@ -1217,7 +1226,10 @@ pub fn stage_object<E: Target>(
     obj.read_symbol_names(strtab);
     obj.warn_referenced_dynamically();
     let split = obj.subsections_via_symbols;
-    obj.failed_at = check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name);
+    obj.failed_at = match obj.check_symbol_sections(strtab) {
+        true => check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name),
+        false => Some(sect_hdrs.len()),
+    };
     let mut relocs_ok = obj.failed_at.is_none() && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
@@ -1233,8 +1245,10 @@ pub fn stage_object<E: Target>(
             (start, start + 32)
         };
         match obj.read_section_relocs::<E>(i, record_at) {
-            Some(rels) => obj.parse_compact_unwind(i, &rels, relocatable),
-            None => relocs_ok = false,
+            Some(rels) if rels.iter().all(|rel| obj.check_reloc_target(rel, &bare)) => {
+                obj.parse_compact_unwind(i, &rels, relocatable)
+            }
+            _ => relocs_ok = false,
         }
     }
     if relocs_ok && let Some((shndx, why)) = obj.bad_cfstring() {
@@ -1527,6 +1541,11 @@ impl StagedObject {
             let Some(mut rels) = self.read_section_relocs::<E>(i, subsec_at) else {
                 return false;
             };
+            // ld-prime checks the targets in table order, as it reads
+            // the relocations, and stops at the first bad one.
+            if !rels.iter().all(|rel| self.check_reloc_target(rel, bare)) {
+                return false;
+            }
             // The sort must be stable: a SUBTRACTOR and the UNSIGNED it
             // pairs with share one offset and their order is the pairing
             // (Swift's relative pointers are all such pairs). An unstable
@@ -1535,9 +1554,6 @@ impl StagedObject {
             rels.sort_by_key(|rel| rel.offset);
 
             for rel in &mut rels {
-                if !self.check_reloc_target(rel, bare) {
-                    continue;
-                }
                 if let RelocTarget::Section(sect_pos) = rel.target() {
                     let (isec, offset) = self.section_target(sect_pos, rel.addend, sect_isecs);
                     rel.set_target(RelocTarget::Section(isec as u32));
@@ -1657,17 +1673,21 @@ impl StagedObject {
                 );
                 false
             }
-            RelocTarget::Sym(idx) if self.extraneous_labels.binary_search(&idx).is_ok() => {
+            RelocTarget::Sym(idx) if self.is_ignored_symbol(idx) => {
                 // ld-prime's symbol table ends at the last symbol it
                 // keeps.
-                let ignored_tail = (self.extraneous_labels.iter().rev())
-                    .zip((0..self.nlists.len() as u32).rev())
-                    .take_while(|&(&a, b)| a == b)
-                    .count();
-                if idx as usize >= self.nlists.len() - ignored_tail {
-                    crate::error!("r_symbolnum={idx} out of range in '{}'", self.mf.name.display());
+                let n = self.nlists.len() as u32;
+                let kept = (0..n).rev().find(|&i| !self.is_ignored_symbol(i)).map_or(0, |i| i + 1);
+                let file = self.mf.name.display();
+                if idx >= kept {
+                    crate::error!("r_symbolnum={idx} out of range in '{file}'");
+                } else if self.misplaced_symbols.binary_search(&idx).is_ok() {
+                    crate::error!(
+                        "invalid r_symbolnum={idx}, a global symbol at this index is missing in \
+                         '{file}'"
+                    );
                 } else {
-                    crate::error!("invalid r_symbolnum={idx} in '{}'", self.mf.name.display());
+                    crate::error!("invalid r_symbolnum={idx} in '{file}'");
                 }
                 false
             }
@@ -1684,6 +1704,15 @@ impl StagedObject {
             }
             _ => true,
         }
+    }
+
+    /// Whether ld-prime ignores symbol `idx` as a relocation's target: a
+    /// debug note, or one it ignores altogether (see extraneous_labels
+    /// and check_symbol_sections).
+    fn is_ignored_symbol(&self, idx: u32) -> bool {
+        self.nlists.get(idx as usize).is_some_and(NList::is_stab)
+            || self.extraneous_labels.binary_search(&idx).is_ok()
+            || self.ignored_symbols.binary_search(&idx).is_ok()
     }
 
     /// The subsection at a section-relative relocation target, section
@@ -1726,6 +1755,40 @@ impl StagedObject {
                 crate::warn!("REFERENCED_DYNAMICALLY flag on symbol '{name}' is deprecated");
             }
         }
+    }
+
+    /// Checks that each symbol defined in a section names one there is,
+    /// as ld-prime does as it reads the symbols, and notes the symbols
+    /// it ignores: one whose name is outside the string table, and one
+    /// whose address is outside its section, misplaced. Returns whether
+    /// all name sections of the object.
+    fn check_symbol_sections(&mut self, strtab: &[u8]) -> bool {
+        let file = self.mf.name.display();
+        for (i, (nlist, name)) in self.nlists.iter().zip(&self.sym_names).enumerate() {
+            if nlist.is_stab() {
+                continue;
+            }
+            // An indirect symbol is no definition in an object.
+            if nlist.n_strx as usize >= strtab.len() || nlist.n_type() == N_INDR {
+                self.ignored_symbols.push(i as u32);
+                continue;
+            }
+            if nlist.n_type() != N_SECT {
+                continue;
+            }
+            let Some(sect) = self.sect_hdrs.get((nlist.n_sect as usize).wrapping_sub(1)) else {
+                crate::error!(
+                    "n_sect={} for symbol '{name}' out of bounds in '{file}'",
+                    nlist.n_sect
+                );
+                return false;
+            };
+            if nlist.n_value < sect.addr || nlist.n_value > sect.addr.wrapping_add(sect.size) {
+                self.ignored_symbols.push(i as u32);
+                self.misplaced_symbols.push(i as u32);
+            }
+        }
+        true
     }
 
     fn read_symbol_names(&mut self, strtab: &'static [u8]) {
