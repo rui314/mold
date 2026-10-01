@@ -94,9 +94,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let checked = passes::check_input_versions(&ctx, &Default::default());
     passes::warn_subtype_mismatches(&ctx);
     passes::warn_linker_options(&mut ctx);
-    passes::check_bitcode_duplicates(&ctx);
+    passes::find_bitcode_duplicates(&mut ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
+        passes::report_bitcode_duplicates(&ctx);
         passes::write_merged_bitcode(&ctx);
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
@@ -121,6 +122,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::check_input_versions(&ctx, &checked);
         passes::warn_linker_options(&mut ctx);
     }
+    passes::report_bitcode_duplicates(&ctx);
+    crate::error::checkpoint();
     t.stop();
     passes::check_common_conflicts(&mut ctx);
     let t = ctx.timer("remove_unreachable_files");

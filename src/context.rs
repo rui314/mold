@@ -129,6 +129,12 @@ pub struct Context<E: Target> {
     pub lto_objs: std::ops::Range<usize>,
     /// The bitcode files LTO compiled, in input order.
     pub lto_inputs: Vec<crate::lto::LtoInput>,
+    /// The object LTO merged modules to, if it did (the last of
+    /// lto_objs).
+    pub merged_lto_obj: Option<usize>,
+    /// The symbols two bitcode files define, found before LTO and
+    /// reported after it (see passes::find_bitcode_duplicates).
+    pub bitcode_duplicates: Vec<crate::passes::Duplicate>,
     /// The imports only code that ld-prime's own dead stripping of an
     /// LTO link removed used, which stay in the symbol table (see
     /// Context::strips_dead_code).
@@ -299,6 +305,8 @@ impl<E: Target> Context<E> {
             lto_modules: Vec::new(),
             lto_objs: 0..0,
             lto_inputs: Vec::new(),
+            merged_lto_obj: None,
+            bitcode_duplicates: Vec::new(),
             stripped_imports: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),

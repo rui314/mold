@@ -2401,6 +2401,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     let plugin = ctx.lto_plugin.unwrap();
 
     let mut objects = Vec::new();
+    let mut merged_any = false;
     {
         let roots = lto_roots(ctx);
         let (thin, merged): (Vec<_>, Vec<_>) = live_bitcode_modules(ctx)
@@ -2408,8 +2409,16 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         if !thin.is_empty() {
             objects.extend(thin_lto(ctx, &plugin, &thin, &roots));
         }
-        if !merged.is_empty() {
+        // A symbol two modules to merge both define would fail the
+        // merge: ld-prime merges none then, and reports the duplicate.
+        let merged_objs: hashbrown::HashSet<usize> = merged.iter().map(|m| m.obj).collect();
+        let clash = ctx
+            .bitcode_duplicates
+            .iter()
+            .any(|dup| dup.files.iter().filter(|obj| merged_objs.contains(*obj)).count() > 1);
+        if !merged.is_empty() && !clash {
             objects.push(merged_lto(ctx, &plugin, &merged, &roots));
+            merged_any = true;
         }
     }
     retire_bitcode_placeholders(ctx);
@@ -2422,6 +2431,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         input_files::parse_object(ctx, Box::leak(Box::new(mf)), true);
     }
     ctx.lto_objs = first..ctx.objs.len();
+    ctx.merged_lto_obj = merged_any.then(|| ctx.objs.len() - 1);
     true
 }
 
@@ -3523,20 +3533,54 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
 /// symbols it doesn't report in the number all the same. It lists them
 /// in no stable order; mold sorts them by name.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
-    report_duplicate_symbols(ctx, false);
+    report_duplicates(ctx, duplicate_symbols(ctx, false));
 }
 
-/// Reports, before LTO, the symbols two bitcode files define strongly,
-/// which libLTO could not merge. ld-prime leaves a duplicate between
-/// bitcode and a Mach-O object to the check after LTO, which then finds
-/// it in the compiled object as well (see lto_roots).
-pub fn check_bitcode_duplicates<E: Target>(ctx: &Context<E>) {
+/// Finds, before LTO, the symbols two bitcode files define strongly,
+/// to report once LTO is done as ld-prime does: it compiles the ThinLTO
+/// modules regardless, and the merged ones unless two of those are
+/// among the files (libLTO could not merge them; see do_lto), and lists
+/// the object it merged them to besides if that defines the symbol. A
+/// duplicate between bitcode and a Mach-O object is left to the check
+/// after LTO, which then finds it in a compiled object as well (see
+/// lto_roots).
+pub fn find_bitcode_duplicates<E: Target>(ctx: &mut Context<E>) {
     if ctx.lto_modules.len() > 1 {
-        report_duplicate_symbols(ctx, true);
+        ctx.bitcode_duplicates = duplicate_symbols(ctx, true);
     }
 }
 
-fn report_duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) {
+/// Reports the duplicates among bitcode files find_bitcode_duplicates
+/// found, now that LTO is done.
+pub fn report_bitcode_duplicates<E: Target>(ctx: &Context<E>) {
+    let mut dups = ctx.bitcode_duplicates.clone();
+    if let Some(merged) = ctx.merged_lto_obj {
+        let obj = &ctx.objs[merged];
+        for dup in &mut dups {
+            let defines = |(nlist, &id): (&NList, &SymbolId)| {
+                id == dup.sym && nlist.is_extern() && nlist.n_type() == N_SECT
+            };
+            if obj.nlists.iter().zip(&obj.symbols).any(defines) {
+                dup.files.push(merged);
+            }
+        }
+    }
+    report_duplicates(ctx, dups);
+}
+
+/// A symbol defined strongly more than once: the files that do, and
+/// whether any of those definitions is live and the one that won is.
+#[derive(Clone)]
+pub struct Duplicate {
+    sym: SymbolId,
+    files: Vec<usize>,
+    any_live: bool,
+    winner_live: bool,
+}
+
+/// The symbols defined strongly more than once - with `among_bitcode`,
+/// by two bitcode files or more.
+fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Duplicate> {
     // Each losing definition, and whether it is live.
     let mut losers: Vec<(SymbolId, usize, bool)> = ctx
         .objs
@@ -3568,27 +3612,11 @@ fn report_duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) {
             })
         })
         .collect();
-    if losers.is_empty() {
-        return;
-    }
     losers.sort_by_key(|&(sym_id, obj_idx, _)| (ctx.symbols[sym_id].name(), obj_idx));
     losers.dedup();
 
-    // ld-prime lists the Mach-O objects that define the symbol, then the
-    // bitcode files, then the object LTO compiled them to - each group
-    // in no stable order, which mold makes input order.
     let is_bitcode = |obj: usize| ctx.objs[obj].lto_module.is_some();
-    let rank = |obj: usize| {
-        let kind = match () {
-            _ if ctx.is_lto_obj(obj) => 2,
-            _ if is_bitcode(obj) => 1,
-            _ => 0,
-        };
-        (kind, ctx.objs[obj].priority)
-    };
-
-    let mut count = 0;
-    let mut reported = false;
+    let mut dups = Vec::new();
     for group in losers.chunk_by(|a, b| a.0 == b.0) {
         let id = group[0].0;
         let sym = &ctx.symbols[id];
@@ -3604,17 +3632,45 @@ fn report_duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) {
             let defines = |input: &&crate::lto::LtoInput| input.strong_defs.contains(&id);
             files.extend(ctx.lto_inputs.iter().filter(defines).map(|input| input.obj));
         }
-        if ctx.args.allow_dead_duplicates && group.iter().all(|&(_, _, live)| !live) {
+        dups.push(Duplicate {
+            sym: id,
+            files,
+            any_live: group.iter().any(|&(_, _, live)| live),
+            winner_live: sym.input_section().is_none_or(|isec| ctx.isecs[isec as usize].is_alive()),
+        });
+    }
+    dups
+}
+
+/// Reports duplicate symbols, failing the link if one is.
+fn report_duplicates<E: Target>(ctx: &Context<E>, dups: Vec<Duplicate>) {
+    // ld-prime lists the Mach-O objects that define the symbol, then the
+    // bitcode files, then the objects LTO compiled them to - each group
+    // in no stable order, which mold makes input order.
+    let rank = |obj: usize| {
+        let kind = match () {
+            _ if ctx.is_lto_obj(obj) => 2,
+            _ if ctx.objs[obj].lto_module.is_some() => 1,
+            _ => 0,
+        };
+        (kind, ctx.objs[obj].priority)
+    };
+
+    let mut count = 0;
+    let mut reported = false;
+    for mut dup in dups {
+        if ctx.args.allow_dead_duplicates && !dup.any_live {
             continue;
         }
         count += 1;
-        if !sym.input_section().is_none_or(|isec| ctx.isecs[isec as usize].is_alive()) {
+        if !dup.winner_live {
             continue;
         }
         reported = true;
-        files.sort_by_key(|&obj| rank(obj));
+        dup.files.sort_by_key(|&obj| rank(obj));
+        let sym = &ctx.symbols[dup.sym];
         crate::error::notice(format_args!("duplicate symbol '{sym}' in:"));
-        for obj in files {
+        for obj in dup.files {
             crate::error::notice(format_args!("    {}", resolved_file_name(ctx.objs[obj].mf)));
         }
     }

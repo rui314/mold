@@ -15,8 +15,9 @@ grep -A3 "^duplicate symbol '_dup' in:" $t/log1 | sed -e 1d -e "s|$dir||" > $t/f
 printf '    n1.o\n    bc1.o\n    /tmp/lto.o\n' | diff - $t/files1
 grep -q ': 1 duplicate symbols$' $t/log1
 
-# One between two bitcode files fails the link before LTO, which could
-# not merge their modules (ld-prime lists them in no stable order).
+# One between two bitcode files fails the link once LTO is done: there
+# is no merging their modules, and no compiled object to list (ld-prime
+# lists the files in no stable order).
 not $CC --ld-path=$mold -flto -o $t/exe2 $t/main.o $t/bc1.o $t/bc2.o 2> $t/log2
 grep -A2 "^duplicate symbol '_dup' in:" $t/log2 | sed -e 1d -e "s|$dir||" | sort > $t/files2
 printf '    bc1.o\n    bc2.o\n' | diff - $t/files2
@@ -28,3 +29,11 @@ not grep -q -e /tmp/lto.o -e lto_codegen $t/log2
 not $CC --ld-path=$mold -flto -o $t/exe3 $t/main.o $t/bc1.o $t/n1.o \
   -Wl,-object_path_lto,$t/../$(basename $t)/lto.o 2> $t/log3
 grep -q "^    $t/../$(basename $t)/lto.o\$" $t/log3
+
+# Between ThinLTO bitcode and other bitcode, which libLTO compiles
+# apart, the merged modules' object defines the symbol too.
+echo 'int dup(void) { return 4; }' | $CC -flto=thin -c -xc - -o $t/bc3.o
+not $CC --ld-path=$mold -flto -o $t/exe4 $t/main.o $t/bc3.o $t/bc1.o 2> $t/log4
+grep -A3 "^duplicate symbol '_dup' in:" $t/log4 | sed -e 1d -e "s|$dir||" | sort > $t/files4
+printf '    /tmp/lto.o\n    bc1.o\n    bc3.o\n' | diff - $t/files4
+grep -q ': 1 duplicate symbols$' $t/log4
