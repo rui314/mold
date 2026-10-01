@@ -2310,12 +2310,14 @@ fn claim_definitions<E: Target>(
     );
 }
 
-/// Common symbols merge: the largest size and strictest alignment win
-/// regardless of input order, gathered from every common claim once
-/// the class-3 winners are known.
+/// Common symbols merge as ld-prime merges them, from every common
+/// claim once the class-3 winners are known: the largest tentative
+/// definition wins whole - its size, its alignment, whatever the
+/// others', and whether it is a private external - and of those of one
+/// size the first claimed (the winner's to start with).
 fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atomic::AtomicU64]) {
     use std::sync::atomic::Ordering;
-    let commons: Vec<(crate::symbol::SymbolId, u64, u8)> = ctx
+    let commons: Vec<(crate::symbol::SymbolId, u64, u8, bool)> = ctx
         .objs
         .par_iter()
         .filter(|obj| obj.is_alive)
@@ -2328,17 +2330,22 @@ fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atom
                     && nlist.is_common()
                     && best[sym_id as usize].load(Ordering::Relaxed) >> 40 == 3
                 {
-                    Some((sym_id, nlist.n_value, ((nlist.n_desc >> 8) & 0xf) as u8))
+                    let p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
+                    let pext = nlist.n_type & N_PEXT != 0 || obj.hidden;
+                    Some((sym_id, nlist.n_value, p2align, pext))
                 } else {
                     None
                 }
             })
         })
         .collect();
-    for (sym_id, size, p2align) in commons {
+    for (sym_id, size, p2align, pext) in commons {
         let sym = &mut ctx.symbols[sym_id];
-        sym.value = sym.value.max(size);
-        sym.common_p2align = sym.common_p2align.max(p2align);
+        if size > sym.value {
+            sym.value = size;
+            sym.common_p2align = p2align;
+            sym.set_is_private_extern(pext);
+        }
     }
 }
 

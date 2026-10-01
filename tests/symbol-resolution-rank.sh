@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# Common size and alignment merge independently of input order.
+# Tentative definitions merge into the largest, whatever the input
+# order, which keeps its own alignment (see common-merge.sh).
 echo 'char buffer[4096];' | $CC -fcommon -c -xc - -o $t/large.o
 echo 'char buffer[1] __attribute__((aligned(4096)));' | $CC -fcommon -c -xc - -o $t/aligned.o
 for inputs in "$t/large.o $t/aligned.o" "$t/aligned.o $t/large.o"; do
   $mold -r -arch $ARCH $inputs -o $t/common.o
   nm -m $t/common.o > $t/syms
-  grep -E '^0*1000 .*alignment 2\^12.* _buffer$' $t/syms
+  grep -E '^0*1000 \(common\) (\(alignment 2\^4\) )?external _buffer$' $t/syms
 done
 
 echo 'int choice() { return 1; }' | $CC -c -xc - -o $t/archive.o
