@@ -442,6 +442,9 @@ pub struct Args {
     /// into a kernel collection: position independent and, like a
     /// shared-cache dylib, with split info.
     pub kernel: bool,
+    /// -kexts_use_stubs: an x86-64 kext calls its imports through
+    /// stubs and GOT slots, not by external relocations on the calls.
+    pub kexts_use_stubs: bool,
     /// Code goes in its own __TEXT_EXEC segment, and __TEXT is
     /// read-only (ld64's -text_exec, implied by an arm64 -kext).
     pub text_exec: bool,
@@ -599,6 +602,7 @@ impl Default for Args {
             static_link: false,
             preload: false,
             kernel: false,
+            kexts_use_stubs: false,
             text_exec: false,
             no_branch_islands: false,
             pie: true,
@@ -1995,6 +1999,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-deduplicate" => args.deduplicate = true,
             b"-text_exec" => args.text_exec = true,
+            b"-kexts_use_stubs" => args.kexts_use_stubs = true,
             b"-no_branch_islands" => args.no_branch_islands = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-verbose_deduplicate" => args.verbose_deduplicate = true,

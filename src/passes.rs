@@ -3433,9 +3433,13 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                 add_stub(ctx, id);
                 add_got(ctx, id);
             }
-            // An x86-64 kext calls an import directly; kmutil fills in
-            // the call by an external relocation.
-            RelocClass::Branch if ctx.args.is_kext() && E::CPUTYPE == CPU_TYPE_X86_64 => {}
+            // An x86-64 kext calls an import directly, unless
+            // -kexts_use_stubs: kmutil fills in the call by an external
+            // relocation, or the stub's GOT slot.
+            RelocClass::Branch
+                if ctx.args.is_kext()
+                    && E::CPUTYPE == CPU_TYPE_X86_64
+                    && !ctx.args.kexts_use_stubs => {}
             RelocClass::Branch if ctx.binds_as_import(id) => {
                 // A stub jumps through the symbol's lazy pointer, or,
                 // without lazy binding, its GOT slot.
