@@ -689,6 +689,16 @@ pub struct Args {
     /// -no_dwarf_unwind: leave the inputs' __eh_frame out of the output
     /// (see input_files::KeptFdes).
     pub no_dwarf_unwind: bool,
+    /// -ignore_auto_link: neither act on the objects' auto-link options
+    /// (LC_LINKER_OPTION) nor -add_linker_option's, nor carry any into
+    /// a -r output.
+    pub ignore_auto_link: bool,
+    /// -add_linker_option: auto-link options as if an object gave them,
+    /// the words of every one in a row (see passes::read_linker_options).
+    pub linker_options: Vec<Vec<u8>>,
+    /// -force_load_swift_libs: load every member of an archive an
+    /// auto-link option finds whose file name starts with "libswift".
+    pub force_load_swift_libs: bool,
 }
 
 impl Default for Args {
@@ -852,6 +862,9 @@ impl Default for Args {
             objc_stubs_small: false,
             const_selrefs: false,
             no_dwarf_unwind: false,
+            ignore_auto_link: false,
+            linker_options: Vec::new(),
+            force_load_swift_libs: false,
         }
     }
 }
@@ -1623,6 +1636,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-max_relative_cache_size_lto" => "missing <value>",
         "-mcpu" => "missing <cpu>",
         "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
+        "-add_linker_option" => "missing <options>",
         "-undefined" => "missing <dynamic_lookup>",
         "-dyld_env" => "missing <arg>",
         "-image_suffix" => "missing <suffix>",
@@ -1654,6 +1668,28 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         _ => "missing <path>",
     };
     format!("{opt} {usage}")
+}
+
+/// Adds an -add_linker_option's words to `words`. ld-prime splits the
+/// option at its first space only for an option that names a framework
+/// (any word with "framework" in it), and takes the rest for its
+/// argument, spaces and all; it ignores any other with a space, and
+/// passes one without on as a word of its own.
+fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8], warnings: &mut OptionWarnings) {
+    let Some(space) = memchr::memchr(b' ', opt) else {
+        words.push(opt.to_vec());
+        return;
+    };
+    let (head, arg) = (&opt[..space], &opt[space + 1..]);
+    if memchr::memmem::find(head, b"framework").is_some() {
+        words.push(head.to_vec());
+        words.push(arg.to_vec());
+    } else {
+        warnings.warn(format!(
+            "unknown linker option from -add_linker_option ignored, starting with: '{}'",
+            display(head)
+        ));
+    }
 }
 
 /// Parses all options. `cmdline` includes the program name.
@@ -2628,6 +2664,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // 32-bit displacements. ld-prime takes them silently.
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
             b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
+            b"-ignore_auto_link" => args.ignore_auto_link = true,
+            b"-force_load_swift_libs" => args.force_load_swift_libs = true,
+            b"-add_linker_option" => {
+                let opt = next_arg(&mut i, name).as_bytes();
+                add_linker_option(&mut args.linker_options, opt, &mut warnings);
+            }
             // ld64 took the D script of the image's probes from this;
             // ld-prime neither opens the file nor needs one, in a -r
             // link either.

@@ -1179,16 +1179,18 @@ pub enum Autolinked {
 /// missing their argument with a warning, then with another the options
 /// a command line may give for a library but an object may not (weak,
 /// re-exported or upward); search paths and loading modes (-L,
-/// -all_load, ...) silently. What is kept reads the same again.
-fn read_linker_options(opts: &[Vec<Vec<u8>>], mf: &MappedFile) -> Vec<Vec<Vec<u8>>> {
+/// -all_load, ...) silently. What is kept reads the same again. `file`
+/// names the object in the warnings ("command line" for
+/// -add_linker_option's, which ld-prime reads the same way).
+fn read_linker_options(opts: &[Vec<Vec<u8>>], file: impl Fn() -> String) -> Vec<Vec<Vec<u8>>> {
     use crate::util::display;
     let words: Vec<&[u8]> = opts.iter().flatten().map(Vec::as_slice).collect();
     let warn = |kind: &str, what: &str| {
-        let file = resolved_file_name(mf);
+        let file = file();
         crate::warn!("{kind} linker option from object file ignored: '{what}' in {file}");
     };
     let malformed = |opt: &str| {
-        let (usage, file) = (crate::cmdline::missing_argument(opt), resolved_file_name(mf));
+        let (usage, file) = (crate::cmdline::missing_argument(opt), file());
         crate::warn!("malformed linker option from object file ignored: '{usage}', in {file}");
     };
     let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();
@@ -1268,7 +1270,7 @@ fn autolinked_input<E: Target>(
     let os_str = crate::util::os_str;
     match opt {
         [lib] => {
-            let (name, rc) = match lib.strip_prefix(b"-hidden-l") {
+            let (name, mut rc) = match lib.strip_prefix(b"-hidden-l") {
                 Some(name) => (name, ReaderContext { hidden: true, ..rc }),
                 None => {
                     let name = ["-needed-l", "-lazy-l", "-l"]
@@ -1282,6 +1284,12 @@ fn autolinked_input<E: Target>(
                 ctx.autolink_misses.push(missing_hint(false, name));
             }
             let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
+            // -force_load_swift_libs loads a Swift library's archive
+            // whole, by its file name.
+            let is_swift = |path: &PathBuf| {
+                path.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libswift"))
+            };
+            rc.force_load = ctx.args.force_load_swift_libs && path.as_ref().is_some_and(is_swift);
             (path, ReaderContext { sdk, ..rc })
         }
         [flag, name] if flag.ends_with(b"framework") => {
@@ -1322,11 +1330,22 @@ fn missing_hint(framework: bool, name: &[u8]) -> String {
 }
 
 pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
-    // Objects new to the link have their auto-link options read now,
-    // which reports the ones ld-prime ignores.
+    if ctx.args.ignore_auto_link {
+        return Autolinked::Nothing;
+    }
+    // -add_linker_option's options are read first, as the command
+    // line's, then those of objects new to the link, which reports the
+    // ones ld-prime ignores.
+    if ctx.cmdline_linker_options.is_none() {
+        let words = std::slice::from_ref(&ctx.args.linker_options);
+        let opts = read_linker_options(words, || "command line".to_string());
+        ctx.cmdline_linker_options = Some(opts);
+    }
     for obj in &mut ctx.objs {
         if obj.is_alive && !obj.linker_options_read {
-            obj.linker_options = read_linker_options(&obj.linker_options, obj.mf);
+            let mf = obj.mf;
+            obj.linker_options =
+                read_linker_options(&obj.linker_options, || resolved_file_name(mf));
             obj.linker_options_read = true;
         }
     }
@@ -1345,14 +1364,12 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     // "-lswiftCore", "-lswiftCoreFoundation" ...), which fixes their
     // ordinals too.
     let mut pending: Vec<Vec<Vec<u8>>> = Vec::new();
-    for obj in &ctx.objs {
-        if !obj.is_alive {
-            continue;
-        }
-        for opt in &obj.linker_options {
-            if !ctx.processed_linker_options.contains(opt) {
-                pending.push(opt.clone());
-            }
+    let objs = ctx.objs.iter().filter(|obj| obj.is_alive);
+    for opt in
+        ctx.cmdline_linker_options.iter().flatten().chain(objs.flat_map(|obj| &obj.linker_options))
+    {
+        if !ctx.processed_linker_options.contains(opt) {
+            pending.push(opt.clone());
         }
     }
     pending.sort();

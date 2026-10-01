@@ -329,9 +329,13 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
 /// naming says whether the library loads lazily, and any whether it is
 /// needed; -hidden-l and -force_load say nothing of it.
 fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<Vec<Vec<u8>>> {
+    if ctx.args.ignore_auto_link {
+        return Vec::new();
+    }
     // (framework, name) -> (lazy, needed)
     let mut libs: BTreeMap<(bool, &[u8]), (bool, bool)> = BTreeMap::new();
-    for opt in ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(|obj| &obj.linker_options) {
+    let objs = ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(|obj| &obj.linker_options);
+    for opt in ctx.cmdline_linker_options.iter().flatten().chain(objs) {
         let (framework, name, kind) = match &opt[..] {
             [flag, name] if flag.ends_with(b"framework") => {
                 let base = name.split(|&c| c == b',').next().unwrap();
