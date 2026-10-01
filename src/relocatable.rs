@@ -353,9 +353,11 @@ fn narrow_unwind_fields<E: Target>(ctx: &Context<E>) -> HashMap<(u32, u32), u8> 
     fields
 }
 
-pub fn link<E: Target>(ctx: &mut Context<E>) {
+/// Writes the -r output, returning its size.
+pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // The sections the output synthesizes: the merged __objc_imageinfo,
     // the re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
+    let t = ctx.timer("r-layout");
     let mut synthetic: Vec<SyntheticSection> =
         [objc_imageinfo_section(ctx), compact_unwind_section(ctx), eh_frame_section(ctx)]
             .into_iter()
@@ -369,6 +371,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let cmds = LoadCommands::new(ctx, sects.len());
     let seg_fileoff = cmds.contents_offset(&ctx.args);
     let content_end = assign_file_offsets(ctx, &mut synthetic, &sects, seg_fileoff);
+    drop(t);
 
     // The symbol table, then what refers to its symbols: the synthetic
     // sections' contents and the relocations, regenerated against the
@@ -381,7 +384,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
             Sect::Synthetic(_) => None,
         })
         .collect();
+    let t = ctx.timer("r-symtab");
     let symtab = build_symtab(ctx, &merged);
+    drop(t);
+    let t = ctx.timer("r-relocs");
     let targets = RelocTargets::new(ctx, &symtab);
     for sec in &mut synthetic {
         sec.build_contents(&targets);
@@ -390,6 +396,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     for &osec in &merged {
         relocs[osec.index()] = section_relocs(&targets, osec);
     }
+    drop(t);
 
     // After the contents: the relocations, the merged sections' in
     // output order, then the synthetic sections', and then data in
@@ -428,6 +435,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
         })
         .collect();
 
+    let t = ctx.timer("r-copy");
     let mut buf = vec![0u8; off as usize];
     write_load_commands(ctx, &mut buf, &cmds, &headers, &layout, &symtab);
     copy_section_contents(&targets, &merged, &mut buf);
@@ -448,8 +456,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) {
     let stroff = layout.stroff as usize;
     buf[stroff..stroff + symtab.strtab.len()].copy_from_slice(&symtab.strtab);
 
+    drop(t);
+
     crate::error::checkpoint();
+    let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
+    drop(t);
+    off
 }
 
 /// A section of the -r output: merged from input subsections, or
@@ -1376,6 +1389,7 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// the stabs, opened by an N_SO of their own, then the defined
 /// externals and the undefined symbols, each by name.
 fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSymtab {
+    let t = ctx.timer("r-symtab-locals");
     let referenced = referenced_syms(ctx);
     let mut locals = Locals::new(ctx, merged);
     locals.add_labels(&referenced);
@@ -1405,10 +1419,12 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
         ents.push((ent, l.syms.first().copied()));
     }
     let nplain = ents.len();
+    drop(t);
 
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
     // output, it names the objects that hold it (N_OSO) and where their
     // symbols landed, and a later link carries the notes through.
+    let t = ctx.timer("r-symtab-stabs");
     let mut names_of: Vec<Option<SymbolId>> = Vec::new();
     if !ctx.args.strip_debug {
         let cwd = std::env::current_dir().unwrap_or_default();
@@ -1434,15 +1450,19 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
         }
     }
     let nlocal = ents.len();
+    drop(t);
 
     // The defined externals, then the undefined and tentative symbols.
+    let t = ctx.timer("r-symtab-externals");
     for (ent, id) in defined_externals(ctx).into_iter().chain(undefined_symbols(ctx, &referenced)) {
         index_of_sym.insert(id, ents.len() as u32);
         names.push(ctx.symbols[id].name().as_bytes());
         ents.push((ent, Some(id)));
     }
+    drop(t);
 
     // The string table, in ld-prime's layout (see layout_strings).
+    let t = ctx.timer("r-symtab-strings");
     let entry_of =
         crate::chunks::symtab::symbol_entries(&ents, nplain, nlocal, ctx.symbols.syms.len());
     let size = crate::chunks::symtab::layout_strings(
@@ -1459,6 +1479,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
         let off = ent.n_strx as usize;
         strtab[off..off + name.len()].copy_from_slice(name);
     }
+
+    drop(t);
 
     RSymtab { nlists: ents.into_iter().map(|e| e.0).collect(), strtab, index_of_sym, atoms }
 }

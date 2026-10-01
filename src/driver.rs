@@ -103,21 +103,32 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
     drop(t);
+    macro_rules! timed {
+        ($name:literal, $e:expr) => {{
+            let t = ctx.timer($name);
+            $e;
+            drop(t);
+        }};
+    }
     if ctx.args.relocatable {
         passes::check_duplicate_symbols(&ctx);
         crate::error::checkpoint();
         passes::hide_all_exports(&mut ctx);
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
+        let t = ctx.timer("merge_literals");
         passes::merge_literals(&mut ctx);
         objc::coalesce_objc_refs(&mut ctx);
+        drop(t);
         // ld64 -r keeps one copy of each weak definition (the marker
         // stays on it for the final link to auto-hide); Swift's
         // per-object conformance and metadata records doubled
         // NetNewsWire's RSCore prelink's __DATA,__const otherwise.
-        passes::coalesce_weak_defs(&mut ctx);
-        output_sections::create_output_sections(&mut ctx);
-        crate::relocatable::link(&mut ctx);
+        timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
+        timed!("create_output_sections", output_sections::create_output_sections(&mut ctx));
+        let t = ctx.timer("relocatable");
+        ctx.output_size = crate::relocatable::link(&mut ctx);
+        drop(t);
         crate::error::checkpoint();
         // Xcode asks every link, its single-object prelinks included,
         // for -dependency_info and fails the build if the file is
@@ -125,6 +136,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         crate::mapfile::write_dependency_info(&ctx);
         crate::error::check_fatal_warnings();
         crate::subprocess::notify_parent();
+        drop(t_all);
+        print_statistics(&ctx);
         return Ok(0);
     }
     passes::check_initializers(&ctx);
@@ -133,13 +146,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::merge_literals(&mut ctx);
     objc::coalesce_objc_refs(&mut ctx);
     drop(t);
-    macro_rules! timed {
-        ($name:literal, $e:expr) => {{
-            let t = ctx.timer($name);
-            $e;
-            drop(t);
-        }};
-    }
     timed!("add_synthetic_symbols", passes::add_synthetic_symbols(&mut ctx));
     timed!("convert_common_symbols", passes::convert_common_symbols(&mut ctx));
     timed!("create_objc_msgsend_stubs", objc::create_objc_msgsend_stubs(&mut ctx));
@@ -212,10 +218,13 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let _ = std::io::Write::flush(&mut std::io::stderr());
     crate::subprocess::notify_parent();
     drop(t_all);
+    print_statistics(&ctx);
+    Ok(0)
+}
 
-    // ld64's -print_statistics reports its phase times and memory to
-    // stderr; ours reports the pass timers and the sizes that drive
-    // them.
+/// ld64's -print_statistics reports its phase times and memory to
+/// stderr; ours reports the pass timers and the sizes that drive them.
+fn print_statistics<E: Target>(ctx: &Context<E>) {
     if ctx.args.perf {
         ctx.timers.print();
         eprintln!(
@@ -226,6 +235,4 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             ctx.output_size,
         );
     }
-
-    Ok(0)
 }
