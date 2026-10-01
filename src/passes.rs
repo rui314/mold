@@ -213,7 +213,12 @@ impl<'a> Prober<'a> {
 /// that has only its Versions/Current without the symlinks at its top,
 /// is found there in a second pass over the directories if
 /// -search_in_sparse_frameworks asks.
-fn find_framework<E: Target>(ctx: &Context<E>, arg: &OsStr, stubs: bool) -> Option<PathBuf> {
+fn find_framework<E: Target>(
+    ctx: &Context<E>,
+    prober: &Prober,
+    arg: &OsStr,
+    stubs: bool,
+) -> Option<PathBuf> {
     let (name, suffix) = match memchr::memchr(b',', arg.as_bytes()) {
         Some(comma) => (&arg.as_bytes()[..comma], Some(&arg.as_bytes()[comma + 1..])),
         None => (arg.as_bytes(), None),
@@ -221,7 +226,6 @@ fn find_framework<E: Target>(ctx: &Context<E>, arg: &OsStr, stubs: bool) -> Opti
     let name = crate::util::os_str(name);
     let mut framework = name.to_os_string();
     framework.push(".framework");
-    let prober = Prober::new(ctx);
     let search = |subdir: &str| {
         for suffix in [suffix, None].into_iter().take(1 + suffix.is_some() as usize) {
             for dir in &ctx.args.framework_paths {
@@ -269,7 +273,7 @@ fn with_image_suffixes<E: Target>(ctx: &Context<E>, path: &Path) -> Vec<PathBuf>
     paths
 }
 
-fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
+fn find_library<E: Target>(ctx: &Context<E>, prober: &Prober, name: &OsStr) -> Option<PathBuf> {
     // By default each directory is tried for a dylib and then an
     // archive before moving on (-search_paths_first, ld64's default
     // since Xcode 4). -search_dylibs_first restores the older ld64
@@ -286,7 +290,7 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     } else {
         &[&[Dylib, So, Archive]]
     };
-    search_library(ctx, name, passes)
+    search_library(ctx, prober, name, passes)
 }
 
 /// A file a library search looks for in a directory, as lib<name> and
@@ -303,14 +307,18 @@ enum LibFile {
 
 /// Looks for a dylib only, as -upward-l and -reexport-l do: an archive
 /// can be neither an upward dependency nor a re-exported library.
-fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
-    search_library(ctx, name, &[&[LibFile::Dylib, LibFile::So]])
+fn find_dylib<E: Target>(ctx: &Context<E>, prober: &Prober, name: &OsStr) -> Option<PathBuf> {
+    search_library(ctx, prober, name, &[&[LibFile::Dylib, LibFile::So]])
 }
 
 /// Looks for a dylib to merge (-merge-l): a dylib itself, which may
 /// carry its mergeable record, never a stub.
-fn find_mergeable_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
-    search_library(ctx, name, &[&[LibFile::DylibItself, LibFile::So]])
+fn find_mergeable_dylib<E: Target>(
+    ctx: &Context<E>,
+    prober: &Prober,
+    name: &OsStr,
+) -> Option<PathBuf> {
+    search_library(ctx, prober, name, &[&[LibFile::DylibItself, LibFile::So]])
 }
 
 /// Looks for lib<name> in the library search path, for each pass of
@@ -320,10 +328,10 @@ fn find_mergeable_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<Pat
 /// links crt1.o for an old deployment target as -lcrt1.10.6.o.
 fn search_library<E: Target>(
     ctx: &Context<E>,
+    prober: &Prober,
     name: &OsStr,
     passes: &[&[LibFile]],
 ) -> Option<PathBuf> {
-    let prober = Prober::new(ctx);
     if name.as_bytes().ends_with(b".o") {
         return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| prober.exists(p));
     }
@@ -1062,34 +1070,14 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     let paths = find_inputs(ctx, &inputs);
     let namings = library_namings(&ctx.args, &inputs, &paths);
 
-    // Warm the .tbd parse cache: parse every input that is a stub
-    // library on all cores, then do the same for the stubs they
-    // reexport - two waves cover an SDK's umbrella trees. The serial
-    // loop below then finds every parse already done.
-    {
-        let stubs: Vec<&'static MappedFile> = inputs
-            .iter()
-            .zip(&paths)
-            .filter(|(arg, _)| !matches!(arg, InputArg::Library(LibraryKind::Force, _)))
-            .filter_map(|(_, path)| MappedFile::open(path.as_ref()?))
-            .filter(|mf| get_file_type(mf) == FileType::Tapi)
-            .collect();
-        let wave1 = tapi::prefetch(&stubs, E::NAME, ctx.args.platform);
-        let mut deps: Vec<&'static MappedFile> = Vec::new();
-        for tbd in wave1.iter().flatten() {
-            for name in &tbd.reexports {
-                if tbd.document(name).is_some() {
-                    continue;
-                }
-                if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
-                    && get_file_type(dep) == FileType::Tapi
-                {
-                    deps.push(dep);
-                }
-            }
-        }
-        tapi::prefetch(&deps, E::NAME, ctx.args.platform);
-    }
+    let stubs: Vec<&'static MappedFile> = inputs
+        .iter()
+        .zip(&paths)
+        .filter(|(arg, _)| !matches!(arg, InputArg::Library(LibraryKind::Force, _)))
+        .filter_map(|(_, path)| MappedFile::open(path.as_ref()?))
+        .filter(|mf| get_file_type(mf) == FileType::Tapi)
+        .collect();
+    prefetch_stubs(ctx, &stubs);
 
     // ld-prime looks for the frameworks after the libraries.
     for framework in [false, true] {
@@ -1128,6 +1116,46 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     collect_indirect_files(ctx, &mut queue);
     add_bundle_hook(ctx, &mut queue);
     load_pending(ctx, queue);
+}
+
+/// Warms the .tbd parse cache: parses the `stubs` on all cores, then
+/// the stubs they re-export likewise - two waves cover an SDK's
+/// umbrella trees -, so that the serial loop loading them finds every
+/// parse done.
+fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
+    let wave1 = tapi::prefetch(stubs, E::NAME, ctx.args.platform);
+    let mut deps: Vec<&'static MappedFile> = Vec::new();
+    for tbd in wave1.iter().flatten() {
+        for name in &tbd.reexports {
+            if tbd.document(name).is_some() {
+                continue;
+            }
+            if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
+                && get_file_type(dep) == FileType::Tapi
+            {
+                deps.push(dep);
+            }
+        }
+    }
+    tapi::prefetch(&deps, E::NAME, ctx.args.platform);
+}
+
+/// Parses the stubs of the libraries the auto-link options `opts` name
+/// ahead of load_autolink_deps' serial loop (see prefetch_stubs), which
+/// looks for them again, noting the files it doesn't find: this quiet
+/// search notes nothing. Each file is opened by one thread.
+fn prefetch_autolinked_stubs<E: Target>(ctx: &Context<E>, opts: &[Vec<Vec<u8>>]) {
+    let prober = Prober::quiet(ctx);
+    let mut paths: Vec<PathBuf> =
+        opts.par_iter().filter_map(|opt| find_autolinked(ctx, &prober, opt)).collect();
+    paths.sort_unstable();
+    paths.dedup();
+    let stubs: Vec<&'static MappedFile> = paths
+        .par_iter()
+        .filter_map(|path| MappedFile::try_open(path).ok())
+        .filter(|mf| get_file_type(mf) == FileType::Tapi)
+        .collect();
+    prefetch_stubs(ctx, &stubs);
 }
 
 /// Adds the hook for the classes of mergeable libraries (see
@@ -1242,20 +1270,27 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
 /// found. Any other path, and any a -filelist gives, is the file's.
 fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
     use LibraryKind::*;
+    let prober = &Prober::new(ctx);
     match arg {
-        InputArg::File(path) if path_bytes(path).ends_with(b".a") => find_file(ctx, path, true),
+        InputArg::File(path) if path_bytes(path).ends_with(b".a") => {
+            find_file(ctx, prober, path, true)
+        }
         InputArg::File(path) | InputArg::Listed(path) => Some(path.clone()),
-        InputArg::Library(Merge, LibraryName::Path(path)) => find_file(ctx, path, false),
+        InputArg::Library(Merge, LibraryName::Path(path)) => find_file(ctx, prober, path, false),
         InputArg::BundleLoader(path) | InputArg::Library(_, LibraryName::Path(path)) => {
-            find_file(ctx, path, true)
+            find_file(ctx, prober, path, true)
         }
         InputArg::Library(Upward | Reexport | NoMerge | Delay, LibraryName::Lib(name)) => {
-            find_dylib(ctx, name)
+            find_dylib(ctx, prober, name)
         }
-        InputArg::Library(Merge, LibraryName::Lib(name)) => find_mergeable_dylib(ctx, name),
-        InputArg::Library(_, LibraryName::Lib(name)) => find_library(ctx, name),
-        InputArg::Library(Merge, LibraryName::Framework(name)) => find_framework(ctx, name, false),
-        InputArg::Library(_, LibraryName::Framework(name)) => find_framework(ctx, name, true),
+        InputArg::Library(Merge, LibraryName::Lib(name)) => find_mergeable_dylib(ctx, prober, name),
+        InputArg::Library(_, LibraryName::Lib(name)) => find_library(ctx, prober, name),
+        InputArg::Library(Merge, LibraryName::Framework(name)) => {
+            find_framework(ctx, prober, name, false)
+        }
+        InputArg::Library(_, LibraryName::Framework(name)) => {
+            find_framework(ctx, prober, name, true)
+        }
     }
 }
 
@@ -1266,8 +1301,12 @@ fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
 /// usr/lib/libz.tbd - then the path as it is, itself only. An object
 /// is taken as it is. A library to merge is no stub (`stubs`). A last
 /// -syslibroot of / drops the roots (see sdk_roots).
-fn find_file<E: Target>(ctx: &Context<E>, path: &Path, stubs: bool) -> Option<PathBuf> {
-    let prober = Prober::new(ctx);
+fn find_file<E: Target>(
+    ctx: &Context<E>,
+    prober: &Prober,
+    path: &Path,
+    stubs: bool,
+) -> Option<PathBuf> {
     let object = path.extension() == Some(OsStr::new("o"));
     if path.is_absolute() && !object {
         for root in sdk_roots(&ctx.args) {
@@ -1599,21 +1638,11 @@ fn autolinked_input<E: Target>(
     opt: &[Vec<u8>],
 ) -> (Option<PathBuf>, ReaderContext) {
     let rc = ReaderContext { autolinked: true, ..Default::default() };
-    let os_str = crate::util::os_str;
+    let path = find_autolinked(ctx, &Prober::new(ctx), opt);
     match opt {
         [lib] => {
-            let (name, mut rc) = match lib.strip_prefix(b"-hidden-l") {
-                Some(name) => (name, ReaderContext { hidden: true, ..rc }),
-                None => {
-                    let name = ["-needed-l", "-lazy-l", "-l"]
-                        .iter()
-                        .find_map(|prefix| lib.strip_prefix(prefix.as_bytes()));
-                    (name.unwrap(), rc)
-                }
-            };
-            let path = find_library(ctx, os_str(name));
             if path.is_none() {
-                ctx.autolink_misses.push(missing_hint(false, name));
+                ctx.autolink_misses.push(missing_hint(false, autolinked_library(lib)));
             }
             let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
             // -force_load_swift_libs loads a Swift library's archive
@@ -1621,23 +1650,45 @@ fn autolinked_input<E: Target>(
             let is_swift = |path: &PathBuf| {
                 path.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libswift"))
             };
-            rc.force_load = ctx.args.force_load_swift_libs && path.as_ref().is_some_and(is_swift);
-            (path, ReaderContext { sdk, ..rc })
+            let force_load = ctx.args.force_load_swift_libs && path.as_ref().is_some_and(is_swift);
+            let hidden = lib.starts_with(b"-hidden-l");
+            (path, ReaderContext { force_load, hidden, sdk, ..rc })
         }
         [flag, name] if flag.ends_with(b"framework") => {
-            let path = find_framework(ctx, os_str(name), true);
             if path.is_none() {
                 ctx.autolink_misses.push(missing_hint(true, name));
             }
             let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
             (path, ReaderContext { sdk, ..rc })
         }
-        [flag, file] if flag == b"-force_load" => {
-            (Some(PathBuf::from(os_str(file))), ReaderContext { force_load: true, ..rc })
+        [flag, _] if flag == b"-force_load" => (path, ReaderContext { force_load: true, ..rc }),
+        _ => (path, rc),
+    }
+}
+
+/// Looks with `prober` for the file an auto-link option names: the
+/// library or framework it names, or the file itself.
+fn find_autolinked<E: Target>(
+    ctx: &Context<E>,
+    prober: &Prober,
+    opt: &[Vec<u8>],
+) -> Option<PathBuf> {
+    let os_str = crate::util::os_str;
+    match opt {
+        [lib] => find_library(ctx, prober, os_str(autolinked_library(lib))),
+        [flag, name] if flag.ends_with(b"framework") => {
+            find_framework(ctx, prober, os_str(name), true)
         }
-        [_, file] => (Some(PathBuf::from(os_str(file))), rc),
+        [_, file] => Some(PathBuf::from(os_str(file))),
         _ => unreachable!(),
     }
+}
+
+/// The name of the library an auto-link option -l<name> (or -needed-l,
+/// -lazy-l, -hidden-l) names.
+fn autolinked_library(lib: &[u8]) -> &[u8] {
+    let prefixes = ["-hidden-l", "-needed-l", "-lazy-l", "-l"];
+    prefixes.iter().find_map(|prefix| lib.strip_prefix(prefix.as_bytes())).unwrap()
 }
 
 /// What ld-prime says, if symbols stay undefined, of a library or
@@ -1708,6 +1759,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
         .cloned()
         .collect();
     pending.sort();
+    prefetch_autolinked_stubs(ctx, &pending);
     let dylibs_before = ctx.dylibs.len();
     ctx.autolink_priority = ctx.autolink_priority.min(ctx.priority_counter + 1);
 
