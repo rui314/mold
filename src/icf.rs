@@ -312,7 +312,10 @@ fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, fla
 /// one even where its address is taken (a coroutine's resume function,
 /// a value witness) or it is exported; it goes by the atom's name only,
 /// so another label at the function's start that outranks the Swift
-/// one keeps it apart.
+/// one keeps it apart. An @objc thunk ("...To"), which an Objective-C
+/// method list names, is no such function: ld-prime folds one only as
+/// it folds a C function (SwiftyMarkdown's unimplemented init()'s
+/// thunk stays apart from the identical init() it calls for).
 fn mark_swift_functions<E: Target>(
     ctx: &Context<E>,
     i: usize,
@@ -320,7 +323,7 @@ fn mark_swift_functions<E: Target>(
     flags: &[AtomicBool],
 ) {
     // Only a function whose address is taken needs to be one.
-    let is_swift = |name: &str| name.starts_with("_$s");
+    let is_swift = |name: &str| name.starts_with("_$s") && !name.ends_with("To");
     for (isec, sym) in atom_names(ctx, i, obj, |isec| ctx.isecs[isec].is_address_taken()) {
         if is_swift(ctx.symbols[sym].name()) {
             flags[isec as usize].store(true, Ordering::Relaxed);
