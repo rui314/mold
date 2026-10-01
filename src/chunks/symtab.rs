@@ -167,7 +167,7 @@ fn keep_local_symbol(name: &str) -> bool {
 /// ld-prime names no symbol for (Swift's _objc_classes_* in
 /// __objc_classlist: ld-prime's NetNewsWire has none of the 127 ours
 /// carried) but as an alias (`list_alias`, see objc_list_aliases), nor
-/// live in a section whose atoms ld-prime names none of (see
+/// live in a section whose subsections ld-prime names none of (see
 /// has_unnamed_subsecs), whatever the symbol was, nor in __objc_protolist
 /// or __objc_imageinfo. A demoted private external in those two stays
 /// (clang's __OBJC_LABEL_PROTOCOL_$_X does), as does one an earlier
@@ -744,16 +744,16 @@ fn symbol_stabs<E: Target>(
 }
 
 /// Whether ld-prime notes the symbols of an input section. It notes
-/// none in those whose contents it takes apart into atoms of its own:
+/// none in those whose contents it splits into subsections of its own:
 /// literals (C strings by the section type, as the 4-, 8- and 16-byte
 /// ones, and UTF-16 strings in __TEXT,__ustring, even in an object
-/// without subsections, where they are one atom), the initializer and
-/// terminator pointers, exception tables, and the Objective-C metadata
-/// it parses - the lists, the class, superclass, protocol and selector
-/// references, CFStrings and literal objects, ivar offsets, and the
-/// method lists it rewrote in the relative form. The metadata goes by
-/// the name clang gives it, in __DATA: a __DATA_CONST,__objc_protolist
-/// is noted like any other section.
+/// without subsections, where they are one subsection), the initializer
+/// and terminator pointers, exception tables, and the Objective-C
+/// metadata it parses - the lists, the class, superclass, protocol and
+/// selector references, CFStrings and literal objects, ivar offsets,
+/// and the method lists it rewrote in the relative form. The metadata
+/// goes by the name clang gives it, in __DATA: a
+/// __DATA_CONST,__objc_protolist is noted like any other section.
 pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
     let literals = matches!(
         hdr.section_type(),
@@ -823,14 +823,14 @@ pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 
 /// A final image's local symbols in ld-prime's order: the non-external
 /// symbols it keeps, the private externals it demotes, the linker's own
 /// names and the objc_msgSend$ stubs, all by address. Names at one
-/// address are aliases of one atom, which ld-prime names by its
+/// address are aliases of one subsection, which ld-prime names by its
 /// highest-ranked symbol - a strong external, then a private external,
 /// a local, a weak definition, each rank by descending name - and it
-/// lists the other names in that order before the atom's own (a strong
-/// external's goes with the externals). The absolute symbols, which are
-/// in no section, follow by value, locals before private externals
-/// where values tie. -x drops them all, the demoted private externals
-/// too, as ld64 lists no local symbol under it.
+/// lists the other names in that order before the subsection's own (a
+/// strong external's goes with the externals). The absolute symbols,
+/// which are in no section, follow by value, locals before private
+/// externals where values tie. -x drops them all, the demoted private
+/// externals too, as ld64 lists no local symbol under it.
 fn plan_local_symbols<E: Target>(
     ctx: &Context<E>,
     pexts: &[usize],
@@ -863,9 +863,9 @@ fn plan_local_symbols<E: Target>(
             (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local_nlist(0, sym.value) }, None),
         };
         // A demoted weak definition keeps N_WEAK_DEF. A method list
-        // rewritten in the relative form is ld-prime's own atom, whose
-        // name is a plain local: Swift's protocol method lists are weak
-        // private externals.
+        // rewritten in the relative form is a subsection ld-prime makes
+        // itself, whose name is a plain local: Swift's protocol method
+        // lists are weak private externals.
         let (rank, ent) = if names_relative_method_list(ctx, i as u32) {
             (RANK_LOCAL, NList { n_type: N_SECT, ..ent })
         } else if sym.is_weak_def() {
@@ -1327,9 +1327,9 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
     for &id in &ctx.unbound_imports {
         live_ref[id as usize].store(true, Ordering::Relaxed);
     }
-    // A merged mergeable dylib's imports are atoms of their own, as
-    // live as its code unless -dead_strip finds nothing that refers to
-    // one (its stub helper's dyld_stub_binder, say).
+    // A merged mergeable dylib's imports, entries of their own in its
+    // record, are as live as its code unless -dead_strip finds nothing
+    // that refers to one (its stub helper's dyld_stub_binder, say).
     if !ctx.args.dead_strip {
         for name in &ctx.merged_imports {
             if let Some(id) = ctx.symbols.get(name) {

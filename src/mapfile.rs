@@ -538,8 +538,8 @@ fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static str>> {
     imports
 }
 
-/// A line of the map's symbol list: an atom's address and size, the
-/// number of the file it came from, and its name (the bytes of a
+/// A line of the map's symbol list: a subsection's address and size,
+/// the number of the file it came from, and its name (the bytes of a
 /// literal, whatever they are).
 struct MapEntry<'a> {
     addr: u64,
@@ -813,8 +813,8 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
             }
         }
         // ld-prime models a static executable's stack as a zero-fill
-        // section of a linker-made atom, which its segment's load
-        // command doesn't list.
+        // section holding one linker-made subsection, which its
+        // segment's load command doesn't list.
         if seg.name == "__UNIXSTACK" {
             let (addr, size) = (seg.cmd.vmaddr, seg.cmd.vmsize);
             sections.push(MapSection { addr, size, segname: "__UNIXSTACK", sectname: "__stack" });
@@ -880,7 +880,7 @@ fn insert_literal_aliases<'a>(entries: &mut Vec<MapEntry<'a>>, aliases: Vec<MapE
     }
 }
 
-/// An atom of a section a -r output makes itself, as its map lists it.
+/// A record of a section a -r output makes itself, as its map lists it.
 pub enum RelocatableRecord {
     /// A record of __LD,__compact_unwind: unwind record `i`'s.
     Unwind(usize),
@@ -893,14 +893,14 @@ pub enum RelocatableRecord {
 
 /// -map for a -r link, which ld-prime writes as for a final image: of
 /// the output's `sections`, at the addresses they have from zero, and
-/// the atoms in them - the inputs', and those of the sections the
-/// output makes itself (`atoms`, by address). A record of
-/// __compact_unwind is its object's, named by its label, if it has one;
-/// the __objc_imageinfo is the linker's, as in an image.
+/// the subsections in them - the inputs', and the records of the
+/// sections the output makes itself (`records`, by address). A record
+/// of __compact_unwind is its object's, named by its label, if it has
+/// one; the __objc_imageinfo is the linker's, as in an image.
 pub fn print_relocatable_map<E: Target>(
     ctx: &Context<E>,
     sections: &[&crate::chunks::ChunkHeader],
-    atoms: &[(u64, RelocatableRecord)],
+    records: &[(u64, RelocatableRecord)],
 ) {
     let Some(path) = &ctx.args.map else { return };
     let sections: Vec<MapSection> = sections.iter().map(|hdr| MapSection::of(hdr)).collect();
@@ -910,27 +910,27 @@ pub fn print_relocatable_map<E: Target>(
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named.entries);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], atoms);
+    let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], records);
     entries.extend(synthetic);
     let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
     insert_literal_aliases(&mut entries, literal_aliases);
     write_map(ctx, path, &files, &sections, &entries, &[]);
 }
 
-/// The map's entries of the atoms of the sections a -r output makes
+/// The map's entries of the records of the sections a -r output makes
 /// itself (see print_relocatable_map), whose FDEs are named after the
 /// `named` symbols.
 fn relocatable_record_entries<E: Target>(
     ctx: &Context<E>,
     files: &MapFiles,
     named: &[MapEntry],
-    atoms: &[(u64, RelocatableRecord)],
+    records: &[(u64, RelocatableRecord)],
 ) -> Vec<MapEntry<'static>> {
     let fde_names = FdeNames::new(named);
     let labels = unwind_labels(ctx);
     let mut entries = Vec::new();
-    for &(addr, ref atom) in atoms {
-        let (size, obj, name) = match *atom {
+    for &(addr, ref record) in records {
+        let (size, obj, name) = match *record {
             RelocatableRecord::Unwind(i) => {
                 let rec = &ctx.unwind_records[i];
                 let label = labels.get(&(rec.isec, rec.input_offset)).copied();
@@ -971,8 +971,9 @@ fn unwind_labels<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<(u32, u32), 
 }
 
 /// Writes the map: the output and its architecture, the files of the
-/// link (see MapFiles), the `sections`, the `entries` - the atoms, in
-/// the order given - and the `dead` ones -dead_strip took out.
+/// link (see MapFiles), the `sections`, the `entries` - the
+/// subsections, in the order given - and the `dead` ones -dead_strip
+/// took out.
 fn write_map<E: Target>(
     ctx: &Context<E>,
     path: &Path,
@@ -1022,7 +1023,7 @@ fn write_map<E: Target>(
 
     // Symbols removed by -dead_strip appear in their own section
     // with "<<dead>>" in the address column, the way ld64 reports
-    // them; sizes are the atom extents they would have had.
+    // them; sizes are the subsection extents they would have had.
     if !dead.is_empty() {
         let _ = writeln!(out);
         let _ = writeln!(out, "# Dead Stripped Symbols:");
@@ -1035,16 +1036,16 @@ fn write_map<E: Target>(
     }
 }
 
-/// Whether a symbol names its atom in the map, as ld-prime names atoms.
-/// An assembler temporary (L...) doesn't, nor does a linker-private
-/// label (l...) of a fixed-size literal, such as the compiler's lCPI0_0
-/// constant-pool labels: the literal is known by its size, as a C
-/// string is by its contents whatever labels it. The atoms of the
-/// sections ld-prime reads as lists of records - CFStrings, UTF-16
-/// strings, selector and class references, Objective-C class and
-/// category lists - are named by no local symbol: they are "anon", as
-/// unnamed atoms are. (An ltmpN label may be shadowed besides; see
-/// drop_shadowed_ltmps.)
+/// Whether a symbol names its subsection in the map, as ld-prime names
+/// subsections. An assembler temporary (L...) doesn't, nor does a
+/// linker-private label (l...) of a fixed-size literal, such as the
+/// compiler's lCPI0_0 constant-pool labels: the literal is known by its
+/// size, as a C string is by its contents whatever labels it. The
+/// entries of the sections ld-prime reads as lists of records -
+/// CFStrings, UTF-16 strings, selector and class references,
+/// Objective-C class and category lists - are named by no local symbol:
+/// they are "anon", as unnamed subsections are. (An ltmpN label may be
+/// shadowed besides; see drop_shadowed_ltmps.)
 fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
     let isec = &ctx.isecs[ctx.resolve_isec(sym.input_section().unwrap() as usize)];
     let split = ctx.objs[isec.file as usize].subsections_via_symbols;
@@ -1063,9 +1064,9 @@ fn names_subsec(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> 
     is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with('L'))
 }
 
-/// Whether a defined symbol of an object names its atom in the map:
-/// is_named, and not an ltmpN label another symbol there shadows (see
-/// drop_shadowed_ltmps), its subsection in the output.
+/// Whether a defined symbol of an object names its subsection in the
+/// map: is_named, and not an ltmpN label another symbol there shadows
+/// (see drop_shadowed_ltmps), its subsection in the output.
 pub(crate) fn names_its_subsec<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
     let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
@@ -1099,11 +1100,11 @@ pub(crate) fn names_its_subsec<E: Target>(ctx: &Context<E>, id: SymbolId) -> boo
 
 /// Drops from the map's named symbols each ltmpN label another of them
 /// shares a place with. An arm64 assembler puts the label where each
-/// section starts; where symbols split the sections, an atom there
+/// section starts; where symbols split the sections, a subsection there
 /// takes the label's name only if it has no other, as ld-prime ranks
-/// the labels an atom may be named after (without subsections the
-/// section's first atom has its name, which the other symbols there
-/// alias).
+/// the labels a subsection may be named after (without subsections the
+/// section's first subsection has its name, which the other symbols
+/// there alias).
 fn drop_shadowed_ltmps<E: Target, T>(
     ctx: &Context<E>,
     syms: &mut Vec<T>,
@@ -1130,12 +1131,12 @@ fn drop_shadowed_ltmps<E: Target, T>(
     syms.retain(|t| !is_ltmp(id(t)) || !shadowed.contains(&place(id(t))));
 }
 
-/// How a symbol ranks to name its atom among the symbols at its place,
-/// lowest first: as ld-prime ranks the labels at an atom's start (see
-/// subsec_name_rank) - _zb names the atom of `_zb: _ab: lc:`, _loc5 that
-/// of a weak definition _wd it labels too -, but in an object without
-/// subsections, where the first in the symbol table names it (an ltmpN
-/// label before an exported function).
+/// How a symbol ranks to name its subsection among the symbols at its
+/// place, lowest first: as ld-prime ranks the labels at a subsection's
+/// start (see subsec_name_rank) - _zb names the subsection of `_zb: _ab:
+/// lc:`, _loc5 that of a weak definition _wd it labels too -, but in an
+/// object without subsections, where the first in the symbol table
+/// names it (an ltmpN label before an exported function).
 fn naming_rank<E: Target>(
     ctx: &Context<E>,
     nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
@@ -1176,20 +1177,21 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 
 /// Defined symbols with their addresses, sizes and owning objects. A
 /// symbol's size is the span to the next symbol in its subsection (or
-/// the subsection's end) - the same atom size ld64 reports; of several
-/// at one place, the one naming the atom has the size (see
-/// naming_rank) and the others are aliases of none, as is an alternate
-/// entry point (Swift's type metadata inside its full metadata).
-/// ld-prime counts a thread-local variable's descriptor, which it
-/// rewrites, as its own, and a common symbol as the object's whose
-/// tentative definition won. It credits itself with an atom it rewrote
-/// (a method list in the relative form), with the alias it makes of a
-/// function folded into an identical one (-deduplicate), which has no
-/// size, and with the names -alias gives; an ltmpN label of a weak
-/// definition another file's won names nothing. Also returns the symbols of the entries but those
-/// of fixed-size literals, which come last, where in its subsection the
-/// first symbol is, by subsection, and the rows of the labels of
-/// fixed-size literals that follow the literals' own (see literal_labels).
+/// the subsection's end) - the size of the subsection ld64 splits off
+/// at it; of several at one place, the one naming the subsection has
+/// the size (see naming_rank) and the others are aliases of none, as is
+/// an alternate entry point (Swift's type metadata inside its full
+/// metadata). ld-prime counts a thread-local variable's descriptor,
+/// which it rewrites, as its own, and a common symbol as the object's
+/// whose tentative definition won. It credits itself with a subsection
+/// it rewrote (a method list in the relative form), with the alias it
+/// makes of a function folded into an identical one (-deduplicate),
+/// which has no size, and with the names -alias gives; an ltmpN label
+/// of a weak definition another file's won names nothing. Also returns
+/// the symbols of the entries but those of fixed-size literals, which
+/// come last, where in its subsection the first symbol is, by
+/// subsection, and the rows of the labels of fixed-size literals that
+/// follow the literals' own (see literal_labels).
 fn symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
@@ -1245,8 +1247,8 @@ fn symbol_entries<'a, E: Target>(
     }
     drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
 
-    // Sizes: sort the symbols by place, the one naming the atom last
-    // of those at one, and measure to the next place.
+    // Sizes: sort the symbols by place, the one naming the subsection
+    // last of those at one, and measure to the next place.
     let key = |sym: SymbolId| {
         let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
         (isec, ctx.symbols[sym].value, naming_rank(ctx, &nlists, sym))
@@ -1301,12 +1303,13 @@ fn is_split_fixed_literal<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
 }
 
 /// The rows of the labels of fixed-size literals (see
-/// is_split_fixed_literal): of a literal's labels, the best to name an
-/// atom (see naming_rank) names its atom - unless it is linker-private
-/// (lCPI0_0), which leaves the atom known by its size - and each other
-/// label, linker-private or not, has a row of no size after the atom's,
-/// the better first. (An ltmpN label is none.) Adds the atoms' rows to
-/// `entries`, noting them in `first_labels`, and returns the others.
+/// is_split_fixed_literal): of a literal's labels, the best (see
+/// naming_rank) names the literal - unless it is linker-private
+/// (lCPI0_0), which leaves the literal known by its size - and each
+/// other label, linker-private or not, has a row of no size after the
+/// literal's, the better first. (An ltmpN label is none.) Adds the
+/// literals' rows to `entries`, noting them in `first_labels`, and
+/// returns the others.
 fn literal_labels<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
@@ -1387,9 +1390,9 @@ fn escape_literal(out: &mut Vec<u8>, data: &[u8]) {
 
 /// The rows of the start of subsection `id` no symbol names, its first
 /// `len` bytes, by offset in it: a literal by what it is, any other
-/// "anon" - one per record of a section of fixed-size records, of which
-/// ld-prime makes each an atom of its own (an __objc_classlist listing
-/// two classes is two).
+/// "anon" - one per record of a section of fixed-size records, which
+/// ld-prime splits into a subsection per record (an __objc_classlist
+/// listing two classes is two).
 fn unnamed_rows<E: Target>(
     ctx: &Context<E>,
     id: usize,
@@ -1408,7 +1411,7 @@ fn unnamed_rows<E: Target>(
     })
 }
 
-/// The atoms of the input files no symbol names, up to the first
+/// The subsections of the input files no symbol names, up to the first
 /// symbol in one (`first_labels` has where it is, by subsection). The
 /// selector names of Objective-C stubs are file 0's: ld-prime makes
 /// them itself, and an input's copy merges into its own.
@@ -1493,7 +1496,7 @@ fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
 
 /// The records of the __eh_frame the linker writes, each credited to
 /// the object it came from: a CIE is "CFI", an FDE "FDE for: " and the
-/// name of the function's atom.
+/// name of the function's subsection.
 fn eh_frame_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
@@ -1519,27 +1522,28 @@ fn eh_frame_entries<'a, E: Target>(
     entries
 }
 
-/// How the map names an FDE: "FDE for: " and the name of the atom of
-/// its function, which of the `named` symbols at its place is listed
-/// first (has the size).
+/// How the map names an FDE: "FDE for: " and the name of the
+/// subsection of its function, which of the `named` symbols at its
+/// place is listed first (has the size).
 struct FdeNames<'a> {
-    atoms: hashbrown::HashMap<u64, (u64, &'a [u8])>,
+    /// The name of the subsection at each address, with its size.
+    names: hashbrown::HashMap<u64, (u64, &'a [u8])>,
 }
 
 impl<'a> FdeNames<'a> {
     fn new(named: &'a [MapEntry<'_>]) -> Self {
-        let mut atoms: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
+        let mut names: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
         for e in named {
-            let atom = atoms.entry(e.addr).or_insert((e.size, &e.name));
-            if e.size < atom.0 {
-                *atom = (e.size, &e.name);
+            let best = names.entry(e.addr).or_insert((e.size, &e.name));
+            if e.size < best.0 {
+                *best = (e.size, &e.name);
             }
         }
-        Self { atoms }
+        Self { names }
     }
 
     fn name(&self, func: u64) -> Cow<'static, [u8]> {
-        let func = self.atoms.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
+        let func = self.names.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
         let mut name = b"FDE for: ".to_vec();
         name.extend_from_slice(func);
         Cow::Owned(name)
@@ -1614,11 +1618,11 @@ fn sectcreate_entries<E: Target>(ctx: &Context<E>, files: &MapFiles) -> Vec<MapE
         .collect()
 }
 
-/// The atoms the linker makes, file 0's but for the stubs and pointers
-/// it makes for a symbol: a stub, a GOT slot or a lazy pointer counts as
-/// the file that defines the symbol, and takes its name with ".stub",
-/// ".got" or ".lazy_ptr" after it. The stub helper's entries are
-/// anonymous.
+/// The subsections the linker makes, file 0's but for the stubs and
+/// pointers it makes for a symbol: a stub, a GOT slot or a lazy pointer
+/// counts as the file that defines the symbol, and takes its name with
+/// ".stub", ".got" or ".lazy_ptr" after it. The stub helper's entries
+/// are anonymous.
 fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
     let mut entries = Vec::new();
     let slot = |sym: SymbolId, addr: u64, size: u64, suffix: &str| MapEntry {
@@ -1661,8 +1665,9 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         }
     }
 
-    // The lazy-load helpers are file 0's, as is the empty atom that
-    // keeps __dyld_lazy_load alive, and each slot its symbol's file's.
+    // The lazy-load helpers are file 0's, as is the empty subsection
+    // that keeps __dyld_lazy_load alive, and each slot its symbol's
+    // file's.
     if ctx.lazy_helpers.keep_alive != u32::MAX {
         entries.push(anon(ctx.isec_addr(ctx.lazy_helpers.keep_alive as usize), 0));
     }
@@ -1731,8 +1736,8 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     entries
 }
 
-/// The atoms of the input files that the output doesn't have, which
-/// ld-prime lists under -dead_strip, whatever took them out: dead
+/// The subsections of the input files that the output doesn't have,
+/// which ld-prime lists under -dead_strip, whatever took them out: dead
 /// stripping, coalescing - a literal or an Objective-C reference equal
 /// to another file's, a weak definition another file's won, a function
 /// folded into an identical one, a tentative definition (a common
@@ -1740,13 +1745,14 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
 /// Objective-C rewrite (a method list in the relative form, a category
 /// merged into its class). They come by the file they came from, in
 /// the order they were in it, its tentative definitions last; the
-/// sizes are the atoms', as for the live ones (see dead_entries_of).
+/// sizes are the subsections', as for the live ones (see
+/// dead_entries_of).
 fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
     use rayon::prelude::*;
     if !ctx.args.dead_strip {
         return Vec::new();
     }
-    let gone = GoneAtoms::new(ctx);
+    let gone = GoneSubsecs::new(ctx);
     let mut dead: Vec<(usize, DeadKey, MapEntry)> = (0..ctx.objs.len())
         .into_par_iter()
         .filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i))
@@ -1767,7 +1773,7 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
         })
         .collect();
     // A class category merging gave a list of a kind it had none of
-    // has, after its file's other dead atoms, one for each such list.
+    // has, after its file's other dead rows, one for each such list.
     for (i, &obj) in ctx.objc_filled_ro_fields.iter().enumerate() {
         let file = files.objs[obj as usize];
         let entry = MapEntry { addr: 0, size: 8, file, name: name("anon") };
@@ -1779,7 +1785,7 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
     dead
 }
 
-/// The linker's own atoms dead stripping removed, last among the dead:
+/// The linker's own symbols dead stripping removed, last among the dead:
 /// the names of the mach header only stripped code used, and - when
 /// nothing kept refers to the header in an image whose header is no
 /// root - the start of __TEXT they name.
@@ -1805,7 +1811,7 @@ fn dead_header_entries<E: Target>(ctx: &Context<E>) -> Vec<MapEntry<'static>> {
     names.into_iter().map(|n| MapEntry { addr: 0, size: 0, file: 0, name: name(n) }).collect()
 }
 
-/// Where a dead atom was in its file: its address in the object, the
+/// Where a dead row was in its file: its address in the object, the
 /// subsection and the row's place among those of the subsection.
 type DeadKey = (u64, u32, u32);
 
@@ -1814,18 +1820,17 @@ type DeadKey = (u64, u32, u32);
 /// another took the place of, but for a class's ro data the merged
 /// record stands for (ld-prime rewrites it in place) - a category list
 /// rebuilt in its place is gone all the same, its merged entries dead
-/// (see is_kept_category_entry); and the C strings
-/// objc stubs take their selector names from, for which ld-prime makes
-/// its own. A section the link consumes, or that
-/// -remove_swift_reflection_metadata_sections drops as ld-prime reads
-/// it, has no atoms.
-struct GoneAtoms {
+/// (see is_kept_category_entry); and the C strings objc stubs take
+/// their selector names from, for which ld-prime makes its own.
+/// ld-prime makes no subsections of a section the link consumes, or of
+/// one -remove_swift_reflection_metadata_sections drops as it reads it.
+struct GoneSubsecs {
     /// The records the Objective-C passes wrote for input ones.
     rewritten: hashbrown::HashSet<u32>,
     stub_names: hashbrown::HashSet<usize>,
 }
 
-impl GoneAtoms {
+impl GoneSubsecs {
     fn new<E: Target>(ctx: &Context<E>) -> Self {
         let rewritten = ctx.data_blobs.iter().map(|blob| blob.isec).collect();
         Self { rewritten, stub_names: stub_name_isecs(ctx) }
@@ -1848,26 +1853,26 @@ impl GoneAtoms {
     }
 }
 
-/// A label of a gone atom (see dead_entries_of).
+/// A label of a gone subsection (see dead_entries_of).
 struct DeadLabel {
     isec: usize,
     off: u64,
-    /// How the label ranks to name the atom, the best first.
+    /// How the label ranks to name the subsection, the best first.
     rank: std::cmp::Reverse<LabelRank>,
     name: &'static str,
     /// An alternate entry point (N_ALT_ENTRY), an alias of none.
     alt: bool,
 }
 
-/// The labels naming the gone atoms of an object (see dead_entries_of),
-/// by subsection, the alternate entry points last, and by place, the
-/// one naming the atom first; and how many labels each C string has at
-/// its start. An ltmpN label of an empty section names nothing (the
-/// section has no atom), nor does one of a C string in an object with
-/// subsections.
+/// The labels naming the gone subsections of an object (see
+/// dead_entries_of), by subsection, the alternate entry points last,
+/// and by place, the one naming the subsection first; and how many
+/// labels each C string has at its start. An ltmpN label of an empty
+/// section names nothing (ld-prime makes no subsection of the section),
+/// nor does one of a C string in an object with subsections.
 fn gone_labels<E: Target>(
     ctx: &Context<E>,
-    gone: &GoneAtoms,
+    gone: &GoneSubsecs,
     obj: &crate::input_files::ObjectFile,
 ) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, u32>) {
     let split = obj.subsections_via_symbols;
@@ -1905,18 +1910,18 @@ fn gone_labels<E: Target>(
     (labels, cstring_labels)
 }
 
-/// The dead atoms of object `obj_idx` (see dead_entries), the `file`th
-/// of the map, keyed by where they were. An atom is named by the best
-/// of the labels at its start, as ld-prime ranks them (see
+/// The dead subsections of object `obj_idx` (see dead_entries), the
+/// `file`th of the map, keyed by where they were. A subsection is named
+/// by the best of the labels at its start, as ld-prime ranks them (see
 /// subsec_name_rank) - in an object without subsections, by the first
-/// in its symbol table -, which has the atom's size; the others are
-/// aliases of none, but for linker-private ones (l...), which the list
-/// leaves out. ld-prime makes a C string an atom per label at its
-/// start, and all but one of them are always dead, merged into that
-/// one.
+/// in its symbol table -, which has the subsection's size; the others
+/// are aliases of none, but for linker-private ones (l...), which the
+/// list leaves out. ld-prime makes a subsection of a C string per label
+/// at its start, and all but one of them are always dead, merged into
+/// that one.
 fn dead_entries_of<'a, E: Target>(
     ctx: &'a Context<E>,
-    gone: &GoneAtoms,
+    gone: &GoneSubsecs,
     commons: &hashbrown::HashMap<u32, u32>,
     obj_idx: usize,
     file: usize,
@@ -1947,8 +1952,8 @@ fn dead_entries_of<'a, E: Target>(
         rows.push((l.isec, l.off, size, Cow::Borrowed(l.name.as_bytes())));
     }
 
-    // The unnamed atoms, from a gone subsection's start up to its first
-    // label, and the C strings' extra atoms.
+    // The unnamed rows, from a gone subsection's start up to its first
+    // label, and the C strings' extra subsections.
     for &id in &obj.subsecs {
         let id = id as usize;
         if gone.contains(ctx, id) {
@@ -1980,7 +1985,7 @@ fn dead_entries_of<'a, E: Target>(
 }
 
 /// An object's tentative definitions that the output lacks, after its
-/// other atoms (see dead_entries_of): all but the one whose common
+/// other subsections (see dead_entries_of): all but the one whose common
 /// symbol the output has (see MapFiles::commons), of the sizes they
 /// give.
 fn dead_commons<'a, E: Target>(

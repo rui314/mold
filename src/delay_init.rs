@@ -87,12 +87,12 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
             continue;
         }
         let split = ctx.objs[sec.file as usize].subsections_via_symbols;
-        let atom = if input_files::is_record_list(hdr, split) {
+        let subsec = if input_files::is_record_list(hdr, split) {
             "anon".into()
         } else {
             ctx.subsec_name(isec as usize)
         };
-        errors.push(format!("{kind} use of '{sym}' in '{atom}' cannot be delayed."));
+        errors.push(format!("{kind} use of '{sym}' in '{subsec}' cannot be delayed."));
     }
     crate::error::errors_together(&errors);
     crate::error::checkpoint();

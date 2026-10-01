@@ -652,10 +652,10 @@ fn output_section_flags(
 }
 
 /// The flags ld-prime reads a section of an input object as having,
-/// which decide how the link splits the section into atoms and what it
-/// makes of them - mold's canonicalize_type for a section typed by name
-/// alone. __TEXT,__constructor, where GCC put the constructors of code
-/// built without dyld (-static, -mkernel) with the assembler's
+/// which decide how the link splits the section into subsections and
+/// what it makes of them - mold's canonicalize_type for a section typed
+/// by name alone. __TEXT,__constructor, where GCC put the constructors
+/// of code built without dyld (-static, -mkernel) with the assembler's
 /// .constructor directive, is a list of initializer pointers whatever
 /// its type (__TEXT,__destructor stays data). ld-prime knows the
 /// Objective-C runtime's sections by name too (see
@@ -1141,19 +1141,19 @@ fn assign_input_sections<E: Target>(
 }
 
 /// -trace_symbol_layout prints, or -trace_symbol_layout_file writes,
-/// how a final link maps the section of each atom a symbol names to its
-/// output section, as ld-prime does: "symbol '_x', use default mapping
-/// to __TEXT/__text", or a line for each step that moved it - a symbol
-/// move (see symbol_moves) or one of ld-prime's (see
+/// how a final link maps the section of each subsection a symbol names
+/// to its output section, as ld-prime does: "symbol '_x', use default
+/// mapping to __TEXT/__text", or a line for each step that moved it - a
+/// symbol move (see symbol_moves) or one of ld-prime's (see
 /// output_section_traced), then the renames: "symbol '_y', -data_const
-/// mapped it to __DATA_CONST/__const". The atoms come in the order
-/// ld-prime comes to them (see traced_atom_symbols), then those it makes
-/// itself: the Objective-C stubs, the DOFs of DTrace probes (named as
-/// -map names them), the -alias names, the method lists it rewrites in
-/// the relative form, __dyld_private and the thread-local variables'
-/// descriptors. ld-prime warns about a file it can't write, ending the
-/// warning with a blank line, and reports nothing then. A -r link
-/// reports nothing.
+/// mapped it to __DATA_CONST/__const". The subsections come in the
+/// order ld-prime comes to them (see traced_subsec_symbols), then those
+/// it makes itself: the Objective-C stubs, the DOFs of DTrace probes
+/// (named as -map names them), the -alias names, the method lists it
+/// rewrites in the relative form, __dyld_private and the thread-local
+/// variables' descriptors. ld-prime warns about a file it can't write,
+/// ending the warning with a blank line, and reports nothing then. A -r
+/// link reports nothing.
 fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u32, Move>) {
     let args = &ctx.args;
     if args.relocatable {
@@ -1185,11 +1185,11 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         }
     };
 
-    // The atoms of the inputs, and of the linker: the method lists it
-    // rewrites and the descriptors.
+    // The subsections of the inputs, and the linker's: the method lists
+    // it rewrites and the descriptors.
     let mut method_lists = Vec::new();
     let mut descriptors = Vec::new();
-    for (place, id) in traced_atom_symbols(ctx) {
+    for (place, id) in traced_subsec_symbols(ctx) {
         let Some(isec) = ctx.symbols[id].input_section() else { continue };
         let isec = ctx.resolve_isec(isec as usize);
         if crate::mapfile::is_rewritten_method_list(ctx, isec) {
@@ -1197,7 +1197,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         } else if place == u32::MAX {
             descriptors.push(id);
         } else {
-            let (steps, to) = atom_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
+            let (steps, to) = subsec_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
             write(ctx.symbols[id].name(), steps, to);
         }
     }
@@ -1213,10 +1213,10 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         write(ctx.symbols[sym].name(), steps.clone(), to);
     }
     for dof in &ctx.dof_sections {
-        let (steps, to) = atom_mapping(ctx, map, dof.isec as usize, None);
+        let (steps, to) = subsec_mapping(ctx, map, dof.isec as usize, None);
         write(&dof.subsec_name, steps, to);
     }
-    // An -alias name maps as its base's atom (see symbol_moves), as
+    // An -alias name maps as its base's subsection (see symbol_moves), as
     // does a method list, which a symbol move may take too.
     let aliases = crate::symbol_moves::object_aliases(ctx);
     let aliases =
@@ -1224,29 +1224,30 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let lists = method_lists.into_iter().map(|id| (id, ctx.symbols[id].input_section().unwrap()));
     for (id, isec) in aliases.chain(lists) {
         let isec = ctx.resolve_isec(isec as usize);
-        let (steps, to) = atom_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
+        let (steps, to) = subsec_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
         write(ctx.symbols[id].name(), steps, to);
     }
     let private = ctx.stub_helper.dyld_private_isec;
     if private != u32::MAX {
-        let (steps, to) = atom_mapping(ctx, map, private as usize, None);
+        let (steps, to) = subsec_mapping(ctx, map, private as usize, None);
         write("__dyld_private", steps, to);
     }
     for id in descriptors {
         let isec = ctx.resolve_isec(ctx.symbols[id].input_section().unwrap() as usize);
-        let (steps, to) = atom_mapping(ctx, map, isec, None);
+        let (steps, to) = subsec_mapping(ctx, map, isec, None);
         write(ctx.symbols[id].name(), steps, to);
     }
 }
 
-/// The symbols -trace_symbol_layout reports, of the atoms of the inputs
-/// they name as the map does (see mapfile::names_its_subsec) - a common
-/// symbol of the object whose tentative definition won -, in the order
-/// ld-prime comes to them, with where that is: an input subsection's
-/// index, or u32::MAX for a thread-local variable's descriptor, which
-/// ld-prime makes anew after every input's atom. Of the symbols at one
-/// place, the last in the object's symbol table comes first.
-fn traced_atom_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u32, crate::symbol::SymbolId)> {
+/// The symbols -trace_symbol_layout reports, of the subsections of the
+/// inputs they name as the map does (see mapfile::names_its_subsec) - a
+/// common symbol of the object whose tentative definition won -, in the
+/// order ld-prime comes to them, with where that is: an input
+/// subsection's index, or u32::MAX for a thread-local variable's
+/// descriptor, which ld-prime makes anew after every input's
+/// subsection. Of the symbols at one place, the last in the object's
+/// symbol table comes first.
+fn traced_subsec_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u32, crate::symbol::SymbolId)> {
     let commons = common_owners(ctx);
     let mut syms = Vec::new();
     for (i, obj) in ctx.objs.iter().enumerate() {
@@ -1283,7 +1284,7 @@ fn traced_atom_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u32, crate::symbol::
 /// The steps -trace_symbol_layout reports for the subsection `isec`,
 /// which `moved` may move (see trace_symbol_layout), and its output
 /// section's name.
-fn atom_mapping<E: Target>(
+fn subsec_mapping<E: Target>(
     ctx: &Context<E>,
     map: SectionMap,
     isec: usize,
@@ -1310,8 +1311,8 @@ fn atom_mapping<E: Target>(
 /// member, an input section with header `hdr` whose flags follow the
 /// name `flags_name` (see output_section_for). The first member
 /// decides, as in ld-prime: code after data in a section doesn't make
-/// it code. An empty member counts if it names an atom (see
-/// bare_sections), in -r too.
+/// it code. An empty member counts if a symbol names a subsection there
+/// (see bare_sections), in -r too.
 fn first_member_flags<E: Target>(
     ctx: &Context<E>,
     hdr: &MachSection,
@@ -1447,13 +1448,13 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
     }
 }
 
-/// Orders each output section's members: the atoms -order_file names
-/// first, cold code last, and the rest in input order (see
+/// Orders each output section's members: the subsections -order_file
+/// names first, cold code last, and the rest in input order (see
 /// assign_input_sections). Thread-local zero fill goes by size instead.
 fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
-    // ld-prime lays out a final image's __thread_bss by atom size,
+    // ld-prime lays out a final image's __thread_bss by subsection size,
     // smallest first and in input order among equals, whatever
-    // -order_file says. An atom's size runs to the next one in its
+    // -order_file says. A subsection's size runs to the next one in its
     // object, padding included.
     let is_tbss = |osec: &OutputSection| osec.hdr.flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL;
     if !ctx.args.relocatable {
@@ -1462,7 +1463,7 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // -order_file moves the atoms it names to the front of their
+    // -order_file moves the subsections it names to the front of their
     // output sections, in the file's order; everything else keeps its
     // input order behind them. A stable sort by rank does both.
     if let Some(ranks) = order_file_ranks(ctx) {
@@ -1473,9 +1474,9 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
 
     // Cold code last: clang marks the rarely-run part it splits off a
     // function (foo.cold.1, and the function it came from) N_COLD_FUNC,
-    // and ld64 lays those atoms out after every other atom of their
-    // section - in final images and -r outputs alike - so hot code
-    // stays dense.
+    // and ld64 lays those subsections out after every other subsection
+    // of their section - in final images and -r outputs alike - so hot
+    // code stays dense.
     let mut cold = vec![false; ctx.isecs.len()];
     let mut any = false;
     for obj in &ctx.objs {
@@ -1500,7 +1501,7 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Where a final image lays out what LTO compiled, as ld-prime does:
-/// each atom where the bitcode file it is credited to (see
+/// each subsection where the bitcode file it is credited to (see
 /// lto::origins) was named, between the inputs before and after that
 /// file, and the rest - which stay the compiled objects' - after every
 /// input, as the map numbers them. Every other section keeps its place,
@@ -2168,8 +2169,8 @@ fn section_first_seen<E: Target>(ctx: &Context<E>, lto_ranks: Option<&[u32]>) ->
         }
         // A copy merged into another input's (a literal, the losing
         // copy of a weak definition) places nothing: ld-prime places a
-        // section by the atoms it keeps. One a synthesized record took
-        // over counts where it was.
+        // section by the subsections it keeps. One a synthesized record
+        // took over counts where it was.
         let kept = ctx.resolve_isec(i);
         if kept != i && !ctx.is_internal(ctx.isecs[kept].file as usize) {
             continue;
@@ -2785,11 +2786,11 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
     entries
 }
 
-/// Ranks every subsection by the -order_file lists: the subsection of
-/// the atom the first line names gets rank 0 and so on; unlisted
-/// subsections rank last. A line names the atoms a symbol of its name
-/// names (see mapfile::names_its_subsec), not a C string's label, say,
-/// and an atom takes the rank of the first line that names it. A
+/// Ranks every subsection by the -order_file lists: the subsection the
+/// first line names gets rank 0 and so on; unlisted subsections rank
+/// last. A line names the subsections a symbol of its name names (see
+/// mapfile::names_its_subsec), not a C string's label, say, and a
+/// subsection takes the rank of the first line that names it. A
 /// symbol of the object LTO compiled counts as the bitcode file's it
 /// came from, if that is known (see lto::origins), unless
 /// -no_use_lto_filenames_in_order_file_matching says to take the
@@ -2801,7 +2802,8 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
     }
     let entries = read_order_files(ctx);
     // A line naming an object and a symbol again is dropped, as
-    // ld-prime drops it: it finds no other atom, nor is it reported.
+    // ld-prime drops it: it finds no other subsection, nor is it
+    // reported.
     let mut rank_of: std::collections::HashMap<&str, Vec<(Option<&str>, u64)>> =
         std::collections::HashMap::new();
     let mut repeated = vec![false; entries.len()];
@@ -2821,7 +2823,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         hashbrown::HashMap::new()
     };
     let mut ranks = vec![u64::MAX; ctx.isecs.len()];
-    // The atoms each line names, as (symbol, object) by line.
+    // The subsections each line names, as (symbol, object) by line.
     let mut named: Vec<Vec<(crate::symbol::SymbolId, usize)>> = vec![Vec::new(); entries.len()];
     for id in 0..ctx.symbols.syms.len() as crate::symbol::SymbolId {
         let sym = &ctx.symbols[id];
@@ -2855,11 +2857,11 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
 }
 
 /// -order_file_statistics: reports, as ld-prime does, the symbols named
-/// more than once without an object (of which the atoms take the first
-/// line's place), once for each atom so named, then the symbols a line
-/// names without an object that more than one object defines, then the
-/// lines that name no atom another line didn't name first, and how many
-/// of the lines ordered an atom.
+/// more than once without an object (of which the subsections take the
+/// first line's place), once for each subsection so named, then the
+/// symbols a line names without an object that more than one object
+/// defines, then the lines that name no subsection another line didn't
+/// name first, and how many of the lines ordered a subsection.
 fn report_order_file_statistics<E: Target>(
     ctx: &Context<E>,
     entries: &[OrderEntry],
@@ -2872,8 +2874,8 @@ fn report_order_file_statistics<E: Target>(
         .filter(|e| e.file.is_none() && !once.insert(e.name.as_str()))
         .map(|e| e.name.as_str())
         .collect();
-    for atoms in named {
-        for &(sym, _) in atoms {
+    for syms in named {
+        for &(sym, _) in syms {
             let name = ctx.symbols[sym].name();
             if ambiguous.contains(name) {
                 crate::warn!(
@@ -2882,10 +2884,10 @@ fn report_order_file_statistics<E: Target>(
             }
         }
     }
-    for (entry, atoms) in entries.iter().zip(named) {
+    for (entry, syms) in entries.iter().zip(named) {
         if entry.file.is_none()
             && !ambiguous.contains(entry.name.as_str())
-            && atoms.iter().any(|&(_, obj)| obj != atoms[0].1)
+            && syms.iter().any(|&(_, obj)| obj != syms[0].1)
         {
             crate::warn!(
                 "{} specified in order_file but it exists in multiple .o files. Prefix symbol with .o filename in order_file to disambiguate",

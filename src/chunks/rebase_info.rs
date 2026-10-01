@@ -35,11 +35,11 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 /// Every pointer a loader must slide when the image lands at another
-/// address than its own, with the start of the atom that holds it: the
-/// pointers written for absolute relocations to local targets, then the
-/// synthesized ones (each its own atom). Unsorted. The rebase stream
-/// describes them to dyld, a -static -pie image's local relocations to
-/// whatever loads it.
+/// address than its own, with the start of the subsection that holds
+/// it: the pointers written for absolute relocations to local targets,
+/// then the synthesized ones (each a subsection of its own). Unsorted.
+/// The rebase stream describes them to dyld, a -static -pie image's
+/// local relocations to whatever loads it.
 pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     let mut locs: Vec<(u64, u64)> = Vec::new();
 

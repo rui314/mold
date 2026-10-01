@@ -70,8 +70,8 @@ pub struct LazyHelpersSection {
     pub sites: hashbrown::HashMap<(u32, u32), u32>,
     /// __dyld_lazy_load, which the helpers call through its stub.
     pub dyld_lazy_load: Option<SymbolId>,
-    /// The empty atom ld-prime keeps __dyld_lazy_load alive from, a
-    /// subsection (see passes::add_keep_alive_subsec), or u32::MAX.
+    /// The empty subsection ld-prime keeps __dyld_lazy_load alive from
+    /// (see passes::add_keep_alive_subsec), or u32::MAX.
     pub keep_alive: u32,
 }
 

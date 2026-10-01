@@ -42,7 +42,7 @@ impl Default for InitOffsetsSection {
 }
 
 /// Writes the offsets. One of an initializer dyld binds is a fixup
-/// error, as in ld-prime, which makes the offsets the atoms of its
+/// error, as in ld-prime, which makes each offset a subsection of its
 /// "inits-file", the k-th initializer's anon-(2k+1), and fails the link
 /// at the first.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -52,8 +52,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             InitFunc::Absolute(value) => value,
             InitFunc::Imported(id) => {
                 let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
-                let (atom, fileoff) = (2 * i + 1, ctx.init_offsets.hdr.fileoff + i as u64 * 4);
-                ctx.synthetic_fixup_error("inits-file", atom, fileoff, 0, "imageOffset32", msg);
+                let (ordinal, fileoff) = (2 * i + 1, ctx.init_offsets.hdr.fileoff + i as u64 * 4);
+                ctx.synthetic_fixup_error("inits-file", ordinal, fileoff, 0, "imageOffset32", msg);
                 return;
             }
         };

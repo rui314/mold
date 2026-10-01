@@ -83,7 +83,7 @@ pub type ChainedFixups = (
 );
 
 /// A fixup: its address, the symbol it binds (None for a rebase), the
-/// addend, and the start of the atom holding it.
+/// addend, and the start of the subsection holding it.
 type Fixup = (u64, Option<SymbolId>, u64, u64);
 
 /// The import-table addend of a bind: addends up to 255 are carried
@@ -94,8 +94,8 @@ fn table_addend(addend: u64) -> u64 {
 
 /// The import table, in ld-prime's order: an entry per distinct
 /// (symbol, table addend), numbered as it is first met walking the
-/// binds atom by atom in address order and, within an atom, from the
-/// highest offset down. A GOT slot is an atom of its own.
+/// binds subsection by subsection in address order and, within one,
+/// from the highest offset down. A GOT slot is a subsection of its own.
 fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
     let mut binds: Vec<&Fixup> = fixups.iter().filter(|f| f.1.is_some()).collect();
     binds.sort_by(|a, b| a.3.cmp(&b.3).then(b.0.cmp(&a.0)));
@@ -136,14 +136,14 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     // header and a starts table with no pages), as ld64 writes it:
     // dyld reads the format from the load command, and its absence
     // would mean classic dyld info.
-    let (with_atoms, suspects) = collect_fixups(ctx);
-    let unaligned = with_atoms.iter().any(|&(addr, ..)| !addr.is_multiple_of(8));
+    let (with_subsecs, suspects) = collect_fixups(ctx);
+    let unaligned = with_subsecs.iter().any(|&(addr, ..)| !addr.is_multiple_of(8));
     if !check_pointer_alignment(ctx, suspects, true, unaligned) {
         return None;
     }
-    let (dynsyms, ordinals) = import_table(&with_atoms);
+    let (dynsyms, ordinals) = import_table(&with_subsecs);
     let fixups: Vec<(u64, Option<SymbolId>, u64)> =
-        with_atoms.into_iter().map(|(addr, sym, addend, _)| (addr, sym, addend)).collect();
+        with_subsecs.into_iter().map(|(addr, sym, addend, _)| (addr, sym, addend)).collect();
 
     let max_addend = dynsyms.iter().map(|&(_, a)| a).max().unwrap_or(0);
     let import_format = if max_addend == 0 {
@@ -526,13 +526,13 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 }
 
 /// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
-/// chain's links are words: it warns of every atom aligned less than a
-/// pointer that holds one as it reads the objects (see
+/// chain's links are words: it warns of every subsection aligned less
+/// than a pointer that holds one as it reads the objects (see
 /// small_pointer_subsecs), then, once relocations are applied,
 /// reports the unaligned pointers where the image has classic dyld info
 /// (as -unaligned_pointers says). With chained fixups, arm64 fails the link
 /// at an unaligned pointer of a chain: of the last section that has
-/// one, the first atom's (in address order), from its last pointer
+/// one, the first subsection's (in address order), from its last pointer
 /// (the order of an assembler's relocations) - ld-prime checks the
 /// sections in parallel and keeps the last one's error, but stops a
 /// section at its first. x86-64 gives chains up for classic dyld info
@@ -553,8 +553,8 @@ fn check_pointer_alignment<E: Target>(
     if (quiet && (!chained || ctx.args.without_dyld())) || suspects.is_empty() && !unaligned {
         return true;
     }
-    let atom_addr = |id: u32| ctx.isec_addr(id as usize);
-    suspects.sort_unstable_by_key(|&(id, addr)| (atom_addr(id), id, addr));
+    let subsec_addr = |id: u32| ctx.isec_addr(id as usize);
+    suspects.sort_unstable_by_key(|&(id, addr)| (subsec_addr(id), id, addr));
     suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
     if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
         // A pointer in a read-only segment is a text relocation, which
@@ -583,17 +583,16 @@ fn check_pointer_alignment<E: Target>(
     !chained
 }
 
-/// The atoms of object `obj` aligned less than a pointer that hold one,
-/// which ld-prime warns of as it reads an object - every object it
-/// reads, archive members the link doesn't use included, but none it
-/// fails to read - unless -unaligned_pointers keeps it quiet (see
-/// Args::unaligned_pointers). It knows nothing yet of the symbols the
-/// pointers point to but those the object defines: a pointer is any
+/// The subsections of object `obj` aligned less than a pointer that
+/// hold one, which ld-prime warns of as it reads an object - every
+/// object it reads, archive members the link doesn't use included, but
+/// none it fails to read - unless -unaligned_pointers keeps it quiet
+/// (see Args::unaligned_pointers). It knows nothing yet of the symbols
+/// the pointers point to but those the object defines: a pointer is any
 /// 8-byte absolute relocation, but one to an absolute symbol of the
-/// object. ld-prime makes no atoms of the DWARF, of __LLVM, of
-/// __compact_unwind or of __eh_frame. The atoms come in section order,
-/// by address within a section, as the object's subsections are
-/// numbered.
+/// object. ld-prime makes no subsections of the DWARF, of __LLVM, of
+/// __compact_unwind or of __eh_frame. They come in section order, by
+/// address within a section, as the object's subsections are numbered.
 pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> {
     if ctx.args.unaligned_pointers == Treatment::Suppress {
         return Vec::new();
@@ -608,7 +607,7 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
             && !matches!(rel.target(), crate::input_sections::RelocTarget::Sym(idx)
                 if file.nlists.get(idx as usize).is_some_and(|n| n.n_type() == N_ABS))
     };
-    let mut atoms: Vec<u32> = file
+    let mut subsecs: Vec<u32> = file
         .subsecs
         .iter()
         .copied()
@@ -621,16 +620,16 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
                 && ctx.isec_relocs(id as usize).iter().any(is_pointer)
         })
         .collect();
-    atoms.sort_unstable();
-    atoms
+    subsecs.sort_unstable();
+    subsecs
 }
 
-/// Warns of an atom small_pointer_subsecs found.
+/// Warns of a subsection small_pointer_subsecs found.
 pub fn warn_small_pointer_subsec<E: Target>(ctx: &Context<E>, id: u32) {
     crate::warn!(
         "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
         1 << ctx.isecs[id].p2align,
-        atom_location(ctx, id, None)
+        subsec_location(ctx, id, None)
     );
 }
 
@@ -688,7 +687,7 @@ pub fn report_unaligned_chain_pointer<E: Target>(ctx: &Context<E>) -> bool {
     let Some(&(id, addr)) = ctx.chained_fixups.unaligned.lock().unwrap().first() else {
         return false;
     };
-    crate::error!("pointer not aligned in {}", atom_location(ctx, id, Some(addr)));
+    crate::error!("pointer not aligned in {}", subsec_location(ctx, id, Some(addr)));
     true
 }
 
@@ -706,7 +705,7 @@ pub fn report_unaligned_pointers<E: Target>(ctx: &Context<E>) {
         if offset_in_segment(ctx, addr).is_multiple_of(8) {
             continue;
         }
-        let place = atom_location(ctx, id, Some(addr));
+        let place = subsec_location(ctx, id, Some(addr));
         if ctx.args.unaligned_pointers == Treatment::Error {
             crate::error!("pointer not aligned in {place}");
             return;
@@ -724,11 +723,11 @@ fn offset_in_segment<E: Target>(ctx: &Context<E>, addr: u64) -> u64 {
     addr - seg.map_or(0, |seg| seg.cmd.vmaddr)
 }
 
-/// A place in an atom as ld-prime names it in a diagnostic: 'name' of
-/// the atom, +0xoffset of `addr` in it (if not its start), and its
-/// file's real path in parentheses. An atom is named by a symbol at its
-/// start, an exported one first.
-fn atom_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
+/// A place in a subsection as ld-prime names it in a diagnostic: 'name'
+/// of the subsection, +0xoffset of `addr` in it (if not its start), and
+/// its file's real path in parentheses. A subsection is named by a
+/// symbol at its start, an exported one first.
+fn subsec_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
     let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
     ctx.subsec_ref(isec as usize, off as u32)
 }

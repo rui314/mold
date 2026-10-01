@@ -168,7 +168,7 @@ pub enum ChunkId {
     ExternRelocs,
     FunctionStarts,
     DataInCode,
-    /// LC_ATOM_INFO's record of a -make_mergeable dylib's atoms.
+    /// The mergeable record (LC_ATOM_INFO) of a -make_mergeable dylib.
     MergeableRecord,
     SplitInfo,
     LazyLoadInfo,

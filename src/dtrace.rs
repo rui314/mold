@@ -82,7 +82,7 @@ fn provider_of(name: &str) -> &str {
 
 /// A provider's DOF section, as the link makes it: the subsection with
 /// the DOF, which refers to each site's subsection (in site order), and
-/// the name ld-prime gives that atom in -map and -why_live.
+/// the name ld-prime gives that subsection in -map and -why_live.
 #[derive(Debug)]
 pub struct DofSection {
     pub isec: u32,
@@ -103,8 +103,8 @@ pub fn site_kind<E: Target>(ctx: &Context<E>, isec: usize, sym: SymbolId) -> Opt
     site_kind_of(sym.name())
 }
 
-/// ld-prime looks for probe sites in the atoms whose content is code,
-/// those of a section of only instructions.
+/// ld-prime looks for probe sites in the subsections whose content is
+/// code, those of a section of only instructions.
 fn is_code<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
     ctx.hdr_of(&ctx.isecs[isec]).flags & S_ATTR_PURE_INSTRUCTIONS != 0
 }
@@ -239,8 +239,8 @@ fn sites_by_provider<'a, E: Target>(
     providers
 }
 
-/// The name of each site's subsection's atom, by subsection, which a
-/// site goes by as the function it is in: its label (see
+/// The name of each site's subsection, by subsection, which a site
+/// goes by as the function it is in: its label (see
 /// Context::subsec_label), or "" if it has none. Each object's symbols
 /// are looked through once.
 fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static str> {
@@ -370,8 +370,8 @@ pub struct Dof {
 /// Makes a provider's DOF from its symbols as ld-prime has libdtrace
 /// make it: `type_names` are the provider's other symbols, sorted and
 /// without duplicates, and `probe_names` and `functions` the symbol and
-/// the name of the atom of each site, in the order of the site's slots.
-/// Fails with the text libdtrace prints.
+/// the name of the subsection of each site, in the order of the site's
+/// slots. Fails with the text libdtrace prints.
 pub fn build_dof(
     type_names: &[&str],
     probe_names: &[&str],
@@ -787,8 +787,8 @@ struct Instance {
 
 /// Registers each site with its probe as libdtrace does: under the
 /// probe's hyphenated name, in the instance of its function - the name
-/// of its atom with one leading underscore less - put first among the
-/// probe's when it is new. libdtrace keeps a function name in 128
+/// of its subsection with one leading underscore less - put first among
+/// the probe's when it is new. libdtrace keeps a function name in 128
 /// bytes and compares it with the full name, so the sites of a function
 /// with a longer one get an instance each. A test of a probe that has
 /// no site is an error. Returns the probes in the DOF's order, by name.

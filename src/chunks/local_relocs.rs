@@ -29,12 +29,12 @@ impl Default for LocalRelocsSection {
     }
 }
 
-/// Lists the pointers as ld-prime does: atom by atom in address order,
-/// each atom's from the last to the first, the order an assembler
-/// emits relocations in.
+/// Lists the pointers as ld-prime does: subsection by subsection in
+/// address order, each one's from the last to the first, the order an
+/// assembler emits relocations in.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
-    locs.sort_unstable_by_key(|&(atom, addr)| (atom, std::cmp::Reverse(addr)));
+    locs.sort_unstable_by_key(|&(start, addr)| (start, std::cmp::Reverse(addr)));
     check_fixup_range(ctx, &locs);
     locs.into_iter().map(|(_, addr)| addr).collect()
 }
@@ -54,16 +54,16 @@ fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
     } else {
         relocation_base(ctx)
     };
-    let Some(&(atom, addr)) =
+    let Some(&(start, addr)) =
         locs.iter().find(|&&(_, addr)| i32::try_from(addr.wrapping_sub(base) as i64).is_err())
     else {
         return;
     };
-    let (name, file) = subsec_name(ctx, atom);
-    crate::error!("atom address cannot fit in a fixup at '{name}' ({file})+{}", addr - atom);
+    let (name, file) = subsec_name(ctx, start);
+    crate::error!("atom address cannot fit in a fixup at '{name}' ({file})+{}", addr - start);
 }
 
-/// The name of the atom starting at `addr`, and its file, for a
+/// The name of the subsection starting at `addr`, and its file, for a
 /// diagnostic.
 fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
     for (id, isec) in ctx.isecs.iter().enumerate() {

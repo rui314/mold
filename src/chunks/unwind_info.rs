@@ -120,7 +120,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
 
     // ld-prime orders the entries of one address by encoding: an empty
-    // atom's of encoding 0 comes before the function sharing its
+    // subsection's of encoding 0 comes before the function sharing its
     // address, and of two records for a function (or one at a
     // section's end and the next section's first), the greater
     // encoding, which the unwinder finds, comes last.
@@ -366,11 +366,11 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 /// Whether the image has __unwind_info: ld-prime writes it for any
 /// unwind info, an FDE of a function that gets no entry of its own
 /// (not being code) or a CIE no FDE points at too, listing each code
-/// atom then.
+/// subsection then.
 pub fn is_needed<E: Target>(ctx: &Context<E>) -> bool {
     let has_eh_frame = || !ctx.fdes.is_empty() || ctx.cies.iter().any(|c| ctx.keeps_lone_cie(c));
     !ctx.unwind_records.is_empty()
-        || (has_eh_frame() && ctx.isecs.par_iter().any(|isec| is_code_atom(ctx, isec)))
+        || (has_eh_frame() && ctx.isecs.par_iter().any(|isec| is_code_subsec(ctx, isec)))
 }
 
 /// Whether __unwind_info covers addresses outside __TEXT, its own
@@ -416,19 +416,20 @@ pub(crate) fn function_lsda<E: Target>(
 }
 
 /// Records for the code that has no unwind information: ld-prime gives
-/// every atom of a code section - an output section of pure
+/// every subsection of a code section - an output section of pure
 /// instructions, not one the assembler marked as holding some - an
 /// entry, encoding 0 ("none") for one without a record of its own, so
 /// that it does not fall under the unwind rules of the function before
-/// it - an empty atom too, such as the empty __text of an object with
-/// only data.
+/// it - an empty subsection too, such as the empty __text of an object
+/// with only data.
 ///
-/// A record anywhere in an atom is the atom's: its start then gets no
-/// entry, and the code ahead of the record falls under the entry
-/// before. An alternate entry point starts an atom of its own here, so
-/// a record at one is not the subsection's. Without
-/// MH_SUBSECTIONS_VIA_SYMBOLS a section is one subsection, but ld-prime
-/// still cuts it into atoms at its labels (see unsplit_bare_atoms).
+/// A record anywhere in a subsection is the subsection's: its start
+/// then gets no entry, and the code ahead of the record falls under the
+/// entry before. To ld-prime an alternate entry point starts a
+/// subsection of its own, so a record at one is not that of mold's
+/// subsection holding it. Without MH_SUBSECTIONS_VIA_SYMBOLS a section
+/// is one subsection, but ld-prime still splits it at its labels (see
+/// unsplit_bare_subsecs).
 fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<UnwindRecord> {
     use crate::input_files::UNWIND_NONE;
     use std::collections::HashMap;
@@ -449,11 +450,11 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
     ctx.isecs
         .par_iter()
         .enumerate()
-        .filter(|&(_, isec)| is_code_atom(ctx, isec))
+        .filter(|&(_, isec)| is_code_subsec(ctx, isec))
         .flat_map_iter(|(i, isec)| {
             let i = i as u32;
             let obj = &ctx.objs[isec.file as usize];
-            let atoms = if obj.subsections_via_symbols {
+            let pieces = if obj.subsections_via_symbols {
                 let bare = match first.get(&i) {
                     None => true,
                     Some(0) => false,
@@ -461,9 +462,9 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
                 };
                 if bare { vec![(0, isec.size)] } else { Vec::new() }
             } else {
-                unsplit_bare_atoms(obj, isec, unsplit.get(&i).map_or(&[], Vec::as_slice))
+                unsplit_bare_subsecs(obj, isec, unsplit.get(&i).map_or(&[], Vec::as_slice))
             };
-            atoms.into_iter().map(move |(off, size)| UnwindRecord {
+            pieces.into_iter().map(move |(off, size)| UnwindRecord {
                 isec: i,
                 input_offset: off,
                 code_len: size,
@@ -496,20 +497,20 @@ fn first_alt_entry(obj: &crate::input_files::ObjectFile, isec: &InputSection) ->
         .unwrap_or(u32::MAX)
 }
 
-/// The atoms, as (offset, size), that have none of the records of
-/// `records` (offset, length) in a section of an object without
-/// MH_SUBSECTIONS_VIA_SYMBOLS. ld-prime cuts such a section into atoms
-/// at each label past its start, an alternate entry point's too, as if
-/// symbols split it: the labels at its start name its first atom, and
-/// of several labels at one place, all but the last name empty atoms
-/// (all do at its end).
+/// The subsections ld-prime makes of a section of an object without
+/// MH_SUBSECTIONS_VIA_SYMBOLS, as (offset, size), that have none of the
+/// records of `records` (offset, length). ld-prime splits such a
+/// section at each label past its start, an alternate entry point's
+/// too, as if symbols split it: the labels at its start name its first
+/// subsection, and of several labels at one place, all but the last
+/// name empty subsections (all do at its end).
 ///
 /// ld-prime goes by the labels alone, so a label inside a function,
 /// within the length of the function's record, gets encoding 0 too,
 /// and the code past it can't be unwound. Such a label gets no entry
 /// here, leaving the record the whole of its code (a section that
 /// can't be split is one function there).
-fn unsplit_bare_atoms(
+fn unsplit_bare_subsecs(
     obj: &crate::input_files::ObjectFile,
     isec: &InputSection,
     records: &[(u32, u32)],
@@ -539,8 +540,8 @@ fn unsplit_bare_atoms(
         })
         .collect();
 
-    // An atom has the records from its start to the next label; the
-    // last one, those at the section's end too.
+    // A subsection has the records from its start to the next label;
+    // the last one, those at the section's end too.
     (0..=labels.len())
         .filter_map(|k| {
             let start = if k == 0 { 0 } else { labels[k - 1] };
@@ -553,11 +554,11 @@ fn unsplit_bare_atoms(
         .collect()
 }
 
-/// Whether an atom is one of a code section, which ld-prime gives an
-/// entry whatever its unwind info (see bare_code_records): an input's,
-/// a -sectcreate option's, or the empty one it keeps __dyld_lazy_load
-/// alive from.
-fn is_code_atom<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
+/// Whether a subsection is one of a code section, which ld-prime gives
+/// an entry whatever its unwind info (see bare_code_records): an
+/// input's, a -sectcreate option's, or the empty one it keeps
+/// __dyld_lazy_load alive from.
+fn is_code_subsec<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
     let is_own = |id: u32| ctx.isecs.get(id as usize).is_some_and(|k| std::ptr::eq(k, isec));
     let is_sectcreate = || {
         (ctx.sectcreate_inputs.iter())

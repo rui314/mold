@@ -306,7 +306,7 @@ fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
 }
 
 /// Looks for a dylib to merge (-merge-l): a dylib itself, which may
-/// carry its atoms, never a stub.
+/// carry its mergeable record, never a stub.
 fn find_mergeable_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     search_library(ctx, name, &[&[LibFile::DylibItself, LibFile::So]])
 }
@@ -764,32 +764,32 @@ fn refuse_file(mf: &MappedFile) {
     }
 }
 
-/// Merges a mergeable dylib into the image: its atoms (LC_ATOM_INFO),
-/// read back into the object file they stand for, link as that object
-/// would (see mergeable::synthesize_object), and the dylibs it links
-/// stand by their recorded identities (see add_merged_dependencies).
-/// The image gets the hook for the classes of mergeable libraries for
-/// the classes it defines (see bundle_hook).
+/// Merges a mergeable dylib into the image: the entries of its record
+/// (LC_ATOM_INFO), read back into the object file they stand for, link
+/// as that object would (see mergeable::synthesize_object), and the
+/// dylibs it links stand by their recorded identities (see
+/// add_merged_dependencies). The image gets the hook for the classes of
+/// mergeable libraries for the classes it defines (see bundle_hook).
 fn merge_dylib<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
     out: &mut Vec<PendingObject>,
 ) {
-    let af = match crate::mergeable::MergeableRecord::read(mf) {
-        Ok(af) => af,
+    let record = match crate::mergeable::MergeableRecord::read(mf) {
+        Ok(record) => record,
         Err(e) => return error!("{e} in '{}'", mf.name.display()),
     };
-    let obj = crate::mergeable::synthesize_object::<E>(&af, &mf.name);
+    let obj = crate::mergeable::synthesize_object::<E>(&record, &mf.name);
     let synth = MappedFile::synthesized(mf.name.clone(), obj);
-    if af.defines_classes() {
-        crate::bundle_hook::note_merged_library(ctx, &af.own.install_name, synth);
+    if record.defines_classes() {
+        crate::bundle_hook::note_merged_library(ctx, &record.own.install_name, synth);
     }
     let priority = ctx.next_priority();
     out.push(PendingObject { mf: synth, alive: true, hidden: false, priority });
-    let deps = af.dependencies(&mf.name);
+    let deps = record.dependencies(&mf.name);
     ctx.merged_imports.extend(deps.iter().flat_map(|d| d.exports.iter().copied()));
     ctx.merged_dependencies.extend(deps);
-    ctx.merged_libraries.push(af.own.install_name);
+    ctx.merged_libraries.push(record.own.install_name);
 }
 
 /// Loads the dylibs the merged mergeable dylibs link, after the command
@@ -931,19 +931,19 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     warn_about_objects(ctx, first, checks);
 }
 
-/// What ld-prime says of each object it has read, once it has its
-/// atoms, those of `ctx.objs` from `first` on, by what `checks` says of
-/// each: whether it read the object whole and the link loads it from
-/// the start, and its unwind info. It warns of the atoms of one it read
-/// whole (see small_pointer_subsecs), then of its unwind info, then of the
-/// auto-link options of one the link loads from the start (see
-/// warn_linker_options).
+/// What ld-prime says of each object it has read - those of `ctx.objs`
+/// from `first` on - once it has split it into subsections, by what
+/// `checks` says of each: whether it read the object whole and the link
+/// loads it from the start, and its unwind info. It warns of the
+/// subsections of one it read whole (see small_pointer_subsecs), then of
+/// its unwind info, then of the auto-link options of one the link loads
+/// from the start (see warn_linker_options).
 fn warn_about_objects<E: Target>(
     ctx: &Context<E>,
     first: usize,
     checks: Vec<(bool, bool, input_files::UnwindCheck)>,
 ) {
-    let small_atoms: Vec<Vec<u32>> = checks
+    let small_subsecs: Vec<Vec<u32>> = checks
         .par_iter()
         .enumerate()
         .map(|(i, &(read, ..))| match read {
@@ -951,8 +951,8 @@ fn warn_about_objects<E: Target>(
             false => Vec::new(),
         })
         .collect();
-    for (i, ((read, alive, unwind), atoms)) in checks.into_iter().zip(small_atoms).enumerate() {
-        for id in atoms {
+    for (i, ((read, alive, unwind), subsecs)) in checks.into_iter().zip(small_subsecs).enumerate() {
+        for id in subsecs {
             chunks::chained_fixups::warn_small_pointer_subsec(ctx, id);
         }
         unwind.report();
@@ -2175,10 +2175,10 @@ fn definition_rank(
 /// lower first: a copy that can't be auto-hidden before one that can
 /// (.weak_def_can_be_hidden, a global's N_WEAK_DEF | N_WEAK_REF), then
 /// a global before a private extern (unless both can be hidden), then
-/// the more aligned. An atom's alignment is its section's with the
-/// atom's address as the modulus, so a copy at 8 mod 16 is 8-aligned:
-/// a Swift metadata record comes at 16 from one object and at 8 from
-/// another, and the first copy wins only if equally aligned.
+/// the more aligned. A subsection's alignment is its section's with
+/// the subsection's address as the modulus, so a copy at 8 mod 16 is
+/// 8-aligned: a Swift metadata record comes at 16 from one object and
+/// at 8 from another, and the first copy wins only if equally aligned.
 fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64 {
     let private = nlist.n_type & N_PEXT != 0 || hidden;
     let auto_hide = !private && nlist.n_desc & N_WEAK_REF != 0;
@@ -2613,8 +2613,8 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     }
 
     // A bitcode definition a native object has one of too survives, as
-    // ld64 keeps the LLVM atoms it coalesced away in favor of Mach-O
-    // ones: left to libLTO, a weak one would be inlined into the
+    // ld64 keeps the LLVM definitions it coalesced away in favor of
+    // Mach-O ones: left to libLTO, a weak one would be inlined into the
     // module's callers in place of the strong native definition that
     // wins, and a strong one would vanish rather than be reported as a
     // duplicate (ld-prime lists it in the compiled object).
@@ -3271,8 +3271,8 @@ pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
 
 /// -remove_swift_reflection_metadata_sections: drops the Swift
 /// reflection metadata from a final image and a -r output alike, as
-/// ld-prime drops its atoms as it reads them, before anything can keep
-/// them alive. What still refers to them is an error (see
+/// ld-prime drops its subsections as it reads them, before anything can
+/// keep them alive. What still refers to them is an error (see
 /// check_removed_swift_metadata_refs).
 pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.remove_swift_reflection_metadata_sections {
@@ -3386,8 +3386,8 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
 /// Marks the literal records a symbol names, other than a temporary
 /// (L-prefixed, which the arm64 assembler keeps for relocations to
 /// name) or linker-private (l-prefixed, the assembler's ltmpN labels
-/// included) one: ld-prime keeps each such record an atom of its own,
-/// merged with no identical copy, and a -r output keeps its label
+/// included) one: ld-prime keeps each such record a subsection of its
+/// own, merged with no identical copy, and a -r output keeps its label
 /// rather than naming it LC<n>/l<nnn>. So it keeps an __objc_superrefs
 /// or __objc_protorefs entry any symbol names, even the ltmpN label of
 /// its section's start (see coalesce_objc_refs), unless the section
@@ -3422,8 +3422,8 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
 /// a "Foo" too.
 ///
 /// A C string keeps its input offset modulo its section's alignment,
-/// as any atom does (see InputSection::align_offset), and like ld64
-/// ld-prime keeps the copy that alignment favors most (see
+/// as any subsection does (see InputSection::align_offset), and like
+/// ld64 ld-prime keeps the copy that alignment favors most (see
 /// InputSection::p2align_at): Swift pads the strings of its 16-aligned
 /// __objc_methname so that many start at a multiple of 16, and a copy
 /// from Swift then wins over clang's, which has no alignment.
@@ -3524,10 +3524,10 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
 ///
 /// __TEXT,__ustring, which holds the UTF-16 strings of CFString
 /// constants (and C's u"" literals), is a regular section that ld-prime
-/// cuts at its symbols, like ld64, but merges each atom with identical
-/// ones whatever labels it: every object that spells @"é" has its own
-/// copy, and so its own CFString, which merges only once the strings
-/// have (iTerm2's debug dylib had 67 CFStrings too many).
+/// cuts at its symbols, like ld64, but merges each subsection with
+/// identical ones whatever labels it: every object that spells @"é" has
+/// its own copy, and so its own CFString, which merges only once the
+/// strings have (iTerm2's debug dylib had 67 CFStrings too many).
 fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
     if isec.nrels != 0 {
         return false;
@@ -4028,9 +4028,9 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         for &(_, isec) in group {
             let file = resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf);
             let leaf = file.rsplit('/').next().unwrap_or(&file);
-            let atom = ctx.subsec_name(isec);
-            let atom = crate::util::demangle::display_name(&atom);
-            msg += &format!("      {atom} in {leaf}\n");
+            let subsec = ctx.subsec_name(isec);
+            let subsec = crate::util::demangle::display_name(&subsec);
+            msg += &format!("      {subsec} in {leaf}\n");
         }
     }
     error!("{msg}");
@@ -5398,7 +5398,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     if !ctx.dylibs.iter().any(|d| d.is_lazy) {
         return;
     }
-    // (The keep-alive atom's reference, as ld-prime names it.)
+    // (The keep-alive subsection's reference, as ld-prime names it.)
     if let Some(id) = ctx.symbols.get("__dyld_lazy_load")
         && ctx.is_lazy_import(id)
     {
@@ -5423,9 +5423,9 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// ld-prime keeps __dyld_lazy_load alive, in any link that names a
-/// lazy dylib, by a reference from an empty atom it appends to __text:
-/// it has an entry of its own in __unwind_info (encoding 0), and in
-/// -map. Returns its subsection.
+/// lazy dylib, by a reference from an empty subsection it appends to
+/// __text: it has an entry of its own in __unwind_info (encoding 0),
+/// and in -map. Returns the subsection.
 fn add_keep_alive_subsec<E: Target>(ctx: &mut Context<E>) -> u32 {
     let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
@@ -5484,12 +5484,12 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             let sym = &ctx.symbols[id];
             let sec = &ctx.isecs[isec as usize];
             let split = ctx.objs[sec.file as usize].subsections_via_symbols;
-            let atom = if input_files::is_record_list(ctx.hdr_of(sec), split) {
+            let subsec = if input_files::is_record_list(ctx.hdr_of(sec), split) {
                 "anon".into()
             } else {
                 ctx.subsec_name(isec as usize)
             };
-            errors.push(format!("{kind} use of '{sym}' in '{atom}' cannot be lazy loaded."));
+            errors.push(format!("{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded."));
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
@@ -6020,14 +6020,15 @@ pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
 /// The symbols of an object, by index, that name an entry of an
 /// Objective-C list ld-prime names no symbol for (see
 /// is_unnamed_objc_list) and survive all the same. ld-prime takes one
-/// of an entry's symbols for the name of its atom, which is lost, and
-/// keeps the others as aliases: an external one (a global or a private
-/// external, both demoted by then, see demote_unnamed_subsec_names) is
-/// the name, else the greatest name; the arm64
-/// assembler's ltmpN labels don't count. So an entry one label names
-/// has no symbol in the output (clang's l_OBJC_LABEL_CLASS_$, Swift's
-/// _objc_classes_...), but where a private external names it too, the
-/// label stays and the private external goes.
+/// of an entry's symbols for the name of its subsection, which is lost,
+/// and keeps the others as aliases: an external one (a global or a
+/// private external, both demoted by then, see
+/// demote_unnamed_subsec_names) is the name, else the greatest name;
+/// the arm64 assembler's ltmpN labels don't count. So an entry one
+/// label names has no symbol in the output (clang's
+/// l_OBJC_LABEL_CLASS_$, Swift's _objc_classes_...), but where a
+/// private external names it too, the label stays and the private
+/// external goes.
 pub(crate) fn objc_list_aliases<E: Target>(
     ctx: &Context<E>,
     obj: &crate::input_files::ObjectFile,
@@ -6063,18 +6064,19 @@ pub(crate) fn objc_list_aliases<E: Target>(
     aliases
 }
 
-/// Whether ld-prime makes a section's atoms by content and names none
-/// of them: CFStrings, selector and class references, UTF-16 literals
-/// and Objective-C constant literals (@42, @[...], @{...}). No label
-/// of theirs is in an output's symbol table; a -r output names the
-/// atoms itself on arm64 (see relocatable.rs). Selector references
-/// are so only of the literal-pointer type the compilers give them: a
-/// regular or coalesced __objc_selrefs is data, whose labels stay and
-/// whose references don't merge. Superclass and protocol references
-/// of the literal-pointer type are taken for class references too,
-/// which merge whatever labels them (see is_class_or_protocol_ref). In
-/// an object without subsections (`split` false) the UTF-16 literals'
-/// section is one atom, whose labels ld-prime keeps as any other's.
+/// Whether ld-prime splits a section into subsections by content and
+/// names none of them: CFStrings, selector and class references,
+/// UTF-16 literals and Objective-C constant literals (@42, @[...],
+/// @{...}). No label of theirs is in an output's symbol table; a -r
+/// output names the subsections itself on arm64 (see relocatable.rs).
+/// Selector references are so only of the literal-pointer type the
+/// compilers give them: a regular or coalesced __objc_selrefs is data,
+/// whose labels stay and whose references don't merge. Superclass and
+/// protocol references of the literal-pointer type are taken for class
+/// references too, which merge whatever labels them (see
+/// is_class_or_protocol_ref). In an object without subsections (`split`
+/// false) the UTF-16 literals' section is one subsection, whose labels
+/// ld-prime keeps as any other's.
 pub(crate) fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
     if hdr.segname_is("__TEXT") {
         return split && hdr.sectname_is("__ustring");
@@ -6222,10 +6224,10 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
 
 /// Fails the link on the text relocations applying relocations found,
 /// listing them as ld-prime does: output section by output section,
-/// each atom's from the last to the first (the order an assembler emits
-/// relocations in). Where it encodes rebase opcodes, it lists each
-/// atom's in address order, and those of the first section only. An
-/// unaligned pointer in a chain fails the link then instead.
+/// each subsection's from the last to the first (the order an assembler
+/// emits relocations in). Where it encodes rebase opcodes, it lists
+/// each subsection's in address order, and those of the first section
+/// only. An unaligned pointer in a chain fails the link then instead.
 fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
     let rebase_opcodes = !ctx.use_chained_fixups() && ctx.chunks.contains(&ChunkId::RebaseInfo);
@@ -6269,8 +6271,8 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
 /// builds the chains, section by section as it does unaligned pointers
 /// (see chunks::chained_fixups::check_pointer_alignment), and the error
 /// takes the place of the text relocations': it reports the last
-/// section's, the first atom's, from its last pointer. Otherwise only an
-/// image without text relocations gets it, of the first pointer.
+/// section's, the first subsection's, from its last pointer. Otherwise
+/// only an image without text relocations gets it, of the first pointer.
 /// Returns whether it failed the link.
 fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool {
     let found = std::mem::take(&mut *ctx.pointers32.lock().unwrap());

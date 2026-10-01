@@ -37,30 +37,31 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
-/// Lists the start of every atom of the image's code, as ld-prime does:
-/// each non-empty subsection of an output section of pure instructions
-/// (__text with the __StaticInit static initializers merged into it,
-/// or any other), each symbol inside one - a local, an alt entry or an
-/// l-prefixed label too, but not a label at its end - and each thunk
-/// entry, ld-prime's branch islands. The stubs of every kind, sections
-/// of their own, are left out.
+/// Lists, as ld-prime does, the start of each piece it splits the
+/// image's code into: each non-empty subsection of an output section
+/// of pure instructions (__text with the __StaticInit static
+/// initializers merged into it, or any other), each symbol inside one -
+/// a local, an alt entry or an l-prefixed label too, but not a label at
+/// its end - and each thunk entry, ld-prime's branch islands. The stubs
+/// of every kind, sections of their own, are left out.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.function_starts {
         return Vec::new();
     }
     let is_code = |hdr: &ChunkHeader| hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0;
-    let atoms = ctx.output_sections.par_iter().filter(|osec| is_code(&osec.hdr)).flat_map(|osec| {
-        let base = osec.hdr.addr;
-        let isecs = osec.members.par_iter().filter_map(move |&id| {
-            let isec = &ctx.isecs[id as usize];
-            (isec.size != 0 && isec.is_alive() && isec.replacement == NO_REPLACEMENT)
-                .then_some(base + isec.offset as u64)
+    let starts =
+        ctx.output_sections.par_iter().filter(|osec| is_code(&osec.hdr)).flat_map(|osec| {
+            let base = osec.hdr.addr;
+            let isecs = osec.members.par_iter().filter_map(move |&id| {
+                let isec = &ctx.isecs[id as usize];
+                (isec.size != 0 && isec.is_alive() && isec.replacement == NO_REPLACEMENT)
+                    .then_some(base + isec.offset as u64)
+            });
+            let thunks = osec.thunks.par_iter().flat_map_iter(move |thunk| {
+                (0..thunk.syms.len() as u64).map(move |i| base + thunk.offset + i * E::THUNK_SIZE)
+            });
+            isecs.chain(thunks)
         });
-        let thunks = osec.thunks.par_iter().flat_map_iter(move |thunk| {
-            (0..thunk.syms.len() as u64).map(move |i| base + thunk.offset + i * E::THUNK_SIZE)
-        });
-        isecs.chain(thunks)
-    });
     // The labels inside the subsections. One at a subsection's start
     // (the usual case: subsections split at symbols) repeats its entry.
     let syms = ctx.symbols.syms.par_iter().filter_map(|sym| {
@@ -72,7 +73,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         (isec.is_alive() && is_code(osec) && sym.value < isec.size as u64)
             .then(|| osec.addr + isec.offset as u64 + sym.value)
     });
-    let mut addrs: Vec<u64> = atoms.chain(syms).collect();
+    let mut addrs: Vec<u64> = starts.chain(syms).collect();
     // No functions: the terminator alone, padded like any table.
     if addrs.is_empty() {
         return vec![0; 8];
