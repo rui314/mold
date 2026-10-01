@@ -324,9 +324,6 @@ pub struct Args {
     pub unexported_symbols: Glob,
     /// -reexported_symbols_list: publish selected imports as exports.
     pub reexported_symbols: Glob,
-    /// The names in -reexported_symbols_list given without wildcards,
-    /// each of which must resolve.
-    pub reexported_names: Vec<String>,
     pub current_version: u32,
     pub compatibility_version: u32,
     /// -map: write a map file describing the output layout.
@@ -884,7 +881,6 @@ impl Default for Args {
             no_exported_symbols: false,
             unexported_symbols: Glob::new(),
             reexported_symbols: Glob::new(),
-            reexported_names: Vec::new(),
             // ld64 leaves both at 0.0.0 unless -current_version /
             // -compatibility_version say otherwise.
             current_version: encode_version(0, 0, 0),
@@ -2627,9 +2623,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 reexports_listed = true;
                 let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
                 // Exact names force a reference even if no object
-                // mentions them. Patterns only match existing symbols.
+                // mentions them, so one nothing defines is reported as
+                // wanted by ld-prime's "<initial-undefines>", as a -u
+                // name is. Patterns only match existing symbols.
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
-                args.reexported_names.extend(names.iter().filter_map(|sym| exact_name(sym)));
                 add_patterns(&mut reexported_symbols, names.iter().map(String::as_str), 0);
             }
             // The -dylib_ spellings are the older names ld64 still

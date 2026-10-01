@@ -5882,14 +5882,6 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.reexported_symbols.is_empty() && exported.is_none() {
         return;
     }
-    for name in &ctx.args.reexported_names {
-        if ctx.symbols.get(name).is_none_or(|id| !ctx.symbols[id].is_defined()) {
-            error!(
-                "-reexported_symbols_list: undefined symbol: {}",
-                crate::util::demangle::display_name(name)
-            );
-        }
-    }
     let targets: Vec<_> = ctx
         .symbols
         .syms
