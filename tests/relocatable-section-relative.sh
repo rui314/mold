@@ -62,7 +62,7 @@ for s in sects:
         if info >> 27 & 1:
             _, _, sect, _, val = struct.unpack_from('<IBBHQ', d, symoff + 16 * (info & 0xffffff))
             field = struct.unpack_from('<Q', d, base + addr)[0]
-            struct.pack_into('<Q', d, base + addr, field + val)
+            struct.pack_into('<Q', d, base + addr, (field + val) % 2**64)
             struct.pack_into('<I', d, reloff + 8 * i + 4, sect | 3 << 25)
 open(sys.argv[2], 'wb').write(d)
 EOF2
@@ -98,6 +98,30 @@ int main() {
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/c.o
 $t/exe
+
+# One before its section's start is re-targeted at the section's
+# first symbol, with a negative addend.
+cat <<EOF | $CC -o $t/f.o -c -xassembler -
+.text
+.globl _fn
+_fn: ret
+.data
+.p2align 3
+.globl _d
+_d: .quad 0
+.globl _q
+_q: .quad _d - 8
+.subsections_via_symbols
+EOF
+python3 $t/patch.py $t/f.o $t/g.o
+$mold -r -arch $ARCH -o $t/h.o $t/g.o
+otool -rv $t/h.o | grep -q '^00000008 False ?( 3)  True   UNSIGND False     _d$'
+cat <<EOF | $CC -o $t/main3.o -c -xc -
+extern char d[], *q;
+int main() { return q != d - 8; }
+EOF
+$CC --ld-path=$mold -o $t/exe3 $t/main3.o $t/h.o
+$t/exe3
 
 # x86-64 assemblers write such references themselves; a pc-relative
 # field keeps its distance from the instruction's end, which may lie

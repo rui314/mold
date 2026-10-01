@@ -1142,12 +1142,13 @@ impl<'a, E: Target> RelocTargets<'a, E> {
 
     /// The symbol a section-relative relocation becomes an extern one
     /// against, and its address: the atom's in a section whose atoms
-    /// ld64 names itself, else the name of the place.
+    /// ld64 names itself, else the name of the place - for a target
+    /// before the section's start (a negative addend), of its first.
     fn atom_target(&self, t: usize, addend: i64) -> Option<(u32, u64)> {
         if let Some(atom) = self.symtab.atoms.get(self.ctx, t, addend) {
             return Some(atom);
         }
-        self.name_at(t, u64::try_from(addend).ok()?)
+        self.name_at(t, u64::try_from(addend).unwrap_or(0))
     }
 
     /// A pointer field to offset `off` of subsection `t`: its contents
@@ -1359,7 +1360,7 @@ fn rewrite_field<E: Target>(
         // Now a relocation against the atom's symbol: the field holds
         // the addend relative to it, in the form an object's extern
         // relocation uses.
-        let mut val = (target_addr - atom_addr) as i64;
+        let mut val = target_addr.wrapping_sub(atom_addr) as i64;
         if rel.is_pcrel {
             val -= E::reloc_bias(rel.r_type);
         }
