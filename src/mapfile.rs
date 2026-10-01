@@ -759,17 +759,27 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     let files = MapFiles::new(ctx);
     let mut entries = linker_symbol_entries(ctx);
     let linker_symbols = entries.len();
-    let (named, first_labels) = symbol_entries(ctx, &files);
+    let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
     entries.extend(synthetic_entries(ctx, &files));
     entries.sort_by_key(|e| (e.addr, e.size));
+    insert_literal_aliases(&mut entries, literal_aliases);
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let addr = ctx.mach_header.hdr.addr;
         entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name("__mh_execute_header") });
     }
     write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
+}
+
+/// Puts each of a literal's other labels right after the literal's own
+/// row in `entries`, sorted by address (see literal_labels).
+fn insert_literal_aliases<'a>(entries: &mut Vec<MapEntry<'a>>, aliases: Vec<MapEntry<'a>>) {
+    for alias in aliases {
+        let at = entries.partition_point(|e| e.addr <= alias.addr);
+        entries.insert(at, alias);
+    }
 }
 
 /// An atom of a section a -r output makes itself, as its map lists it.
@@ -799,12 +809,13 @@ pub fn print_relocatable_map<E: Target>(
     let files = MapFiles::new(ctx);
     let mut entries = linker_symbol_entries(ctx);
     let linker_symbols = entries.len();
-    let (named, first_labels) = symbol_entries(ctx, &files);
+    let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
     entries.extend(named);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     let synthetic = relocatable_atom_entries(ctx, &files, &entries[linker_symbols..], atoms);
     entries.extend(synthetic);
     entries.sort_by_key(|e| (e.addr, e.size));
+    insert_literal_aliases(&mut entries, literal_aliases);
     write_map(ctx, path, &files, &sections, &entries, &[]);
 }
 
@@ -1078,21 +1089,30 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// of a function folded into an identical one (-deduplicate), which
 /// has no size; an ltmpN label of a weak definition another file's won
 /// names nothing. Also returns where in its subsection the first
-/// symbol is, by subsection.
+/// symbol is, by subsection, and the rows of the labels of fixed-size
+/// literals that follow their atoms' (see literal_labels).
 fn symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
-) -> (Vec<MapEntry<'a>>, hashbrown::HashMap<usize, u64>) {
+) -> (Vec<MapEntry<'a>>, hashbrown::HashMap<usize, u64>, Vec<MapEntry<'a>>) {
     use crate::chunks::symtab::is_coalesced_away;
     let nlists = defining_nlists(ctx);
     let mut syms: Vec<(SymbolId, usize)> = Vec::new();
+    let mut literal_syms: Vec<SymbolId> = Vec::new();
     for i in 0..ctx.symbols.syms.len() as SymbolId {
         let sym = &ctx.symbols[i];
         let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
             continue;
         };
         let isec = ctx.resolve_isec(own as usize);
-        if !ctx.isecs[isec].is_alive() || !is_named(ctx, sym) {
+        if !ctx.isecs[isec].is_alive() {
+            continue;
+        }
+        if isec == own as usize && is_split_fixed_literal(ctx, isec) {
+            literal_syms.push(i);
+            continue;
+        }
+        if !is_named(ctx, sym) {
             continue;
         }
         // Of the name of the function a folded one folded into, ld-prime
@@ -1142,7 +1162,7 @@ fn symbol_entries<'a, E: Target>(
         let first = first_labels.entry(isec).or_insert(value);
         *first = (*first).min(value);
     }
-    let entries = syms
+    let mut entries: Vec<MapEntry> = syms
         .iter()
         .zip(sizes)
         .map(|(&(sym, file), size)| MapEntry {
@@ -1152,7 +1172,63 @@ fn symbol_entries<'a, E: Target>(
             name: name(ctx.symbols[sym].name()),
         })
         .collect();
-    (entries, first_labels)
+    let aliases =
+        literal_labels(ctx, files, &nlists, literal_syms, &mut entries, &mut first_labels);
+    (entries, first_labels, aliases)
+}
+
+/// Whether a subsection is a fixed-size literal (4, 8 or 16 bytes) of an
+/// object with subsections, which ld-prime names its own way (see
+/// literal_labels).
+fn is_split_fixed_literal<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
+    let isec = &ctx.isecs[isec];
+    matches!(
+        ctx.hdr_of(isec).section_type(),
+        S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+    ) && ctx.objs[isec.file as usize].subsections_via_symbols
+}
+
+/// The rows of the labels of fixed-size literals (see
+/// is_split_fixed_literal): of a literal's labels, the best to name an
+/// atom (see naming_rank) names its atom - unless it is linker-private
+/// (lCPI0_0), which leaves the atom known by its size - and each other
+/// label, linker-private or not, has a row of no size after the atom's,
+/// the better first. (An ltmpN label is none.) Adds the atoms' rows to
+/// `entries`, noting them in `first_labels`, and returns the others.
+fn literal_labels<'a, E: Target>(
+    ctx: &'a Context<E>,
+    files: &MapFiles,
+    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
+    syms: Vec<SymbolId>,
+    entries: &mut Vec<MapEntry<'a>>,
+    first_labels: &mut hashbrown::HashMap<usize, u64>,
+) -> Vec<MapEntry<'a>> {
+    let mut labels: Vec<(usize, u64, std::cmp::Reverse<LabelRank>, SymbolId)> = (syms.into_iter())
+        .filter(|&id| {
+            let name = ctx.symbols[id].name();
+            !name.is_empty() && !name.starts_with("ltmp") && !name.starts_with('L')
+        })
+        .map(|id| {
+            let (sym, rank) = (&ctx.symbols[id], naming_rank(ctx, nlists, id));
+            (sym.input_section().unwrap() as usize, sym.value, std::cmp::Reverse(rank), id)
+        })
+        .collect();
+    labels.sort_unstable();
+    let mut aliases = Vec::new();
+    for place in labels.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1)) {
+        let (isec, value, _, best) = place[0];
+        let row = |id: SymbolId, size: u64| {
+            let Some(FileId::Obj(obj)) = ctx.symbols[id].file() else { unreachable!() };
+            let file = files.of_object(obj as usize, ctx.symbols[id].name());
+            MapEntry { addr: ctx.sym_addr(id), size, file, name: name(ctx.symbols[id].name()) }
+        };
+        if !crate::input_files::is_private_label(ctx.symbols[best].name()) {
+            entries.push(row(best, ctx.isecs[isec].size as u64 - value));
+            first_labels.insert(isec, value);
+        }
+        aliases.extend(place[1..].iter().map(|&(.., id)| row(id, 0)));
+    }
+    aliases
 }
 
 /// Whether a subsection is an Objective-C method list the linker
