@@ -3796,6 +3796,25 @@ struct DylibBinary {
     rpaths: Vec<PathBuf>,
 }
 
+/// Whether a dylib is mergeable: -make_mergeable gave it its atoms
+/// (LC_ATOM_INFO), which a stub never has.
+pub fn is_mergeable(mf: &MappedFile) -> bool {
+    if crate::filetype::get_file_type(mf) != crate::filetype::FileType::Dylib {
+        return false;
+    }
+    let data = mf.data();
+    let hdr = MachHeader::read_from(data);
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..hdr.ncmds {
+        let lc = LoadCommand::read_from(&data[off..]);
+        if lc.cmd == LC_ATOM_INFO {
+            return true;
+        }
+        off += lc.cmdsize as usize;
+    }
+    false
+}
+
 fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);

@@ -86,6 +86,9 @@ pub const LC_BUILD_VERSION: u32 = 0x32;
 pub const LC_DYLD_EXPORTS_TRIE: u32 = 0x33 | LC_REQ_DYLD;
 pub const LC_DYLD_CHAINED_FIXUPS: u32 = 0x34 | LC_REQ_DYLD;
 pub const LC_LAZY_LOAD_DYLIB_INFO: u32 = 0x3a;
+// The atoms of a mergeable dylib (-make_mergeable), in ld-prime's own
+// format, which a link that merges the dylib (-merge_*) reads.
+pub const LC_ATOM_INFO: u32 = 0x36;
 
 // Platform identifiers for LC_BUILD_VERSION
 pub const PLATFORM_MACOS: u32 = 1;

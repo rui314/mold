@@ -141,7 +141,10 @@ fn under_root(root: &Path, path: &Path) -> PathBuf {
     root.join(crate::util::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
 }
 
-fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
+/// Looks for a framework's stub, then its dylib, in each framework
+/// directory in turn; for its dylib only if `stubs` is false, as for a
+/// framework to merge.
+fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr, stubs: bool) -> Option<PathBuf> {
     let with_suffix = |suffix: &str| {
         let mut file = name.to_os_string();
         file.push(suffix);
@@ -149,7 +152,8 @@ fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> 
     };
     for dir in &ctx.args.framework_paths {
         let fw = dir.join(with_suffix(".framework"));
-        for file in [with_suffix(".tbd"), name.to_os_string()] {
+        let stub = stubs.then(|| with_suffix(".tbd"));
+        for file in stub.into_iter().chain([name.to_os_string()]) {
             let path = fw.join(file);
             if path.exists() {
                 return Some(path);
@@ -186,6 +190,12 @@ const DYLIB_EXTS: &[&str] = &["tbd", "dylib", "so"];
 /// can be neither an upward dependency nor a re-exported library.
 fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     search_library(ctx, name, &[DYLIB_EXTS])
+}
+
+/// Looks for a dylib to merge (-merge-l): a dylib itself, which may
+/// carry its atoms, never a stub.
+fn find_mergeable_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
+    search_library(ctx, name, &[&["dylib", "so"]])
 }
 
 /// Looks for lib<name>.<ext> in the library search path, for each pass
@@ -276,6 +286,9 @@ struct ReaderContext {
     /// -lazy_library, -lazy-l, -lazy_framework: dyld loads the dylib
     /// at its first use (from macOS 27 on; as any other before).
     lazy: bool,
+    /// -merge_library, -merge-l, -merge_framework: the dylib's content
+    /// goes into the image.
+    merge: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
     /// Found in the SDK (see found_in_sdk).
@@ -293,6 +306,7 @@ impl ReaderContext {
             needed: self.needed || other.needed,
             upward: self.upward || other.upward,
             lazy: self.lazy || other.lazy,
+            merge: self.merge || other.merge,
             autolinked: self.autolinked && other.autolinked,
             sdk: self.sdk || other.sdk,
         }
@@ -377,6 +391,16 @@ fn collect_file<E: Target>(
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
+        // Only a dylib -make_mergeable made can be merged, which
+        // ld-prime checks first, in an image that would ignore the dylib
+        // too. (It takes a stub for one, then binds the stub's symbols
+        // to the image itself, which dyld then fails to find.)
+        FileType::Tapi | FileType::Dylib if rc.merge && !input_files::is_mergeable(mf) => {
+            error!(
+                "dylib cannot be merged, not built with -make_mergeable in '{}'",
+                mf.name.display()
+            );
+        }
         // A relocatable output keeps every reference undefined for the
         // final link, and the other images that link no dylib have
         // nothing to load one with (Args::links_dylibs): ld-prime reads
@@ -386,6 +410,11 @@ fn collect_file<E: Target>(
             if get_file_type(mf) == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
                 crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
             }
+        }
+        // Merging is ld-prime's alone so far: it reads the dylib back
+        // into its atoms (LC_ATOM_INFO), in a format of its own.
+        FileType::Dylib if rc.merge => {
+            error!("merging a mergeable dylib is not supported in '{}'", mf.name.display());
         }
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
@@ -611,6 +640,7 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
             InputArg::UpwardLib(name) => ("-upward-l", name.as_os_str()),
             InputArg::LazyLib(name) => ("-lazy-l", name.as_os_str()),
             InputArg::NoMergeLib(name) => ("-no_merge-l", name.as_os_str()),
+            InputArg::MergeLib(name) => ("-merge-l", name.as_os_str()),
             InputArg::ForceLoad(path) => ("-force_load ", path.as_os_str()),
             InputArg::WeakFile(path) => ("-weak_library ", path.as_os_str()),
             InputArg::ReexportFile(path) => ("-reexport_library ", path.as_os_str()),
@@ -618,6 +648,7 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
             InputArg::UpwardFile(path) => ("-upward_library ", path.as_os_str()),
             InputArg::LazyFile(path) => ("-lazy_library ", path.as_os_str()),
             InputArg::NoMergeFile(path) => ("-no_merge_library ", path.as_os_str()),
+            InputArg::MergeFile(path) => ("-merge_library ", path.as_os_str()),
             // Objects, which are many, go without a string.
             InputArg::File(path) => {
                 if !seen_files.insert(path)
@@ -763,7 +794,8 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         | InputArg::NeededFile(path)
         | InputArg::UpwardFile(path)
         | InputArg::LazyFile(path)
-        | InputArg::NoMergeFile(path) => find_file(ctx, path),
+        | InputArg::NoMergeFile(path) => find_file(ctx, path, true),
+        InputArg::MergeFile(path) => find_file(ctx, path, false),
         InputArg::Lib(name, _)
         | InputArg::HiddenLib(name)
         | InputArg::NeededLib(name)
@@ -771,12 +803,14 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         InputArg::UpwardLib(name) | InputArg::ReexportLib(name) | InputArg::NoMergeLib(name) => {
             find_dylib(ctx, name)
         }
+        InputArg::MergeLib(name) => find_mergeable_dylib(ctx, name),
         InputArg::Framework(name, _)
         | InputArg::ReexportFramework(name)
         | InputArg::NeededFramework(name)
         | InputArg::UpwardFramework(name)
         | InputArg::LazyFramework(name)
-        | InputArg::NoMergeFramework(name) => find_framework(ctx, name),
+        | InputArg::NoMergeFramework(name) => find_framework(ctx, name, true),
+        InputArg::MergeFramework(name) => find_framework(ctx, name, false),
     };
     inputs.iter().map(find).collect()
 }
@@ -786,14 +820,17 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
 /// a stub in place of the library where there is one there -
 /// `-weak_library /usr/lib/libz.dylib` links the SDK's
 /// usr/lib/libz.tbd - then the path as it is, itself only. An object
-/// is taken as it is.
-fn find_file<E: Target>(ctx: &Context<E>, path: &Path) -> Option<PathBuf> {
+/// is taken as it is. A library to merge is no stub (`stubs`).
+fn find_file<E: Target>(ctx: &Context<E>, path: &Path, stubs: bool) -> Option<PathBuf> {
     let object = path.extension() == Some(OsStr::new("o"));
     let mut candidates: Vec<PathBuf> = Vec::new();
     if path.is_absolute() && !object {
         for root in &ctx.args.syslibroot {
             let path = under_root(root, path);
-            candidates.extend([path.with_extension("tbd"), path]);
+            if stubs {
+                candidates.push(path.with_extension("tbd"));
+            }
+            candidates.push(path);
         }
     }
     candidates.push(path.to_path_buf());
@@ -843,9 +880,11 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         | UpwardFramework(name)
         | LazyFramework(name)
         | NoMergeLib(name)
-        | NoMergeFramework(name) => name.as_os_str(),
+        | NoMergeFramework(name)
+        | MergeLib(name)
+        | MergeFramework(name) => name.as_os_str(),
         WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
-        | LazyFile(path) | NoMergeFile(path) => path.as_os_str(),
+        | LazyFile(path) | NoMergeFile(path) | MergeFile(path) => path.as_os_str(),
         File(_) | ForceLoad(_) | BundleLoader(_) => return None,
     };
     let rc = ReaderContext {
@@ -863,6 +902,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         needed: matches!(arg, NeededLib(_) | NeededFramework(_) | NeededFile(_)),
         upward: matches!(arg, UpwardLib(_) | UpwardFramework(_) | UpwardFile(_)),
         lazy: matches!(arg, LazyLib(_) | LazyFramework(_) | LazyFile(_)),
+        merge: matches!(arg, MergeLib(_) | MergeFramework(_) | MergeFile(_)),
         ..Default::default()
     };
     let framework = matches!(
@@ -873,6 +913,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
             | UpwardFramework(_)
             | LazyFramework(_)
             | NoMergeFramework(_)
+            | MergeFramework(_)
     );
     Some((rc, framework, name))
 }
@@ -952,8 +993,9 @@ fn library_namings(
 }
 
 /// ld-prime refuses to re-export a library that it links weakly or
-/// lazily, naming the pair as the option that makes it spells the
-/// library (a path as `-weak-l<path>`).
+/// lazily, and to merge one that it re-exports, links weakly, upward
+/// or lazily, all of which want a load command, naming the pair as the
+/// option that makes it spells the library (a path as `-weak-l<path>`).
 fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
     let spell = |opt: &str| match framework {
         true => format!("'-{opt}_framework {}'", name.display()),
@@ -962,6 +1004,13 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
     for (on, opt) in [(rc.weak, "weak"), (rc.lazy, "lazy")] {
         if on && rc.reexport {
             fatal!("{} and {} cannot be used together", spell(opt), spell("reexport"));
+        }
+    }
+    let load_command =
+        [(rc.reexport, "reexport"), (rc.weak, "weak"), (rc.upward, "upward"), (rc.lazy, "lazy")];
+    for (on, opt) in load_command {
+        if on && rc.merge {
+            fatal!("{} and {} cannot be used together", spell(opt), spell("merge"));
         }
     }
 }
@@ -1125,7 +1174,7 @@ fn autolinked_input<E: Target>(
             (path, ReaderContext { sdk, ..rc })
         }
         [flag, name] if flag.ends_with(b"framework") => {
-            let path = find_framework(ctx, os_str(name));
+            let path = find_framework(ctx, os_str(name), true);
             if path.is_none() {
                 // (The first name leaves out a ",suffix".)
                 let base = name.split(|&c| c == b',').next().unwrap();

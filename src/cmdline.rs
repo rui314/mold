@@ -87,6 +87,15 @@ pub enum InputArg {
     NoMergeLib(OsString),
     NoMergeFramework(OsString),
     NoMergeFile(PathBuf),
+    /// -merge-lfoo / -merge_framework Foo / -merge_library path: a
+    /// library whose content goes into this image, a dylib that
+    /// -make_mergeable made mergeable (LC_ATOM_INFO) linked as its
+    /// objects would be, in place of a load command. Only a dylib can
+    /// be found for one, never a stub; an object or archive the path
+    /// names links as ever.
+    MergeLib(OsString),
+    MergeFramework(OsString),
+    MergeFile(PathBuf),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
     /// A file of another kind is an input like any other.
@@ -1359,6 +1368,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.inputs.push(InputArg::NoMergeFile(path(next_arg(&mut i, name))))
             }
             b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
+            b"-merge_framework" => {
+                args.inputs.push(InputArg::MergeFramework(next_arg(&mut i, name).to_owned()))
+            }
+            b"-merge_library" => {
+                args.inputs.push(InputArg::MergeFile(path(next_arg(&mut i, name))))
+            }
             b"-filelist" => {
                 args.inputs
                     .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
@@ -1896,6 +1911,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "-lazy-l",
                     "-weak-l",
                     "-no_merge-l",
+                    "-merge-l",
                 ] {
                     if raw == prefix.as_bytes() {
                         fatal!("{}", missing_argument(prefix));
@@ -1906,6 +1922,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.inputs.push(InputArg::ReexportLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-no_merge-l") {
                     args.inputs.push(InputArg::NoMergeLib(os_name(lib)));
+                } else if let Some(lib) = raw.strip_prefix(b"-merge-l") {
+                    args.inputs.push(InputArg::MergeLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-hidden-l") {
                     args.inputs.push(InputArg::HiddenLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-needed-l") {
