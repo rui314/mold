@@ -20,7 +20,7 @@ use crate::macho::*;
 use crate::objc::{DataBlob, cstring_of};
 use crate::passes::{is_class_or_protocol_ref_name, resolved_file_name};
 use crate::target::Target;
-use crate::util::{align_to, path_bytes};
+use crate::util::align_to;
 
 /// Where a section sits within its segment in a final image, as
 /// ld-prime 27037 orders them; sections of one rank keep input order.
@@ -2048,7 +2048,8 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
 
     // A line is [arch:][object-file:]symbol. An arch qualifier gates
     // the whole line; an object qualifier narrows the match to
-    // symbols from that file (compared by leaf name, as ld64 does).
+    // symbols from that file, by leaf name alone as ld-prime compares
+    // it: m.o, or lib.a(m.o) for an archive member, but no longer path.
     const ARCHS: [&str; 6] = ["arm64", "arm64e", "x86_64", "i386", "armv7", "ppc"];
     let mut rank_of: std::collections::HashMap<String, Vec<(Option<String>, u64)>> =
         std::collections::HashMap::new();
@@ -2097,14 +2098,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         };
         let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
         for (file, r) in entries {
-            let applies = match file {
-                Some(f) => {
-                    leaf == f.as_bytes()
-                        || path_bytes(&ctx.objs[obj].mf.name).ends_with(f.as_bytes())
-                }
-                None => true,
-            };
-            if applies {
+            if file.as_ref().is_none_or(|f| leaf == f.as_bytes()) {
                 let isec = ctx.resolve_isec(isec);
                 ranks[isec] = ranks[isec].min(*r);
             }

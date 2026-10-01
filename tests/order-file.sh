@@ -47,3 +47,11 @@ a.o:_print
 EOF
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-order_file,$t/order4
 $t/exe4 | grep '^1$'
+
+# The qualifier is a leaf name: one with a directory names no file.
+cat <<EOF > $t/order5
+$t/a.o:_main
+_print
+EOF
+$CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-order_file,$t/order5
+$t/exe5 | grep '^1$'
