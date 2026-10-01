@@ -1938,7 +1938,7 @@ fn retarget_class_data<E: Target>(ctx: &mut Context<E>, cls: (u32, u64), ro: u32
 
 /// Takes the merged categories out of the category lists: a list
 /// subsection all of whose entries merged goes away, one with
-/// survivors is rewritten with those.
+/// survivors is rewritten with those, in its place.
 fn rebuild_category_lists<E: Target>(
     ctx: &mut Context<E>,
     lists: &[CategoryList],
@@ -1954,9 +1954,13 @@ fn rebuild_category_lists<E: Target>(
             .filter(|&&(_, ci)| !merged(ci))
             .map(|&(r, _)| DataField::Ptr(r))
             .collect();
+        // The list keeps its place: ld-prime drops the merged entries
+        // from it, so the categories of the objects after it still come
+        // after its others.
         if !survivors.is_empty() {
             let sect = if list.nonlazy { "__objc_nlcatlist" } else { "__objc_catlist" };
-            add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
+            let blob = add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
+            ctx.isecs[list.isec as usize].replacement = blob;
         }
     }
 }

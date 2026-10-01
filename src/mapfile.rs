@@ -1808,7 +1808,9 @@ type DeadKey = (u64, u32, u32);
 /// Which input subsections the output doesn't have (see dead_entries):
 /// those dead stripping or an Objective-C rewrite took out and those
 /// another took the place of, but for a class's ro data the merged
-/// record stands for (ld-prime rewrites it in place); and the C strings
+/// record stands for (ld-prime rewrites it in place) - a category list
+/// rebuilt in its place is gone all the same, its merged entries dead
+/// (see is_kept_category_entry); and the C strings
 /// objc stubs take their selector names from, for which ld-prime makes
 /// its own. A section the link consumes, or that
 /// -remove_swift_reflection_metadata_sections drops as ld-prime reads
@@ -1835,7 +1837,8 @@ impl GoneAtoms {
             return false;
         }
         if isec.replacement != crate::input_sections::NO_REPLACEMENT {
-            return !self.rewritten.contains(&isec.replacement);
+            let list = matches!(hdr.sectname(), "__objc_catlist" | "__objc_nlcatlist");
+            return list || !self.rewritten.contains(&isec.replacement);
         }
         !isec.is_alive() || self.stub_names.contains(&id)
     }

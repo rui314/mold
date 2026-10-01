@@ -185,14 +185,16 @@ pub(crate) fn keep_local_symbol_in<E: Target>(
         return false;
     }
     let Some(isec) = isec else { return true };
+    // A list the Objective-C passes rebuilt in its place (see
+    // objc::rebuild_category_lists) is still one.
+    if is_unnamed_objc_list(ctx.hdr_of(&ctx.isecs[isec as usize])) {
+        return list_alias;
+    }
     let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
     if ctx.is_internal(isec.file as usize) {
         return true;
     }
     let hdr = ctx.hdr_of(isec);
-    if is_unnamed_objc_list(hdr) {
-        return list_alias;
-    }
     if has_unnamed_atoms(hdr, ctx.objs[isec.file as usize].subsections_via_symbols) {
         return false;
     }
