@@ -110,10 +110,10 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     }
 }
 
-/// Whether a symbol lies in an initializer or terminator pointer list
-/// whose atoms dead stripping keeps by their section type alone: there
-/// ld-prime marks only the name of each atom no-dead-strip, not its
-/// aliases - unless the section says no_dead_strip itself.
+/// Whether a symbol lies in an initializer or terminator pointer list,
+/// whose subsections dead stripping keeps by their section type alone:
+/// there ld-prime marks only the name of each subsection no-dead-strip,
+/// not its aliases - unless the section says no_dead_strip itself.
 fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: SymbolId) -> bool {
     let Some(isec) = ctx.symbols[sym].input_section() else { return false };
     let h = ctx.hdr_of(&ctx.isecs[isec as usize]);
@@ -122,8 +122,8 @@ fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: SymbolId) -> bool {
 }
 
 /// Where the -r output's defined externals sit, as (object, section,
-/// address): an external names its atom over any local there (a weak
-/// one only in an object with subsections).
+/// address): an external names its subsection over any local there (a
+/// weak one only in an object with subsections).
 fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
     let per_obj: Vec<Vec<(u32, u8, u64)>> = ctx
         .objs
@@ -158,11 +158,12 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
 /// their address. ld-prime ranks the names of a place non-weak before
 /// weak, then global, private external and local, each by descending
 /// name, an assembler's ltmpN label last. A reference to the place
-/// names the first, and so does one past it, into the atom's bytes:
-/// the names are aliases of one atom. But in an object without
-/// subsections only those at the start of a section are; elsewhere
-/// each name is an atom of its own, all empty but the last, which
-/// holds the bytes and is the one a reference into them names.
+/// names the first, and so does one past it, into the subsection's
+/// bytes: the names are aliases of one subsection. But in an object
+/// without subsections only those at the start of a section are;
+/// elsewhere ld-prime makes a subsection of each name, all empty but
+/// the last, which holds the bytes and is the one a reference into
+/// them names.
 fn symbol_places<E: Target>(ctx: &Context<E>, index_of_sym: &[u32]) -> Places {
     let mut names: Vec<_> = (0..index_of_sym.len())
         .into_par_iter()
@@ -275,8 +276,8 @@ fn named_places<E: Target>(
 }
 
 /// The n_desc of a symbol from an object without subsections: ld64
-/// marks the whole-section atoms no-dead-strip and drops the alt-entry
-/// marker, which means nothing there.
+/// marks the subsections that are whole sections no-dead-strip and
+/// drops the alt-entry marker, which means nothing there.
 fn whole_desc(desc: u16, whole: bool) -> u16 {
     if whole { (desc | N_NO_DEAD_STRIP) & !N_ALT_ENTRY } else { desc }
 }
@@ -555,31 +556,31 @@ fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
         .collect()
 }
 
-/// The atoms of the sections the output makes itself, by address, as
+/// The records of the sections the output makes itself, by address, as
 /// the map lists them.
 fn synthetic_records(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableRecord)> {
-    let mut atoms = Vec::new();
+    let mut out = Vec::new();
     for sec in synthetic {
         let addr = sec.hdr.addr;
         match &sec.kind {
-            SyntheticKind::ObjcImageInfo => atoms.push((addr, RelocatableRecord::ImageInfo)),
+            SyntheticKind::ObjcImageInfo => out.push((addr, RelocatableRecord::ImageInfo)),
             SyntheticKind::CompactUnwind(records) => {
                 for (j, &rec) in records.iter().enumerate() {
-                    atoms.push((addr + 32 * j as u64, RelocatableRecord::Unwind(rec)));
+                    out.push((addr + 32 * j as u64, RelocatableRecord::Unwind(rec)));
                 }
             }
             SyntheticKind::EhFrame(records) => {
                 for &(rec, off) in records {
-                    let atom = match rec {
+                    let record = match rec {
                         EhRec::Cie(c) => RelocatableRecord::Cie(c),
                         EhRec::Fde(f) => RelocatableRecord::Fde(f),
                     };
-                    atoms.push((addr + off as u64, atom));
+                    out.push((addr + off as u64, record));
                 }
             }
         }
     }
-    atoms
+    out
 }
 
 /// A section of the -r output: merged from input subsections,
@@ -923,7 +924,7 @@ fn compact_unwind_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
         return None;
     }
     // Each record keeps the alignment of the section it came from, as
-    // an ld-prime atom does, so the section takes the largest.
+    // any subsection does to ld-prime, so the section takes the largest.
     let p2align = records
         .par_iter()
         .filter_map(|&i| {
@@ -1122,11 +1123,11 @@ fn eh_frame_contents<E: Target>(
 
 /// A -r output section's relocations, regenerated against the merged
 /// tables, each subsection's on a core of its own. ld-prime writes each
-/// atom's relocations by descending offset whatever the input's order,
-/// keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64 ADDEND and
-/// its PAGE21 or PAGEOFF12 - in order. A section of fixed-size records
-/// it splits into one subsection per record, so a subsection mold
-/// keeps whole (__objc_clsrolist's, see
+/// subsection's relocations by descending offset whatever the input's
+/// order, keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64
+/// ADDEND and its PAGE21 or PAGEOFF12 - in order. A section of
+/// fixed-size records it splits into one subsection per record, so a
+/// subsection mold keeps whole (__objc_clsrolist's, see
 /// ObjectFile::pointer_without_target) has its records' relocations in
 /// ascending order, each record's descending.
 fn section_relocs<E: Target>(
@@ -1191,7 +1192,7 @@ fn push_reloc<E: Target>(
             }
             (symnum, true)
         }
-        OutTarget::Section(target, addend) => match targets.atom_target(target, addend) {
+        OutTarget::Section(target, addend) => match targets.extern_target(target, addend) {
             Some((symnum, _)) => (symnum, true),
             None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
         },
@@ -1263,12 +1264,13 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     }
 
     /// The symbol a section-relative relocation becomes an extern one
-    /// against, and its address: the atom's in a section whose atoms
-    /// ld64 names itself, else the name of the place - for a target
-    /// before the section's start (a negative addend), of its first.
-    fn atom_target(&self, t: usize, addend: i64) -> Option<(u32, u64)> {
-        if let Some(atom) = self.symtab.atoms.get(self.ctx, t, addend) {
-            return Some(atom);
+    /// against, and its address: the literal's in a section whose
+    /// literals ld64 names itself, else the name of the place - for a
+    /// target before the section's start (a negative addend), of its
+    /// first.
+    fn extern_target(&self, t: usize, addend: i64) -> Option<(u32, u64)> {
+        if let Some(literal) = self.symtab.literals.get(self.ctx, t, addend) {
+            return Some(literal);
         }
         self.name_at(t, u64::try_from(addend).unwrap_or(0))
     }
@@ -1455,8 +1457,8 @@ fn copy_section_contents<E: Target>(
 /// Rewrites the field a relocation at address `here` applies to, as a
 /// -r output holds it: an x86-64 GOT load's cell, or the address a
 /// non-external relocation's field embeds, now in the merged address
-/// space - or relative to the atom's symbol where the relocation becomes
-/// an extern one against it.
+/// space - or relative to the symbol of the target where the relocation
+/// becomes an extern one against it.
 fn rewrite_field<E: Target>(
     targets: &RelocTargets<E>,
     isec: &InputSection,
@@ -1478,11 +1480,11 @@ fn rewrite_field<E: Target>(
     };
     // The addend is negative for a target before its section's start.
     let target_addr = ctx.isec_addr(target).wrapping_add_signed(addend);
-    if let Some((_, atom_addr)) = targets.atom_target(target, addend) {
-        // Now a relocation against the atom's symbol: the field holds
-        // the addend relative to it, in the form an object's extern
+    if let Some((_, sym_addr)) = targets.extern_target(target, addend) {
+        // Now a relocation against that symbol: the field holds the
+        // addend relative to it, in the form an object's extern
         // relocation uses.
-        let mut val = target_addr.wrapping_sub(atom_addr) as i64;
+        let mut val = target_addr.wrapping_sub(sym_addr) as i64;
         if rel.is_pcrel {
             val -= E::reloc_bias(rel.r_type);
         }
@@ -1512,7 +1514,7 @@ fn rewrite_field<E: Target>(
 }
 
 /// A -r output's symbol and string tables, and where relocations find
-/// the atoms ld64 names itself.
+/// the literals ld64 names itself.
 struct RSymtab {
     /// The tables, laid out as a final image's are and written by the
     /// same writer (see write_symtab), but with every entry's n_value
@@ -1520,8 +1522,8 @@ struct RSymtab {
     table: SymtabSection,
     /// Each symbol's index in the table, or u32::MAX if it has none.
     index_of_sym: Vec<u32>,
-    /// The linker-named atoms: each one's symbol index and address.
-    atoms: LiteralAtoms<(u32, u64)>,
+    /// The linker-named literals: each one's symbol index and address.
+    literals: NamedLiterals<(u32, u64)>,
 }
 
 impl RSymtab {
@@ -1542,8 +1544,8 @@ struct Local {
     addr: u64,
     rename: Rename,
     /// The input symbol it stands for: a label's own, or the first of the
-    /// labels of a literal atom ld64 names itself (none, often), whose
-    /// other labels stand for it too (see Locals::atom_labels).
+    /// labels of a literal ld64 names itself (none, often), whose other
+    /// labels stand for it too (see Locals::literal_labels).
     sym: Option<SymbolId>,
     /// The object, the section there and the address, which order the
     /// locals - for an absolute symbol, section 0 and its index in the
@@ -1560,8 +1562,7 @@ impl Local {
     }
 }
 
-/// The name a local takes: its own, or one ld64 makes for a literal
-/// atom.
+/// The name a local takes: its own, or one ld64 makes for a literal.
 #[derive(Clone, Copy, PartialEq)]
 enum Rename {
     None,
@@ -1570,11 +1571,11 @@ enum Rename {
 }
 
 /// How a local ranks among the names of a place: ld-prime orders them
-/// a literal atom it names itself, a private external, a local, a weak
+/// a literal it names itself, a private external, a local, a weak
 /// definition, an ltmpN label, each rank by descending name.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Rank {
-    Atom,
+    Literal,
     PrivateExtern,
     Local,
     Weak,
@@ -1613,7 +1614,7 @@ fn build_symtab<E: Target>(
         locals.add_private_externs();
     }
     locals.locals.extend(sectcreate);
-    let (locals, atoms, atom_labels) = locals.finish();
+    let (locals, literals, literal_labels) = locals.finish();
     drop(t);
 
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
@@ -1675,7 +1676,7 @@ fn build_symtab<E: Target>(
             }
         }
     });
-    atom_labels.par_iter().for_each(|&(e, id)| {
+    literal_labels.par_iter().for_each(|&(e, id)| {
         index_of_sym[id as usize].store(e as u32, Ordering::Relaxed);
     });
     externals.par_iter().enumerate().for_each(|(k, &(_, id))| {
@@ -1690,7 +1691,7 @@ fn build_symtab<E: Target>(
     RSymtab {
         table,
         index_of_sym: index_of_sym.into_iter().map(AtomicU32::into_inner).collect(),
-        atoms,
+        literals,
     }
 }
 
@@ -1746,8 +1747,8 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
         .map(|&i| {
             let sym = &ctx.symbols[i];
             let pext = if sym.is_private_extern() { N_PEXT } else { 0 };
-            // An absolute symbol names no atom, and ld-prime gives it no
-            // n_desc flags (the assembler marks one N_NO_DEAD_STRIP).
+            // An absolute symbol names no subsection, and ld-prime gives
+            // it no n_desc flags (the assembler marks one N_NO_DEAD_STRIP).
             let Some(input) = sym.input_section() else {
                 let ent =
                     NList { n_type: N_ABS | N_EXT | pext, n_value: sym.value, ..NList::default() };
@@ -1823,44 +1824,44 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
         .collect()
 }
 
-/// The atoms ld64 names itself in a -r output's literal sections (see
-/// Locals), by subsection and record index.
-struct LiteralAtoms<T> {
-    /// The record size of each output section whose atoms are named; 0
-    /// for one record per subsection.
+/// The literals ld64 names itself in a -r output's literal sections
+/// (see Locals), by subsection and record index.
+struct NamedLiterals<T> {
+    /// The record size of each output section whose literals are named;
+    /// 0 for one record per subsection.
     entsize_of: HashMap<OutputSectionId, u64>,
-    atoms: HashMap<(usize, u64), T>,
+    literals: HashMap<(usize, u64), T>,
 }
 
-impl<T: Copy> LiteralAtoms<T> {
-    /// The atom a reference to offset `addend` of subsection `t` lands
-    /// in, if ld64 names it.
+impl<T: Copy> NamedLiterals<T> {
+    /// The literal a reference to offset `addend` of subsection `t`
+    /// lands in, if ld64 names it.
     fn get<E: Target>(&self, ctx: &Context<E>, t: usize, addend: i64) -> Option<T> {
         let ChunkId::Output(osec) = ctx.isecs[t].output_section()? else {
             return None;
         };
         let entsize = *self.entsize_of.get(&osec)?;
         let k = (addend as u64).checked_div(entsize).unwrap_or(0);
-        self.atoms.get(&(t, k)).copied()
+        self.literals.get(&(t, k)).copied()
     }
 }
 
 /// The local symbols of a -r output, in ld64's form, as they are
 /// gathered. ld-prime makes the literals - the strings of a
 /// cstring-literal section, the records of a fixed-size literal section
-/// and the atoms has_unnamed_subsecs names (CFStrings, selector and class
-/// references, UTF-16 and ObjC constant literals) - by content: their
-/// labels vanish, all but those of the cstring and fixed-size literals a
-/// symbol names (labeled, kept apart). arm64 relocations must name what
-/// they refer to, so there ld64 names each such atom itself, and each
-/// superclass or protocol reference no label names, with one shared
-/// counter: a cstring literal LC<n>, the others l<nnn>, all with N_PEXT
-/// set so that a later link can still coalesce them. x86-64 ones
-/// refer to them section-relatively, and only the literals of
-/// __TEXT,__cstring get names (LC<n>). The entries of the __objc_*list
-/// sections get no symbol, and on x86-64 neither do the class and
-/// protocol references only a linker-private label (l...) names.
-/// Relocations against the vanished labels - by label, or
+/// and the subsections has_unnamed_subsecs names (CFStrings, selector
+/// and class references, UTF-16 and ObjC constant literals) - by
+/// content: their labels vanish, all but those of the cstring and
+/// fixed-size literals a symbol names (labeled, kept apart). arm64
+/// relocations must name what they refer to, so there ld64 names each
+/// such literal itself, and each superclass or protocol reference no
+/// label names, with one shared counter: a cstring literal LC<n>, the
+/// others l<nnn>, all with N_PEXT set so that a later link can still
+/// coalesce them. x86-64 ones refer to them section-relatively, and only
+/// the literals of __TEXT,__cstring get names (LC<n>). The entries of
+/// the __objc_*list sections get no symbol, and on x86-64 neither do the
+/// class and protocol references only a linker-private label (l...)
+/// names. Relocations against the vanished labels - by label, or
 /// section-relative as x86-64 objects refer to literals - are
 /// re-targeted at the new symbols, or are section-relative. Other labels
 /// survive, those of the linker-private kind too, except the ltmpN
@@ -1873,27 +1874,26 @@ impl<T: Copy> LiteralAtoms<T> {
 struct Locals<'a, E: Target> {
     ctx: &'a Context<E>,
     locals: Vec<Local>,
-    /// The literal atoms ld64 names itself: each one's entry in
-    /// `locals`.
-    atoms: LiteralAtoms<usize>,
-    /// The labels of those atoms, in the objects' order.
-    atom_labels: Vec<AtomLabel>,
-    /// The literal sections whose atoms get no name.
+    /// The literals ld64 names itself: each one's entry in `locals`.
+    literals: NamedLiterals<usize>,
+    /// The labels of those literals, in the objects' order.
+    literal_labels: Vec<LiteralLabel>,
+    /// The literal sections whose literals get no name.
     unnamed: HashSet<OutputSectionId>,
     /// The symbols a subtraction names, on x86-64 (see vanishes).
     subtracted: Vec<bool>,
 }
 
-/// A label on a literal atom ld64 names itself, which stands for the
-/// atom (see Locals): the atom's entry among the locals, and the
+/// A label on a literal ld64 names itself, which stands for the
+/// literal (see Locals): the literal's entry among the locals, and the
 /// label's symbol.
-type AtomLabel = (usize, SymbolId);
+type LiteralLabel = (usize, SymbolId);
 
-/// The size of the records of a literal subsection whose atoms ld-prime
-/// makes by content, 0 for one record per subsection (as C string
-/// literals are split), or None for any other subsection: that of a
-/// section of another kind, or of a __ustring section without
-/// subsections, which is one atom (see has_unnamed_subsecs).
+/// The size of the records of a literal subsection whose literals
+/// ld-prime makes by content, 0 for one record per subsection (as C
+/// string literals are split), or None for any other subsection: that
+/// of a section of another kind, or of a __ustring section without
+/// subsections, which ld-prime keeps whole (see has_unnamed_subsecs).
 fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
     let h = ctx.hdr_of(&ctx.isecs[isec]);
     match h.section_type() {
@@ -1919,14 +1919,14 @@ fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
 }
 
 impl<'a, E: Target> Locals<'a, E> {
-    /// Starts the locals with the literal atoms ld64 names itself.
+    /// Starts the locals with the literals ld64 names itself.
     fn new(ctx: &'a Context<E>, merged: &[OutputSectionId]) -> Self {
         let names_literals = |segname: &str, sectname: &str| {
             E::CPUTYPE == CPU_TYPE_ARM64 || (segname == "__TEXT" && sectname == "__cstring")
         };
 
         let mut locals = Vec::new();
-        let mut atoms = LiteralAtoms { entsize_of: HashMap::new(), atoms: HashMap::new() };
+        let mut literals = NamedLiterals { entsize_of: HashMap::new(), literals: HashMap::new() };
         let mut unnamed = HashSet::new();
         for &chunk_idx in merged {
             let chunk = ctx.output_section(chunk_idx);
@@ -1938,12 +1938,12 @@ impl<'a, E: Target> Locals<'a, E> {
                 unnamed.insert(chunk_idx);
                 continue;
             }
-            atoms.entsize_of.insert(chunk_idx, entsize);
+            literals.entsize_of.insert(chunk_idx, entsize);
             for &id in &chunk.members {
                 let id = id as usize;
                 let isec = &ctx.isecs[id];
                 // A literal a label names keeps that label instead, as
-                // does a whole section that is one atom.
+                // does a section ld-prime keeps whole.
                 if !isec.is_alive()
                     || isec.replacement != NO_REPLACEMENT
                     || isec.is_labeled()
@@ -1957,7 +1957,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 }
                 let n = if entsize == 0 { 1 } else { size.div_ceil(entsize) };
                 for k in 0..n {
-                    atoms.atoms.insert((id, k), locals.len());
+                    literals.literals.insert((id, k), locals.len());
                     locals.push(Local {
                         name: "",
                         n_type: N_PEXT | N_SECT,
@@ -1971,7 +1971,7 @@ impl<'a, E: Target> Locals<'a, E> {
                         },
                         sym: None,
                         at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
-                        rank: Rank::Atom,
+                        rank: Rank::Literal,
                     });
                 }
             }
@@ -1979,7 +1979,7 @@ impl<'a, E: Target> Locals<'a, E> {
 
         let subtracted =
             if E::CPUTYPE == CPU_TYPE_ARM64 { Vec::new() } else { subtracted_syms(ctx) };
-        Self { ctx, locals, atoms, atom_labels: Vec::new(), unnamed, subtracted }
+        Self { ctx, locals, literals, literal_labels: Vec::new(), unnamed, subtracted }
     }
 
     /// Whether a label vanishes. On x86-64 the label of a literal left
@@ -2014,37 +2014,41 @@ impl<'a, E: Target> Locals<'a, E> {
     /// Adds the objects' local labels that survive, `referenced` being
     /// the symbols the output's relocations name.
     fn add_labels(&mut self, referenced: &[bool]) {
-        let per_obj: Vec<(Vec<Local>, Vec<AtomLabel>)> = (0..self.ctx.objs.len())
+        let per_obj: Vec<(Vec<Local>, Vec<LiteralLabel>)> = (0..self.ctx.objs.len())
             .into_par_iter()
             .map(|obj_idx| self.object_labels(obj_idx, referenced))
             .collect();
-        for (labels, atom_labels) in per_obj {
+        for (labels, literal_labels) in per_obj {
             self.locals.extend(labels);
-            for (e, sym_id) in atom_labels {
+            for (e, sym_id) in literal_labels {
                 self.locals[e].sym.get_or_insert(sym_id);
-                self.atom_labels.push((e, sym_id));
+                self.literal_labels.push((e, sym_id));
             }
         }
     }
 
     /// An object's local labels that survive, and those that stand for
-    /// literal atoms ld64 names itself, each with its atom's entry.
-    fn object_labels(&self, obj_idx: usize, referenced: &[bool]) -> (Vec<Local>, Vec<AtomLabel>) {
+    /// literals ld64 names itself, each with its literal's entry.
+    fn object_labels(
+        &self,
+        obj_idx: usize,
+        referenced: &[bool],
+    ) -> (Vec<Local>, Vec<LiteralLabel>) {
         let ctx = self.ctx;
         let obj = &ctx.objs[obj_idx];
         let mut labels = Vec::new();
-        let mut atom_labels = Vec::new();
+        let mut literal_labels = Vec::new();
         if !obj.is_alive {
-            return (labels, atom_labels);
+            return (labels, literal_labels);
         }
-        // Without subsections the object's sections are whole atoms,
-        // which ld64 marks no-dead-strip - every symbol, the
-        // assembler's ltmpN labels (they name the atoms) included -
+        // Without subsections each of the object's sections is one
+        // subsection, which ld64 marks no-dead-strip - every symbol, the
+        // assembler's ltmpN labels (they name the sections) included -
         // and an alt entry means nothing there.
         let whole = !obj.subsections_via_symbols;
         let aliases = crate::passes::objc_list_aliases(ctx, obj);
         let named_at = named_places(ctx, obj);
-        let literal_names = self.literal_atom_names(obj);
+        let literal_names = self.fixed_literal_names(obj);
         for i in obj.local_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             if nlist.is_stab() || nlist.is_extern() {
@@ -2061,15 +2065,15 @@ impl<'a, E: Target> Locals<'a, E> {
             if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
                 continue;
             }
-            // A label on an atom ld64 names itself stands for that
-            // atom, but for a fixed-size literal's other labels (see
-            // literal_atom_names).
-            let atom = self.atoms.get(ctx, isec, sym.value as i64);
+            // A label on a literal ld64 names itself stands for that
+            // literal, but for a fixed-size literal's other labels (see
+            // fixed_literal_names).
+            let named_literal = self.literals.get(ctx, isec, sym.value as i64);
             let place = (nlist.n_sect, nlist.n_value);
-            if let Some(e) = atom
+            if let Some(e) = named_literal
                 && literal_names.get(&place).is_none_or(|&name| name == sym_id)
             {
-                atom_labels.push((e, sym_id));
+                literal_labels.push((e, sym_id));
                 continue;
             }
             if (self.in_unnamed_list(isec) && !referenced[sym_id as usize] && !aliases.contains(&i))
@@ -2084,11 +2088,11 @@ impl<'a, E: Target> Locals<'a, E> {
             {
                 continue;
             }
-            // A labeled literal is an atom of its own, not a whole
+            // A labeled literal is a subsection of its own, not a whole
             // section's, and so is one ld64 names itself.
-            let whole = whole && !ctx.isecs[isec].is_labeled() && atom.is_none();
-            // An alias of a list entry is not the atom, which the
-            // section's no_dead_strip marks.
+            let whole = whole && !ctx.isecs[isec].is_labeled() && named_literal.is_none();
+            // The section's no_dead_strip marks a list entry's name, not
+            // its aliases.
             let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             labels.push(Local {
                 name: local_symbol_name(sym.name()),
@@ -2102,19 +2106,19 @@ impl<'a, E: Target> Locals<'a, E> {
                 rank: if sym.name().starts_with("ltmp") { Rank::Ltmp } else { Rank::Local },
             });
         }
-        (labels, atom_labels)
+        (labels, literal_labels)
     }
 
     /// The label that stands for each record of an object's fixed-size
     /// literal sections (__literal4/8/16) ld64 names itself, by the
     /// record's place (section and address in the object): of the
-    /// record's local labels, the one ld-prime takes for the atom's
+    /// record's local labels, the one ld-prime takes for the record's
     /// name, which the record's l<nnn> replaces: the greatest name, an
     /// ltmpN label only if no other names the record (see
     /// symbol_places). The others stay as its aliases, unlike a C
     /// string's labels, which all stand for its LC<n>. (A record merged
-    /// into another's atom by its contents is named apart all the same.)
-    fn literal_atom_names(
+    /// into another by its contents is named apart all the same.)
+    fn fixed_literal_names(
         &self,
         obj: &crate::input_files::ObjectFile,
     ) -> HashMap<(u8, u64), SymbolId> {
@@ -2136,7 +2140,7 @@ impl<'a, E: Target> Locals<'a, E> {
             if !fixed_size {
                 continue;
             }
-            if self.atoms.get(ctx, isec, sym.value as i64).is_some() {
+            if self.literals.get(ctx, isec, sym.value as i64).is_some() {
                 let name = (sym.name().starts_with("ltmp"), Reverse(sym.name()), sym_id);
                 let place = (nlist.n_sect, nlist.n_value);
                 names.entry(place).and_modify(|best| *best = (*best).min(name)).or_insert(name);
@@ -2251,12 +2255,12 @@ impl<'a, E: Target> Locals<'a, E> {
         }
     }
 
-    /// The locals in ld-prime's order, the literal atoms ld64 names
-    /// numbered in it with one counter, and those atoms' symbol indices
-    /// (the locals open the symbol table) and addresses, and their
-    /// labels' (see atom_labels).
-    fn finish(self) -> (Vec<Local>, LiteralAtoms<(u32, u64)>, Vec<AtomLabel>) {
-        let Self { ctx, locals, atoms, atom_labels, .. } = self;
+    /// The locals in ld-prime's order, the literals ld64 names numbered
+    /// in it with one counter, and those literals' symbol indices (the
+    /// locals open the symbol table) and addresses, and their labels'
+    /// (see literal_labels).
+    fn finish(self) -> (Vec<Local>, NamedLiterals<(u32, u64)>, Vec<LiteralLabel>) {
+        let Self { ctx, locals, literals, literal_labels, .. } = self;
         // A stable sort, by object first: each object's locals as they
         // were gathered where all else ties.
         let mut order: Vec<usize> = (0..locals.len()).collect();
@@ -2282,8 +2286,8 @@ impl<'a, E: Target> Locals<'a, E> {
             counter += 1;
         }
 
-        // The first name at a place names the atom, unless an external
-        // there does; the others are its aliases. An alias in an
+        // The first name at a place names the subsection, unless an
+        // external there does; the others are its aliases. An alias in an
         // initializer or terminator list is not marked no-dead-strip
         // (see in_init_term_list). (A name ld64 makes for a literal
         // record has no symbol.)
@@ -2301,10 +2305,10 @@ impl<'a, E: Target> Locals<'a, E> {
             }
         }
 
-        let atoms = LiteralAtoms {
-            entsize_of: atoms.entsize_of,
-            atoms: atoms
-                .atoms
+        let literals = NamedLiterals {
+            entsize_of: literals.entsize_of,
+            literals: literals
+                .literals
                 .into_iter()
                 .map(|(key, e)| {
                     let i = index_of[e];
@@ -2312,8 +2316,8 @@ impl<'a, E: Target> Locals<'a, E> {
                 })
                 .collect(),
         };
-        let atom_labels =
-            atom_labels.into_iter().map(|(e, id)| (index_of[e] as usize, id)).collect();
-        (locals, atoms, atom_labels)
+        let literal_labels =
+            literal_labels.into_iter().map(|(e, id)| (index_of[e] as usize, id)).collect();
+        (locals, literals, literal_labels)
     }
 }
