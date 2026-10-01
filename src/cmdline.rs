@@ -343,6 +343,9 @@ pub struct Args {
     /// -save-temps: keep LTO's intermediate bitcode and objects beside
     /// the output.
     pub save_temps: bool,
+    /// -flto-codegen-only: have libLTO compile each bitcode module as
+    /// it is, ThinLTO or not, without optimizing it.
+    pub lto_codegen_only: bool,
     /// -mllvm: options for LLVM's optimizer and code generator, which
     /// libLTO parses as its own command line.
     pub mllvm: Vec<Vec<u8>>,
@@ -848,6 +851,7 @@ impl Default for Args {
             lto_cpu: None,
             lto_softload: false,
             save_temps: false,
+            lto_codegen_only: false,
             mllvm: Vec::new(),
             lto_cache_dir: None,
             lto_cache_prune_interval: None,
@@ -2943,6 +2947,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-mllvm" => args.mllvm.push(bytes(next_arg(&mut i, name))),
             b"-save-temps" => args.save_temps = true,
+            b"-flto-codegen-only" => args.lto_codegen_only = true,
             // The ThinLTO cache. ld-prime reads the numbers as strtoul
             // does and hands libLTO their low 32 bits, as an int or an
             // unsigned (so -1 never prunes), checking the percentage

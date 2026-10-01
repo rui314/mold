@@ -66,6 +66,7 @@ pub struct Plugin {
     pub thinlto_codegen_set_cache_entry_expiration: unsafe extern "C" fn(*mut c_void, u32),
     pub thinlto_codegen_set_final_cache_size_relative_to_available_space:
         unsafe extern "C" fn(*mut c_void, u32),
+    pub thinlto_codegen_set_codegen_only: unsafe extern "C" fn(*mut c_void, bool),
     pub thinlto_codegen_process: unsafe extern "C" fn(*mut c_void),
     pub thinlto_module_get_num_objects: unsafe extern "C" fn(*mut c_void) -> u32,
     pub thinlto_module_get_object: unsafe extern "C" fn(*mut c_void, u32) -> ObjectBuffer,
@@ -216,6 +217,7 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
                 handle,
                 c"thinlto_codegen_set_final_cache_size_relative_to_available_space",
             ),
+            thinlto_codegen_set_codegen_only: dlsym(handle, c"thinlto_codegen_set_codegen_only"),
             thinlto_codegen_process: dlsym(handle, c"thinlto_codegen_process"),
             thinlto_module_get_num_objects: dlsym(handle, c"thinlto_module_get_num_objects"),
             thinlto_module_get_object: dlsym(handle, c"thinlto_module_get_object"),
@@ -345,6 +347,8 @@ pub struct ThinOptions<'a> {
     /// The output, if -save-temps keeps the intermediate files beside
     /// it.
     pub save_temps: Option<&'a Path>,
+    /// -flto-codegen-only: compile the modules without optimizing.
+    pub codegen_only: bool,
 }
 
 /// Where ThinLTO caches the objects it compiles, keyed by everything
@@ -463,6 +467,9 @@ pub unsafe fn compile_thin(
         let objects_dir = opts.objects_dir.map(|dir| c(crate::util::path_bytes(dir)));
         if let Some(dir) = &objects_dir {
             (plugin.thinlto_set_generated_objects_dir)(cg, dir.as_ptr());
+        }
+        if opts.codegen_only {
+            (plugin.thinlto_codegen_set_codegen_only)(cg, true);
         }
         (plugin.thinlto_codegen_process)(cg);
 

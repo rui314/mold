@@ -2224,11 +2224,12 @@ fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec
 /// Whether a -r link takes in bitcode and nothing else, none of it
 /// built for ThinLTO: ld-prime then writes the modules merged into one
 /// bitcode file rather than an object, so that the final link still
-/// optimizes them as a whole. A Mach-O object of any content, or a
-/// ThinLTO module, makes it compile them instead.
+/// optimizes them as a whole. A Mach-O object of any content, a
+/// ThinLTO module or -flto-codegen-only makes it compile them instead.
 pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
     let mut modules = live_bitcode_modules(ctx).peekable();
     modules.peek().is_some()
+        && !ctx.args.lto_codegen_only
         && modules.all(|module| !module.is_thin)
         && ctx
             .objs
@@ -2406,6 +2407,7 @@ struct LtoObject {
 /// does - first the modules built for ThinLTO, an object each, then the
 /// rest merged into one - and replaces the placeholder objects' symbol
 /// claims with the real ones. Both see the same symbols to preserve.
+/// -flto-codegen-only has ThinLTO compile every module, unoptimized.
 pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     if live_bitcode_modules(ctx).next().is_none() {
         return false;
@@ -2418,8 +2420,8 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     let mut objects = Vec::new();
     {
         let roots = lto_roots(ctx);
-        let (thin, merged): (Vec<_>, Vec<_>) =
-            live_bitcode_modules(ctx).partition(|module| module.is_thin);
+        let (thin, merged): (Vec<_>, Vec<_>) = live_bitcode_modules(ctx)
+            .partition(|module| module.is_thin || ctx.args.lto_codegen_only);
         if !thin.is_empty() {
             objects.extend(thin_lto(ctx, &plugin, &thin, &roots));
         }
@@ -2487,6 +2489,7 @@ fn thin_lto<E: Target>(
             max_size: ctx.args.lto_cache_max_size,
         }),
         save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),
+        codegen_only: ctx.args.lto_codegen_only,
     };
     // SAFETY: the plugin is the library that parsed the modules.
     let objects = unsafe { crate::lto::compile_thin(plugin, &thin_modules, roots, &cross, &opts) };

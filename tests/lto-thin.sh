@@ -56,6 +56,15 @@ otool -hv $t/exe7.1.thinlto.o | grep -q OBJECT
 [ -s $t/exe7.thinlto.bcs/0.4.opt.bc ]
 [ -s $t/exe7.lto.bc ]
 
+# -flto-codegen-only has ThinLTO compile every module as it is, the ones
+# to merge too, without optimizing: an object each, and no /tmp/lto.o.
+$CC --ld-path=$mold -o $t/exe8 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,-flto-codegen-only \
+  -Wl,-map,$t/map8
+$t/exe8 | grep -q '^8 0$'
+sed -n '/^# Object files:/,/^# Sections:/p' $t/map8 | grep '^\[' > $t/files8
+[ $(grep -c '^\[ *[0-9]*\] $' $t/files8) = 3 ]
+not grep -q /tmp/lto.o $t/files8
+
 # ThinLTO bitcode in an archive, and in a dylib, which keeps its exports.
 rm -f $t/libfoo.a
 ar rcs $t/libfoo.a $t/b.o
