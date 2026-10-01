@@ -850,6 +850,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::UnwindInfo);
     }
     lay_out_eh_frame(ctx);
+    warn_eh_frame_too_large(ctx);
     add_linkedit_chunks(ctx);
     rename_synthetic_sections(ctx);
     add_boundary_sections(ctx);
@@ -1415,6 +1416,30 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
     ctx.eh_frame.hdr.size = off as u64;
     ctx.chunks.push(ChunkId::EhFrame);
+}
+
+/// Warns, as ld-prime does, if __unwind_info points a function at an
+/// FDE beyond the reach of the 24 bits an entry has for its offset
+/// (which it leaves 0 then, see encode_unwind_info).
+fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
+    use chunks::unwind_info::MAX_FDE_OFFSET;
+    if !ctx.args.warn_eh_frame_too_large
+        || ctx.eh_frame.hdr.size <= MAX_FDE_OFFSET as u64
+        || !ctx.chunks.contains(&ChunkId::UnwindInfo)
+    {
+        return;
+    }
+    let out_of_reach = ctx.unwind_records.iter().any(|rec| {
+        let isec = &ctx.isecs[rec.isec as usize];
+        isec.is_alive()
+            && isec.replacement == crate::input_sections::NO_REPLACEMENT
+            && rec.fde().is_some_and(|fde| ctx.fdes[fde].output_offset > MAX_FDE_OFFSET)
+    });
+    if out_of_reach {
+        crate::warn!(
+            "__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected"
+        );
+    }
 }
 
 /// Sorts the chunks into file order: the standard segment order, and

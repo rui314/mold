@@ -25,6 +25,10 @@ pub struct UnwindInfoSection {
     pub min_size: u64,
 }
 
+/// The greatest offset into __eh_frame the low 24 bits of a DWARF-mode
+/// encoding hold.
+pub const MAX_FDE_OFFSET: u32 = 0xff_ffff;
+
 impl UnwindInfoSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new("__TEXT", "__unwind_info");
@@ -91,12 +95,15 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     };
 
     // A DWARF-mode record's encoding holds its FDE's offset in
-    // __eh_frame in the low 24 bits. Its personality and LSDA are the
-    // FDE's, which ld-prime lists in the tables below as a compact
-    // record's, though the unwinder reads them from the FDE.
+    // __eh_frame in the low 24 bits, or 0 if they can't hold it, as in
+    // ld-prime (which warns, see lay_out_eh_frame): the unwinder then
+    // looks for the FDE through the whole section. Its personality and
+    // LSDA are the FDE's, which ld-prime lists in the tables below as a
+    // compact record's, though the unwinder reads them from the FDE.
     for rec in &mut records {
         if let Some(fde) = rec.fde() {
-            rec.encoding = E::UNWIND_MODE_DWARF | (ctx.fdes[fde].output_offset & 0xff_ffff);
+            let off = ctx.fdes[fde].output_offset;
+            rec.encoding = E::UNWIND_MODE_DWARF | if off <= MAX_FDE_OFFSET { off } else { 0 };
             if let Some(p) = function_personality(ctx, rec) {
                 rec.personality_sym = p;
             }
@@ -141,9 +148,11 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     // Merge consecutive records with identical contents. An entry has no
     // length - it covers the code up to the next one - so the padding
     // between two functions does not keep them apart. ld-prime keeps
-    // each entry of encoding 0, code without unwind info, though.
+    // each entry of encoding 0, code without unwind info, though, and
+    // each in DWARF mode (alike only if their FDEs are out of reach).
     records.dedup_by(|rec, last| {
         rec.encoding != 0
+            && rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF
             && last.encoding == rec.encoding
             && last.personality() == rec.personality()
             && last.lsda().is_none()
@@ -155,11 +164,12 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     // increasing order, up to 127 of them (a compressed entry's 8-bit
     // index names a common encoding below the table's count and a
     // page-local one above it). ld64 fills it the same way; a one-off
-    // encoding - every DWARF-mode one, with its FDE offset - stays
-    // page-local.
+    // encoding stays page-local, as does every DWARF-mode one, even
+    // one that several FDEs out of reach share.
     let common: Vec<(u32, usize)> = {
         let mut freq: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
-        for rec in &records {
+        for rec in records.iter().filter(|r| r.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF)
+        {
             *freq.entry(rec.encoding).or_default() += 1;
         }
         let mut all: Vec<(u32, usize)> = freq.into_iter().collect();

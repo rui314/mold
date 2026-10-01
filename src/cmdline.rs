@@ -502,6 +502,10 @@ pub struct Args {
     /// -no_compact_unwind: no __unwind_info; the image unwinds by its
     /// __eh_frame alone (GCC's driver passes it on every link).
     pub no_compact_unwind: bool,
+    /// Warn about an FDE beyond the 16 MiB of __eh_frame an
+    /// __unwind_info entry can point into (-no_warn_eh_frame_too_large
+    /// silences it).
+    pub warn_eh_frame_too_large: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
     /// Whether imported functions are called through lazy pointers
@@ -828,6 +832,7 @@ impl Default for Args {
             no_inits: false,
             no_warn_inits: false,
             no_compact_unwind: false,
+            warn_eh_frame_too_large: true,
             bind_at_load: false,
             lazy_binding: false,
             application_extension: false,
@@ -2332,9 +2337,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-reference_output" => {
                 next_arg(&mut i, name);
             }
-            // mold never warns about an __eh_frame too large for compact
-            // unwind entries to point into.
-            b"-no_warn_eh_frame_too_large" => {}
+            b"-no_warn_eh_frame_too_large" => args.warn_eh_frame_too_large = false,
             // ld-prime ignores this with a warning for another target
             // than arm64, and changes nothing seen in an arm64 image.
             b"-x86_64_layout_emulation" => x86_64_layout_emulation = true,
