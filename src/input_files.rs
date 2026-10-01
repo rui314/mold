@@ -3203,6 +3203,39 @@ fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
     fat_arches(mf).map(|(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype)).collect()
 }
 
+/// What ld-prime refuses of an object file's layout before it reads the
+/// object: load commands, a symbol table or its strings running past
+/// the end of the file. (One a few bytes short of a mach header is
+/// "buffer too small", see passes::collect_file.)
+pub fn malformed_object(data: &[u8]) -> Option<&'static str> {
+    let hdr = MachHeader::read_from(data);
+    let end = data.len() as u64;
+    let cmds_end = size_of::<MachHeader>() + hdr.sizeofcmds as usize;
+    if cmds_end as u64 > end {
+        return Some("mh.sizeofcmds extends beyond buffer size");
+    }
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..hdr.ncmds {
+        if off + size_of::<SymtabCommand>() > cmds_end {
+            break;
+        }
+        let lc = SymtabCommand::read_from(&data[off..]);
+        if lc.cmd == LC_SYMTAB {
+            if lc.symoff as u64 + lc.nsyms as u64 * size_of::<NList>() as u64 > end {
+                return Some("LINKEDIT content 'symbol table' extends beyond end of segment");
+            }
+            if lc.stroff as u64 + lc.strsize as u64 > end {
+                return Some("LINKEDIT content 'symbol strings' extends beyond end of segment");
+            }
+        }
+        if lc.cmdsize < 8 {
+            break;
+        }
+        off += lc.cmdsize as usize;
+    }
+    None
+}
+
 /// The slice of a fat file the link takes (see takes_arch), if any: the
 /// one for exactly its architecture first. With `subtypes`
 /// (-allow_sub_type_mismatches), one of another subtype of its CPU type

@@ -537,6 +537,11 @@ fn collect_file<E: Target>(
     }
     match get_file_type(mf) {
         FileType::Object => {
+            if let Some(why) = input_files::malformed_object(mf.data()) {
+                let name = mf.name.display();
+                error!("{why} in '{name}' in '{name}'");
+                return;
+            }
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
@@ -622,6 +627,13 @@ fn collect_file<E: Target>(
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
+                if get_file_type(member) == FileType::Object
+                    && let Some(why) = input_files::malformed_object(member.data())
+                {
+                    let name = member.name.display();
+                    error!("{why} in '{name}' in '{name}'");
+                    continue;
+                }
                 let alive = rc.force_load
                     || all_load
                     || (ctx.args.load_objc && input_files::has_objc_sections(member));
@@ -647,14 +659,20 @@ fn collect_file<E: Target>(
             input_files::parse_bitcode(ctx, mf, true);
         }
         FileType::Empty => {}
+        // ld-prime knows a 64-bit Mach-O file by its magic number, and
+        // refuses one a few bytes short of its header.
         _ => {
             let name = input_files::trace_name(path_bytes(&mf.name));
-            if crate::filetype::get_macho_filetype(mf.data()).is_some() {
-                fatal!(
+            let data = mf.data();
+            if crate::filetype::get_macho_filetype(data).is_some() {
+                error!(
                     "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
                 );
+            } else if data.len() >= 28 && data[..4] == MH_MAGIC_64.to_le_bytes() {
+                error!("buffer too small in '{name}' in '{name}'");
+            } else {
+                error!("unknown file type in '{name}'");
             }
-            fatal!("unknown file type in '{name}'");
         }
     }
 }
