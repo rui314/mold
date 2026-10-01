@@ -118,6 +118,10 @@ pub struct Context<E: Target> {
     /// The files only -possible-l and the like name, which load with
     /// the auto-linked libraries (see passes::load_autolink_deps).
     pub possible_files: Vec<std::path::PathBuf>,
+    /// Under -commons error, the first tentative definition a dylib
+    /// defines too, as ld-prime reports it once it has found no
+    /// duplicate symbol (see passes::check_common_conflicts).
+    pub common_conflict: Option<String>,
     /// The dylibs named on the command line that -dead_strip_dylibs
     /// dropped, which ld-prime's -map still lists: their positions
     /// among the inputs and paths.
@@ -240,6 +244,7 @@ impl<E: Target> Context<E> {
             processed_linker_options: std::collections::HashSet::new(),
             autolink_misses: Vec::new(),
             possible_files: Vec::new(),
+            common_conflict: None,
             stripped_dylibs: Vec::new(),
             indirect_files: Vec::new(),
             unwind_records: Vec::new(),

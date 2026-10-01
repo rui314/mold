@@ -195,6 +195,16 @@ pub enum WeakRefMismatches {
     Error,
 }
 
+/// -commons: what becomes of a tentative definition (a common symbol)
+/// some dylib of the link defines: it wins (ignore_dylibs, the
+/// default), the dylib's does (use_dylibs), or the link fails.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CommonsMode {
+    IgnoreDylibs,
+    UseDylibs,
+    Error,
+}
+
 /// Parsed command line arguments.
 #[derive(Debug)]
 pub struct Args {
@@ -377,6 +387,10 @@ pub struct Args {
     /// -weak_reference_mismatches: what a final image makes of a symbol
     /// it imports that some objects reference weakly and others not.
     pub weak_reference_mismatches: WeakRefMismatches,
+    /// -commons, and -warn_commons (or $LD_WARN_COMMONS): warn of each
+    /// tentative definition that wins over a dylib's definition.
+    pub commons: CommonsMode,
+    pub warn_commons: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -668,6 +682,8 @@ impl Default for Args {
             no_weak_exports: false,
             no_weak_imports: false,
             weak_reference_mismatches: WeakRefMismatches::NonWeak,
+            commons: CommonsMode::IgnoreDylibs,
+            warn_commons: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1525,8 +1541,11 @@ pub(crate) fn missing_argument(opt: &str) -> String {
 /// by nature (symbol and section names, versions, the -undefined
 /// treatment) must be UTF-8.
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
-    let mut args =
-        Args { zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(), ..Default::default() };
+    let mut args = Args {
+        zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
+        warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
+        ..Default::default()
+    };
     let mut kind = OutputKind::DynamicExecutable;
     let mut stack_size: Option<u64> = None;
     let mut stack_addr: Option<u64> = None;
@@ -2271,6 +2290,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     ),
                 }
             }
+            // ld-prime's usage leaves use_dylibs out, and takes a
+            // missing treatment for an invalid one.
+            b"-commons" => {
+                i += 1;
+                args.commons = match cmdline.get(i).map(|arg| arg.as_bytes()) {
+                    Some(b"ignore_dylibs") => CommonsMode::IgnoreDylibs,
+                    Some(b"use_dylibs") => CommonsMode::UseDylibs,
+                    Some(b"error") => CommonsMode::Error,
+                    _ => fatal!("invalid option to -commons [ ignore_dylibs | error ]"),
+                }
+            }
+            b"-warn_commons" => args.warn_commons = true,
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();

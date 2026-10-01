@@ -1801,17 +1801,25 @@ fn claim_dylib_exports<E: Target>(
     use std::sync::atomic::Ordering;
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
+    // A tentative definition (a common symbol) beats a dylib's but
+    // under -commons use_dylibs.
+    let use_dylibs = ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs;
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
         if !used[i].load(Ordering::Relaxed) {
             return;
         }
         let won = best[i].load(Ordering::Relaxed);
-        if sym.is_common() || won >> 40 < 2 {
+        if (sym.is_common() && !use_dylibs) || won >> 40 < 2 {
             return;
         }
         for (dylib_idx, dylib) in dylibs.iter().enumerate() {
             let rank = (2u64 << 40) | dylib.priority as u64;
             if rank < won && dylib.exports.contains(sym.name()) {
+                if sym.is_common() {
+                    sym.set_is_common(false);
+                    sym.value = 0;
+                    sym.common_p2align = 0;
+                }
                 let owner = import_from_dylib(sym, dylibs, &providers, dylib_idx);
                 // -weak_framework / -weak_library / -weak-l: every
                 // import from the library is a weak import (ld64 binds
@@ -2811,6 +2819,93 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
             prev,
             ctx.symbols[sym_id]
         );
+    }
+}
+
+/// The tentative definitions (common symbols) left after resolution
+/// that a dylib of the link defines too, by name: the object whose
+/// definition won (the first of the largest) and the files of the
+/// dylibs, in the order the link loaded them.
+fn common_conflicts<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, String, Vec<String>)> {
+    let mut found: Vec<(SymbolId, Vec<usize>)> = (0..ctx.symbols.syms.len() as u32)
+        .into_par_iter()
+        .filter(|&id| ctx.symbols[id].is_common() && !ctx.symbols[id].is_defined())
+        .filter_map(|id| {
+            let name = ctx.symbols[id].name();
+            let dylibs: Vec<usize> =
+                (0..ctx.dylibs.len()).filter(|&i| ctx.dylibs[i].exports.contains(name)).collect();
+            (!dylibs.is_empty()).then_some((id, dylibs))
+        })
+        .collect();
+    found.par_sort_unstable_by_key(|&(id, _)| ctx.symbols[id].name());
+    // The file that defines the symbol: a private library the dylib
+    // re-exports and merges, or for a library a stub inlines as a
+    // public re-export, the file ld-prime would find for it, if any.
+    let real = |dylib: &input_files::DylibFile, name: &str| {
+        let merged = dylib.merged_files.iter().find(|file| file.exports.contains(&name));
+        let file = match (merged, dylib.is_implicit) {
+            (Some(file), _) => Some(&file.path),
+            (None, true) => input_files::find_reexport(ctx, &dylib.install_name).map(|mf| &mf.name),
+            (None, false) => None,
+        };
+        let path = file.unwrap_or(&dylib.path);
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    };
+    found
+        .into_iter()
+        .map(|(id, dylibs)| {
+            let size = ctx.symbols[id].value;
+            let obj = ctx.objs.iter().find(|obj| {
+                obj.is_alive
+                    && obj.nlists.iter().zip(&obj.symbols).any(|(nlist, &sym)| {
+                        sym == id && nlist.is_common() && nlist.n_value == size
+                    })
+            });
+            let obj = obj.map_or(String::new(), |obj| resolved_file_name(obj.mf));
+            let dylibs = dylibs
+                .into_iter()
+                .map(|i| {
+                    real(&ctx.dylibs[i], ctx.symbols[id].name()).to_string_lossy().into_owned()
+                })
+                .collect();
+            (id, obj, dylibs)
+        })
+        .collect()
+}
+
+/// -warn_commons: ld-prime warns, as it resolves symbols, of each
+/// tentative definition it keeps over a dylib's definition of the name
+/// (by default; a missing `extern` in a header makes one), once for
+/// each such dylib. Under -commons error it notes the first such one
+/// for report_common_conflict.
+pub fn check_common_conflicts<E: Target>(ctx: &mut Context<E>) {
+    use crate::cmdline::CommonsMode;
+    let warn = ctx.args.warn_commons && ctx.args.commons == CommonsMode::IgnoreDylibs;
+    if !warn && ctx.args.commons != CommonsMode::Error {
+        return;
+    }
+    for (id, obj, dylibs) in common_conflicts(ctx) {
+        let name = ctx.symbols[id].name();
+        if !warn {
+            ctx.common_conflict = Some(format!(
+                "common symbol '{name}' ({obj}) conflicts with definition from dylib '{name}' ({})",
+                dylibs[0]
+            ));
+            return;
+        }
+        for dylib in dylibs {
+            crate::warn!(
+                "using common symbol '{name}' ({obj}) and ignoring definition from dylib '{name}' ({dylib})"
+            );
+        }
+    }
+}
+
+/// -commons error fails the link on the first tentative definition a
+/// dylib defines too, once ld-prime has found no duplicate symbol.
+pub fn report_common_conflict<E: Target>(ctx: &Context<E>) {
+    if let Some(msg) = &ctx.common_conflict {
+        error!("{msg}");
     }
 }
 

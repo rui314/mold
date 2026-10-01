@@ -1154,6 +1154,18 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
     for &(_, target) in &ctx.indirect_aliases {
         live_ref[target as usize].store(true, Ordering::Relaxed);
     }
+    // So does a tentative definition that -commons use_dylibs replaced
+    // with a dylib's definition.
+    if ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs {
+        ctx.objs.par_iter().filter(|obj| obj.is_alive).for_each(|obj| {
+            let r = obj.global_range();
+            for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+                if nlist.is_common() && ctx.symbols[id].is_imported() {
+                    live_ref[id as usize].store(true, Ordering::Relaxed);
+                }
+            }
+        });
+    }
     live_ref
 }
 

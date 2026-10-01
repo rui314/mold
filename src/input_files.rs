@@ -3170,9 +3170,13 @@ fn load_reexports<E: Target>(
     };
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
-    // Only -map and -why_live read the files, and gathering them costs.
+    // Only -map, -why_live and the diagnostics of tentative definitions
+    // a dylib defines too read the files, and gathering them costs.
     let mut merged_files = Vec::new();
-    let map = ctx.args.map.is_some() || !ctx.args.why_live.is_empty();
+    let map = ctx.args.map.is_some()
+        || !ctx.args.why_live.is_empty()
+        || ctx.args.warn_commons
+        || ctx.args.commons == crate::cmdline::CommonsMode::Error;
     let mut record = |install_name: &[u8], path: &Path, exports: Vec<&'static str>| {
         let (install_name, path) = (install_name.to_vec(), path.to_path_buf());
         merged_files.push(MergedFile { install_name, path, exports });

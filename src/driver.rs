@@ -102,6 +102,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     t.stop();
     passes::warn_subtype_mismatches(&ctx);
     passes::check_input_versions(&ctx);
+    passes::check_common_conflicts(&mut ctx);
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
     drop(t);
@@ -173,6 +174,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::check_weak_imports(&ctx);
     crate::error::checkpoint();
     passes::check_duplicate_symbols(&ctx);
+    crate::error::checkpoint();
+    passes::report_common_conflict(&ctx);
     crate::error::checkpoint();
     passes::check_weak_exports(&ctx);
     crate::error::checkpoint();
