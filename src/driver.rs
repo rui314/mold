@@ -158,10 +158,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         ctx.output_size = crate::relocatable::link(&mut ctx);
         drop(t);
         crate::error::checkpoint();
-        // Xcode asks every link, its single-object prelinks included,
-        // for -dependency_info and fails the build if the file is
-        // missing.
-        crate::mapfile::write_dependency_info(&ctx);
         crate::error::check_fatal_warnings();
         crate::subprocess::notify_parent();
         drop(t_all);

@@ -161,6 +161,9 @@ pub struct ObjectFile {
     /// The __compact_unwind pointer fields a 4-byte relocation set (see
     /// StagedObject::unwind_ptr32), by global subsection.
     pub unwind_ptr32: Vec<(u32, u32, u8)>,
+    /// The labels of __compact_unwind records (see
+    /// StagedObject::unwind_labels), by global subsection.
+    pub unwind_labels: Vec<(u32, u32, u32)>,
     /// For a bitcode input, the lto_module handle: the object is a
     /// placeholder that only claims symbols until LTO compiles it.
     pub lto_module: Option<usize>,
@@ -207,6 +210,7 @@ impl ObjectFile {
             objc_image_info: None,
             has_debug_info: false,
             unwind_ptr32: Vec::new(),
+            unwind_labels: Vec::new(),
             lto_module: None,
             nlists: std::borrow::Cow::Owned(Vec::new()),
             first_global: None,
@@ -752,6 +756,11 @@ pub struct StagedObject {
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
     /// output keeps them 4 bytes, as ld-prime does.
     pub unwind_ptr32: Vec<(u32, u32, u8)>,
+    /// In a -r link, the labels at the start of __compact_unwind
+    /// records - an arm64 assembler's ltmpN at the section's -, as
+    /// (subsection, function offset, nlist) of their records: one names
+    /// its record in the map, of which ld-prime makes an atom.
+    pub unwind_labels: Vec<(u32, u32, u32)>,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -1105,6 +1114,7 @@ pub fn stage_object<E: Target>(
         data_fde: false,
         pointer_without_target: None,
         unwind_ptr32: Vec::new(),
+        unwind_labels: Vec::new(),
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
@@ -1141,7 +1151,7 @@ pub fn stage_object<E: Target>(
             (start, start + 32)
         };
         match obj.read_section_relocs::<E>(i, record_at) {
-            Some(rels) => obj.parse_compact_unwind(&sect_hdrs[i], &rels),
+            Some(rels) => obj.parse_compact_unwind(i, &rels, relocatable),
             None => relocs_ok = false,
         }
     }
@@ -1759,6 +1769,9 @@ impl StagedObject {
         for (isec, _, _) in &mut self.unwind_ptr32 {
             *isec += isec_base as u32;
         }
+        for (isec, _, _) in &mut self.unwind_labels {
+            *isec += isec_base as u32;
+        }
         for rec in &mut self.unwind {
             rec.isec += isec_base as u32;
             if rec.lsda_isec != UNWIND_NONE {
@@ -1806,6 +1819,7 @@ impl StagedObject {
             objc_image_info: self.objc_image_info,
             has_debug_info: self.has_debug_info,
             unwind_ptr32: self.unwind_ptr32,
+            unwind_labels: self.unwind_labels,
             nlists: self.nlists,
             first_global: self.first_global,
             symbols,
@@ -2120,6 +2134,7 @@ pub fn parse_bitcode<E: Target>(
         objc_image_info: None,
         has_debug_info: false,
         unwind_ptr32: Vec::new(),
+        unwind_labels: Vec::new(),
         nlists: std::borrow::Cow::Owned(nlists),
         first_global: None,
         symbols: syms,
@@ -2222,11 +2237,17 @@ impl StagedObject {
     /// regenerates the encoding from it, a -r output copies the record
     /// as it came, like ld64). Object files usually don't contain such
     /// records, but `ld -r` output does.
-    fn parse_compact_unwind(&mut self, hdr: &MachSection, rels: &[crate::input_sections::Reloc]) {
+    fn parse_compact_unwind(
+        &mut self,
+        sect: usize,
+        rels: &[crate::input_sections::Reloc],
+        labels: bool,
+    ) {
         use crate::input_sections::RelocTarget;
 
         const ENTRY_SIZE: usize = 32;
         let mf = self.mf;
+        let hdr = &self.sect_hdrs[sect];
         // Diagnostics spell the path lossily.
         let file_name = mf.name.display();
         if !hdr.size.is_multiple_of(ENTRY_SIZE as u64) {
@@ -2336,9 +2357,34 @@ impl StagedObject {
             }
         }
 
+        if labels {
+            self.label_unwind_records(sect, &records);
+        }
+
         // A record no relocation gave a function describes nothing.
         records.retain(|rec| rec.isec != u32::MAX);
         self.unwind.extend(records);
+    }
+
+    /// Notes the labels at the start of records of __compact_unwind
+    /// (section `sect`) in unwind_labels.
+    fn label_unwind_records(&mut self, sect: usize, records: &[UnwindRecord]) {
+        let hdr = &self.sect_hdrs[sect];
+        for (k, nlist) in self.nlists.iter().enumerate() {
+            let off = nlist.n_value.wrapping_sub(hdr.addr);
+            if nlist.is_stab()
+                || nlist.n_type() != N_SECT
+                || nlist.n_sect as usize != sect + 1
+                || off >= hdr.size
+                || off % 32 != 0
+            {
+                continue;
+            }
+            let rec = &records[off as usize / 32];
+            if rec.isec != u32::MAX {
+                self.unwind_labels.push((rec.isec, rec.input_offset, k as u32));
+            }
+        }
     }
 
     /// Gathers each subsection's unwind records into one run, the range

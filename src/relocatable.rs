@@ -28,6 +28,7 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
+use crate::mapfile::RelocatableAtom;
 use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -507,10 +508,46 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     drop(t);
 
     crate::error::checkpoint();
+    // The reports come before the output, which may not be writable.
+    // Xcode asks every link, its single-object prelinks included, for
+    // -dependency_info and fails the build if the file is missing.
+    crate::mapfile::write_dependency_info(ctx);
+    if ctx.args.map.is_some() {
+        let headers: Vec<&ChunkHeader> =
+            sects.iter().map(|&s| sect_hdr(ctx, &synthetic, s)).collect();
+        crate::mapfile::print_relocatable_map(ctx, &headers, &synthetic_atoms(&synthetic));
+    }
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
     drop(t);
     off
+}
+
+/// The atoms of the sections the output makes itself, by address, as
+/// the map lists them.
+fn synthetic_atoms(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableAtom)> {
+    let mut atoms = Vec::new();
+    for sec in synthetic {
+        let addr = sec.hdr.addr;
+        match &sec.kind {
+            SyntheticKind::ObjcImageInfo => atoms.push((addr, RelocatableAtom::ImageInfo)),
+            SyntheticKind::CompactUnwind(records) => {
+                for (j, &rec) in records.iter().enumerate() {
+                    atoms.push((addr + 32 * j as u64, RelocatableAtom::Unwind(rec)));
+                }
+            }
+            SyntheticKind::EhFrame(records) => {
+                for &(rec, off) in records {
+                    let atom = match rec {
+                        EhRec::Cie(c) => RelocatableAtom::Cie(c),
+                        EhRec::Fde(f) => RelocatableAtom::Fde(f),
+                    };
+                    atoms.push((addr + off as u64, atom));
+                }
+            }
+        }
+    }
+    atoms
 }
 
 /// A section of the -r output: merged from input subsections, or

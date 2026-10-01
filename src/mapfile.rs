@@ -348,8 +348,157 @@ fn merged_providers<E: Target>(
     (provided, merged_only)
 }
 
+/// A line of the map's section list.
+struct MapSection<'a> {
+    addr: u64,
+    size: u64,
+    segname: &'a str,
+    sectname: &'a str,
+}
+
+impl<'a> MapSection<'a> {
+    fn of(hdr: &'a crate::chunks::ChunkHeader) -> Self {
+        Self { addr: hdr.addr, size: hdr.size, segname: hdr.segname, sectname: &hdr.sectname }
+    }
+}
+
 pub fn print_map<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.map else { return };
+    let mut sections = Vec::new();
+    for seg in &ctx.segments {
+        for &id in &seg.chunks {
+            let hdr = ctx.chunk_header(id);
+            if hdr.is_sect {
+                sections.push(MapSection::of(hdr));
+            }
+        }
+        // ld-prime models a static executable's stack as a zero-fill
+        // section of a linker-made atom, which its segment's load
+        // command doesn't list.
+        if seg.name == "__UNIXSTACK" {
+            let (addr, size) = (seg.cmd.vmaddr, seg.cmd.vmsize);
+            sections.push(MapSection { addr, size, segname: "__UNIXSTACK", sectname: "__stack" });
+        }
+    }
+
+    // The linker's symbols go first of those at one place, and an
+    // executable's header first of all.
+    let files = MapFiles::new(ctx);
+    let mut entries = linker_symbol_entries(ctx);
+    let linker_symbols = entries.len();
+    let (named, first_labels) = symbol_entries(ctx, &files);
+    entries.extend(named);
+    entries.extend(unnamed_entries(ctx, &files, &first_labels));
+    entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
+    entries.extend(synthetic_entries(ctx, &files));
+    entries.sort_by_key(|e| (e.addr, e.size));
+    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
+        let addr = ctx.mach_header.hdr.addr;
+        entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name("__mh_execute_header") });
+    }
+    write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
+}
+
+/// An atom of a section a -r output makes itself, as its map lists it.
+pub enum RelocatableAtom {
+    /// A record of __LD,__compact_unwind: unwind record `i`'s.
+    Unwind(usize),
+    /// A record of __TEXT,__eh_frame: CIE or FDE `i`.
+    Cie(usize),
+    Fde(usize),
+    /// The merged __objc_imageinfo.
+    ImageInfo,
+}
+
+/// -map for a -r link, which ld-prime writes as for a final image: of
+/// the output's `sections`, at the addresses they have from zero, and
+/// the atoms in them - the inputs', and those of the sections the
+/// output makes itself (`atoms`, by address). A record of
+/// __compact_unwind is its object's, named by its label, if it has one;
+/// the __objc_imageinfo is the linker's, as in an image.
+pub fn print_relocatable_map<E: Target>(
+    ctx: &Context<E>,
+    sections: &[&crate::chunks::ChunkHeader],
+    atoms: &[(u64, RelocatableAtom)],
+) {
+    let Some(path) = &ctx.args.map else { return };
+    let sections: Vec<MapSection> = sections.iter().map(|hdr| MapSection::of(hdr)).collect();
+    let files = MapFiles::new(ctx);
+    let mut entries = linker_symbol_entries(ctx);
+    let linker_symbols = entries.len();
+    let (named, first_labels) = symbol_entries(ctx, &files);
+    entries.extend(named);
+    entries.extend(unnamed_entries(ctx, &files, &first_labels));
+    let synthetic = relocatable_atom_entries(ctx, &files, &entries[linker_symbols..], atoms);
+    entries.extend(synthetic);
+    entries.sort_by_key(|e| (e.addr, e.size));
+    write_map(ctx, path, &files, &sections, &entries, &[]);
+}
+
+/// The map's entries of the atoms of the sections a -r output makes
+/// itself (see print_relocatable_map), whose FDEs are named after the
+/// `named` symbols.
+fn relocatable_atom_entries<E: Target>(
+    ctx: &Context<E>,
+    files: &MapFiles,
+    named: &[MapEntry],
+    atoms: &[(u64, RelocatableAtom)],
+) -> Vec<MapEntry<'static>> {
+    let fde_names = FdeNames::new(named);
+    let labels = unwind_labels(ctx);
+    let mut entries = Vec::new();
+    for &(addr, ref atom) in atoms {
+        let (size, obj, name) = match *atom {
+            RelocatableAtom::Unwind(i) => {
+                let rec = &ctx.unwind_records[i];
+                let label = labels.get(&(rec.isec, rec.input_offset)).copied();
+                let obj = ctx.isecs[rec.isec as usize].file as usize;
+                (32, Some(obj), Cow::Borrowed(label.unwrap_or("anon").as_bytes()))
+            }
+            RelocatableAtom::Cie(i) => {
+                let cie = &ctx.cies[i];
+                (cie.data.len() as u64, Some(cie.obj as usize), name("CFI"))
+            }
+            RelocatableAtom::Fde(i) => {
+                let fde = &ctx.fdes[i];
+                let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
+                (fde.data.len() as u64, Some(fde.obj as usize), fde_names.name(func))
+            }
+            RelocatableAtom::ImageInfo => (8, None, name("anon")),
+        };
+        let file = obj.map_or(0, |obj| files.objs[obj]);
+        entries.push(MapEntry { addr, size, file, name });
+    }
+    entries
+}
+
+/// The label of each __compact_unwind record that has one, by the
+/// record's subsection and function offset (see
+/// ObjectFile::unwind_labels).
+fn unwind_labels<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<(u32, u32), &'static str> {
+    let mut labels = hashbrown::HashMap::new();
+    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+        for &(isec, off, k) in &obj.unwind_labels {
+            let name = ctx.symbols[obj.symbols[k as usize]].name();
+            if !name.is_empty() && !name.starts_with('L') {
+                labels.entry((isec, off)).or_insert(name);
+            }
+        }
+    }
+    labels
+}
+
+/// Writes the map: the output and its architecture, the files of the
+/// link (see MapFiles), the `sections`, the `entries` - the atoms, in
+/// the order given - and the `dead` ones -dead_strip took out.
+fn write_map<E: Target>(
+    ctx: &Context<E>,
+    path: &Path,
+    files: &MapFiles,
+    sections: &[MapSection],
+    entries: &[MapEntry],
+    dead: &[MapEntry],
+) {
     let Ok(file) = std::fs::File::create(path) else {
         crate::warn!("could not write map file: {}", path.display());
         return;
@@ -361,7 +510,6 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     let _ = writeln!(out);
     let _ = writeln!(out, "# Arch: {}", E::NAME);
 
-    let files = MapFiles::new(ctx);
     let _ = writeln!(out, "# Object files:");
     let _ = writeln!(out, "[  0] linker synthesized");
     // A fat file's slice, and a fat archive's member, by the file's own
@@ -374,49 +522,17 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 
     let _ = writeln!(out, "# Sections:");
     let _ = writeln!(out, "# Address\tSize    \tSegment\tSection");
-    for seg in &ctx.segments {
-        for &id in &seg.chunks {
-            let hdr = ctx.chunk_header(id);
-            if hdr.is_sect {
-                let _ = writeln!(
-                    out,
-                    "0x{:08X}\t0x{:08X}\t{}\t{}",
-                    hdr.addr, hdr.size, hdr.segname, hdr.sectname
-                );
-            }
-        }
-        // ld-prime models a static executable's stack as a zero-fill
-        // section of a linker-made atom, which its segment's load
-        // command doesn't list.
-        if seg.name == "__UNIXSTACK" {
-            let _ = writeln!(
-                out,
-                "0x{:08X}\t0x{:08X}\t__UNIXSTACK\t__stack",
-                seg.cmd.vmaddr, seg.cmd.vmsize
-            );
-        }
+    for sec in sections {
+        let _ = writeln!(
+            out,
+            "0x{:08X}\t0x{:08X}\t{}\t{}",
+            sec.addr, sec.size, sec.segname, sec.sectname
+        );
     }
-
-    // The linker's symbols go first of those at one place.
-    let mut entries = linker_symbol_entries(ctx);
-    let linker_symbols = entries.len();
-    let (named, first_labels) = symbol_entries(ctx, &files);
-    entries.extend(named);
-    entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
-    entries.extend(synthetic_entries(ctx, &files));
-    entries.sort_by_key(|e| (e.addr, e.size));
 
     let _ = writeln!(out, "# Symbols:");
     let _ = writeln!(out, "# Address\tSize    \tFile  Name");
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
-        let _ = writeln!(
-            out,
-            "0x{:08X}\t0x00000000\t[  0] __mh_execute_header",
-            ctx.mach_header.hdr.addr
-        );
-    }
-    for e in &entries {
+    for e in entries {
         let _ = write!(out, "0x{:08X}\t0x{:08X}\t[{:3}] ", e.addr, e.size, e.file);
         let _ = out.write_all(&e.name);
         let _ = writeln!(out);
@@ -425,12 +541,11 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     // Symbols removed by -dead_strip appear in their own section
     // with "<<dead>>" in the address column, the way ld64 reports
     // them; sizes are the atom extents they would have had.
-    let dead = dead_entries(ctx, &files);
     if !dead.is_empty() {
         let _ = writeln!(out);
         let _ = writeln!(out, "# Dead Stripped Symbols:");
         let _ = writeln!(out, "#        \tSize    \tFile  Name");
-        for e in &dead {
+        for e in dead {
             let _ = write!(out, "<<dead>>\t0x{:08X}\t[{:3}] ", e.size, e.file);
             let _ = out.write_all(&e.name);
             let _ = writeln!(out);
@@ -786,14 +901,7 @@ fn eh_frame_entries<'a, E: Target>(
     if !ctx.chunks.contains(&ChunkId::EhFrame) {
         return Vec::new();
     }
-    // Of the symbols at one place, the one listed first names the atom.
-    let mut atoms: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
-    for e in named {
-        let atom = atoms.entry(e.addr).or_insert((e.size, &e.name));
-        if e.size < atom.0 {
-            *atom = (e.size, &e.name);
-        }
-    }
+    let fde_names = FdeNames::new(named);
     let base = ctx.eh_frame.hdr.addr;
     let mut entries = Vec::new();
     for cie in ctx.cies.iter().filter(|cie| cie.is_alive) {
@@ -803,14 +911,38 @@ fn eh_frame_entries<'a, E: Target>(
     }
     for fde in &ctx.fdes {
         let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
-        let func = atoms.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
-        let mut name = b"FDE for: ".to_vec();
-        name.extend_from_slice(func);
         let addr = base + fde.output_offset as u64;
         let (size, file) = (fde.data.len() as u64, files.objs[fde.obj as usize]);
-        entries.push(MapEntry { addr, size, file, name: Cow::Owned(name) });
+        entries.push(MapEntry { addr, size, file, name: fde_names.name(func) });
     }
     entries
+}
+
+/// How the map names an FDE: "FDE for: " and the name of the atom of
+/// its function, which of the `named` symbols at its place is listed
+/// first (has the size).
+struct FdeNames<'a> {
+    atoms: hashbrown::HashMap<u64, (u64, &'a [u8])>,
+}
+
+impl<'a> FdeNames<'a> {
+    fn new(named: &'a [MapEntry<'_>]) -> Self {
+        let mut atoms: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
+        for e in named {
+            let atom = atoms.entry(e.addr).or_insert((e.size, &e.name));
+            if e.size < atom.0 {
+                *atom = (e.size, &e.name);
+            }
+        }
+        Self { atoms }
+    }
+
+    fn name(&self, func: u64) -> Cow<'static, [u8]> {
+        let func = self.atoms.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
+        let mut name = b"FDE for: ".to_vec();
+        name.extend_from_slice(func);
+        Cow::Owned(name)
+    }
 }
 
 /// The symbols the linker defines, as ld-prime lists them once
