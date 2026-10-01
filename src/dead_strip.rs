@@ -38,7 +38,8 @@ pub fn strip_dead_code<E: Target>(ctx: &mut Context<E>) {
     };
     dead_strip(ctx);
     mark_live_references(ctx);
-    ctx.stripped_imports = imports.into_iter().filter(|&id| !ctx.symbols[id].is_used()).collect();
+    let unused = imports.into_iter().filter(|&id| !ctx.symbols[id].is_used());
+    ctx.unbound_imports.extend(unused.collect::<Vec<_>>());
 }
 
 /// Removes subsections that are not reachable from the roots: the entry

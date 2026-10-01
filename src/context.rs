@@ -135,10 +135,12 @@ pub struct Context<E: Target> {
     /// The symbols two bitcode files define, found before LTO and
     /// reported after it (see passes::find_bitcode_duplicates).
     pub bitcode_duplicates: Vec<crate::passes::Duplicate>,
-    /// The imports only code that ld-prime's own dead stripping of an
-    /// LTO link removed used, which stay in the symbol table (see
+    /// The imports no live code refers to that ld-prime lists in the
+    /// symbol table all the same, unbound: those only bitcode did
+    /// before LTO (see passes::keep_bitcode_imports), and those only
+    /// code its own dead stripping of an LTO link removed did (see
     /// Context::strips_dead_code).
-    pub stripped_imports: Vec<crate::symbol::SymbolId>,
+    pub unbound_imports: Vec<crate::symbol::SymbolId>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -307,7 +309,7 @@ impl<E: Target> Context<E> {
             lto_inputs: Vec::new(),
             merged_lto_obj: None,
             bitcode_duplicates: Vec::new(),
-            stripped_imports: Vec::new(),
+            unbound_imports: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
             processed_linker_options: std::collections::HashSet::new(),

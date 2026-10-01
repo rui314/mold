@@ -595,6 +595,9 @@ pub struct LtoInput {
     pub defined: Vec<&'static str>,
     /// The external symbols resolution gave the file's definitions.
     pub won: Vec<&'static str>,
+    /// The symbols the module referred to that a dylib defined, and
+    /// which one.
+    pub imports: Vec<(crate::symbol::SymbolId, u32)>,
 }
 
 /// The bitcode file each symbol of the objects LTO compiled comes from,

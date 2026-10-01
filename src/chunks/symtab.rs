@@ -1202,9 +1202,9 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
     for &(_, target) in &ctx.indirect_aliases {
         live_ref[target as usize].store(true, Ordering::Relaxed);
     }
-    // So does one only code stripped unasked used (see
-    // Context::strips_dead_code).
-    for &id in &ctx.stripped_imports {
+    // So does one only bitcode or code stripped unasked used (see
+    // Context::unbound_imports).
+    for &id in &ctx.unbound_imports {
         live_ref[id as usize].store(true, Ordering::Relaxed);
     }
     // So does a tentative definition that -commons use_dylibs replaced
