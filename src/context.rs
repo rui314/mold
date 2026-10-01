@@ -141,6 +141,9 @@ pub struct Context<E: Target> {
     /// code its own dead stripping of an LTO link removed did (see
     /// Context::strips_dead_code).
     pub unbound_imports: Vec<crate::symbol::SymbolId>,
+    /// The names of the mach header that only code dead stripping
+    /// removed referred to (see mapfile::dead_entries).
+    pub dead_header_names: Vec<crate::symbol::SymbolId>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -310,6 +313,7 @@ impl<E: Target> Context<E> {
             merged_lto_obj: None,
             bitcode_duplicates: Vec::new(),
             unbound_imports: Vec::new(),
+            dead_header_names: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
             processed_linker_options: std::collections::HashSet::new(),

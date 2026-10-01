@@ -1641,7 +1641,35 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
         dead.push((file, (u64::MAX, u32::MAX, i as u32), entry));
     }
     dead.sort_by_key(|&(file, key, _)| (file, key));
-    dead.into_iter().map(|(_, _, entry)| entry).collect()
+    let mut dead: Vec<MapEntry> = dead.into_iter().map(|(_, _, entry)| entry).collect();
+    dead.extend(dead_header_entries(ctx));
+    dead
+}
+
+/// The linker's own atoms dead stripping removed, last among the dead:
+/// the names of the mach header only stripped code used, and - when
+/// nothing kept refers to the header in an image whose header is no
+/// root - the start of __TEXT they name.
+fn dead_header_entries<E: Target>(ctx: &Context<E>) -> Vec<MapEntry<'static>> {
+    let header_root = ctx.args.output_type == MH_EXECUTE && !ctx.args.preload;
+    let mut names: Vec<&'static str> = ctx
+        .dead_header_names
+        .iter()
+        .map(|&id| ctx.symbols[id].name())
+        .filter(|&n| !(header_root && n == "__mh_execute_header"))
+        .collect();
+    names.sort();
+    let header_live = crate::dead_strip::HEADER_NAMES.iter().any(|n| {
+        ctx.symbols.get(n).is_some_and(|id| {
+            let sym = &ctx.symbols[id];
+            sym.is_used()
+                && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.is_internal(o as usize))
+        })
+    });
+    if !names.is_empty() && !header_root && !header_live {
+        names.insert(0, "segment$start$__TEXT");
+    }
+    names.into_iter().map(|n| MapEntry { addr: 0, size: 0, file: 0, name: name(n) }).collect()
 }
 
 /// Where a dead atom was in its file: its address in the object, the
