@@ -1588,7 +1588,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-read_only_relocs"
         | "-arch_variant_lto_cache_mismatch"
         | "-duplicate_symbols"
-        | "-deployment_target_mismatches" => "missing <option>",
+        | "-deployment_target_mismatches"
+        | "-objc_class_ro_signing_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
         "-dylib_file" => "missing <path:path>",
@@ -2429,6 +2430,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.deployment_target_mismatches =
                     parse_treatment(name, next_arg(&mut i, name), true);
             }
+            // Whether objects may disagree on signing class_ro_t
+            // pointers, which only arm64e signs: nothing to check here.
+            b"-objc_class_ro_signing_mismatch" => {
+                parse_treatment(name, next_arg(&mut i, name), false);
+            }
             b"-poison_symbol" => {
                 poisoned.add(next_arg(&mut i, name).as_bytes(), 0);
             }
@@ -2590,6 +2596,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // has read the others (and given their warnings).
     if !unknown.is_empty() {
         fatal!("unknown options: {unknown}");
+    }
+    // Then it reads -objc_class_ro_signing_mismatch's environment
+    // variable, as it would the option.
+    let env = "LD_OBJC_CLASS_RO_SIGNING_MISMATCH";
+    if let Some(val) = std::env::var_os(env) {
+        if val.is_empty() {
+            fatal!("{env} missing <option>");
+        }
+        parse_treatment(env, &val, false);
     }
 
     args.output_type = match kind {
