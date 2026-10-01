@@ -573,8 +573,12 @@ fn symbol_entries<'a, E: Target>(
         if !ctx.isecs[isec].is_alive() || !is_named(ctx, sym) {
             continue;
         }
+        // Of the name of the function a folded one folded into, ld-prime
+        // lists one of each scope (see icf::folded_atom_names).
         let folded = is_coalesced_away(ctx, own as usize);
-        if folded && sym.name().starts_with("ltmp") {
+        if folded
+            && (sym.name().starts_with("ltmp") || ctx.folded_atom_names.get(&i) == Some(&true))
+        {
             continue;
         }
         let file = match files.commons.get(&(isec as u32)) {

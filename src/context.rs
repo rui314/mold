@@ -212,6 +212,9 @@ pub struct Context<E: Target> {
     /// the synthesized __common section takes its place in the section
     /// order from it, as ld64's does.
     pub common_first_obj: Option<u32>,
+    /// The symbols naming the atoms of the functions icf folded, each
+    /// with whether the output drops it (see icf::folded_atom_names).
+    pub folded_atom_names: hashbrown::HashMap<SymbolId, bool>,
     /// -alias and selective reexports: (alias, imported target).
     /// Emitted as N_INDR symbols and re-export trie entries.
     pub indirect_aliases: Vec<(SymbolId, SymbolId)>,
@@ -323,6 +326,7 @@ impl<E: Target> Context<E> {
             data_blobs: Vec::new(),
             extra_local_syms: Vec::new(),
             common_first_obj: None,
+            folded_atom_names: hashbrown::HashMap::new(),
             dylib_load_seq: 0,
             autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),

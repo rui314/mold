@@ -31,6 +31,7 @@ use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile, atom_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
+use crate::symbol::SymbolId;
 use crate::target::Target;
 
 /// A stable identifier for what a relocation edge points at.
@@ -318,33 +319,88 @@ fn mark_swift_functions<E: Target>(
     obj: &ObjectFile,
     flags: &[AtomicBool],
 ) {
-    // The labels at a subsection's start, but for an exported one
-    // another object's definition won, with their ranks.
-    let labels = || {
-        obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &sym_id)| {
-            let sym = &ctx.symbols[sym_id];
-            let isec = sym.input_section()?;
-            (!nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && sym.value == 0
-                && sym.file() == Some(FileId::Obj(i as u32)))
-            .then(|| (isec, atom_name_rank(nlist, sym.name()), sym.name()))
-        })
-    };
+    // Only a function whose address is taken needs to be one.
     let is_swift = |name: &str| name.starts_with("_$s");
-
-    // Few objects have any.
-    if !labels().any(|(_, _, name)| is_swift(name)) {
-        return;
-    }
-    let mut labels: Vec<_> = labels().collect();
-    labels.sort_unstable();
-    for (j, &(isec, _, name)) in labels.iter().enumerate() {
-        let names_atom = labels.get(j + 1).is_none_or(|next| next.0 != isec);
-        if names_atom && is_swift(name) {
+    for (isec, sym) in atom_names(ctx, i, obj, |isec| ctx.isecs[isec].is_address_taken()) {
+        if is_swift(ctx.symbols[sym].name()) {
             flags[isec as usize].store(true, Ordering::Relaxed);
         }
     }
+}
+
+/// The labels at the start of object `i`'s subsections, but for an
+/// exported one another object's definition won: (subsection, rank of
+/// the label as ld-prime picks the one naming the atom, name, symbol).
+fn start_labels<'a, E: Target>(
+    ctx: &'a Context<E>,
+    i: usize,
+    obj: &'a ObjectFile,
+) -> impl Iterator<Item = (u32, u8, &'static str, SymbolId)> + 'a {
+    obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &id)| {
+        let sym = &ctx.symbols[id];
+        let isec = sym.input_section()?;
+        (!nlist.is_stab()
+            && nlist.n_type() == N_SECT
+            && sym.value == 0
+            && sym.file() == Some(FileId::Obj(i as u32)))
+        .then(|| (isec, atom_name_rank(nlist, sym.name()), sym.name(), id))
+    })
+}
+
+/// The symbol naming the atom of each of object `i`'s subsections that
+/// a label starts (see Context::atom_label) and `wanted` takes, by
+/// subsection.
+fn atom_names<E: Target>(
+    ctx: &Context<E>,
+    i: usize,
+    obj: &ObjectFile,
+    wanted: impl Fn(usize) -> bool,
+) -> Vec<(u32, SymbolId)> {
+    let mut labels: Vec<_> = start_labels(ctx, i, obj).filter(|l| wanted(l.0 as usize)).collect();
+    labels.sort_unstable();
+    labels.chunk_by(|a, b| a.0 == b.0).map(|run| (run[0].0, run[run.len() - 1].3)).collect()
+}
+
+/// The symbols naming the atoms of folded functions, each with whether
+/// ld-prime drops it. It gives a folded function an alias atom of its
+/// own named as the function's atom was (file 0's in -map), but of the
+/// name of the function it folded into it lists only the one of each
+/// scope, local or private extern, in the symbol table - so a name that
+/// functions of internal linkage share across objects (an inline
+/// function's .cold.1 part) is there once. `folded` pairs each folded
+/// subsection, in input order, with the one it folded into.
+fn folded_atom_names<E: Target>(
+    ctx: &Context<E>,
+    folded: &[(usize, usize)],
+) -> hashbrown::HashMap<SymbolId, bool> {
+    let mut involved = vec![false; ctx.isecs.len()];
+    let mut objs = Vec::new();
+    for &(member, leader) in folded {
+        involved[member] = true;
+        involved[leader] = true;
+        objs.extend([ctx.isecs[member].file, ctx.isecs[leader].file]);
+    }
+    objs.sort_unstable();
+    objs.dedup();
+    let names: hashbrown::HashMap<u32, SymbolId> = objs
+        .par_iter()
+        .flat_map_iter(|&i| atom_names(ctx, i as usize, &ctx.objs[i as usize], |j| involved[j]))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .collect();
+
+    let scoped = |id: SymbolId| (ctx.symbols[id].name(), ctx.symbols[id].is_extern());
+    let mut listed = hashbrown::HashSet::new();
+    let mut out = hashbrown::HashMap::new();
+    for &(member, leader) in folded {
+        let Some(&id) = names.get(&(member as u32)) else { continue };
+        let dropped = names.get(&(leader as u32)).is_some_and(|&l| {
+            let (a, b) = (scoped(id), scoped(l));
+            a.0 == b.0 && (a == b || !listed.insert((leader, a)))
+        });
+        out.insert(id, dropped);
+    }
+    out
 }
 
 /// Whether a subsection is a function of __TEXT,__text (ld64 folds no
@@ -697,6 +753,7 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     // Fold members onto leaders and give each leader the strongest
     // alignment among its members (mold's update_alignment): the leader
     // is laid out for every folded reference.
+    let mut folded = Vec::new();
     for (i, &l) in leaders.iter().enumerate() {
         let l = l as usize;
         if l != i {
@@ -705,6 +762,8 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
             ctx.isecs[member].replacement = leader as u32;
             let a = ctx.isecs[member].p2align;
             ctx.isecs[leader].p2align = ctx.isecs[leader].p2align.max(a);
+            folded.push((member, leader));
         }
     }
+    ctx.folded_atom_names = folded_atom_names(ctx, &folded);
 }

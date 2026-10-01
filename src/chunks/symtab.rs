@@ -909,11 +909,16 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             }
             continue;
         };
-        let isec = ctx.resolve_isec(isec);
-        if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[isec].is_alive() {
+        // A folded function's name goes with it if the function it
+        // folded into has the same (see icf::folded_atom_names).
+        let kept = ctx.resolve_isec(isec);
+        if !matches!(sym.file(), Some(FileId::Obj(_)))
+            || !ctx.isecs[kept].is_alive()
+            || (kept != isec && ctx.folded_atom_names.get(&sym_id) == Some(&true))
+        {
             continue;
         }
-        let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[isec]), 0);
+        let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
         out.push((ctx.sym_addr(sym_id), RANK_LOCAL, sym.name().as_bytes(), ent, Some(sym_id)));
     }
     out
