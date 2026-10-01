@@ -2457,14 +2457,18 @@ impl StagedObject {
                 Some(len) if pos + 4 + len as usize <= contents.len() => len as usize,
                 _ => fatal!("CFI at 0x{pos:08X} extends beyond end of section in '{file_name}'"),
             };
-            if len == 0 {
-                fatal!("empty CIE in '{file_name}'");
-            }
-            if len < 4 {
+            // ld-prime takes the word after the length for the ID even
+            // if the length leaves it no room - the next record's length
+            // after an empty one - and checks the CIE pointer of an FDE
+            // before its size.
+            let id = word(pos + 4).filter(|&id| len >= 4 || id != 0);
+            let Some(id) = id else {
+                if len == 0 {
+                    fatal!("empty CIE in '{file_name}'");
+                }
                 truncated_cfi(&mf.name, pos);
-            }
+            };
             let rec: &'static [u8] = &contents[pos..pos + 4 + len];
-            let id = u32::from_le_bytes(rec[4..8].try_into().unwrap());
             let input_addr = hdr.addr as u32 + pos as u32;
             if id == 0 {
                 let Some((fde_enc, lsda_enc)) = parse_cie_augmentation(rec, &mf.name) else {
@@ -2497,6 +2501,9 @@ impl StagedObject {
                     }
                     fatal!("{file_name}: __eh_frame: FDE with an invalid CIE pointer");
                 };
+                if len < 4 {
+                    truncated_cfi(&mf.name, pos);
+                }
                 fdes.push((input_addr, rec, cie as u32));
             }
             pos += 4 + len;

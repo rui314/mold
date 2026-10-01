@@ -44,6 +44,13 @@ fail id 'empty CIE' "$cie" '.long 20' '.long 16' '.quad 0' '.quad 0'
 
 # A zero length, and a CIE version other than 1 and 3.
 fail zero 'empty CIE' "$cie" '.long 0' '.long 0'
+
+# ld-prime takes the word after an empty record's length for its ID all
+# the same - the next record's length - and an ID other than zero for
+# an FDE's CIE pointer, which it checks first.
+fail zero-outside 'FDE points to CIE outside __eh_frame section' \
+  "$cie" '.long 0' '.long 0x100' '.long 0'
+fail zero-id 'CIE ID is not zero' "$cie" '.long 0' '.long 12' '.long 0' '.quad 0'
 fail version 'CIE version is not 1 or 3' '.long 12' '.long 0' '.byte 2, 0, 1, 0x78, 30, 0, 0, 0'
 
 # Records too short for their fields: a section too short for a length,
