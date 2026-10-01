@@ -3268,7 +3268,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                 // A stub jumps through the symbol's lazy pointer, or,
                 // without lazy binding, its GOT slot.
                 add_stub(ctx, id);
-                if ctx.lazy_binding() {
+                if ctx.args.lazy_binding {
                     ensure_stub_binder(ctx);
                 } else {
                     add_got(ctx, id);
@@ -3446,7 +3446,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         && let Some(id) = ctx.symbols.get("__dyld_lazy_load")
     {
         add_stub(ctx, id);
-        if ctx.lazy_binding() {
+        if ctx.args.lazy_binding {
             ensure_stub_binder(ctx);
         } else {
             add_got(ctx, id);
@@ -3698,7 +3698,7 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     for (i, &id) in stubs.iter().enumerate() {
         ctx.sym_aux_mut(id).stub_idx = i as u32;
     }
-    if ctx.lazy_binding() {
+    if ctx.args.lazy_binding {
         ctx.stubs.lazy = (0..stubs.len() as u32)
             .filter(|&i| !ctx.binds_weak_lookup(stubs[i as usize]))
             .collect();
@@ -5012,7 +5012,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
         && ctx.symbols[id].is_imported()
     {
         add_stub(ctx, id);
-        if ctx.lazy_binding() {
+        if ctx.args.lazy_binding {
             ensure_stub_binder(ctx);
         } else {
             add_got(ctx, id);
@@ -5098,7 +5098,7 @@ fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::Sy
 /// exporting it (libSystem's libdyld) counts as used then, and -map
 /// lists it. Nothing refers to the symbol until a stub does.
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    if ctx.lazy_binding() {
+    if ctx.args.lazy_binding {
         bind_stub_binder(ctx);
     }
 }

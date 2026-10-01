@@ -261,6 +261,10 @@ pub struct Args {
     pub no_compact_unwind: bool,
     /// -bind_at_load: ask dyld to resolve all bindings at load time.
     pub bind_at_load: bool,
+    /// Whether imported functions are called through lazy pointers
+    /// bound on first use (classic dyld info's __la_symbol_ptr and
+    /// __stub_helper): resolved at the end of parsing.
+    pub lazy_binding: bool,
     /// -application_extension: mark the image safe for app extensions.
     pub application_extension: bool,
     /// -add_ast_path: Swift AST paths recorded as N_AST stabs for the
@@ -471,6 +475,7 @@ impl Default for Args {
             no_warn_inits: false,
             no_compact_unwind: false,
             bind_at_load: false,
+            lazy_binding: false,
             application_extension: false,
             add_ast_paths: Vec::new(),
             dynamic: true,
@@ -2020,6 +2025,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.pie = resolve_pie(target, &args, pie, fixup_chains);
     args.fixup_chains = resolve_fixup_chains(target, &args, fixup_chains);
     args.no_fixup_chains = fixup_chains == Some(false);
+    // ld64 binds lazily below the chained-fixups deployment targets
+    // unless -bind_at_load.
+    args.lazy_binding =
+        !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
     // ld-prime emits initializers as offsets implicitly with chained
     // fixups: the point of chains is a fixup-free __DATA_CONST, and
     // absolute initializer pointers would drag rebases back in. It

@@ -405,7 +405,7 @@ impl<'a, E: Target> Places<'a, E> {
         let has = |id| ctx.chunks.contains(&id);
         if has(ChunkId::Stubs) {
             for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
-                let slot = if ctx.lazy_binding() && !ctx.binds_weak_lookup(id) {
+                let slot = if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
                     let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
                     self.chunk(ChunkId::LazyPtrs, lazy as u64 * 8)
                 } else {

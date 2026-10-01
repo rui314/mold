@@ -1706,7 +1706,7 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         // stub): each stub has its own alignment and the section takes
         // the largest. arm64's are instruction-aligned.
         if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
-            let lazy = ctx.lazy_binding()
+            let lazy = ctx.args.lazy_binding
                 && ctx.stubs.symbols.iter().all(|&id| !ctx.binds_weak_lookup(id));
             ctx.stubs.hdr.p2align = if lazy { 0 } else { 1 };
         }

@@ -561,23 +561,12 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// Whether imported functions are called through lazy pointers
-    /// bound on first use (classic dyld info's __la_symbol_ptr and
-    /// __stub_helper), as ld64 does below the chained-fixups
-    /// deployment targets unless -bind_at_load.
-    pub fn lazy_binding(&self) -> bool {
-        !self.args.relocatable
-            && !self.args.without_dyld()
-            && !self.args.fixup_chains
-            && !self.args.bind_at_load
-    }
-
     /// The address of the pointer slot stub `i` (for symbol `id`)
     /// jumps through: its lazy pointer, or its GOT slot. A weak
     /// definition of this image always goes through its GOT slot (the
     /// lazy binder cannot do weak lookup), as in ld64.
     pub fn stub_ptr_addr(&self, i: usize, id: SymbolId) -> u64 {
-        if self.lazy_binding() && !self.binds_weak_lookup(id) {
+        if self.args.lazy_binding && !self.binds_weak_lookup(id) {
             let slot = self.stubs.lazy.binary_search(&(i as u32)).unwrap();
             self.lazy_ptrs.hdr.addr + slot as u64 * 8
         } else {
