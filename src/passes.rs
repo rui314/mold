@@ -6357,14 +6357,16 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 
 /// With lazy binding, the stub helper enters dyld through
 /// dyld_stub_binder (libSystem's): the symbol is bound from whichever
-/// loaded dylib exports it, given a GOT slot, and __dyld_private (the
-/// word dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
+/// loaded dylib exports it - or, where the image may look it up
+/// dynamically (-undefined dynamic_lookup, -U), from whatever image dyld
+/// finds it in - given a GOT slot, and __dyld_private (the word
+/// dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
 /// synthesized. Once, on the first stub.
 pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.stub_helper.dyld_stub_binder.is_some() {
         return;
     }
-    let Some(id) = bind_stub_binder(ctx) else {
+    let Some(id) = bind_stub_binder(ctx).or_else(|| look_up_stub_binder(ctx)) else {
         // An image that loads no dylib at all fails the libSystem
         // check that dead_strip_dylibs would make later, and ld-prime
         // says so first.
@@ -6421,6 +6423,25 @@ fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::Sy
     let sym = &mut ctx.symbols[id];
     if !sym.is_defined() {
         sym.set_file(FileId::Dylib(dylib as u32));
+        sym.set_is_imported(true);
+        sym.set_is_extern(true);
+        sym.set_input_section(None);
+    }
+    Some(id)
+}
+
+/// Makes dyld_stub_binder a symbol dyld looks up, if the image may look
+/// it up so.
+fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
+    let name = "dyld_stub_binder";
+    let args = &ctx.args;
+    if !args.undefined_dynamic_lookup && !args.allowed_undefined.iter().any(|n| n == name) {
+        return None;
+    }
+    let id = ctx.symbols.intern(name);
+    let sym = &mut ctx.symbols[id];
+    if !sym.is_defined() {
+        sym.set_file(FileId::Dylib(u32::MAX));
         sym.set_is_imported(true);
         sym.set_is_extern(true);
         sym.set_input_section(None);

@@ -65,3 +65,10 @@ EOF2
 not $mold -arch $ARCH -platform_version macos 11.0 11.0 -syslibroot "$sdk" -o $t/exe4 $t/m.o \
   -undefined dynamic_lookup 2> $t/log8
 grep -q "$msg" $t/log8
+
+# With a dylib that doesn't export dyld_stub_binder, an image that may
+# look symbols up dynamically binds it so too, with a flat lookup.
+link -o $t/exe5 $t/m.o $t/libfoo.tbd -no_fixup_chains -undefined dynamic_lookup
+objdump --macho --bind $t/exe5 | grep -q 'flat-namespace *dyld_stub_binder'
+link -o $t/exe6 $t/m.o $t/libfoo.tbd -no_fixup_chains -U dyld_stub_binder
+objdump --macho --bind $t/exe6 | grep -q 'flat-namespace *dyld_stub_binder'
