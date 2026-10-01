@@ -41,3 +41,13 @@ not grep -q 'only be used when linking\|ignoring -e' $t/log5
 not $CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -Wl,-install_name,/usr/lib/liba.dylib \
   -Wl,-flat_namespace -Wl,-client_name,foo 2> $t/log6
 grep -q -- '-client_name can only be used' $t/log6
+
+# ld-prime warns about a run path before it refuses -U, but refuses
+# -flat_namespace before either.
+not $CC --ld-path=$mold -o $t/e.dylib -shared $t/b.o -Wl,-install_name,/usr/lib/libe.dylib \
+  -Wl,-U,_missing -Wl,-rpath,/foo 2> $t/log7
+grep -A1 'OS dylibs should not add rpaths' $t/log7 | grep -q "cannot use '-undefined dynamic_lookup' or '-U'"
+not $CC --ld-path=$mold -o $t/e.dylib -shared $t/b.o -Wl,-install_name,/usr/lib/libe.dylib \
+  -Wl,-flat_namespace -Wl,-rpath,/foo 2> $t/log8
+grep -q "cannot use '-flat_namespace'" $t/log8
+not grep -q rpaths $t/log8

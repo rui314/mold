@@ -2980,18 +2980,18 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
         return;
     }
     args.ignore_optimization_hints = true;
+    if !args.rpaths.is_empty() {
+        crate::warn!(
+            "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
+             LD_RUNPATH_SEARCH_PATHS)"
+        );
+    }
     // (A kext looks up every import.)
     if (args.undefined_dynamic_lookup || !args.allowed_undefined.is_empty()) && !args.is_kext() {
         fatal!(
             "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
              symbols. Remove these options or opt out of the shared cache using the build \
              setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
-        );
-    }
-    if !args.rpaths.is_empty() {
-        crate::warn!(
-            "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
-             LD_RUNPATH_SEARCH_PATHS)"
         );
     }
 }
