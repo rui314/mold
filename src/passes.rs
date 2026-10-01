@@ -512,6 +512,13 @@ fn collect_file<E: Target>(
     // does a dylib ld-prime ignored, with its warning each time.
     let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
     if !ctx.visited_files.insert(mf.name.clone()) && !object && !was_ignored(ctx, mf) {
+        // -force_load of an archive named before loads its members all
+        // the same.
+        if rc.force_load && ctx.force_loaded.insert(mf.name.clone()) {
+            for p in out.iter_mut().filter(|p| p.mf.parent.is_some_and(|a| a.name == mf.name)) {
+                p.alive = true;
+            }
+        }
         return;
     }
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {

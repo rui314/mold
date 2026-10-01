@@ -24,3 +24,9 @@ $CC --ld-path=$mold -o $t/exe $t/e.o -Wl,-force_load,$t/b.a $t/d.a
 nm $t/exe > $t/log
 grep -q 'D _foo$' $t/log
 ! grep -q 'D _bar$' $t/log || false
+
+# An archive named before -force_load names it is force loaded all the
+# same.
+$CC --ld-path=$mold -o $t/exe2 $t/e.o $t/d.a -Wl,-force_load,$t/d.a 2> $t/log2
+nm $t/exe2 > $t/syms2
+grep -q 'D _bar$' $t/syms2
