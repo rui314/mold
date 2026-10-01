@@ -554,11 +554,11 @@ pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec
     buf
 }
 
-fn create_source_version_cmd<E: Target>(_ctx: &Context<E>) -> Vec<u8> {
+fn create_source_version_cmd(version: u64) -> Vec<u8> {
     let cmd = SourceVersionCommand {
         cmd: LC_SOURCE_VERSION,
         cmdsize: size_of::<SourceVersionCommand>() as u32,
-        version: 0,
+        version,
     };
     to_vec(&cmd)
 }
@@ -788,8 +788,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
             ctx.args.platform_sdk,
         ));
     }
-    if ctx.args.source_version {
-        vec.push(create_source_version_cmd(ctx));
+    if let Some(version) = ctx.args.source_version {
+        vec.push(create_source_version_cmd(version));
     }
     if ctx.args.unixthread {
         vec.push(create_unixthread_cmd(ctx));

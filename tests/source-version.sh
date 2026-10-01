@@ -29,3 +29,14 @@ link lib1.dylib 10.7 27.0 -dylib
 not has_cmd lib1.dylib
 link lib2.dylib 10.8 27.0 -dylib
 has_cmd lib2.dylib
+
+# -source_version sets the version, a.b.c.d.e, and asks for the command
+# as -add_source_version does. Numbers past the fifth are ignored.
+link exe5 10.7 27.0 -no_source_version -source_version 1.2.3.4.5.6
+otool -l $t/exe5 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 1.2.3.4.5$'
+link exe6 13.0 27.0 -source_version 16777215..1023
+otool -l $t/exe6 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 16777215.0.1023$'
+not link exe7 13.0 27.0 -source_version 1.1024 2> $t/log7
+not link exe7 13.0 27.0 -source_version 1.2. 2>> $t/log7
+not $mold -arch $ARCH -o $t/exe7 $t/a.o -source_version 1.x 2>> $t/log7
+grep -q -- '-source_version: malformed 64-bit a.b.c.d.e version number: 1.x$' $t/log7

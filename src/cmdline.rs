@@ -202,9 +202,10 @@ pub struct Args {
     pub data_in_code_info: bool,
     /// -version_load_command: give a -static image LC_BUILD_VERSION.
     pub version_load_command: bool,
-    /// Emit LC_SOURCE_VERSION (from macOS 10.8 on; -add_source_version
-    /// and -no_source_version say otherwise).
-    pub source_version: bool,
+    /// LC_SOURCE_VERSION's version, -source_version's or 0; None for no
+    /// command (before macOS 10.8 unless -add_source_version or
+    /// -source_version asks for one, or under -no_source_version).
+    pub source_version: Option<u64>,
     /// The image starts from LC_UNIXTHREAD's thread state rather than
     /// from LC_MAIN, through which dyld calls main (see parse_args).
     pub unixthread: bool,
@@ -471,7 +472,7 @@ impl Default for Args {
             function_starts: true,
             data_in_code_info: true,
             version_load_command: false,
-            source_version: true,
+            source_version: Some(0),
             unixthread: false,
             add_split_seg_info: false,
             init_offsets: false,
@@ -612,6 +613,38 @@ fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u
     }
     let num = |i: usize| nums.get(i).map_or(0, |&num| num.min(VERSION_LIMITS[i]) as u32);
     encode_version(num(0), num(1), num(2))
+}
+
+/// Parses -source_version's a.b.c.d.e into LC_SOURCE_VERSION's 64 bits,
+/// 24 for a and 10 for each other number. ld-prime reads up to five
+/// numbers of decimal digits apart by dots, an empty one 0 and each
+/// taken modulo 2^32, and ignores what follows the fifth; a dot ending
+/// the string before it, another character or a number too large for
+/// its bits make the string malformed.
+fn parse_source_version(arg: &str) -> u64 {
+    let malformed =
+        || -> ! { fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}") };
+    let mut nums = [0u32; 5];
+    let mut s = arg.as_bytes();
+    for (i, num) in nums.iter_mut().enumerate() {
+        let len = s.iter().take_while(|c| c.is_ascii_digit()).count();
+        *num = s[..len]
+            .iter()
+            .fold(0, |n: u32, &c| n.wrapping_mul(10).wrapping_add((c - b'0') as u32));
+        s = &s[len..];
+        if i == 4 || s.is_empty() {
+            break;
+        }
+        match s {
+            [b'.', rest @ ..] if !rest.is_empty() => s = rest,
+            _ => malformed(),
+        }
+    }
+    let [a, b, c, d, e] = nums.map(u64::from);
+    if a > 0xff_ffff || [b, c, d, e].iter().any(|&n| n > 0x3ff) {
+        malformed();
+    }
+    (a << 40) | (b << 30) | (c << 20) | (d << 10) | e
 }
 
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
@@ -1109,7 +1142,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-dylib_current_version"
         | "-compatibility_version"
         | "-dylib_compatibility_version"
-        | "-macos_version_min" => "missing <version>",
+        | "-macos_version_min"
+        | "-source_version" => "missing <version>",
         "-mllvm" => "missing <value>",
         "-undefined" => "missing <dynamic_lookup>",
         "-read_only_relocs" => "missing <option>",
@@ -1147,6 +1181,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut source_version: Option<bool> = None;
+    let mut source_version_number = 0;
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
     let mut objc_relative_method_lists: Option<bool> = None;
@@ -1763,6 +1798,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-function_starts" => function_starts = Some(true),
             b"-add_source_version" => source_version = Some(true),
             b"-no_source_version" => source_version = Some(false),
+            b"-source_version" => {
+                source_version_number = parse_source_version(text(name, next_arg(&mut i, name)));
+                source_version = Some(true);
+            }
             // ld64 kept the FDEs of functions with compact unwind
             // records for a target before macOS 10.9 (iOS 7), or as
             // these said. ld-prime goes by the target alone.
@@ -1928,9 +1967,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
     // LC_SOURCE_VERSION came with macOS 10.8; ld-prime gives an image
     // for an older one none.
-    args.source_version = source_version.unwrap_or(
-        args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
-    );
+    args.source_version = source_version
+        .unwrap_or(
+            args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
+        )
+        .then_some(source_version_number);
 
     // ld-prime signs arm64 macOS images by default and leaves x86_64
     // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
@@ -1959,7 +2000,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.function_starts = false;
         args.data_in_code_info = false;
         args.version_load_command = false;
-        args.source_version = false;
+        args.source_version = None;
         args.adhoc_codesign = false;
         args.rpaths.clear();
     }
