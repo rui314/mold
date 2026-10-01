@@ -957,6 +957,11 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         }
         _ => {}
     }
+    // -simulator_support: a macOS dylib that dyld may load into a
+    // simulator process too (ld-prime marks no other kind of image).
+    if ctx.args.simulator_support && ctx.args.output_type == MH_DYLIB {
+        hdr.flags |= MH_SIM_SUPPORT;
+    }
     // MH_BINDS_TO_WEAK: the image binds to a symbol some dylib
     // defines weakly, or to one of its own coalescable weak
     // definitions (dyld must then consider weak coalescing when it

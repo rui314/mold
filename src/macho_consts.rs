@@ -33,6 +33,7 @@ pub const MH_KEXT_BUNDLE: u32 = 11;
 pub const MH_NOUNDEFS: u32 = 0x1;
 pub const MH_BINDATLOAD: u32 = 0x8;
 pub const MH_APP_EXTENSION_SAFE: u32 = 0x0200_0000;
+pub const MH_SIM_SUPPORT: u32 = 0x0800_0000;
 pub const MH_DYLDLINK: u32 = 0x4;
 pub const MH_TWOLEVEL: u32 = 0x80;
 pub const MH_PIE: u32 = 0x20_0000;

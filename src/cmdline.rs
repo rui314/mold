@@ -304,6 +304,9 @@ pub struct Args {
     pub lazy_binding: bool,
     /// -application_extension: mark the image safe for app extensions.
     pub application_extension: bool,
+    /// -simulator_support: a dylib simulator processes may load too
+    /// (MH_SIM_SUPPORT).
+    pub simulator_support: bool,
     /// -add_ast_path: Swift AST paths recorded as N_AST stabs for the
     /// debugger.
     pub add_ast_paths: Vec<PathBuf>,
@@ -536,6 +539,7 @@ impl Default for Args {
             bind_at_load: false,
             lazy_binding: false,
             application_extension: false,
+            simulator_support: false,
             add_ast_paths: Vec::new(),
             dynamic: true,
             headerpad: 32,
@@ -1668,6 +1672,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-bind_at_load" => args.bind_at_load = true,
             b"-application_extension" => args.application_extension = true,
             b"-no_application_extension" => args.application_extension = false,
+            b"-simulator_support" => args.simulator_support = true,
             b"-add_ast_path" => args.add_ast_paths.push(path(next_arg(&mut i, name))),
             b"-S" => args.strip_debug = true,
             b"-all_load" => args.all_load = true,
