@@ -2322,6 +2322,11 @@ pub(crate) fn header_segment<E: Target>(ctx: &Context<E>) -> &'static str {
     if ctx.args.static_link { renamed_segment(&ctx.args, "__TEXT") } else { "__TEXT" }
 }
 
+/// The __text section a final image always has (see text_section_name).
+pub(crate) fn text_section<E: Target>(ctx: &Context<E>) -> Option<OutputSectionId> {
+    find_output_section(ctx, text_section_name(ctx))
+}
+
 /// The name of the __text section a final image always has: it moves
 /// with -text_exec like the code, and -rename_section and
 /// -rename_segment rename it like any section - but -rename_segment

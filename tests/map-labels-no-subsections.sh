@@ -94,3 +94,9 @@ diff - <(cut -f2- $t/rows2) <<EOF
 0x00000000	[  1] ds
 0x00000000	[  1] cs
 EOF
+
+# A final image's __text that no subsection reached keeps a placeholder
+# of no size, the linker's, named by the section.
+echo 'int x = 1;' | $CC -o $t/c.o -c -xc -
+$CC --ld-path=$mold -shared -o $t/c.dylib $t/c.o -Wl,-map,$t/map3
+grep -q $'^0x[0-9A-F]*\t0x00000000\t\\[  0\\] __TEXT,__text$' $t/map3

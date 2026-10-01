@@ -825,8 +825,9 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     // executable's header first of all.
     let files = MapFiles::new(ctx);
     let mut entries = linker_symbol_entries(ctx, &files);
-    let linker_symbols = entries.len();
     let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
+    entries.extend(empty_text_entry(ctx, &named.ids));
+    let linker_symbols = entries.len();
     entries.extend(named.entries);
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
@@ -1280,12 +1281,19 @@ fn symbol_entries<'a, E: Target>(
             _ => ctx.isecs[isec].size as u64,
         };
         let size = end.saturating_sub(value);
-        if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
+        // The labels of an empty output section (an arm64 assembler's
+        // ltmpN of an empty __text) go before the next section's.
+        let osec = ctx.isecs[isec].output_section();
+        if osec.is_some_and(|id| ctx.chunk_header(id).size == 0) {
+            for &(_, idx) in place.iter() {
+                leading[idx] = Some(0);
+            }
+        } else if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
             sizes[place.last().unwrap().1] = size;
         } else {
             sizes[place[0].1] = size;
             for (n, &(_, idx)) in place[1..].iter().rev().enumerate() {
-                leading[idx] = Some(n as u32);
+                leading[idx] = Some(n as u32 + 1);
             }
         }
     }
@@ -1678,6 +1686,26 @@ fn linker_symbol_entries<'a, E: Target>(
         entries.push(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) });
     }
     entries
+}
+
+/// The placeholder ld-prime keeps in a final image's __text that no
+/// subsection reached (a dylib of only data, whose objects' empty
+/// __text sections it has none of, unless one is labeled in an object
+/// without subsections): file 0's, of no size, named by the section's
+/// name, as the empty section a boundary symbol makes is (see
+/// linker_symbol_entries). `named` are the symbols the map lists.
+fn empty_text_entry<E: Target>(ctx: &Context<E>, named: &[SymbolId]) -> Option<MapEntry<'static>> {
+    let id = crate::output_sections::text_section(ctx)?;
+    let hdr = &ctx.output_section(id).hdr;
+    let in_text = |&sym: &SymbolId| {
+        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
+        ctx.isecs[isec].output_section() == Some(ChunkId::Output(id))
+    };
+    if hdr.size != 0 || named.iter().any(in_text) {
+        return None;
+    }
+    let name = format!("{},{}", hdr.segname, hdr.sectname).into_bytes();
+    Some(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) })
 }
 
 /// The input sections of -sectcreate and -add_empty_section, each
