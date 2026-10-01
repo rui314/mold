@@ -118,8 +118,22 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
         return;
     };
     let mut entries: Vec<(u8, Vec<u8>)> = dependency_inputs(ctx);
+    // Paths are equal as their components are, and sort so, which is
+    // slow; but a path that spells its components as they are - with
+    // no empty or "." component past the first, no trailing slash -
+    // compares as its bytes do.
     let mut missing = ctx.missing_files.lock().unwrap().clone();
-    missing.sort_unstable();
+    let plain = |path: &[u8]| {
+        memchr::memmem::find(path, b"//").is_none()
+            && memchr::memmem::find(path, b"/./").is_none()
+            && !path.ends_with(b"/")
+            && !path.ends_with(b"/.")
+    };
+    if missing.iter().all(|path| plain(path_bytes(path))) {
+        missing.sort_unstable_by(|a, b| path_bytes(a).cmp(path_bytes(b)));
+    } else {
+        missing.sort_unstable();
+    }
     missing.dedup();
     entries.extend(missing.iter().map(|path| (0x11, path_bytes(path).to_vec())));
     let outputs = [Some(&ctx.args.output), ctx.args.map.as_ref(), ctx.args.sdk_imports.as_ref()];
