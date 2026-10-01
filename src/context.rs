@@ -985,6 +985,23 @@ impl<E: Target> Context<E> {
         }
     }
 
+    /// How a fixup error names the target of branch `rel` of object
+    /// `obj`: a branch through a stub (to an import, or to a definition
+    /// dyld may interpose; see branch_target_addr) goes to an atom of
+    /// ld-prime's "stubs-got-file", which has no name, as a GOT slot
+    /// hasn't. Any other target is named as by fixup_target_name.
+    pub fn branch_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
+        match self.reloc_target_sym(obj, rel) {
+            Some(id)
+                if self.sym_aux(id).stub_idx != crate::symbol::NO_IDX
+                    && (self.symbols[id].is_imported() || self.is_interposable(id)) =>
+            {
+                ""
+            }
+            _ => self.fixup_target_name(obj, rel),
+        }
+    }
+
     /// How a text-relocation diagnostic names the target of relocation
     /// `rel` of object `obj`: by its symbol, or else by the atom it
     /// points into - as for a label an assembler made for itself on a

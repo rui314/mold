@@ -1366,7 +1366,7 @@ impl Target for Arm64 {
                             }
                             _ => {
                                 let kind = if a != 0 { "arm64_b26_addend" } else { "arm64_b26" };
-                                let name = ctx.fixup_target_name(obj, r);
+                                let name = ctx.branch_target_name(obj, r);
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"

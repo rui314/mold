@@ -600,13 +600,14 @@ impl Target for X86_64 {
                 // A pc-relative fixup that can't reach is an error
                 // named after what ld-prime makes of the reference: a
                 // call, a plain one, or a GOT or TLV load that it
-                // relaxed ("elide") or not. It names a GOT slot ''.
+                // relaxed ("elide") or not. It names a GOT slot and a
+                // stub ''.
                 X86_64_RELOC_BRANCH => {
                     let s = match ctx.reloc_target_sym(obj, r) {
                         Some(id) => ctx.branch_target_addr(id),
                         None => s,
                     };
-                    let name = ctx.fixup_target_name(obj, r);
+                    let name = ctx.branch_target_name(obj, r);
                     let t = s.wrapping_add_signed(a);
                     write32(loc, rip32_displacement(ctx, isec_id, r, "x86_64_call", p, t, name));
                 }

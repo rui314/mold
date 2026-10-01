@@ -174,3 +174,38 @@ grep -q "fixup error (kind=[a-z0-9_]*) at $near_at from first2.o, " $t/first.log
 printf '_c\n_b\n' > $t/first.order
 first -order_file $t/first.order
 grep -q "fixup error (kind=$far_kind) at $far_at from first2.o, " $t/first.log
+
+# A call to an import, or to a definition dyld may interpose, goes to
+# its stub, which a fixup error names '' as well.
+if [ $ARCH = arm64 ]; then
+  call=bl
+  late=0x110000000
+else
+  call=call
+  late=0x190000000
+fi
+cat <<EOF | $CC -o $t/late.o -c -xassembler -
+.text
+.globl _main, _wk
+.weak_definition _wk
+.p2align 2
+_main: ret
+_wk: ret
+.section __LATE,__text,regular,pure_instructions
+.globl _late, _late2
+.p2align 2
+_late:
+  $call _extf
+_late2:
+  $call _wk
+.subsections_via_symbols
+EOF
+not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" \
+  -o $t/late $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late 2> $t/late.log
+grep -Eq "fixup error \(kind=$far_kind\) at '_late'(\+0x1)? from late.o, .* \(''\)" $t/late.log
+
+printf '_late2\n_late\n' > $t/late.order
+not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" -dylib \
+  -o $t/late.dylib $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late \
+  -order_file $t/late.order 2> $t/late.log
+grep -Eq "fixup error \(kind=$far_kind\) at '_late2'(\+0x1)? from late.o, .* \(''\)" $t/late.log
