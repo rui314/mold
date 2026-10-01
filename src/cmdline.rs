@@ -212,10 +212,11 @@ pub struct Args {
     /// defining dylib (and add a load command for it); bind to the
     /// re-exporting dylib named on the command line instead.
     pub no_implicit_dylibs: bool,
-    /// -objc_relative_method_lists / -no_objc_relative_method_lists:
-    /// rewrite Objective-C method lists in the relative form. ld64's
-    /// default is on from macOS 11.
-    pub objc_relative_method_lists: Option<bool>,
+    /// Whether Objective-C method lists are rewritten in the relative
+    /// form: -objc_relative_method_lists /
+    /// -no_objc_relative_method_lists, resolved for the target at the
+    /// end of parsing.
+    pub objc_relative_method_lists: bool,
     /// Merge categories into the classes defined in the same image, as
     /// ld64 does unless -no_objc_category_merging is given (there is no
     /// option to turn it on).
@@ -457,7 +458,7 @@ impl Default for Args {
             init: None,
             data_const: true,
             no_implicit_dylibs: false,
-            objc_relative_method_lists: None,
+            objc_relative_method_lists: false,
             objc_category_merging: true,
             uuid: true,
             suppress_warnings: false,
@@ -1127,6 +1128,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_in_code_info: Option<bool> = None;
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
+    let mut objc_relative_method_lists: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
@@ -1746,8 +1748,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-data_const" => data_const = Some(true),
             b"-no_data_const" => data_const = Some(false),
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
-            b"-objc_relative_method_lists" => args.objc_relative_method_lists = Some(true),
-            b"-no_objc_relative_method_lists" => args.objc_relative_method_lists = Some(false),
+            b"-objc_relative_method_lists" => objc_relative_method_lists = Some(true),
+            b"-no_objc_relative_method_lists" => objc_relative_method_lists = Some(false),
             b"-no_objc_category_merging" => args.objc_category_merging = false,
             b"-no_function_starts" => function_starts = Some(false),
             b"-data_in_code_info" => data_in_code_info = Some(true),
@@ -1901,6 +1903,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // and firmware unsigned too.
     args.adhoc_codesign = adhoc_codesign.unwrap_or(
         target.name == "arm64" && !args.without_dyld() && args.platform == PLATFORM_MACOS,
+    );
+
+    // ld-prime converts Objective-C method lists from macOS 11 on, in
+    // every arm64 image, and on x86-64 in dylibs and bundles only: an
+    // x86-64 executable keeps the compiler's absolute lists at any
+    // deployment target.
+    args.objc_relative_method_lists = objc_relative_method_lists.unwrap_or(
+        (target.name == "arm64" || args.output_type != MH_EXECUTE)
+            && args.platform == PLATFORM_MACOS
+            && args.platform_minos >= encode_version(11, 0, 0),
     );
 
     // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing

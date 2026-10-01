@@ -17,7 +17,7 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::InputSection;
 use crate::macho::*;
-use crate::objc::{DataBlob, cstring_of, objc_relative_method_lists};
+use crate::objc::{DataBlob, cstring_of};
 use crate::passes::{is_class_or_protocol_ref_name, resolved_file_name};
 use crate::target::Target;
 use crate::util::{align_to, path_bytes};
@@ -385,7 +385,7 @@ impl SectionMap {
             objc_const_refs: objc_refs_are_const(ctx),
             const_interpose: interpose_is_const(ctx),
             shared_region: ctx.args.shared_region,
-            relative_methods: objc_relative_method_lists(ctx),
+            relative_methods: ctx.args.objc_relative_method_lists,
             text_exec: ctx.args.text_exec,
         }
     }

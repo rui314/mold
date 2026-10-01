@@ -851,17 +851,6 @@ fn pair_classref_uses<E: Target>(
     pairs
 }
 
-pub(crate) fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
-    // ld-prime converts method lists in every arm64 image, and on
-    // x86-64 in dylibs and bundles only: an x86-64 executable keeps
-    // the compiler's absolute lists at any deployment target.
-    ctx.args.objc_relative_method_lists.unwrap_or_else(|| {
-        (E::CPUTYPE == crate::macho::CPU_TYPE_ARM64 || ctx.args.output_type != MH_EXECUTE)
-            && ctx.args.platform == crate::macho::PLATFORM_MACOS
-            && ctx.args.platform_minos >= crate::macho::encode_version(11, 0, 0)
-    })
-}
-
 /// Rewrites the Objective-C method lists in the relative form, as
 /// ld64 does from a deployment target of macOS 11 (its
 /// -objc_relative_method_lists). A classic entry is three pointers
@@ -881,7 +870,7 @@ pub(crate) fn objc_relative_method_lists<E: Target>(ctx: &Context<E>) -> bool {
 /// when it is not the whole of its subsection or not in the classic
 /// 24-byte form.
 pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable || !objc_relative_method_lists(ctx) {
+    if ctx.args.relocatable || !ctx.args.objc_relative_method_lists {
         return;
     }
     let lists = runtime_method_lists(ctx);
@@ -1109,7 +1098,7 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !ctx.args.objc_category_merging {
         return;
     }
-    let relative = objc_relative_method_lists(ctx);
+    let relative = ctx.args.objc_relative_method_lists;
     let (mut classes, class_idx) = defined_classes(ctx);
     let (mut cats, catlists, imported) = find_categories(ctx, &mut classes, &class_idx);
     if cats.is_empty() {
