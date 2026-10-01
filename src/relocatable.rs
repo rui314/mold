@@ -1611,8 +1611,12 @@ fn build_symtab<E: Target>(
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
     // output, it names the objects that hold it (N_OSO) and where their
     // symbols landed, and a later link carries the notes through.
+    // Under -x, which strip -x passes, ld-prime writes none.
     let t = ctx.timer("r-symtab-stabs");
-    let stabs = crate::chunks::symtab::plan_stabs(ctx);
+    let stabs = match ctx.args.strip_locals {
+        true => Vec::new(),
+        false => crate::chunks::symtab::plan_stabs(ctx),
+    };
     let nstabs: usize = stabs.iter().map(|plan| plan.len()).sum();
     drop(t);
 
@@ -1647,7 +1651,8 @@ fn build_symtab<E: Target>(
 
     // Each symbol's index in the table, for the relocations, and its
     // string, for the notes naming it - but for the first local's,
-    // whose notes ld-prime gives a copy of their own.
+    // whose notes ld-prime gives a copy of their own, and a renamed
+    // private external's, whose notes keep its name.
     let nsyms = ctx.symbols.syms.len();
     let index_of_sym: Vec<AtomicU32> =
         (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
@@ -1657,7 +1662,7 @@ fn build_symtab<E: Target>(
     locals.par_iter().enumerate().for_each(|(i, l)| {
         if let Some(id) = l.sym {
             index_of_sym[id as usize].store(i as u32, Ordering::Relaxed);
-            if i != 0 {
+            if i != 0 && !(l.rename == Rename::Anon && l.n_type & N_PEXT != 0) {
                 strx_of[id as usize].store(entries[i].0.n_strx, Ordering::Relaxed);
             }
         }
@@ -2077,7 +2082,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
-                rename: Rename::None,
+                rename: self.rename(sym.name()),
                 sym: Some(sym_id),
                 at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
                 rank: if sym.name().starts_with("ltmp") { Rank::Ltmp } else { Rank::Local },
@@ -2184,7 +2189,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 ) | section_desc(ctx, input),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
-                rename: Rename::None,
+                rename: self.rename(sym.name()),
                 sym: Some(sym_id),
                 at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
                 rank: if sym.is_weak_def() { Rank::Weak } else { Rank::PrivateExtern },
@@ -2212,10 +2217,23 @@ impl<'a, E: Target> Locals<'a, E> {
             n_desc: 0,
             n_sect: 0,
             addr: sym.value,
-            rename: Rename::None,
+            rename: self.rename(sym.name()),
             sym: Some(sym_id),
             at: (obj_idx as u32, 0, i as u64),
             rank,
+        }
+    }
+
+    /// The name a local named `name` takes: under -x, or if
+    /// -non_global_symbols_strip_list or -non_global_symbols_no_strip_list
+    /// strips the name, ld-prime keeps the symbol, which a relocation
+    /// may name, by a name it makes up (l<nnn>, see finish), and the
+    /// notes of its unit name it so.
+    fn rename(&self, name: &str) -> Rename {
+        let ctx = self.ctx;
+        match ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, name.as_bytes()) {
+            true => Rename::Anon,
+            false => Rename::None,
         }
     }
 

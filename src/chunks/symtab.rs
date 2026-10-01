@@ -123,9 +123,14 @@ impl Default for SymtabSection {
 
 /// The -add_ast_path paths the symbol table lists after the local
 /// symbols, as N_AST entries (Swift modules for the debugger): none
-/// under -S, which drops the debugger's notes.
+/// under -S, which drops the debugger's notes, nor in a -r output under
+/// -x, which has none (see relocatable::build_symtab).
 pub fn ast_paths<E: Target>(ctx: &Context<E>) -> &[PathBuf] {
-    if ctx.args.strip_debug { &[] } else { &ctx.args.add_ast_paths }
+    if ctx.args.strip_debug || (ctx.args.relocatable && ctx.args.strip_locals) {
+        &[]
+    } else {
+        &ctx.args.add_ast_paths
+    }
 }
 
 /// Adds the N_AST entries of ast_paths, final image or -r output.
@@ -943,7 +948,7 @@ fn local_nlist(n_sect: u8, n_value: u64) -> NList {
 
 /// Whether -non_global_symbols_no_strip_list or -non_global_symbols_strip_list
 /// filters out a local symbol, by name. (Stabs are unaffected.)
-fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
+pub(crate) fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
     ctx.args.local_keep_list.as_ref().is_some_and(|keep| keep.find(name) == -1)
         || ctx.args.local_strip_list.find(name) != -1
 }
