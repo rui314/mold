@@ -6678,7 +6678,7 @@ fn layout_segment<E: Target>(
         hdr.addr = addr;
         hdr.size = size;
         cursor += size;
-        place_synthetic(ctx, id);
+        place_joined(ctx, id);
     }
 
     let filesize = cursor - seg_fileoff;
@@ -6837,22 +6837,20 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
         let id = ctx.segments[seg_idx].chunks[i];
         let hdr = ctx.chunk_header_mut(id);
         hdr.addr = hdr.addr.wrapping_add(delta);
-        place_synthetic(ctx, id);
+        place_joined(ctx, id);
     }
 }
 
-/// Places the synthesized section that joined output section `id`, if
-/// one did (see output_sections::merge_synthetic_sections), where the
-/// section has it.
-fn place_synthetic<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
-    let ChunkId::Output(osec) = id else { return };
-    let osec = ctx.output_section(osec);
-    let Some(chunk) = osec.synthetic else { return };
-    let (addr, fileoff) = (osec.hdr.addr, osec.hdr.fileoff);
-    let off = osec.synthetic_off;
-    let hdr = ctx.chunk_header_mut(chunk);
-    hdr.addr = addr + off;
-    hdr.fileoff = fileoff + off;
+/// Places the chunk that joined section `id`, if one did (see
+/// output_sections::merge_same_name_sections), where the section has
+/// it.
+fn place_joined<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
+    let hdr = ctx.chunk_header(id);
+    let Some((joined, off)) = hdr.joined else { return };
+    let (addr, fileoff) = (hdr.addr + off, hdr.fileoff + off);
+    let hdr = ctx.chunk_header_mut(joined);
+    hdr.addr = addr;
+    hdr.fileoff = fileoff;
 }
 
 /// ld-prime refuses segments that overlap, which takes a -segaddr (or

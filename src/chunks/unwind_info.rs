@@ -25,7 +25,7 @@ pub struct UnwindInfoSection {
     /// took (see set_osec_offsets). The contents are padded with zeros.
     pub min_size: u64,
     /// Stubs that joined a code section of their name (see
-    /// output_sections::merge_synthetic_sections), which ld-prime
+    /// output_sections::merge_same_name_sections), which ld-prime
     /// gives an entry each, as other code there: a subsection standing
     /// for the stubs, and the size of each.
     pub merged_stubs: Vec<(u32, u64)>,

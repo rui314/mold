@@ -71,11 +71,6 @@ pub struct OutputSection {
     /// took along through moves and renames; None for one that ranks
     /// by its type alone.
     pub rank_name: Option<(&'static str, &'static str)>,
-    /// A section the linker synthesizes under this one's name, which
-    /// joins it (see output_sections::merge_synthetic_sections) at
-    /// `synthetic_off`, after the members and the tail.
-    pub synthetic: Option<ChunkId>,
-    pub synthetic_off: u64,
 }
 
 impl OutputSection {
@@ -90,8 +85,6 @@ impl OutputSection {
             has_tlv_data: false,
             moved: None,
             rank_name: None,
-            synthetic: None,
-            synthetic_off: 0,
         }
     }
 }
@@ -157,13 +150,6 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
                 tail[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
             }
         }
-    }
-
-    // A synthesized section of the same name, last.
-    if let Some(chunk) = osec.synthetic {
-        let off = osec.synthetic_off as usize;
-        let size = ctx.chunk_header(chunk).size as usize;
-        crate::chunks::copy_buf(ctx, chunk, &mut buf[off..off + size]);
     }
 }
 

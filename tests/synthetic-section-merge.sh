@@ -44,3 +44,21 @@ otool -l $t/exe2 > $t/load2
 [ "$(grep -c 'sectname __got' $t/load2)" = 1 ]
 otool -Iv $t/exe2 > $t/indirect
 not grep -F '(__DATA_CONST,__got)' $t/indirect
+
+# A -sectcreate section of the name comes first, then the linker's
+# contents: the GOT's slots, or the lazy binder's __dyld_private word.
+printf 'ABCDEFGH' > $t/blob
+$CC --ld-path=$mold -o $t/exe3 $t/b.o -Wl,-sectcreate,__DATA_CONST,__got,$t/blob
+$t/exe3 | grep '^3333 1$'
+otool -l $t/exe3 > $t/load3
+[ "$(grep -c 'sectname __got' $t/load3)" = 1 ]
+grep -A3 'sectname __got' $t/load3 | grep -E 'size 0x0+18$'
+otool -s __DATA_CONST __got $t/exe3 | grep -E '44434241 48474645|41 42 43 44 45 46 47 48'
+
+$CC --ld-path=$mold -o $t/exe4 $t/b.o -mmacos-version-min=11.0 \
+  -Wl,-no_fixup_chains,-sectcreate,__DATA,__data,$t/blob
+$t/exe4 | grep '^3333 1$'
+otool -l $t/exe4 > $t/load4
+[ "$(grep -c 'sectname __data' $t/load4)" = 1 ]
+grep -A3 'sectname __data' $t/load4 | grep -E 'size 0x0+10$'
+nm -m $t/exe4 | grep -F '(__DATA,__data) non-external __dyld_private'

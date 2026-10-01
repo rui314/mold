@@ -233,7 +233,7 @@ impl Reach {
             let id = match id {
                 ChunkId::Output(id) => {
                     sides[id.index()] = side(i);
-                    ctx.output_section(id).synthetic.unwrap_or(ChunkId::Output(id))
+                    ctx.output_section(id).hdr.joined.map_or(ChunkId::Output(id), |(j, _)| j)
                 }
                 id => id,
             };
@@ -341,17 +341,18 @@ fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
             ctx.symbols[sym].unmark();
         }
     }
-    // A synthesized section that joined this one (the stubs, say)
-    // follows the last thunk.
-    let synthetic = ctx.output_sections[id.index()].synthetic.map(|chunk| {
+    // A section that joined this one (the stubs, say) follows the last
+    // thunk.
+    let joined = ctx.output_sections[id.index()].hdr.joined.map(|(chunk, _)| {
         let hdr = ctx.chunk_header(chunk);
-        (hdr.size, hdr.p2align)
+        (chunk, hdr.size, hdr.p2align)
     });
     let osec = &mut ctx.output_sections[id.index()];
     osec.hdr.size = offset;
-    if let Some((size, p2align)) = synthetic {
-        osec.synthetic_off = align_to(offset, 1 << p2align);
-        osec.hdr.size = osec.synthetic_off + size;
+    if let Some((chunk, size, p2align)) = joined {
+        let off = align_to(offset, 1 << p2align);
+        osec.hdr.joined = Some((chunk, off));
+        osec.hdr.size = off + size;
     }
     osec.thunks = thunks;
     osec.members = members;
