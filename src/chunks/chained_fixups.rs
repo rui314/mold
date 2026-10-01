@@ -34,7 +34,7 @@ pub struct ChainedFixupsSection {
     /// report_unaligned_pointers).
     pub unaligned: std::sync::Mutex<Vec<(u32, u64)>>,
     /// The first segment whose chain pages dyld can't read, for a
-    /// -segalign below 4 KiB (see report_bad_page_size).
+    /// -segalign other than 4 KiB or 16 KiB (see report_bad_page_size).
     pub bad_page_size: std::sync::Mutex<Option<usize>>,
 }
 
@@ -197,17 +197,21 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
-        // A -segalign below 4KB makes arm64 chain pages no dyld reads:
-        // ld-prime lays the image out to the end all the same, and
-        // reports the first segment (see report_bad_page_size), unless
-        // an unaligned pointer in a chain fails the link first (see
-        // check_pointer_alignment).
+        // A -segalign other than 4KB or 16KB makes arm64 chain pages no
+        // dyld reads: ld-prime lays the image out to the end all the
+        // same, each segment's record (its size shows in the layout it
+        // prints) included, and reports the first segment (see
+        // report_bad_page_size), unless an unaligned pointer in a chain
+        // fails the link first (see check_pointer_alignment).
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
-            if ctx.chained_fixups.unaligned.lock().unwrap().is_empty() {
-                *ctx.chained_fixups.bad_page_size.lock().unwrap() = Some(seg_idx);
+            let mut bad = ctx.chained_fixups.bad_page_size.lock().unwrap();
+            if bad.is_none() && ctx.chained_fixups.unaligned.lock().unwrap().is_empty() {
+                *bad = Some(seg_idx);
             }
-            break;
+            if page_size == 0 {
+                break;
+            }
         }
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its

@@ -31,6 +31,12 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-segalign,0x1000
 if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000 2> $t/log
   grep -q 'chained fixups, page_size not 4KB or 16KB in segment #2' $t/log
+  # It builds the segment's chain record all the same, and its
+  # __LINKEDIT is as large as with 16KB pages.
+  not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000,-no_adhoc_codesign 2> $t/log
+  $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x4000,-no_adhoc_codesign
+  size=$(otool -l $t/exe4 | grep -A8 'segname __LINKEDIT' | awk '$1 == "filesize" { print $2 }')
+  grep -q "^    __LINKEDIT .*fileSize=$(printf '0x%08x' $size)$" $t/log
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000,-no_fixup_chains
 else
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000
