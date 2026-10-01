@@ -295,7 +295,8 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 }
 
 /// Coalesces the Objective-C reference records the compiler emits
-/// once per object: __objc_selrefs entries naming the same selector,
+/// once per object: __objc_selrefs entries naming the same selector
+/// (of the literal-pointer type, see has_unnamed_atoms),
 /// __objc_classrefs entries naming the same class, and identical
 /// __cfstring constants. ld64 keeps one of each, in a -r output as in
 /// a final link (NetNewsWire's RSCore prelink had 56 class references
@@ -363,6 +364,7 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
         };
         let key = match h.sectname() {
             "__objc_classrefs" if folds_objc_classrefs(ctx) => continue,
+            "__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => continue,
             "__objc_selrefs" | "__objc_classrefs" => {
                 if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
                     continue;

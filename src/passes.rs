@@ -4948,20 +4948,24 @@ pub(crate) fn objc_list_aliases<E: Target>(
 /// of them: CFStrings, selector and class references, UTF-16 literals
 /// and Objective-C constant literals (@42, @[...], @{...}). No label
 /// of theirs is in an output's symbol table; a -r output names the
-/// atoms itself on arm64 (see relocatable.rs). Superclass and protocol
-/// references of the literal-pointer type are taken for class
-/// references too, which merge whatever labels them (see
-/// is_class_or_protocol_ref). In an object without subsections
-/// (`split` false) the UTF-16 literals' section is one atom, whose
-/// labels ld-prime keeps as any other's.
+/// atoms itself on arm64 (see relocatable.rs). Selector references
+/// are so only of the literal-pointer type the compilers give them: a
+/// regular or coalesced __objc_selrefs is data, whose labels stay and
+/// whose references don't merge. Superclass and protocol references
+/// of the literal-pointer type are taken for class references too,
+/// which merge whatever labels them (see is_class_or_protocol_ref). In
+/// an object without subsections (`split` false) the UTF-16 literals'
+/// section is one atom, whose labels ld-prime keeps as any other's.
 pub(crate) fn has_unnamed_atoms(hdr: &MachSection, split: bool) -> bool {
     if hdr.segname_is("__TEXT") {
         return split && hdr.sectname_is("__ustring");
     }
+    if hdr.sectname_is("__objc_selrefs") {
+        return hdr.segname_is("__DATA") && hdr.section_type() == S_LITERAL_POINTERS;
+    }
     hdr.segname_is("__DATA")
         && ([
             "__cfstring",
-            "__objc_selrefs",
             "__objc_classrefs",
             "__objc_intobj",
             "__objc_floatobj",
