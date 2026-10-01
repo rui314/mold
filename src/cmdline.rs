@@ -431,6 +431,9 @@ pub struct Args {
     /// -poison_symbol / -poison_symbols_list: symbols the output may
     /// not refer to.
     pub poisoned: Glob,
+    /// -deployment_target_mismatches: what to make of an object built
+    /// for a newer OS version than the link's (a warning unless given).
+    pub deployment_target_mismatches: Treatment,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -730,6 +733,7 @@ impl Default for Args {
             keep_duplicates: Glob::new(),
             allow_dead_duplicates: false,
             poisoned: Glob::new(),
+            deployment_target_mismatches: Treatment::Warning,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1581,9 +1585,10 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-force_symbols_not_weak_list" => {
             return "-force_symbols_weak_list missing <path>".to_string();
         }
-        "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" | "-duplicate_symbols" => {
-            "missing <option>"
-        }
+        "-read_only_relocs"
+        | "-arch_variant_lto_cache_mismatch"
+        | "-duplicate_symbols"
+        | "-deployment_target_mismatches" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
         "-dylib_file" => "missing <path:path>",
@@ -2420,6 +2425,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
             }
             b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
+            b"-deployment_target_mismatches" => {
+                args.deployment_target_mismatches =
+                    parse_treatment(name, next_arg(&mut i, name), true);
+            }
             b"-poison_symbol" => {
                 poisoned.add(next_arg(&mut i, name).as_bytes(), 0);
             }

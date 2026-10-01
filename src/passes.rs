@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{self, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
-use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName};
+use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, Treatment};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -2312,15 +2312,21 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
         };
 
         // The SDK version used to compile an input does not constrain
-        // its use.
+        // its use. -deployment_target_mismatches error makes the first
+        // object for a newer OS fail the link, and suppress keeps quiet.
         if minos != 0 && version.minos > minos {
-            crate::warn!(
+            let msg = format!(
                 "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
                 resolved_file_name(obj.mf),
                 platform_name(version.platform),
                 format_version(version.minos),
                 format_version(minos)
             );
+            match ctx.args.deployment_target_mismatches {
+                Treatment::Warning => crate::warn!("{msg}"),
+                Treatment::Error => fatal!("{msg}"),
+                Treatment::Suppress => {}
+            }
         }
     }
     for (_, dylib) in dylibs {
