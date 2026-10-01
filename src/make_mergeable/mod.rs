@@ -672,7 +672,10 @@ impl<'a, E: Target> Builder<'a, E> {
     /// The entry a relocation refers to, and the offset there.
     fn reloc_target(&self, obj: usize, rel: &Reloc) -> (To, i64) {
         match rel.target() {
-            RelocTarget::Sym(idx) => self.sym_target(self.ctx.objs[obj].symbols[idx as usize]),
+            RelocTarget::Sym(idx) => {
+                let id = self.ctx.objs[obj].symbols[idx as usize];
+                self.other_got_slot(id, rel.addend).unwrap_or_else(|| self.sym_target(id))
+            }
             // The offset the relocation's addend has in the subsection
             // is the entry's if it is a record of it.
             RelocTarget::Section(isec) => match self.isec_target_at(isec, rel.addend) {
@@ -683,6 +686,34 @@ impl<'a, E: Target> Builder<'a, E> {
                 ),
             },
         }
+    }
+
+    /// Where a reference to a symbol of an input __DATA,__got with
+    /// `addend` reaches past the symbol's slot: the entry of the slot it
+    /// reads, and the offset to add to the addend to read it there.
+    /// Hand-written code may reach a slot as another's label plus an
+    /// offset - the section's start (ltmpN), say - and each slot is an
+    /// entry of its own, which a merging link places apart, so the
+    /// reference must name the slot it reads. (ld-prime records the first
+    /// slot and the offset, which reads the wrong one.)
+    fn other_got_slot(&self, id: SymbolId, addend: i64) -> Option<(To, i64)> {
+        let ctx = self.ctx;
+        let sym = &ctx.symbols[id];
+        let (Some(FileId::Obj(obj)), Some(isec)) = (sym.file(), sym.input_section()) else {
+            return None;
+        };
+        let slot = &ctx.isecs[isec as usize];
+        let off = sym.value as i64 + addend;
+        if !is_input_got(ctx.hdr_of(slot)) || (0..slot.size as i64).contains(&off) {
+            return None;
+        }
+        let addr = u64::try_from(slot.input_addr as i64 + off).ok()?;
+        let subsecs = &ctx.objs[obj as usize].subsecs;
+        let (other, other_off) = crate::input_files::find_subsec(&ctx.isecs, subsecs, addr)?;
+        if ctx.isecs[other].shndx != slot.shndx {
+            return None;
+        }
+        Some((self.isec_target(other as u32)?, other_off as i64 - addend))
     }
 
     /// The fixups a subsection's relocations make.
