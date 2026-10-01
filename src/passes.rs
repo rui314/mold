@@ -2413,17 +2413,6 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         crate::lto::compile(&plugin, cg, &opts)
     };
 
-    // -object_path_lto keeps the machine-code object LTO produced.
-    // Debug info stays in object files on Mach-O (the executable only
-    // gets stabs pointing at them), and for LTO code that object
-    // exists only inside the linker - Xcode passes a path under the
-    // dSYM staging directory so dsymutil can find it afterwards.
-    if let Some(path) = &ctx.args.object_path_lto
-        && std::fs::write(path, &data).is_err()
-    {
-        fatal!("-object_path_lto: cannot write {}", path.display());
-    }
-
     // Retire the placeholders: the compiled object provides the real
     // definitions, so they must neither claim nor reference anything in
     // the next resolution round. What diagnostics still need to know of
@@ -2458,12 +2447,22 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         obj.symbols.clear();
     }
 
-    // ld-prime names the object after the file -object_path_lto wrote
-    // it to, or else after a temporary file it never writes, in its
-    // diagnostics, the map and the debug stabs - which give the latter
-    // modification time 0.
+    // -object_path_lto keeps the machine-code object LTO produced.
+    // Debug info stays in object files on Mach-O (the executable only
+    // gets stabs pointing at them), and for LTO code that object
+    // exists only inside the linker - Xcode passes a path under the
+    // dSYM staging directory so dsymutil can find it afterwards.
+    // ld-prime names the object after that file, or else after a
+    // temporary file it never writes, in its diagnostics, the map and
+    // the debug stabs - which give the latter modification time 0.
     let (name, mtime) = match &ctx.args.object_path_lto {
-        Some(path) => (path.clone(), None),
+        Some(path) => {
+            let path = lto_object_path(path);
+            // ld-prime keeps the object if it can, saying nothing
+            // otherwise.
+            let _ = std::fs::write(&path, &data);
+            (path, None)
+        }
         None => (PathBuf::from("/tmp/lto.o"), Some(0)),
     };
     let mf = Box::leak(Box::new(crate::mapped_file::MappedFile {
@@ -2474,6 +2473,19 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     }));
     ctx.lto_obj = Some(input_files::parse_object(ctx, mf, true));
     true
+}
+
+/// Where -object_path_lto has the merged LTO object written: the path
+/// itself, or lto.o in it if it names a directory - as it does when
+/// ThinLTO objects share it (ld-prime appends "/lto.o" to the path as
+/// given, trailing slash or not).
+fn lto_object_path(path: &Path) -> PathBuf {
+    if !path.is_dir() {
+        return path.to_path_buf();
+    }
+    let mut path = path.as_os_str().to_owned();
+    path.push("/lto.o");
+    PathBuf::from(path)
 }
 
 /// The tentative definitions (common symbols) no definition replaced,
