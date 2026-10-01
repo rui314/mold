@@ -321,6 +321,9 @@ pub struct Args {
     /// -search_dylibs_first: search every path for a dylib before
     /// falling back to archives.
     pub search_dylibs_first: bool,
+    /// -search_in_sparse_frameworks: look for a framework not found
+    /// in the search path in its Versions/Current too.
+    pub search_in_sparse_frameworks: bool,
     /// -dylib_file install_name:file: (install name, file) pairs, the
     /// files to load a dylib re-exports under those install names from,
     /// before looking anywhere else.
@@ -548,6 +551,7 @@ impl Default for Args {
             headerpad: 32,
             headerpad_max_install_names: false,
             search_dylibs_first: false,
+            search_in_sparse_frameworks: false,
             dylib_files: Vec::new(),
             umbrella: None,
             oso_prefix: None,
@@ -1753,6 +1757,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // and an archive before moving to the next.
             b"-search_paths_first" => args.search_dylibs_first = false,
             b"-search_dylibs_first" => args.search_dylibs_first = true,
+            b"-search_in_sparse_frameworks" => args.search_in_sparse_frameworks = true,
             b"-umbrella" => args.umbrella = Some(bytes(next_arg(&mut i, name))),
             // ld-prime deprecates the option, once, as it reads it.
             b"-dylib_file" => {

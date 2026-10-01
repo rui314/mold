@@ -143,24 +143,32 @@ fn under_root(root: &Path, path: &Path) -> PathBuf {
 
 /// Looks for a framework's stub, then its dylib, in each framework
 /// directory in turn; for its dylib only if `stubs` is false, as for a
-/// framework to merge.
+/// framework to merge. A sparse framework, one that has only its
+/// Versions/Current without the symlinks at its top, is found there in
+/// a second pass over the directories if -search_in_sparse_frameworks
+/// asks.
 fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr, stubs: bool) -> Option<PathBuf> {
     let with_suffix = |suffix: &str| {
         let mut file = name.to_os_string();
         file.push(suffix);
         file
     };
-    for dir in &ctx.args.framework_paths {
-        let fw = dir.join(with_suffix(".framework"));
-        let stub = stubs.then(|| with_suffix(".tbd"));
-        for file in stub.into_iter().chain([name.to_os_string()]) {
-            let path = fw.join(file);
-            if path.exists() {
-                return Some(path);
+    let search = |subdir: &str| {
+        for dir in &ctx.args.framework_paths {
+            let fw = dir.join(with_suffix(".framework")).join(subdir);
+            let stub = stubs.then(|| with_suffix(".tbd"));
+            for file in stub.into_iter().chain([name.to_os_string()]) {
+                let path = fw.join(file);
+                if path.exists() {
+                    return Some(path);
+                }
             }
         }
-    }
-    None
+        None
+    };
+    search("").or_else(|| {
+        ctx.args.search_in_sparse_frameworks.then(|| search("Versions/Current")).flatten()
+    })
 }
 
 fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
