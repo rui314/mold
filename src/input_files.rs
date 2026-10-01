@@ -4663,6 +4663,7 @@ struct LdSymbols {
 impl LdSymbols {
     /// Reads the directives among `names`, which may hold other names.
     fn read<E: Target>(ctx: &Context<E>, names: &[&'static str]) -> Self {
+        use hashbrown::hash_map::Entry;
         let minos = ctx.args.platform_minos;
         let mut ld = Self {
             added: Vec::new(),
@@ -4672,6 +4673,9 @@ impl LdSymbols {
             compatibility_version: None,
             moved: Vec::new(),
         };
+        // Where each moved export is in `ld.moved`: SwiftUICore moves
+        // some 15,000 for a macOS 13 target.
+        let mut moved_at: hashbrown::HashMap<&str, usize> = hashbrown::HashMap::new();
         for &name in names {
             let Some(rest) = name.strip_prefix("$ld$") else { continue };
             if let Some(rest) = rest.strip_prefix("previous$") {
@@ -4679,16 +4683,22 @@ impl LdSymbols {
                 if p.platform != ctx.args.platform || minos < p.lo || p.hi <= minos {
                     continue;
                 }
-                let moved = (p.sym, p.install_name, p.version);
-                match ld.moved.iter_mut().find(|(sym, ..)| *sym == p.sym) {
-                    _ if p.sym.is_empty() => {
-                        if ld.previous.is_none_or(|(first, _)| p.install_name < first) {
-                            ld.previous = Some((p.install_name, p.version));
-                        }
+                if p.sym.is_empty() {
+                    if ld.previous.is_none_or(|(first, _)| p.install_name < first) {
+                        ld.previous = Some((p.install_name, p.version));
                     }
-                    Some(old) if p.install_name < old.1 => *old = moved,
-                    Some(_) => {}
-                    None => ld.moved.push(moved),
+                    continue;
+                }
+                let moved = (p.sym, p.install_name, p.version);
+                match moved_at.entry(p.sym) {
+                    Entry::Occupied(e) if p.install_name < ld.moved[*e.get()].1 => {
+                        ld.moved[*e.get()] = moved;
+                    }
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(e) => {
+                        e.insert(ld.moved.len());
+                        ld.moved.push(moved);
+                    }
                 }
                 continue;
             }
@@ -4853,13 +4863,13 @@ fn strtoul32(s: &str) -> Option<u32> {
 /// below 256. An empty number is 0, but not as the last of the first
 /// four ("1..2" is 1.0.2, "1." no version).
 fn previous_version(s: &str) -> Option<u32> {
-    let parts: Vec<&str> = s.split('.').collect();
-    if parts.len() > 5 {
+    let count = s.split('.').count();
+    if count > 5 {
         return None;
     }
     let mut nums = [0; 5];
-    for (i, part) in parts.iter().enumerate() {
-        if part.is_empty() && i + 1 == parts.len() && i < 4 {
+    for (i, part) in s.split('.').enumerate() {
+        if part.is_empty() && i + 1 == count && i < 4 {
             return None;
         }
         nums[i] = strtoul32(part)?;
