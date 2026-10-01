@@ -1442,10 +1442,11 @@ enum Rename {
 }
 
 /// How a local ranks among the names of a place: ld-prime orders them
-/// a private external, a local, a weak definition, an ltmpN label, each
-/// rank by descending name.
+/// a literal atom it names itself, a private external, a local, a weak
+/// definition, an ltmpN label, each rank by descending name.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Rank {
+    Atom,
     PrivateExtern,
     Local,
     Weak,
@@ -1818,7 +1819,7 @@ impl<'a, E: Target> Locals<'a, E> {
                         },
                         sym: None,
                         at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
-                        rank: Rank::Local,
+                        rank: Rank::Atom,
                     });
                 }
             }
@@ -1891,6 +1892,7 @@ impl<'a, E: Target> Locals<'a, E> {
         let whole = !obj.subsections_via_symbols;
         let aliases = crate::passes::objc_list_aliases(ctx, obj);
         let named_at = named_places(ctx, obj);
+        let literal_names = self.literal_atom_names(obj);
         for i in obj.local_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             if nlist.is_stab() || nlist.is_extern() {
@@ -1908,8 +1910,13 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             }
             // A label on an atom ld64 names itself stands for that
-            // atom.
-            if let Some(e) = self.atoms.get(ctx, isec, sym.value as i64) {
+            // atom, but for a fixed-size literal's other labels (see
+            // literal_atom_names).
+            let atom = self.atoms.get(ctx, isec, sym.value as i64);
+            let place = (nlist.n_sect, nlist.n_value);
+            if let Some(e) = atom
+                && literal_names.get(&place).is_none_or(|&name| name == sym_id)
+            {
                 atom_labels.push((e, sym_id));
                 continue;
             }
@@ -1921,13 +1928,13 @@ impl<'a, E: Target> Locals<'a, E> {
             if sym.name().starts_with("ltmp")
                 && !whole
                 && !referenced[sym_id as usize]
-                && named_at.contains(&(nlist.n_sect, nlist.n_value))
+                && named_at.contains(&place)
             {
                 continue;
             }
             // A labeled literal is an atom of its own, not a whole
-            // section's.
-            let whole = whole && !ctx.isecs[isec].is_labeled();
+            // section's, and so is one ld64 names itself.
+            let whole = whole && !ctx.isecs[isec].is_labeled() && atom.is_none();
             // An alias of a list entry is not the atom, which the
             // section's no_dead_strip marks.
             let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
@@ -1944,6 +1951,46 @@ impl<'a, E: Target> Locals<'a, E> {
             });
         }
         (labels, atom_labels)
+    }
+
+    /// The label that stands for each record of an object's fixed-size
+    /// literal sections (__literal4/8/16) ld64 names itself, by the
+    /// record's place (section and address in the object): of the
+    /// record's local labels, the one ld-prime takes for the atom's
+    /// name, which the record's l<nnn> replaces: the greatest name, an
+    /// ltmpN label only if no other names the record (see
+    /// symbol_places). The others stay as its aliases, unlike a C
+    /// string's labels, which all stand for its LC<n>. (A record merged
+    /// into another's atom by its contents is named apart all the same.)
+    fn literal_atom_names(
+        &self,
+        obj: &crate::input_files::ObjectFile,
+    ) -> HashMap<(u8, u64), SymbolId> {
+        let ctx = self.ctx;
+        let mut names: HashMap<(u8, u64), (bool, Reverse<&str>, SymbolId)> = HashMap::new();
+        for i in obj.local_range() {
+            let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
+            let sym = &ctx.symbols[sym_id];
+            if nlist.is_stab() || nlist.is_extern() || sym.name().is_empty() {
+                continue;
+            }
+            let Some(isec) = sym.input_section().map(|i| ctx.resolve_isec(i as usize)) else {
+                continue;
+            };
+            let fixed_size = matches!(
+                ctx.hdr_of(&ctx.isecs[isec]).section_type(),
+                S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+            );
+            if !fixed_size {
+                continue;
+            }
+            if self.atoms.get(ctx, isec, sym.value as i64).is_some() {
+                let name = (sym.name().starts_with("ltmp"), Reverse(sym.name()), sym_id);
+                let place = (nlist.n_sect, nlist.n_value);
+                names.entry(place).and_modify(|best| *best = (*best).min(name)).or_insert(name);
+            }
+        }
+        names.into_iter().map(|(place, (_, _, id))| (place, id)).collect()
     }
 
     /// Adds the private externals, which become non-external symbols in
