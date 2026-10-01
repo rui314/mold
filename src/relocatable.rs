@@ -1770,14 +1770,19 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
 /// their entries. ld-prime keeps an undefined one only if a relocation
 /// refers to it (`referenced`) or the command line makes it an initial
 /// undefine (-u): a stray `.globl`, a weak or lazy reference nothing
-/// uses, goes.
+/// uses, goes. A DTrace symbol stays whatever refers to it, with no
+/// n_desc flags: the final link reads a provider's stability and
+/// typedefs from symbols nothing relocates.
 fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(NList, SymbolId)> {
     let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
     let undefs = symbols_by_name(ctx, |i| {
         let sym = &ctx.symbols[i];
         sym.is_used()
             && (sym.is_common()
-                || !sym.is_defined() && (referenced[i] || forced.contains(sym.name())))
+                || !sym.is_defined()
+                    && (referenced[i]
+                        || forced.contains(sym.name())
+                        || crate::dtrace::is_dtrace_symbol(sym.name())))
     });
     undefs
         .par_iter()
@@ -1788,7 +1793,7 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
             if sym.is_common() {
                 n_value = sym.value;
                 n_desc |= (sym.common_p2align as u16) << 8;
-            } else if sym.is_weak_ref() {
+            } else if sym.is_weak_ref() && !crate::dtrace::is_dtrace_symbol(sym.name()) {
                 n_desc |= N_WEAK_REF;
             }
             (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value }, i as u32)

@@ -9,6 +9,7 @@ pub(crate) mod context;
 pub(crate) mod dead_strip;
 pub(crate) mod delay_init;
 pub mod driver;
+pub(crate) mod dtrace;
 pub(crate) mod dwarf;
 pub(crate) mod error;
 pub(crate) mod filetype;
