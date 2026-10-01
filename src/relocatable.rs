@@ -456,10 +456,14 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             }
         }
     }
+    // ld-prime rounds the segment's size up to 8 bytes and counts the
+    // padding in its file size too, whose end, past a trailing zero-fill
+    // section, may then lie in the relocations.
+    let pad = align_to(vmsize, 8) - vmsize;
     let layout = FileLayout {
-        vmsize,
+        vmsize: vmsize + pad,
         seg_fileoff,
-        seg_filesize: content_end - seg_fileoff,
+        seg_filesize: content_end - seg_fileoff + pad,
         diceoff: place(cmds.dice.len() * 8),
         lohoff: place(cmds.loh.as_ref().map_or(0, Vec::len)),
         symoff: place(symtab.table.len() * size_of::<NList>()),
