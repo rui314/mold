@@ -392,10 +392,14 @@ impl<'a, E: Target> Builder<'a, E> {
         if !isec.is_alive() {
             return;
         }
-        if isec.replacement != NO_REPLACEMENT {
+        let hdr = ctx.hdr_of(isec);
+        // A slot of an input __DATA,__got the link moved into its GOT
+        // (see passes::fold_input_got) is an entry in its place all the
+        // same, as ld-prime records it, with the bytes of the GOT slot.
+        let got_slot = isec.replacement != NO_REPLACEMENT && is_input_got(hdr);
+        if isec.replacement != NO_REPLACEMENT && !got_slot {
             return self.add_folded_function(obj, id, debug);
         }
-        let hdr = ctx.hdr_of(isec);
         if !has_atoms(hdr) {
             return;
         }
@@ -427,9 +431,13 @@ impl<'a, E: Target> Builder<'a, E> {
         if !isec.is_record() {
             atom.modulus = (isec.input_addr & ((1 << isec.p2align) - 1)) as u16;
         }
-        atom.content = self.isec_content(isec, hdr);
+        let placed = if got_slot { &ctx.isecs[isec.replacement] } else { isec };
+        atom.content = self.isec_content(placed, ctx.hdr_of(placed));
         let atom_idx = self.push_records(atom, id, record_size(hdr));
         self.isec_atom.insert(id, To::Atom(atom_idx));
+        if got_slot {
+            self.isec_atom.insert(isec.replacement, To::Atom(atom_idx));
+        }
         if let Some(i) = label {
             self.sym_atom.insert(obj.symbols[i], To::Atom(atom_idx));
         }
@@ -1118,10 +1126,17 @@ fn has_atoms(hdr: &MachSection) -> bool {
         && hdr.sectname() != "__objc_imageinfo"
 }
 
+/// Whether a section is an object's __DATA,__got, whose slots the link
+/// moves into its GOT (see passes::fold_input_got).
+fn is_input_got(hdr: &MachSection) -> bool {
+    hdr.segname() == "__DATA" && hdr.sectname() == "__got"
+}
+
 /// Whether ld-prime merges a section's atoms by their contents: the
-/// literals, and the UTF-16 strings.
+/// literals (not an object's GOT slots, which it takes one by one all
+/// the same), and the UTF-16 strings.
 fn merges_by_content(hdr: &MachSection) -> bool {
-    crate::input_files::is_literal_section(hdr)
+    crate::input_files::is_literal_section(hdr) && !is_input_got(hdr)
         || (hdr.segname() == "__TEXT" && hdr.sectname() == "__ustring")
 }
 

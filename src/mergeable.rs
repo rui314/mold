@@ -617,6 +617,9 @@ pub(crate) fn standard_section(ct: u8) -> Option<(&'static str, &'static str, u3
         17 => ("__TEXT", "__literal4", S_4BYTE_LITERALS),
         18 => ("__TEXT", "__literal8", S_8BYTE_LITERALS),
         19 => ("__TEXT", "__literal16", S_16BYTE_LITERALS),
+        // A slot of an object's GOT, which an object has as a regular
+        // section (one of non-lazy pointers is refused).
+        22 => ("__DATA", "__got", 0),
         26 => ("__DATA", "__const", 0),
         27 => ("__DATA", "__data", 0),
         28 => ("__DATA", "__cfstring", 0),

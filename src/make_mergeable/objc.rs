@@ -29,6 +29,10 @@ impl<E: Target> Builder<'_, E> {
         let ctx = self.ctx;
         let slots = self.add_selref_atoms();
         for &(stand_in, id) in &ctx.got.stand_ins {
+            // An input GOT slot's is the slot's entry (see add_isec_atom).
+            if self.isec_atom.contains_key(&stand_in) {
+                continue;
+            }
             let mut atom = coalesced(CT_CLASS_REF, 8, 3);
             atom.content =
                 self.isec_content(&ctx.isecs[stand_in], ctx.hdr_of(&ctx.isecs[stand_in]));
