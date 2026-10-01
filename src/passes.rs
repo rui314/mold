@@ -647,12 +647,14 @@ fn collect_file<E: Target>(
 /// only if it has its 8 bytes and no more than their worth, and ignores
 /// a label at the end of a section of fixed-size records. It fails the
 /// link on an initializer, terminator or __objc_clsrolist pointer with
-/// no relocation.
+/// no relocation. It warns of none past the section where it gave up
+/// reading an object (see StagedObject::failed_at).
 /// Staging runs in parallel, so the diagnostics come here, in input
 /// order.
 fn warn_about_sections(staged: &[input_files::StagedObject]) {
     for obj in staged {
-        for (i, hdr) in obj.sect_hdrs.iter().enumerate() {
+        let read = obj.failed_at.map_or(obj.sect_hdrs.len(), |i| obj.sect_hdrs.len().min(i + 1));
+        for (i, hdr) in obj.sect_hdrs[..read].iter().enumerate() {
             if input_files::is_unknown_ld_section(hdr) {
                 crate::warn!(
                     "unknown section: __LD/{} in {}",
@@ -720,9 +722,10 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         .collect();
     drop(t);
     warn_about_sections(&staged);
-    for obj in &staged {
-        obj.check_unwind_sections();
-    }
+    // ld-prime goes on to warn of an object's atoms if it read the
+    // object whole, then of its unwind info: see the end.
+    let checks: Vec<(bool, input_files::UnwindCheck)> =
+        staged.iter().map(|obj| (obj.failed_at.is_none(), obj.check_unwind_sections())).collect();
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
@@ -753,9 +756,24 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let ids = ctx.symbols.gather(&batch);
     drop(t);
 
+    let first = ctx.objs.len();
     let t = ctx.timer("integrate");
     input_files::integrate_objects(ctx, staged, ids, counts);
     drop(t);
+    let small_atoms: Vec<Vec<u32>> = checks
+        .par_iter()
+        .enumerate()
+        .map(|(i, &(read, _))| match read {
+            true => chunks::chained_fixups::small_pointer_atoms(ctx, first + i),
+            false => Vec::new(),
+        })
+        .collect();
+    for ((_, unwind), atoms) in checks.into_iter().zip(small_atoms) {
+        for id in atoms {
+            chunks::chained_fixups::warn_small_pointer_atom(ctx, id);
+        }
+        unwind.report();
+    }
 }
 
 /// ld64 warns, once, about the libraries given more than once, each as

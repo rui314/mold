@@ -630,13 +630,13 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
 }
 
 /// Reports the first section of an object ld-prime refuses to split
-/// into atoms, and returns false if there is one: a section of
+/// into atoms, and returns its index if there is one: a section of
 /// fixed-size records that doesn't end on a record boundary, or a
 /// non-empty one of the pointers only ld-prime makes (see
 /// linker_pointer_content). `nindirect` is the number of the object's
 /// indirect symbol table entries.
-fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
-    for hdr in hdrs {
+fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> Option<usize> {
+    for (i, hdr) in hdrs.iter().enumerate() {
         if hdr.size != 0
             && let Some(content) = linker_pointer_content(hdr)
         {
@@ -645,7 +645,7 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
                 hdr.sectname(),
                 file.display()
             );
-            return false;
+            return Some(i);
         }
         if let Some(size) = record_size(hdr)
             && !hdr.size.is_multiple_of(size)
@@ -657,7 +657,7 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
                 hdr.size,
                 file.display()
             );
-            return false;
+            return Some(i);
         }
     }
 
@@ -672,9 +672,9 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> bool {
             "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
             file.display()
         );
-        return false;
+        return Some(hdrs.len());
     }
-    true
+    None
 }
 
 /// The kind of pointers ld-prime reads a __DATA section as holding by
@@ -762,6 +762,10 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
     /// The labels ld-prime ignores (see extraneous_labels), sorted.
     pub extraneous_labels: Vec<u32>,
+    /// Where ld-prime gave up reading the object, if it did: at the
+    /// section check_sections refused, or past the sections at a bad
+    /// relocation. It reads (and warns of) no section after it.
+    pub failed_at: Option<usize>,
 }
 
 /// The object's nlist_64 array as a slice of the mapped file, or None
@@ -1106,6 +1110,7 @@ pub fn stage_object<E: Target>(
         dice: cmds.dice,
         loh: cmds.loh,
         extraneous_labels: Vec::new(),
+        failed_at: None,
     };
 
     let split_ok = obj.subsections_via_symbols;
@@ -1120,8 +1125,8 @@ pub fn stage_object<E: Target>(
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     obj.warn_referenced_dynamically();
-    let mut relocs_ok = check_sections(sect_hdrs, nindirect, &mf.name)
-        && obj.read_relocations::<E>(&bare, &sect_isecs);
+    obj.failed_at = check_sections(sect_hdrs, nindirect, &mf.name);
+    let mut relocs_ok = obj.failed_at.is_none() && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
     // section's, each 32-byte record being an atom.
@@ -1139,6 +1144,9 @@ pub fn stage_object<E: Target>(
             Some(rels) => obj.parse_compact_unwind(&sect_hdrs[i], &rels),
             None => relocs_ok = false,
         }
+    }
+    if !relocs_ok {
+        obj.failed_at.get_or_insert(sect_hdrs.len());
     }
     if relocs_ok
         && kept_fdes != KeptFdes::None
@@ -2007,6 +2015,25 @@ pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObjec
     obj_idx
 }
 
+/// What check_unwind_sections found of an object, to report once the
+/// object's atoms are warned of (see passes::load_pending): the warnings
+/// and, for an FDE in a section of data, the object's name.
+pub struct UnwindCheck {
+    warnings: Vec<String>,
+    data_fde: Option<String>,
+}
+
+impl UnwindCheck {
+    pub fn report(self) {
+        for msg in self.warnings {
+            crate::warn!("{msg}");
+        }
+        if let Some(file) = self.data_fde {
+            fatal!("invalid function target for dwarf unwind in '{file}'");
+        }
+    }
+}
+
 /// Parses one object and adds it to the link immediately.
 pub fn parse_object<E: Target>(
     ctx: &mut Context<E>,
@@ -2016,7 +2043,7 @@ pub fn parse_object<E: Target>(
     let priority = ctx.next_priority();
     let kept_fdes = KeptFdes::of(&ctx.args);
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, kept_fdes);
-    staged.check_unwind_sections();
+    staged.check_unwind_sections().report();
     integrate_object(ctx, staged)
 }
 
@@ -2710,10 +2737,11 @@ impl StagedObject {
         Some((isec as u32, off as u32))
     }
 
-    /// Warns about each section of the object that has unwind info
-    /// (compact or DWARF) but no code, as ld-prime does, then refuses an
-    /// FDE for a function in a section of data (see add_fdes).
-    pub fn check_unwind_sections(&self) {
+    /// Checks the object's unwind info as ld-prime does: it warns
+    /// about each section that has unwind info (compact or DWARF) but no
+    /// code, then refuses an FDE for a function in a section of data
+    /// (see add_fdes).
+    pub fn check_unwind_sections(&self) -> UnwindCheck {
         let isecs = self.unwind.iter().map(|rec| rec.isec).chain(self.fdes.iter().map(|f| f.isec));
         let mut sects: Vec<u32> = isecs
             .map(|isec| self.isecs[isec as usize].shndx)
@@ -2721,22 +2749,20 @@ impl StagedObject {
             .collect();
         sects.sort_unstable();
         sects.dedup();
-        for shndx in sects {
-            let sect = &self.sect_hdrs[shndx as usize];
-            crate::warn!(
-                "symbols in {},{} ({}) have unwind information, but it's not a code section \
-                 (missing 'regular,pure_instructions' section flag)",
-                sect.segname(),
-                sect.sectname(),
-                crate::passes::resolved_file_name(self.mf)
-            );
-        }
-        if self.data_fde {
-            fatal!(
-                "invalid function target for dwarf unwind in '{}'",
-                crate::passes::resolved_file_name(self.mf)
-            );
-        }
+        let file = crate::passes::resolved_file_name(self.mf);
+        let warnings = sects
+            .into_iter()
+            .map(|shndx| {
+                let sect = &self.sect_hdrs[shndx as usize];
+                format!(
+                    "symbols in {},{} ({file}) have unwind information, but it's not a code \
+                     section (missing 'regular,pure_instructions' section flag)",
+                    sect.segname(),
+                    sect.sectname(),
+                )
+            })
+            .collect();
+        UnwindCheck { warnings, data_fde: self.data_fde.then_some(file) }
     }
 
     /// The first pointer, an atom of ld-prime's own, that has no

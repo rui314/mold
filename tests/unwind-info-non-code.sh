@@ -49,3 +49,34 @@ entry() {
 grep -q "$(entry _main 0x00000000)" $t/unwind
 grep -q "$(entry _g 0x02001000)" $t/unwind
 grep -q "$(entry _h 0x02002000)" $t/unwind
+
+# Reading an object, ld-prime warns of its atoms aligned less than the
+# pointers they hold before it warns of its unwind info.
+cat <<EOF | $CC -o $t/b.o -c -xassembler -
+.text
+.globl _main
+.p2align 2
+_main:
+  ret
+.data
+.globl _q0, _q1
+_q0: .byte 0
+_q1: .quad _main
+.section __DATA,__foo
+.p2align 2
+.globl _g
+_g:
+  ret
+.section __LD,__compact_unwind,regular,debug
+.p2align 3
+.quad _g
+.long 1
+.long 0x02001000
+.quad 0
+.quad 0
+.subsections_via_symbols
+EOF
+$CC --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_fixup_chains 2> $t/log2
+grep 'warning: ' $t/log2 > $t/warnings2
+head -1 $t/warnings2 | grep -q "alignment (1) of atom '_q1'"
+sed -n 2p $t/warnings2 | grep -q 'symbols in __DATA,__foo (.*/b.o) have unwind information'

@@ -517,9 +517,10 @@ fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
 
 /// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
 /// chain's links are words: it warns of every atom aligned less than a
-/// pointer that holds one, then, once relocations are applied, reports
-/// the unaligned pointers where the image has classic dyld info (as
-/// -unaligned_pointers says). With chained fixups, arm64 fails the link
+/// pointer that holds one as it reads the objects (see
+/// small_pointer_atoms), then, once relocations are applied,
+/// reports the unaligned pointers where the image has classic dyld info
+/// (as -unaligned_pointers says). With chained fixups, arm64 fails the link
 /// at an unaligned pointer of a chain: of the last section that has
 /// one, the first atom's (in address order), from its last pointer
 /// (the order of an assembler's relocations) - ld-prime checks the
@@ -544,20 +545,6 @@ fn check_pointer_alignment<E: Target>(
     }
     let atom_addr = |id: u32| ctx.isec_addr(id as usize);
     suspects.sort_unstable_by_key(|&(id, addr)| (atom_addr(id), id, addr));
-
-    let mut atoms: Vec<u32> = suspects.iter().map(|&(id, _)| id).collect();
-    atoms.dedup();
-    for id in atoms.into_iter().filter(|_| !quiet) {
-        let p2align = ctx.isecs[id as usize].p2align;
-        if p2align < 3 {
-            crate::warn!(
-                "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
-                1 << p2align,
-                atom_location(ctx, id, None)
-            );
-        }
-    }
-
     suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
     if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
         // A pointer in a read-only segment is a text relocation, which
@@ -584,6 +571,57 @@ fn check_pointer_alignment<E: Target>(
         *ctx.chained_fixups.unaligned.lock().unwrap() = suspects;
     }
     !chained
+}
+
+/// The atoms of object `obj` aligned less than a pointer that hold one,
+/// which ld-prime warns of as it reads an object - every object it
+/// reads, archive members the link doesn't use included, but none it
+/// fails to read - unless -unaligned_pointers keeps it quiet (see
+/// Args::unaligned_pointers). It knows nothing yet of the symbols the
+/// pointers point to but those the object defines: a pointer is any
+/// 8-byte absolute relocation, but one to an absolute symbol of the
+/// object. ld-prime makes no atoms of the DWARF, of __LLVM, of
+/// __compact_unwind or of __eh_frame. The atoms come in section order,
+/// by address within a section, as the object's subsections are
+/// numbered.
+pub fn small_pointer_atoms<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> {
+    if ctx.args.unaligned_pointers == Treatment::Suppress {
+        return Vec::new();
+    }
+    let file = &ctx.objs[obj];
+    let is_pointer = |rel: &crate::input_sections::Reloc| {
+        E::classify_reloc(rel.r_type) == RelocClass::Plain
+            && rel.size == 8
+            && !rel.is_pcrel
+            && !rel.is_subtracted
+            && rel.r_type != E::RELOC_SUBTRACTOR
+            && !matches!(rel.target(), crate::input_sections::RelocTarget::Sym(idx)
+                if file.nlists.get(idx as usize).is_some_and(|n| n.n_type() == N_ABS))
+    };
+    let mut atoms: Vec<u32> = file
+        .subsecs
+        .iter()
+        .copied()
+        .filter(|&id| {
+            let isec = &ctx.isecs[id];
+            let hdr = ctx.hdr_of(isec);
+            isec.p2align < 3
+                && !matches!(hdr.segname(), "__DWARF" | "__LLVM")
+                && !matches!(hdr.sectname(), "__compact_unwind" | "__eh_frame")
+                && ctx.isec_relocs(id as usize).iter().any(is_pointer)
+        })
+        .collect();
+    atoms.sort_unstable();
+    atoms
+}
+
+/// Warns of an atom small_pointer_atoms found.
+pub fn warn_small_pointer_atom<E: Target>(ctx: &Context<E>, id: u32) {
+    crate::warn!(
+        "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
+        1 << ctx.isecs[id].p2align,
+        atom_location(ctx, id, None)
+    );
 }
 
 /// Fails the link on the unaligned pointer check_pointer_alignment found

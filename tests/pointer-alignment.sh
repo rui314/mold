@@ -166,3 +166,42 @@ else
 fi
 not $mold -o $t/exe12 $t/a.o -unaligned_pointers foo 2> $t/log12
 grep -q -- '-unaligned_pointers invalid option (warning | error | suppress)' $t/log12
+
+# ld-prime warns of the atoms as it reads each object, knowing nothing
+# of the other inputs yet: of an atom dead stripping drops, of an
+# archive member the link doesn't load, of a pointer to an absolute
+# symbol another object defines (not of one to its own), and before
+# the link fails on an undefined symbol.
+cat <<EOF | $CC -o $t/u.o -c -xassembler -
+.data
+.globl _u0, _u1, _u2, _u3, _u4
+_u0: .byte 1
+_u1: .quad _bar
+_u2: .byte 1
+.quad _abs
+_u3: .byte 1
+.quad _own
+_u4: .byte 1
+.globl _own
+_own = 0x1234
+.subsections_via_symbols
+EOF
+cat <<EOF | $CC -o $t/abs.o -c -xassembler -
+.globl _abs
+_abs = 0x5678
+EOF
+u="(/.*/$t/u.o)"
+$CC --ld-path=$mold -o $t/exe13 $t/m.o $t/u.o $t/abs.o -Wl,-dead_strip 2> $t/log13
+grep -q "alignment (1) of atom '_u1' $u is too small" $t/log13
+grep -q "alignment (1) of atom '_u2' $u is too small" $t/log13
+not grep -q "atom '_u3'" $t/log13
+
+rm -f $t/libu.a
+ar rcs $t/libu.a $t/u.o
+$CC --ld-path=$mold -o $t/exe14 $t/m.o $t/libu.a 2> $t/log14
+grep -q "alignment (1) of atom '_u1' (/.*/$t/libu.a\[2\](u.o)) is too small" $t/log14
+
+echo 'extern char nosuch[]; char *p = nosuch;' | $CC -o $t/n.o -c -xc -
+not $CC --ld-path=$mold -o $t/exe15 $t/m.o $t/u.o $t/abs.o $t/n.o 2> $t/log15
+grep -q "alignment (1) of atom '_u1' $u is too small" $t/log15
+grep -q "_nosuch" $t/log15

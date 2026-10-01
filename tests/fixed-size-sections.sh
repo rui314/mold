@@ -54,6 +54,26 @@ not $CC --ld-path=$mold -o $t/exe $t/main.o $t/lib.a 2> $t/log
 grep -qF "section __TEXT/__literal8 size 1 is not a multiple of 8 in '$t/lib.a(b.o)'" $t/log
 not grep -q __mod_init_func $t/log
 
+# ld-prime reads the sections in order and stops at the bad one: it
+# warns of a __cfstring section aligned less than a pointer if it is
+# the bad one, not if it comes after it.
+cfstring='.section __DATA,__cfstring'
+init='.section __DATA,__mod_init_func,mod_init_funcs'
+for first in cfstring mod_init_func; do
+  if [ $first = cfstring ]; then
+    printf '%s\n.long 0\n%s\n.long 0\n' "$cfstring" "$init"
+  else
+    printf '%s\n.long 0\n%s\n.long 0\n' "$init" "$cfstring"
+  fi | $CC -o $t/d.o -c -xassembler -
+  not $CC --ld-path=$mold -o $t/exe $t/main.o $t/d.o 2> $t/log
+  grep -qF "section __DATA/__$first size 4 is not a multiple of" $t/log
+  if [ $first = cfstring ]; then
+    grep -q 'section __DATA/__cfstring is not pointer aligned' $t/log
+  else
+    not grep -q 'not pointer aligned' $t/log
+  fi
+done
+
 # Where the name doesn't say what the records are, a section of the
 # regular type is not one of them.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
