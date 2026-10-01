@@ -125,3 +125,42 @@ install-name:    /usr/lib/libflow.dylib
 allowable-clients: [ Foo ]
 ...
 EOF
+
+# A scalar's value must be what its key's type reads: a version of up
+# to three numbers, a flag TAPI knows, a Swift ABI version (by number
+# alone in version 4) ...
+check version 5:18 'invalid packed version string.' '                 ^~~~~~~' <<EOF
+--- !tapi-tbd-v3
+archs:           [ $ARCH ]
+platform:        macosx
+install-name:    /usr/lib/libversion.dylib
+current-version: 1.2.3.4
+...
+EOF
+
+check flags 5:20 'unknown bit value' '                   ^~~~~~~~~~~~' <<EOF
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ $ARCH-macos ]
+install-name:    /usr/lib/libflags.dylib
+flags:           [ sim_support ]
+...
+EOF
+
+check swift 5:20 'invalid Swift ABI version.' '                   ^~~' <<EOF
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ $ARCH-macos ]
+install-name:    /usr/lib/libswift.dylib
+swift-abi-version: 1.1
+...
+EOF
+
+# ... and a sequence where a scalar belongs fails at its first token.
+check name 4:20 'unexpected scalar' '                   ^' <<EOF
+--- !tapi-tbd-v3
+archs:           [ $ARCH ]
+platform:        macosx
+install-name:    [ /usr/lib/libname.dylib ]
+...
+EOF

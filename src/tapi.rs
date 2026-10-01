@@ -68,7 +68,7 @@ impl TbdFile {
 enum Json {
     Null,
     Bool,
-    Num,
+    Num(f64),
     Str(&'static str),
     Arr(Vec<Self>),
     Obj(Vec<(&'static str, Self)>),
@@ -96,6 +96,15 @@ impl Json {
     /// The strings of an array-valued key.
     fn strs(&self, key: &str) -> impl Iterator<Item = &'static str> {
         self.get(key).map(Self::arr).unwrap_or(&[]).iter().filter_map(Self::str)
+    }
+
+    /// The value as an integer, as LLVM's JSON reader takes one: a
+    /// number with no fraction.
+    fn integer(&self) -> Option<i64> {
+        match *self {
+            Self::Num(n) if n.fract() == 0.0 && n.abs() < 9.2e18 => Some(n as i64),
+            _ => None,
+        }
     }
 }
 
@@ -191,10 +200,10 @@ impl JsonParser<'_> {
                 {
                     self.pos += 1;
                 }
-                if self.text[start..self.pos].parse::<f64>().is_err() {
-                    self.fail("expected a value");
+                match self.text[start..self.pos].parse::<f64>() {
+                    Ok(n) => Json::Num(n),
+                    Err(_) => self.fail("expected a value"),
                 }
-                Json::Num
             }
             None => self.fail("unexpected end of file"),
         }
@@ -275,14 +284,20 @@ fn parse_json(
 ) -> Option<TbdFile> {
     let mut p = JsonParser { file, text, pos: 0 };
     let root = p.value();
+    check_json(file, &root);
 
     let targets_of = |lib: &Json| -> Vec<Target> {
         let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
         info.iter().filter_map(|t| t.get("target").and_then(Json::str)).filter_map(target).collect()
     };
     let target_of = |lib: &Json| select_target(arch, platform, &targets_of(lib)).0;
-    let applies = |group: &Json, want: Target| {
-        group.get("targets").is_none() || group.strs("targets").any(|t| target(t) == Some(want))
+    // A group's targets TAPI can't read - not an array, or one with
+    // something other than a string - don't restrict it.
+    let applies = |group: &Json, want: Target| match group.get("targets") {
+        Some(Json::Arr(targets)) if targets.iter().all(|t| t.str().is_some()) => {
+            targets.iter().filter_map(Json::str).any(|t| target(t) == Some(want))
+        }
+        _ => true,
     };
     let library_applies = |lib: &Json, want: Target| {
         lib.get("target_info").is_none() || targets_of(lib).contains(&want)
@@ -330,29 +345,19 @@ fn parse_json(
             compatibility_version: crate::macho::encode_version(1, 0, 0),
             ..TbdFile::default()
         };
-        if let Some(name) = lib
-            .get("install_names")
-            .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, target)))
-            && let Some(s) = name.get("name").and_then(Json::str)
-        {
+        // TAPI takes the install name and versions from the first entry
+        // of their lists, whatever its targets.
+        let first = |key: &str, field: &str| {
+            lib.get(key).map(Json::arr).and_then(<[Json]>::first)?.get(field)?.str()
+        };
+        if let Some(s) = first("install_names", "name") {
             tbd.install_name = s.to_string();
         }
-        if let Some(v) = lib
-            .get("current_versions")
-            .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, target)))
-            && let Some(s) = v.get("version").and_then(Json::str)
-        {
-            tbd.current_version = parse_version(s);
+        if let Some(s) = first("current_versions", "version") {
+            tbd.current_version = packed_version(s).unwrap();
         }
-        if let Some(v) = lib
-            .get("compatibility_versions")
-            .map(Json::arr)
-            .and_then(|a| a.iter().find(|g| applies(g, target)))
-            && let Some(s) = v.get("version").and_then(Json::str)
-        {
-            tbd.compatibility_version = parse_version(s);
+        if let Some(s) = first("compatibility_versions", "version") {
+            tbd.compatibility_version = packed_version(s).unwrap();
         }
         let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
         if let Some(s) = info
@@ -411,6 +416,147 @@ fn parse_json(
         fatal!("{}: no install name in .tbd file", file.display());
     }
     Some(tbd)
+}
+
+/// Stops the link on a version 5 .tbd TAPI refuses, with its diagnostic
+/// naming the section at fault: the first one that isn't what it should
+/// be, by the order TAPI reads them in. Of some lists it reads the first
+/// element only; unknown keys it ignores.
+fn check_json(file: &Path, root: &Json) {
+    let fail = |key: &str| -> ! {
+        fatal!("tapi error: invalid {key} section\n in '{}'", file.display());
+    };
+    if root.get("tapi_tbd_version").and_then(Json::integer) != Some(5) {
+        fail("tapi_tbd_version");
+    }
+    let Some(main) = root.get("main_library") else {
+        fatal!("{}: no main_library in .tbd file", file.display());
+    };
+    let libraries = root.get("libraries").map(Json::arr).unwrap_or(&[]);
+    for lib in
+        std::iter::once(main).chain(libraries.iter().filter(|lib| matches!(lib, Json::Obj(_))))
+    {
+        check_json_library(lib, &fail);
+    }
+}
+
+/// check_json for a library: the main one or one inlined.
+fn check_json_library(lib: &Json, fail: &dyn Fn(&str) -> !) {
+    let Some(Json::Arr(targets)) = lib.get("target_info") else { fail("targets") };
+    for info in targets {
+        if info.get("target").and_then(Json::str).is_none() {
+            fail("target");
+        }
+        if let Some(version) = info.get("min_deployment").and_then(Json::str)
+            && !is_version_tuple(version)
+        {
+            fail("min_deployment");
+        }
+    }
+    match lib.get("install_names").map(Json::arr).and_then(<[Json]>::first) {
+        Some(name @ Json::Obj(_)) if name.get("name").and_then(Json::str).is_none() => fail("name"),
+        Some(Json::Obj(_)) => {}
+        Some(_) => fail("install_names"),
+        None if matches!(lib.get("install_names"), Some(Json::Arr(_))) => {}
+        None => fail("install_names"),
+    }
+    for key in ["current_versions", "compatibility_versions"] {
+        match lib.get(key).map(Json::arr).and_then(<[Json]>::first) {
+            Some(Json::Obj(_)) => {}
+            Some(_) => fail(key),
+            None => continue,
+        }
+        let version = lib.get(key).unwrap().arr()[0].get("version").and_then(Json::str);
+        if version.is_some_and(|v| packed_version(v).is_none()) {
+            fail("version");
+        }
+    }
+    match lib.get("swift_abi").map(Json::arr).and_then(<[Json]>::first) {
+        Some(abi @ Json::Obj(_)) if abi.get("abi").and_then(Json::integer).is_none() => fail("abi"),
+        Some(Json::Obj(_)) | None => {}
+        Some(_) => fail("swift_abi"),
+    }
+    match lib.get("flags").map(Json::arr).and_then(<[Json]>::first) {
+        Some(flags @ Json::Obj(_)) => check_json_strings(flags, "attributes", fail),
+        Some(_) => fail("flags"),
+        None => {}
+    }
+    for umbrella in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
+        match umbrella {
+            Json::Obj(_) if umbrella.get("umbrella").and_then(Json::str).is_none() => {
+                fail("umbrella")
+            }
+            Json::Obj(_) => {}
+            _ => fail("parent_umbrellas"),
+        }
+    }
+    for (key, names) in
+        [("allowable_clients", "clients"), ("reexported_libraries", "names"), ("rpaths", "paths")]
+    {
+        for group in lib.get(key).map(Json::arr).unwrap_or(&[]) {
+            check_json_strings(group, names, fail);
+        }
+    }
+    for key in ["exported_symbols", "reexported_symbols", "undefined_symbols"] {
+        for group in lib.get(key).map(Json::arr).unwrap_or(&[]) {
+            if !matches!(group, Json::Obj(_)) {
+                continue;
+            }
+            let segments: Vec<&Json> = (["data", "text"].iter())
+                .filter_map(|seg| group.get(seg).filter(|v| matches!(v, Json::Obj(_))))
+                .collect();
+            if segments.is_empty() {
+                fail(key);
+            }
+            for segment in segments {
+                for kind in
+                    ["global", "objc_class", "objc_eh_type", "objc_ivar", "weak", "thread_local"]
+                {
+                    check_json_strings(segment, kind, fail);
+                }
+            }
+        }
+    }
+}
+
+/// Fails on an array `key` of `obj` with something other than a string.
+fn check_json_strings(obj: &Json, key: &str, fail: &dyn Fn(&str) -> !) {
+    if let Some(Json::Arr(items)) = obj.get(key)
+        && items.iter().any(|item| item.str().is_none())
+    {
+        fail(key);
+    }
+}
+
+/// Whether TAPI reads a version 5 .tbd's min_deployment: one to five
+/// numbers, separated by dots.
+fn is_version_tuple(s: &str) -> bool {
+    let parts = s.split('.');
+    let n = parts.clone().count();
+    n <= 5 && parts.into_iter().all(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
+}
+
+/// A library version as TAPI reads one, packed into 32 bits: up to
+/// three dot-separated numbers (an empty one skipped), the first below
+/// 65536 and the others below 256.
+fn packed_version(s: &str) -> Option<u32> {
+    let parts: Vec<&str> = s.split('.').filter(|p| !p.is_empty()).collect();
+    if parts.is_empty() || parts.len() > 3 {
+        return None;
+    }
+    let mut version = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if !part.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let n: u64 = part.parse().ok()?;
+        let max = if i == 0 { 0xffff } else { 0xff };
+        if n > max {
+            return None;
+        }
+        version |= (n as u32) << (16 - 8 * i);
+    }
+    Some(version)
 }
 
 /// Strips a YAML scalar's surrounding quotes, if any.
@@ -530,9 +676,12 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 continue;
             }
             match field.key {
-                "current-version" => tbd.current_version = parse_version(unquote(field.value)),
+                // (check_yaml has made sure they read.)
+                "current-version" => {
+                    tbd.current_version = packed_version(unquote(field.value)).unwrap()
+                }
                 "compatibility-version" => {
-                    tbd.compatibility_version = parse_version(unquote(field.value))
+                    tbd.compatibility_version = packed_version(unquote(field.value)).unwrap()
                 }
                 // Version 4 lists them per target group ("umbrella:",
                 // "clients:"), older versions directly.
@@ -684,7 +833,7 @@ fn scalar_len(item: &str) -> usize {
 /// in one mapping it refuses before all that, as it reads the document.
 fn check_yaml(mf: &MappedFile, text: &str, docs: &[YamlDoc]) {
     for doc in docs.iter().filter(|doc| !doc.fields.is_empty()) {
-        let cx = YamlCheck { mf, text, fields: &doc.fields };
+        let cx = YamlCheck { mf, text, fields: &doc.fields, v4: doc.tag == "!tapi-tbd" };
         cx.check_duplicates(0);
         let schema = match doc.tag {
             "" | "!tapi-tbd-v1" => TOP_V1,
@@ -857,6 +1006,8 @@ struct YamlCheck<'a> {
     mf: &'a MappedFile,
     text: &'a str,
     fields: &'a [YamlField],
+    /// The document is in version 4 of the format.
+    v4: bool,
 }
 
 impl YamlCheck<'_> {
@@ -943,14 +1094,23 @@ impl YamlCheck<'_> {
     fn check_value(&self, i: usize, key: &SchemaKey) {
         let field = &self.fields[i];
         let value = field.value;
-        let is_scalar = !value.is_empty()
-            && !value.starts_with('[')
-            && !value.starts_with("- ")
-            && !matches!(value, "~" | "null" | "Null" | "NULL");
+        let is_sequence = value.starts_with('[') || value.starts_with("- ");
+        // A null is an empty sequence, but for a set of flags.
+        let is_null = value.is_empty() || matches!(value, "~" | "null" | "Null" | "NULL");
+        let is_scalar = !is_sequence && !is_null;
         match key.value {
-            Scalar => {
-                if key.name == "platform" && legacy_platforms(unquote(value)).is_empty() {
-                    self.fail(value, scalar_len(value), "unknown platform");
+            Scalar => self.check_scalar(key.name, value),
+            Sequence if key.name == "flags" => {
+                if !is_sequence && !value.is_empty() {
+                    self.fail(value, scalar_len(value), "expected sequence of bit values");
+                }
+                let known = |item: &str| {
+                    let flags = ["flat_namespace", "not_app_extension_safe", "installapi"];
+                    flags.contains(&item) || item == "not_for_dyld_shared_cache"
+                };
+                let unknown = |item: &&str| !item.is_empty() && !known(unquote(item));
+                if let Some(item) = field.raw_items().find(unknown) {
+                    self.fail(item, scalar_len(item), "unknown bit value");
                 }
             }
             Sequence => {
@@ -978,6 +1138,75 @@ impl YamlCheck<'_> {
             }
         }
     }
+
+    /// Checks a scalar's value as the type TAPI reads it as takes it. In
+    /// place of a scalar, a sequence fails it with the same complaint,
+    /// at the sequence's first token (or "unexpected scalar", for a
+    /// plain string); an empty value fails it at the token that follows.
+    fn check_scalar(&self, key: &str, value: &'static str) {
+        let what = match key {
+            "platform" => "unknown platform",
+            "current-version" | "compatibility-version" => "invalid packed version string.",
+            "swift-version" | "swift-abi-version" => "invalid Swift ABI version.",
+            "objc-constraint" => "unknown enumerated scalar",
+            "tbd-version" => "invalid number",
+            "target" => "unknown target",
+            _ => "unexpected scalar",
+        };
+        if let Some(seq) = value.strip_prefix('[').or_else(|| value.strip_prefix("- ")) {
+            self.fail(seq.trim_start(), 1, what);
+        }
+        let v = unquote(value);
+        let ok = match key {
+            "platform" => !legacy_platforms(v).is_empty(),
+            "current-version" | "compatibility-version" => packed_version(v).is_some(),
+            "swift-version" | "swift-abi-version" => {
+                (!self.v4 && matches!(v, "1.0" | "1.1" | "2.0" | "3.0"))
+                    || (v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u8>().is_ok())
+            }
+            "objc-constraint" => matches!(
+                v,
+                "none"
+                    | "retain_release"
+                    | "retain_release_for_simulator"
+                    | "retain_release_or_gc"
+                    | "gc"
+            ),
+            "tbd-version" => match auto_radix_number(v) {
+                Some(n) if n > u32::MAX as u64 => {
+                    self.fail(value, scalar_len(value), "out of range number")
+                }
+                n => n.is_some(),
+            },
+            "target" => target(v).is_some(),
+            _ => true,
+        };
+        if !ok {
+            let off = value.as_ptr() as usize - self.text.as_ptr() as usize;
+            let at = if value.is_empty() { self.text[off..].trim_start() } else { value };
+            self.fail(at, scalar_len(value), what);
+        }
+    }
+}
+
+/// A number as LLVM reads one with its radix from its prefix: 0x for
+/// hexadecimal, 0b binary, 0o or 0 octal, and decimal otherwise.
+fn auto_radix_number(s: &str) -> Option<u64> {
+    let (digits, radix) = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        (hex, 16)
+    } else if let Some(bin) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
+        (bin, 2)
+    } else if let Some(oct) = s.strip_prefix("0o") {
+        (oct, 8)
+    } else if s.len() > 1 && s.starts_with('0') {
+        (&s[1..], 8)
+    } else {
+        (s, 10)
+    };
+    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    u64::from_str_radix(digits, radix).ok()
 }
 
 /// The targets of a document's top-level fields: a version 4 file's, or
@@ -1237,7 +1466,7 @@ exports:
     #[test]
     fn json_target_groups_and_inline_libraries() {
         let mf = mapped(
-            r#"{"main_library":{
+            r#"{"tapi_tbd_version":5,"main_library":{
           "target_info":[{"target":"arm64-macos"},{"target":"x86_64-macos"}],
           "install_names":[{"name":"/libtest"}],
           "exported_symbols":[
