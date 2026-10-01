@@ -121,6 +121,15 @@ impl Default for SymtabSection {
     }
 }
 
+/// A non-external symbol's name as ld-prime writes it in the output's
+/// symbol table: cut at its first ".llvm.", which ThinLTO appends with
+/// a hash of the module to the statics it promotes to global scope, so
+/// that the debugger sees the name the source gave it. (The map keeps
+/// the whole name.)
+pub fn local_symbol_name(name: &str) -> &str {
+    name.find(".llvm.").map_or(name, |i| &name[..i])
+}
+
 /// Returns true if a local symbol should appear in the output symbol
 /// table. Assembler temporaries, which begin with 'l' or 'L', are
 /// dropped.
@@ -232,8 +241,7 @@ impl StabPlan {
             self.fixed.iter().filter(|s| !s.name.is_empty() && s.shared_strx(strx_of).is_none());
         let syms = self.syms.iter().filter(|s| strx_of[s.sym as usize] == u32::MAX);
         let size = |name: &[u8]| if name.is_empty() { 0 } else { name.len() + 1 };
-        fixed.map(|s| size(s.name)).sum::<usize>()
-            + syms.map(|s| size(ctx.symbols[s.sym].name().as_bytes())).sum::<usize>()
+        fixed.map(|s| size(s.name)).sum::<usize>() + syms.map(|s| size(s.name(ctx))).sum::<usize>()
     }
 
     /// Writes the entries, with their final addresses and their own names,
@@ -281,9 +289,17 @@ impl SymbolStabs {
         if self.n_type == N_FUN { 4 } else { 1 }
     }
 
+    /// The name the notes give the symbol: a non-external one's as its
+    /// symbol table entry has it (see local_symbol_name).
+    fn name<E: Target>(&self, ctx: &Context<E>) -> &'static [u8] {
+        let sym = &ctx.symbols[self.sym];
+        let local = !sym.is_extern() || sym.is_private_extern();
+        if local { local_symbol_name(sym.name()) } else { sym.name() }.as_bytes()
+    }
+
     fn stabs<E: Target>(&self, ctx: &Context<E>) -> impl Iterator<Item = Stab> {
         let id = Some(self.sym);
-        let name = ctx.symbols[self.sym].name().as_bytes();
+        let name = self.name(ctx);
         let sect = self.n_sect;
         // Named entries get their string offsets later; the rest keep 1,
         // the empty string.
@@ -778,7 +794,8 @@ fn plan_local_symbols<E: Target>(
         } else {
             (RANK_PEXT, ent)
         };
-        ents.push((ctx.sym_addr(i as u32), rank, sym.name().as_bytes(), ent, id));
+        let name = local_symbol_name(sym.name()).as_bytes();
+        ents.push((ctx.sym_addr(i as u32), rank, name, ent, id));
     }
 
     // A stable sort, so that absolute symbols of one value keep the
@@ -912,7 +929,8 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
         let Some(isec) = sym.input_section().map(|i| i as usize) else {
             if nlist.n_type() == N_ABS {
                 let ent = NList { n_type: N_ABS, ..local_nlist(0, 0) };
-                out.push((sym.value, RANK_LOCAL, sym.name().as_bytes(), ent, Some(sym_id)));
+                let name = local_symbol_name(sym.name()).as_bytes();
+                out.push((sym.value, RANK_LOCAL, name, ent, Some(sym_id)));
             }
             continue;
         };
@@ -926,7 +944,8 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             continue;
         }
         let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
-        out.push((ctx.sym_addr(sym_id), RANK_LOCAL, sym.name().as_bytes(), ent, Some(sym_id)));
+        let name = local_symbol_name(sym.name()).as_bytes();
+        out.push((ctx.sym_addr(sym_id), RANK_LOCAL, name, ent, Some(sym_id)));
     }
     out
 }

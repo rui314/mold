@@ -20,7 +20,7 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
-use crate::chunks::symtab::{SymtabSection, par_push_entries};
+use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::error;
@@ -1982,7 +1982,7 @@ impl<'a, E: Target> Locals<'a, E> {
             // section's no_dead_strip marks.
             let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             labels.push(Local {
-                name: sym.name(),
+                name: local_symbol_name(sym.name()),
                 n_type: nlist.n_type,
                 n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
@@ -2086,7 +2086,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             }
             out.push(Local {
-                name: sym.name(),
+                name: local_symbol_name(sym.name()),
                 n_type: N_PEXT | N_SECT,
                 n_desc: whole_desc(
                     nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
