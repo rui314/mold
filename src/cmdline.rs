@@ -1915,8 +1915,9 @@ pub struct TargetTraits {
 /// modifier as much as a kind: it makes a static executable of anything
 /// but a relocatable object or a kext, which it leaves as they are, and
 /// a later -execute leaves a static executable static.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq)]
 enum OutputKind {
+    #[default]
     DynamicExecutable,
     StaticExecutable,
     Dylib,
@@ -1959,6 +1960,87 @@ impl OptionWarnings {
             crate::error::hidden_warning();
         }
     }
+}
+
+/// What parse_args gathers from the options for the phases after them:
+/// the options it resolves into Args only once it knows the target and
+/// the kind of output (None for one not given), the symbol lists, and
+/// the diagnostics ld-prime gives once it has read every option.
+#[derive(Default)]
+struct ParseState<'a> {
+    kind: OutputKind,
+    /// -target's triple, which overrides -arch and -platform_version.
+    target_triple: Option<&'a str>,
+    /// The first two platforms the options name that cannot go
+    /// together (see set_platform).
+    incompatible_platforms: Option<(u32, u32)>,
+    arch_variant: bool,
+    /// -no_allow_dylib_sub_type_mismatches's architectures.
+    dylib_subtype_list: Option<&'a [u8]>,
+    /// Whether -e names the entry point.
+    explicit_entry: bool,
+    pie: Option<bool>,
+    fixup_chains: Option<bool>,
+    /// -fixup_chains_section's kind (see Args::chain_starts_kind), unless
+    /// a later -fixup_chains or -no_fixup_chains turned it off.
+    chain_starts: Option<u32>,
+    rebase_section: bool,
+    threaded_starts: bool,
+    /// -read_only_relocs: whether its treatment allows text relocations.
+    read_only_relocs: Option<bool>,
+    unaligned_pointers: Option<Treatment>,
+    function_starts: Option<bool>,
+    data_in_code_info: Option<bool>,
+    /// -add_source_version or -no_source_version, and -source_version's
+    /// number.
+    source_version: Option<bool>,
+    source_version_number: Option<u64>,
+    adhoc_codesign: Option<bool>,
+    data_const: Option<bool>,
+    objc_relative_method_lists: Option<bool>,
+    objc_stubs_small: Option<bool>,
+    const_selrefs: Option<bool>,
+    warn_unused_dylibs: Option<bool>,
+    max_default_common_align: Option<u8>,
+    headerpad: Option<u64>,
+    segalign: Option<u64>,
+    segprots: Vec<(Vec<u8>, u8, u8)>,
+    seg_page_sizes: Vec<(Vec<u8>, u64)>,
+    stack_size: Option<u64>,
+    stack_addr: Option<u64>,
+    x86_64_layout_emulation: bool,
+    lto_libraries: Vec<PathBuf>,
+    lto_softload: Option<bool>,
+    lists: SymbolLists,
+    export_choice: Option<ExportChoice>,
+    reexports_listed: bool,
+    force_weakness_listed: bool,
+    warnings: OptionWarnings,
+    /// The warnings about the obsolete options given, which ld-prime
+    /// ignores with a warning once it has read them all.
+    obsolete: Vec<String>,
+    /// The options ld-prime doesn't know, each followed by a space.
+    unknown: String,
+}
+
+/// The symbol name patterns the options give, which parse_args compiles
+/// into Args's matchers once the whole command line is known.
+#[derive(Default)]
+struct SymbolLists {
+    exported_symbols: Option<GlobBuilder>,
+    unexported_symbols: GlobBuilder,
+    reexported_symbols: GlobBuilder,
+    why_live: GlobBuilder,
+    local_strip_list: GlobBuilder,
+    local_keep_list: Option<GlobBuilder>,
+    force_weak: GlobBuilder,
+    force_not_weak: GlobBuilder,
+    keep_duplicates: GlobBuilder,
+    poisoned: GlobBuilder,
+    /// -interposable: every symbol, unless an -interposable_list names
+    /// some.
+    interposable_all: bool,
+    interposable_list: Option<GlobBuilder>,
 }
 
 /// The error for an option the command line ends before the argument
@@ -2184,65 +2266,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         uuid_salt: std::env::var_os("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
         ..Default::default()
     };
-    let mut kind = OutputKind::DynamicExecutable;
-    let mut stack_size: Option<u64> = None;
-    let mut stack_addr: Option<u64> = None;
-    let mut pie: Option<bool> = None;
-    let mut function_starts: Option<bool> = None;
-    let mut data_in_code_info: Option<bool> = None;
-    let mut source_version: Option<bool> = None;
-    let mut source_version_number: Option<u64> = None;
-    let mut max_default_common_align: Option<u8> = None;
-    let mut adhoc_codesign: Option<bool> = None;
-    let mut fixup_chains: Option<bool> = None;
-    let mut objc_relative_method_lists: Option<bool> = None;
-    let mut warn_unused_dylibs: Option<bool> = None;
-    let mut data_const: Option<bool> = None;
-    let mut segprots: Vec<(Vec<u8>, u8, u8)> = Vec::new();
-    let mut seg_page_sizes: Vec<(Vec<u8>, u64)> = Vec::new();
-    let mut segalign: Option<u64> = None;
-    let mut explicit_entry = false;
-    // -read_only_relocs: whether its treatment allows text relocations.
-    let mut read_only_relocs: Option<bool> = None;
-    let mut headerpad: Option<u64> = None;
-    let mut threaded_starts = false;
-    let mut x86_64_layout_emulation = false;
-    let mut target_triple: Option<&str> = None;
-    let mut incompatible_platforms: Option<(u32, u32)> = None;
-    let mut objc_stubs_small: Option<bool> = None;
-    let mut const_selrefs: Option<bool> = None;
-    let mut lto_softload: Option<bool> = None;
-    let mut lto_libraries: Vec<PathBuf> = Vec::new();
-    // -fixup_chains_section's kind (see Args::chain_starts_kind), unless
-    // a later -fixup_chains or -no_fixup_chains turned it off.
-    let mut chain_starts: Option<u32> = None;
-    let mut rebase_section = false;
-    let mut warnings = OptionWarnings::default();
-
-    // Symbol name patterns are collected here and compiled into
-    // matchers once the whole command line is known.
-    let mut exported_symbols: Option<GlobBuilder> = None;
-    let mut unexported_symbols = GlobBuilder::default();
-    let mut reexported_symbols = GlobBuilder::default();
-    let mut reexports_listed = false;
-    let mut why_live = GlobBuilder::default();
-    let mut local_strip_list = GlobBuilder::default();
-    let mut local_keep_list: Option<GlobBuilder> = None;
-    let mut force_weak = GlobBuilder::default();
-    let mut force_not_weak = GlobBuilder::default();
-    let mut force_weakness_listed = false;
-    let mut dylib_subtype_list: Option<&[u8]> = None;
-    let mut arch_variant = false;
-    let mut keep_duplicates = GlobBuilder::default();
-    let mut poisoned = GlobBuilder::default();
-    let mut unaligned_pointers: Option<Treatment> = None;
-    let mut interposable_all = false;
-    let mut interposable_list: Option<GlobBuilder> = None;
-    let mut export_choice: Option<ExportChoice> = None;
-    // The warnings about the obsolete options given, which ld-prime
-    // ignores with a warning once it has read them all.
-    let mut obsolete: Vec<String> = Vec::new();
-    let mut unknown = String::new();
+    let mut st = ParseState::default();
 
     crate::error::set_color(std::io::stderr().is_terminal());
 
@@ -2258,10 +2282,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.arch =
                     Some(target_arch(arch).unwrap_or_else(|| fatal!("unknown -arch name: {arch}")));
             }
-            b"-target" => target_triple = Some(cur.next_text(name)),
+            b"-target" => st.target_triple = Some(cur.next_text(name)),
             b"-e" => {
                 args.entry = cur.next_text(name).to_string();
-                explicit_entry = true;
+                st.explicit_entry = true;
             }
             // ld-prime takes all three before it reads any.
             b"-platform_version" => {
@@ -2273,8 +2297,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let sdk = parse_version(name, sdk);
                 set_platform(
                     &mut args,
-                    &mut warnings,
-                    &mut incompatible_platforms,
+                    &mut st.warnings,
+                    &mut st.incompatible_platforms,
                     platform,
                     minos,
                 );
@@ -2295,14 +2319,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-F" => args.framework_paths.push(cur.next_path(name)),
             b"-execute" => {
-                if kind != OutputKind::StaticExecutable {
-                    kind = OutputKind::DynamicExecutable;
+                if st.kind != OutputKind::StaticExecutable {
+                    st.kind = OutputKind::DynamicExecutable;
                 }
             }
-            b"-dylib" => kind = OutputKind::Dylib,
-            b"-bundle" => kind = OutputKind::Bundle,
-            b"-kext" => kind = OutputKind::Kext,
-            b"-dylinker" => kind = OutputKind::Dylinker,
+            b"-dylib" => st.kind = OutputKind::Dylib,
+            b"-bundle" => st.kind = OutputKind::Bundle,
+            b"-kext" => st.kind = OutputKind::Kext,
+            b"-dylinker" => st.kind = OutputKind::Dylinker,
             // The last one counts; ld-prime reads no other.
             b"-bundle_loader" => {
                 let loader = |arg: &InputArg| matches!(arg, InputArg::BundleLoader(_));
@@ -2310,7 +2334,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
                 {
                     let old = old.display();
-                    warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
+                    st.warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
                 }
                 args.inputs.push(InputArg::BundleLoader(cur.next_path(name)))
             }
@@ -2322,7 +2346,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 Some(arg) if !arg.is_empty() && !arg.as_bytes().starts_with(b"-") => {
                     args.rpaths.push(arg.as_bytes().to_vec());
                 }
-                _ => warnings.warn("-rpath missing <path>"),
+                _ => st.warnings.warn("-rpath missing <path>"),
             },
             // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
             // -dylinker_install_name says.)
@@ -2337,53 +2361,53 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.sdk_imports_api_list = Some(list);
             }
             b"-fixup_chains" | b"-no_fixup_chains" => {
-                fixup_chains = Some(name == "-fixup_chains");
-                chain_starts = None;
+                st.fixup_chains = Some(name == "-fixup_chains");
+                st.chain_starts = None;
             }
             // The last of these and -fixup_chains or -no_fixup_chains
             // counts, but ld-prime refuses to switch from one kind of
             // chain starts to the other.
             b"-fixup_chains_section" | b"-fixup_chains_section_vm" => {
                 let kind = if name == "-fixup_chains_section" { 1 } else { 2 };
-                if chain_starts.is_some_and(|k| k != kind) {
+                if st.chain_starts.is_some_and(|k| k != kind) {
                     fatal!(
                         "{name} can't be used together with other -fixup_chains_section* options"
                     );
                 }
-                fixup_chains = Some(true);
-                chain_starts = Some(kind);
+                st.fixup_chains = Some(true);
+                st.chain_starts = Some(kind);
             }
             // A 32-bit image's rebases in a section, which no image of
             // the 64-bit targets mold has can have.
-            b"-rebase_section" => rebase_section = true,
-            b"-threaded_starts_section" => threaded_starts = true,
-            b"-adhoc_codesign" => adhoc_codesign = Some(true),
-            b"-no_adhoc_codesign" => adhoc_codesign = Some(false),
+            b"-rebase_section" => st.rebase_section = true,
+            b"-threaded_starts_section" => st.threaded_starts = true,
+            b"-adhoc_codesign" => st.adhoc_codesign = Some(true),
+            b"-no_adhoc_codesign" => st.adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
             b"-static" => {
-                if !matches!(kind, OutputKind::Object | OutputKind::Kext) {
-                    kind = OutputKind::StaticExecutable;
+                if !matches!(st.kind, OutputKind::Object | OutputKind::Kext) {
+                    st.kind = OutputKind::StaticExecutable;
                 }
             }
-            b"-preload" => kind = OutputKind::Preload,
+            b"-preload" => st.kind = OutputKind::Preload,
             b"-kernel" => args.kernel = true,
             b"-version_load_command" => args.version_load_command = true,
             // The last one wins; ld-prime warns as it reads one that
             // turns the other around.
             b"-pie" | b"-no_pie" => {
                 let on = name == "-pie";
-                if pie == Some(!on) {
+                if st.pie == Some(!on) {
                     let other = if on { "-no_pie" } else { "-pie" };
-                    warnings.warn(format!("{name} overriding previous {other}"));
+                    st.warnings.warn(format!("{name} overriding previous {other}"));
                 }
-                pie = Some(on);
+                st.pie = Some(on);
             }
             // Given with -dead_strip, this once kept initializers and
             // terminators nothing referenced. -dead_strip always keeps
             // them now, and ld64 takes this for -dead_strip alone.
             b"-no_dead_strip_inits_and_terms" => {
                 args.dead_strip = true;
-                warnings.warn(
+                st.warnings.warn(
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
                 );
             }
@@ -2392,7 +2416,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if size > u32::MAX as u64 {
                     fatal!("-headerpad size too large");
                 }
-                headerpad = Some(size);
+                st.headerpad = Some(size);
             }
             // ld-prime spaces its branch island clusters by this size;
             // mold places range-extension thunks by each branch's reach
@@ -2424,11 +2448,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let seg = seg.to_vec();
                 // __LINKEDIT, which dyld reads, keeps its own.
                 if seg == b"__LINKEDIT" {
-                    warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
+                    st.warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
                 } else {
-                    let max = parse_prot(max, &mut warnings);
-                    let init = parse_prot(init, &mut warnings);
-                    segprots.push((seg, max, init));
+                    let max = parse_prot(max, &mut st.warnings);
+                    let init = parse_prot(init, &mut st.warnings);
+                    st.segprots.push((seg, max, init));
                 }
             }
             b"-segment_order" => {
@@ -2454,14 +2478,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if size > u32::MAX as u64 {
                     fatal!("-seg_page_size {size}: size too big");
                 }
-                seg_page_sizes.push((seg.as_bytes().to_vec(), size));
+                st.seg_page_sizes.push((seg.as_bytes().to_vec(), size));
             }
             b"-segalign" => {
                 let align = parse_hex(name, cur.next_text(name));
                 if align > u32::MAX as u64 {
                     fatal!("-segalign {align}: alignemnt too big");
                 }
-                segalign = Some(align);
+                st.segalign = Some(align);
             }
             b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
             b"-no_warn_reduced_section_align" => args.warn_reduced_section_align = false,
@@ -2514,21 +2538,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-stack_size" => {
                 let size = hex_number(cur.next_text(name));
-                stack_size = Some(
+                st.stack_size = Some(
                     size.unwrap_or_else(|| fatal!("-stack_size must specify an integer size")),
                 );
             }
             b"-stack_addr" => {
                 let addr = hex_number(cur.next_text(name));
-                stack_addr = Some(
+                st.stack_addr = Some(
                     addr.unwrap_or_else(|| fatal!("-stack_addr must specify an integer address")),
                 );
             }
             b"-sectcreate" => {
                 let seg = cur.next_arg(name).as_bytes();
-                let seg = sectcreate_name("segment", seg, &mut warnings);
+                let seg = sectcreate_name("segment", seg, &mut st.warnings);
                 let sect = cur.next_arg(name).as_bytes();
-                let sect = sectcreate_name("section", sect, &mut warnings);
+                let sect = sectcreate_name("section", sect, &mut st.warnings);
                 let file = cur.next_path(name);
                 args.sectcreate.push(SectCreate {
                     segname: seg,
@@ -2549,13 +2573,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-x" => args.strip_locals = true,
             b"-Z" => args.no_standard_dirs = true,
-            b"-r" => kind = OutputKind::Object,
+            b"-r" => st.kind = OutputKind::Object,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
             // ld64 made an executable bind its dylibs' imports flat too
             // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
             b"-force_flat_namespace" => {
-                warnings.warn(
+                st.warnings.warn(
                     "-force_flat_namespace is no longer supported, using -flat_namespace instead",
                 );
                 args.flat_namespace = true;
@@ -2566,7 +2590,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // resolve_text_relocs.
             b"-read_only_relocs" => {
                 let treatment = parse_treatment(name, cur.next_arg(name), true);
-                read_only_relocs = Some(treatment != Treatment::Error);
+                st.read_only_relocs = Some(treatment != Treatment::Error);
             }
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates
@@ -2578,13 +2602,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.undefined_dynamic_lookup = true;
                 }
                 if treatment != "dynamic_lookup" {
-                    warnings.warn(format!("-undefined {treatment} is deprecated"));
+                    st.warnings.warn(format!("-undefined {treatment} is deprecated"));
                 }
             }
             b"-U" => args.allowed_undefined.push(cur.next_text(name).to_string()),
             b"-w" => {
                 args.suppress_warnings = true;
-                warnings.quiet = true;
+                st.warnings.quiet = true;
             }
             b"-fatal_warnings" => args.fatal_warnings = true,
             b"-demangle" => args.demangle = true,
@@ -2595,8 +2619,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-dead_strip" => args.dead_strip = true,
             b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
-            b"-warn_unused_dylibs" => warn_unused_dylibs = Some(true),
-            b"-no_warn_unused_dylibs" => warn_unused_dylibs = Some(false),
+            b"-warn_unused_dylibs" => st.warn_unused_dylibs = Some(true),
+            b"-no_warn_unused_dylibs" => st.warn_unused_dylibs = Some(false),
             b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
             b"-debug_variant" => args.debug_variant = true,
             b"-no_inits" => args.no_inits = true,
@@ -2611,53 +2635,53 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-all_load" => args.all_load = true,
             b"-u" => args.forced_undefined.push(cur.next_text(name).to_string()),
             b"-exported_symbol" => {
-                check_export_choice(&mut export_choice, ExportChoice::Exported, name);
+                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
                 let pat = cur.next_text(name);
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
-                add_patterns(exported_symbols.get_or_insert_default(), [pat], 0);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat], 0);
             }
             b"-no_exported_symbols" => {
-                check_export_choice(&mut export_choice, ExportChoice::None, name);
+                check_export_choice(&mut st.export_choice, ExportChoice::None, name);
                 args.no_exported_symbols = true;
             }
             b"-exported_symbols_list" => {
-                check_export_choice(&mut export_choice, ExportChoice::Exported, name);
+                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
                 let names = read_symbol_list(name, &cur.next_path(name));
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
                 add_patterns(
-                    exported_symbols.get_or_insert_default(),
+                    st.lists.exported_symbols.get_or_insert_default(),
                     names.iter().map(String::as_str),
                     0,
                 );
             }
             b"-unexported_symbol" => {
-                check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut unexported_symbols, [cur.next_text(name)], 0)
+                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
+                add_patterns(&mut st.lists.unexported_symbols, [cur.next_text(name)], 0)
             }
             b"-unexported_symbols_list" => {
-                check_export_choice(&mut export_choice, ExportChoice::Unexported, name);
+                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
                 let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut unexported_symbols, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.unexported_symbols, names.iter().map(String::as_str), 0);
             }
             b"-reexported_symbols_list" => {
-                reexports_listed = true;
+                st.reexports_listed = true;
                 let names = read_symbol_list(name, &cur.next_path(name));
                 // Exact names force a reference even if no object
                 // mentions them, so one nothing defines is reported as
                 // wanted by ld-prime's "<initial-undefines>", as a -u
                 // name is. Patterns only match existing symbols.
                 add_initial_undefines(&mut args.forced_undefined, names.iter().map(String::as_str));
-                add_patterns(&mut reexported_symbols, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.reexported_symbols, names.iter().map(String::as_str), 0);
             }
             // The -dylib_ spellings are the older names ld64 still
             // accepts; Xcode passes -dylib_compatibility_version.
             b"-current_version" | b"-dylib_current_version" => {
                 let version = text(name, cur.arg_or_empty(name));
-                args.current_version = parse_dylib_version(name, version, &mut warnings);
+                args.current_version = parse_dylib_version(name, version, &mut st.warnings);
             }
             b"-compatibility_version" | b"-dylib_compatibility_version" => {
                 let version = text(name, cur.arg_or_empty(name));
-                args.compatibility_version = parse_dylib_version(name, version, &mut warnings);
+                args.compatibility_version = parse_dylib_version(name, version, &mut st.warnings);
             }
             b"-v" => args.verbose = true,
             // Xcode's build system runs `ld -version_details` before the
@@ -2687,7 +2711,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-dylib_file malformed <path:path>");
                 };
                 if args.dylib_files.is_empty() {
-                    warnings.warn(
+                    st.warnings.warn(
                         "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found",
                     );
                 }
@@ -2704,13 +2728,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // linker of a client to drop the dylib's load command if it
             // bound nothing from it. ld-prime neither sets nor honors
             // the flag.
-            b"-mark_dead_strippable_dylib" => obsolete.push(format!("{name} is obsolete")),
+            b"-mark_dead_strippable_dylib" => st.obsolete.push(format!("{name} is obsolete")),
             b"-export_dynamic" => args.export_dynamic = true,
             b"-order_file" => args.order_files.push(cur.next_path(name)),
             b"-order_file_statistics" => args.order_file_statistics = true,
             b"--print-dependencies" => args.print_dependencies = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
-            b"-why_live" => add_patterns(&mut why_live, [cur.next_text(name)], 0),
+            b"-why_live" => add_patterns(&mut st.lists.why_live, [cur.next_text(name)], 0),
             b"-allowable_client" => args.allowable_clients.push(cur.next_bytes(name)),
             b"-client_name" => args.client_name = Some(cur.next_bytes(name)),
             b"-t" => args.trace = true,
@@ -2742,11 +2766,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_warn_eh_frame_too_large" => args.warn_eh_frame_too_large = false,
             // ld-prime ignores this with a warning for another target
             // than arm64, and changes nothing seen in an arm64 image.
-            b"-x86_64_layout_emulation" => x86_64_layout_emulation = true,
+            b"-x86_64_layout_emulation" => st.x86_64_layout_emulation = true,
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
             b"-no_allow_dylib_sub_type_mismatches" => {
-                dylib_subtype_list = Some(cur.next_arg(name).as_bytes());
+                st.dylib_subtype_list = Some(cur.next_arg(name).as_bytes());
             }
             // An architecture's variant (of arm64e's pointer
             // authentication ABI), which no -arch mold links for has.
@@ -2755,7 +2779,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if arch_cpu_family(variant).is_none() {
                     fatal!("unknown -arch name: {}", display(variant));
                 }
-                arch_variant = true;
+                st.arch_variant = true;
             }
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
@@ -2763,12 +2787,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
             b"-non_global_symbols_strip_list" => {
                 let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut local_strip_list, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.local_strip_list, names.iter().map(String::as_str), 0);
             }
             b"-non_global_symbols_no_strip_list" => {
                 let names = read_symbol_list(name, &cur.next_path(name));
                 add_patterns(
-                    local_keep_list.get_or_insert_default(),
+                    st.lists.local_keep_list.get_or_insert_default(),
                     names.iter().map(String::as_str),
                     0,
                 );
@@ -2785,7 +2809,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
                 let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
                 if !align.is_power_of_two() {
-                    warnings.warn(format_args!(
+                    st.warnings.warn(format_args!(
                         "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
                         raw(&seg),
                         raw(&sect),
@@ -2809,7 +2833,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     Ok(contents) => contents,
                     Err(e) => {
                         let errno = crate::error::errno_text(&e);
-                        warnings.warn(format!(
+                        st.warnings.warn(format!(
                             "order file '{}' could not be opened, {errno}",
                             list.display()
                         ));
@@ -2835,7 +2859,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the option with a warning.
             b"-executable_path" => {
                 cur.arg_or_empty(name);
-                obsolete.push(format!("{name} is obsolete"));
+                st.obsolete.push(format!("{name} is obsolete"));
             }
             // What ld64 and its predecessors took for prebinding, the
             // two-level namespace hints, multiple modules, Objective-C
@@ -2860,13 +2884,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-single_module"
             | b"-Sp"
             | b"-twolevel_namespace_hints"
-            | b"-X" => obsolete.push(format!("{name} is obsolete")),
+            | b"-X" => st.obsolete.push(format!("{name} is obsolete")),
             b"-kext_objects_dir" | b"-multiply_defined" | b"-sdk_version" | b"-seg_addr_table"
             | b"-Y" => {
                 cur.arg_or_empty(name);
-                obsolete.push(format!("{name} is obsolete"));
+                st.obsolete.push(format!("{name} is obsolete"));
             }
-            b"-s" | b"-Si" | b"-Sn" => warnings.warn(format!("{name} is obsolete")),
+            b"-s" | b"-Si" | b"-Sn" => st.warnings.warn(format!("{name} is obsolete")),
             // Bitcode bundles went with Xcode 14, and ld-prime ignores
             // the options that asked for one, as it does -ld_classic,
             // which once picked ld64 over it. -ld_new picks ld-prime,
@@ -2876,12 +2900,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-bitcode_process_mode"
             | b"-bitcode_symbol_map"
             | b"-bitcode_verify" => {
-                obsolete.push(format!("{name} is no longer supported and will be ignored"))
+                st.obsolete.push(format!("{name} is no longer supported and will be ignored"))
             }
             b"-ld_classic" => {
-                warnings.warn("-ld_classic is no longer supported and will be ignored")
+                st.warnings.warn("-ld_classic is no longer supported and will be ignored")
             }
-            b"-ld_prime" => obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
+            b"-ld_prime" => st.obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
             b"-ld_new" => {}
             // ld64 could still link the fragile (version 1) Objective-C
             // ABI of 32-bit macOS; ld-prime knows the modern one alone.
@@ -2910,34 +2934,34 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("invalid argument for -max_code_deduplicate_passes");
                 }
             }
-            b"-function_starts" => function_starts = Some(true),
-            b"-add_source_version" => source_version = Some(true),
-            b"-no_source_version" => source_version = Some(false),
+            b"-function_starts" => st.function_starts = Some(true),
+            b"-add_source_version" => st.source_version = Some(true),
+            b"-no_source_version" => st.source_version = Some(false),
             b"-source_version" => {
                 let arg = cur.next_text(name);
-                source_version_number = Some(parse_source_version(arg).unwrap_or_else(|| {
+                st.source_version_number = Some(parse_source_version(arg).unwrap_or_else(|| {
                     fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}")
                 }));
-                source_version = Some(true);
+                st.source_version = Some(true);
             }
             // ld64 kept the FDEs of functions with compact unwind
             // records for a target before macOS 10.9 (iOS 7), or as
             // these said. ld-prime goes by the target alone.
             b"-keep_dwarf_unwind" | b"-no_keep_dwarf_unwind" => {
-                obsolete.push(format!("{name} is obsolete"))
+                st.obsolete.push(format!("{name} is obsolete"))
             }
             b"-init_offsets" => args.init_offsets = true,
             b"-init" => args.init = Some(cur.next_text(name).to_string()),
-            b"-data_const" => data_const = Some(true),
-            b"-no_data_const" => data_const = Some(false),
+            b"-data_const" => st.data_const = Some(true),
+            b"-no_data_const" => st.data_const = Some(false),
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
-            b"-objc_relative_method_lists" => objc_relative_method_lists = Some(true),
-            b"-no_objc_relative_method_lists" => objc_relative_method_lists = Some(false),
+            b"-objc_relative_method_lists" => st.objc_relative_method_lists = Some(true),
+            b"-no_objc_relative_method_lists" => st.objc_relative_method_lists = Some(false),
             b"-no_objc_category_merging" => args.objc_category_merging = false,
-            b"-no_function_starts" => function_starts = Some(false),
-            b"-data_in_code_info" => data_in_code_info = Some(true),
+            b"-no_function_starts" => st.function_starts = Some(false),
+            b"-data_in_code_info" => st.data_in_code_info = Some(true),
             b"-add_split_seg_info" => args.add_split_seg_info = true,
-            b"-no_data_in_code_info" => data_in_code_info = Some(false),
+            b"-no_data_in_code_info" => st.data_in_code_info = Some(false),
 
             // The last of the two counts.
             b"-no_uuid" => args.uuid = false,
@@ -2988,30 +3012,30 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     );
                 }
                 if align == 0 {
-                    warnings.warn("zero is not a valid -max_default_common_align");
+                    st.warnings.warn("zero is not a valid -max_default_common_align");
                 } else if !align.is_power_of_two() {
-                    warnings.warn(format!(
+                    st.warnings.warn(format!(
                         "alignment for -max_default_common_align is not a power of two, using {:#x}",
                         1u64 << align.ilog2()
                     ));
                 }
-                max_default_common_align = Some(align.max(1).ilog2() as u8);
+                st.max_default_common_align = Some(align.max(1).ilog2() as u8);
             }
             b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
                 let names = read_symbol_list(name, &cur.next_path(name));
                 let glob = match name {
-                    "-force_symbols_weak_list" => &mut force_weak,
-                    _ => &mut force_not_weak,
+                    "-force_symbols_weak_list" => &mut st.lists.force_weak,
+                    _ => &mut st.lists.force_not_weak,
                 };
                 add_patterns(glob, names.iter().map(String::as_str), 0);
-                force_weakness_listed = true;
+                st.force_weakness_listed = true;
             }
             b"-keep_duplicate" => {
-                add_patterns(&mut keep_duplicates, [cur.next_text(name)], 0);
+                add_patterns(&mut st.lists.keep_duplicates, [cur.next_text(name)], 0);
             }
             b"-keep_duplicates_list" => {
                 let names = read_symbol_list(name, &cur.next_path(name));
-                add_patterns(&mut keep_duplicates, names.iter().map(String::as_str), 0);
+                add_patterns(&mut st.lists.keep_duplicates, names.iter().map(String::as_str), 0);
             }
             b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
             b"-deployment_target_mismatches" => {
@@ -3022,14 +3046,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-image_suffix" => args.image_suffixes.push(cur.next_arg(name).to_owned()),
             b"-encryptable" => args.encryptable = true,
             b"-no_encryption" => args.encryptable = false,
-            b"-interposable" => interposable_all = true,
+            b"-interposable" => st.lists.interposable_all = true,
             b"-interposable_list" => {
                 let names = read_symbol_list(name, &cur.next_path(name));
-                let glob = interposable_list.get_or_insert_default();
+                let glob = st.lists.interposable_list.get_or_insert_default();
                 add_patterns(glob, names.iter().map(String::as_str), 0);
             }
             b"-unaligned_pointers" => {
-                unaligned_pointers = Some(parse_treatment(name, cur.next_arg(name), true));
+                st.unaligned_pointers = Some(parse_treatment(name, cur.next_arg(name), true));
             }
             // Whether objects may disagree on signing class_ro_t
             // pointers, which only arm64e signs: nothing to check here.
@@ -3037,11 +3061,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 parse_treatment(name, cur.next_arg(name), false);
             }
             b"-poison_symbol" => {
-                poisoned.add(cur.next_arg(name).as_bytes(), 0);
+                st.lists.poisoned.add(cur.next_arg(name).as_bytes(), 0);
             }
             b"-poison_symbols_list" => {
                 for pat in read_symbol_list(name, &cur.next_path(name)) {
-                    poisoned.add(pat.as_bytes(), 0);
+                    st.lists.poisoned.add(pat.as_bytes(), 0);
                 }
             }
             // For duplicate symbols ld-prime would only warn of, which
@@ -3069,14 +3093,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the old spelling, and reports on the option as the new.
             b"-macos_version_min" | b"-macosx_version_min" => {
                 if name == "-macosx_version_min" {
-                    warnings.notice("-macosx_version_min has been renamed to -macos_version_min");
+                    st.warnings
+                        .notice("-macosx_version_min has been renamed to -macos_version_min");
                 }
                 let opt = "-macos_version_min";
                 let minos = parse_version(opt, cur.next_text(opt));
                 set_platform(
                     &mut args,
-                    &mut warnings,
-                    &mut incompatible_platforms,
+                    &mut st.warnings,
+                    &mut st.incompatible_platforms,
                     PLATFORM_MACOS,
                     minos,
                 );
@@ -3097,7 +3122,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     _ => ("-maccatalyst_version_min", PLATFORM_MACCATALYST),
                 };
                 if name != opt {
-                    warnings.notice(format!("{name} has been renamed to {opt}"));
+                    st.warnings.notice(format!("{name} has been renamed to {opt}"));
                 }
                 parse_version(opt, cur.next_text(opt));
                 fatal!("unsupported platform: {}", platform_name(platform));
@@ -3107,7 +3132,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // writes no modification times in the stabs then either.
             b"-reproducible" => args.zero_ar_date = true,
 
-            b"-lto_library" => lto_libraries.push(cur.next_path(name)),
+            b"-lto_library" => st.lto_libraries.push(cur.next_path(name)),
             b"-mcpu" => args.lto_cpu = Some(cur.next_text(name).to_string()),
             b"-mllvm" => args.mllvm.push(cur.next_bytes(name)),
             b"-save-temps" => args.save_temps = true,
@@ -3149,17 +3174,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_use_lto_filenames_in_order_file_matching" => {
                 args.lto_filenames_in_order_file = false;
             }
-            b"-lto_softload_runtime_symbols" => lto_softload = Some(true),
-            b"-no_lto_softload_runtime_symbols" => lto_softload = Some(false),
+            b"-lto_softload_runtime_symbols" => st.lto_softload = Some(true),
+            b"-no_lto_softload_runtime_symbols" => st.lto_softload = Some(false),
 
             b"-dependency_info" => args.dependency_info = Some(cur.next_path(name)),
 
             b"-object_path_lto" => args.object_path_lto = Some(cur.next_path(name)),
 
-            b"-objc_stubs_fast" => objc_stubs_small = Some(false),
-            b"-objc_stubs_small" => objc_stubs_small = Some(true),
-            b"-const_selrefs" => const_selrefs = Some(true),
-            b"-no_const_selrefs" => const_selrefs = Some(false),
+            b"-objc_stubs_fast" => st.objc_stubs_small = Some(false),
+            b"-objc_stubs_small" => st.objc_stubs_small = Some(true),
+            b"-const_selrefs" => st.const_selrefs = Some(true),
+            b"-no_const_selrefs" => st.const_selrefs = Some(false),
             // ld64's switches for passes ld-prime doesn't run: the
             // labels a -r output gave the FDEs in __eh_frame, the
             // ordering of initializer functions within __text, and
@@ -3185,7 +3210,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-force_load_swift_libs" => args.force_load_swift_libs = true,
             b"-add_linker_option" => {
                 let opt = cur.next_arg(name).as_bytes();
-                add_linker_option(&mut args.linker_options, opt, &mut warnings);
+                add_linker_option(&mut args.linker_options, opt, &mut st.warnings);
             }
             // ld64 took the D script of the image's probes from this;
             // ld-prime neither opens the file nor needs one, in a -r
@@ -3234,8 +3259,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     // switches function deduplication, which here is
                     // on unless -no_deduplicate, whatever the level.
                 } else if raw.starts_with(b"-") {
-                    unknown.push_str(name);
-                    unknown.push(' ');
+                    st.unknown.push_str(name);
+                    st.unknown.push(' ');
                 } else if raw.ends_with(b".a") {
                     // ld-prime takes a path to an archive on the
                     // command line, though not in a -filelist, for a
@@ -3249,11 +3274,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
     }
 
-    args.lto_library = resolve_lto_library(lto_libraries);
+    args.lto_library = resolve_lto_library(st.lto_libraries);
     // ld-prime reports the options it doesn't know together, once it
     // has read the others (and given their warnings).
-    if !unknown.is_empty() {
-        fatal!("unknown options: {unknown}");
+    if !st.unknown.is_empty() {
+        fatal!("unknown options: {}", st.unknown);
     }
     // Then it reads -objc_class_ro_signing_mismatch's environment
     // variable, as it would the option.
@@ -3266,18 +3291,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     trace_env(&mut args);
 
-    args.output_type = match kind {
+    args.output_type = match st.kind {
         OutputKind::Dylib => MH_DYLIB,
         OutputKind::Bundle => MH_BUNDLE,
         OutputKind::Kext => MH_KEXT_BUNDLE,
         OutputKind::Dylinker => MH_DYLINKER,
         _ => MH_EXECUTE,
     };
-    args.relocatable = kind == OutputKind::Object;
-    args.static_link = matches!(kind, OutputKind::StaticExecutable | OutputKind::Preload);
-    args.preload = kind == OutputKind::Preload;
+    args.relocatable = st.kind == OutputKind::Object;
+    args.static_link = matches!(st.kind, OutputKind::StaticExecutable | OutputKind::Preload);
+    args.preload = st.kind == OutputKind::Preload;
 
-    if let Some(triple) = target_triple {
+    if let Some(triple) = st.target_triple {
         apply_target_triple(&mut args, triple);
     }
 
@@ -3315,21 +3340,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // A -static image (a kernel) carries the code tables only when
     // asked to, as ld-prime writes it.
-    args.function_starts = function_starts.unwrap_or(!args.without_dyld());
-    args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
+    args.function_starts = st.function_starts.unwrap_or(!args.without_dyld());
+    args.data_in_code_info = st.data_in_code_info.unwrap_or(!args.without_dyld());
     // LC_SOURCE_VERSION came with macOS 10.8; ld-prime gives an image
     // for an older one none.
-    args.source_version = source_version
+    args.source_version = st
+        .source_version
         .unwrap_or(
             args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
         )
-        .then_some(source_version_number.unwrap_or(0));
+        .then_some(st.source_version_number.unwrap_or(0));
 
     // ld-prime signs arm64 macOS images by default and leaves x86_64
     // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
     // -static image or a kext (signed if at all by whoever packages it)
     // and firmware unsigned too.
-    args.adhoc_codesign = adhoc_codesign.unwrap_or(
+    args.adhoc_codesign = st.adhoc_codesign.unwrap_or(
         target.name == "arm64" && !args.without_dyld() && args.platform == PLATFORM_MACOS,
     );
 
@@ -3341,7 +3367,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // method list there, whatever the option says, and merges no
     // category (nor folds a class reference, see fold_objc_classrefs).
     args.objc_relative_method_lists = !args.without_dyld()
-        && objc_relative_method_lists.unwrap_or(
+        && st.objc_relative_method_lists.unwrap_or(
             (target.name == "arm64" || args.output_type != MH_EXECUTE)
                 && args.platform == PLATFORM_MACOS
                 && args.platform_minos >= encode_version(11, 0, 0),
@@ -3355,7 +3381,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // does -rpath, which only dyld would read.
     // A -preload image aligns its common symbols to 256 bytes at most.
     args.max_default_common_align =
-        max_default_common_align.unwrap_or(if args.preload { 8 } else { 15 });
+        st.max_default_common_align.unwrap_or(if args.preload { 8 } else { 15 });
     if args.preload {
         args.function_starts = false;
         args.data_in_code_info = false;
@@ -3369,7 +3395,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // -headerpad says otherwise, but 128 in firmware that dyld loads.
     let dyld_loaded_firmware =
         args.platform == PLATFORM_FIRMWARE && !args.without_dyld() && !args.relocatable;
-    args.headerpad = headerpad.unwrap_or(if dyld_loaded_firmware { 128 } else { 32 });
+    args.headerpad = st.headerpad.unwrap_or(if dyld_loaded_firmware { 128 } else { 32 });
 
     // An image no dyld loads, and dyld, which the kernel loads, start
     // from LC_UNIXTHREAD at "start", crt1.o's entry point, as every
@@ -3381,24 +3407,24 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         && args.platform == PLATFORM_MACOS
         && args.platform_minos < encode_version(10, 8, 0);
     args.unixthread = args.static_link || args.is_dylinker() || old_x86_64_executable;
-    if args.unixthread && !explicit_entry {
+    if args.unixthread && !st.explicit_entry {
         args.entry = "start".to_string();
     }
 
-    args.exported_symbols = exported_symbols.map(GlobBuilder::build);
-    args.unexported_symbols = unexported_symbols.build();
-    args.reexported_symbols = reexported_symbols.build();
-    args.why_live = why_live.build();
-    args.local_strip_list = local_strip_list.build();
-    args.local_keep_list = local_keep_list.map(GlobBuilder::build);
-    args.force_weak = force_weak.build();
-    args.force_not_weak = force_not_weak.build();
-    args.keep_duplicates = keep_duplicates.build();
-    args.poisoned = poisoned.build();
-    if interposable_all && interposable_list.is_none() {
-        interposable_list.get_or_insert_default().add(b"*", 0);
+    args.exported_symbols = st.lists.exported_symbols.map(GlobBuilder::build);
+    args.unexported_symbols = st.lists.unexported_symbols.build();
+    args.reexported_symbols = st.lists.reexported_symbols.build();
+    args.why_live = st.lists.why_live.build();
+    args.local_strip_list = st.lists.local_strip_list.build();
+    args.local_keep_list = st.lists.local_keep_list.map(GlobBuilder::build);
+    args.force_weak = st.lists.force_weak.build();
+    args.force_not_weak = st.lists.force_not_weak.build();
+    args.keep_duplicates = st.lists.keep_duplicates.build();
+    args.poisoned = st.lists.poisoned.build();
+    if st.lists.interposable_all && st.lists.interposable_list.is_none() {
+        st.lists.interposable_list.get_or_insert_default().add(b"*", 0);
     }
-    args.interposable = interposable_list.map(GlobBuilder::build);
+    args.interposable = st.lists.interposable_list.map(GlobBuilder::build);
     let lists_reexports = args.exported_symbols.is_some() || !args.reexported_symbols.is_empty();
     let reexports_library = !args.sub_libraries.is_empty()
         || !args.sub_umbrellas.is_empty()
@@ -3415,37 +3441,37 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // the command line. So does -w to those from the option checks
     // below, but not to those given as options were read.
     crate::error::set_fatal_warnings(args.fatal_warnings);
-    warnings.print();
+    st.warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
-    if arch_variant {
+    if st.arch_variant {
         fatal!("-arch_variant is not supported with -arch {}", target.name);
     }
     let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
-    if let Some(list) = dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
+    if let Some(list) = st.dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
     }
     args.dylib_arch_fallback = dylib_arch_fallback(target.name);
     // The build system's source version stands in for -source_version
     // unless -no_source_version says there is none (ld-prime reads it
     // even where there is none anyway).
-    if source_version != Some(false) && source_version_number.is_none() {
+    if st.source_version != Some(false) && st.source_version_number.is_none() {
         let version = env_source_version();
         if let Some(v) = &mut args.source_version {
             *v = version;
         }
     }
-    if let Some((old, new)) = incompatible_platforms {
+    if let Some((old, new)) = st.incompatible_platforms {
         fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
     }
 
     // ld-prime checks the options it has read in this order, each
     // diagnostic in its place: a fatal error stops the checks after it.
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
-    if args.kernel && kind != OutputKind::StaticExecutable {
+    if args.kernel && st.kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");
     }
     // Only a bundle has a loader.
-    if kind != OutputKind::Bundle
+    if st.kind != OutputKind::Bundle
         && args.inputs.iter().any(|arg| matches!(arg, InputArg::BundleLoader(_)))
     {
         fatal!("-bundle_loader can only be used with -bundle");
@@ -3454,27 +3480,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     resolve_delay_init(&mut args);
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
-    if threaded_starts {
-        if fixup_chains == Some(true) {
+    if st.threaded_starts {
+        if st.fixup_chains == Some(true) {
             fatal!(
                 "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
             );
         }
         fatal!("-threaded_starts_section is no longer supported");
     }
-    check_output_kind(&mut args, pie);
+    check_output_kind(&mut args, st.pie);
 
     // kmutil links a kext by its relocations and slides a -kernel
     // image by its local ones: ld-prime takes neither -fixup_chains nor
     // -no_fixup_chains for them.
     if args.is_kext() || args.kernel {
-        fixup_chains = None;
+        st.fixup_chains = None;
     }
-    args.pie = resolve_pie(target, &args, pie, fixup_chains);
-    args.fixup_chains = resolve_fixup_chains(target, &args, fixup_chains);
-    args.no_fixup_chains = fixup_chains == Some(false);
-    args.fixup_chains_section = chain_starts.is_some() && args.static_link && args.fixup_chains;
-    args.chain_starts_kind = chain_starts.unwrap_or(0);
+    args.pie = resolve_pie(target, &args, st.pie, st.fixup_chains);
+    args.fixup_chains = resolve_fixup_chains(target, &args, st.fixup_chains);
+    args.no_fixup_chains = st.fixup_chains == Some(false);
+    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.chain_starts_kind = st.chain_starts.unwrap_or(0);
     // ld64 binds lazily below the chained-fixups deployment targets
     // unless -bind_at_load.
     args.lazy_binding =
@@ -3490,9 +3516,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // -static one or a kext (XNU runs the kernel's __mod_init_func
     // itself, and a kext's): it converts only with -init_offsets.
     args.init_offsets |= !args.without_dyld()
-        && fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, &args));
-    args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
-    check_fixup_sections(&args, fixup_chains, chain_starts.is_some(), rebase_section);
+        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, &args));
+    args.text_relocs = resolve_text_relocs(target, &args, st.read_only_relocs);
+    check_fixup_sections(&args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
     // Only a dylib is mergeable: ld-prime checks so here, and that only
     // a dylib gets the debug hook right after the next check.
     if args.make_mergeable && args.output_type != MH_DYLIB {
@@ -3512,18 +3538,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.add_mergeable_debug_hook && args.output_type != MH_DYLIB {
         fatal!("-add_mergeable_debug_hook can only be used with -dylib");
     }
-    if x86_64_layout_emulation && target.name != "arm64" {
+    if st.x86_64_layout_emulation && target.name != "arm64" {
         crate::warn!(
             "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
         );
     }
     check_dylib_use(target, &args);
-    args.objc_stubs_small = objc_stubs_small == Some(true);
+    args.objc_stubs_small = st.objc_stubs_small == Some(true);
     resolve_shared_region(target, &mut args);
     resolve_dirty_data(&mut args);
     resolve_sdk_order_file(&mut args);
 
-    args.segment_align = resolve_segment_align(target, &args, segalign);
+    args.segment_align = resolve_segment_align(target, &args, st.segalign);
     resolve_encryptable(&mut args);
     // An encryptable image's __oslogstring, which goes unencrypted,
     // starts a page of its own unless -sectalign says otherwise.
@@ -3533,27 +3559,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         let p2align = args.segment_align.max(1).ilog2() as u8;
         args.sectalign.push((b"__TEXT".to_vec(), b"__oslogstring".to_vec(), p2align));
     }
-    args.segprots = resolve_segprots(target, segprots);
-    args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
+    args.segprots = resolve_segprots(target, st.segprots);
+    args.seg_page_sizes = resolve_seg_page_sizes(&args, st.seg_page_sizes);
     resolve_pagezero_size(&mut args);
-    resolve_stack(target, &mut args, stack_size, stack_addr);
-    check_relocatable(&args, data_const);
-    args.const_selrefs = const_selrefs.unwrap_or(args.shared_region);
-    args.lto_softload = lto_softload.unwrap_or(args.static_link || args.preload);
+    resolve_stack(target, &mut args, st.stack_size, st.stack_addr);
+    check_relocatable(&args, st.data_const);
+    args.const_selrefs = st.const_selrefs.unwrap_or(args.shared_region);
+    args.lto_softload = st.lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
-        warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
-    args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
+        st.warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
+    args.data_const = st.data_const.unwrap_or_else(|| default_data_const(&args, st.pie));
     resolve_kext(target, &mut args);
     check_segaddrs(&args);
     complete_segment_order(&mut args);
     check_section_order(&args);
     resolve_image_base(&mut args);
-    args.unaligned_pointers = resolve_unaligned_pointers(target, &args, unaligned_pointers);
+    args.unaligned_pointers = resolve_unaligned_pointers(target, &args, st.unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
 
     // An image dyld loads keeps 32 bytes for the command of a code
     // signature added later (see chunks::header_pad).
-    if let Some(size) = headerpad
+    if let Some(size) = st.headerpad
         && size < 32
         && !args.without_dyld()
         && !args.relocatable
@@ -3562,27 +3588,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
         );
     }
-    warn_platform_options(target, &args, read_only_relocs.is_some());
+    warn_platform_options(target, &args, st.read_only_relocs.is_some());
     check_dynamic_lookup(&args);
     // So is the -init function an initial undefine, as -u would make
     // it (a -r output keeps it undefined).
     args.forced_undefined.extend(args.init.clone());
     // Only a dylib has exports of others' symbols to publish.
-    if reexports_listed && args.output_type != MH_DYLIB {
+    if st.reexports_listed && args.output_type != MH_DYLIB {
         fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
     }
     // ld-prime deprecates the lists but for the libraries of /usr/lib,
     // libSystem's among them, which still use them.
     let usr_lib =
         args.output_type == MH_DYLIB && args.output_install_name().starts_with(b"/usr/lib/");
-    if force_weakness_listed && !usr_lib {
+    if st.force_weakness_listed && !usr_lib {
         crate::warn!("-force_symbols_[not_]weak_list is deprecated");
     }
-    for msg in obsolete {
+    for msg in st.obsolete {
         crate::warn!("{msg}");
     }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
-    if !args.has_entry_point() && explicit_entry && !args.suppress_warnings {
+    if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
     }
     args
