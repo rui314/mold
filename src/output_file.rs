@@ -87,6 +87,14 @@ impl SharedBuf {
 /// them.
 const BLOCK: usize = 8 << 20;
 
+/// The page size of the file cache: 16 KiB on Apple silicon, and a
+/// multiple of the 4 KiB pages elsewhere. Two pwrites to different bytes of one page must
+/// not run at once: when neither covers the whole page, the kernel may
+/// zero-fill the part of a newly cached page its write doesn't cover,
+/// over the other's bytes. So the writers get only whole pages, and a
+/// range's partial first and last pages are written once they are done.
+const PAGE: usize = 1 << 14;
+
 /// The writers mostly sit in the kernel, and the copy into the page
 /// cache scales only a little with threads, but the exposed tail after
 /// the last range is queued shrinks with more of them (debug clang:
@@ -99,9 +107,13 @@ const WRITERS: usize = 4;
 /// is finished.
 pub struct OutputFile {
     path: PathBuf,
+    file: Arc<std::fs::File>,
+    buf: SharedBuf,
     len: usize,
     tx: Option<Sender<(usize, usize)>>,
     threads: Vec<JoinHandle<Result<(), String>>>,
+    /// The partial pages at queued ranges' ends, written by finish().
+    edges: Mutex<Vec<(usize, usize)>>,
 }
 
 impl OutputFile {
@@ -144,7 +156,15 @@ impl OutputFile {
             })
             .collect();
 
-        Self { path: path.to_path_buf(), len, tx: Some(tx), threads }
+        Self {
+            path: path.to_path_buf(),
+            file,
+            buf: shared,
+            len,
+            tx: Some(tx),
+            threads,
+            edges: Mutex::new(Vec::new()),
+        }
     }
 
     /// Queues the buffer's bytes at `off..off + len` for writing. They
@@ -153,9 +173,22 @@ impl OutputFile {
         debug_assert!(off + len <= self.len);
         let tx = self.tx.as_ref().unwrap();
         let end = off + len;
-        let mut pos = off;
-        while pos < end {
-            let n = BLOCK.min(end - pos);
+        // The whole pages go to the writers; the partial ones at either
+        // end wait for finish(), since a neighboring range may still be
+        // written into the same pages.
+        let lo = off.next_multiple_of(PAGE).min(end);
+        let hi = (end / PAGE * PAGE).max(lo);
+        let mut edges = self.edges.lock().unwrap();
+        if off < lo {
+            edges.push((off, lo - off));
+        }
+        if hi < end {
+            edges.push((hi, end - hi));
+        }
+        drop(edges);
+        let mut pos = lo;
+        while pos < hi {
+            let n = BLOCK.min(hi - pos);
             // A closed channel means a writer failed; finish() reports it.
             let _ = tx.send((pos, n));
             pos += n;
@@ -171,6 +204,11 @@ impl OutputFile {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => fatal!("cannot write {}: {e}", self.path.display()),
                 Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.display()),
+            }
+        }
+        for &(off, n) in self.edges.get_mut().unwrap().iter() {
+            if let Err(e) = self.file.write_all_at(self.buf.block(off, n), off as u64) {
+                fatal!("cannot write {}: {e}", self.path.display());
             }
         }
         if let Err(e) = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o755))
