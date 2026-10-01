@@ -31,3 +31,16 @@ grep -q "'_bar' caused load of /.*/lib.a\[3\](b.o)" $t/log2
 # the archive's entries (the symbol table is [1]), on stderr.
 $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-all_load $t/lib.a -Wl,-why_load 2> $t/log3
 grep -q -- '-force_load caused load of /.*/lib.a\[3\](b.o)' $t/log3
+
+# Resolution runs again after LTO: the members loaded before keep their
+# reasons, a bitcode one LTO compiled included.
+echo 'int nat(void); int bc(void); int main() { return nat() + bc(); }' |
+  $CC -flto -o $t/lto-main.o -c -xc -
+echo 'int nat(void) { return 1; }' | $CC -o $t/nat.o -c -xc -
+echo 'int bc(void) { return 2; }' | $CC -flto -o $t/bc.o -c -xc -
+rm -f $t/libnat.a $t/libbc.a
+ar rcs $t/libnat.a $t/nat.o
+ar rcs $t/libbc.a $t/bc.o
+$CC --ld-path=$mold -flto -o $t/exe $t/lto-main.o $t/libnat.a $t/libbc.a -Wl,-why_load 2> $t/log4
+grep -q "'_nat' caused load of /.*/libnat.a\[2\](nat.o)" $t/log4
+grep -q "'_bc' caused load of /.*/libbc.a\[2\](bc.o)" $t/log4

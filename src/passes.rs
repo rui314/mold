@@ -2007,9 +2007,8 @@ fn claim_dylib_exports<E: Target>(
 /// Marks archive members whose definitions live code references,
 /// walking owner links to a fixed point.
 fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
-    // Resolution runs in rounds and recomputes liveness each time, so
-    // the -why_load record starts over with it.
-    ctx.why_load.clear();
+    // Resolution runs in rounds (auto-linking, LTO), and a file live
+    // after one stays so, with the -why_load reason it was loaded for.
     let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();
 
     // The entry point and -u symbols are roots too.
@@ -3821,8 +3820,16 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     // parsed in parallel interleave - before resolution names the ones
     // a symbol pulled in. -all_load counts as -force_load; -ObjC names
     // itself.
-    let members =
-        || ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive && obj.mf.parent.is_some());
+    // A bitcode member LTO compiled counts, though no longer live.
+    let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
+    let members = || {
+        let loaded =
+            |i: &usize, obj: &input_files::ObjectFile| obj.is_alive || compiled.contains(i);
+        ctx.objs
+            .iter()
+            .enumerate()
+            .filter(move |(i, obj)| loaded(i, obj) && obj.mf.parent.is_some())
+    };
     let forced: Vec<&input_files::ObjectFile> =
         members().filter(|(idx, _)| !ctx.why_load.contains_key(idx)).map(|(_, obj)| obj).collect();
     for run in forced.chunk_by(|a, b| std::ptr::eq(a.mf.parent.unwrap(), b.mf.parent.unwrap())) {
