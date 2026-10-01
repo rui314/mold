@@ -241,6 +241,8 @@ pub struct AtomFile {
     pub atoms: Vec<Atom>,
     pub fixups: Vec<Fixup>,
     pub sections: Vec<CustomSection>,
+    /// The mergeable dylib's own identity.
+    pub own: DylibInfo,
     pub dylibs: Vec<DylibInfo>,
     pub debug_infos: Vec<DebugInfo>,
 }
@@ -349,6 +351,7 @@ impl AtomFile {
                 flags: read32(c, 4),
             })
             .collect();
+        let (own, _) = r.dylib_info(read32(blob, 0xa8) as usize)?;
         let dylibs = r.dylib_infos(read32(blob, 0xb0) as usize, read32(blob, 0xb4) as usize)?;
         let debug_infos = r.debug_infos()?;
         let atoms = r.atoms(&symbols, fixups.len(), sections.len(), dylibs.len())?;
@@ -362,6 +365,7 @@ impl AtomFile {
             atoms,
             fixups,
             sections,
+            own,
             dylibs,
             debug_infos,
         })

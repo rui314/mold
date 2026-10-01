@@ -717,6 +717,7 @@ fn merge_dylib<E: Target>(
     let deps = af.dependencies(&mf.name);
     ctx.merged_imports.extend(deps.iter().flat_map(|d| d.exports.iter().copied()));
     ctx.merged_dependencies.extend(deps);
+    ctx.merged_libraries.push(af.own.install_name);
 }
 
 /// Loads the dylibs the merged mergeable dylibs link, after the command
@@ -724,9 +725,14 @@ fn merge_dylib<E: Target>(
 /// versions the mergeable dylib recorded, without reading it, and binds
 /// the merged code's imports to it - unless the command line loaded the
 /// library already, whose naming then decides (a -weak-l makes it weak).
+/// A library merged as well is none: what one merged library imports
+/// from another, the other's merged code defines.
 fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
+    let merged = std::mem::take(&mut ctx.merged_libraries);
     for dep in std::mem::take(&mut ctx.merged_dependencies) {
-        input_files::add_merged_dependency(ctx, dep);
+        if !merged.contains(&dep.info.install_name) {
+            input_files::add_merged_dependency(ctx, dep);
+        }
     }
 }
 

@@ -174,6 +174,9 @@ pub struct Context<E: Target> {
     /// their recorded identities, to add after the command line's (see
     /// passes::add_merged_dependencies).
     pub merged_dependencies: Vec<crate::mergeable::Dependency>,
+    /// The install names of the mergeable dylibs merged into the
+    /// image, which are none of its dependencies.
+    pub merged_libraries: Vec<Vec<u8>>,
     /// The symbols the merged mergeable dylibs import, which ld-prime
     /// lists whether or not anything refers to them (see
     /// chunks::symtab's live_refs).
@@ -335,6 +338,7 @@ impl<E: Target> Context<E> {
             stripped_dylibs: Vec::new(),
             indirect_files: Vec::new(),
             merged_dependencies: Vec::new(),
+            merged_libraries: Vec::new(),
             merged_imports: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
