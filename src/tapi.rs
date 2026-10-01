@@ -251,6 +251,19 @@ impl JsonParser<'_> {
     }
 }
 
+/// Adds the symbols of an Objective-C class a stub lists by name to its
+/// exports: the class and metaclass objects, and with `eh_type` the
+/// exception type too. tapi has a class listed for its exception type
+/// alone (objc-eh-types, objc_eh_type) export all three: ld-prime links
+/// _OBJC_CLASS_$_Foo against such a stub.
+fn push_objc_class(exports: &mut Vec<&'static str>, name: &str, eh_type: bool) {
+    exports.push(String::leak(format!("_OBJC_CLASS_$_{name}")));
+    exports.push(String::leak(format!("_OBJC_METACLASS_$_{name}")));
+    if eh_type {
+        exports.push(String::leak(format!("_OBJC_EHTYPE_$_{name}")));
+    }
+}
+
 /// Parses a TBD v5 file: JSON with a "main_library" object and, for
 /// reexported libraries inlined in the same file, a "libraries" array
 /// of objects of the same shape. Each group applies only to its targets.
@@ -291,11 +304,10 @@ fn parse_json(
                     tbd.weak_exports.extend(kinds.strs("weak"));
                     tbd.tlv_exports.extend(kinds.strs("thread_local"));
                     for name in kinds.strs("objc_class") {
-                        tbd.exports.push(String::leak(format!("_OBJC_CLASS_$_{name}")));
-                        tbd.exports.push(String::leak(format!("_OBJC_METACLASS_$_{name}")));
+                        push_objc_class(&mut tbd.exports, name, false);
                     }
                     for name in kinds.strs("objc_eh_type") {
-                        tbd.exports.push(String::leak(format!("_OBJC_EHTYPE_$_{name}")));
+                        push_objc_class(&mut tbd.exports, name, true);
                     }
                     for name in kinds.strs("objc_ivar") {
                         tbd.exports.push(String::leak(format!("_OBJC_IVAR_$_{name}")));
@@ -535,13 +547,12 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 }
                 "objc-classes" => {
                     for item in field.items() {
-                        tbd.exports.push(String::leak(format!("_OBJC_CLASS_$_{item}")));
-                        tbd.exports.push(String::leak(format!("_OBJC_METACLASS_$_{item}")));
+                        push_objc_class(&mut tbd.exports, item, false);
                     }
                 }
                 "objc-eh-types" => {
                     for item in field.items() {
-                        tbd.exports.push(String::leak(format!("_OBJC_EHTYPE_$_{item}")));
+                        push_objc_class(&mut tbd.exports, item, true);
                     }
                 }
                 "objc-ivars" => {
