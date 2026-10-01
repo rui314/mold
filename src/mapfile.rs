@@ -874,64 +874,214 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     entries
 }
 
-/// The atoms -dead_strip removed, by the file they came from and where
-/// they were in it: the symbols with the sizes their atoms would have
-/// had, and the literals no symbol names.
+/// The atoms of the input files that the output doesn't have, which
+/// ld-prime lists under -dead_strip, whatever took them out: dead
+/// stripping, coalescing - a literal or an Objective-C reference equal
+/// to another file's, a weak definition another file's won, a function
+/// folded into an identical one, a tentative definition (a common
+/// symbol) a larger or a real one took the place of - or an
+/// Objective-C rewrite (a method list in the relative form, a category
+/// merged into its class). They come by the file they came from, in
+/// the order they were in it, its tentative definitions last; the
+/// sizes are the atoms', as for the live ones (see dead_entries_of).
 fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
+    use rayon::prelude::*;
     if !ctx.args.dead_strip {
         return Vec::new();
     }
-    let is_dead = |isec: &crate::input_sections::InputSection| {
-        !isec.is_alive()
-            && isec.replacement == crate::input_sections::NO_REPLACEMENT
-            && ctx.objs[isec.file as usize].is_alive
-            && !ctx.is_internal(isec.file as usize)
-    };
-
-    // (isec, offset, name) of each symbol, sized as live ones are.
-    let mut ids: Vec<SymbolId> = Vec::new();
-    for i in 0..ctx.symbols.syms.len() as SymbolId {
-        let sym = &ctx.symbols[i];
-        let (Some(FileId::Obj(_)), Some(isec)) = (sym.file(), sym.input_section()) else {
-            continue;
-        };
-        let isec = ctx.resolve_isec(isec as usize);
-        if is_dead(&ctx.isecs[isec]) && is_named(ctx, sym) {
-            ids.push(i);
-        }
-    }
-    drop_shadowed_ltmps(ctx, &mut ids, |&sym| sym);
-    let mut syms: Vec<(usize, u64, &str)> = ids
-        .iter()
-        .map(|&i| {
-            let sym = &ctx.symbols[i];
-            (ctx.resolve_isec(sym.input_section().unwrap() as usize), sym.value, sym.name())
+    let gone = GoneAtoms::new(ctx);
+    let mut dead: Vec<(usize, DeadKey, MapEntry)> = (0..ctx.objs.len())
+        .into_par_iter()
+        .filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i))
+        .flat_map_iter(|i| {
+            let file = files.objs[i];
+            dead_entries_of(ctx, &gone, &files.commons, i, file)
+                .into_iter()
+                .map(move |(key, entry)| (file, key, entry))
         })
         .collect();
-    syms.sort();
-    let mut dead: Vec<(usize, u64, MapEntry)> = Vec::new();
-    for (i, &(isec, value, name)) in syms.iter().enumerate() {
-        let end = match syms.get(i + 1) {
-            Some(&(next_isec, next_value, _)) if next_isec == isec => next_value,
-            _ => ctx.isecs[isec].size as u64,
-        };
-        let file = files.objs[ctx.isecs[isec].file as usize];
-        let size = end.saturating_sub(value);
-        let entry = MapEntry { addr: 0, size, file, name: name.as_bytes().into() };
-        dead.push((file, u64::from(ctx.isecs[isec].input_addr) + value, entry));
+    dead.sort_by_key(|&(file, key, _)| (file, key));
+    dead.into_iter().map(|(_, _, entry)| entry).collect()
+}
+
+/// Where a dead atom was in its file: its address in the object, the
+/// subsection and the row's place among those of the subsection.
+type DeadKey = (u64, u32, u32);
+
+/// Which input subsections the output doesn't have (see dead_entries):
+/// those dead stripping or an Objective-C rewrite took out and those
+/// another took the place of, but for a class's ro data the merged
+/// record stands for (ld-prime rewrites it in place); and the C strings
+/// objc stubs take their selector names from, for which ld-prime makes
+/// its own. A section the link consumes, or that
+/// -remove_swift_reflection_metadata_sections drops as ld-prime reads
+/// it, has no atoms.
+struct GoneAtoms {
+    /// The records the Objective-C passes wrote for input ones.
+    rewritten: hashbrown::HashSet<u32>,
+    stub_names: hashbrown::HashSet<usize>,
+}
+
+impl GoneAtoms {
+    fn new<E: Target>(ctx: &Context<E>) -> Self {
+        let rewritten = ctx.data_blobs.iter().map(|blob| blob.isec).collect();
+        Self { rewritten, stub_names: stub_name_isecs(ctx) }
     }
 
-    for (id, isec) in ctx.isecs.iter().enumerate() {
-        if !is_dead(isec) {
+    fn contains<E: Target>(&self, ctx: &Context<E>, id: usize) -> bool {
+        let isec = &ctx.isecs[id];
+        let hdr = ctx.hdr_of(isec);
+        if crate::output_sections::is_consumed_in_image(hdr.segname(), hdr.sectname())
+            || (ctx.args.remove_swift_reflection_metadata_sections
+                && crate::passes::is_swift_reflection_section(hdr))
+        {
+            return false;
+        }
+        if isec.replacement != crate::input_sections::NO_REPLACEMENT {
+            return !self.rewritten.contains(&isec.replacement);
+        }
+        !isec.is_alive() || self.stub_names.contains(&id)
+    }
+}
+
+/// The dead atoms of object `obj_idx` (see dead_entries), the `file`th
+/// of the map, keyed by where they were. An atom is named by the best
+/// of the labels at its start, as ld-prime ranks them (see
+/// atom_name_rank) - in an object without subsections, by the first
+/// in its symbol table -, which has the atom's size; the others are
+/// aliases of none, but for linker-private ones (l...), which the list
+/// leaves out. An ltmpN label of an empty section names nothing (the
+/// section has no atom). ld-prime makes a C string an atom per label
+/// at its start, and all but one of them are always dead, merged into
+/// that one. Of the tentative definitions, all but the one whose
+/// common symbol the output has (see MapFiles::commons) are dead.
+fn dead_entries_of<'a, E: Target>(
+    ctx: &'a Context<E>,
+    gone: &GoneAtoms,
+    commons: &hashbrown::HashMap<u32, u32>,
+    obj_idx: usize,
+    file: usize,
+) -> Vec<(DeadKey, MapEntry<'a>)> {
+    use crate::input_files::find_symbol_subsec;
+    let obj = &ctx.objs[obj_idx];
+    let split = obj.subsections_via_symbols;
+    let is_ltmp = |name: &str| split && name.starts_with("ltmp");
+
+    // The labels of the gone atoms, as (subsection, offset, how the
+    // label ranks to name the atom, best first, name, alternate entry
+    // point), and the number of labels each C string has.
+    type Rank = std::cmp::Reverse<LabelRank>;
+    let mut labels: Vec<(usize, u64, Rank, &str, bool)> = Vec::new();
+    let mut cstring_labels: hashbrown::HashMap<usize, u32> = hashbrown::HashMap::new();
+    for (k, nlist) in obj.nlists.iter().enumerate() {
+        if nlist.is_stab() || nlist.n_type() != N_SECT {
             continue;
         }
-        let Some(name) = literal_name(ctx, isec) else { continue };
-        if syms.binary_search_by_key(&(id, 0), |&(isec, value, _)| (isec, value)).is_err() {
-            let file = files.objs[isec.file as usize];
-            let entry = MapEntry { addr: 0, size: isec.size as u64, file, name };
-            dead.push((file, u64::from(isec.input_addr), entry));
+        let Some((isec, off)) =
+            find_symbol_subsec(&ctx.isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
+        else {
+            continue;
+        };
+        let name = ctx.symbols[obj.symbols[k]].name();
+        let hdr = ctx.hdr_of(&ctx.isecs[isec]);
+        if hdr.section_type() == S_CSTRING_LITERALS && off == 0 && !is_ltmp(name) {
+            *cstring_labels.entry(isec).or_default() += 1;
+        }
+        if !gone.contains(ctx, isec)
+            || !names_atom(hdr, split, nlist.is_extern(), name)
+            || (is_ltmp(name) && hdr.size == 0)
+        {
+            continue;
+        }
+        let rank = std::cmp::Reverse(label_rank(obj, k as u32, name));
+        labels.push((isec, off, rank, name, nlist.n_desc & N_ALT_ENTRY != 0));
+    }
+    // By subsection, the alternate entry points last, and by place, the
+    // label naming the atom first.
+    labels.sort_unstable_by_key(|&(isec, off, rank, _, alt)| (isec, alt, off, rank));
+
+    let mut rows: Vec<(usize, u64, u64, Cow<'a, [u8]>)> = Vec::new();
+    let mut first_label: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
+    for (i, &(isec, off, _, name, alt)) in labels.iter().enumerate() {
+        let first = first_label.entry(isec).or_insert(off);
+        *first = (*first).min(off);
+        let is_alias = alt || (i > 0 && (labels[i - 1].0, labels[i - 1].1) == (isec, off));
+        if is_alias && name.starts_with('l') {
+            continue;
+        }
+        let size = match is_alias {
+            true => 0,
+            false => {
+                let next = labels[i + 1..]
+                    .iter()
+                    .take_while(|l| l.0 == isec && !l.4)
+                    .find(|l| l.1 != off)
+                    .map_or(ctx.isecs[isec].size as u64, |l| l.1);
+                next - off
+            }
+        };
+        rows.push((isec, off, size, Cow::Borrowed(name.as_bytes())));
+    }
+
+    // The unnamed atoms, from a gone subsection's start up to its first
+    // label, and the C strings' extra atoms.
+    for &id in &obj.subsecs {
+        let id = id as usize;
+        if gone.contains(ctx, id) {
+            let len = first_label.get(&id).copied().unwrap_or(ctx.isecs[id].size as u64);
+            for (off, size, name) in unnamed_rows(ctx, id, len) {
+                if !is_kept_category_entry(ctx, id, off) {
+                    rows.push((id, off, size, name));
+                }
+            }
+        }
+        if let Some(&n) = cstring_labels.get(&id) {
+            let name = literal_name(ctx, &ctx.isecs[id]).unwrap();
+            for _ in 1..n {
+                rows.push((id, 0, ctx.isecs[id].size as u64, name.clone()));
+            }
         }
     }
-    dead.sort_by_key(|(file, addr, _)| (*file, *addr));
-    dead.into_iter().map(|(_, _, entry)| entry).collect()
+
+    let mut entries: Vec<(DeadKey, MapEntry)> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(seq, (isec, off, size, name))| {
+            let key = (u64::from(ctx.isecs[isec].input_addr) + off, isec as u32, seq as u32);
+            (key, MapEntry { addr: 0, size, file, name })
+        })
+        .collect();
+
+    let r = obj.global_range();
+    for (k, (nlist, &sym)) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).enumerate() {
+        let won = || {
+            ctx.symbols[sym].input_section().is_some_and(|isec| {
+                commons.get(&isec) == Some(&(obj_idx as u32)) && ctx.isecs[isec as usize].is_alive()
+            })
+        };
+        if nlist.is_common() && !won() {
+            let name = Cow::Borrowed(ctx.symbols[sym].name().as_bytes());
+            let entry = MapEntry { addr: 0, size: nlist.n_value, file, name };
+            entries.push(((u64::MAX, u32::MAX, k as u32), entry));
+        }
+    }
+    entries
+}
+
+/// Whether the 8-byte record at `off` of a category list the
+/// Objective-C passes rebuilt names a category that wasn't merged into
+/// its class, which the rebuilt list keeps (see objc_list_entries).
+fn is_kept_category_entry<E: Target>(ctx: &Context<E>, id: usize, off: u64) -> bool {
+    if !matches!(ctx.hdr_of(&ctx.isecs[id]).sectname(), "__objc_catlist" | "__objc_nlcatlist") {
+        return false;
+    }
+    let obj = &ctx.objs[ctx.isecs[id].file as usize];
+    let rel = ctx.isec_relocs(id).iter().find(|r| u64::from(r.offset) == off && r.size == 8);
+    let target = rel.and_then(|rel| match rel.target() {
+        crate::input_sections::RelocTarget::Section(isec) => Some(isec),
+        crate::input_sections::RelocTarget::Sym(idx) => {
+            ctx.symbols[obj.symbols[idx as usize]].input_section()
+        }
+    });
+    target.is_some_and(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
 }

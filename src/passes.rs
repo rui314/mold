@@ -2665,7 +2665,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
 /// Whether -remove_swift_reflection_metadata_sections drops an input
 /// section: Swift's field descriptors, associated type records and the
 /// names they give (but not the type references), in any segment.
-fn is_swift_reflection_section(hdr: &MachSection) -> bool {
+pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
     matches!(hdr.sectname(), "__swift5_fieldmd" | "__swift5_assocty" | "__swift5_reflstr")
 }
 

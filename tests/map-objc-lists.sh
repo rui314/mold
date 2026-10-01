@@ -7,7 +7,7 @@ source "$(dirname "$0")"/common.inc
 # list without the categories it merged into their classes; ld-prime
 # keeps the other entries, each its file's, and credits itself with
 # the __objc_nlclslist entry it adds for a class a category's +load
-# makes non-lazy.
+# makes non-lazy. The merged categories' entries are dead.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject - (int)a; + (void)cm; @end
@@ -42,3 +42,6 @@ rows() {
 [ "$(rows __objc_nlclslist)" = '0x00000008 [  0] anon|' ]
 grep $'\t__objc_nlcatlist$' $t/map > $t/nlcatlist || true
 [ ! -s $t/nlcatlist ]
+
+# Foo (Cat)'s entries in __objc_catlist and __objc_nlcatlist are dead.
+[ "$(grep -c $'^<<dead>>\t0x00000008\t\\[  1\\] anon$' $t/map)" = 2 ]
