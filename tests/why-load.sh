@@ -44,3 +44,17 @@ ar rcs $t/libbc.a $t/bc.o
 $CC --ld-path=$mold -flto -o $t/exe $t/lto-main.o $t/libnat.a $t/libbc.a -Wl,-why_load 2> $t/log4
 grep -q "'_nat' caused load of /.*/libnat.a\[2\](nat.o)" $t/log4
 grep -q "'_bc' caused load of /.*/libbc.a\[2\](bc.o)" $t/log4
+
+# ld-prime says so as it resolves the symbols, before it checks the
+# inputs' versions, in a -r link too.
+cat <<EOF2 | $CC -o $t/new.o -c -xc - -mmacosx-version-min=99.0
+void foo();
+int main() { foo(); }
+EOF2
+$CC --ld-path=$mold -o $t/exe $t/new.o $t/lib.a -Wl,-why_load 2> $t/log5
+grep -n "caused load of /.*/lib.a\[2\](a.o)" $t/log5 | cut -d: -f1 > $t/line5
+grep -n 'was built for newer' $t/log5 | cut -d: -f1 >> $t/line5
+[ "$(grep -c . $t/line5)" = 2 ]
+[ "$(sort -n $t/line5)" = "$(cat $t/line5)" ]
+$mold -r -arch $ARCH -o $t/r.o $t/main.o $t/lib.a -why_load 2> $t/log6
+grep -q "'_foo' caused load of /.*/lib.a\[2\](a.o)" $t/log6

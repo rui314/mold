@@ -34,3 +34,10 @@ nm $t/exe | grep -q ' T _foo$'
 
 link $t/libb.a -Wl,-allow_sub_type_mismatches 2> $t/log
 [ "$(grep -c "warning: linking x86_64h file '$t/libb.a(b.o)' into x86_64 link" $t/log)" = 1 ]
+
+# The second warning comes once ld-prime has checked the inputs'
+# versions.
+echo 'int main() { return 0; }' | $CC -o $t/new.o -c -xc - -mmacosx-version-min=99.0
+$CC --ld-path=$mold -o $t/exe $t/new.o $t/b.o -Wl,-allow_sub_type_mismatches 2> $t/log
+grep 'warning: ' $t/log | sed -n 3p | grep -q "$msg"
+grep 'warning: ' $t/log | sed -n 2p | grep -q 'was built for newer'

@@ -3881,25 +3881,26 @@ pub fn print_trace<E: Target>(ctx: &Context<E>) {
 /// -why_load reports what dragged each archive member into the link:
 /// "_symbol forced load of archive.a(member.o)", in ld64's wording.
 /// Members loaded unconditionally (-all_load, -force_load) are
-/// reported with the option as the reason.
-pub fn print_why_load<E: Target>(ctx: &Context<E>) {
+/// reported with the option as the reason. ld-prime says so as it
+/// resolves the symbols, so of each round of resolution the members it
+/// loads: those but the `explained` ones. Returns the objects loaded by
+/// then.
+pub fn print_why_load<E: Target>(ctx: &Context<E>, explained: &[bool]) -> Vec<bool> {
+    // A bitcode member LTO compiled counts, though no longer live.
+    let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
+    let loaded: Vec<bool> =
+        ctx.objs.iter().enumerate().map(|(i, obj)| obj.is_alive || compiled.contains(&i)).collect();
     if !ctx.args.why_load {
-        return;
+        return loaded;
     }
     // ld-prime reports, on stderr, the members an option loads as it
     // parses the archives - an archive's last member first; archives
     // parsed in parallel interleave - before resolution names the ones
     // a symbol pulled in. -all_load counts as -force_load; -ObjC names
     // itself.
-    // A bitcode member LTO compiled counts, though no longer live.
-    let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
     let members = || {
-        let loaded =
-            |i: &usize, obj: &input_files::ObjectFile| obj.is_alive || compiled.contains(i);
-        ctx.objs
-            .iter()
-            .enumerate()
-            .filter(move |(i, obj)| loaded(i, obj) && obj.mf.parent.is_some())
+        let new = |i: usize| loaded[i] && !explained.get(i).is_some_and(|&e| e);
+        ctx.objs.iter().enumerate().filter(move |&(i, obj)| new(i) && obj.mf.parent.is_some())
     };
     let forced: Vec<&input_files::ObjectFile> =
         members().filter(|(idx, _)| !ctx.why_load.contains_key(idx)).map(|(_, obj)| obj).collect();
@@ -3925,6 +3926,7 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
             ));
         }
     }
+    loaded
 }
 
 /// A file name for diagnostics: the object's path. Archive members

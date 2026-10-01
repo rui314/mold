@@ -88,8 +88,11 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             passes::Autolinked::Objects => {}
         }
     }
-    passes::warn_subtype_mismatches(&ctx);
+    // ld-prime says why it loads each archive member as it resolves the
+    // symbols, then checks the inputs it uses.
+    let explained = passes::print_why_load(&ctx, &[]);
     let checked = passes::check_input_versions(&ctx, &Default::default());
+    passes::warn_subtype_mismatches(&ctx);
     passes::check_bitcode_duplicates(&ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
@@ -113,6 +116,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
                 passes::Autolinked::Objects => {}
             }
         }
+        passes::print_why_load(&ctx, &explained);
         passes::check_input_versions(&ctx, &checked);
     }
     t.stop();
@@ -179,7 +183,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("create_symbol_reexports", passes::create_symbol_reexports(&mut ctx));
     timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
     passes::print_dependencies(&ctx);
-    passes::print_why_load(&ctx);
     passes::print_trace(&ctx);
     crate::error::checkpoint();
     if ctx.args.dead_strip {
