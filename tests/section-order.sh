@@ -95,3 +95,62 @@ otool -l $t/exe3 | awk '$1 == "sectname" { s = $2; next }
   $1 == "segname" && s != "" { printf "%s,%s ", $2, s; s = "" }' > $t/order3
 grep -q '__DATA,__mycode __DATA,__objc_data ' $t/order3
 grep -q '__FOO,__b __FOO,__text __FOO,__x ' $t/order3
+
+# One order holds for __DATA_CONST and __DATA alike: under
+# -no_data_const the sections that would have made __DATA_CONST lead
+# __DATA in their usual order, but for the GOT and __auth_ptr, which
+# close __DATA_CONST and so follow the thread-local variables'
+# descriptors in __DATA.
+cat <<EOF2 | $CC -o $t/e.o -c -xassembler -
+.section __DATA,__yy
+.quad 1
+.section __DATA,__auth_ptr
+.quad 1
+.section __DATA,__const
+.quad 1
+.section __DATA,__objc_data
+.quad 1
+.data
+.quad 1
+.subsections_via_symbols
+EOF2
+cat <<EOF2 | $CC -o $t/f.o -c -xc -
+#include <stdio.h>
+__thread int tv = 1;
+int *get(void) { return &tv; }
+void *gp(void) { return (void *)&puts; }
+int main() {}
+EOF2
+order() {
+  otool -l $t/$1 | awk '$1 == "sectname" { s = $2; next }
+    $1 == "segname" && s != "" { printf "%s,%s ", $2, s; s = "" }'
+}
+$CC --ld-path=$mold -o $t/exe4 $t/e.o $t/f.o
+order exe4 > $t/order4
+grep -q '__DATA_CONST,__const __DATA_CONST,__got __DATA_CONST,__auth_ptr __DATA,__objc_data __DATA,__yy __DATA,__data __DATA,__thread_vars __DATA,__thread_data ' $t/order4
+$CC --ld-path=$mold -o $t/exe5 $t/e.o $t/f.o -Wl,-no_data_const
+order exe5 > $t/order5
+grep -q '__DATA,__const __DATA,__objc_data __DATA,__yy __DATA,__data __DATA,__thread_vars __DATA,__got __DATA,__auth_ptr __DATA,__thread_data ' $t/order5
+
+# A -static image, which no dyld loads, has no place of their own for
+# __const and __auth_ptr: they keep input order among the unknown
+# sections, while the Objective-C data still leads.
+cat <<EOF2 | $CC -o $t/g.o -c -xassembler -
+.section __DATA,__yy
+.quad 1
+.section __DATA,__auth_ptr
+.quad 1
+.section __DATA,__const
+.quad 1
+.section __DATA,__objc_data
+.quad 1
+.data
+.quad 1
+.text
+.globl _start
+_start: ret
+.subsections_via_symbols
+EOF2
+$mold -arch $ARCH -static -e _start -o $t/exe6 $t/g.o
+order exe6 > $t/order6
+grep -q '__DATA,__objc_data __DATA,__yy __DATA,__auth_ptr __DATA,__const __DATA,__data ' $t/order6

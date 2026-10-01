@@ -25,87 +25,87 @@ use crate::util::align_to;
 
 /// Where a section sits within its segment in a final image, as
 /// ld-prime 27037 orders them; sections of one rank keep input order.
-/// __text leads __TEXT, other code sections follow in input order, then
-/// the synthesized code and method lists; code leads any other segment
-/// too. dyld's tables lead __DATA_CONST, then the read-only ObjC lists
-/// in a fixed order; the ObjC runtime data leads __DATA in the order the
-/// compiler emits it, and __data follows in input order among the
-/// unknown sections.
-fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
-    match (segname, sectname) {
-        ("__TEXT", "__text") => 0,
-        ("__TEXT", "__stubs") => 2,
-        ("__TEXT", "__stub_helper") => 3,
-        ("__TEXT", "__delay_stubs") => 4,
-        ("__TEXT", "__delay_helper") => 5,
-        ("__TEXT", "__lazy_helpers") => 6,
-        ("__TEXT", "__objc_stubs") => 7,
-        ("__TEXT", "__init_offsets") => 8,
-        ("__TEXT", "__objc_methlist") => 9,
-        ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
-        ("__TEXT", _) => 10,
-        _ if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
-        ("__DATA_CONST", "__mod_init_func") => 1,
-        ("__DATA_CONST", "__mod_term_func") => 2,
-        ("__DATA_CONST", "__const") => 3,
-        ("__DATA_CONST", "__cfstring") => 4,
-        ("__DATA_CONST", "__objc_classlist") => 5,
-        ("__DATA_CONST", "__objc_nlclslist") => 6,
-        ("__DATA_CONST", "__objc_catlist") => 7,
-        ("__DATA_CONST", "__objc_catlist2") => 8,
-        ("__DATA_CONST", "__objc_nlcatlist") => 9,
-        ("__DATA_CONST", "__objc_protolist") => 10,
-        ("__DATA_CONST", "__objc_imageinfo") => 11,
-        ("__DATA_CONST", "__objc_protorefs") => 12,
-        ("__DATA_CONST", "__objc_classrefs") => 13,
-        ("__DATA_CONST", "__objc_superrefs") => 14,
-        // The GOT closes __DATA_CONST, after every input-derived
-        // section (ld-prime: __cfstring, __objc_classlist,
-        // __objc_imageinfo, then __got). In the shared region the lazy
-        // pointers lead it (the lazy-load slots after them), and the
-        // class data, __weak_got and the selector references come
-        // before __got.
-        ("__DATA_CONST", "__la_symbol_ptr" | "__lazy_load_got") => 0,
-        ("__DATA_CONST", "__objc_const") => 21,
-        ("__DATA_CONST", "__weak_got") => 22,
-        ("__DATA_CONST", "__objc_selrefs") => 23,
-        ("__DATA_CONST", "__got") => 25,
-        ("__DATA_CONST", _) => 20,
-        // Without __DATA_CONST (-no_data_const, an x86-64 kext),
-        // ld-prime's __DATA starts with the lazy pointers and the
-        // initializer and terminator lists, and the GOT follows the
-        // input sections. Ahead of all come crt1.o's tables for dyld
-        // and the C runtime, __dyld and __program_vars, in input order
-        // (the lazy pointers, which the linker makes, follow those of
-        // their rank).
-        ("__DATA", "__dyld" | "__program_vars") => 0,
-        ("__DATA", "__la_symbol_ptr") => 0,
-        ("__DATA", "__mod_init_func" | "__mod_term_func") => 1,
-        ("__DATA", "__got") => 25,
-        ("__DATA", "__objc_const") => 2,
-        ("__DATA", "__objc_selrefs") => 3,
-        ("__DATA", "__objc_protorefs") => 4,
-        ("__DATA", "__objc_classrefs") => 5,
-        ("__DATA", "__objc_superrefs") => 6,
-        ("__DATA", "__objc_ivar") => 7,
-        ("__DATA", "__objc_data") => 8,
-        ("__DATA", "__lazy_load_got") => 9,
-        // The thread-local initialization image must be contiguous: its
-        // initial values (__thread_data) last among file-backed __DATA
-        // sections, after the variables' descriptors (__thread_vars),
-        // and its zero fill (__thread_bss) first among zero-fill ones
-        // (zero-fill sections sort after all file-backed ones).
-        // ld-prime goes by the section types, whatever the names.
-        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES => 30,
-        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_REGULAR => 31,
-        ("__DATA", _) if flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL => 0,
-        // ld-prime keeps a place for -merge_zero_fill_sections's
-        // __zerofill, whether or not given, ahead of the rest.
-        ("__DATA", "__zerofill") if flags & SECTION_TYPE == S_ZEROFILL => 1,
-        // The other zero-fill sections, __bss and __common too, go in
-        // first-seen order: the synthesized __common counts from the
-        // first object with a common symbol.
-        _ => 10,
+/// ld-prime has one order for all segments, which places the read-only
+/// data of __DATA_CONST and the writable data of __DATA alike - so that
+/// under -no_data_const (or in an x86-64 kext) the sections that would
+/// have made __DATA_CONST lead __DATA in their usual order, but for the
+/// GOT and __auth_ptr, which close it. Code comes first in any
+/// segment, __text ahead; a section of initializer or terminator
+/// pointers, or of thread-local data, has the place of its type in any
+/// segment and whatever its name. A -static or -preload image, which
+/// no dyld loads, has no place of their own for the initializer and
+/// terminator lists, __const, __cfstring and __auth_ptr: they keep
+/// input order among the unknown sections there.
+fn output_section_rank(segname: &str, sectname: &str, flags: u32, static_link: bool) -> u32 {
+    const UNKNOWN: u32 = 32;
+    let dyld = !static_link;
+    if (segname, sectname) == ("__TEXT", "__text") {
+        return 0;
+    }
+    if flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
+        return 1;
+    }
+    match flags & SECTION_TYPE {
+        S_MOD_INIT_FUNC_POINTERS if dyld => return 12,
+        S_MOD_TERM_FUNC_POINTERS if dyld => return 13,
+        // The thread-local template must be contiguous: its initial
+        // values come last among file-backed sections, after the
+        // variables' descriptors and after the GOT, and its zero fill
+        // first among the zero-fill ones (zero-fill sections sort after
+        // all file-backed ones).
+        S_THREAD_LOCAL_VARIABLES => return 33,
+        S_THREAD_LOCAL_REGULAR => return 36,
+        S_THREAD_LOCAL_ZEROFILL => return 0,
+        _ => {}
+    }
+    match segname {
+        "__TEXT" => match sectname {
+            "__stubs" => 3,
+            "__stub_helper" => 4,
+            "__delay_stubs" => 5,
+            "__delay_helper" => 6,
+            "__lazy_helpers" => 7,
+            "__objc_stubs" => 8,
+            "__init_offsets" => 9,
+            "__objc_methlist" => 10,
+            _ => UNKNOWN,
+        },
+        "__DATA" | "__DATA_CONST" => match sectname {
+            // crt1.o's tables for dyld and the C runtime, in input
+            // order, ahead of the lazy pointers.
+            "__dyld" | "__program_vars" if segname == "__DATA" => 2,
+            "__la_symbol_ptr" => 11,
+            "__const" if dyld => 14,
+            "__cfstring" if dyld => 15,
+            "__objc_classlist" => 16,
+            "__objc_nlclslist" => 17,
+            "__objc_catlist" => 18,
+            "__objc_catlist2" => 19,
+            "__objc_nlcatlist" => 20,
+            "__objc_protolist" => 21,
+            "__objc_imageinfo" => 22,
+            "__objc_const" => 23,
+            "__weak_got" => 24,
+            "__objc_selrefs" => 25,
+            "__objc_protorefs" => 26,
+            "__objc_classrefs" => 27,
+            "__objc_superrefs" => 28,
+            "__objc_ivar" => 29,
+            "__objc_data" => 30,
+            "__lazy_load_got" => 31,
+            "__got" => 34,
+            "__auth_ptr" if dyld => 35,
+            // ld-prime keeps a place for -merge_zero_fill_sections's
+            // __zerofill, whether or not given, ahead of the other
+            // zero-fill sections.
+            "__zerofill" if flags & SECTION_TYPE == S_ZEROFILL => 1,
+            // The rest, __data among them, and the other zero-fill
+            // sections, __bss and __common too, go in first-seen
+            // order: the synthesized __common counts from the first
+            // object with a common symbol.
+            _ => UNKNOWN,
+        },
+        _ => UNKNOWN,
     }
 }
 
@@ -1770,6 +1770,7 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
         first_seen.entry(ctx.chunk_header(id).segname).or_insert(n);
     }
     let segment_order = &ctx.args.segment_order;
+    let static_link = ctx.args.static_link;
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
         // Code in __TEXT_EXEC follows __TEXT. The __DATA_CONST of an
@@ -1816,11 +1817,13 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
             // of its new segment by what its atoms hold, which they took
             // along: data as in __DATA (and code first).
             ChunkId::Output(osec) if ctx.output_section(osec).moved.is_some() => {
-                late_text_rank(ctx, hdr)
-                    .unwrap_or_else(|| 1 + output_section_rank("__DATA", &hdr.sectname, hdr.flags))
+                late_text_rank(ctx, hdr).unwrap_or_else(|| {
+                    1 + output_section_rank("__DATA", &hdr.sectname, hdr.flags, static_link)
+                })
             }
-            _ => late_text_rank(ctx, hdr)
-                .unwrap_or_else(|| 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags)),
+            _ => late_text_rank(ctx, hdr).unwrap_or_else(|| {
+                1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags, static_link)
+            }),
         };
         let seen = match id {
             ChunkId::Output(osec) => section_first_seen[osec.index()],
