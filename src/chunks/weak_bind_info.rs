@@ -2,11 +2,10 @@
 //! another image's copy of one of this image's weak definitions wins
 //! coalescing.
 
-use crate::chunks::{ChunkHeader, segment_and_offset};
+use crate::chunks::{ChunkHeader, bind_info};
 use crate::context::Context;
 use crate::macho::*;
 use crate::target::{RelocClass, Target};
-use crate::util::encode_uleb;
 
 /// The weak-bind opcode stream: the slots dyld redirects when another
 /// image's copy of one of this image's weak definitions wins
@@ -40,7 +39,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// entries and data pointers - a bind by name, which dyld applies
 /// only if another image's copy of the symbol won coalescing (the
 /// slot's rebase already holds this image's copy). Sorted by symbol
-/// name, then address, as ld64 writes them.
+/// name, then address, and encoded as the bind stream is (see
+/// bind_info::bind_ops), each piece of state set only when it changes,
+/// as ld64 writes them.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // A -static image calls its weak definitions directly, but under
     // -no_fixup_chains ld-prime still lists the slots holding their
@@ -93,23 +94,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         buf.extend_from_slice(ctx.symbols[id].name().as_bytes());
         buf.push(0);
     }
-    let mut last: Option<crate::symbol::SymbolId> = None;
-    for (id, addr) in binds {
-        if last != Some(id) {
-            buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM);
-            buf.extend_from_slice(ctx.symbols[id].name().as_bytes());
-            buf.push(0);
-            buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
-            last = Some(id);
-        }
-        let (seg, off) = segment_and_offset(ctx, addr);
-        buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
-        encode_uleb(&mut buf, off);
-        buf.push(BIND_OPCODE_DO_BIND);
-    }
-    buf.push(BIND_OPCODE_DONE);
-    while buf.len() % 8 != 0 {
-        buf.push(0);
-    }
-    buf
+    let binds: Vec<_> = binds.into_iter().map(|(id, addr)| (addr, id, 0)).collect();
+    let ops = bind_info::bind_ops(ctx, &binds, |_| None, |_| 0);
+    bind_info::encode(bind_info::compress(ops), buf)
 }

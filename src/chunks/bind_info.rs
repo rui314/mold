@@ -86,9 +86,14 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             b.0,
         ))
     });
-    let ops = compress(bind_ops(ctx, &binds, ordinal));
+    let flags = |id: crate::symbol::SymbolId| {
+        if ctx.symbols[id].is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 }
+    };
+    encode(compress(bind_ops(ctx, &binds, |id| Some(ordinal(id)), flags)), Vec::new())
+}
 
-    let mut buf = Vec::new();
+/// Encodes bind opcodes after `buf`'s, ending the stream.
+pub(crate) fn encode(ops: Vec<Op>, mut buf: Vec<u8>) -> Vec<u8> {
     for op in ops {
         match op {
             Op::Dylib(ord) if ord <= 0 => {
@@ -134,14 +139,14 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
 
     buf.push(BIND_OPCODE_DONE);
-    while buf.len() % 8 != 0 {
+    while !buf.len().is_multiple_of(8) {
         buf.push(0);
     }
     buf
 }
 
 /// A bind opcode before encoding.
-enum Op {
+pub(crate) enum Op {
     Dylib(i32),
     Symbol(&'static str, u8),
     Type,
@@ -156,11 +161,14 @@ enum Op {
 /// The opcodes binding the sorted `binds`, each piece of the bind
 /// machine's state set only when it changes, as ld-prime writes them:
 /// the address moves by ADD_ADDR_ULEB within a segment, backwards too,
-/// and by SET_SEGMENT_AND_OFFSET_ULEB into another one.
-fn bind_ops<E: Target>(
+/// and by SET_SEGMENT_AND_OFFSET_ULEB into another one. `ordinal` is the
+/// library each symbol binds to, if the stream names one, and `flags`
+/// the flags its name goes with.
+pub(crate) fn bind_ops<E: Target>(
     ctx: &Context<E>,
     binds: &[(u64, crate::symbol::SymbolId, i64)],
-    ordinal: impl Fn(crate::symbol::SymbolId) -> i32,
+    ordinal: impl Fn(crate::symbol::SymbolId) -> Option<i32>,
+    flags: impl Fn(crate::symbol::SymbolId) -> u8,
 ) -> Vec<Op> {
     let mut ops = Vec::new();
     let mut cur_ordinal = None;
@@ -170,12 +178,13 @@ fn bind_ops<E: Target>(
     let mut cur_addend = 0;
     for &(addr, id, addend) in binds {
         let sym = &ctx.symbols[id];
-        let ord = ordinal(id);
-        if cur_ordinal != Some(ord) {
+        if let Some(ord) = ordinal(id)
+            && cur_ordinal != Some(ord)
+        {
             ops.push(Op::Dylib(ord));
             cur_ordinal = Some(ord);
         }
-        let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
+        let flags = flags(id);
         if cur_symbol != Some((id, flags)) {
             ops.push(Op::Symbol(sym.name(), flags));
             if cur_symbol.is_none() {
@@ -206,7 +215,7 @@ fn bind_ops<E: Target>(
 /// address step becomes one opcode, and a run of those with one step
 /// becomes DO_BIND_ULEB_TIMES_SKIPPING_ULEB. (Encoding then writes a
 /// small, pointer-aligned step as DO_BIND_ADD_ADDR_IMM_SCALED.)
-fn compress(ops: Vec<Op>) -> Vec<Op> {
+pub(crate) fn compress(ops: Vec<Op>) -> Vec<Op> {
     let mut paired = Vec::with_capacity(ops.len());
     let mut it = ops.into_iter().peekable();
     while let Some(op) = it.next() {
