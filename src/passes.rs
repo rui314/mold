@@ -63,11 +63,10 @@ pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
 
 /// The directories `dirs` given on the command line, then, unless -Z,
 /// the default ones, each looked up under the syslibroots as ld64 does
-/// (see push_search_dir) - but a default directory missing from the
-/// only SDK is not searched at all, not even outside it. A -syslibroot
-/// of / anywhere, which configure scripts pass, puts none under a root
-/// (ld64 drops the roots only for a last one); the roots still hold the
-/// files the options naming a library's path look up (find_file).
+/// (see push_search_dir). A -syslibroot of / anywhere, which configure
+/// scripts pass, puts none under a root (ld64 drops the roots only for
+/// a last one); the roots still hold the files the options naming a
+/// library's path look up (find_file).
 fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
     let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
         &[]
@@ -76,31 +75,27 @@ fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf>
     };
     let mut out = Vec::new();
     for dir in dirs {
-        push_search_dir(syslibroot, &mut out, dir);
+        push_search_dir(syslibroot, &mut out, dir, true);
     }
     if !args.no_standard_dirs {
         for dir in standard {
-            if let [root] = syslibroot {
-                let dir = under_root(root, Path::new(dir));
-                if dir.is_dir() {
-                    out.push(dir);
-                }
-            } else {
-                push_search_dir(syslibroot, &mut out, Path::new(dir));
-            }
+            push_search_dir(syslibroot, &mut out, Path::new(dir), false);
         }
     }
     out
 }
 
-/// Adds a -L or -F directory to a search path. ld64 looks an absolute
-/// directory up under each syslibroot, keeping those that exist and
-/// falling back to the directory itself; one that climbs with "/.." is
+/// Adds a directory to a search path. ld64 looks an absolute directory
+/// up under each syslibroot, keeping those that have it and falling
+/// back to the directory itself - but a default directory missing from
+/// the only SDK is not searched at all; one that climbs with "/.." is
 /// first resolved (symbolic links too) where it can be. A relative
 /// directory is never put under a syslibroot, which the compiler
 /// driver always passes: `-L.` would otherwise search the SDK's root,
-/// not the working directory.
-fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path) {
+/// not the working directory. What is no directory is left out with a
+/// warning, as is a directory the command line `given` that is not
+/// there; a default directory that is not there goes without a word.
+fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, given: bool) {
     let mut dir = dir.to_path_buf();
     if dir.is_absolute() {
         if memchr::memmem::find(path_bytes(&dir), b"/..").is_some()
@@ -109,12 +104,27 @@ fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path) 
             dir = real;
         }
         let len = dirs.len();
-        dirs.extend(syslibroot.iter().map(|root| under_root(root, &dir)).filter(|p| p.is_dir()));
-        if dirs.len() > len {
+        for root in syslibroot {
+            let path = under_root(root, &dir);
+            match std::fs::metadata(&path) {
+                Ok(md) if md.is_dir() => dirs.push(path),
+                Ok(_) => crate::warn!(
+                    "-syslibroot and combined search path '{}' is not a directory",
+                    path.display()
+                ),
+                Err(_) => {}
+            }
+        }
+        if dirs.len() > len || (!given && syslibroot.len() == 1) {
             return;
         }
     }
-    dirs.push(dir);
+    match std::fs::metadata(&dir) {
+        Ok(md) if md.is_dir() => dirs.push(dir),
+        Ok(_) => crate::warn!("search path '{}' is not a directory", dir.display()),
+        Err(_) if given => crate::warn!("search path '{}' not found", dir.display()),
+        Err(_) => {}
+    }
 }
 
 /// An absolute path looked up under a syslibroot, as ld-prime joins
