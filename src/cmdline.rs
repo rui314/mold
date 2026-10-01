@@ -47,6 +47,9 @@ pub fn print_version_details() {
 pub enum InputArg {
     /// A file path.
     File(PathBuf),
+    /// A file path a -filelist gives, which ld-prime takes as it is,
+    /// an archive's too (see passes::find_input).
+    Listed(PathBuf),
     /// A library option: what it makes of the library, and how it
     /// names it.
     Library(LibraryKind, LibraryName),
@@ -2158,7 +2161,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
             b"-filelist" => {
                 let (list, files) = read_filelist(next_arg(&mut i, name));
-                args.inputs.extend(files.into_iter().map(InputArg::File));
+                args.inputs.extend(files.into_iter().map(InputArg::Listed));
                 args.filelists.push(list);
             }
             b"-F" => args.framework_paths.push(path(next_arg(&mut i, name))),
@@ -4227,7 +4230,7 @@ fn resolve_lto_library(mut paths: Vec<PathBuf>) -> Option<PathBuf> {
 /// don't count, and without such an object there is no target.
 fn detect_target(args: &Args) -> &'static str {
     for input in &args.inputs {
-        let InputArg::File(path) = input else { continue };
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
         let Some(mf) = open_for_target(path) else { continue };
         match get_file_type(mf) {
             FileType::Object => {
@@ -4271,7 +4274,7 @@ fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
 fn infer_platform(args: &mut Args) {
     let mut bitcode = None;
     for input in &args.inputs {
-        let InputArg::File(path) = input else { continue };
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
         let Some(mf) = open_for_target(path) else { continue };
         match get_file_type(mf) {
             FileType::Object => {

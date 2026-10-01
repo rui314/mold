@@ -57,3 +57,26 @@ for opt in -weak_library -needed_library -reexport_library -upward_library -lazy
   not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,$opt,$t/lib2/libqux.dylib 2> $t/log
   grep -q "library '$t/lib2/libqux.dylib' not found" $t/log
 done
+
+# A path of an archive (one ending in .a) on the command line is a
+# library's to ld-prime: an absolute one is looked up under the
+# syslibroot first, and one missing is a library not found. Any other
+# path is the file as it is, as is an archive's a -filelist gives.
+abs=$(cd $t && pwd)
+mkdir -p $t/arc $t/root$abs/arc
+echo 'int which(void) { return 1; }' | $CC -o $t/arc/one.o -c -xc -
+echo 'int which(void) { return 2; }' | $CC -o $t/arc/two.o -c -xc -
+rm -f $t/arc/libw.a $t/root$abs/arc/libw.a
+ar rcs $t/arc/libw.a $t/arc/one.o
+ar rcs $t/root$abs/arc/libw.a $t/arc/two.o
+cat <<EOF2 | $CC -o $t/main.o -c -xc -
+int which(void);
+int main() { return which(); }
+EOF2
+$CC --ld-path=$mold -o $t/exe $t/main.o $abs/arc/libw.a -Wl,-syslibroot,$t/root
+$t/exe || [ $? = 2 ]
+echo $abs/arc/libw.a > $t/arc/list
+$CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-filelist,$t/arc/list -Wl,-syslibroot,$t/root
+$t/exe || [ $? = 1 ]
+not $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,$t/arc/libnone.a 2> $t/log
+grep -q "library '$t/arc/libnone.a' not found" $t/log

@@ -970,7 +970,7 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
             InputArg::Library(_, LibraryName::Framework(_)) => continue,
             InputArg::Library(kind, name) => (kind.option(name), name.as_os_str()),
             // Objects, which are many, go without a string.
-            InputArg::File(path) => {
+            InputArg::File(path) | InputArg::Listed(path) => {
                 if !seen_files.insert(path)
                     && MappedFile::open(path)
                         .is_some_and(|mf| get_file_type(mf) == FileType::Archive)
@@ -1190,17 +1190,22 @@ pub fn unreadable_file(path: &Path, e: &std::io::Error) -> String {
 }
 
 /// Finds the file each input names: None for a library or framework
-/// not found, or a file a library option, -force_load or -bundle_loader
-/// names that isn't there.
+/// not found, or a file a library option, -force_load, -bundle_loader
+/// or a path of an archive (see find_input) names that isn't there.
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
     inputs.iter().map(|arg| find_input(ctx, arg)).collect()
 }
 
-/// Finds the file an input names (see find_inputs).
+/// Finds the file an input names (see find_inputs). ld-prime takes a
+/// path of an archive on the command line - one its name ends in .a -
+/// for a library's: an absolute one is looked for under each
+/// -syslibroot first (see find_file), and one missing is a library not
+/// found. Any other path, and any a -filelist gives, is the file's.
 fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
     use LibraryKind::*;
     match arg {
-        InputArg::File(path) => Some(path.clone()),
+        InputArg::File(path) if path_bytes(path).ends_with(b".a") => find_file(ctx, path, true),
+        InputArg::File(path) | InputArg::Listed(path) => Some(path.clone()),
         InputArg::Library(Merge, LibraryName::Path(path)) => find_file(ctx, path, false),
         InputArg::BundleLoader(path) | InputArg::Library(_, LibraryName::Path(path)) => {
             find_file(ctx, path, true)
@@ -1324,7 +1329,9 @@ fn library_namings(
             }
             (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
             (None, None) => match arg {
-                InputArg::BundleLoader(path) => fatal!("library '{}' not found", path.display()),
+                InputArg::BundleLoader(path) | InputArg::File(path) => {
+                    fatal!("library '{}' not found", path.display())
+                }
                 _ => None,
             },
             (Some((rc, framework, name)), Some(path)) => {
