@@ -1368,23 +1368,17 @@ fn resolve_delay_init(args: &mut Args) {
 /// same platform, and about firmware replacing macOS, but refuses
 /// macOS (or another platform) replacing firmware once it has read
 /// every option.
-fn set_platform(
-    args: &mut Args,
-    warnings: &mut OptionWarnings,
-    incompatible: &mut Option<(u32, u32)>,
-    platform: u32,
-    minos: u32,
-) {
+fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32) {
     if args.platform == platform && args.platform_minos != minos {
         let (old, new) = (format_version(args.platform_minos), format_version(minos));
         let name = platform_name(platform);
-        warnings.warn(format!(
+        st.warnings.warn(format!(
             "passed two min versions ({old}, {new}) for platform {name}. Using {new}."
         ));
     } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
-        warnings.warn("conflicting -platform_version platform: macOS, using: firmware");
+        st.warnings.warn("conflicting -platform_version platform: macOS, using: firmware");
     } else if args.platform != 0 && args.platform != platform {
-        incompatible.get_or_insert((args.platform, platform));
+        st.incompatible_platforms.get_or_insert((args.platform, platform));
     }
     args.platform = platform;
     args.platform_minos = minos;
@@ -2242,6 +2236,315 @@ fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
     })
 }
 
+/// -platform_version <platform> <min_version> <sdk_version>: ld-prime
+/// takes all three before it reads any.
+fn read_platform_version(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, opt: &str) {
+    let platform = cur.next_text(opt);
+    let minos = cur.next_text(opt);
+    let sdk = cur.next_text(opt);
+    let platform = parse_platform(platform);
+    let minos = parse_version(opt, minos);
+    let sdk = parse_version(opt, sdk);
+    set_platform(args, st, platform, minos);
+    args.platform_sdk = sdk;
+}
+
+/// -macos_version_min <version>, the old pre-LC_BUILD_VERSION way of
+/// stating the deployment target, still emitted by clang for older
+/// -mmacosx-version-min targets. It fixes the platform to macOS; ld64
+/// records the SDK as the same version (the flag carries no separate
+/// SDK). ld-prime notes each use of the old spelling,
+/// -macosx_version_min, and reports on the option as the new.
+fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, name: &str) {
+    if name == "-macosx_version_min" {
+        st.warnings.notice("-macosx_version_min has been renamed to -macos_version_min");
+    }
+    let opt = "-macos_version_min";
+    let minos = parse_version(opt, cur.next_text(opt));
+    set_platform(args, st, PLATFORM_MACOS, minos);
+    args.platform_sdk = minos;
+}
+
+/// -ios_version_min and -maccatalyst_version_min, which ld-prime still
+/// takes, under their old names too, as it does -macosx_version_min.
+/// mold links for neither, as -platform_version ios says.
+fn read_other_version_min(cur: &mut ArgCursor, st: &mut ParseState, name: &str) -> ! {
+    let (opt, platform) = match name {
+        "-ios_version_min" | "-iphoneos_version_min" => ("-ios_version_min", PLATFORM_IOS),
+        _ => ("-maccatalyst_version_min", PLATFORM_MACCATALYST),
+    };
+    if name != opt {
+        st.warnings.notice(format!("{name} has been renamed to {opt}"));
+    }
+    parse_version(opt, cur.next_text(opt));
+    fatal!("unsupported platform: {}", platform_name(platform));
+}
+
+/// -bundle_loader <executable>: the last one counts; ld-prime reads no
+/// other.
+fn read_bundle_loader(
+    cur: &mut ArgCursor,
+    args: &mut Args,
+    warnings: &mut OptionWarnings,
+    opt: &str,
+) {
+    let loader = |arg: &InputArg| matches!(arg, InputArg::BundleLoader(_));
+    if let Some(pos) = args.inputs.iter().position(loader)
+        && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
+    {
+        let old = old.display();
+        warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
+    }
+    args.inputs.push(InputArg::BundleLoader(cur.next_path(opt)))
+}
+
+/// -dylib_file <install_name>:<path>, which ld-prime deprecates, once,
+/// as it reads it.
+fn add_dylib_file(args: &mut Args, warnings: &mut OptionWarnings, arg: &[u8]) {
+    let Some(colon) = memchr::memchr(b':', arg) else {
+        fatal!("-dylib_file malformed <path:path>");
+    };
+    if args.dylib_files.is_empty() {
+        warnings.warn(
+            "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found",
+        );
+    }
+    let file = PathBuf::from(os_str(&arg[colon + 1..]));
+    args.dylib_files.push((arg[..colon].to_vec(), file));
+}
+
+/// -segprot <segment> <max-prot> <init-prot>.
+fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState) {
+    // ld-prime takes a missing argument for an empty one.
+    let mut arg = || cur.advance().map_or(&b""[..], |arg| arg.as_bytes());
+    let (seg, max, init) = (arg(), arg(), arg());
+    if seg.is_empty() || max.is_empty() || init.is_empty() {
+        fatal!("-segprot missing <seg> <max-prot> <init-prot>");
+    }
+    let seg = seg.to_vec();
+    // __LINKEDIT, which dyld reads, keeps its own.
+    if seg == b"__LINKEDIT" {
+        st.warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
+    } else {
+        let max = parse_prot(max, &mut st.warnings);
+        let init = parse_prot(init, &mut st.warnings);
+        st.segprots.push((seg, max, init));
+    }
+}
+
+/// -segment_order <segment>:<segment>..., which ld-prime refuses after
+/// one that names any segment.
+fn read_segment_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
+    if !args.segment_order.is_empty() {
+        fatal!("-segment_order used more than once");
+    }
+    args.segment_order = cur
+        .next_arg(opt)
+        .as_bytes()
+        .split(|&c| c == b':')
+        .filter(|s| !s.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect();
+}
+
+/// -seg_page_size <segment> <size>.
+fn read_seg_page_size(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
+    let (Some(seg), Some(size)) = (cur.advance(), cur.advance()) else {
+        fatal!("-seg_page_size needs <segname> <size>");
+    };
+    if seg.is_empty() || size.is_empty() {
+        fatal!("-seg_page_size needs <segname> <size>");
+    }
+    let size = parse_hex(opt, text(opt, size));
+    if size > u32::MAX as u64 {
+        fatal!("-seg_page_size {size}: size too big");
+    }
+    st.seg_page_sizes.push((seg.as_bytes().to_vec(), size));
+}
+
+/// -section_order <segment> <section>:<section>..., once per segment.
+fn read_section_order(cur: &mut ArgCursor, args: &mut Args) {
+    let (Some(seg), Some(list)) = (cur.advance(), cur.advance()) else {
+        fatal!("-section_order needs <segname> <section-list>");
+    };
+    if seg.is_empty() || list.is_empty() {
+        fatal!("-section_order needs <segname> <section-list>");
+    }
+    let seg = seg.as_bytes().to_vec();
+    let list: Vec<Vec<u8>> = (list.as_bytes().split(|&c| c == b':'))
+        .filter(|s| !s.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect();
+    if list.is_empty() {
+        fatal!("-section_order should specifify at least one section");
+    }
+    if args.section_order.iter().any(|(s, _)| *s == seg) {
+        fatal!("-section_order {} used more than once", raw(&seg));
+    }
+    args.section_order.push((seg, list));
+}
+
+/// -sectcreate <segment> <section> <file>.
+fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWarnings, opt: &str) {
+    let seg = cur.next_arg(opt).as_bytes();
+    let seg = sectcreate_name("segment", seg, warnings);
+    let sect = cur.next_arg(opt).as_bytes();
+    let sect = sectcreate_name("section", sect, warnings);
+    let file = cur.next_path(opt);
+    args.sectcreate.push(SectCreate {
+        segname: seg,
+        sectname: sect,
+        path: Some(file),
+        position: args.inputs.len(),
+    });
+}
+
+/// -add_empty_section <segment> <section>.
+fn read_add_empty_section(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
+    let seg = section_name(cur.next_arg(opt).as_bytes());
+    let sect = section_name(cur.next_arg(opt).as_bytes());
+    args.sectcreate.push(SectCreate {
+        segname: seg,
+        sectname: sect,
+        path: None,
+        position: args.inputs.len(),
+    });
+}
+
+/// -sectalign <segment> <section> <align>. ld64 takes the largest power
+/// of two that divides the alignment (1 for 0), and the first
+/// -sectalign given for a section.
+fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWarnings, opt: &str) {
+    let seg = cur.next_bytes(opt);
+    let sect = cur.next_bytes(opt);
+    let align = parse_hex(opt, cur.next_text(opt));
+    if align > u32::MAX as u64 {
+        fatal!("-sectalign {align}: alignment too big");
+    }
+    let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
+    if !align.is_power_of_two() {
+        warnings.warn(format_args!(
+            "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
+            raw(&seg),
+            raw(&sect),
+            1u64 << p2align
+        ));
+    }
+    if !args.sectalign.iter().any(|(s1, s2, _)| *s1 == seg && *s2 == sect) {
+        args.sectalign.push((seg, sect, p2align));
+    }
+}
+
+/// -max_default_common_align's alignment, as a power of two: a
+/// hexadecimal power of two up to 0x8000. ld-prime takes 0 for 1 and
+/// anything else for the power of two below it, with a warning.
+fn parse_common_align(arg: &str, warnings: &mut OptionWarnings) -> u8 {
+    let Some(align) = hex_number(arg) else {
+        fatal!("-max_default_common_align must specify an integer size");
+    };
+    if align > 0x8000 {
+        fatal!(
+            "argument for -max_default_common_align ({align:#x}) must be less than or equal to 0x8000"
+        );
+    }
+    if align == 0 {
+        warnings.warn("zero is not a valid -max_default_common_align");
+    } else if !align.is_power_of_two() {
+        warnings.warn(format!(
+            "alignment for -max_default_common_align is not a power of two, using {:#x}",
+            1u64 << align.ilog2()
+        ));
+    }
+    align.max(1).ilog2() as u8
+}
+
+/// Reads an -alias_list file: an existing symbol's name and its alias's
+/// on each line, '#' starting a comment. ld64 links on without the
+/// aliases of a file it can't read, warning in the words it uses for
+/// an order file.
+fn read_alias_list(
+    list: &Path,
+    aliases: &mut Vec<(String, String)>,
+    warnings: &mut OptionWarnings,
+) {
+    let contents = match std::fs::read_to_string(list) {
+        Ok(contents) => contents,
+        Err(e) => {
+            let errno = crate::error::errno_text(&e);
+            warnings.warn(format!("order file '{}' could not be opened, {errno}", list.display()));
+            String::new()
+        }
+    };
+    for line in contents.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut it = line.split_whitespace();
+        match (it.next(), it.next()) {
+            (Some(existing), Some(new)) => aliases.push((existing.to_string(), new.to_string())),
+            _ => fatal!("malformed -alias_list line: {line}"),
+        }
+    }
+}
+
+/// An option no other arm of parse_args names: one with its argument
+/// joined to its name (-lfoo, -weak-lfoo, -L<dir>, -F<dir>),
+/// -debug_snapshot with its mode, an optimization level, or one ld-prime
+/// doesn't know, which it reports with the others once it has read them
+/// all (see finish_options).
+fn read_joined_option(
+    cur: &mut ArgCursor,
+    args: &mut Args,
+    st: &mut ParseState,
+    raw: &[u8],
+    name: &str,
+) {
+    if let Some(&(prefix, kind)) =
+        JOINED_LIBRARY_OPTIONS.iter().find(|(prefix, _)| raw.starts_with(prefix.as_bytes()))
+    {
+        // An option with no name joined to it takes the next argument
+        // for one, as ld-prime does: -weak-l foo is -weak-lfoo.
+        let lib = match &raw[prefix.len()..] {
+            [] => cur.next_arg(prefix),
+            lib => os_str(lib),
+        };
+        let lib = LibraryName::Lib(lib.to_owned());
+        args.inputs.push(InputArg::Library(kind, lib));
+    } else if let Some(dir) = raw.strip_prefix(b"-L") {
+        args.library_paths.push(PathBuf::from(os_str(dir)));
+    } else if let Some(dir) = raw.strip_prefix(b"-F") {
+        args.framework_paths.push(PathBuf::from(os_str(dir)));
+    } else if let Some(mode) = raw.strip_prefix(b"-debug_snapshot") {
+        // A link snapshot (see -snapshot_dir) in a mode after the name,
+        // or after a '='.
+        let mode = mode.strip_prefix(b"=").unwrap_or(mode);
+        if !matches!(mode, b"" | b"minimal") {
+            fatal!("unknown debug snapshot mode: {}", display(mode));
+        }
+    } else if raw.starts_with(b"-O") {
+        // An optimization level, which clang passes on from its own
+        // command line (-O2, -Ofast, -Og, ...). ld-prime takes -O
+        // followed by anything; it only switches function
+        // deduplication, which here is on unless -no_deduplicate,
+        // whatever the level.
+    } else {
+        st.unknown.push_str(name);
+        st.unknown.push(' ');
+    }
+}
+
+/// A file the command line names to link. ld-prime takes a path to an
+/// archive on the command line, though not in a -filelist, for a
+/// library option's (see LibraryKind::Plain).
+fn input_file(path: &OsStr) -> InputArg {
+    if path.as_bytes().ends_with(b".a") {
+        InputArg::Library(LibraryKind::Plain, LibraryName::Path(PathBuf::from(path)))
+    } else {
+        InputArg::File(PathBuf::from(path))
+    }
+}
+
 /// Parses all options. `cmdline` includes the program name.
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
@@ -2285,23 +2588,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.entry = cur.next_text(name).to_string();
                 st.explicit_entry = true;
             }
-            // ld-prime takes all three before it reads any.
-            b"-platform_version" => {
-                let platform = cur.next_text(name);
-                let minos = cur.next_text(name);
-                let sdk = cur.next_text(name);
-                let platform = parse_platform(platform);
-                let minos = parse_version(name, minos);
-                let sdk = parse_version(name, sdk);
-                set_platform(
-                    &mut args,
-                    &mut st.warnings,
-                    &mut st.incompatible_platforms,
-                    platform,
-                    minos,
-                );
-                args.platform_sdk = sdk;
-            }
+            b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
             b"-syslibroot" => args.syslibroot.push(cur.next_path(name)),
             b"-L" => args.library_paths.push(cur.next_path(name)),
             raw if let Some((kind, naming)) = library_option(raw) => {
@@ -2325,17 +2612,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-bundle" => st.kind = OutputKind::Bundle,
             b"-kext" => st.kind = OutputKind::Kext,
             b"-dylinker" => st.kind = OutputKind::Dylinker,
-            // The last one counts; ld-prime reads no other.
-            b"-bundle_loader" => {
-                let loader = |arg: &InputArg| matches!(arg, InputArg::BundleLoader(_));
-                if let Some(pos) = args.inputs.iter().position(loader)
-                    && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
-                {
-                    let old = old.display();
-                    st.warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
-                }
-                args.inputs.push(InputArg::BundleLoader(cur.next_path(name)))
-            }
+            b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, &mut st.warnings, name),
             b"-final_output" => args.final_output = Some(cur.next_bytes(name)),
             b"-keep_private_externs" => args.keep_private_externs = true,
             // ld-prime only warns about a missing path, or an empty
@@ -2436,48 +2713,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let addr = parse_hex(name, cur.next_text(name));
                 args.segaddrs.push((seg, addr));
             }
-            b"-segprot" => {
-                // ld-prime takes a missing argument for an empty one.
-                let mut arg = || cur.advance().map_or(&b""[..], |arg| arg.as_bytes());
-                let (seg, max, init) = (arg(), arg(), arg());
-                if seg.is_empty() || max.is_empty() || init.is_empty() {
-                    fatal!("-segprot missing <seg> <max-prot> <init-prot>");
-                }
-                let seg = seg.to_vec();
-                // __LINKEDIT, which dyld reads, keeps its own.
-                if seg == b"__LINKEDIT" {
-                    st.warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
-                } else {
-                    let max = parse_prot(max, &mut st.warnings);
-                    let init = parse_prot(init, &mut st.warnings);
-                    st.segprots.push((seg, max, init));
-                }
-            }
-            b"-segment_order" => {
-                if !args.segment_order.is_empty() {
-                    fatal!("-segment_order used more than once");
-                }
-                args.segment_order = cur
-                    .next_arg(name)
-                    .as_bytes()
-                    .split(|&c| c == b':')
-                    .filter(|s| !s.is_empty())
-                    .map(<[u8]>::to_vec)
-                    .collect();
-            }
-            b"-seg_page_size" => {
-                let (Some(seg), Some(size)) = (cur.advance(), cur.advance()) else {
-                    fatal!("-seg_page_size needs <segname> <size>");
-                };
-                if seg.is_empty() || size.is_empty() {
-                    fatal!("-seg_page_size needs <segname> <size>");
-                }
-                let size = parse_hex(name, text(name, size));
-                if size > u32::MAX as u64 {
-                    fatal!("-seg_page_size {size}: size too big");
-                }
-                st.seg_page_sizes.push((seg.as_bytes().to_vec(), size));
-            }
+            b"-segprot" => read_segprot(&mut cur, &mut st),
+            b"-segment_order" => read_segment_order(&mut cur, &mut args, name),
+            b"-seg_page_size" => read_seg_page_size(&mut cur, &mut st, name),
             b"-segalign" => {
                 let align = parse_hex(name, cur.next_text(name));
                 if align > u32::MAX as u64 {
@@ -2487,26 +2725,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
             b"-no_warn_reduced_section_align" => args.warn_reduced_section_align = false,
-            b"-section_order" => {
-                let (Some(seg), Some(list)) = (cur.advance(), cur.advance()) else {
-                    fatal!("-section_order needs <segname> <section-list>");
-                };
-                if seg.is_empty() || list.is_empty() {
-                    fatal!("-section_order needs <segname> <section-list>");
-                }
-                let seg = seg.as_bytes().to_vec();
-                let list: Vec<Vec<u8>> = (list.as_bytes().split(|&c| c == b':'))
-                    .filter(|s| !s.is_empty())
-                    .map(<[u8]>::to_vec)
-                    .collect();
-                if list.is_empty() {
-                    fatal!("-section_order should specifify at least one section");
-                }
-                if args.section_order.iter().any(|(s, _)| *s == seg) {
-                    fatal!("-section_order {} used more than once", raw(&seg));
-                }
-                args.section_order.push((seg, list));
-            }
+            b"-section_order" => read_section_order(&mut cur, &mut args),
             b"-rename_section" => {
                 let usage = "<from-segment> <from-section> <to-segment> <to-section>";
                 let old_seg = cur.rename_operand(name, usage).to_vec();
@@ -2546,29 +2765,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     addr.unwrap_or_else(|| fatal!("-stack_addr must specify an integer address")),
                 );
             }
-            b"-sectcreate" => {
-                let seg = cur.next_arg(name).as_bytes();
-                let seg = sectcreate_name("segment", seg, &mut st.warnings);
-                let sect = cur.next_arg(name).as_bytes();
-                let sect = sectcreate_name("section", sect, &mut st.warnings);
-                let file = cur.next_path(name);
-                args.sectcreate.push(SectCreate {
-                    segname: seg,
-                    sectname: sect,
-                    path: Some(file),
-                    position: args.inputs.len(),
-                });
-            }
-            b"-add_empty_section" => {
-                let seg = section_name(cur.next_arg(name).as_bytes());
-                let sect = section_name(cur.next_arg(name).as_bytes());
-                args.sectcreate.push(SectCreate {
-                    segname: seg,
-                    sectname: sect,
-                    path: None,
-                    position: args.inputs.len(),
-                });
-            }
+            b"-sectcreate" => read_sectcreate(&mut cur, &mut args, &mut st.warnings, name),
+            b"-add_empty_section" => read_add_empty_section(&mut cur, &mut args, name),
             b"-x" => args.strip_locals = true,
             b"-Z" => args.no_standard_dirs = true,
             b"-r" => st.kind = OutputKind::Object,
@@ -2697,19 +2895,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-search_dylibs_first" => args.search_dylibs_first = true,
             b"-search_in_sparse_frameworks" => args.search_in_sparse_frameworks = true,
             b"-umbrella" => args.umbrella = Some(cur.next_bytes(name)),
-            // ld-prime deprecates the option, once, as it reads it.
             b"-dylib_file" => {
-                let arg = cur.next_arg(name).as_bytes();
-                let Some(colon) = memchr::memchr(b':', arg) else {
-                    fatal!("-dylib_file malformed <path:path>");
-                };
-                if args.dylib_files.is_empty() {
-                    st.warnings.warn(
-                        "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found",
-                    );
-                }
-                let file = PathBuf::from(os_str(&arg[colon + 1..]));
-                args.dylib_files.push((arg[..colon].to_vec(), file));
+                add_dylib_file(&mut args, &mut st.warnings, cur.next_arg(name).as_bytes());
             }
             // ld-prime takes this one without its argument.
             b"-oso_prefix" => {
@@ -2785,62 +2972,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let names = cur.next_symbol_list(name);
                 add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names, 0);
             }
-            // ld64 takes the largest power of two that divides the
-            // alignment (1 for 0), and the first -sectalign given for a
-            // section.
-            b"-sectalign" => {
-                let seg = cur.next_bytes(name);
-                let sect = cur.next_bytes(name);
-                let align = parse_hex(name, cur.next_text(name));
-                if align > u32::MAX as u64 {
-                    fatal!("-sectalign {align}: alignment too big");
-                }
-                let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
-                if !align.is_power_of_two() {
-                    st.warnings.warn(format_args!(
-                        "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
-                        raw(&seg),
-                        raw(&sect),
-                        1u64 << p2align
-                    ));
-                }
-                if !args.sectalign.iter().any(|(s1, s2, _)| *s1 == seg && *s2 == sect) {
-                    args.sectalign.push((seg, sect, p2align));
-                }
-            }
+            b"-sectalign" => read_sectalign(&mut cur, &mut args, &mut st.warnings, name),
             b"-alias" => {
                 let existing = cur.next_text(name).to_string();
                 let new = cur.next_text(name).to_string();
                 args.aliases.push((existing, new));
             }
             b"-alias_list" => {
-                let list = cur.next_path(name);
-                // ld64 links on without the aliases, warning in the
-                // words it uses for an order file.
-                let contents = match std::fs::read_to_string(&list) {
-                    Ok(contents) => contents,
-                    Err(e) => {
-                        let errno = crate::error::errno_text(&e);
-                        st.warnings.warn(format!(
-                            "order file '{}' could not be opened, {errno}",
-                            list.display()
-                        ));
-                        String::new()
-                    }
-                };
-                for line in contents.lines() {
-                    let line = line.split('#').next().unwrap_or("").trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let mut it = line.split_whitespace();
-                    match (it.next(), it.next()) {
-                        (Some(existing), Some(new)) => {
-                            args.aliases.push((existing.to_string(), new.to_string()))
-                        }
-                        _ => fatal!("malformed -alias_list line: {line}"),
-                    }
-                }
+                read_alias_list(&cur.next_path(name), &mut args.aliases, &mut st.warnings);
             }
             // ld64 took what @executable_path stands for in a dylib's
             // re-exports from this. ld-prime expands none, and ignores
@@ -2986,28 +3125,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
             }
             b"-warn_commons" => args.warn_commons = true,
-            // A hexadecimal power of two up to 0x8000; ld-prime takes 0
-            // for 1 and anything else for the power of two below it,
-            // with a warning.
             b"-max_default_common_align" => {
-                let arg = cur.next_text(name);
-                let Some(align) = hex_number(arg) else {
-                    fatal!("-max_default_common_align must specify an integer size");
-                };
-                if align > 0x8000 {
-                    fatal!(
-                        "argument for -max_default_common_align ({align:#x}) must be less than or equal to 0x8000"
-                    );
-                }
-                if align == 0 {
-                    st.warnings.warn("zero is not a valid -max_default_common_align");
-                } else if !align.is_power_of_two() {
-                    st.warnings.warn(format!(
-                        "alignment for -max_default_common_align is not a power of two, using {:#x}",
-                        1u64 << align.ilog2()
-                    ));
-                }
-                st.max_default_common_align = Some(align.max(1).ilog2() as u8);
+                let align = parse_common_align(cur.next_text(name), &mut st.warnings);
+                st.max_default_common_align = Some(align);
             }
             b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
                 let names = cur.next_symbol_list(name);
@@ -3071,48 +3191,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.dyld_envs.push(arg.to_vec());
             }
 
-            // The old pre-LC_BUILD_VERSION way of stating the
-            // deployment target, still emitted by clang for older
-            // -mmacosx-version-min targets. It fixes the platform to
-            // macOS; ld64 records the SDK as the same version (the
-            // flag carries no separate SDK). ld-prime notes each use of
-            // the old spelling, and reports on the option as the new.
             b"-macos_version_min" | b"-macosx_version_min" => {
-                if name == "-macosx_version_min" {
-                    st.warnings
-                        .notice("-macosx_version_min has been renamed to -macos_version_min");
-                }
-                let opt = "-macos_version_min";
-                let minos = parse_version(opt, cur.next_text(opt));
-                set_platform(
-                    &mut args,
-                    &mut st.warnings,
-                    &mut st.incompatible_platforms,
-                    PLATFORM_MACOS,
-                    minos,
-                );
-                args.platform_sdk = minos;
+                read_macos_version_min(&mut cur, &mut args, &mut st, name)
             }
-            // ld-prime still takes iOS's and Mac Catalyst's, under their
-            // old names too, as it does -macosx_version_min. mold links
-            // for neither, as -platform_version ios says.
             b"-ios_version_min"
             | b"-iphoneos_version_min"
             | b"-maccatalyst_version_min"
             | b"-iosmac_version_min"
-            | b"-uikitformac_version_min" => {
-                let (opt, platform) = match name {
-                    "-ios_version_min" | "-iphoneos_version_min" => {
-                        ("-ios_version_min", PLATFORM_IOS)
-                    }
-                    _ => ("-maccatalyst_version_min", PLATFORM_MACCATALYST),
-                };
-                if name != opt {
-                    st.warnings.notice(format!("{name} has been renamed to {opt}"));
-                }
-                parse_version(opt, cur.next_text(opt));
-                fatal!("unsupported platform: {}", platform_name(platform));
-            }
+            | b"-uikitformac_version_min" => read_other_version_min(&mut cur, &mut st, name),
 
             // This linker's output is always deterministic, but ld-prime
             // writes no modification times in the stabs then either.
@@ -3213,50 +3299,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // build system's empty variable, or '' in a response file.
             b"" => {}
 
-            raw => {
-                if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
-                    .iter()
-                    .find(|(prefix, _)| raw.starts_with(prefix.as_bytes()))
-                {
-                    // An option with no name joined to it takes the
-                    // next argument for one, as ld-prime does: -weak-l
-                    // foo is -weak-lfoo.
-                    let lib = match &raw[prefix.len()..] {
-                        [] => cur.next_arg(prefix),
-                        lib => os_str(lib),
-                    };
-                    let lib = LibraryName::Lib(lib.to_owned());
-                    args.inputs.push(InputArg::Library(kind, lib));
-                } else if let Some(dir) = raw.strip_prefix(b"-L") {
-                    args.library_paths.push(PathBuf::from(os_str(dir)));
-                } else if let Some(dir) = raw.strip_prefix(b"-F") {
-                    args.framework_paths.push(PathBuf::from(os_str(dir)));
-                } else if let Some(mode) = raw.strip_prefix(b"-debug_snapshot") {
-                    // A link snapshot (see -snapshot_dir) in a mode
-                    // after the name, or after a '='.
-                    let mode = mode.strip_prefix(b"=").unwrap_or(mode);
-                    if !matches!(mode, b"" | b"minimal") {
-                        fatal!("unknown debug snapshot mode: {}", display(mode));
-                    }
-                } else if raw.starts_with(b"-O") {
-                    // An optimization level, which clang passes on from
-                    // its own command line (-O2, -Ofast, -Og, ...).
-                    // ld-prime takes -O followed by anything; it only
-                    // switches function deduplication, which here is
-                    // on unless -no_deduplicate, whatever the level.
-                } else if raw.starts_with(b"-") {
-                    st.unknown.push_str(name);
-                    st.unknown.push(' ');
-                } else if raw.ends_with(b".a") {
-                    // ld-prime takes a path to an archive on the
-                    // command line, though not in a -filelist, for a
-                    // library option's (see LibraryKind::Plain).
-                    let lib = LibraryName::Path(PathBuf::from(opt));
-                    args.inputs.push(InputArg::Library(LibraryKind::Plain, lib));
-                } else {
-                    args.inputs.push(InputArg::File(PathBuf::from(opt)));
-                }
+            raw if raw.starts_with(b"-") => {
+                read_joined_option(&mut cur, &mut args, &mut st, raw, name)
             }
+            _ => args.inputs.push(input_file(opt)),
         }
     }
 
