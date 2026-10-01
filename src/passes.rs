@@ -5524,9 +5524,43 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             ctx.atom_ref(id as usize, rel.offset)
         ));
     }
-    if !chunks::chained_fixups::report_unaligned_chain_pointer(ctx) && osec.is_some() {
+    if report_32bit_pointer(ctx, osec.is_some())
+        || chunks::chained_fixups::report_unaligned_chain_pointer(ctx)
+    {
+        return;
+    }
+    if osec.is_some() {
         error!("Found illegal text-relocations");
     }
+}
+
+/// Fails the link on a 32-bit pointer of an x86-64 image dyld loads,
+/// which it could neither slide nor bind, as ld-prime does once the
+/// text relocations are listed. With chained fixups, it finds it as it
+/// builds the chains, section by section as it does unaligned pointers
+/// (see chunks::chained_fixups::check_pointer_alignment), and the error
+/// takes the place of the text relocations': it reports the last
+/// section's, the first atom's, from its last pointer. Otherwise only an
+/// image without text relocations gets it, of the first pointer.
+/// Returns whether it failed the link.
+fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool {
+    let found = std::mem::take(&mut *ctx.pointers32.lock().unwrap());
+    let addr = |&(isec, off): &(u32, u32)| ctx.isec_addr(isec as usize) + off as u64;
+    let pick = if ctx.use_chained_fixups() {
+        let osec = |isec: u32| ctx.isecs[isec as usize].output_section();
+        let Some(&(last, _)) = found.iter().max_by_key(|p| addr(p)) else { return false };
+        let in_sect = found.iter().filter(|&&(isec, _)| osec(isec) == osec(last));
+        let first =
+            in_sect.clone().map(|&(isec, _)| isec).min_by_key(|&i| ctx.isec_addr(i as usize));
+        in_sect.filter(|&&(isec, _)| Some(isec) == first).max_by_key(|&&(_, off)| off)
+    } else if text_relocs {
+        None
+    } else {
+        found.iter().min_by_key(|p| addr(p))
+    };
+    let Some(&(isec, off)) = pick else { return false };
+    error!("32-bit pointer used in 64-bit code in {}", ctx.atom_ref(isec as usize, off));
+    true
 }
 
 /// Prints the image's segments and sections, in load command order, if

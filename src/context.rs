@@ -227,6 +227,9 @@ pub struct Context<E: Target> {
     /// The text relocations found applying relocations, as (subsection,
     /// relocation index) pairs.
     pub text_relocs: std::sync::Mutex<Vec<(u32, u32)>>,
+    /// The 32-bit pointers an image dyld loads can't have (see
+    /// passes::report_32bit_pointer), as (subsection, offset) pairs.
+    pub pointers32: std::sync::Mutex<Vec<(u32, u32)>>,
     /// Deduplication map for literal elements: (section type, contents)
     /// to the surviving subsection.
     pub literals: std::collections::HashMap<(u32, &'static [u8]), usize>,
@@ -320,6 +323,7 @@ impl<E: Target> Context<E> {
             tls_begin: 0,
             text_reloc_ranges: Vec::new(),
             text_relocs: std::sync::Mutex::new(Vec::new()),
+            pointers32: std::sync::Mutex::new(Vec::new()),
             literals: std::collections::HashMap::new(),
             uuid: std::sync::Mutex::new([0; 16]),
             entry_addr: 0,

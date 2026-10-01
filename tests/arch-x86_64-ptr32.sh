@@ -42,3 +42,40 @@ $mold -arch x86_64 -preload -e _g -o $t/f $t/a.o $t/ext.o
 # Above it (after the default 4 GiB __PAGEZERO) it overflows.
 not $mold -arch x86_64 -static -e _g -o $t/g $t/a.o $t/ext.o 2> $t/log
 grep -qF "fixup error (kind=ptr32) at '_g'+0x8 from a.o, 32-bit pointer oveflow" $t/log
+
+# One where any pointer would be a text relocation ld-prime lists as
+# one. With chained fixups a 32-bit pointer elsewhere then fails the
+# link in place of the text relocations: the last section's (its first
+# atom's last). With classic dyld info the text relocations fail it
+# first, and only without them does a 32-bit pointer, the first.
+cat <<EOF2 | $CC -o $t/h.o -c -xassembler -
+.section __TEXT,__const
+.p2align 3
+.globl _tc
+_tc: .long _ext
+.data
+.globl _d1, _d2
+_d1: .long _ext
+.long _ext
+_d2: .long _ext
+.section __DATA,__foo
+.globl _f1, _f2
+_f1: .long _ext
+.long _ext
+_f2: .long _ext
+.subsections_via_symbols
+EOF2
+echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
+not $CC --ld-path=$mold -o $t/h $t/main.o $t/h.o $t/ext.o 2> $t/log
+grep -q "text-relocation in '_tc' (.*/h.o) to '_ext'" $t/log
+grep -q "32-bit pointer used in 64-bit code in '_f1'+0x4 (.*/h.o)" $t/log
+[ "$(grep -c '32-bit pointer' $t/log)" = 1 ]
+not grep -q 'Found illegal text-relocations' $t/log
+
+not $CC --ld-path=$mold -o $t/h $t/main.o $t/h.o $t/ext.o -Wl,-no_fixup_chains 2> $t/log
+grep -q "text-relocation in '_tc' (.*/h.o) to '_ext'" $t/log
+grep -q 'Found illegal text-relocations' $t/log
+not grep -q '32-bit pointer' $t/log
+
+not $CC --ld-path=$mold -o $t/h $t/main.o $t/a.o $t/ext.o -Wl,-no_fixup_chains 2> $t/log
+grep -q "32-bit pointer used in 64-bit code in '_g'+0x8 (" $t/log

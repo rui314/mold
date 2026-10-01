@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
+use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -12,7 +13,6 @@ use crate::target::{
     BadReloc, RelocError, SplitRef, Target, check_reloc_index, check_reloc_place, has_reloc_form,
     reloc_form,
 };
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -682,14 +682,19 @@ impl Target for X86_64 {
                     // A 32-bit pointer (.long sym) can be neither slid
                     // nor bound, so ld-prime takes one only in an image
                     // no dyld or kmutil loads, where it must fit
-                    // ("oveflow" sic).
+                    // ("oveflow" sic). Elsewhere one where a pointer
+                    // would be a text relocation is one, and any other
+                    // an error (see passes::report_32bit_pointer).
                     let val = s.wrapping_add_signed(a);
-                    if !ctx.args.static_link {
-                        let at = ctx.atom_ref(isec_id, r.offset);
-                        error!("32-bit pointer used in 64-bit code in {at}");
-                    } else if val > u32::MAX as u64 {
-                        let msg = format_args!("32-bit pointer oveflow");
-                        ctx.fixup_error(isec_id, r.offset, "ptr32", msg);
+                    if ctx.args.static_link {
+                        if val > u32::MAX as u64 {
+                            let msg = format_args!("32-bit pointer oveflow");
+                            ctx.fixup_error(isec_id, r.offset, "ptr32", msg);
+                        }
+                    } else if ctx.text_reloc_ranges.iter().any(|range| range.contains(&p)) {
+                        ctx.check_text_reloc(isec_id, rels, i, p);
+                    } else {
+                        ctx.pointers32.lock().unwrap().push((isec_id as u32, r.offset));
                     }
                     write32(loc, val as u32);
                 }
