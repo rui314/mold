@@ -3465,6 +3465,14 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
              LD_RUNPATH_SEARCH_PATHS)"
         );
     }
+    // Nor be found by run path, as a dylib -add_split_seg_info makes
+    // eligible may be.
+    let install_name = args.install_name.as_deref().unwrap_or_default();
+    if args.output_type == MH_DYLIB && install_name.starts_with(b"@rpath") {
+        crate::warn!(
+            "OS dylibs should not use @rpath for -install_name. Use absolute path instead"
+        );
+    }
     if args.objc_stubs_small {
         fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
     }

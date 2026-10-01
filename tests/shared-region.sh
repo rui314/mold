@@ -65,10 +65,14 @@ r1() { otool -l $t/e.dylib | awk -v s=$1 '$1 == "sectname" { n = $2 } $1 == "res
 [ "$(r1 __weak_got)" -lt "$(r1 __got)" ]
 
 # The cache builder binds every symbol, so none may be looked up
-# dynamically; an OS image should need no run paths, and a dylib's
-# static initializers slow down every process.
+# dynamically; an OS image should need no run paths, nor be found by
+# one, and a dylib's static initializers slow down every process.
 not link f.dylib -Wl,-add_split_seg_info -Wl,-U,_nothing 2> $t/log
 grep -q "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U'" $t/log
+link f.dylib -Wl,-add_split_seg_info -Wl,-install_name,@rpath/libf.dylib 2> $t/log
+grep -q 'OS dylibs should not use @rpath for -install_name. Use absolute path instead' $t/log
+link f.dylib -Wl,-install_name,@rpath/libf.dylib 2> $t/log
+not grep -q 'should not use @rpath' $t/log
 
 cat <<EOF | $CXX -o $t/g.o -c -xc++ -
 #include <unistd.h>
