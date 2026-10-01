@@ -542,6 +542,10 @@ pub struct Args {
     /// -order_file: files of symbol names; matching atoms are placed
     /// first in their output sections, in file order.
     pub order_files: Vec<PathBuf>,
+    /// An order file's file:symbol line names a symbol of the object
+    /// LTO compiled by the bitcode file it came from, not the object
+    /// (-use_lto_filenames_in_order_file_matching, the default).
+    pub lto_filenames_in_order_file: bool,
     /// -object_path_lto: keep the LTO-compiled object at this path for
     /// the debugger.
     pub object_path_lto: Option<PathBuf>,
@@ -834,6 +838,7 @@ impl Default for Args {
             oso_prefix: None,
             export_dynamic: false,
             order_files: Vec::new(),
+            lto_filenames_in_order_file: true,
             object_path_lto: None,
             print_dependencies: false,
             why_load: false,
@@ -2705,11 +2710,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     );
                 }
             }
-            // ld-prime has the bitcode's file names stand for the object
-            // LTO makes in order file entries of the form file:symbol,
-            // unless asked not to; mold matches the object's own name.
-            b"-use_lto_filenames_in_order_file_matching"
-            | b"-no_use_lto_filenames_in_order_file_matching" => {}
+            b"-use_lto_filenames_in_order_file_matching" => {
+                args.lto_filenames_in_order_file = true;
+            }
+            b"-no_use_lto_filenames_in_order_file_matching" => {
+                args.lto_filenames_in_order_file = false;
+            }
             // ld-prime loads the routines LTO code may call (memset,
             // __udivdi3 ...) from the libraries before LTO, by default
             // in a -static or -preload image; mold loads none.

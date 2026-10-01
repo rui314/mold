@@ -2050,6 +2050,10 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
     // the whole line; an object qualifier narrows the match to
     // symbols from that file, by leaf name alone as ld-prime compares
     // it: m.o, or lib.a(m.o) for an archive member, but no longer path.
+    // A symbol of the object LTO compiled counts as the bitcode file's
+    // it came from, if that is known (see lto::origins), unless
+    // -no_use_lto_filenames_in_order_file_matching says to take the
+    // object's own name, lto.o.
     const ARCHS: [&str; 6] = ["arm64", "arm64e", "x86_64", "i386", "armv7", "ppc"];
     let mut rank_of: std::collections::HashMap<String, Vec<(Option<String>, u64)>> =
         std::collections::HashMap::new();
@@ -2086,16 +2090,25 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         }
     }
 
+    let origins = match ctx.lto_obj {
+        Some(_) if ctx.args.lto_filenames_in_order_file => crate::lto::origins(&ctx.lto_inputs),
+        _ => hashbrown::HashMap::new(),
+    };
     let mut ranks = vec![u64::MAX; ctx.isecs.len()];
     for sym in &ctx.symbols.syms {
         let Some(FileId::Obj(obj)) = sym.file() else {
             continue;
         };
-        let obj = obj as usize;
+        let mut obj = obj as usize;
         let Some(isec) = sym.input_section().map(|i| i as usize) else { continue };
         let Some(entries) = rank_of.get(sym.name()) else {
             continue;
         };
+        if ctx.lto_obj == Some(obj)
+            && let Some(&Some(origin)) = origins.get(sym.name())
+        {
+            obj = origin;
+        }
         let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
         for (file, r) in entries {
             if file.as_ref().is_none_or(|f| leaf == f.as_bytes()) {
