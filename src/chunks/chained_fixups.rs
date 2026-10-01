@@ -636,12 +636,42 @@ pub fn warn_small_pointer_atom<E: Target>(ctx: &Context<E>, id: u32) {
 /// chains after it has applied the relocations, so a relocation it
 /// can't apply fails the link first.
 pub fn report_bad_page_size<E: Target>(ctx: &Context<E>) {
-    if let Some(seg_idx) = *ctx.chained_fixups.bad_page_size.lock().unwrap() {
+    let Some(seg_idx) = *ctx.chained_fixups.bad_page_size.lock().unwrap() else { return };
+    // In pages over 16 KiB, two fixups of one page may be too far apart
+    // for the 12-bit `next` field, which ld-prime finds first as it
+    // chains them: it names the segment of the first and its offset
+    // there.
+    if let Some((seg, off, dist)) = unchainable_fixups(ctx) {
         crate::layout_error_at!(
             u64::MAX,
-            "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
+            "distance between fixups ({dist}) is not encodable in chain for fixup at {seg}+{off:#x}, "
         );
+        return;
     }
+    crate::layout_error_at!(
+        u64::MAX,
+        "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
+    );
+}
+
+/// The first fixup of the image that the next one of its page is too
+/// far from to chain to: its segment's name, its offset there, and the
+/// distance.
+fn unchainable_fixups<E: Target>(ctx: &Context<E>) -> Option<(&'static str, u64, u64)> {
+    let page_size = chain_page_size(ctx);
+    let fixups = &ctx.chained_fixups.fixups;
+    for seg in &ctx.segments {
+        let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
+        let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
+        let page = |addr: u64| (addr - seg.cmd.vmaddr) / page_size.max(1);
+        for pair in fixups[lo..hi].windows(2) {
+            let (a, b) = (pair[0].0, pair[1].0);
+            if page(a) == page(b) && b - a > MAX_CHAIN_STRIDE {
+                return Some((seg.name, a - seg.cmd.vmaddr, b - a));
+            }
+        }
+    }
+    None
 }
 
 /// Fails the link on the unaligned pointer check_pointer_alignment found

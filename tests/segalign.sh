@@ -38,6 +38,18 @@ if [ $ARCH = arm64 ]; then
   size=$(otool -l $t/exe4 | grep -A8 'segname __LINKEDIT' | awk '$1 == "filesize" { print $2 }')
   grep -q "^    __LINKEDIT .*fileSize=$(printf '0x%08x' $size)$" $t/log
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000,-no_fixup_chains
+  # In a page over 16KB, two fixups may be too far apart to chain, which
+  # ld-prime finds first.
+  cat <<EOF | $CC -o $t/far.o -c -xc -
+int x = 5;
+int *p = &x;
+char gap[20000] = {1};
+int *q = &x;
+int main() { return *p + *q - 10; }
+EOF
+  not $CC --ld-path=$mold -o $t/exe7 $t/far.o -Wl,-segalign,0x8000 2> $t/log
+  grep -q 'distance between fixups (20008) is not encodable in chain for fixup at __DATA+0x8, $' $t/log
+  not grep -q page_size $t/log
 else
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000
   if native_arch; then
