@@ -417,8 +417,8 @@ impl<'a, E: Target> Builder<'a, E> {
         // What is live whatever refers to it: an initializer or a
         // terminator, and what its section says (but a class reference,
         // which ld-prime reads as a pointer to the class whatever its
-        // section's attributes).
-        let classref = matches!(hdr.sectname(), "__objc_classrefs" | "__objc_superrefs");
+        // section's attributes; not so a reference to a superclass).
+        let classref = hdr.sectname() == "__objc_classrefs";
         atom.no_dead_strip |= hdr.flags & S_ATTR_NO_DEAD_STRIP != 0 && !classref
             || matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
         atom.dds_if_refs_live = hdr.flags & S_ATTR_LIVE_SUPPORT != 0;
