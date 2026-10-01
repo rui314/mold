@@ -2101,7 +2101,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     for opt in obsolete {
         crate::warn!("{opt} is obsolete");
     }
-    check_output_kind(&args, pie, data_const, explicit_entry);
+    check_output_kind(target, &args, pie, data_const, explicit_entry);
 
     // A dylib is loaded at an arbitrary address, and a -preload image
     // copied to wherever its segments say; only a main executable
@@ -2193,27 +2193,13 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
 /// optimization hints); it may not look symbols up dynamically, since
 /// the cache builder binds every one to the dylib that exports it; and
 /// ld-prime warns about run paths, which an OS library must not need.
-/// (It lets dyld, which binds nothing, have a flat namespace.)
+/// (A flat namespace it refuses earlier: check_dylib_use.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
-    let is_dylib = args.output_type == MH_DYLIB;
-    args.shared_region = !args.not_for_dyld_shared_cache
-        && !(is_dylib && args.debug_variant)
-        && (args.add_split_seg_info
-            || args.kernel
-            || (args.is_kext() && target.name == "arm64")
-            || args.is_dylinker()
-            || (is_dylib && in_shared_cache_path(args.output_install_name())));
+    args.shared_region = shared_region_eligible(target, args);
     if !args.shared_region {
         return;
     }
     args.ignore_optimization_hints = true;
-    if args.flat_namespace && !args.is_dylinker() {
-        fatal!(
-            "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
-             or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
-             (or linker flag '-not_for_dyld_shared_cache')"
-        );
-    }
     // (A kext looks up every import.)
     if (args.undefined_dynamic_lookup || !args.allowed_undefined.is_empty()) && !args.is_kext() {
         fatal!(
@@ -2228,6 +2214,19 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
              LD_RUNPATH_SEARCH_PATHS)"
         );
     }
+}
+
+/// Whether the image is bound for the shared region: see
+/// resolve_shared_region.
+fn shared_region_eligible(target: &TargetTraits, args: &Args) -> bool {
+    let is_dylib = args.output_type == MH_DYLIB;
+    !args.not_for_dyld_shared_cache
+        && !(is_dylib && args.debug_variant)
+        && (args.add_split_seg_info
+            || args.kernel
+            || (args.is_kext() && target.name == "arm64")
+            || args.is_dylinker()
+            || (is_dylib && in_shared_cache_path(args.output_install_name())))
 }
 
 /// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
@@ -2315,8 +2314,16 @@ impl Args {
 /// an executable presents to the umbrella it links against. A
 /// relocatable object also leaves the __DATA_CONST split to the link
 /// that consumes it. (-stack_size is checked with its other limits:
-/// resolve_stack.)
-fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, entry: bool) {
+/// resolve_stack.) Between those that fit no output and those only a
+/// main executable takes, ld-prime checks those at odds with what the
+/// image is for: check_dylib_use.
+fn check_output_kind(
+    target: &TargetTraits,
+    args: &Args,
+    pie: Option<bool>,
+    data_const: Option<bool>,
+    entry: bool,
+) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     let has_stack = main_executable && !args.preload;
     if args.client_name.is_some()
@@ -2333,12 +2340,27 @@ fn check_output_kind(args: &Args, pie: Option<bool>, data_const: Option<bool>, e
     if args.relocatable && data_const == Some(true) {
         fatal!("-data_const not supported with -r");
     }
+    check_dylib_use(target, args);
     if !has_stack && args.explicit_pagezero && args.pagezero_size != 0 {
         fatal!("-pagezero_size can only be used when linking a main executable");
     }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
     if !args.has_entry_point() && entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
+    }
+}
+
+/// Rejects the options at odds with where the image goes: a flat
+/// namespace in one bound for the shared cache, whose builder binds
+/// each import to the dylib that exports it once and for all (dyld,
+/// which binds nothing, may have one).
+fn check_dylib_use(target: &TargetTraits, args: &Args) {
+    if args.flat_namespace && !args.is_dylinker() && shared_region_eligible(target, args) {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
+             or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
+             (or linker flag '-not_for_dyld_shared_cache')"
+        );
     }
 }
 

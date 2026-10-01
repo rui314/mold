@@ -31,3 +31,13 @@ $CC --ld-path=$mold -o $t/c.dylib -shared $t/a.o -Wl,-install_name,/usr/lib/liba
   -Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache
 $CC --ld-path=$mold -o $t/d.dylib -shared $t/a.o -Wl,-install_name,/usr/local/lib/liba.dylib \
   -Wl,-undefined,dynamic_lookup
+
+# ld-prime refuses the flat namespace before it looks at the options
+# only a main executable takes, but after those no dylib takes at all.
+not $CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -Wl,-install_name,/usr/lib/liba.dylib \
+  -Wl,-flat_namespace -Wl,-pagezero_size,0x1000 -Wl,-e,_foo 2> $t/log5
+grep -q "Shared cache eligible dylibs cannot use '-flat_namespace'" $t/log5
+not grep -q 'only be used when linking\|ignoring -e' $t/log5
+not $CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -Wl,-install_name,/usr/lib/liba.dylib \
+  -Wl,-flat_namespace -Wl,-client_name,foo 2> $t/log6
+grep -q -- '-client_name can only be used' $t/log6
