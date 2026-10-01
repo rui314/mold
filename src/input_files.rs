@@ -438,6 +438,11 @@ pub struct DylibFile {
     /// first use of one of its symbols (LC_LAZY_LOAD_DYLIB_INFO), so it
     /// has no LC_LOAD_DYLIB and no ordinal.
     pub is_lazy: bool,
+    /// Named by -lazy-l, -lazy_library or -lazy_framework, whatever the
+    /// deployment target. Below macOS 27 such a dylib loads as any
+    /// other, but its load command follows those of the other libraries
+    /// the command line names (see passes::dead_strip_dylibs).
+    pub named_lazily: bool,
     /// -delay-l and the like, or a public library such a dylib
     /// re-exports: dyld runs its initializers only when the image
     /// dlopen()s this install name (its own, or the re-exporting
@@ -3623,6 +3628,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -3834,6 +3840,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -4408,6 +4415,7 @@ fn register_tbd<E: Target>(
             is_needed: false,
             is_upward: false,
             is_lazy: false,
+            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -4463,6 +4471,7 @@ fn add_moved_dylibs<E: Target>(
                     is_needed: false,
                     is_upward: false,
                     is_lazy: false,
+                    named_lazily: false,
                     delay_init: None,
                     named_at: None,
                     is_autolinked: false,

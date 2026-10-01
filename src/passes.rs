@@ -302,6 +302,7 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
     }
     let lazy = rc.lazy && ctx.args.lazy_load;
     let dylib = &mut ctx.dylibs[idx];
+    dylib.named_lazily |= rc.lazy;
     let delay_init = rc.delay.then(|| dylib.install_name.clone());
     if dylib.is_implicit && !rc.autolinked {
         dylib.is_weak = rc.weak;
@@ -3944,19 +3945,23 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Ordinals (and so the load commands) in ld-prime's order: the
-    // libraries named on the command line in naming order, then those
-    // loaded implicitly or by auto-link options together, by install
-    // name. A lazy dylib has none: its imports' n_desc names the image
-    // itself (ordinal 0), as ld-prime writes it.
+    // libraries named on the command line in naming order, those named
+    // lazily (loaded as usual below macOS 27) last among them, then
+    // those loaded implicitly or by auto-link options together, by
+    // install name. A lazy dylib has none: its imports' n_desc names the
+    // image itself (ordinal 0), as ld-prime writes it.
     for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
         dylib.dylib_idx = 0;
     }
     let mut order: Vec<usize> = (0..ctx.dylibs.len())
         .filter(|&i| !ctx.dylibs[i].is_bundle_loader && !ctx.dylibs[i].is_lazy)
         .collect();
-    let named_at = |d: &input_files::DylibFile| match d.is_autolinked {
-        true => u32::MAX,
-        false => d.load_order,
+    let named_at = |d: &input_files::DylibFile| {
+        if d.is_autolinked || d.load_order == u32::MAX {
+            (2, u32::MAX)
+        } else {
+            (u8::from(d.named_lazily), d.load_order)
+        }
     };
     order.sort_by(|&a, &b| {
         let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
