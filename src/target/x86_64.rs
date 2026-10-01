@@ -222,20 +222,18 @@ impl Target for X86_64 {
     }
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let mut reported = false;
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 6..];
             let ent_addr = addr + i as u64 * 6;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
             let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
-            if !reported && i32::try_from(disp).is_err() {
+            if i32::try_from(disp).is_err() {
                 let p = ent_addr + 2;
                 let msg = format_args!(
                     "32-bit RIP-relative reference out of range (displacement={disp}, max is \
                      +/-2GB), from 0x{p:08X} to 0x{ptr_addr:08X} ('')"
                 );
                 ctx.stub_fixup_error(i, 2, "x86_64_rip", msg);
-                reported = true;
             }
 
             // jmp *ptr(%rip)

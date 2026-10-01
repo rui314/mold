@@ -937,29 +937,35 @@ impl<E: Target> Context<E> {
     /// Reports that stub `i` can't reach its pointer, as ld-prime does:
     /// a fixup error of the atoms it makes the stubs of, in its
     /// "stubs-got-file", whose first stub is anon-2 (anon-6 with lazy
-    /// binding, the stub helper's atoms first). It reports only the
-    /// first such stub. `off` is the offset of the field in the stub.
+    /// binding, the stub helper's atoms first). `off` is the offset of
+    /// the field in the stub.
     pub fn stub_fixup_error(&self, i: usize, off: u32, kind: &str, msg: std::fmt::Arguments) {
         let atom = if self.stubs.lazy.is_empty() { 2 } else { 6 } + i;
-        self.synthetic_fixup_error("stubs-got-file", atom, off, kind, msg);
+        let fileoff = self.stubs.hdr.fileoff + i as u64 * E::STUB_SIZE;
+        self.synthetic_fixup_error("stubs-got-file", atom, fileoff, off, kind, msg);
     }
 
     /// Reports a relocation that can't be applied `off` bytes into
     /// anon-`atom` of `file`, one of the files ld-prime makes its own
-    /// atoms in, as it does (see fixup_error).
+    /// atoms in, as it does (see fixup_error). The atom is `fileoff`
+    /// bytes into the output file.
     pub fn synthetic_fixup_error(
         &self,
         file: &str,
         atom: usize,
+        fileoff: u64,
         off: u32,
         kind: &str,
         msg: std::fmt::Arguments,
     ) {
+        let at = fileoff + off as u64;
         match off {
-            0 => crate::layout_error!(
+            0 => crate::layout_error_at!(
+                at,
                 "fixup error (kind={kind}) at 'anon-{atom}' from {file}, {msg}"
             ),
-            _ => crate::layout_error!(
+            _ => crate::layout_error_at!(
+                at,
                 "fixup error (kind={kind}) at 'anon-{atom}'+0x{off:X} from {file}, {msg}"
             ),
         }
@@ -1102,14 +1108,18 @@ impl<E: Target> Context<E> {
     /// kind as ld-prime calls it, and the object by its leaf name (an
     /// archive member's archive[index](member)).
     pub fn fixup_error(&self, isec: usize, offset: u32, kind: &str, msg: std::fmt::Arguments) {
-        let obj = &self.objs[self.isecs[isec].file as usize];
+        let sec = &self.isecs[isec];
+        let obj = &self.objs[sec.file as usize];
         let path = crate::passes::resolved_file_name(obj.mf);
         let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
         let atom = self.atom_name(isec);
+        let osec = self.chunk_header(sec.output_section().unwrap());
+        let at = osec.fileoff + sec.offset as u64 + offset as u64;
         if offset == 0 {
-            crate::layout_error!("fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
+            crate::layout_error_at!(at, "fixup error (kind={kind}) at '{atom}' from {file}, {msg}");
         } else {
-            crate::layout_error!(
+            crate::layout_error_at!(
+                at,
                 "fixup error (kind={kind}) at '{atom}'+0x{offset:X} from {file}, {msg}"
             );
         }

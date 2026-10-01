@@ -115,3 +115,62 @@ not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" -dyli
   2> $t/call.log
 [ "$(grep -c 'fixup error' $t/call.log)" = 1 ]
 grep -Eq "fixup error \(kind=(arm64_adrp_lo12|x86_64_rip)\) at 'anon-2'(\+0x2)? from stubs-got-file, .* to 0x200000000 \(''\)" $t/call.log
+
+# Of several fixup errors, ld-prime reports only the first in the
+# output file - by segment and section in load command order, then by
+# address - whatever their kinds or the order of the inputs and their
+# relocations, and prints the layout once. __A lies below __TEXT but
+# after it in the file.
+if [ $ARCH = arm64 ]; then
+  far='  bl _far'
+  near='  adrp x0, _x@PAGE'
+  far_kind=arm64_b26
+  near_at="'_b'"
+  far_at="'_c'"
+else
+  far='  call _far'
+  near='  movl _x(%rip), %eax'
+  far_kind=x86_64_call
+  near_at="'_b'+0x2"
+  far_at="'_c'+0x1"
+fi
+cat <<EOF | $CC -o $t/first1.o -c -xassembler -
+.section __A,__text,regular,pure_instructions
+.globl _a
+.p2align 2
+_a:
+$far
+EOF
+cat <<EOF | $CC -o $t/first2.o -c -xassembler -
+.text
+.globl start, _b, _c
+.p2align 2
+start:
+  ret
+_b:
+$near
+$far
+_c:
+$far
+.data
+.globl _x
+_x: .quad 1
+.section __FAR,__text,regular,pure_instructions
+.globl _far
+_far: ret
+.subsections_via_symbols
+EOF
+first() {
+  not $mold -arch $ARCH -platform_version macos 14.0 14.0 -static -e start \
+    -segaddr __A 0x100000000 -segaddr __TEXT 0x200000000 -segaddr __DATA 0x400000000 \
+    -segaddr __FAR 0x600000000 $t/first1.o $t/first2.o -o $t/first "$@" 2> $t/first.log
+  [ "$(grep -c 'fixup error' $t/first.log)" = 1 ]
+  [ "$(grep -c '^final section layout:$' $t/first.log)" = 1 ]
+}
+
+first
+grep -q "fixup error (kind=[a-z0-9_]*) at $near_at from first2.o, " $t/first.log
+
+printf '_c\n_b\n' > $t/first.order
+first -order_file $t/first.order
+grep -q "fixup error (kind=$far_kind) at $far_at from first2.o, " $t/first.log

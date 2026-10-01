@@ -961,17 +961,15 @@ impl Target for Arm64 {
     }
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let mut reported = false;
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 12..];
             let ent_addr = addr + i as u64 * 12;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
-            if !reported && !adrp_reaches(ptr_addr, ent_addr) {
+            if !adrp_reaches(ptr_addr, ent_addr) {
                 let msg = format_args!(
                     "ADRP out of range, from 0x{ent_addr:08X} to 0x{ptr_addr:08X} ('')"
                 );
                 ctx.stub_fixup_error(i, 0, "arm64_adrp_lo12", msg);
-                reported = true;
             }
 
             // adrp x16, $ptr@PAGE; ldr x16, [x16, $ptr@PAGEOFF]; br x16

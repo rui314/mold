@@ -52,7 +52,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             InitFunc::Absolute(value) => value,
             InitFunc::Imported(id) => {
                 let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
-                ctx.synthetic_fixup_error("inits-file", 2 * i + 1, 0, "imageOffset32", msg);
+                let (atom, fileoff) = (2 * i + 1, ctx.init_offsets.hdr.fileoff + i as u64 * 4);
+                ctx.synthetic_fixup_error("inits-file", atom, fileoff, 0, "imageOffset32", msg);
                 return;
             }
         };

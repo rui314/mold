@@ -92,7 +92,7 @@ fn release_parallel() {
 /// back first.
 pub fn fatal(msg: fmt::Arguments) -> ! {
     release_held();
-    release_layout_errors();
+    release_layout_error();
     emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
     exit_after_cleanup(1);
 }
@@ -136,26 +136,36 @@ pub fn error(msg: fmt::Arguments) {
     HAS_ERROR.store(true, Ordering::Relaxed);
 }
 
-/// The layout errors reported so far, not yet given.
-static LAYOUT_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// The layout error to give, with where in the output file it is (see
+/// layout_error_at), until it is given.
+static LAYOUT_ERROR: Mutex<Option<(u64, String)>> = Mutex::new(None);
 
-/// Reports an error in the output's layout, or in writing it: a
-/// thread-local section it can't place, or a fixup that doesn't fit.
-/// ld-prime lays the output out to the end all the same, and prints
-/// the layout as it fails the link (see passes::print_final_layout).
-/// The messages wait for release_layout_errors: the passes that find
-/// them run in parallel.
+/// Reports an error in the output's layout: a thread-local section it
+/// can't place, say. ld-prime lays the output out to the end all the
+/// same, and prints the layout as it fails the link (see
+/// passes::print_final_layout), but gives only the first error it
+/// finds: one found later is dropped.
 pub fn layout_error(msg: fmt::Arguments) {
-    LAYOUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()).push(msg.to_string());
+    layout_error_at(0, msg);
+}
+
+/// Reports an error in writing the output, `fileoff` bytes into the
+/// file: a fixup that doesn't fit. Of the errors found as the sections
+/// are written, in parallel, ld-prime gives the first in the file,
+/// whatever its kind or the order of the inputs - and none of them
+/// after an error in the layout (see layout_error).
+pub fn layout_error_at(fileoff: u64, msg: fmt::Arguments) {
+    let mut first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner());
+    if first.as_ref().is_none_or(|&(at, _)| fileoff < at) {
+        *first = Some((fileoff, msg.to_string()));
+    }
     HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
 }
 
-/// Gives the layout errors reported so far, sorted so that they come
-/// out in the same order in every run.
-pub fn release_layout_errors() {
-    let mut msgs = std::mem::take(&mut *LAYOUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()));
-    msgs.sort_unstable();
-    for msg in msgs {
+/// Gives the layout error reported, unless it has been given.
+pub fn release_layout_error() {
+    let first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some((_, msg)) = first {
         emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{msg}"));
     }
 }
@@ -218,7 +228,7 @@ pub fn checkpoint_in_layout() {
 /// without running destructors. Input files are mapped for the process's
 /// lifetime, so there is nothing else to release.
 pub fn exit_after_cleanup(status: i32) -> ! {
-    release_layout_errors();
+    release_layout_error();
     release_parallel();
     crate::output_file::cleanup();
     let _ = io::stdout().flush();
@@ -245,6 +255,13 @@ macro_rules! error {
 macro_rules! layout_error {
     ($($arg:tt)*) => {
         $crate::error::layout_error(format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! layout_error_at {
+    ($fileoff:expr, $($arg:tt)*) => {
+        $crate::error::layout_error_at($fileoff, format_args!($($arg)*))
     };
 }
 

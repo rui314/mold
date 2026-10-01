@@ -4227,7 +4227,7 @@ pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
     if !crate::error::has_layout_error() {
         return;
     }
-    crate::error::release_layout_errors();
+    crate::error::release_layout_error();
     let mut out = String::from("final section layout:\n");
     for seg in &ctx.segments {
         let cmd = &seg.cmd;
