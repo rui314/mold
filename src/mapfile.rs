@@ -324,9 +324,11 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     let files = MapFiles::new(ctx);
     let _ = writeln!(out, "# Object files:");
     let _ = writeln!(out, "[  0] linker synthesized");
+    // A fat file's slice, and a fat archive's member, by the file's own
+    // path: "libfoo.a(foo.o)".
     for (i, path) in files.paths.iter().enumerate() {
         let _ = write!(out, "[{:3}] ", i + 1);
-        let _ = out.write_all(path_bytes(path));
+        let _ = out.write_all(&crate::input_files::without_fat_arch(path_bytes(path)));
         let _ = writeln!(out);
     }
 

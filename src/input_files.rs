@@ -3226,6 +3226,16 @@ pub fn trace_name(name: &[u8]) -> String {
     crate::util::display(&without_fat_arch(name)).to_string()
 }
 
+/// Splits the name fat_slice gives a fat file's slice into the file's
+/// path and the slice's architecture.
+pub fn split_fat_arch(name: &[u8]) -> (&[u8], Option<&[u8]>) {
+    const TAG: &[u8] = b"(for architecture ";
+    match memchr::memmem::find(name, TAG) {
+        Some(i) if name.ends_with(b")") => (&name[..i], Some(&name[i + TAG.len()..name.len() - 1])),
+        _ => (name, None),
+    }
+}
+
 /// A file's name without the "(for architecture ...)" that fat_slice
 /// gives a fat file's slice, which ld-prime never shows: it names the
 /// slice, and the members of a fat archive, by the file's own path.

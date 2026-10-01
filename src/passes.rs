@@ -3867,9 +3867,16 @@ pub(crate) fn file_display(obj: &crate::input_files::ObjectFile) -> std::borrow:
 /// A file name as ld-prime spells it where it says where an input is:
 /// its real path (symlinks and relative steps resolved), or for an
 /// archive member the archive's real path, the member's position among
-/// the archive's entries and its name: "/abs/libfoo.a[2](foo.o)".
+/// the archive's entries and its name: "/abs/libfoo.a[2](foo.o)". A
+/// fat file's slice goes by the file's path, but a fat archive's
+/// member names the architecture too: "/abs/libfoo.a[arm64][2](foo.o)".
 pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
-    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    use crate::util::display;
+    fn real(name: &Path) -> (PathBuf, Option<&[u8]>) {
+        let (path, arch) = input_files::split_fat_arch(path_bytes(name));
+        let path = Path::new(crate::util::os_str(path));
+        (std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()), arch)
+    }
     if let Some(ar) = mf.parent
         && let Some(index) = crate::archive_file::member_index(mf)
     {
@@ -3879,9 +3886,11 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
             .and_then(|rest| rest.strip_prefix(b"("))
             .and_then(|rest| rest.strip_suffix(b")"))
             .unwrap_or(full);
-        return format!("{}[{index}]({})", real(&ar.name).display(), crate::util::display(member));
+        let (path, arch) = real(&ar.name);
+        let arch = arch.map_or(String::new(), |arch| format!("[{}]", display(arch)));
+        return format!("{}{arch}[{index}]({})", path.display(), display(member));
     }
-    real(&mf.name).display().to_string()
+    real(&mf.name).0.display().to_string()
 }
 
 /// -assert-weak-l and the like load a dylib weakly but leave its
