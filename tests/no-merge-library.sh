@@ -51,26 +51,24 @@ ar rcs $t/lib/libbar.a $t/a.o
 not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-no_merge-lbar 2> $t/log4
 grep -q "library 'bar' not found" $t/log4
 
-# ld-prime also links its own hook (bundleForClassHook.o) into the image,
-# unless -no_merged_libraries_hook, if a library a -no_merge_* option
-# names exports a class itself: an Objective-C class or metaclass
-# object, or a Swift class's type metadata ($s...CN), as the names go.
-# The hook has the Objective-C runtime place each class in the
-# library's framework, whose resources stay in the app bundle. mold has
-# no such hook, and refuses such a link instead. (The ERR trap doesn't
+# The linker also links its hook for the classes of mergeable libraries
+# into the image (see merged-libraries-hook.sh), unless
+# -no_merged_libraries_hook, if a library a -no_merge_* option names
+# exports a class itself: an Objective-C class or metaclass object, or
+# a Swift class's type metadata ($s...CN), as the names go. The hook
+# has the Objective-C runtime place each class in the library's
+# framework, whose resources stay in the app bundle. Its initializer
+# has the same name in mold's and ld-prime's. (The ERR trap doesn't
 # reach into a function: each command's status goes to the caller.)
 needs_hook() {
   rm -f $t/exe
-  if $CC --ld-path=$mold -o $t/exe $t/main.o "$@" 2> $t/log; then
-    nm $t/exe > $t/syms && grep -q _relinkableLibraryClasses $t/syms
-  else
-    grep -q 'the hook for the classes of mergeable libraries is not supported' $t/log
-  fi
+  $CC --ld-path=$mold -o $t/exe $t/main.o "$@" && nm $t/exe > $t/syms &&
+    grep -q __ZL11constructorv $t/syms
 }
 no_hook() {
   rm -f $t/exe
   $CC --ld-path=$mold -o $t/exe $t/main.o "$@" && nm $t/exe > $t/syms &&
-    not grep -q imageNameHook $t/syms
+    not grep -q __ZL11constructorv $t/syms
 }
 
 cat <<EOF | $CC -o $t/c.o -c -xobjective-c -
@@ -151,8 +149,7 @@ EOF
 needs_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=12.0
 no_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=11.0
 
-if $mold -v 2>&1 | grep -q mold-macho; then
-  not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-no_merge-lfoo \
-    -Wl,-no_merge-lc 2> $t/log5
-  grep -q -- "-no_merge-lc: the hook for the classes of mergeable libraries is not supported ('$t/lib/libc.dylib' exports _OBJC_CLASS_\$_Bar); use -no_merged_libraries_hook" $t/log5
-fi
+# The hook binds to each class a re-exported library exports, once.
+needs_hook -L$t/lib -Wl,-no_merge-lfoo -Wl,-no_merge-lc
+dyld_info -fixups $t/exe > $t/fixups
+[ "$(grep -c 'bind .*/_OBJC_CLASS_\$_Bar$' $t/fixups)" = 1 ]

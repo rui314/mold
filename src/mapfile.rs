@@ -146,12 +146,15 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
 fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
     use crate::cmdline::InputArg;
     // The object LTO compiled is no input (a build system can't depend
-    // on it), whatever -object_path_lto made of it.
+    // on it), whatever -object_path_lto made of it, nor is the hook for
+    // the classes of mergeable libraries (see bundle_hook).
     let mut named: Vec<&Path> = ctx
         .objs
         .iter()
         .enumerate()
-        .filter(|&(i, o)| o.is_alive && !ctx.is_internal(i) && !ctx.is_lto_obj(i))
+        .filter(|&(i, o)| {
+            o.is_alive && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) && !ctx.is_lto_obj(i)
+        })
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
     named.extend(ctx.visited_files.iter().map(PathBuf::as_path));
@@ -564,7 +567,8 @@ fn name(s: &str) -> Cow<'_, [u8]> {
 /// auto-linked dylib all of whose bound symbols such a library defines
 /// is no file of the link's (libswiftDarwin, which merges
 /// libswift_Builtin_float). Number 0 stands for the linker, which makes
-/// the stubs, the unwind info and such. A bitcode file is listed as any
+/// the stubs, the unwind info, the hook for the classes of mergeable
+/// libraries and such. A bitcode file is listed as any
 /// object, and the object LTO compiled last of all; ld-prime credits
 /// each of the latter's symbols to the bitcode file it came from, when
 /// it can tell (see lto::origins).
@@ -609,7 +613,7 @@ impl<'a> MapFiles<'a> {
         let mut named: Vec<(u32, File)> = Vec::new();
         let mut autolinked: Vec<((u32, u32), File)> = Vec::new();
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive || ctx.is_internal(i) || ctx.is_lto_obj(i) {
+            if !obj.is_alive || ctx.is_internal(i) || ctx.is_bundle_hook(i) || ctx.is_lto_obj(i) {
                 continue;
             }
             match obj.mf.parent.and_then(|ar| ctx.autolinked_archives.get(&ar.name)) {

@@ -189,6 +189,9 @@ pub struct Context<E: Target> {
     /// The install names of the mergeable dylibs merged into the
     /// image, which are none of its dependencies.
     pub merged_libraries: Vec<Vec<u8>>,
+    /// The hook for the classes of the mergeable libraries merged or
+    /// re-exported, and the classes it is for.
+    pub bundle_hook: crate::bundle_hook::BundleHook,
     /// The symbols the merged mergeable dylibs import, which ld-prime
     /// lists whether or not anything refers to them (see
     /// chunks::symtab's live_refs).
@@ -248,8 +251,8 @@ pub struct Context<E: Target> {
     /// numbers (see dylib_load_seq).
     pub autolinked_archives: hashbrown::HashMap<std::path::PathBuf, u32>,
     /// Objective-C data records the linker synthesized (see
-    /// merge_objc_categories), each placed as the tail of the output
-    /// section it names.
+    /// merge_objc_categories) and the table of bundle_hook, each placed
+    /// as the tail of the output section it names.
     pub data_blobs: Vec<crate::objc::DataBlob>,
     /// Local symbols the linker names itself, on synthesized data:
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
@@ -360,6 +363,7 @@ impl<E: Target> Context<E> {
             indirect_files: Vec::new(),
             merged_dependencies: Vec::new(),
             merged_libraries: Vec::new(),
+            bundle_hook: Default::default(),
             merged_imports: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
@@ -551,6 +555,12 @@ impl<E: Target> Context<E> {
     /// sections and symbols.
     pub fn is_internal(&self, idx: usize) -> bool {
         self.internal_obj == Some(idx)
+    }
+
+    /// Whether the file is the hook for the classes of mergeable
+    /// libraries, which ld-prime counts as linker synthesized.
+    pub fn is_bundle_hook(&self, idx: usize) -> bool {
+        self.bundle_hook.obj == Some(idx)
     }
 
     /// Whether an object is one LTO compiled.

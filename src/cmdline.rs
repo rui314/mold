@@ -792,19 +792,16 @@ pub struct Args {
     /// write permission (a text relocation): resolved from the kind of
     /// output and -read_only_relocs at the end of parsing.
     pub text_relocs: bool,
-    /// Whether ld-prime adds its hook to the image for the classes of
-    /// the mergeable libraries it merges or re-exports (-merge_*,
-    /// -no_merge_*): code (its own bundleForClassHook.o) that has
-    /// objc_setHook_getImageName place each such class in its
+    /// Whether the image gets the hook for the classes of the mergeable
+    /// libraries it merges or re-exports (-merge_*, -no_merge_*): code
+    /// that has objc_setHook_getImageName place each such class in its
     /// framework's directory within the app bundle, where the
-    /// framework's resources stay, rather than in this image. On
-    /// unless -no_merged_libraries_hook; mold has no such hook, and
-    /// refuses a link that needs it (see
-    /// passes::check_mergeable_libraries).
+    /// framework's resources stay, rather than in this image (see
+    /// bundle_hook). On unless -no_merged_libraries_hook.
     pub merged_libraries_hook: bool,
     /// -make_mergeable: a dylib that a later link may merge (-merge_*),
     /// for which ld-prime records its atoms in LC_ATOM_INFO, as Xcode
-    /// builds a MERGEABLE_LIBRARY. mold can't write them yet.
+    /// builds a MERGEABLE_LIBRARY.
     pub make_mergeable: bool,
     /// -add_mergeable_debug_hook: a debug build of a mergeable dylib
     /// gets the hook of merged libraries itself, for its classes that

@@ -397,17 +397,9 @@ impl AtomFile {
     }
 
     /// Whether the dylib's objects define Objective-C (or Swift)
-    /// classes, as ld-prime records it; and the name of one, if an atom
-    /// has one.
-    pub fn defines_classes(&self) -> Option<&'static [u8]> {
-        if self.flags & FLAG_HAS_CLASSES == 0 {
-            return None;
-        }
-        let class = self.atoms.iter().filter_map(|a| a.name).find(|name| {
-            name.starts_with(b"_OBJC_CLASS_$_")
-                || (name.starts_with(b"_$s") && name.ends_with(b"CN"))
-        });
-        Some(class.unwrap_or(b"classes"))
+    /// classes, as ld-prime records it.
+    pub fn defines_classes(&self) -> bool {
+        self.flags & FLAG_HAS_CLASSES != 0
     }
 }
 

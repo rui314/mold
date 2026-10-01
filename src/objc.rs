@@ -65,13 +65,25 @@ pub struct ObjcMethList {
 #[derive(Clone, Debug)]
 pub enum DataField {
     Bytes(Vec<u8>),
-    /// An 8-byte pointer, rebased at load (or null).
+    /// An 8-byte pointer, rebased at load (or null), or bound if to an
+    /// import.
     Ptr(ObjcRef),
 }
 
-/// A synthesized Objective-C data record, placed in the tail of the
-/// output section `sect` (mapped to its segment like an input section
-/// of that name) as the synthetic subsection `isec`.
+impl ObjcRef {
+    /// The import a reference is to, which dyld binds.
+    pub fn import<E: Target>(self, ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
+        match self {
+            ObjcRef::Sym(id, _) if ctx.symbols[id].is_imported() => Some(id),
+            _ => None,
+        }
+    }
+}
+
+/// A synthesized data record (an Objective-C one, or the table of
+/// bundle_hook), placed in the tail of the output section `sect`
+/// (mapped to its segment like an input section of that name) as the
+/// synthetic subsection `isec`.
 #[derive(Debug)]
 pub struct DataBlob {
     pub sect: &'static str,
@@ -161,7 +173,7 @@ pub(crate) fn add_slot_stand_in<E: Target>(ctx: &mut Context<E>, sect: (u32, u32
 
 /// Appends a synthesized record to the tail of __DATA,`sect` (a section
 /// with the given flags) and returns its subsection.
-fn add_data_blob<E: Target>(
+pub(crate) fn add_data_blob<E: Target>(
     ctx: &mut Context<E>,
     sect: &'static str,
     flags: u32,
@@ -252,7 +264,10 @@ fn objc_ref_location<E: Target>(ctx: &Context<E>, r: ObjcRef) -> Option<(u32, u6
 
 /// The pointers in the 8-byte slots of a list section such as
 /// __objc_classlist (None where a slot has none).
-fn list_entries<E: Target>(ctx: &Context<E>, isec: u32) -> impl Iterator<Item = Option<ObjcRef>> {
+pub(crate) fn list_entries<E: Target>(
+    ctx: &Context<E>,
+    isec: u32,
+) -> impl Iterator<Item = Option<ObjcRef>> {
     let size = ctx.isecs[isec as usize].size as u64;
     (0..size).step_by(8).map(move |off| objc_pointer_at(ctx, isec, off))
 }

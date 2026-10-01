@@ -6,9 +6,10 @@ source "$(dirname "$0")"/common.inc
 # link optimized it: a category of a class of the dylib merged into the
 # class, the method lists in the relative form, and every list pointer
 # that is NULL bound to a placeholder. An image that merges a library
-# that defines classes gets ld-prime's hook for them (so that
+# that defines classes gets the linker's hook for them (so that
 # +[NSBundle bundleForClass:] finds the library's bundle), unless
-# -no_merged_libraries_hook; mold has no such hook yet.
+# -no_merged_libraries_hook; the hook's initializer has the same name
+# in mold's and ld-prime's (see merged-libraries-hook.sh).
 cat <<EOF | $CC -o $t/a.o -c -O1 -xobjective-c -
 #import <Foundation/Foundation.h>
 @protocol Greeter <NSObject>
@@ -61,10 +62,9 @@ otool -L $t/exe > $t/libs
 not grep -q libfoo $t/libs
 grep -q Foundation $t/libs
 
-if $mold -v 2>&1 | grep -q mold-macho; then
-  not $CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo 2> $t/log
-  grep -q "the hook for the classes of mergeable libraries is not supported ('$t/libfoo.dylib' defines _OBJC_CLASS_\$_Person); use -no_merged_libraries_hook" $t/log
-else
-  $CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-  nm $t/exe2 | grep -q imageNameHook
-fi
+nm $t/exe > $t/syms
+not grep -q __ZL11constructorv $t/syms
+$CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
+$t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
+nm $t/exe2 > $t/syms
+grep -q __ZL11constructorv $t/syms

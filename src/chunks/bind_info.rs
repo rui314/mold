@@ -71,6 +71,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             }
         }
     }
+    for (addr, id) in super::rebase_info::data_blob_binds(ctx) {
+        binds.push((addr, id, 0));
+    }
 
     if binds.is_empty() {
         return Vec::new();

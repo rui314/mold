@@ -4,7 +4,8 @@
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::objc::{DataField, objc_ref_addr};
+use crate::objc::{DataField, ObjcRef, objc_ref_addr};
+use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
 use crate::util::encode_uleb;
 
@@ -244,9 +245,9 @@ fn compress(ops: Vec<Op>) -> Vec<Op> {
     out
 }
 
-/// The (address, target) of every non-null pointer field of the
-/// synthesized Objective-C records: each is a rebase.
-pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
+/// The (address, target) of every pointer field of the synthesized
+/// records (see objc::DataBlob).
+fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
     let mut out = Vec::new();
     for b in &ctx.data_blobs {
         let mut at = ctx.isec_addr(b.isec as usize);
@@ -254,14 +255,24 @@ pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
             match f {
                 DataField::Bytes(bytes) => at += bytes.len() as u64,
                 DataField::Ptr(r) => {
-                    let target = objc_ref_addr(ctx, *r);
-                    if target != 0 {
-                        out.push((at, target));
-                    }
+                    out.push((at, *r));
                     at += 8;
                 }
             }
         }
     }
     out
+}
+
+/// The (address, target) of every non-null pointer field of the
+/// synthesized records into the image: each is a rebase.
+pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
+    let fields = data_blob_fields(ctx).into_iter().filter(|(_, r)| r.import(ctx).is_none());
+    fields.map(|(at, r)| (at, objc_ref_addr(ctx, r))).filter(|&(_, target)| target != 0).collect()
+}
+
+/// The (address, symbol) of every pointer field of the synthesized
+/// records to an import: each is a bind.
+pub fn data_blob_binds<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId)> {
+    data_blob_fields(ctx).into_iter().filter_map(|(at, r)| Some((at, r.import(ctx)?))).collect()
 }

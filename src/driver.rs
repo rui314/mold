@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 
+use crate::bundle_hook;
 use crate::cmdline;
 use crate::context::Context;
 use crate::dead_strip;
@@ -75,7 +76,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     drop(t);
     passes::create_internal_file(&mut ctx);
     crate::error::checkpoint();
-    passes::check_mergeable_libraries(&ctx);
     let mut t = ctx.timer("resolve_symbols");
     loop {
         passes::resolve_symbols(&mut ctx);
@@ -126,6 +126,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::report_bitcode_duplicates(&ctx);
     crate::error::checkpoint();
     t.stop();
+    bundle_hook::create_class_table(&mut ctx);
     passes::check_common_conflicts(&mut ctx);
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);

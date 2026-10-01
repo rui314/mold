@@ -768,9 +768,8 @@ fn refuse_file(mf: &MappedFile) {
 /// read back into the object file they stand for, link as that object
 /// would (see mergeable::synthesize_object), and the dylibs it links
 /// stand by their recorded identities (see add_merged_dependencies).
-/// ld-prime adds its hook for the classes of mergeable libraries to an
-/// image that merges one that defines any, which mold can't yet (see
-/// check_mergeable_libraries).
+/// The image gets the hook for the classes of mergeable libraries for
+/// the classes it defines (see bundle_hook).
 fn merge_dylib<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
@@ -780,18 +779,11 @@ fn merge_dylib<E: Target>(
         Ok(af) => af,
         Err(e) => return error!("{e} in '{}'", mf.name.display()),
     };
-    if ctx.args.merged_libraries_hook
-        && let Some(class) = af.defines_classes()
-    {
-        fatal!(
-            "the hook for the classes of mergeable libraries is not supported ('{}' defines {}); \
-             use -no_merged_libraries_hook",
-            mf.name.display(),
-            String::from_utf8_lossy(class)
-        );
-    }
     let obj = crate::mergeable::synthesize_object::<E>(&af, &mf.name);
     let synth = MappedFile::synthesized(mf.name.clone(), obj);
+    if af.defines_classes() {
+        crate::bundle_hook::note_merged_library(ctx, &af.own.install_name, synth);
+    }
     let priority = ctx.next_priority();
     out.push(PendingObject { mf: synth, alive: true, hidden: false, priority });
     let deps = af.dependencies(&mf.name);
@@ -1094,7 +1086,27 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     ctx.args.inputs = inputs;
     add_merged_dependencies(ctx);
     collect_indirect_files(ctx, &mut queue);
+    add_bundle_hook(ctx, &mut queue);
     load_pending(ctx, queue);
+}
+
+/// Adds the hook for the classes of mergeable libraries (see
+/// bundle_hook), if the link may need it, as the first object, for the
+/// classes of a library a -no_merge_* option names whether or not the
+/// option is the one to load it: `-lfoo -no_merge_library ./libfoo.dylib`
+/// adds the hook to an image that doesn't re-export libfoo.
+fn add_bundle_hook<E: Target>(ctx: &mut Context<E>, queue: &mut Vec<PendingObject>) {
+    let reexported: Vec<&'static MappedFile> = (ctx.args.inputs.iter())
+        .filter(|arg| matches!(arg, InputArg::Library(LibraryKind::NoMerge, _)))
+        .filter_map(|arg| find_input(ctx, arg).and_then(MappedFile::open))
+        .collect();
+    for mf in reexported {
+        crate::bundle_hook::note_reexported_library(ctx, mf);
+    }
+    if let Some(mf) = crate::bundle_hook::hook_object(ctx) {
+        ctx.bundle_hook.obj = Some(ctx.objs.len());
+        queue.insert(0, PendingObject { mf, alive: true, hidden: false, priority: 0 });
+    }
 }
 
 /// Gives the files of the -sectcreate and -add_empty_section options
@@ -1105,41 +1117,6 @@ fn place_sectcreate_files<E: Target>(ctx: &mut Context<E>, i: usize) {
     while ctx.args.sectcreate.get(placed(ctx)).is_some_and(|sc| sc.position <= i) {
         let priority = ctx.next_priority();
         ctx.sectcreate_priority.push(priority);
-    }
-}
-
-/// Refuses what ld-prime does for mergeable libraries that mold can't
-/// do yet: write a dylib's atoms (-make_mergeable), or add the hook for
-/// classes (Args::merged_libraries_hook). A debug build of a mergeable
-/// dylib gets the hook with -add_mergeable_debug_hook, if it has
-/// classes it doesn't export. An image gets it, unless
-/// -no_merged_libraries_hook, if a library a -no_merge_* option names
-/// exports a class itself (see input_files::exported_class), mergeable
-/// or not - a system stub too - and whether or not the option is the
-/// one to load it: `-lfoo -no_merge_library ./libfoo.dylib` adds the
-/// hook to an image that doesn't re-export libfoo. Without the hook the
-/// option is -reexport_*. (A -r output and an image that links no dylib
-/// ignore the library.)
-pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
-    if ctx.args.add_mergeable_debug_hook {
-        fatal!("-add_mergeable_debug_hook is not supported");
-    }
-    if !ctx.args.merged_libraries_hook || ctx.args.relocatable || !ctx.args.links_dylibs() {
-        return;
-    }
-    for arg in &ctx.args.inputs {
-        let InputArg::Library(kind @ LibraryKind::NoMerge, name) = arg else { continue };
-        // One not found failed the link already.
-        let Some(mf) = find_input(ctx, arg).and_then(MappedFile::open) else { continue };
-        if let Some(class) = input_files::exported_class(ctx, mf) {
-            fatal!(
-                "{}{}: the hook for the classes of mergeable libraries is not supported \
-                 ('{}' exports {class}); use -no_merged_libraries_hook",
-                kind.option(name),
-                name.as_os_str().display(),
-                mf.name.display()
-            );
-        }
     }
 }
 
@@ -2136,6 +2113,12 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
             refs.used[id as usize].store(true, Ordering::Relaxed);
         }
     }
+    // So are the classes the hook for those of mergeable libraries
+    // binds to (see bundle_hook).
+    for id in ctx.bundle_hook.imports() {
+        refs.used[id as usize].store(true, Ordering::Relaxed);
+        refs.strong[id as usize].store(true, Ordering::Relaxed);
+    }
     // A softloaded routine is wanted like these, so that a dylib that
     // comes before any archive defining it provides it - in the round
     // over all objects as soon as bitcode might be live.
@@ -3007,12 +2990,16 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         let func = init_func(ctx, id);
         ctx.init_offsets.init_funcs.push(func);
     }
-    for i in 0..ctx.isecs.len() {
-        if ctx.hdr_of(&ctx.isecs[i]).section_type() != S_MOD_INIT_FUNC_POINTERS
-            || !ctx.isecs[i].is_alive()
-        {
-            continue;
-        }
+    // ld-prime runs the hook for the classes of mergeable libraries (see
+    // bundle_hook) last, though its object comes first.
+    let mut pointers: Vec<usize> = (0..ctx.isecs.len())
+        .filter(|&i| {
+            ctx.hdr_of(&ctx.isecs[i]).section_type() == S_MOD_INIT_FUNC_POINTERS
+                && ctx.isecs[i].is_alive()
+        })
+        .collect();
+    pointers.sort_by_key(|&i| ctx.is_bundle_hook(ctx.isecs[i].file as usize));
+    for i in pointers {
         let obj = ctx.isecs[i].file as usize;
         for rel in initializer_relocs(ctx, i) {
             let func = match rel.target() {
@@ -3214,7 +3201,11 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
 
     // In input order: a bitcode file's placeholder object joins the
     // link ahead of the Mach-O objects, which are staged in parallel.
-    let is_new = |i: usize| ctx.objs[i].is_alive && !checked.objs.get(i).is_some_and(|&c| c);
+    // The hook for the classes of mergeable libraries is the linker's,
+    // for any macOS (ld-prime warns that its own is for a newer one).
+    let is_new = |i: usize| {
+        ctx.objs[i].is_alive && !checked.objs.get(i).is_some_and(|&c| c) && !ctx.is_bundle_hook(i)
+    };
     let mut objs: Vec<usize> = (0..ctx.objs.len()).filter(|&i| is_new(i)).collect();
     objs.sort_by_key(|&i| ctx.objs[i].priority);
     for i in objs {

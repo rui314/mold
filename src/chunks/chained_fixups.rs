@@ -494,6 +494,9 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
     for (addr, _) in super::rebase_info::data_blob_pointers(ctx) {
         fixups.push((addr, None, 0, addr));
     }
+    for (addr, id) in super::rebase_info::data_blob_binds(ctx) {
+        fixups.push((addr, Some(id), 0, addr));
+    }
     // The pointers of an image nothing slides keep their addresses:
     // its chains hold only binds.
     if super::rebase_info::is_never_slid(ctx) {

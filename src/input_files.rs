@@ -4818,40 +4818,45 @@ pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<
     tbd
 }
 
-/// The first Objective-C or Swift class (see is_class_export) that a
-/// dylib or stub exports itself for the link's target, after its
-/// $ld$hide and $ld$add directives: the classes of the libraries it
-/// re-exports don't count, those it re-exports one by one (an alias, a
-/// -reexported_symbols_list entry) do. None for a file the link
-/// ignores, or one that is no library. (For such a class ld-prime adds
-/// its hook to an image that re-exports the library with -no_merge_*;
-/// see passes::check_mergeable_libraries.)
-pub fn exported_class<E: Target>(
+/// A dylib's or stub's install name, and the Objective-C and Swift
+/// classes (see is_class_export) it exports itself for the link's
+/// target, after its $ld$hide and $ld$add directives: the classes of
+/// the libraries it re-exports don't count, those it re-exports one by
+/// one (an alias, a -reexported_symbols_list entry) do. None for a file
+/// the link ignores, or one that is no library. (ld-prime adds its hook
+/// for such classes to an image that re-exports the library with
+/// -no_merge_*; see bundle_hook.)
+pub fn exported_classes<E: Target>(
     ctx: &Context<E>,
     mf: &'static MappedFile,
-) -> Option<&'static str> {
+) -> Option<(Vec<u8>, Vec<&'static str>)> {
     use crate::filetype::{FileType, get_file_type};
     let mf = match get_file_type(mf) {
         FileType::Fat => fat_slice::<E>(&ctx.args, mf)?,
         _ => mf,
     };
-    let (ld, exports) = match get_file_type(mf) {
+    let (install_name, ld, exports) = match get_file_type(mf) {
         FileType::Tapi => {
             let tbd = read_tbd(ctx, mf)?;
             let ld = LdSymbols::read(ctx, &tbd.exports);
-            (ld, [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat())
+            let exports = [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat();
+            (tbd.install_name.into_bytes(), ld, exports)
         }
         FileType::Dylib
             if foreign_arch::<E>(&ctx.args, mf).is_none()
                 || (ctx.args.allow_sub_type_mismatches && is_subtype_mismatch::<E>(mf)) =>
         {
             let dylib = read_dylib_binary(mf);
-            (LdSymbols::read(ctx, &dylib.ld_symbols), dylib.exports)
+            (dylib.install_name, LdSymbols::read(ctx, &dylib.ld_symbols), dylib.exports)
         }
         _ => return None,
     };
-    let mut own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
-    own.find(|name| is_class_export(name))
+    let own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
+    // A binary names its exports in its symbol table and export trie.
+    let mut classes: Vec<&str> = own.filter(|name| is_class_export(name)).collect();
+    classes.sort_unstable();
+    classes.dedup();
+    Some((install_name, classes))
 }
 
 /// Whether an export is that of a class, as ld-prime's hook for the

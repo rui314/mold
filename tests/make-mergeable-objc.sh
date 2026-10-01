@@ -6,8 +6,8 @@ source "$(dirname "$0")"/common.inc
 # category of a class of its own merged into the class, the selector
 # references of the objc stubs; and a placeholder at each null list
 # pointer of a class or a category, for lists a merging link may add,
-# without which ld-prime fails to merge it. (mold has no hook for the
-# classes of mergeable libraries yet: -no_merged_libraries_hook.)
+# without which ld-prime fails to merge it. (The hook for the classes
+# of mergeable libraries is no matter here: -no_merged_libraries_hook.)
 cat <<EOF | $CC -o $t/a.o -c -O1 -xobjective-c -
 #import <Foundation/Foundation.h>
 @protocol Greeter <NSObject>

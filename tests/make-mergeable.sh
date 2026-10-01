@@ -50,7 +50,7 @@ grep -q "Shared cache eligible dylibs cannot use '-flat_namespace'" $t/log11
 
 # The atoms are in a table at the start of __LINKEDIT after the
 # function starts and data in code, and its load command follows
-# theirs. mold has no debug hook yet.
+# theirs.
 $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable
 otool -l $t/a.dylib > $t/cmds
 grep -A3 LC_ATOM_INFO $t/cmds > $t/atom-info
@@ -71,6 +71,10 @@ $CC --ld-path=$mold -shared -o $t/c.dylib $t/c.o -Wl,-make_mergeable
 otool -tv $t/c.dylib > $t/disasm
 not grep -q 'nop' $t/disasm
 
+# The debug build gets the hook for the classes it doesn't export (see
+# merged-libraries-hook.sh), after the export options; none if there
+# are none. The hook's initializer has the same name in mold's and
+# ld-prime's.
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 __attribute__((visibility("hidden")))
@@ -78,13 +82,33 @@ __attribute__((visibility("hidden")))
 @end
 @implementation Hidden
 @end
+@interface Shown : NSObject
+@end
+@implementation Shown
+@end
 EOF
-if $mold -v 2>&1 | grep -q mold-macho; then
-  not $CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
-    -Wl,-add_mergeable_debug_hook 2> $t/log13
-  grep -q -- '-add_mergeable_debug_hook is not supported' $t/log13
-else
-  $CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
+cat <<EOF | $CC -o $t/d.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+@interface Shown : NSObject
+@end
+@implementation Shown
+@end
+EOF
+$CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
+  -Wl,-add_mergeable_debug_hook
+nm $t/b.dylib > $t/syms
+grep -q __ZL11constructorv $t/syms
+for objs in $t/d.o $t/a.o; do
+  $CC --ld-path=$mold -shared -o $t/d.dylib $objs -framework Foundation \
     -Wl,-add_mergeable_debug_hook
-  nm $t/b.dylib | grep -q imageNameHook
-fi
+  nm $t/d.dylib > $t/syms
+  not grep -q __ZL11constructorv $t/syms
+done
+$CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -framework Foundation \
+  -Wl,-add_mergeable_debug_hook -Wl,-unexported_symbol,'_OBJC_CLASS_$_Shown'
+nm $t/d.dylib > $t/syms
+grep -q __ZL11constructorv $t/syms
+$CC --ld-path=$mold -shared -o $t/d.dylib $t/b.o -framework Foundation \
+  -Wl,-add_mergeable_debug_hook -Wl,-no_merged_libraries_hook
+nm $t/d.dylib > $t/syms
+not grep -q __ZL11constructorv $t/syms

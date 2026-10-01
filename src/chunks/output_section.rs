@@ -169,7 +169,9 @@ fn write_data_blobs<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut 
                     at += bytes.len();
                 }
                 DataField::Ptr(r) => {
-                    buf[at..at + 8].copy_from_slice(&objc_ref_addr(ctx, *r).to_le_bytes());
+                    // dyld fills in a pointer to an import.
+                    let addr = if r.import(ctx).is_some() { 0 } else { objc_ref_addr(ctx, *r) };
+                    buf[at..at + 8].copy_from_slice(&addr.to_le_bytes());
                     at += 8;
                 }
             }
