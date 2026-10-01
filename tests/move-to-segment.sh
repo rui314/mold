@@ -109,6 +109,29 @@ nm -m $t/libb.dylib | grep -q '(__FOO,__data) external _ptr$'
 $CC --ld-path=$mold -o $t/exe5 $t/c.o $t/libb.dylib
 [ "$($t/exe5)" = hello ]
 
+# The warnings follow ld-prime's walk over the atoms: file by file the
+# atoms of an object's sections, common symbols and absolute symbols,
+# then those of the thread-local variables' descriptors it makes.
+cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.data
+.globl _f1
+_f1: .quad 1
+.comm _c1,8,3
+.globl _absf
+_absf = 7
+.subsections_via_symbols
+EOF
+cat <<EOF | $CC -o $t/f.o -c -xc -
+__thread int tv1 = 1;
+int e1 = 2;
+int *get(void) { return &tv1; }
+int main() { return 0; }
+EOF
+printf '_tv1\n_e1\n_absf\n_c1\n_f1\n' > $t/order.txt
+$CC --ld-path=$mold -o $t/exe10 $t/e.o $t/f.o -Wl,-move_to_ro_segment,__BAR,$t/order.txt 2> $t/log10
+sed -n "s/.*cannot move symbol '\([^']*\)'.*/\1/p" $t/log10 | tr '\n' ' ' > $t/order10
+[ "$(cat $t/order10)" = '_f1 _c1 _absf _e1 _tv1 ' ]
+
 # The Objective-C records the linker rewrites move as the input's would:
 # the class data category merging rebuilt, and the method lists in the
 # relative form, which ld-prime makes in its own objc-file and counts

@@ -71,16 +71,25 @@ struct Atom<'a> {
     /// symbol, or for another subsection the linker places itself (an
     /// input class reference folded into the GOT).
     isec: Option<u32>,
-    /// Where ld-prime comes to the atom: at its input subsection, or
-    /// after every input's for an absolute symbol or a thread-local
-    /// variable's descriptor, which ld-prime makes anew, and for a
-    /// method list rewritten in the relative form, in the order the
-    /// lists were rewritten.
-    place: u32,
+    /// Where ld-prime comes to the atom (see Place).
+    place: Place,
     segment: &'a str,
     content: Content,
     kind: &'static str,
 }
+
+/// Where ld-prime comes to an atom in its walk over the files' atoms,
+/// which orders its warnings and its -trace_symbol_layout lines: file
+/// by file, an object's atoms of its sections, then of its common
+/// symbols (mold makes their subsections after every input's), then of
+/// its absolute symbols; after the objects, the files ld-prime makes
+/// itself, each with its atoms in the order made - the Objective-C
+/// one's relative method lists, then the thread-local variables'
+/// descriptors. (A file and a subsection.)
+type Place = (u32, u64);
+
+const OBJC_FILE: u32 = u32::MAX - 1;
+const TLV_FILE: u32 = u32::MAX;
 
 /// What an atom of an input section holds, and ld-prime's name for it.
 fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
@@ -130,7 +139,7 @@ fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
 /// subsection, and warns about each symbol a list names (not one a
 /// pattern matches) that its option cannot move, as ld-prime does: of
 /// -move_to_ro_segment's first, then of -move_to_rw_segment's, each in
-/// the order of the atoms (absolute symbols last). The two
+/// the order of the atoms (see Place). The two
 /// options look at an atom apart, each with the first of its lists
 /// that names it: one whose segment is the atom's own leaves it in
 /// place silently, -move_to_rw_segment's wins over the other's, and
@@ -275,7 +284,8 @@ fn atom_named<'a, E: Target>(
     if nlist.is_common() {
         let isec = sym.input_section().filter(|isec| commons.get(isec) == Some(&(obj as u32)))?;
         let (content, kind) = (Content::Data, "common");
-        return Some(Atom { isec: Some(isec), place: isec, segment: "__DATA", content, kind });
+        let place = (obj as u32, isec as u64);
+        return Some(Atom { isec: Some(isec), place, segment: "__DATA", content, kind });
     }
     if nlist.is_stab()
         || !matches!(nlist.n_type(), N_SECT | N_ABS)
@@ -290,7 +300,8 @@ fn atom_named<'a, E: Target>(
     }
     let Some(isec) = isec else {
         let (content, kind) = (Content::Data, "data");
-        return Some(Atom { isec: None, place: u32::MAX, segment: "", content, kind });
+        let place = (obj as u32, u64::MAX);
+        return Some(Atom { isec: None, place, segment: "", content, kind });
     };
     let kept = ctx.resolve_isec(isec as usize);
     if !ctx.isecs[kept].is_alive() {
@@ -303,9 +314,14 @@ fn atom_named<'a, E: Target>(
         _ => content_of(hdr.segname(), hdr.sectname(), hdr.flags),
     };
     let movable = rewritten.is_some() || !ctx.isecs[kept].is_placed();
+    let file = match kind {
+        "objc-method-list" => OBJC_FILE,
+        "thread-vars" => TLV_FILE,
+        _ => obj as u32,
+    };
     Some(Atom {
         isec: movable.then_some(kept as u32),
-        place: if kind == "thread-vars" { u32::MAX } else { isec },
+        place: (file, isec as u64),
         segment: hdr.segname(),
         content,
         kind,
