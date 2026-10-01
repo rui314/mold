@@ -38,8 +38,11 @@ pub struct MappedFile {
     pub(crate) data: &'static [u8],
     /// The archive this file is a member of.
     pub parent: Option<&'static Self>,
-    /// An archive member's modification time, as its header records it.
-    pub ar_date: Option<u64>,
+    /// The modification time to note for the file in debug stabs when
+    /// it is not the one of a file on disk: an archive member's, as
+    /// its header records it, or 0 for the object LTO compiled in
+    /// memory.
+    pub mtime: Option<u64>,
 }
 
 impl MappedFile {
@@ -77,12 +80,8 @@ impl MappedFile {
                 .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
             Box::leak(Box::new(map))
         };
-        let mf: &'static Self = Box::leak(Box::new(Self {
-            name: path.to_path_buf(),
-            data,
-            parent: None,
-            ar_date: None,
-        }));
+        let mf: &'static Self =
+            Box::leak(Box::new(Self { name: path.to_path_buf(), data, parent: None, mtime: None }));
         FILE_CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), mf);
         Ok(mf)
     }
@@ -132,14 +131,14 @@ impl MappedFile {
         name: PathBuf,
         start: usize,
         size: usize,
-        ar_date: Option<u64>,
+        mtime: Option<u64>,
     ) -> &'static Self {
         assert!(start <= self.size() && size <= self.size() - start);
         Box::leak(Box::new(Self {
             name,
             data: &self.data[start..start + size],
             parent: Some(self),
-            ar_date,
+            mtime,
         }))
     }
 

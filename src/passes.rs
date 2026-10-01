@@ -2212,13 +2212,21 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         obj.symbols.clear();
     }
 
+    // ld-prime names the object after the file -object_path_lto wrote
+    // it to, or else after a temporary file it never writes, in its
+    // diagnostics, the map and the debug stabs - which give the latter
+    // modification time 0.
+    let (name, mtime) = match &ctx.args.object_path_lto {
+        Some(path) => (path.clone(), None),
+        None => (PathBuf::from("/tmp/lto.o"), Some(0)),
+    };
     let mf = Box::leak(Box::new(crate::mapped_file::MappedFile {
-        name: PathBuf::from("<LTO>"),
+        name,
         data: Vec::leak(data),
         parent: None,
-        ar_date: None,
+        mtime,
     }));
-    input_files::parse_object(ctx, mf, true);
+    ctx.lto_obj = Some(input_files::parse_object(ctx, mf, true));
     true
 }
 

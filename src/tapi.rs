@@ -805,7 +805,7 @@ mod tests {
             name: std::path::PathBuf::from("test.tbd"),
             data: text.as_bytes(),
             parent: None,
-            ar_date: None,
+            mtime: None,
         }))
     }
 

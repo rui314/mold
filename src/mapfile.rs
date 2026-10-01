@@ -97,11 +97,13 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     };
 
     emit(0x00, concat!("mold-macho ", env!("CARGO_PKG_VERSION")).as_bytes());
+    // The object LTO compiled is no input (a build system can't depend
+    // on it), whatever -object_path_lto made of it.
     let mut inputs: Vec<&Path> = ctx
         .objs
         .iter()
         .enumerate()
-        .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
+        .filter(|&(i, o)| o.is_alive && !ctx.is_internal(i) && ctx.lto_obj != Some(i))
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
     inputs.extend(ctx.visited_files.iter().map(PathBuf::as_path));

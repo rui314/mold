@@ -578,11 +578,12 @@ fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Pat
     }
     // n_value is the object's modification time, which dsymutil and
     // lldb compare against the file they find (0 disables the check):
-    // an archive member's is its header's. ZERO_AR_DATE, set to
+    // an archive member's is its header's, and the LTO object's 0
+    // unless -object_path_lto wrote it out. ZERO_AR_DATE, set to
     // anything, zeroes them all for reproducible builds.
     let mtime = if ctx.args.zero_ar_date {
         0
-    } else if let Some(date) = obj.mf.ar_date {
+    } else if let Some(date) = obj.mf.mtime {
         date
     } else {
         std::fs::metadata(crate::util::os_str(&path))

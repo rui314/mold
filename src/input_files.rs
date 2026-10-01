@@ -158,7 +158,7 @@ impl ObjectFile {
             name: PathBuf::from("<synthesized>"),
             data: &[],
             parent: None,
-            ar_date: None,
+            mtime: None,
         }));
         Self {
             mf,
