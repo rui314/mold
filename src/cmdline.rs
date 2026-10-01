@@ -1180,7 +1180,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-compatibility_version"
         | "-dylib_compatibility_version"
         | "-macos_version_min"
-        | "-source_version" => "missing <version>",
+        | "-source_version"
+        | "-objc_abi_version" => "missing <version>",
         "-mllvm" => "missing <value>",
         "-undefined" => "missing <dynamic_lookup>",
         "-read_only_relocs" => "missing <option>",
@@ -1232,6 +1233,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // -read_only_relocs: whether its treatment allows text relocations.
     let mut read_only_relocs: Option<bool> = None;
     let mut headerpad: Option<u64> = None;
+    let mut threaded_starts = false;
     let mut target_triple: Option<&str> = None;
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut warnings = OptionWarnings::default();
@@ -1434,6 +1436,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-map" => args.map = Some(path(next_arg(&mut i, name))),
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
             b"-fixup_chains" => fixup_chains = Some(true),
+            b"-threaded_starts_section" => threaded_starts = true,
             b"-no_fixup_chains" => fixup_chains = Some(false),
             b"-adhoc_codesign" => adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => adhoc_codesign = Some(false),
@@ -1893,6 +1896,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-ld_prime" => obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
             b"-ld_new" => {}
+            // ld64 could still link the fragile (version 1) Objective-C
+            // ABI of 32-bit macOS; ld-prime knows the modern one alone.
+            b"-objc_abi_version" => {
+                let version = next_arg(&mut i, name).as_bytes();
+                if version != b"2" {
+                    fatal!("-objc_abi_version '{}' not supported (expected 2)", display(version));
+                }
+            }
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
@@ -2204,6 +2215,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         for _ in &lazy_libraries {
             crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
         }
+    }
+    // ld64 chained a static arm64e image's rebases through its pointers
+    // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
+    if threaded_starts {
+        if fixup_chains == Some(true) {
+            fatal!(
+                "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
+            );
+        }
+        fatal!("-threaded_starts_section is no longer supported");
     }
     // Only a dylib is mergeable: ld-prime checks so here, and that only
     // a dylib gets the debug hook right after the next check.
