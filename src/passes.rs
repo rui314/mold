@@ -2069,19 +2069,26 @@ unsafe fn create_lto_codegen<E: Target>(
 /// that definition's storage. So do -alias bases, which the linker
 /// itself references.
 fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicU8, Ordering};
 
-    let executable = ctx.args.output_type == MH_EXECUTE;
-    let native_refs: Vec<AtomicBool> =
-        (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
+    // What the native objects do with each symbol.
+    const REFERENCED: u8 = 1;
+    const DEFINED: u8 = 2;
+    let native: Vec<AtomicU8> = (0..ctx.symbols.syms.len()).map(|_| AtomicU8::new(0)).collect();
     ctx.objs.par_iter().filter(|obj| obj.is_alive && obj.lto_module.is_none()).for_each(|obj| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab() && nlist.n_type() == N_UNDF {
-                native_refs[sym_id as usize].store(true, Ordering::Relaxed);
-            }
+            let flag = match nlist.n_type() {
+                _ if nlist.is_stab() || !nlist.is_extern() => continue,
+                N_UNDF => REFERENCED,
+                N_SECT | N_ABS => DEFINED,
+                _ => continue,
+            };
+            native[sym_id as usize].fetch_or(flag, Ordering::Relaxed);
         }
     });
+
+    let executable = ctx.args.output_type == MH_EXECUTE;
     let mut roots = Vec::new();
     for (i, sym) in ctx.symbols.syms.iter().enumerate() {
         if let Some(FileId::Obj(idx)) = sym.file()
@@ -2091,7 +2098,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         {
             if executable
                 && !ctx.args.export_dynamic
-                && (!sym.is_used() || !native_refs[i].load(Ordering::Relaxed))
+                && (!sym.is_used() || native[i].load(Ordering::Relaxed) & REFERENCED == 0)
                 && sym.name() != ctx.args.entry
                 && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
                 && !ctx.args.aliases.iter().any(|(existing, _)| existing == sym.name())
@@ -2107,6 +2114,24 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         }
     }
     roots.push(&ctx.args.entry);
+
+    // A bitcode definition a native object has one of too survives, as
+    // ld64 keeps the LLVM atoms it coalesced away in favor of Mach-O
+    // ones: left to libLTO, a weak one would be inlined into the
+    // module's callers in place of the strong native definition that
+    // wins, and a strong one would vanish rather than be reported as a
+    // duplicate (ld-prime lists it in the compiled object).
+    for &(obj, _) in &ctx.lto_modules {
+        if !ctx.objs[obj].is_alive {
+            continue;
+        }
+        for (nlist, &id) in ctx.objs[obj].nlists.iter().zip(&ctx.objs[obj].symbols) {
+            if nlist.n_type() == N_ABS && native[id as usize].load(Ordering::Relaxed) & DEFINED != 0
+            {
+                roots.push(ctx.symbols[id].name());
+            }
+        }
+    }
     roots
 }
 

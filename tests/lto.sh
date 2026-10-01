@@ -59,3 +59,17 @@ rm -f $t/libfoo.a
 ar rcs $t/libfoo.a $t/c.o
 $CC -flto --ld-path=$mold -o $t/exe2 $t/d.o $t/libfoo.a
 $t/exe2 | grep '^3$'
+
+# A strong native definition overrides a weak bitcode one, so LTO must
+# keep the bitcode one external rather than inline it into its callers.
+cat <<EOF2 | $CC -flto -O2 -o $t/g.o -c -xc -
+#include <stdio.h>
+int pick(void);
+int main() {
+  printf("%d\n", pick());
+}
+EOF2
+echo '__attribute__((weak)) int pick(void) { return 1; }' | $CC -flto -O2 -o $t/h.o -c -xc -
+echo 'int pick(void) { return 2; }' | $CC -o $t/i.o -c -xc -
+$CC -flto --ld-path=$mold -o $t/exe5 $t/g.o $t/h.o $t/i.o
+$t/exe5 | grep '^2$'
