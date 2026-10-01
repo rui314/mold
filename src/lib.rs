@@ -26,6 +26,7 @@ pub(crate) mod passes;
 pub(crate) mod relocatable;
 pub(crate) mod subprocess;
 pub(crate) mod symbol;
+pub(crate) mod symbol_moves;
 pub(crate) mod tapi;
 pub mod target;
 pub(crate) mod thunks;

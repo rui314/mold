@@ -19,6 +19,7 @@ use crate::input_sections::InputSection;
 use crate::macho::*;
 use crate::objc::{DataBlob, cstring_of};
 use crate::passes::{is_class_or_protocol_ref_name, resolved_file_name};
+use crate::symbol_moves::{Move, MoveOption};
 use crate::target::Target;
 use crate::util::align_to;
 
@@ -368,6 +369,33 @@ impl SectionMap {
             _ => DATA_CONST_SECTIONS.contains(&sect),
         };
         if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
+    }
+
+    /// The name of the output section a symbol move (see symbol_moves)
+    /// puts a subsection of the input section `seg`,`sect` with `flags`
+    /// in, and the name its flags follow: -move_to_rw_segment and
+    /// -move_to_ro_segment move it, before ld-prime's own moves (which
+    /// then don't apply), to the section of its name in their segment;
+    /// -dirty_data_list after those, out of __DATA alone (None for a
+    /// section elsewhere), to __DATA_DIRTY. -rename_section and
+    /// -rename_segment then rename the new name.
+    fn moved_name(
+        self,
+        args: &crate::cmdline::Args,
+        m: Move,
+        seg: &str,
+        sect: &str,
+        flags: u32,
+    ) -> Option<(SectionName, SectionName)> {
+        let name = self.zero_fill_name((static_name(seg), static_name(sect)), flags);
+        let from = match m.option {
+            MoveOption::Rw | MoveOption::Ro => name,
+            MoveOption::Dirty => self.builtin_name(name, flags),
+        };
+        if m.option == MoveOption::Dirty && from.0 != "__DATA" {
+            return None;
+        }
+        Some((renamed(args, (m.segment, from.1)), from))
     }
 
     /// The name of a section with the type in `flags` under
@@ -884,19 +912,22 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Appends each live input section to its output section (see
-/// output_section_for), creating the output sections in the order their
-/// first members come, and drops the sections the link consumes. A
-/// final image's sections that renames made of zero-fill and
-/// file-backed members alike are then settled.
+/// output_section_for) - a subsection a symbol move takes to another
+/// segment to the section that names (see SectionMap::moved_name) -
+/// creating the output sections in the order their first members come,
+/// and drops the sections the link consumes. A final image's sections
+/// that renames made of zero-fill and file-backed members alike are
+/// then settled.
 fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     let map = SectionMap::new(ctx);
+    let moves = crate::symbol_moves::find_moves(ctx);
     // Each input section name's output section, keyed by the raw
     // 16-byte names, so that the hot loop does no allocation and no
     // linear scans - and by its flags too, which say whether -text_exec
     // moves it and whether it is the standard section of its name (see
-    // is_standard_section).
-    let mut by_name: hashbrown::HashMap<([u8; 16], [u8; 16], u32), Option<OutputSectionId>> =
-        hashbrown::HashMap::new();
+    // is_standard_section), and by the move of a moved subsection.
+    type Key = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static str)>);
+    let mut by_name: hashbrown::HashMap<Key, Option<OutputSectionId>> = hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
     let mut by_out: hashbrown::HashMap<(&'static str, &'static str), OutputSectionId> =
@@ -925,20 +956,28 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
         // A copy: the header lives in its object, which stays borrowed
         // while the section is placed below otherwise.
         let hdr = *hdr_ref;
-        let osec_id = if hdr_ptr == last_hdr {
+        let mv = moves.get(&(i as u32)).copied();
+        let osec_id = if hdr_ptr == last_hdr && mv.is_none() {
             last_osec
         } else {
-            let key = (hdr.segname, hdr.sectname, hdr.flags);
+            let key = (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)));
             let id = match by_name.get(&key) {
                 Some(&id) => id,
                 None => {
                     let (seg, sect) = (hdr.segname(), hdr.sectname());
-                    let out = output_section_for(&ctx.args, map, seg, sect, hdr.flags);
+                    let moved = mv.and_then(|m| {
+                        Some((m.option, map.moved_name(&ctx.args, m, seg, sect, hdr.flags)?))
+                    });
+                    let out = match moved {
+                        Some((_, names)) => Some(names),
+                        None => output_section_for(&ctx.args, map, seg, sect, hdr.flags),
+                    };
                     let id = out.map(|(out, flags_name)| match by_out.get(&out) {
                         Some(&id) => id,
                         None => {
                             let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
                             let id = add_output_section(ctx, out.0, out.1, flags);
+                            ctx.output_section_mut(id).moved = moved.map(|(option, _)| option);
                             by_out.insert(out, id);
                             id
                         }
@@ -956,8 +995,10 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
                     ctx.output_section_mut(id).has_tlv_data = true;
                 }
             }
-            last_hdr = hdr_ptr;
-            last_osec = id;
+            if mv.is_none() {
+                last_hdr = hdr_ptr;
+                last_osec = id;
+            }
             id
         };
         let Some(osec_id) = osec_id else {
@@ -1475,7 +1516,8 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
         // shared region, a kext) comes after __DATA, as ld-prime
         // places it. The segments of signed pointers, __AUTH_CONST then
         // __AUTH, go before __DATA, but in an image no loader slides by
-        // its fixups (a -static or -preload one).
+        // its fixups (a -static or -preload one); __DATA_DIRTY (see
+        // symbol_moves) follows __DATA in an image dyld loads.
         let auth = !ctx.args.static_link && !ctx.args.preload;
         let standard = match hdr.segname {
             "__TEXT" | "__TEXT_EXEC" => 0,
@@ -1484,6 +1526,7 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
             "__AUTH" if auth => 3,
             "__DATA" => 4,
             "__DATA_CONST" => 5,
+            "__DATA_DIRTY" if !ctx.args.without_dyld() => 5,
             _ => 6,
         };
         // -segment_order orders the rest: __TEXT, which holds the
@@ -1508,6 +1551,16 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
+            // ld-prime orders a section a symbol move made among those
+            // of its new segment by what its atoms hold, which they took
+            // along: code as in __TEXT, data as in __DATA.
+            ChunkId::Output(osec) if ctx.output_section(osec).moved.is_some() => {
+                late_text_rank(ctx, hdr).unwrap_or_else(|| {
+                    let code = hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0;
+                    let seg = if code { "__TEXT" } else { "__DATA" };
+                    1 + output_section_rank(seg, &hdr.sectname, hdr.flags)
+                })
+            }
             _ => late_text_rank(ctx, hdr)
                 .unwrap_or_else(|| 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags)),
         };

@@ -141,7 +141,7 @@ fn keep_local_symbol(name: &str) -> bool {
 /// ld -r demoted, a local that kept N_PEXT (`demoted`). A superclass or
 /// protocol reference keeps its label, unless it is of the
 /// literal-pointer type (see has_unnamed_atoms).
-fn keep_local_symbol_in<E: Target>(
+pub(crate) fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
     name: &str,
     isec: Option<u32>,

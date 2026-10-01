@@ -9,6 +9,7 @@ use crate::context::Context;
 use crate::input_sections::InputSectionId;
 use crate::objc::{DataField, objc_ref_addr};
 use crate::symbol::SymbolId;
+use crate::symbol_moves::MoveOption;
 use crate::target::Target;
 
 /// A range-extension thunk: a block of jump entries placed inside an
@@ -59,6 +60,9 @@ pub struct OutputSection {
     /// which a rename may have put in a section of another type (see
     /// passes::check_tlv_template).
     pub has_tlv_data: bool,
+    /// For a section a symbol move made (see symbol_moves), the option
+    /// that moved its first member.
+    pub moved: Option<MoveOption>,
 }
 
 impl OutputSection {
@@ -71,6 +75,7 @@ impl OutputSection {
             tail_off: 0,
             has_blobs: false,
             has_tlv_data: false,
+            moved: None,
         }
     }
 }

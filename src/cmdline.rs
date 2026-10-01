@@ -226,6 +226,20 @@ pub enum CommonsMode {
     Error,
 }
 
+/// A list of symbols whose atoms move to another segment: one of
+/// -move_to_rw_segment, -move_to_ro_segment or -dirty_data_list (see
+/// symbol_moves).
+#[derive(Debug)]
+pub struct SymbolMove {
+    /// The segment, as given: ld-prime's warnings name it so, and the
+    /// output cuts it to 16 bytes.
+    pub segment: String,
+    /// The names listed, each found with value 1, and the patterns,
+    /// with 0: ld-prime warns about a symbol it cannot move only if the
+    /// list names it.
+    pub symbols: Glob,
+}
+
 /// Parsed command line arguments.
 #[derive(Debug)]
 pub struct Args {
@@ -637,6 +651,13 @@ pub struct Args {
     pub rename_sections: Vec<(String, String, String, String)>,
     /// -rename_segment: (old, new).
     pub rename_segments: Vec<(String, String)>,
+    /// -move_to_rw_segment and -move_to_ro_segment: the lists of the
+    /// data and of the code to move to other segments, in command-line
+    /// order (the first list naming a symbol decides where it goes).
+    pub move_to_rw: Vec<SymbolMove>,
+    pub move_to_ro: Vec<SymbolMove>,
+    /// -dirty_data_list: the lists of the data to move to __DATA_DIRTY.
+    pub dirty_data: Vec<SymbolMove>,
     /// ZERO_AR_DATE is set: the stabs record no modification times.
     pub zero_ar_date: bool,
     /// A static executable (-static, -preload): an image no dyld loads
@@ -878,6 +899,9 @@ impl Default for Args {
             section_order: Vec::new(),
             rename_sections: Vec::new(),
             rename_segments: Vec::new(),
+            move_to_rw: Vec::new(),
+            move_to_ro: Vec::new(),
+            dirty_data: Vec::new(),
             zero_ar_date: false,
             static_link: false,
             preload: false,
@@ -1365,6 +1389,19 @@ fn read_symbol_list(opt: &str, path: &Path) -> Vec<String> {
             crate::error::errno_text(&e)
         ),
     }
+}
+
+/// Reads the list of a symbol move to `segment` (see SymbolMove), whose
+/// lines are those of an export list: names, patterns, and either
+/// qualified as file:name to match the symbol of an object of that
+/// leaf name ("foo.o", "libfoo.a(foo.o)") alone. A malformed pattern
+/// matches nothing, as in ld-prime.
+fn symbol_move(opt: &str, segment: &str, path: &Path) -> SymbolMove {
+    let mut symbols = GlobBuilder::default();
+    for sym in read_symbol_list(opt, path) {
+        symbols.add(sym.as_bytes(), if is_pattern(&sym) { 0 } else { 1 });
+    }
+    SymbolMove { segment: segment.to_string(), symbols: symbols.build() }
 }
 
 fn symbol_list(text: &str) -> Vec<String> {
@@ -1858,6 +1895,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             _ => fatal!("{opt} missing {usage}"),
         }
     };
+    // An operand of -move_to_rw_segment or -move_to_ro_segment: ld-prime
+    // reports a missing or empty one with the option's usage alone.
+    let move_operand = |i: &mut usize, opt: &str| -> &OsStr {
+        *i += 1;
+        match cmdline.get(*i) {
+            Some(arg) if !arg.is_empty() => arg.as_ref(),
+            _ => fatal!("{opt} <segname> <path>"),
+        }
+    };
     // An argument that is text by nature.
     fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
         arg.to_str().unwrap_or_else(|| {
@@ -2113,6 +2159,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let old = rename_operand(&mut i, name, usage).to_string();
                 let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
+            }
+            b"-move_to_rw_segment" | b"-move_to_ro_segment" => {
+                let segment = text(name, move_operand(&mut i, name));
+                let list = symbol_move(name, segment, &path(move_operand(&mut i, name)));
+                match name {
+                    "-move_to_rw_segment" => args.move_to_rw.push(list),
+                    _ => args.move_to_ro.push(list),
+                }
+            }
+            // ld-prime's error about a list it can't open names no option.
+            b"-dirty_data_list" => {
+                let list = symbol_move("", "__DATA_DIRTY", &path(next_arg(&mut i, name)));
+                args.dirty_data.push(list);
             }
             b"-stack_size" => {
                 let size = hex_number(text(name, next_arg(&mut i, name)));
@@ -3078,11 +3137,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
     resolve_pagezero_size(&mut args);
     resolve_stack(target, &mut args, stack_size, stack_addr);
-    // A relocatable object leaves the __DATA_CONST split to the link
-    // that consumes it.
-    if args.relocatable && data_const == Some(true) {
-        fatal!("-data_const not supported with -r");
-    }
+    check_relocatable(&args, data_const);
     args.const_selrefs = const_selrefs.unwrap_or(args.shared_region);
     args.lto_softload = lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
@@ -3357,6 +3412,25 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
             fatal!("-pie can only be used when linking a main executable");
         }
         crate::warn!("-pie being ignored. It is only used when linking a main executable");
+    }
+}
+
+/// Rejects in a relocatable object what only a final image lays out, as
+/// ld-prime does, in this order: the moves of symbols to other
+/// segments - but -dirty_data_list's, which it ignores there - and the
+/// __DATA_CONST split, which the link that consumes it decides.
+fn check_relocatable(args: &Args, data_const: Option<bool>) {
+    if !args.relocatable {
+        return;
+    }
+    if !args.move_to_rw.is_empty() {
+        fatal!("-move_to_rw_segment not supported with -r");
+    }
+    if !args.move_to_ro.is_empty() {
+        fatal!("-move_to_ro_segment not supported with -r");
+    }
+    if data_const == Some(true) {
+        fatal!("-data_const not supported with -r");
     }
 }
 

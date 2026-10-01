@@ -49,6 +49,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
+use crate::symbol_moves::MoveOption;
 use crate::target::Target;
 
 pub use output_section::{OutputSection, Tail, Thunk};
@@ -363,7 +364,8 @@ fn append_string(buf: &mut Vec<u8>, s: &[u8]) {
 }
 
 /// A segment's maxprot and initprot in the output.
-pub fn segment_prots<E: Target>(ctx: &Context<E>, name: &str) -> (u32, u32) {
+pub fn segment_prots<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> (u32, u32) {
+    let name = seg.name;
     // -segprot overrides the defaults.
     if let Some(&(_, max, init)) = ctx.args.segprots.iter().find(|(seg, _, _)| seg == name) {
         return (u32::from(max), u32::from(init));
@@ -372,8 +374,26 @@ pub fn segment_prots<E: Target>(ctx: &Context<E>, name: &str) -> (u32, u32) {
     if name == "__TEXT" && ctx.args.text_exec {
         return (VM_PROT_READ, VM_PROT_READ);
     }
+    if holds_moved_code(ctx, seg) {
+        return (VM_PROT_READ | VM_PROT_EXECUTE, VM_PROT_READ | VM_PROT_EXECUTE);
+    }
     let prot = segment_prot(name);
     (prot, prot)
+}
+
+/// Whether a segment is one -move_to_ro_segment made for code: all its
+/// sections hold what the option moved there, code among it. ld-prime
+/// gives such a segment the read-write protection of any other one it
+/// doesn't know, where the code it moved can't run (a Bus error); mold
+/// deliberately makes it executable - and read-only, as the option's
+/// name has it.
+fn holds_moved_code<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> bool {
+    let moved_ro = |id: &ChunkId| match id {
+        ChunkId::Output(osec) => ctx.output_section(*osec).moved == Some(MoveOption::Ro),
+        _ => false,
+    };
+    let is_code = |id: &ChunkId| ctx.chunk_header(*id).flags & S_ATTR_PURE_INSTRUCTIONS != 0;
+    seg.chunks.iter().all(moved_ro) && seg.chunks.iter().any(is_code)
 }
 
 fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u8> {
@@ -386,7 +406,7 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
 
     cmd.nsects = sects.len() as u32;
     cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
-    (cmd.maxprot, cmd.initprot) = segment_prots(ctx, seg.name);
+    (cmd.maxprot, cmd.initprot) = segment_prots(ctx, seg);
     // dyld makes __DATA_CONST read-only once binds are applied; not in
     // an image bound for the shared region, which ld-prime leaves to
     // the cache (or kernel collection) builder, but for dyld itself,

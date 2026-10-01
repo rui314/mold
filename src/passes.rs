@@ -5592,7 +5592,7 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
         .filter(|seg| {
             seg.name != "__PAGEZERO"
                 && seg.name != "__LINKEDIT"
-                && chunks::segment_prots(ctx, seg.name).1 & VM_PROT_WRITE == 0
+                && chunks::segment_prots(ctx, seg).1 & VM_PROT_WRITE == 0
         })
         .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize)
         .collect()
