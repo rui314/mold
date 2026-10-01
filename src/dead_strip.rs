@@ -907,7 +907,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
                 let Some(FileId::Dylib(i)) = ctx.symbols[sym].file() else { unreachable!() };
                 let path = self.providers.get(&sym).copied();
                 let path = path.unwrap_or(&ctx.dylibs[i as usize].path);
-                let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                let (real, _) = crate::passes::real_path(path);
                 return format!("{name} from {}", real.display());
             }
         };

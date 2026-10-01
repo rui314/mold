@@ -4232,8 +4232,7 @@ fn defining_file<E: Target>(
         (None, true) => input_files::find_reexport(ctx, &dylib.install_name).map(|mf| &mf.name),
         (None, false) => None,
     };
-    let path = file.unwrap_or(&dylib.path);
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    real_path(file.unwrap_or(&dylib.path)).0
 }
 
 /// -warn_commons: ld-prime warns, as it resolves symbols, of each
@@ -4457,7 +4456,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
             map
         });
         match map.get(&id) {
-            Some(&obj_idx) => file_display(&ctx.objs[obj_idx]).to_string(),
+            Some(&obj_idx) => referencing_file_name(ctx.objs[obj_idx].mf),
             None if Some(id) == lazy_load => "<lazy-load-undefs>".to_string(),
             None => initial.get(&id).copied().unwrap_or("<synthesized>").to_string(),
         }
@@ -4682,6 +4681,28 @@ fn resolved_file_path(mf: &MappedFile) -> Vec<u8> {
     if mf.is_lto_output {
         return path_bytes(&mf.name).to_vec();
     }
+    spelled_file_path(mf, |path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+}
+
+/// A file's name as ld-prime's undefined-symbol report says where a
+/// symbol is referenced from: the file's leaf name - of an archive
+/// member "libfoo.a[2](foo.o)", of a fat archive's member
+/// "libfoo.a[arm64][2](foo.o)", of the object LTO compiled "lto.o".
+pub(crate) fn referencing_file_name(mf: &MappedFile) -> String {
+    let leaf = spelled_file_path(mf, |path| path.file_name().unwrap_or_default().into());
+    crate::util::display(&leaf).into_owned()
+}
+
+/// A file's name as resolved_file_name and referencing_file_name spell
+/// it, the file's path (or for an archive member, the archive's) as
+/// `spell` gives it, without the architecture of a fat file's slice:
+/// "path", or "path[2](foo.o)" for an archive member, with a fat
+/// archive's architecture before the member's position.
+fn spelled_file_path(mf: &MappedFile, spell: impl Fn(&Path) -> PathBuf) -> Vec<u8> {
+    fn split<'a>(name: &'a Path, spell: &impl Fn(&Path) -> PathBuf) -> (PathBuf, Option<&'a [u8]>) {
+        let (path, arch) = input_files::split_fat_arch(path_bytes(name));
+        (spell(Path::new(crate::util::os_str(path))), arch)
+    }
     if let Some(ar) = mf.parent
         && let Some(index) = crate::archive_file::member_index(mf)
     {
@@ -4691,12 +4712,12 @@ fn resolved_file_path(mf: &MappedFile) -> Vec<u8> {
             .and_then(|rest| rest.strip_prefix(b"("))
             .and_then(|rest| rest.strip_suffix(b")"))
             .unwrap_or(full);
-        let (path, arch) = real_path(&ar.name);
+        let (path, arch) = split(&ar.name, &spell);
         let arch = arch.map_or(Vec::new(), |arch| [b"[", arch, b"]"].concat());
         let index = format!("[{index}](");
         return [path_bytes(&path), &arch, index.as_bytes(), member, b")"].concat();
     }
-    path_bytes(&real_path(&mf.name).0).to_vec()
+    path_bytes(&split(&mf.name, &spell).0).to_vec()
 }
 
 /// A file's real path, and of a fat file's slice the architecture.
@@ -4943,7 +4964,7 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     }
     for (i, dylib) in ctx.dylibs.iter().enumerate() {
         if !bound[i] && dylib.is_bundle_loader {
-            let real = std::fs::canonicalize(&dylib.path).unwrap_or_else(|_| dylib.path.clone());
+            let (real, _) = real_path(&dylib.path);
             crate::warn!(
                 "linking with bundle loader ({}) but not using any symbols from it",
                 real.display()
