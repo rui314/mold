@@ -1913,9 +1913,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
 
             raw => {
-                // The library options with the name joined to them
-                // want one.
-                for prefix in [
+                // The library options with the name joined to them take
+                // it as the next argument as well, as -l does.
+                let joined;
+                let raw = match [
                     "-reexport-l",
                     "-hidden-l",
                     "-needed-l",
@@ -1924,11 +1925,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "-weak-l",
                     "-no_merge-l",
                     "-merge-l",
-                ] {
-                    if raw == prefix.as_bytes() {
-                        fatal!("{}", missing_argument(prefix));
+                ]
+                .into_iter()
+                .find(|prefix| raw == prefix.as_bytes())
+                {
+                    Some(prefix) => {
+                        joined = [raw, next_arg(&mut i, prefix).as_bytes()].concat();
+                        &joined[..]
                     }
-                }
+                    None => raw,
+                };
                 let os_name = |rest: &[u8]| os_str(rest).to_owned();
                 if let Some(lib) = raw.strip_prefix(b"-reexport-l") {
                     args.inputs.push(InputArg::ReexportLib(os_name(lib)));

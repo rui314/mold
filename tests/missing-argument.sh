@@ -46,6 +46,7 @@ missing '-platform_version missing arguments <platform> <min_version> <sdk_versi
 missing '-macos_version_min missing <version>' -macos_version_min ''
 missing '-weak-l missing <path>' -weak-l
 missing '-needed-l missing <path>' -needed-l
+missing '-reexport-l missing <path>' -reexport-l ''
 missing '-seg_page_size needs <segname> <size>' -seg_page_size '' 4000
 $mold -r -arch $ARCH -o $t/d.o $t/a.o -rpath '' -current_version '' 2> $t/log
 grep -Fq -- 'warning: -rpath missing <path>' $t/log
@@ -57,3 +58,11 @@ not $mold -target foo-apple-macos14.0 -o $t/exe $t/a.o 2> $t/log
 grep -Fq -- "unknown architecture in target triple 'foo-apple-macos14.0'" $t/log
 not $mold -arch i386 -o $t/exe $t/a.o 2> $t/log
 grep -Fq -- 'linking for i386 is no longer supported' $t/log
+
+# A library option with the name joined to it takes the name as the
+# next argument as well, as -l does.
+echo 'void foo(void) {}' | $CC -shared -o $t/libfoo.dylib -xc - -Wl,-install_name,@rpath/libfoo.dylib
+for opt in -weak-l -needed-l -reexport-l -hidden-l -upward-l -lazy-l; do
+  $CC --ld-path=$mold -shared -o $t/b.dylib $t/a.o -L$t -Wl,$opt,foo 2> /dev/null
+  otool -L $t/b.dylib | grep -q @rpath/libfoo.dylib
+done
