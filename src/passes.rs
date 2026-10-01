@@ -3215,10 +3215,10 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Ordinals (and so the load commands) in ld64's order: the
-    // libraries named on the command line or by auto-link options in
-    // naming order, then the implicitly loaded ones by install name. A
-    // lazy dylib has neither: its imports' n_desc names the image
+    // Ordinals (and so the load commands) in ld-prime's order: the
+    // libraries named on the command line in naming order, then those
+    // loaded implicitly or by auto-link options together, by install
+    // name. A lazy dylib has none: its imports' n_desc names the image
     // itself (ordinal 0), as ld-prime writes it.
     for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
         dylib.dylib_idx = 0;
@@ -3226,9 +3226,13 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     let mut order: Vec<usize> = (0..ctx.dylibs.len())
         .filter(|&i| !ctx.dylibs[i].is_bundle_loader && !ctx.dylibs[i].is_lazy)
         .collect();
+    let named_at = |d: &input_files::DylibFile| match d.is_autolinked {
+        true => u32::MAX,
+        false => d.load_order,
+    };
     order.sort_by(|&a, &b| {
         let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
-        da.load_order.cmp(&db.load_order).then_with(|| da.install_name.cmp(&db.install_name))
+        named_at(da).cmp(&named_at(db)).then_with(|| da.install_name.cmp(&db.install_name))
     });
     for (ordinal, &i) in order.iter().enumerate() {
         ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
