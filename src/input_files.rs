@@ -966,20 +966,42 @@ fn read_symtab(
     (nlists, strtab)
 }
 
+/// Which FDEs of an object's __eh_frame the link keeps.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KeptFdes {
+    /// Those of functions no compact unwind record covers.
+    Uncovered,
+    /// Every one (see Args::keeps_all_fdes).
+    All,
+    /// None: -no_dwarf_unwind leaves the DWARF unwind info out of the
+    /// output, a -r one too. ld-prime keeps a function's DWARF-mode
+    /// compact record all the same, its FDE offset 0.
+    None,
+}
+
+impl KeptFdes {
+    pub fn of(args: &crate::cmdline::Args) -> Self {
+        if args.no_dwarf_unwind {
+            KeptFdes::None
+        } else if args.keeps_all_fdes() {
+            KeptFdes::All
+        } else {
+            KeptFdes::Uncovered
+        }
+    }
+}
+
 /// Parses one object file without touching any linker state.
 /// `relocatable` is set for a -r link, which keeps the flags of a
 /// .weak_def_can_be_hidden symbol that names a whole section (see
-/// unweaken_section_atom_names). `keep_all_fdes` keeps the
-/// FDEs of functions a compact unwind record already covers, for an
-/// output that has no __unwind_info to hold that record (see
-/// Args::unwind_info).
+/// unweaken_section_atom_names).
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
     hidden: bool,
     priority: u32,
     relocatable: bool,
-    keep_all_fdes: bool,
+    kept_fdes: KeptFdes,
 ) -> StagedObject {
     let data = mf.data();
     let hdr = MachHeader::read_from(data);
@@ -1072,18 +1094,21 @@ pub fn stage_object<E: Target>(
         }
     }
     if relocs_ok
+        && kept_fdes != KeptFdes::None
         && let Some(hdr) =
             sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
     {
-        obj.data_fde = obj.parse_eh_frame::<E>(hdr, keep_all_fdes);
+        obj.data_fde = obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
     }
     if relocs_ok {
         obj.pointer_without_target = obj.pointer_without_target();
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
-    obj.unwind.retain(|rec| {
-        rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
-    });
+    if kept_fdes != KeptFdes::None {
+        obj.unwind.retain(|rec| {
+            rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
+        });
+    }
     obj.group_unwind_records();
     obj
 }
@@ -1942,8 +1967,8 @@ pub fn parse_object<E: Target>(
     alive: bool,
 ) -> usize {
     let priority = ctx.next_priority();
-    let keep_all_fdes = ctx.args.keeps_all_fdes();
-    let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, keep_all_fdes);
+    let kept_fdes = KeptFdes::of(&ctx.args);
+    let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, kept_fdes);
     staged.check_unwind_sections();
     integrate_object(ctx, staged)
 }

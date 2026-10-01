@@ -673,7 +673,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
 /// input order - the parallel front end of the mold design.
 fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let relocatable = ctx.args.relocatable;
-    let keep_all_fdes = ctx.args.keeps_all_fdes();
+    let kept_fdes = input_files::KeptFdes::of(&ctx.args);
     let t = ctx.timer("stage");
     let staged: Vec<input_files::StagedObject> = pending
         .par_iter()
@@ -684,7 +684,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
                 p.hidden,
                 p.priority,
                 relocatable,
-                keep_all_fdes,
+                kept_fdes,
             )
         })
         .collect();

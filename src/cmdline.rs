@@ -686,6 +686,9 @@ pub struct Args {
     /// default only in an image bound for the shared region, whatever
     /// the deployment target (unlike ld64's, from macOS 13 on).
     pub const_selrefs: bool,
+    /// -no_dwarf_unwind: leave the inputs' __eh_frame out of the output
+    /// (see input_files::KeptFdes).
+    pub no_dwarf_unwind: bool,
 }
 
 impl Default for Args {
@@ -848,6 +851,7 @@ impl Default for Args {
             dyld_envs: Vec::new(),
             objc_stubs_small: false,
             const_selrefs: false,
+            no_dwarf_unwind: false,
         }
     }
 }
@@ -2623,6 +2627,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // x86-64's pass for zero-fill sections out of reach of
             // 32-bit displacements. ld-prime takes them silently.
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
+            b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
             // ld64 took the D script of the image's probes from this;
             // ld-prime neither opens the file nor needs one, in a -r
             // link either.
