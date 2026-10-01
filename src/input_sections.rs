@@ -314,6 +314,11 @@ impl InputSection {
     pub fn mark_visited(&self) -> bool {
         self.flags.fetch_or(IS_VISITED, std::sync::atomic::Ordering::Relaxed) & IS_VISITED == 0
     }
+    /// Clears the visited bit, through a shared reference.
+    #[inline]
+    pub fn unmark_visited(&self) {
+        self.flags.fetch_and(!IS_VISITED, std::sync::atomic::Ordering::Relaxed);
+    }
     /// Whether the visited bit is set.
     #[inline]
     pub fn is_visited(&self) -> bool {

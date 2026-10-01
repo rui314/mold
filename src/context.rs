@@ -129,6 +129,10 @@ pub struct Context<E: Target> {
     pub lto_objs: std::ops::Range<usize>,
     /// The bitcode files LTO compiled, in input order.
     pub lto_inputs: Vec<crate::lto::LtoInput>,
+    /// The imports only code that ld-prime's own dead stripping of an
+    /// LTO link removed used, which stay in the symbol table (see
+    /// Context::strips_dead_code).
+    pub stripped_imports: Vec<crate::symbol::SymbolId>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -295,6 +299,7 @@ impl<E: Target> Context<E> {
             lto_modules: Vec::new(),
             lto_objs: 0..0,
             lto_inputs: Vec::new(),
+            stripped_imports: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
             processed_linker_options: std::collections::HashSet::new(),
@@ -499,6 +504,17 @@ impl<E: Target> Context<E> {
         self.lto_objs.contains(&idx)
     }
 
+    /// Whether the link strips dead code: under -dead_strip, or - as
+    /// ld-prime does unasked - in a final image of code LTO compiled,
+    /// executable or not, which it walks as dead stripping does to
+    /// find what LTO must preserve (see
+    /// dead_strip::native_refs_before_lto). That strip leaves the
+    /// imports only stripped code used in the symbol table, unbound,
+    /// and the map lists nothing it removed.
+    pub fn strips_dead_code(&self) -> bool {
+        self.args.dead_strip || (!self.args.relocatable && !self.lto_inputs.is_empty())
+    }
+
     /// Whether a lone CIE - one no FDE of its object points at - goes
     /// to the output: ld-prime carries it as any other atom of a live
     /// file, so that a -r output keeps it too, but dead stripping drops
@@ -508,7 +524,7 @@ impl<E: Target> Context<E> {
     pub fn keeps_lone_cie(&self, cie: &crate::input_files::Cie) -> bool {
         !cie.has_fdes
             && self.objs[cie.obj as usize].is_alive
-            && (self.args.relocatable || !self.args.dead_strip)
+            && (self.args.relocatable || !self.strips_dead_code())
     }
 
     /// Adds a section the linker synthesizes to the internal object,

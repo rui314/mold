@@ -185,10 +185,9 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::print_trace(&ctx);
     passes::print_implicit_trace(&ctx);
     crate::error::checkpoint();
-    if ctx.args.dead_strip {
+    if ctx.strips_dead_code() {
         let t = ctx.timer("dead_strip");
-        dead_strip::dead_strip(&mut ctx);
-        dead_strip::mark_live_references(&mut ctx);
+        dead_strip::strip_dead_code(&mut ctx);
         drop(t);
     }
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));

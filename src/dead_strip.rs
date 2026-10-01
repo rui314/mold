@@ -9,6 +9,7 @@
 //! gc_sections.rs in mold (dead-strip.cc in sold).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
@@ -20,11 +21,31 @@ use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
 use crate::target::Target;
 
+/// Strips dead code (see Context::strips_dead_code) and refreshes which
+/// symbols live code uses. An import only stripped code used stays in
+/// the symbol table if -dead_strip didn't ask for the strip.
+pub fn strip_dead_code<E: Target>(ctx: &mut Context<E>) {
+    let imports: Vec<SymbolId> = if ctx.args.dead_strip {
+        Vec::new()
+    } else {
+        (0..ctx.symbols.syms.len() as SymbolId)
+            .into_par_iter()
+            .filter(|&id| {
+                let sym = &ctx.symbols[id];
+                sym.is_used() && matches!(sym.file(), Some(FileId::Dylib(_)))
+            })
+            .collect()
+    };
+    dead_strip(ctx);
+    mark_live_references(ctx);
+    ctx.stripped_imports = imports.into_iter().filter(|&id| !ctx.symbols[id].is_used()).collect();
+}
+
 /// Removes subsections that are not reachable from the roots: the entry
 /// point, exported symbols (for a dylib), and everything the format
 /// requires to stay (initializers, no-dead-strip sections and symbols).
 /// Reachability follows relocations and unwind-info edges.
-pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
+fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     // Merged literals and rewritten ObjC data stand in for the
     // subsections they replaced; roots and edges are marked through to
     // the replacement.
@@ -36,7 +57,7 @@ pub fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     // walk run on all cores; -why_live's chains are not, and it walks
     // serially as ld-prime does.
     if ctx.args.why_live.is_empty() {
-        let roots = collect_root_set(ctx, redirects);
+        let roots = collect_root_set(ctx, redirects, |sym| symbol_root(ctx, sym).is_some());
         mark(ctx, redirects, &roots);
     } else {
         WhyLive::new(ctx, redirects).walk();
@@ -113,9 +134,15 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
             && hdr.section_type() != S_THREAD_LOCAL_VARIABLES)
 }
 
-/// Marks the roots and returns them. They are found on all cores;
+/// Marks the roots and returns them: the sections the format keeps,
+/// those defining a symbol `is_root` takes, and those of the
+/// initializers and initial undefines. They are found on all cores;
 /// marking stays serial (it is a handful of sections).
-fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usize> {
+fn collect_root_set<E: Target>(
+    ctx: &Context<E>,
+    redirects: &[usize],
+    is_root: impl Fn(&Symbol) -> bool + Sync,
+) -> Vec<usize> {
     let mut roots = Vec::new();
     // Liveness is marked in place, on the section's atomic visited bit
     // (mold's IS_VISITED), rather than in side arrays copied back at
@@ -153,7 +180,7 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
         .symbols
         .syms
         .par_iter()
-        .filter(|sym| symbol_root(ctx, sym).is_some())
+        .filter(|sym| is_root(sym))
         .filter_map(|sym| Some(sym.input_section()? as usize))
         .collect();
     for id in syms {
@@ -168,6 +195,79 @@ fn collect_root_set<E: Target>(ctx: &Context<E>, redirects: &[usize]) -> Vec<usi
         }
     }
     roots
+}
+
+/// The symbols live Mach-O code refers to before LTO, as ld-prime finds
+/// them to tell libLTO what to preserve: it walks the atoms as dead
+/// stripping does - in any link with bitcode, -dead_strip or not - from
+/// the same roots, each bitcode file's "internal" atom among them,
+/// which stands for its module's code and refers to every symbol the
+/// module does. A bitcode definition is an atom that refers to that
+/// one. So native code that only bitcode, a root or another such
+/// function reaches counts, and code nothing does (a hidden helper no
+/// one calls) doesn't. The export lists have hidden nothing yet; the
+/// roots go by them (see exported_before_lto).
+pub fn native_refs_before_lto<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
+    let redirects: Vec<usize> =
+        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
+    let is_root = |sym: &Symbol| sym.no_dead_strip() || exported_before_lto(ctx, sym);
+    let mut roots = collect_root_set(ctx, &redirects, is_root);
+    for module in &ctx.lto_modules {
+        let obj = &ctx.objs[module.obj];
+        if !obj.is_alive {
+            continue;
+        }
+        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
+            if nlist.n_type() == N_UNDF
+                && let Some(isec) = ctx.symbols[id].input_section()
+                && ctx.isecs[redirects[isec as usize]].mark_visited()
+            {
+                roots.push(redirects[isec as usize]);
+            }
+        }
+    }
+    mark(ctx, &redirects, &roots);
+    mark_live_support(ctx, &redirects);
+
+    let refs: Vec<AtomicBool> =
+        (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
+    ctx.isecs.par_iter().enumerate().for_each(|(id, isec)| {
+        if !isec.is_visited() {
+            return;
+        }
+        isec.unmark_visited();
+        let file = &ctx.objs[isec.file as usize];
+        for rel in ctx.isec_relocs(id) {
+            if let RelocTarget::Sym(idx) = rel.target() {
+                refs[file.symbols[idx as usize] as usize].store(true, Ordering::Relaxed);
+            }
+        }
+        for_each_unwind_edge(ctx, id, |_, sym| {
+            if let Some(sym) = sym {
+                refs[sym as usize].store(true, Ordering::Relaxed);
+            }
+        });
+    });
+    refs
+}
+
+/// Whether a definition is exported before LTO, as ld-prime's walk
+/// before it and libLTO's preserve set see it: under an export list if
+/// the list names it, hidden or not; otherwise, unless
+/// -unexported_symbols_list names it, any external definition in -r,
+/// and a visible one in an image that exports any (see keeps_export).
+pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
+    if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {
+        return false;
+    }
+    let name = sym.name().as_bytes();
+    if let Some(exported) = &ctx.args.exported_symbols {
+        return exported.find(name) != -1;
+    }
+    if ctx.args.unexported_symbols.find(name) != -1 {
+        return false;
+    }
+    ctx.args.relocatable || (!sym.is_private_extern() && keeps_export(ctx, sym.name()))
 }
 
 /// Whether dead stripping keeps an export named `name`: every one of a
@@ -373,7 +473,7 @@ fn sweep<E: Target>(ctx: &mut Context<E>) {
 
 /// Refresh symbol usage after atom liveness is known. Undefined references
 /// in removed atoms must neither cause errors nor become dynamic imports.
-pub fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
+fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| sym.unmark());
     ctx.isecs
         .par_iter()

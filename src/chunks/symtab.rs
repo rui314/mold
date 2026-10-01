@@ -1174,6 +1174,11 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
     for &(_, target) in &ctx.indirect_aliases {
         live_ref[target as usize].store(true, Ordering::Relaxed);
     }
+    // So does one only code stripped unasked used (see
+    // Context::strips_dead_code).
+    for &id in &ctx.stripped_imports {
+        live_ref[id as usize].store(true, Ordering::Relaxed);
+    }
     // So does a tentative definition that -commons use_dylibs replaced
     // with a dylib's definition.
     if ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs {

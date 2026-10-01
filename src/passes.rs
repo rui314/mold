@@ -2299,10 +2299,11 @@ unsafe fn create_lto_codegen<E: Target>(
 /// The symbols of the bitcode modules that must survive the LTO
 /// internalizer, as ld-prime picks them - the same set for ThinLTO and
 /// the merged module: the definitions the output exports (see
-/// lto_exports), the entry point, -u symbols, -alias bases (which the
-/// linker itself references), and those some code outside the module
-/// defining them references: a Mach-O object, or a bitcode module that
-/// libLTO compiles apart from it. A reference between two modules it
+/// exported_before_lto), the entry point, -u symbols, -alias bases
+/// (which the linker itself references), and those some code outside
+/// the module defining them references: live Mach-O code (see
+/// native_refs_before_lto), or a bitcode module that libLTO compiles
+/// apart from it. A reference between two modules it
 /// merges does not count, as libLTO resolves it itself (_times2,
 /// called only from a bitcode main, goes local and is not exported),
 /// but a ThinLTO module is compiled on its own, so a reference to or
@@ -2311,12 +2312,12 @@ unsafe fn create_lto_codegen<E: Target>(
 fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     use std::sync::atomic::{AtomicU8, Ordering};
 
-    // Who refers to each symbol: a Mach-O object, a ThinLTO module or a
+    // Who refers to each symbol: live Mach-O code, a ThinLTO module or a
     // module to merge; and whether a Mach-O object defines it.
-    const NATIVE_REF: u8 = 1;
-    const THIN_REF: u8 = 2;
-    const MERGED_REF: u8 = 4;
-    const NATIVE_DEF: u8 = 8;
+    let native_refs = crate::dead_strip::native_refs_before_lto(ctx);
+    const THIN_REF: u8 = 1;
+    const MERGED_REF: u8 = 2;
+    const NATIVE_DEF: u8 = 4;
     let mut thin = vec![None; ctx.objs.len()];
     for module in &ctx.lto_modules {
         thin[module.obj] = Some(module.is_thin);
@@ -2327,7 +2328,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             let flag = match (nlist.n_type(), thin[i]) {
                 _ if nlist.is_stab() || !nlist.is_extern() => continue,
-                (N_UNDF, None) => NATIVE_REF,
+                (N_UNDF, None) => continue,
                 (N_UNDF, Some(true)) => THIN_REF,
                 (N_UNDF, Some(false)) => MERGED_REF,
                 (N_SECT | N_ABS, None) => NATIVE_DEF,
@@ -2344,10 +2345,11 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         if !ctx.objs[obj as usize].is_alive || !sym.is_extern() {
             continue;
         }
-        let outside = NATIVE_REF | THIN_REF | if is_thin { MERGED_REF } else { 0 };
+        let outside = THIN_REF | if is_thin { MERGED_REF } else { 0 };
         let name = sym.name();
-        if flags[i].load(Ordering::Relaxed) & outside != 0
-            || lto_exports(ctx, sym)
+        if native_refs[i].load(Ordering::Relaxed)
+            || flags[i].load(Ordering::Relaxed) & outside != 0
+            || crate::dead_strip::exported_before_lto(ctx, sym)
             || (ctx.args.has_entry_point() && name == ctx.args.entry)
             || ctx.args.forced_undefined.iter().any(|n| n == name)
             || ctx.args.aliases.iter().any(|(existing, _)| existing == name)
@@ -2373,23 +2375,6 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         }
     }
     roots
-}
-
-/// Whether the output exports a bitcode definition, or a -r output
-/// keeps it for the final link, so that LTO must leave it as it is:
-/// under an export list if the list names it, hidden or not; otherwise,
-/// unless -unexported_symbols_list names it, any definition in -r, and
-/// a visible one in an image that exports any (see keeps_export).
-fn lto_exports<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
-    let name = sym.name().as_bytes();
-    if let Some(exported) = &ctx.args.exported_symbols {
-        return exported.find(name) != -1;
-    }
-    if ctx.args.unexported_symbols.find(name) != -1 {
-        return false;
-    }
-    ctx.args.relocatable
-        || (!sym.is_private_extern() && crate::dead_strip::keeps_export(ctx, sym.name()))
 }
 
 /// An object LTO compiled, under the name ld-prime gives it (see
@@ -3928,7 +3913,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     }
     let mut aliases = hashbrown::HashSet::new();
     for (base, alias) in &ctx.args.aliases {
-        let live = !ctx.args.dead_strip
+        let live = !ctx.strips_dead_code()
             || (crate::dead_strip::keeps_export(ctx, alias)
                 && ctx.args.unexported_symbols.find(alias.as_bytes()) == -1);
         if let Some(id) = ctx.symbols.get(base) {
