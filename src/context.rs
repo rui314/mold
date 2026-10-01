@@ -1116,22 +1116,44 @@ impl<E: Target> Context<E> {
     /// The index in its object's symbol table of the symbol that names
     /// subsection `id` (see subsec_label).
     pub fn subsec_label_index(&self, id: usize) -> Option<usize> {
+        let isec = &self.isecs[id];
+        let obj = &self.objs[isec.file as usize];
+        let key = Some(label_key(isec));
+        let at_start = (0..obj.nlists.len()).filter(|&i| nlist_label_key(&obj.nlists[i]) == key);
+        self.pick_label(id, at_start)
+    }
+
+    /// subsec_label of each of `ids`, subsections of object `file`,
+    /// found in one pass over the object's symbols rather than one each.
+    pub fn subsec_labels(&self, file: usize, ids: &[usize]) -> Vec<Option<&'static str>> {
+        let obj = &self.objs[file];
+        let mut at_start: hashbrown::HashMap<(u32, u64), Vec<usize>> =
+            ids.iter().map(|&id| (label_key(&self.isecs[id]), Vec::new())).collect();
+        for (i, nlist) in obj.nlists.iter().enumerate() {
+            if let Some(labels) = nlist_label_key(nlist).and_then(|k| at_start.get_mut(&k)) {
+                labels.push(i);
+            }
+        }
+        let label = |id: usize| {
+            let labels = &at_start[&label_key(&self.isecs[id])];
+            self.pick_label(id, labels.iter().copied())
+        };
+        ids.iter().map(|&id| label(id).map(|i| self.symbols[obj.symbols[i]].name())).collect()
+    }
+
+    /// Of the symbols `at_start` of subsection `id` (indices in its
+    /// object's symbol table, ascending), the one that names it (see
+    /// subsec_label).
+    fn pick_label(
+        &self,
+        id: usize,
+        at_start: impl Iterator<Item = usize> + Clone,
+    ) -> Option<usize> {
         use crate::input_files::is_private_label;
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
         let merged = crate::input_files::has_merged_subsecs(self.hdr_of(isec));
-        let labels = obj
-            .nlists
-            .iter()
-            .zip(&obj.symbols)
-            .enumerate()
-            .filter(|(_, (n, _))| {
-                !n.is_stab()
-                    && n.n_type() == crate::macho::N_SECT
-                    && n.n_sect as u32 == isec.shndx + 1
-                    && n.n_value == isec.input_addr as u64
-            })
-            .map(|(i, (n, &id))| (i, n, self.symbols[id].name()));
+        let labels = at_start.map(|i| (i, &obj.nlists[i], self.symbols[obj.symbols[i]].name()));
         if merged
             && labels
                 .clone()
@@ -1504,4 +1526,16 @@ impl<E: Target> Context<E> {
             format!("'{name}'+0x{offset:X} ({path})")
         }
     }
+}
+
+/// Where the labels at the start of a subsection sit: its section,
+/// counted from 1 as nlists count them, and its address.
+fn label_key(isec: &InputSection) -> (u32, u64) {
+    (isec.shndx + 1, isec.input_addr as u64)
+}
+
+/// Where a symbol labels a subsection's start, if it is a label at all.
+fn nlist_label_key(nlist: &crate::macho::NList) -> Option<(u32, u64)> {
+    (!nlist.is_stab() && nlist.n_type() == crate::macho::N_SECT)
+        .then_some((nlist.n_sect as u32, nlist.n_value))
 }

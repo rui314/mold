@@ -92,7 +92,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         .par_iter()
         .filter(|rec| {
             // A folded copy's record is gone, but for one that kept its
-            // FDE (see output_sections::keeps_folded_fde).
+            // FDE (see output_sections::kept_fdes_of).
             ctx.isecs[rec.isec as usize].is_alive()
                 && (ctx.isecs[rec.isec as usize].replacement
                     == crate::input_sections::NO_REPLACEMENT
