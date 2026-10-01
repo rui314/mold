@@ -717,6 +717,28 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     buf
 }
 
+/// LC_ENCRYPTION_INFO_64: the range of the file an encryptable image's
+/// code may be encrypted in, from the first section, which starts a
+/// page of its own (see mach_header_size), to the page end of the last
+/// __TEXT section but __oslogstring, which the OS logs read
+/// unencrypted; and the encryption system, none yet (cryptid 0). (The
+/// layout sizes the command before the sections have file offsets.)
+fn create_encryption_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+    let text = |id: &&ChunkId| {
+        let hdr = ctx.chunk_header(**id);
+        **id != ChunkId::MachHeader && hdr.segname == "__TEXT" && hdr.sectname != "__oslogstring"
+    };
+    let sections = || ctx.chunks.iter().filter(text).map(|&id| ctx.chunk_header(id));
+    let start = sections().map(|hdr| hdr.fileoff).min().unwrap_or(0);
+    let end = sections().map(|hdr| hdr.fileoff + hdr.size).max().unwrap_or(0);
+    let end = crate::util::align_to(end, ctx.args.segment_align);
+    let mut buf = Vec::with_capacity(24);
+    for word in [LC_ENCRYPTION_INFO_64, 24, start as u32, end.saturating_sub(start) as u32, 0, 0] {
+        buf.extend_from_slice(&word.to_le_bytes());
+    }
+    buf
+}
+
 fn create_code_signature_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     create_linkedit_data_cmd(LC_CODE_SIGNATURE, &ctx.code_signature.hdr)
 }
@@ -809,6 +831,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     } else if ctx.args.output_type == MH_EXECUTE {
         vec.push(create_main_cmd(ctx));
     }
+    if ctx.args.encryptable {
+        vec.push(create_encryption_info_cmd(ctx));
+    }
     if ctx.chunks.contains(&ChunkId::SplitInfo) {
         vec.push(create_linkedit_data_cmd(LC_SEGMENT_SPLIT_INFO, &ctx.split_info.hdr));
     }
@@ -873,7 +898,14 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
     let cmds = create_load_commands(ctx);
     let size: usize = cmds.iter().map(Vec::len).sum();
-    size_of::<MachHeader>() as u64 + size as u64 + header_pad(ctx, &cmds)
+    let size = size_of::<MachHeader>() as u64 + size as u64 + header_pad(ctx, &cmds);
+    // An encryptable image's code starts a page of its own, which the
+    // header and load commands, left unencrypted, don't share; dyld's
+    // starts a 4 KiB page of its own anyway.
+    match ctx.args.encryptable && !ctx.args.is_dylinker() {
+        true => crate::util::align_to(size, ctx.args.segment_align),
+        false => size,
+    }
 }
 
 /// The free space ld-prime leaves after a final image's load commands:

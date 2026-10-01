@@ -451,6 +451,12 @@ pub struct Args {
     /// framework variants -l and -framework look for before the plain
     /// one, in order.
     pub image_suffixes: Vec<OsString>,
+    /// -encryptable (the last of it and -no_encryption): the image's
+    /// code may be encrypted after the link, as the App Store does iOS
+    /// apps': __TEXT's sections but __oslogstring start on a page of
+    /// their own, which LC_ENCRYPTION_INFO_64 names (see
+    /// resolve_encryptable).
+    pub encryptable: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -756,6 +762,7 @@ impl Default for Args {
             sub_libraries: Vec::new(),
             sub_umbrellas: Vec::new(),
             image_suffixes: Vec::new(),
+            encryptable: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -2460,6 +2467,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sub_library" => args.sub_libraries.push(bytes(next_arg(&mut i, name))),
             b"-sub_umbrella" => args.sub_umbrellas.push(bytes(next_arg(&mut i, name))),
             b"-image_suffix" => args.image_suffixes.push(next_arg(&mut i, name).to_owned()),
+            b"-encryptable" => args.encryptable = true,
+            b"-no_encryption" => args.encryptable = false,
             b"-interposable" => interposable_all = true,
             b"-interposable_list" => {
                 let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
@@ -2840,6 +2849,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     warn_platform_options(target, &args, read_only_relocs.is_some());
     args.segment_align = resolve_segment_align(target, &args, segalign);
+    resolve_encryptable(&mut args);
+    // An encryptable image's __oslogstring, which goes unencrypted,
+    // starts a page of its own unless -sectalign says otherwise.
+    let oslog = |(seg, sect, _): &(String, String, u8)| seg == "__TEXT" && sect == "__oslogstring";
+    if args.encryptable && !args.sectalign.iter().any(oslog) {
+        let p2align = args.segment_align.max(1).ilog2() as u8;
+        args.sectalign.push(("__TEXT".to_string(), "__oslogstring".to_string(), p2align));
+    }
     // An image dyld loads keeps 32 bytes for the command of a code
     // signature added later (see chunks::header_pad).
     if let Some(size) = headerpad
@@ -3434,6 +3451,11 @@ fn resolve_segprots(
 /// (see passes::check_segments).
 fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
     match segalign {
+        // -encryptable gives an image 16 KiB pages for 4 KiB ones, as
+        // iOS has, though ld-prime then makes it no encryptable one
+        // (see resolve_encryptable).
+        None if args.encryptable => target.page_size.max(0x4000),
+        Some(0x1000) if args.encryptable => 0x4000,
         None if args.preload => 0x1000,
         None => target.page_size,
         Some(align) if align == 0 || align.is_power_of_two() => align,
@@ -3445,6 +3467,15 @@ fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u6
             p2
         }
     }
+}
+
+/// Whether the image is encryptable: an image dyld or the kernel loads
+/// (ld-prime gives a -r or -preload output no LC_ENCRYPTION_INFO_64,
+/// and crashes on a kext), as -encryptable says; macOS images are not
+/// by default. (ld64 made iOS apps encryptable unless $LD_NO_ENCRYPT,
+/// which ld-prime reads but which -encryptable overrides.)
+fn resolve_encryptable(args: &mut Args) {
+    args.encryptable &= !args.relocatable && !args.preload && !args.is_kext();
 }
 
 /// -seg_page_size's (segment, size) pairs, as ld-prime takes them: a

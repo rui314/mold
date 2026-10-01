@@ -85,6 +85,7 @@ pub const LC_MAIN: u32 = 0x28 | LC_REQ_DYLD;
 pub const LC_DATA_IN_CODE: u32 = 0x29;
 pub const LC_LINKER_OPTIMIZATION_HINT: u32 = 0x2e;
 pub const LC_SOURCE_VERSION: u32 = 0x2a;
+pub const LC_ENCRYPTION_INFO_64: u32 = 0x2c;
 pub const LC_LINKER_OPTION: u32 = 0x2d;
 pub const LC_VERSION_MIN_TVOS: u32 = 0x2f;
 pub const LC_VERSION_MIN_WATCHOS: u32 = 0x30;

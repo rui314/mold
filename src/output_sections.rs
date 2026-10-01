@@ -106,21 +106,26 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
 
 /// Where ld-prime moves a __TEXT section of an image bound for the
 /// shared region: the stubs and the Objective-C names, which the shared
-/// cache builder bypasses and uniques, come after __unwind_info (100)
-/// and __eh_frame (101), the names in a fixed order.
-fn shared_region_text_rank<E: Target>(
-    ctx: &Context<E>,
-    hdr: &crate::chunks::ChunkHeader,
-) -> Option<u32> {
-    if !ctx.args.shared_region || hdr.segname != "__TEXT" {
+/// cache builder bypasses and uniques, come after __unwind_info (100),
+/// __eh_frame (101) and an encryptable image's __oslogstring (102), the
+/// names in a fixed order. (__oslogstring goes there in any image: its
+/// page is left unencrypted.)
+fn late_text_rank<E: Target>(ctx: &Context<E>, hdr: &crate::chunks::ChunkHeader) -> Option<u32> {
+    if hdr.segname != "__TEXT" {
+        return None;
+    }
+    if ctx.args.encryptable && hdr.sectname == "__oslogstring" {
+        return Some(102);
+    }
+    if !ctx.args.shared_region {
         return None;
     }
     match hdr.sectname.as_str() {
-        "__objc_stubs" => Some(102),
-        "__stubs" => Some(103),
-        "__objc_classname" => Some(104),
-        "__objc_methname" => Some(105),
-        "__objc_methtype" => Some(106),
+        "__objc_stubs" => Some(103),
+        "__stubs" => Some(104),
+        "__objc_classname" => Some(105),
+        "__objc_methname" => Some(106),
+        "__objc_methtype" => Some(107),
         _ => None,
     }
 }
@@ -1410,7 +1415,7 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
-            _ => shared_region_text_rank(ctx, hdr)
+            _ => late_text_rank(ctx, hdr)
                 .unwrap_or_else(|| 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags)),
         };
         let seen = match id {
