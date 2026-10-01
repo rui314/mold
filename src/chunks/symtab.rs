@@ -383,6 +383,11 @@ fn plan_object_stabs<E: Target>(
         }
         plan.syms.extend(symbol_stabs(ctx, obj, sym_id, nlist, common));
     }
+    // An object none of whose symbols are left - dead stripping took
+    // them all - gets no notes at all.
+    if plan.syms.is_empty() {
+        return StabPlan::default();
+    }
     plan.closed = true;
     plan.len = plan.fixed.len() + plan.syms.iter().map(|s| s.len()).sum::<usize>() + 1;
     plan
