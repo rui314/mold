@@ -126,6 +126,37 @@ grep -q '^11 12 13 21 20 1 2 3 7 11 3$' $t/out_no
 otool -s __DATA_CONST __objc_catlist $t/exe_no | tail -n +3 > $t/catlist_no
 [ "$(wc -l < $t/catlist_no | tr -d ' ')" = 2 ]
 
+# The runtime calls a class's first +load alone: a class whose merged
+# method list would hold two keeps its categories, all of them.
+cat <<EOF | $CC -o $t/l.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+#include <stdio.h>
+@interface L : NSObject @end
+@implementation L
++ (void)load { printf("L\n"); }
+@end
+@interface L (C1) @end
+@implementation L (C1)
+- (void)x {}
+@end
+@interface L (C2) @end
+@implementation L (C2)
++ (void)load { printf("C2\n"); }
+@end
+@interface M : NSObject @end
+@implementation M @end
+@interface M (C3) @end
+@implementation M (C3)
++ (void)load { printf("C3\n"); }
+@end
+int main() {}
+EOF
+$CC --ld-path=$mold -o $t/exe_load $t/l.o -framework Foundation
+$t/exe_load | tr '\n' ' ' > $t/out_load
+[ "$(cat $t/out_load)" = 'L C3 C2 ' ]
+otool -s __DATA_CONST __objc_catlist $t/exe_load | tail -n +3 > $t/catlist_load
+[ "$(wc -l < $t/catlist_load | tr -d ' ')" = 1 ]
+
 # Merging is on by default, so there is no -objc_category_merging.
 not $CC --ld-path=$mold -o $t/exe_on $t/a.o -framework Foundation \
   -Wl,-objc_category_merging 2> /dev/null

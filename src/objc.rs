@@ -1121,6 +1121,13 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         if class.cats.is_empty() {
             continue;
         }
+        // The runtime calls the first +load of a class's method list
+        // alone: ld-prime leaves a class's categories be when merging
+        // them would put more than one there.
+        let loads = class.cats.iter().filter(|&&ci| cats[ci].nonlazy).count();
+        if loads + usize::from(class.nonlazy) > 1 {
+            continue;
+        }
 
         // Gather everything first, and give up on the class if anything
         // is not in shape: nothing changes until everything checks out.
