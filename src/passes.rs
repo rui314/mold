@@ -5300,6 +5300,7 @@ fn layout_segment<E: Target>(
     let seg_fileoff = fileoff;
     let mut cursor = fileoff;
     let chunk_ids = ctx.segments[seg_idx].chunks.clone();
+    let linkedit = ctx.segments[seg_idx].name == "__LINKEDIT";
 
     // Regular chunks, in file order
     for &id in &chunk_ids {
@@ -5329,19 +5330,23 @@ fn layout_segment<E: Target>(
             }
             _ => ctx.chunk_header(id).size,
         };
+        // ld-prime starts the dyld opcodes, the chained fixups and the
+        // local relocations wherever the table before them ends - the
+        // first of them where __LINKEDIT starts, which a -segalign below
+        // 8 leaves unaligned (each table's size is a multiple of 8).
         let p2align = match id {
-            ChunkId::Symtab
-            | ChunkId::Strtab
-            | ChunkId::RebaseInfo
+            ChunkId::RebaseInfo
             | ChunkId::BindInfo
             | ChunkId::WeakBindInfo
             | ChunkId::LazyBindInfo
             | ChunkId::ChainedFixups
+            | ChunkId::LocalRelocs => 0,
+            ChunkId::Symtab
+            | ChunkId::Strtab
             | ChunkId::ExportTrie
             | ChunkId::FunctionStarts
             | ChunkId::DataInCode
             | ChunkId::SplitInfo
-            | ChunkId::LocalRelocs
             | ChunkId::ExternRelocs => 3,
             ChunkId::IndirectSymtab => 2,
             ChunkId::CodeSignature => 4,
@@ -5349,8 +5354,14 @@ fn layout_segment<E: Target>(
         };
         // Aligned is the address; the file offset keeps its distance
         // from it, which is no multiple of the alignment where a
-        // -preload image's header pages shift the file.
-        let addr = align_to(vmaddr + (cursor - seg_fileoff), 1 << p2align);
+        // -preload image's header pages shift the file. __LINKEDIT's
+        // tables, which nothing addresses, are aligned in the file.
+        let addr = if linkedit {
+            cursor = align_to(cursor, 1 << p2align);
+            vmaddr + (cursor - seg_fileoff)
+        } else {
+            align_to(vmaddr + (cursor - seg_fileoff), 1 << p2align)
+        };
         cursor = seg_fileoff + (addr - vmaddr);
         let hdr = ctx.chunk_header_mut(id);
         hdr.fileoff = cursor;
