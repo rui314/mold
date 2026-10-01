@@ -2087,8 +2087,14 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
                 1 + output_section_rank(rank_name(ctx, id), hdr.flags, static_link)
             }),
         };
+        // ld-prime reads -sectcreate's and -add_empty_section's
+        // contents as inputs, and makes its own content (such as the
+        // selector names of the objc_msgSend$ stubs, or the lazy
+        // binder's __dyld_private word) after all inputs: a section of
+        // only the linker's content follows the options' sections.
         let seen = match id {
             ChunkId::Output(osec) => section_first_seen[osec.index()],
+            ChunkId::SectCreate(_) => u64::MAX - 1,
             _ => u64::MAX,
         };
         // Zero-fill sections go last in their segment so that they don't
