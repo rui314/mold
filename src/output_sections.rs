@@ -26,10 +26,11 @@ use crate::util::align_to;
 /// Where a section sits within its segment in a final image, as
 /// ld-prime 27037 orders them; sections of one rank keep input order.
 /// __text leads __TEXT, other code sections follow in input order, then
-/// the synthesized code and method lists; dyld's tables lead
-/// __DATA_CONST, then the read-only ObjC lists in a fixed order; the
-/// ObjC runtime data leads __DATA in the order the compiler emits it,
-/// and __data follows in input order among the unknown sections.
+/// the synthesized code and method lists; code leads any other segment
+/// too. dyld's tables lead __DATA_CONST, then the read-only ObjC lists
+/// in a fixed order; the ObjC runtime data leads __DATA in the order the
+/// compiler emits it, and __data follows in input order among the
+/// unknown sections.
 fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
     match (segname, sectname) {
         ("__TEXT", "__text") => 0,
@@ -43,6 +44,7 @@ fn output_section_rank(segname: &str, sectname: &str, flags: u32) -> u32 {
         ("__TEXT", "__objc_methlist") => 9,
         ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 1,
         ("__TEXT", _) => 10,
+        _ if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
         ("__DATA_CONST", "__mod_init_func") => 1,
         ("__DATA_CONST", "__mod_term_func") => 2,
         ("__DATA_CONST", "__const") => 3,
@@ -1612,13 +1614,10 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
             ChunkId::CodeSignature => u32::MAX,
             // ld-prime orders a section a symbol move made among those
             // of its new segment by what its atoms hold, which they took
-            // along: code as in __TEXT, data as in __DATA.
+            // along: data as in __DATA (and code first).
             ChunkId::Output(osec) if ctx.output_section(osec).moved.is_some() => {
-                late_text_rank(ctx, hdr).unwrap_or_else(|| {
-                    let code = hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0;
-                    let seg = if code { "__TEXT" } else { "__DATA" };
-                    1 + output_section_rank(seg, &hdr.sectname, hdr.flags)
-                })
+                late_text_rank(ctx, hdr)
+                    .unwrap_or_else(|| 1 + output_section_rank("__DATA", &hdr.sectname, hdr.flags))
             }
             _ => late_text_rank(ctx, hdr)
                 .unwrap_or_else(|| 1 + output_section_rank(hdr.segname, &hdr.sectname, hdr.flags)),

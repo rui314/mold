@@ -73,3 +73,25 @@ otool -l $t/exe2 | awk '$1 == "sectname" { s = $2; next }
   $1 == "segname" && s != "" { printf "%s,%s ", $2, s; s = "" }' > $t/order2
 grep -q '__TEXT,__aaa __TEXT,__bbb __TEXT,__cstring ' $t/order2
 grep -q '__DATA,__dda __DATA,__ddb __DATA,__weak ' $t/order2
+
+# Code leads any other segment too, ahead of the sections of fixed
+# ranks such as __objc_data, in input order: outside __TEXT, __text is
+# code like any other.
+cat <<EOF2 | $CC -o $t/d.o -c -xassembler -
+.section __DATA,__data
+.quad 1
+.section __DATA,__mycode,regular,pure_instructions
+_dc: ret
+.section __FOO,__x
+.quad 1
+.section __FOO,__b,regular,pure_instructions
+_fb: ret
+.section __FOO,__text,regular,pure_instructions
+_ft: ret
+.subsections_via_symbols
+EOF2
+$CC --ld-path=$mold -o $t/exe3 $t/a.o $t/d.o
+otool -l $t/exe3 | awk '$1 == "sectname" { s = $2; next }
+  $1 == "segname" && s != "" { printf "%s,%s ", $2, s; s = "" }' > $t/order3
+grep -q '__DATA,__mycode __DATA,__objc_data ' $t/order3
+grep -q '__FOO,__b __FOO,__text __FOO,__x ' $t/order3
