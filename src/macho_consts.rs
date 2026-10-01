@@ -36,6 +36,9 @@ pub const MH_APP_EXTENSION_SAFE: u32 = 0x0200_0000;
 pub const MH_SIM_SUPPORT: u32 = 0x0800_0000;
 pub const MH_DYLDLINK: u32 = 0x4;
 pub const MH_TWOLEVEL: u32 = 0x80;
+// Once prebinding's "don't fix up" mark, now -no_dynamic_access's: dyld
+// neither dlopen()s the image nor finds its symbols with dlsym().
+pub const MH_NOFIXPREBINDING: u32 = 0x400;
 pub const MH_PIE: u32 = 0x20_0000;
 pub const MH_HAS_TLV_DESCRIPTORS: u32 = 0x80_0000;
 pub const MH_NO_REEXPORTED_DYLIBS: u32 = 0x10_0000;

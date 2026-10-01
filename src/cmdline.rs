@@ -353,6 +353,10 @@ pub struct Args {
     /// -random_uuid: a random LC_UUID in place of the content hash,
     /// which saves hashing a large output.
     pub random_uuid: bool,
+    /// -no_dynamic_access: dyld may neither dlopen() the image nor find
+    /// its symbols with dlsym() (MH_NOFIXPREBINDING), for a dynamic main
+    /// executable or a dylib (see check_output_kind).
+    pub no_dynamic_access: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -635,6 +639,7 @@ impl Default for Args {
             objc_category_merging: true,
             uuid: true,
             random_uuid: false,
+            no_dynamic_access: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -2218,6 +2223,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.uuid = true;
                 args.random_uuid = true;
             }
+            b"-no_dynamic_access" => args.no_dynamic_access = true,
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();
@@ -2554,6 +2560,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         crate::warn!("{msg}");
     }
     check_output_kind(target, &args, pie, data_const, explicit_entry);
+    // Only dyld reads the mark, and only in what it loads by name.
+    let dyld_loaded = args.output_type == MH_DYLIB
+        || (args.output_type == MH_EXECUTE && !args.relocatable && !args.static_link);
+    if args.no_dynamic_access && !dyld_loaded {
+        crate::warn!(
+            "-no_dynamic_access ignored. It can only be used with dylibs and main executables"
+        );
+        args.no_dynamic_access = false;
+    }
 
     // A dylib is loaded at an arbitrary address, and a -preload image
     // copied to wherever its segments say; only a main executable

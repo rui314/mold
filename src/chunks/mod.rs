@@ -1026,6 +1026,9 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     if ctx.args.application_extension && !ctx.args.static_link && !ctx.args.is_dylinker() {
         hdr.flags |= MH_APP_EXTENSION_SAFE;
     }
+    if ctx.args.no_dynamic_access {
+        hdr.flags |= MH_NOFIXPREBINDING;
+    }
     if ctx
         .chunks
         .iter()
