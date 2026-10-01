@@ -5,7 +5,7 @@ source "$(dirname "$0")"/common.inc
 # mean anything, with a warning for each once it has read them all, in
 # command-line order, which a -w anywhere silences. -s, -Si and -Sn it
 # warns about as it reads them, so that only a -w before them does.
-echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
+echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - -mmacosx-version-min=14.0
 sdk=$(xcrun --show-sdk-path)
 link() {
   $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" -lSystem $t/a.o \

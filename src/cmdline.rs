@@ -1869,6 +1869,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 obsolete.push(format!("{name} is obsolete"));
             }
             b"-s" | b"-Si" | b"-Sn" => warnings.warn(format!("{name} is obsolete")),
+            // Bitcode bundles went with Xcode 14, and ld-prime ignores
+            // the options that asked for one, as it does -ld_classic,
+            // which once picked ld64 over it. -ld_new picks ld-prime,
+            // which -ld_prime still does with a warning.
+            b"-bitcode_bundle"
+            | b"-bitcode_hide_symbols"
+            | b"-bitcode_process_mode"
+            | b"-bitcode_symbol_map"
+            | b"-bitcode_verify" => {
+                obsolete.push(format!("{name} is no longer supported and will be ignored"))
+            }
+            b"-ld_classic" => {
+                warnings.warn("-ld_classic is no longer supported and will be ignored")
+            }
+            b"-ld_prime" => obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
+            b"-ld_new" => {}
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
