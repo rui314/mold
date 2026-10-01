@@ -64,16 +64,23 @@ pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
 /// The directories `dirs` given on the command line, then, unless -Z,
 /// the default ones, each looked up under the syslibroots as ld64 does
 /// (see push_search_dir) - but a default directory missing from the
-/// only SDK is not searched at all, not even outside it.
+/// only SDK is not searched at all, not even outside it. A -syslibroot
+/// of / anywhere, which configure scripts pass, puts none under a root
+/// (ld64 drops the roots only for a last one); the roots still hold the
+/// files the options naming a library's path look up (find_file).
 fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
-    let syslibroot = &args.syslibroot;
+    let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
+        &[]
+    } else {
+        &args.syslibroot
+    };
     let mut out = Vec::new();
     for dir in dirs {
         push_search_dir(syslibroot, &mut out, dir);
     }
     if !args.no_standard_dirs {
         for dir in standard {
-            if let [root] = syslibroot.as_slice() {
+            if let [root] = syslibroot {
                 let dir = under_root(root, Path::new(dir));
                 if dir.is_dir() {
                     out.push(dir);
@@ -88,29 +95,34 @@ fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf>
 
 /// Adds a -L or -F directory to a search path. ld64 looks an absolute
 /// directory up under each syslibroot, keeping those that exist and
-/// falling back to the directory itself. A relative directory is never
-/// put under a syslibroot, which the compiler driver always passes:
-/// `-L.` would otherwise search the SDK's root, not the working
-/// directory.
+/// falling back to the directory itself; one that climbs with "/.." is
+/// first resolved (symbolic links too) where it can be. A relative
+/// directory is never put under a syslibroot, which the compiler
+/// driver always passes: `-L.` would otherwise search the SDK's root,
+/// not the working directory.
 fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path) {
+    let mut dir = dir.to_path_buf();
     if dir.is_absolute() {
+        if memchr::memmem::find(path_bytes(&dir), b"/..").is_some()
+            && let Ok(real) = std::fs::canonicalize(&dir)
+        {
+            dir = real;
+        }
         let len = dirs.len();
-        dirs.extend(syslibroot.iter().map(|root| under_root(root, dir)).filter(|p| p.is_dir()));
+        dirs.extend(syslibroot.iter().map(|root| under_root(root, &dir)).filter(|p| p.is_dir()));
         if dirs.len() > len {
             return;
         }
     }
-    dirs.push(dir.to_path_buf());
+    dirs.push(dir);
 }
 
-/// `dir` looked up under a syslibroot: an absolute directory keeps its
-/// path below the root.
-fn under_root(root: &Path, dir: &Path) -> PathBuf {
-    let mut relative = path_bytes(dir);
-    while let Some(rest) = relative.strip_prefix(b"/") {
-        relative = rest;
-    }
-    root.join(crate::util::os_str(relative))
+/// An absolute path looked up under a syslibroot, as ld-prime joins
+/// them: less its leading slash, the path goes below the root, but one
+/// that starts with two slashes stays absolute and replaces the root.
+fn under_root(root: &Path, path: &Path) -> PathBuf {
+    let bytes = path_bytes(path);
+    root.join(crate::util::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
 }
 
 fn find_framework<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
