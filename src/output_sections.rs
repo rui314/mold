@@ -1522,8 +1522,9 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// When ld-prime first sees each output section, by output section: at
-/// the object and section ordinal of its first input section - or, for
-/// the synthesized __common, at the first object with a common symbol.
+/// the object and section ordinal of its first input section - for
+/// __common, or at the first object with a common symbol if that is
+/// earlier (a C++ zero-initialized global is in an input __common).
 /// mold's own subsections don't count, nor the input selector names
 /// the objc_msgSend$ stubs absorb (see is_stub_selector_name).
 fn section_first_seen<E: Target>(ctx: &Context<E>) -> Vec<u64> {
@@ -1552,7 +1553,7 @@ fn section_first_seen<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     if let Some(obj) = ctx.common_first_obj {
         for (i, osec) in ctx.output_sections.iter().enumerate() {
             if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
-                first_seen[i] = ((obj as u64) << 32) | u32::MAX as u64;
+                first_seen[i] = first_seen[i].min(((obj as u64) << 32) | u32::MAX as u64);
             }
         }
     }

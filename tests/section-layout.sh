@@ -46,6 +46,16 @@ $CXX --ld-path=$mold -o $t/exe2 $t/d.o $t/a.o $t/b.o $t/c.o
 sections $t/exe2 > $t/order2
 grep -Eq '__data __common __bss' $t/order2
 
+# So it does with a zero-initialized C++ global, which is in an input
+# __common section, ahead of the object with __bss, even though the
+# first common symbol is later.
+cat <<EOF | $CXX -o $t/h.o -c -xc++ -
+int cxx_var;
+EOF
+$CXX --ld-path=$mold -o $t/exe6 $t/h.o $t/a.o $t/b.o $t/c.o
+sections $t/exe6 > $t/order6
+grep -Eq '__data __common __bss' $t/order6
+
 # __bss and __common take no precedence over other zero-fill sections
 # (but __thread_bss): they all follow the order they were first seen.
 cat <<EOF | $CC -o $t/f.o -c -xassembler -
