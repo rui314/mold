@@ -627,10 +627,11 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
 
 /// The size of each record of a section ld-prime splits into fixed-size
 /// records. Its name decides for the __DATA segment's GOT and Objective-C
-/// lists, whatever their type, and for a CFString, pointer-auth or
-/// compact unwind section of the regular type; its type does for the
-/// others: literals, pointers to initializers, terminators or GOT slots,
-/// and thread-local variable descriptors (three pointers).
+/// lists, whatever their type, and for a CFString, pointer-auth,
+/// lazy-load slot or compact unwind section of the regular type; its
+/// type does for the others: literals, pointers to initializers,
+/// terminators or GOT slots, and thread-local variable descriptors
+/// (three pointers).
 pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     let regular = hdr.section_type() == S_REGULAR;
     match (hdr.segname(), hdr.sectname()) {
@@ -640,7 +641,7 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
             | "__objc_clsrolist" | "__objc_nlclslist" | "__objc_nlcatlist" | "__objc_protolist"
             | "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs",
         ) => return Some(8),
-        ("__DATA", "__auth_ptr") if regular => return Some(8),
+        ("__DATA", "__auth_ptr" | "__lazy_load_got") if regular => return Some(8),
         ("__DATA", "__cfstring") | ("__LD", "__compact_unwind") if regular => return Some(32),
         _ => {}
     }
@@ -656,20 +657,25 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
 
 /// Reports the first section of an object ld-prime refuses to split into
 /// subsections, and returns its index if there is one: a section of
-/// fixed-size records that doesn't end on a record boundary, or a
-/// non-empty one of the pointers only ld-prime makes (see
-/// linker_pointer_content). `nindirect` is the number of the object's
-/// indirect symbol table entries.
-fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> Option<usize> {
+/// fixed-size records that doesn't end on a record boundary, or else a
+/// non-empty one of the code or pointers only ld-prime makes (see
+/// is_linker_code_section and linker_pointer_content) - code it splits
+/// at symbols only in an object with MH_SUBSECTIONS_VIA_SYMBOLS
+/// (`split`). `nindirect` is the number of the object's indirect symbol
+/// table entries.
+fn check_sections(
+    hdrs: &[MachSection],
+    nlists: &[NList],
+    split: bool,
+    nindirect: u32,
+    file: &Path,
+) -> Option<usize> {
+    let has_symbol = |i: usize| {
+        nlists.iter().any(|n| !n.is_stab() && n.n_type() == N_SECT && n.n_sect as usize == i + 1)
+    };
     for (i, hdr) in hdrs.iter().enumerate() {
-        if hdr.size != 0
-            && let Some(content) = linker_pointer_content(hdr)
-        {
-            crate::error!(
-                "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
-                hdr.sectname(),
-                file.display()
-            );
+        if hdr.size != 0 && split && is_linker_code_section(hdr) && has_symbol(i) {
+            crate::error!("unknown symboled section type in '{}'", file.display());
             return Some(i);
         }
         if let Some(size) = record_size(hdr)
@@ -680,6 +686,16 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> Option<u
                 hdr.segname(),
                 hdr.sectname(),
                 hdr.size,
+                file.display()
+            );
+            return Some(i);
+        }
+        if hdr.size != 0
+            && let Some(content) = linker_pointer_content(hdr)
+        {
+            crate::error!(
+                "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
+                hdr.sectname(),
                 file.display()
             );
             return Some(i);
@@ -707,8 +723,8 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) -> Option<u
 /// record size of: a 64-bit object has no business with the classic
 /// lazy pointers only dyld's lazy binder fills, nor with the signed or
 /// weak GOTs of an image (an input __got is GOT slots, see
-/// fold_input_got). A section of one of those names but of another type
-/// is data.
+/// fold_input_got), nor with the slots of lazily loaded dylibs. A
+/// section of one of those names but of another type is data.
 fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
     if hdr.segname() != "__DATA" {
         return None;
@@ -718,8 +734,28 @@ fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
         (S_NON_LAZY_SYMBOL_POINTERS, "__auth_got") => Some("auth-got"),
         (S_NON_LAZY_SYMBOL_POINTERS, "__weak_got") => Some("weak-got"),
         (S_NON_LAZY_SYMBOL_POINTERS, "__weak_auth_got") => Some("weak-auth-got"),
+        (S_REGULAR, "__lazy_load_got") => Some("lazy-load-GOT"),
         _ => None,
     }
+}
+
+/// Whether ld-prime reads a regular __TEXT section by its name as code
+/// of a kind only it makes - the lazy-binding helper, Objective-C stubs,
+/// lazy-load helpers, delay-init stubs and helpers - which it has no
+/// reader for in an object: it refuses one a symbol is in (an arm64
+/// assembler's ltmpN too) in an object it splits at symbols, "unknown
+/// symboled section type", and takes one without as data.
+fn is_linker_code_section(hdr: &MachSection) -> bool {
+    hdr.segname() == "__TEXT"
+        && hdr.section_type() == S_REGULAR
+        && matches!(
+            hdr.sectname(),
+            "__stub_helper"
+                | "__objc_stubs"
+                | "__lazy_helpers"
+                | "__delay_stubs"
+                | "__delay_helper"
+        )
 }
 
 /// Whether a section is an object's Objective-C image info, the record
@@ -1170,7 +1206,8 @@ pub fn stage_object<E: Target>(
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     obj.warn_referenced_dynamically();
-    obj.failed_at = check_sections(sect_hdrs, nindirect, &mf.name);
+    let split = obj.subsections_via_symbols;
+    obj.failed_at = check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name);
     let mut relocs_ok = obj.failed_at.is_none() && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
