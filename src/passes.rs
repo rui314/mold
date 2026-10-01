@@ -521,6 +521,12 @@ fn collect_file<E: Target>(
                 p.alive = true;
             }
         }
+        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name)
+            && !rc.autolinked
+        {
+            let priority = ctx.next_priority();
+            ctx.dylib_renamings.push((priority, idx));
+        }
         return;
     }
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
@@ -590,6 +596,8 @@ fn collect_file<E: Target>(
                     input_files::untrace_file(ctx, path_bytes(&path));
                 }
                 name_dylib(ctx, idx, mf, rc);
+            } else if !rc.autolinked {
+                ctx.dylib_renamings.push((ctx.priority_counter, idx));
             }
             note_naming(ctx, first, idx, mf, rc.autolinked);
         }
@@ -2658,13 +2666,14 @@ pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
 }
 
 /// The inputs check_input_versions has looked at: the objects live
-/// then, and the dylibs loaded by then, those built for another platform
-/// included.
+/// then, and the dylibs loaded by then - those built for another
+/// platform, and the inputs naming one again, included.
 #[derive(Default)]
 pub struct CheckedInputs {
     objs: Vec<bool>,
     dylibs: usize,
     foreign_dylibs: usize,
+    renamings: usize,
 }
 
 /// Validates only objects selected by resolution, not those `checked`
@@ -2673,31 +2682,39 @@ pub struct CheckedInputs {
 /// order, used or not: one built for another platform is an error (a
 /// firmware link takes it with a warning), as an object is, and the
 /// first stops the link; one built for a newer OS version gets a
-/// warning, but not those it re-exports, nor those of the SDK, built for
-/// newer OS versions as a matter of course. It checks bitcode files by
-/// their target triples before LTO, and the object LTO makes (with what
-/// it pulls in) after: the driver calls this twice.
+/// warning, for each input that names it, but not those it re-exports,
+/// nor those of the SDK, built for newer OS versions as a matter of
+/// course. It checks bitcode files by their target triples before LTO,
+/// and the object LTO makes (with what it pulls in) after: the driver
+/// calls this twice.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
     let now = CheckedInputs {
         objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
         dylibs: ctx.dylibs.len(),
         foreign_dylibs: ctx.foreign_platform_dylibs.len(),
+        renamings: ctx.dylib_renamings.len(),
     };
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
-    let mut dylibs: Vec<(u32, String, bool)> = ctx.dylibs[checked.dylibs..]
-        .iter()
-        .filter(|d| !d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos)
-        .map(|d| {
-            let msg = format!(
+    let newer = |d: &input_files::DylibFile| {
+        (!d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos).then(|| {
+            format!(
                 "building for {}-{}, but linking with dylib '{}' which was built for newer \
                  version {}",
                 platform_name(platform),
                 format_version(minos),
                 crate::util::display(&d.install_name),
                 format_version(d.minos)
-            );
-            (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), msg, false)
+            )
         })
+    };
+    let renamings = ctx.dylib_renamings[checked.renamings..]
+        .iter()
+        .map(|&(priority, idx)| (priority, &ctx.dylibs[idx]));
+    let mut dylibs: Vec<(u32, String, bool)> = ctx.dylibs[checked.dylibs..]
+        .iter()
+        .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))
+        .chain(renamings)
+        .filter_map(|(priority, d)| Some((priority, newer(d)?, false)))
         .chain(
             ctx.foreign_platform_dylibs[checked.foreign_dylibs..]
                 .iter()

@@ -64,3 +64,16 @@ cat > $t/foo.tbd <<EOF
 EOF
 link $t/foo.tbd 2> $t/log8
 grep -q "building for macOS-13.0, but linking with dylib '/opt/tbd/libfoo.dylib' which was built for newer version 15.0" $t/log8
+
+# The check is of each input: a dylib given twice by path, or by path
+# and by -l, is warned of twice, a copy with its install name too; the
+# -l options naming one library make one input.
+count() { grep -c "linking with dylib '/opt/inst/libfoo.dylib'" $t/log9; }
+link $t/lib/libfoo.dylib $t/lib/libfoo.dylib 2> $t/log9
+[ "$(count)" = 2 ]
+link -L$t/lib -lfoo $t/lib/libfoo.dylib 2> $t/log9
+[ "$(count)" = 2 ]
+link $t/lib/libfoo.dylib $root/opt/x/libfoo.dylib 2> $t/log9
+[ "$(count)" = 2 ]
+link -L$t/lib -lfoo -needed-lfoo 2> $t/log9
+[ "$(count)" = 1 ]
