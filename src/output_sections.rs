@@ -1817,7 +1817,7 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::IndirectSymtab);
     }
     ctx.chunks.push(ChunkId::Strtab);
-    if ctx.adhoc_codesign() {
+    if ctx.args.adhoc_codesign {
         ctx.chunks.push(ChunkId::CodeSignature);
     }
 }

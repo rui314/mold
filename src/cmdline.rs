@@ -114,9 +114,10 @@ pub struct Args {
     pub inputs: Vec<InputArg>,
     /// -rpath: LC_RPATH strings, as given.
     pub rpaths: Vec<Vec<u8>>,
-    /// -adhoc_codesign / -no_adhoc_codesign. None means "decide from
-    /// the target".
-    pub adhoc_codesign: Option<bool>,
+    /// Whether the output is ad-hoc code signed: -adhoc_codesign /
+    /// -no_adhoc_codesign, resolved for the target at the end of
+    /// parsing.
+    pub adhoc_codesign: bool,
     pub dead_strip: bool,
     /// -S: do not emit debug stab symbols.
     pub strip_debug: bool,
@@ -405,7 +406,7 @@ impl Default for Args {
             framework_paths: Vec::new(),
             inputs: Vec::new(),
             rpaths: Vec::new(),
-            adhoc_codesign: None,
+            adhoc_codesign: false,
             dead_strip: false,
             strip_debug: false,
             all_load: false,
@@ -1109,6 +1110,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
+    let mut adhoc_codesign: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
@@ -1305,8 +1307,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
             b"-fixup_chains" => args.fixup_chains = Some(true),
             b"-no_fixup_chains" => args.fixup_chains = Some(false),
-            b"-adhoc_codesign" => args.adhoc_codesign = Some(true),
-            b"-no_adhoc_codesign" => args.adhoc_codesign = Some(false),
+            b"-adhoc_codesign" => adhoc_codesign = Some(true),
+            b"-no_adhoc_codesign" => adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
             b"-static" => {
                 if !matches!(kind, OutputKind::Object | OutputKind::Kext) {
@@ -1877,6 +1879,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.function_starts = function_starts.unwrap_or(!args.without_dyld());
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
 
+    // ld-prime signs arm64 macOS images by default and leaves x86_64
+    // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
+    // -static image or a kext (signed if at all by whoever packages it)
+    // and firmware unsigned too.
+    args.adhoc_codesign = adhoc_codesign.unwrap_or(
+        target.name == "arm64" && !args.without_dyld() && args.platform == PLATFORM_MACOS,
+    );
+
     // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing
     // outside its segments but the symbol table (and the local
     // relocations of a -pie one). The options asking for the code
@@ -1886,7 +1896,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.function_starts = false;
         args.data_in_code_info = false;
         args.version_load_command = false;
-        args.adhoc_codesign = Some(false);
+        args.adhoc_codesign = false;
         args.rpaths.clear();
     }
 
