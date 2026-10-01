@@ -151,7 +151,10 @@ pub fn push_ast_paths<E: Target>(
 /// that the debugger sees the name the source gave it. (The map keeps
 /// the whole name.)
 pub fn local_symbol_name(name: &str) -> &str {
-    name.find(".llvm.").map_or(name, |i| &name[..i])
+    // Not str::find, which sets a searcher up for each name.
+    static LLVM: std::sync::LazyLock<memchr::memmem::Finder<'static>> =
+        std::sync::LazyLock::new(|| memchr::memmem::Finder::new(".llvm."));
+    LLVM.find(name.as_bytes()).map_or(name, |i| &name[..i])
 }
 
 /// Returns true if a local symbol should appear in the output symbol
