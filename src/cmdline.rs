@@ -475,6 +475,9 @@ pub struct Args {
     /// tentative definition that wins over a dylib's definition.
     pub commons: CommonsMode,
     pub warn_commons: bool,
+    /// $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES: objects built for
+    /// different Swift ABI versions draw a warning rather than an error.
+    pub warn_swift_abi_mismatches: bool,
     /// -max_default_common_align, as a power of two: the most a common
     /// symbol with no alignment of its own is aligned to (its size
     /// rounded up to a power of two). 2^15 unless given, 2^8 in a
@@ -918,6 +921,7 @@ impl Default for Args {
             weak_reference_mismatches: WeakRefMismatches::NonWeak,
             commons: CommonsMode::IgnoreDylibs,
             warn_commons: false,
+            warn_swift_abi_mismatches: false,
             max_default_common_align: 15,
             force_weak: Glob::new(),
             force_not_weak: Glob::new(),
@@ -2037,6 +2041,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args = Args {
         zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
         warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
+        warn_swift_abi_mismatches: std::env::var_os("LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES")
+            .is_some(),
         order_file_statistics: std::env::var_os("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
         fatal_warnings: std::env::var_os("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
         application_extension: ["LD_APPLICATION_EXTENSION_SAFE", "LD_NO_ENCRYPT"]

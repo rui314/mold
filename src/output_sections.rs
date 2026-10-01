@@ -17,6 +17,7 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::InputSection;
 use crate::macho::*;
+use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, cstring_of};
 use crate::passes::{is_class_or_protocol_ref_name, resolved_file_name};
 use crate::symbol_moves::{Move, MoveOption};
@@ -1796,29 +1797,47 @@ fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Merges the objects' __objc_imageinfo records into the image's: the
-/// Swift version must agree, the Swift language version is the newest,
+/// Swift ABI version must agree with the first object's that has one
+/// (ld-prime only warns under $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES,
+/// and keeps that first one), the Swift language version is the newest,
 /// and the category-class-properties bit holds only if every
 /// Objective-C object has it. An image no dyld loads (-static,
 /// -preload, a kext), whose Objective-C no runtime sets up, gets none
 /// from ld-prime.
 fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
-    let infos: Vec<u32> =
-        ctx.objs.iter().filter(|o| o.is_alive).filter_map(|o| o.objc_image_info).collect();
+    let infos: Vec<(u32, &MappedFile)> = (ctx.objs.iter())
+        .filter(|o| o.is_alive)
+        .filter_map(|o| Some((o.objc_image_info?, o.mf)))
+        .collect();
     if infos.is_empty() {
         return;
     }
     let mut swift_version = 0;
-    for &flags in &infos {
+    for &(flags, mf) in &infos {
         let v = (flags >> 8) & 0xff;
         if swift_version == 0 {
             swift_version = v;
         } else if v != 0 && v != swift_version {
-            error!("incompatible __objc_imageinfo swift versions");
+            let (first, file) = (swift_abi_name(swift_version), resolved_file_name(mf));
+            if ctx.args.warn_swift_abi_mismatches {
+                crate::warn!(
+                    "{file} compiled with a different Swift ABI version ({}), than previous \
+                     files ({first})",
+                    swift_abi_name(v)
+                );
+            } else {
+                fatal!(
+                    "not all .o files built with the same Swift ABI version. Started with \
+                     ({first}), now found ({}) in {file}",
+                    swift_abi_name(v)
+                );
+            }
         }
     }
     if ctx.args.without_dyld() {
         return;
     }
+    let infos: Vec<u32> = infos.into_iter().map(|(flags, _)| flags).collect();
     let lang = infos.iter().map(|f| f >> 16).max().unwrap();
     let cat = infos.iter().all(|f| f & 0x40 != 0);
     let flags = (lang << 16) | (swift_version << 8) | if cat { 0x40 } else { 0 };
@@ -1827,6 +1846,22 @@ fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     ctx.objc_imageinfo.hdr.segname = data_seg(ctx);
     ctx.objc_imageinfo.hdr.size = 8;
     ctx.chunks.push(ChunkId::ObjcImageInfo);
+}
+
+/// A Swift ABI version, the byte of __objc_imageinfo's flags that holds
+/// it, as ld-prime names it.
+fn swift_abi_name(v: u32) -> String {
+    let name = match v {
+        1 => "1.0",
+        2 => "1.1",
+        3 => "2.0",
+        4 => "3.0",
+        5 => "4.0",
+        6 => "4.1/4.2",
+        7 => "5 or later",
+        _ => return format!("unknown ABI version 0x{v:02X}"),
+    };
+    name.to_string()
 }
 
 /// Lays out __eh_frame, the surviving DWARF unwind records, in input
