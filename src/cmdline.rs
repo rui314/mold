@@ -1194,7 +1194,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-stack_addr" => "requires <address>",
         "-segment_order" => "needs <segment-list>",
         "-sectalign" => "needs <segname> <sectname> <align>",
-        "-executable_path" => return format!("obsolete option {opt} requires 1 arguments"),
+        "-executable_path" | "-kext_objects_dir" | "-multiply_defined" | "-sdk_version"
+        | "-seg_addr_table" | "-Y" => return format!("obsolete option {opt} requires 1 arguments"),
         // Files and directories: inputs, lists, outputs and search paths.
         _ => "missing <path>",
     };
@@ -1246,9 +1247,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
-    // The obsolete options given, which ld-prime ignores with a
-    // warning once it has read them all.
-    let mut obsolete: Vec<&str> = Vec::new();
+    // The warnings about the obsolete options given, which ld-prime
+    // ignores with a warning once it has read them all.
+    let mut obsolete: Vec<String> = Vec::new();
     // The libraries and the frameworks to load lazily, which ld-prime
     // keeps apart.
     let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
@@ -1751,7 +1752,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // linker of a client to drop the dylib's load command if it
             // bound nothing from it. ld-prime neither sets nor honors
             // the flag.
-            b"-mark_dead_strippable_dylib" => obsolete.push("-mark_dead_strippable_dylib"),
+            b"-mark_dead_strippable_dylib" => obsolete.push(format!("{name} is obsolete")),
             b"-export_dynamic" => args.export_dynamic = true,
             b"-order_file" => args.order_files.push(path(next_arg(&mut i, name))),
             b"--print-dependencies" => args.print_dependencies = true,
@@ -1836,8 +1837,38 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the option with a warning.
             b"-executable_path" => {
                 arg_or_empty(&mut i, name);
-                obsolete.push("-executable_path");
+                obsolete.push(format!("{name} is obsolete"));
             }
+            // What ld64 and its predecessors took for prebinding, the
+            // two-level namespace hints, multiple modules, Objective-C
+            // garbage collection, kext object files and the classic ld's
+            // -X, -m, -b and -Sp: ld-prime ignores them all, with a
+            // warning once it has read every option. The other old
+            // symbol stripping flags, -s, -Si and -Sn, it warns about as
+            // it reads them.
+            b"-allow_simulator_linking_to_macosx_dylibs"
+            | b"-b"
+            | b"-m"
+            | b"-M"
+            | b"-new_linker"
+            | b"-no_arch_warnings"
+            | b"-no_kext_objects"
+            | b"-no_new_main"
+            | b"-nomultidefs"
+            | b"-objc_gc"
+            | b"-objc_gc_compaction"
+            | b"-objc_gc_only"
+            | b"-prebind"
+            | b"-single_module"
+            | b"-Sp"
+            | b"-twolevel_namespace_hints"
+            | b"-X" => obsolete.push(format!("{name} is obsolete")),
+            b"-kext_objects_dir" | b"-multiply_defined" | b"-sdk_version" | b"-seg_addr_table"
+            | b"-Y" => {
+                arg_or_empty(&mut i, name);
+                obsolete.push(format!("{name} is obsolete"));
+            }
+            b"-s" | b"-Si" | b"-Sn" => warnings.warn(format!("{name} is obsolete")),
 
             // Reserve enough header padding that install_name_tool can
             // grow install names in place.
@@ -1857,8 +1888,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld64 kept the FDEs of functions with compact unwind
             // records for a target before macOS 10.9 (iOS 7), or as
             // these said. ld-prime goes by the target alone.
-            b"-keep_dwarf_unwind" => obsolete.push("-keep_dwarf_unwind"),
-            b"-no_keep_dwarf_unwind" => obsolete.push("-no_keep_dwarf_unwind"),
+            b"-keep_dwarf_unwind" | b"-no_keep_dwarf_unwind" => {
+                obsolete.push(format!("{name} is obsolete"))
+            }
             b"-init_offsets" => args.init_offsets = true,
             b"-init" => args.init = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-data_const" => data_const = Some(true),
@@ -2175,8 +2207,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
         );
     }
-    for opt in obsolete {
-        crate::warn!("{opt} is obsolete");
+    for msg in obsolete {
+        crate::warn!("{msg}");
     }
     check_output_kind(target, &args, pie, data_const, explicit_entry);
 
