@@ -380,6 +380,10 @@ pub struct Args {
     /// -not_for_dyld_shared_cache: a dylib installed in /usr/lib or
     /// /System/Library that won't go into the dyld shared cache.
     pub not_for_dyld_shared_cache: bool,
+    /// -no_shared_cache_eligible: -not_for_dyld_shared_cache, and an
+    /// empty LC_SEGMENT_SPLIT_INFO in a final image (but a -preload
+    /// one) to mark it so for the cache builder.
+    pub shared_cache_marker: bool,
     /// -debug_variant: a debug build, which ld64 keeps out of the dyld
     /// shared cache (and spares warnings that only matter for binaries
     /// shipped to customers; there are none here).
@@ -649,6 +653,7 @@ impl Default for Args {
             lazy_load: false,
             warn_unused_dylibs: false,
             not_for_dyld_shared_cache: false,
+            shared_cache_marker: false,
             debug_variant: false,
             shared_region: false,
             no_inits: false,
@@ -2224,6 +2229,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.random_uuid = true;
             }
             b"-no_dynamic_access" => args.no_dynamic_access = true,
+            b"-no_shared_cache_eligible" => {
+                args.not_for_dyld_shared_cache = true;
+                args.shared_cache_marker = true;
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();

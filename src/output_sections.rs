@@ -1832,7 +1832,9 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     } else if ctx.args.pie || ctx.args.is_kext() {
         ctx.chunks.push(ChunkId::LocalRelocs);
     }
-    if ctx.args.shared_region {
+    // An empty one marks an image -no_shared_cache_eligible keeps out
+    // of the shared cache.
+    if ctx.args.shared_region || (ctx.args.shared_cache_marker && !ctx.args.preload) {
         ctx.chunks.push(ChunkId::SplitInfo);
     }
     if !ctx.lazy_load_info.dylibs.is_empty() {
