@@ -1561,11 +1561,50 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
     // -alias bases too: Xcode aliases an app extension's debug dylib
     // entry point to Foundation's _NSExtensionMain.
     named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.clone()));
+    // So are the runtime routines LTO may come to call, so that a
+    // library can provide them.
+    if may_softload_runtime_routines(ctx) {
+        named.extend(LTO_RUNTIME_ROUTINES.iter().map(|name| name.to_string()));
+    }
     for name in named {
         if ctx.symbols.get(&name).is_none() {
             ctx.symbols.intern(String::leak(name));
         }
     }
+}
+
+/// The runtime routines ld-prime "softloads" for LTO, whose code
+/// generator may call them where no input did: it looks each up in the
+/// libraries before LTO as if something referenced it, loading the
+/// archive member or binding to the dylib that provides it first, but
+/// takes none as missing. Its list is its own (libLTO's
+/// lto_runtime_lib_symbols_list is longer and lacks _strcpy): these are
+/// the names of compiler-rt's builtins, libm and libc it was found to
+/// load, for x86-64 and arm64 alike.
+pub const LTO_RUNTIME_ROUTINES: [&str; 8] = [
+    "___divsi3",
+    "___gtdf2",
+    "___ltdf2",
+    "___muldi3",
+    "___udivdi3",
+    "___udivsi3",
+    "_memset",
+    "_strcpy",
+];
+
+/// Whether the link softloads LTO_RUNTIME_ROUTINES: once bitcode is in
+/// it, with -lto_softload_runtime_symbols or in a -static or -preload
+/// image (Args::lto_softload).
+pub fn softloads_runtime_routines<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.lto_softload
+        && (!ctx.lto_inputs.is_empty()
+            || ctx.lto_modules.iter().any(|module| ctx.objs[module.obj].is_alive))
+}
+
+/// Whether the link may softload LTO_RUNTIME_ROUTINES: any bitcode file
+/// is in it or could join it, live or not.
+fn may_softload_runtime_routines<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.lto_softload && !(ctx.lto_modules.is_empty() && ctx.lto_inputs.is_empty())
 }
 
 /// Non-external symbols are private to their object and never compete:
@@ -1718,6 +1757,19 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
         .chain(ctx.args.aliases.iter().map(|(existing, _)| existing));
     for name in named {
         if let Some(id) = ctx.symbols.get(name) {
+            refs.used[id as usize].store(true, Ordering::Relaxed);
+        }
+    }
+    // A softloaded routine is wanted like these, so that a dylib that
+    // comes before any archive defining it provides it - in the round
+    // over all objects as soon as bitcode might be live.
+    let softload = if only_alive {
+        softloads_runtime_routines(ctx)
+    } else {
+        may_softload_runtime_routines(ctx)
+    };
+    if softload {
+        for id in LTO_RUNTIME_ROUTINES.iter().filter_map(|name| ctx.symbols.get(name)) {
             refs.used[id as usize].store(true, Ordering::Relaxed);
         }
     }
@@ -1976,21 +2028,41 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    while let Some(obj_idx) = queue.pop() {
-        for i in 0..ctx.objs[obj_idx].nlists.len() {
-            let nlist = ctx.objs[obj_idx].nlists[i];
-            if nlist.is_stab() || !nlist.is_extern() || nlist.n_type() != N_UNDF {
-                continue;
-            }
-            let sym_id = ctx.objs[obj_idx].symbols[i];
-            if let Some(FileId::Obj(owner)) = ctx.symbols[sym_id].file() {
-                let owner = owner as usize;
-                if !ctx.objs[owner].is_alive {
-                    ctx.objs[owner].is_alive = true;
-                    ctx.why_load.insert(owner, ctx.symbols[sym_id].name());
-                    queue.push(owner);
+    // Once bitcode is live, the archive members that define a runtime
+    // routine LTO may call are too (see LTO_RUNTIME_ROUTINES).
+    let mut softloaded = false;
+    loop {
+        while let Some(obj_idx) = queue.pop() {
+            for i in 0..ctx.objs[obj_idx].nlists.len() {
+                let nlist = ctx.objs[obj_idx].nlists[i];
+                if nlist.is_stab() || !nlist.is_extern() || nlist.n_type() != N_UNDF {
+                    continue;
                 }
+                let sym_id = ctx.objs[obj_idx].symbols[i];
+                load_owner(ctx, sym_id, &mut queue);
             }
+        }
+        if softloaded || !softloads_runtime_routines(ctx) {
+            break;
+        }
+        softloaded = true;
+        for name in LTO_RUNTIME_ROUTINES {
+            if let Some(id) = ctx.symbols.get(name) {
+                load_owner(ctx, id, &mut queue);
+            }
+        }
+    }
+}
+
+/// Makes live the archive member that defines a symbol something live
+/// wants, if it is not yet.
+fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec<usize>) {
+    if let Some(FileId::Obj(owner)) = ctx.symbols[sym_id].file() {
+        let owner = owner as usize;
+        if !ctx.objs[owner].is_alive {
+            ctx.objs[owner].is_alive = true;
+            ctx.why_load.insert(owner, ctx.symbols[sym_id].name());
+            queue.push(owner);
         }
     }
 }

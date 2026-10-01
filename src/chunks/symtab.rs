@@ -1152,6 +1152,17 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
             live_ref[id as usize].store(true, Ordering::Relaxed);
         }
     }
+    // A runtime routine LTO might have called, bound to a dylib, stays
+    // as an import too, unless -dead_strip strips it after LTO.
+    if !ctx.args.dead_strip && crate::passes::softloads_runtime_routines(ctx) {
+        for name in crate::passes::LTO_RUNTIME_ROUTINES {
+            if let Some(id) = ctx.symbols.get(name)
+                && ctx.symbols[id].is_imported()
+            {
+                live_ref[id as usize].store(true, Ordering::Relaxed);
+            }
+        }
+    }
     for &(_, target) in &ctx.indirect_aliases {
         live_ref[target as usize].store(true, Ordering::Relaxed);
     }

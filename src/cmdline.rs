@@ -312,6 +312,10 @@ pub struct Args {
     pub lto_library: Option<PathBuf>,
     /// -mcpu: the CPU libLTO compiles the bitcode for.
     pub lto_cpu: Option<String>,
+    /// -lto_softload_runtime_symbols / -no_lto_softload_runtime_symbols,
+    /// the last one given, or else whether the image is -static or
+    /// -preload (see passes::LTO_RUNTIME_ROUTINES).
+    pub lto_softload: bool,
     /// -save-temps: keep LTO's merged bitcode and its object beside the
     /// output.
     pub save_temps: bool,
@@ -762,6 +766,7 @@ impl Default for Args {
             no_fixup_chains: false,
             lto_library: None,
             lto_cpu: None,
+            lto_softload: false,
             save_temps: false,
             stack_size: 0,
             sectcreate: Vec::new(),
@@ -1787,6 +1792,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut objc_stubs_small: Option<bool> = None;
     let mut const_selrefs: Option<bool> = None;
+    let mut lto_softload: Option<bool> = None;
     // -fixup_chains_section's kind (see Args::chain_starts_kind), unless
     // a later -fixup_chains or -no_fixup_chains turned it off.
     let mut chain_starts: Option<u32> = None;
@@ -2716,10 +2722,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_use_lto_filenames_in_order_file_matching" => {
                 args.lto_filenames_in_order_file = false;
             }
-            // ld-prime loads the routines LTO code may call (memset,
-            // __udivdi3 ...) from the libraries before LTO, by default
-            // in a -static or -preload image; mold loads none.
-            b"-lto_softload_runtime_symbols" | b"-no_lto_softload_runtime_symbols" => {}
+            b"-lto_softload_runtime_symbols" => lto_softload = Some(true),
+            b"-no_lto_softload_runtime_symbols" => lto_softload = Some(false),
 
             b"-dependency_info" => args.dependency_info = Some(path(next_arg(&mut i, name))),
 
@@ -3109,6 +3113,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.unaligned_pointers = resolve_unaligned_pointers(target, &args, unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
     args.const_selrefs = const_selrefs.unwrap_or(args.shared_region);
+    args.lto_softload = lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
         warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
