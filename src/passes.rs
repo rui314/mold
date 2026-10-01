@@ -137,9 +137,46 @@ fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, 
 /// An absolute path looked up under a syslibroot, as ld-prime joins
 /// them: less its leading slash, the path goes below the root, but one
 /// that starts with two slashes stays absolute and replaces the root.
-fn under_root(root: &Path, path: &Path) -> PathBuf {
+pub(crate) fn under_root(root: &Path, path: &Path) -> PathBuf {
     let bytes = path_bytes(path);
     root.join(crate::util::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
+}
+
+/// Looks for files as ld-prime does in its searches for inputs, noting
+/// each file it looks for and doesn't find: -dependency_info lists
+/// them, so that a build system links again once one appears. A lookup
+/// made ahead of time, or made again, is quiet.
+pub struct Prober<'a> {
+    missing: Option<&'a std::sync::Mutex<Vec<PathBuf>>>,
+}
+
+impl<'a> Prober<'a> {
+    pub fn new<E: Target>(ctx: &'a Context<E>) -> Self {
+        Self { missing: ctx.args.dependency_info.is_some().then_some(&ctx.missing_files) }
+    }
+
+    pub fn quiet() -> Self {
+        Self { missing: None }
+    }
+
+    /// Whether there is a file at `path`.
+    pub fn exists(&self, path: &Path) -> bool {
+        let found = path.exists();
+        if !found && let Some(missing) = self.missing {
+            missing.lock().unwrap().push(path.to_path_buf());
+        }
+        found
+    }
+
+    /// The library at `path` or its stub, `path` with .tbd for its
+    /// extension: ld-prime looks for both, the stub first, and takes
+    /// the stub where both are there.
+    pub fn library(&self, path: &Path) -> Option<PathBuf> {
+        let stub = path.with_extension("tbd");
+        let has_stub = self.exists(&stub);
+        let has_library = self.exists(path);
+        if has_stub { Some(stub) } else { has_library.then(|| path.to_path_buf()) }
+    }
 }
 
 /// Finds -framework Name[,suffix]: Name.framework/Name (its stub
@@ -160,6 +197,7 @@ fn find_framework<E: Target>(ctx: &Context<E>, arg: &OsStr, stubs: bool) -> Opti
     let name = crate::util::os_str(name);
     let mut framework = name.to_os_string();
     framework.push(".framework");
+    let prober = Prober::new(ctx);
     let search = |subdir: &str| {
         for suffix in [suffix, None].into_iter().take(1 + suffix.is_some() as usize) {
             for dir in &ctx.args.framework_paths {
@@ -169,11 +207,12 @@ fn find_framework<E: Target>(ctx: &Context<E>, arg: &OsStr, stubs: bool) -> Opti
                     path.as_mut_os_string().push(crate::util::os_str(suffix));
                 }
                 for path in with_image_suffixes(ctx, &path) {
-                    let stub = stubs.then(|| path.with_extension("tbd"));
-                    for path in stub.into_iter().chain([path]) {
-                        if path.exists() {
-                            return Some(path);
-                        }
+                    let found = match stubs {
+                        true => prober.library(&path),
+                        false => prober.exists(&path).then_some(path),
+                    };
+                    if found.is_some() {
+                        return found;
                     }
                 }
             }
@@ -215,59 +254,78 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     // An image that links no dylib (Args::links_dylibs) looks for
     // archives only. A relocatable output looks for dylibs too, only to
     // ignore them (collect_file).
-    let passes: &[&[&str]] = if !ctx.args.links_dylibs() {
-        &[&["a"]]
+    use LibFile::*;
+    let passes: &[&[LibFile]] = if !ctx.args.links_dylibs() {
+        &[&[Archive]]
     } else if ctx.args.search_dylibs_first {
-        &[DYLIB_EXTS, &["a"]]
+        &[&[Dylib, So], &[Archive]]
     } else {
-        &[&["tbd", "dylib", "so", "a"]]
+        &[&[Dylib, So, Archive]]
     };
     search_library(ctx, name, passes)
 }
 
-/// The extensions of a dylib in the library search path, in the order
-/// ld-prime tries them in a directory: a stub, a dylib, a .so.
-const DYLIB_EXTS: &[&str] = &["tbd", "dylib", "so"];
+/// A file a library search looks for in a directory, as lib<name> and
+/// an extension: a dylib - or its stub, a .tbd of the name, which
+/// ld-prime looks for with it (see Prober::library), unless the dylib
+/// itself is wanted -, a .so or an archive.
+#[derive(Clone, Copy, PartialEq)]
+enum LibFile {
+    Dylib,
+    DylibItself,
+    So,
+    Archive,
+}
 
 /// Looks for a dylib only, as -upward-l and -reexport-l do: an archive
 /// can be neither an upward dependency nor a re-exported library.
 fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
-    search_library(ctx, name, &[DYLIB_EXTS])
+    search_library(ctx, name, &[&[LibFile::Dylib, LibFile::So]])
 }
 
 /// Looks for a dylib to merge (-merge-l): a dylib itself, which may
 /// carry its atoms, never a stub.
 fn find_mergeable_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
-    search_library(ctx, name, &[&["dylib", "so"]])
+    search_library(ctx, name, &[&[LibFile::DylibItself, LibFile::So]])
 }
 
-/// Looks for lib<name>.<ext> in the library search path, for each pass
-/// of extensions in turn. What is there counts, as for ld-prime, which
-/// fails on a directory it finds (see unreadable_input). A name ending
-/// in .o is a file name to look up as it is, whatever the option:
-/// clang links crt1.o for an old deployment target as -lcrt1.10.6.o.
+/// Looks for lib<name> in the library search path, for each pass of
+/// files in turn. What is there counts, as for ld-prime, which fails
+/// on a directory it finds (see unreadable_input). A name ending in .o
+/// is a file name to look up as it is, whatever the option: clang
+/// links crt1.o for an old deployment target as -lcrt1.10.6.o.
 fn search_library<E: Target>(
     ctx: &Context<E>,
     name: &OsStr,
-    passes: &[&[&str]],
+    passes: &[&[LibFile]],
 ) -> Option<PathBuf> {
+    let prober = Prober::new(ctx);
     if name.as_bytes().ends_with(b".o") {
-        return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| p.exists());
+        return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| prober.exists(p));
     }
     // In a directory, ld-prime looks for each -image_suffix variant
     // of the library, of any extension, before the library itself.
-    for exts in passes {
+    for files in passes {
         for dir in &ctx.args.library_paths {
             let suffixes = ctx.args.image_suffixes.iter().map(OsString::as_os_str);
             for suffix in suffixes.chain([OsStr::new("")]) {
-                for ext in *exts {
-                    let mut file = OsString::from("lib");
-                    file.push(name);
-                    file.push(suffix);
-                    file.push(format!(".{ext}"));
-                    let path = dir.join(file);
-                    if path.exists() {
-                        return Some(path);
+                for &file in *files {
+                    let ext = match file {
+                        LibFile::Dylib | LibFile::DylibItself => "dylib",
+                        LibFile::So => "so",
+                        LibFile::Archive => "a",
+                    };
+                    let mut leaf = OsString::from("lib");
+                    leaf.push(name);
+                    leaf.push(suffix);
+                    leaf.push(format!(".{ext}"));
+                    let path = dir.join(leaf);
+                    let found = match file {
+                        LibFile::Dylib => prober.library(&path),
+                        _ => prober.exists(&path).then_some(path),
+                    };
+                    if found.is_some() {
+                        return found;
                     }
                 }
             }
@@ -1165,19 +1223,21 @@ fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
 /// is taken as it is. A library to merge is no stub (`stubs`). A last
 /// -syslibroot of / drops the roots (see sdk_roots).
 fn find_file<E: Target>(ctx: &Context<E>, path: &Path, stubs: bool) -> Option<PathBuf> {
+    let prober = Prober::new(ctx);
     let object = path.extension() == Some(OsStr::new("o"));
-    let mut candidates: Vec<PathBuf> = Vec::new();
     if path.is_absolute() && !object {
         for root in sdk_roots(&ctx.args) {
             let path = under_root(root, path);
-            if stubs {
-                candidates.push(path.with_extension("tbd"));
+            let found = match stubs {
+                true => prober.library(&path),
+                false => prober.exists(&path).then_some(path),
+            };
+            if found.is_some() {
+                return found;
             }
-            candidates.push(path);
         }
     }
-    candidates.push(path.to_path_buf());
-    candidates.into_iter().find(|path| path.exists())
+    prober.exists(path).then(|| path.to_path_buf())
 }
 
 /// Whether the library an option names was `found` in the SDK, whose

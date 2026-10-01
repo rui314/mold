@@ -97,16 +97,22 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
 /// keeps them, the -bundle_loader -, the -filelist and -sectcreate
 /// files, the libraries auto-link options load, and twice each the
 /// libraries loaded only as another's re-exports (ld-prime records them
-/// as it finds them and as it loads them). The outputs are the image,
-/// the -map and the -sdk_imports file. A file is named as often as it
-/// is spelled differently, and a relative path resolved to the file's
-/// real path, where there is one: an output's, where a previous link
-/// wrote it.
+/// as it finds them and as it loads them). The missing files are those
+/// the searches for inputs looked for, each once, as spelled (see
+/// passes::Prober): a build system links again when one appears. The
+/// outputs are the image, the -map and the -sdk_imports file. A file
+/// is named as often as it is spelled differently, and a relative path
+/// resolved to the file's real path, where there is one: an output's,
+/// where a previous link wrote it.
 pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.dependency_info else {
         return;
     };
     let mut entries: Vec<(u8, Vec<u8>)> = dependency_inputs(ctx);
+    let mut missing = ctx.missing_files.lock().unwrap().clone();
+    missing.sort_unstable();
+    missing.dedup();
+    entries.extend(missing.iter().map(|path| (0x11, path_bytes(path).to_vec())));
     let outputs = [Some(&ctx.args.output), ctx.args.map.as_ref(), ctx.args.sdk_imports.as_ref()];
     entries.extend(outputs.into_iter().flatten().map(|path| (0x40, dependency_path(path))));
     entries.sort();

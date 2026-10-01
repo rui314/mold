@@ -125,6 +125,9 @@ pub struct Context<E: Target> {
     /// Under -dependency_info, the files of the libraries loaded as
     /// another's re-exports, as found (see load_reexports).
     pub reexport_files: Vec<std::path::PathBuf>,
+    /// Under -dependency_info, the files a search for an input looked
+    /// for and did not find (see passes::Prober).
+    pub missing_files: std::sync::Mutex<Vec<std::path::PathBuf>>,
     /// The loaded libLTO, once a bitcode input has been seen.
     pub lto_plugin: Option<crate::lto::Plugin>,
     /// Bitcode modules registered for LTO.
@@ -337,6 +340,7 @@ impl<E: Target> Context<E> {
             dead_header_names: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
+            missing_files: Default::default(),
             processed_linker_options: std::collections::HashSet::new(),
             cmdline_linker_options: None,
             linker_option_warnings: Vec::new(),

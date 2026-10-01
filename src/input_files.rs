@@ -3533,7 +3533,7 @@ fn load_reexports<E: Target>(
         let on_disk = if inline.is_some() && !public {
             None
         } else {
-            resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths)
+            resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, inline.is_some())
         };
         if on_disk.is_none()
             && let Some(i) = inline
@@ -3541,7 +3541,7 @@ fn load_reexports<E: Target>(
             // ld-prime names an inlined library by the file it would
             // find for it, where there is one.
             if ctx.args.trace || ctx.args.dependency_info.is_some() {
-                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths);
+                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, true);
                 if let Some(mf) = found {
                     note_reexport_file(ctx, &mf.name);
                 }
@@ -3556,7 +3556,7 @@ fn load_reexports<E: Target>(
             }
             walk.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
             if map {
-                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths);
+                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, true);
                 let path = found.map_or(Path::new(crate::util::os_str(&name)), |mf| &mf.name);
                 record(&name, path, all_exports(&doc));
             }
@@ -4311,14 +4311,16 @@ fn dir_of(path: &Path) -> PathBuf {
 /// executable's directory, or -executable_path's), so such a name
 /// resolves only by its leaf. A -dylib_file for the name comes first,
 /// unless its file isn't there; one that is ld-prime reads as any input
-/// (see passes::unreadable_input).
+/// (see passes::unreadable_input). Then the name is looked for as
+/// find_dylib_ref does, the files not found noted for -dependency_info
+/// - but for the name itself if a stub has the library `inlined`.
 fn resolve_dylib_ref<E: Target>(
     ctx: &Context<E>,
     name: &[u8],
     loader_dir: &Path,
     loader_rpaths: &[PathBuf],
+    inlined: bool,
 ) -> Option<&'static MappedFile> {
-    use crate::util::{os_str, path_bytes};
     let dylib_files = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
     for (_, file) in dylib_files {
         match MappedFile::try_open(file) {
@@ -4328,82 +4330,90 @@ fn resolve_dylib_ref<E: Target>(
             Err(e) => fatal!("{}", crate::passes::unreadable_input(file, &e)),
         }
     }
-    // A name relative to the re-exporter or its rpaths resolves as
-    // such first, and failing that like an absolute one.
-    if let Some(rest) = name.strip_prefix(b"@loader_path/") {
-        return find_reexport_file(ctx, path_bytes(&loader_dir.join(os_str(rest))))
-            .or_else(|| find_reexport_by_leaf(ctx, name));
-    }
-    if let Some(rest) = name.strip_prefix(b"@rpath/") {
-        return loader_rpaths
-            .iter()
-            .find_map(|rpath| find_reexport_file(ctx, path_bytes(&rpath.join(os_str(rest)))))
-            .or_else(|| find_reexport_by_leaf(ctx, name));
-    }
-    find_reexport(ctx, name)
+    let prober = crate::passes::Prober::new(ctx);
+    let loader = Some((loader_dir, loader_rpaths));
+    MappedFile::open(&find_dylib_ref(ctx, &prober, name, loader, inlined)?)
 }
 
-/// Locates a re-exported library by an absolute install name. As in
-/// ld-prime, a library of the name's leaf in the library search path
-/// (-L, then the SDK's /usr/lib) comes first - a stub for a library not
-/// yet installed, found next to the re-exporter's own - and the install
-/// path only after that.
+/// Locates a re-exported library by its install name as load_reexports
+/// does, but quietly: ahead of the link, or again after it.
 pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
-    find_reexport_by_leaf(ctx, name).or_else(|| find_reexport_file(ctx, name))
+    let prober = crate::passes::Prober::quiet();
+    MappedFile::open(&find_dylib_ref(ctx, &prober, name, None, false)?)
 }
 
-/// Looks a re-exported library up in the library search path by its
-/// install name's leaf, less its extension: /opt/x/libfoo.1.dylib as
-/// libfoo.1.tbd or libfoo.1.dylib. A framework is not looked up this way.
-fn find_reexport_by_leaf<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
-    let leaf = Path::new(crate::util::os_str(name)).file_name()?;
-    if memchr::memmem::find(name, b".framework/").is_some() {
+/// Finds the file of a dependent dylib's install name with `prober`, as
+/// ld-prime looks for it: a name relative to its `loader` - the
+/// directory of the dylib that names it, and that dylib's rpaths - in
+/// its place there first; then by the name's end in the search paths
+/// (see find_by_leaf); then the name itself, an absolute one under each
+/// -syslibroot first (reexports between freshly built dylibs use
+/// absolute install names outside any SDK) - but not where a stub has
+/// the library `inlined`, which ld-prime takes in its place. Each place
+/// is looked in for a stub too (see Prober::library).
+fn find_dylib_ref<E: Target>(
+    ctx: &Context<E>,
+    prober: &crate::passes::Prober,
+    name: &[u8],
+    loader: Option<(&Path, &[PathBuf])>,
+    inlined: bool,
+) -> Option<PathBuf> {
+    use crate::util::os_str;
+    if let Some((loader_dir, loader_rpaths)) = loader {
+        if let Some(rest) = name.strip_prefix(b"@loader_path/") {
+            if let Some(path) = prober.library(&loader_dir.join(os_str(rest))) {
+                return Some(path);
+            }
+        } else if let Some(rest) = name.strip_prefix(b"@rpath/") {
+            let mut rpaths = loader_rpaths.iter();
+            if let Some(path) = rpaths.find_map(|rpath| prober.library(&rpath.join(os_str(rest)))) {
+                return Some(path);
+            }
+        }
+    }
+    if let Some(path) = find_by_leaf(ctx, prober, name) {
+        return Some(path);
+    }
+    let path = Path::new(os_str(name));
+    if path.is_absolute() {
+        for root in &ctx.args.syslibroot {
+            if let Some(path) = prober.library(&crate::passes::under_root(root, path)) {
+                return Some(path);
+            }
+        }
+    }
+    if inlined {
         return None;
     }
-    let stem = Path::new(leaf).with_extension("").into_os_string();
-    for dir in &ctx.args.library_paths {
-        for ext in [".tbd", ".dylib"] {
-            let mut file = stem.clone();
-            file.push(ext);
-            if let Some(mf) = MappedFile::open(dir.join(file)) {
-                return Some(mf);
-            }
-        }
-    }
-    None
+    prober.library(path)
 }
 
-/// Locates the stub or binary for a reexported library's install name
-/// under the syslibroot.
-pub fn find_reexport_file<E: Target>(
+/// Looks a dependent dylib up by the end of its install name in the
+/// search paths, as ld-prime does before the name itself: a framework's
+/// path from its .framework directory (/Foo.framework/Versions/A/Foo)
+/// in each framework directory, another library's leaf
+/// (libfoo.1.dylib) in each library directory - but for a library
+/// inside a framework, which is looked up by its name alone.
+fn find_by_leaf<E: Target>(
     ctx: &Context<E>,
-    install_name: &[u8],
-) -> Option<&'static MappedFile> {
-    // Try under each syslibroot, then the raw path: reexports between
-    // freshly built dylibs use absolute install names outside any SDK.
-    let mut roots: Vec<PathBuf> = ctx.args.syslibroot.clone();
-    roots.push(PathBuf::new());
-
-    for root in &roots {
-        let base = if root.as_os_str().is_empty() {
-            PathBuf::from(crate::util::os_str(install_name))
-        } else {
-            let mut relative = install_name;
-            while let Some(rest) = relative.strip_prefix(b"/") {
-                relative = rest;
-            }
-            root.join(crate::util::os_str(relative))
-        };
-        let mut with_tbd = base.clone().into_os_string();
-        with_tbd.push(".tbd");
-        let candidates = [base.with_extension("tbd"), PathBuf::from(with_tbd), base];
-        for path in candidates {
-            if let Some(mf) = MappedFile::open(&path) {
-                return Some(mf);
-            }
-        }
+    prober: &crate::passes::Prober,
+    name: &[u8],
+) -> Option<PathBuf> {
+    use crate::util::{os_str, path_bytes};
+    use memchr::{memmem, memrchr};
+    let leaf = memrchr(b'/', name).map_or(name, |slash| &name[slash + 1..]);
+    let framework_dir = [b"/", leaf, b".framework/"].concat();
+    if leaf.len() < name.len() && memmem::rfind(name, &framework_dir).is_some() {
+        let end = memmem::rfind(name, b".framework").unwrap();
+        let from = &name[memrchr(b'/', &name[..end]).unwrap()..];
+        return (ctx.args.framework_paths.iter())
+            .find_map(|dir| prober.library(Path::new(os_str(&[path_bytes(dir), from].concat()))));
     }
-    None
+    if leaf.ends_with(b".dylib") && memmem::find(name, b".framework/").is_some() {
+        return None;
+    }
+    let leaf = Path::new(os_str(leaf));
+    ctx.args.library_paths.iter().find_map(|dir| prober.library(&dir.join(leaf)))
 }
 
 /// An export that a per-symbol $ld$previous directive moves to an older
