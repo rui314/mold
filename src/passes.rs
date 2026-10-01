@@ -4878,6 +4878,9 @@ pub(crate) fn traces_implicit(args: &crate::cmdline::Args, name: &[u8]) -> bool 
 /// "auto-linking framework hint 'Foo' from file '/abs/a.o'" for
 /// -framework Foo, then "auto-linking library hint 'foo' ..." for -lfoo.
 fn autolink_hint_lines<E: Target>(ctx: &Context<E>, obj: &input_files::ObjectFile) -> Vec<String> {
+    if !ctx.args.trace_implicit_libraries && ctx.args.trace_implicit_library.is_empty() {
+        return Vec::new();
+    }
     let mut hints: Vec<(bool, &str, &[u8])> = Vec::new();
     for opt in &obj.linker_options {
         match opt.as_slice() {
