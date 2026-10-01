@@ -1379,9 +1379,16 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
 }
 
 /// Orders each output section's members: the atoms -order_file names
-/// first, cold code last, and the rest in input order. Thread-local
-/// zero fill goes by size instead.
+/// first, cold code last, and the rest in input order - what LTO
+/// compiled where its bitcode files were (see lto_layout_ranks).
+/// Thread-local zero fill goes by size instead.
 fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
+    if let Some(ranks) = lto_layout_ranks(ctx) {
+        for osec in &mut ctx.output_sections {
+            osec.members.sort_by_key(|&id| ranks[id as usize]);
+        }
+    }
+
     // ld-prime lays out a final image's __thread_bss by atom size,
     // smallest first and in input order among equals, whatever
     // -order_file says. An atom's size runs to the next one in its
@@ -1428,6 +1435,38 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
             osec.members.sort_by_key(|&id| cold[id as usize]);
         }
     }
+}
+
+/// Where a final image lays out what LTO compiled, as ld-prime does:
+/// each atom where the bitcode file it is credited to (see
+/// lto::origins) was named, between the inputs before and after that
+/// file, and the rest - which stay the compiled objects' - after every
+/// input, as the map numbers them. Every other section keeps its place,
+/// ranked by the latest input up to it. (-r lays them out after the
+/// inputs, as they come.)
+fn lto_layout_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u32>> {
+    if ctx.lto_objs.is_empty() || ctx.args.relocatable {
+        return None;
+    }
+    let mut latest = 0;
+    let mut ranks: Vec<u32> = ctx
+        .isecs
+        .iter()
+        .map(|isec| {
+            latest = latest.max(ctx.objs[isec.file as usize].priority);
+            latest
+        })
+        .collect();
+    let origins = crate::lto::origins(&ctx.lto_inputs);
+    for sym in &ctx.symbols.syms {
+        if let (Some(FileId::Obj(obj)), Some(isec)) = (sym.file(), sym.input_section())
+            && ctx.is_lto_obj(obj as usize)
+            && let Some(&Some(origin)) = origins.get(sym.name())
+        {
+            ranks[isec as usize] = ctx.objs[origin].priority;
+        }
+    }
+    Some(ranks)
 }
 
 /// Computes each input section's offset within its output section, and
