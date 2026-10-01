@@ -15,6 +15,7 @@ path = "integration.rs"
 harness = false
 
 [dependencies]
+mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "d4636c9f420065b29306de9deb128b7fa162892c" }
 mold.workspace = true
 mold-target-x86_64 = { path = "../arch/x86_64", optional = true }
 mold-target-i386 = { path = "../arch/i386", optional = true }
@@ -36,10 +37,6 @@ mold-target-sh4 = { path = "../arch/sh4", optional = true }
 mold-target-sh4be = { path = "../arch/sh4be", optional = true }
 mold-target-loongarch64 = { path = "../arch/loongarch64", optional = true }
 mold-target-loongarch32 = { path = "../arch/loongarch32", optional = true }
-
-# sparc64 uses the system allocator. See main.rs.
-[target.'cfg(not(target_arch = "sparc64"))'.dependencies]
-mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "d4636c9f420065b29306de9deb128b7fa162892c" }
 
 [dev-dependencies]
 mold-tests = { path = "../tests" }
