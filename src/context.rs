@@ -112,6 +112,9 @@ pub struct Context<E: Target> {
     /// The libraries and frameworks auto-link options named that were
     /// not found, as ld-prime reports them if symbols stay undefined.
     pub autolink_misses: Vec<String>,
+    /// The files only -possible-l and the like name, which load with
+    /// the auto-linked libraries (see passes::load_autolink_deps).
+    pub possible_files: Vec<std::path::PathBuf>,
     /// The dylibs named on the command line that -dead_strip_dylibs
     /// dropped, which ld-prime's -map still lists: their positions
     /// among the inputs and paths.
@@ -232,6 +235,7 @@ impl<E: Target> Context<E> {
             visited_files: std::collections::HashSet::new(),
             processed_linker_options: std::collections::HashSet::new(),
             autolink_misses: Vec::new(),
+            possible_files: Vec::new(),
             stripped_dylibs: Vec::new(),
             indirect_files: Vec::new(),
             unwind_records: Vec::new(),

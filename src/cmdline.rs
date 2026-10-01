@@ -106,6 +106,10 @@ pub enum LibraryKind {
     /// -force-l, -force_load: an archive all of whose members are
     /// linked.
     Force,
+    /// -possible-l, -possible_framework, -possible_library: a library
+    /// as an auto-link option names one, a hint (see
+    /// passes::load_autolink_deps).
+    Possible,
 }
 
 impl LibraryKind {
@@ -126,6 +130,7 @@ impl LibraryKind {
                 NoMerge => "-no_merge-l",
                 Merge => "-merge-l",
                 Force => "-force-l",
+                Possible => "-possible-l",
             },
             LibraryName::Framework(_) => match self {
                 Plain => "-framework ",
@@ -137,6 +142,7 @@ impl LibraryKind {
                 NoMerge => "-no_merge_framework ",
                 Merge => "-merge_framework ",
                 Hidden => "-hidden_framework ",
+                Possible => "-possible_framework ",
                 Force => unreachable!(),
             },
             LibraryName::Path(_) => match self {
@@ -149,6 +155,7 @@ impl LibraryKind {
                 Merge => "-merge_library ",
                 Hidden => "-load_hidden ",
                 Force => "-force_load ",
+                Possible => "-possible_library ",
                 Plain => unreachable!(),
             },
         }
@@ -842,6 +849,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-no_merge_framework" => (NoMerge, framework),
         b"-merge_framework" => (Merge, framework),
         b"-hidden_framework" => (Hidden, framework),
+        b"-possible_framework" => (Possible, framework),
         b"-weak_library" => (Weak, path),
         b"-reexport_library" => (Reexport, path),
         b"-needed_library" => (Needed, path),
@@ -850,6 +858,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
         b"-no_merge_library" => (NoMerge, path),
         b"-merge_library" => (Merge, path),
         b"-load_hidden" => (Hidden, path),
+        b"-possible_library" => (Possible, path),
         b"-force_load" => (Force, path),
         _ => return None,
     })
@@ -858,7 +867,7 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
 /// The library options with the library's name joined to them
 /// (-weak-lfoo), and the kind of library each names; -l, the others'
 /// prefix, last.
-const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 10] = [
+const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 11] = [
     ("-reexport-l", LibraryKind::Reexport),
     ("-no_merge-l", LibraryKind::NoMerge),
     ("-merge-l", LibraryKind::Merge),
@@ -868,6 +877,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 10] = [
     ("-lazy-l", LibraryKind::Lazy),
     ("-weak-l", LibraryKind::Weak),
     ("-force-l", LibraryKind::Force),
+    ("-possible-l", LibraryKind::Possible),
     ("-l", LibraryKind::Plain),
 ];
 

@@ -304,6 +304,20 @@ struct ReaderContext {
 }
 
 impl ReaderContext {
+    /// What no naming says, which any naming's union with is itself.
+    const NO_NAMING: Self = Self {
+        force_load: false,
+        weak: false,
+        reexport: false,
+        hidden: false,
+        needed: false,
+        upward: false,
+        lazy: false,
+        merge: false,
+        autolinked: true,
+        sdk: false,
+    };
+
     /// What two namings of one library say together.
     fn union(self, other: Self) -> Self {
         Self {
@@ -707,9 +721,26 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         tapi::prefetch(&deps, E::NAME, ctx.args.platform);
     }
 
+    // ld-prime looks for the frameworks after the libraries.
+    for framework in [false, true] {
+        for (arg, path) in inputs.iter().zip(&paths) {
+            if let (InputArg::Library(LibraryKind::Possible, name), None) = (arg, path)
+                && matches!(name, LibraryName::Framework(_)) == framework
+            {
+                ctx.autolink_misses.push(missing_hint(framework, name.as_os_str().as_bytes()));
+            }
+        }
+    }
+
     let mut queue: Vec<PendingObject> = Vec::new();
     for ((arg, path), rc) in inputs.iter().zip(paths).zip(namings) {
         let (Some(path), Some(rc)) = (path, rc) else { continue };
+        // A library only -possible-l and the like name is a hint, which
+        // loads with the auto-linked ones.
+        if rc.autolinked {
+            ctx.possible_files.push(path);
+            continue;
+        }
         match MappedFile::try_open(&path) {
             Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
             Ok(mf) if matches!(arg, InputArg::BundleLoader(_)) => {
@@ -875,6 +906,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         upward: kind == Upward,
         lazy: kind == Lazy,
         merge: kind == Merge,
+        autolinked: kind == Possible,
         ..Default::default()
     };
     Some((rc, matches!(name, LibraryName::Framework(_)), name.as_os_str()))
@@ -901,6 +933,8 @@ fn library_namings(
     let mut missing_framework = None;
     for (arg, path) in inputs.iter().zip(paths) {
         let key = match (library_option(arg), path) {
+            // A hint (see missing_hint).
+            (Some((rc, _, _)), None) if rc.autolinked => None,
             (Some((_, true, name)), None) => {
                 missing_framework.get_or_insert(name);
                 None
@@ -914,7 +948,7 @@ fn library_namings(
                 // A framework by its name, any other library by the
                 // file found.
                 let key = (framework, if framework { name } else { path.as_os_str() });
-                let all = merged.entry(key).or_default();
+                let all = merged.entry(key).or_insert(ReaderContext::NO_NAMING);
                 // An archive has no imports to make weak; ld-prime warns
                 // of a -weak-l that finds one, once for the library.
                 if let InputArg::Library(LibraryKind::Weak, LibraryName::Lib(_)) = arg
@@ -1122,10 +1156,7 @@ fn autolinked_input<E: Target>(
             };
             let path = find_library(ctx, os_str(name));
             if path.is_none() {
-                ctx.autolink_misses.push(format!(
-                    "Could not find or use auto-linked library '{0}': library '{0}' not found",
-                    crate::util::display(name)
-                ));
+                ctx.autolink_misses.push(missing_hint(false, name));
             }
             let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
             (path, ReaderContext { sdk, ..rc })
@@ -1133,13 +1164,7 @@ fn autolinked_input<E: Target>(
         [flag, name] if flag.ends_with(b"framework") => {
             let path = find_framework(ctx, os_str(name), true);
             if path.is_none() {
-                // (The first name leaves out a ",suffix".)
-                let base = name.split(|&c| c == b',').next().unwrap();
-                ctx.autolink_misses.push(format!(
-                    "Could not find or use auto-linked framework '{}': framework '{}' not found",
-                    crate::util::display(base),
-                    crate::util::display(name)
-                ));
+                ctx.autolink_misses.push(missing_hint(true, name));
             }
             let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
             (path, ReaderContext { sdk, ..rc })
@@ -1149,6 +1174,27 @@ fn autolinked_input<E: Target>(
         }
         [_, file] => (Some(PathBuf::from(os_str(file))), rc),
         _ => unreachable!(),
+    }
+}
+
+/// What ld-prime says, if symbols stay undefined, of a library or
+/// framework an auto-link option or a -possible-l and the like names
+/// that it didn't find. (A framework's first name leaves out a
+/// ",suffix".)
+fn missing_hint(framework: bool, name: &[u8]) -> String {
+    use crate::util::display;
+    if framework {
+        let base = name.split(|&c| c == b',').next().unwrap();
+        format!(
+            "Could not find or use auto-linked framework '{}': framework '{}' not found",
+            display(base),
+            display(name)
+        )
+    } else {
+        format!(
+            "Could not find or use auto-linked library '{0}': library '{0}' not found",
+            display(name)
+        )
     }
 }
 
@@ -1212,6 +1258,20 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
             && let Some(mf) = MappedFile::open(&path)
         {
             collect_file(ctx, mf, rc, &mut queue);
+        }
+    }
+    // The libraries only -possible-l and the like name come next, once,
+    // in command line order: ld-prime binds a symbol both they and an
+    // auto-linked library define to the auto-linked one.
+    for path in std::mem::take(&mut ctx.possible_files) {
+        match MappedFile::try_open(&path) {
+            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
+            Ok(mf) => {
+                let sdk = searched_in_sdk(&ctx.args, &path);
+                let rc = ReaderContext { autolinked: true, sdk, ..Default::default() };
+                collect_file(ctx, mf, rc, &mut queue);
+            }
+            Err(e) => error!("{}", unreadable_input(&path, &e)),
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
