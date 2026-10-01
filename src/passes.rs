@@ -2606,46 +2606,65 @@ pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
 }
 
 /// The inputs check_input_versions has looked at: the objects live
-/// then, and the dylibs loaded by then.
+/// then, and the dylibs loaded by then, those built for another platform
+/// included.
 #[derive(Default)]
 pub struct CheckedInputs {
     objs: Vec<bool>,
     dylibs: usize,
+    foreign_dylibs: usize,
 }
 
 /// Validates only objects selected by resolution, not those `checked`
 /// covers. Unused archive members must not cause errors or warnings.
 /// ld-prime checks the dylibs the link names along with them, in input
-/// order, used or not; not those they re-export, nor those of the SDK,
-/// built for newer OS versions as a matter of course. It checks bitcode
-/// files by their target triples before LTO, and the object LTO makes
-/// (with what it pulls in) after: the driver calls this twice.
+/// order, used or not: one built for another platform is an error (a
+/// firmware link takes it with a warning), as an object is, and the
+/// first stops the link; one built for a newer OS version gets a
+/// warning, but not those it re-exports, nor those of the SDK, built for
+/// newer OS versions as a matter of course. It checks bitcode files by
+/// their target triples before LTO, and the object LTO makes (with what
+/// it pulls in) after: the driver calls this twice.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
     let now = CheckedInputs {
         objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
         dylibs: ctx.dylibs.len(),
+        foreign_dylibs: ctx.foreign_platform_dylibs.len(),
     };
-    // A -r or -preload output for no platform takes any object.
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
-    if platform == 0 {
-        return now;
-    }
-    let mut dylibs: Vec<(u32, &input_files::DylibFile)> = ctx.dylibs[checked.dylibs..]
+    let mut dylibs: Vec<(u32, String, bool)> = ctx.dylibs[checked.dylibs..]
         .iter()
         .filter(|d| !d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos)
-        .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))
+        .map(|d| {
+            let msg = format!(
+                "building for {}-{}, but linking with dylib '{}' which was built for newer \
+                 version {}",
+                platform_name(platform),
+                format_version(minos),
+                crate::util::display(&d.install_name),
+                format_version(d.minos)
+            );
+            (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), msg, false)
+        })
+        .chain(
+            ctx.foreign_platform_dylibs[checked.foreign_dylibs..]
+                .iter()
+                .map(|(priority, msg)| (*priority, msg.clone(), true)),
+        )
         .collect();
-    dylibs.sort_by_key(|&(priority, _)| priority);
+    dylibs.sort_by_key(|&(priority, ..)| priority);
     let mut dylibs = dylibs.into_iter().peekable();
-    let warn_dylib = |dylib: &input_files::DylibFile| {
-        crate::warn!(
-            "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
-            platform_name(platform),
-            format_version(minos),
-            crate::util::display(&dylib.install_name),
-            format_version(dylib.minos)
-        );
+    let report_dylib = |(_, msg, foreign): (u32, String, bool)| {
+        if foreign && platform != crate::macho::PLATFORM_FIRMWARE {
+            fatal!("{msg}");
+        }
+        crate::warn!("{msg}");
     };
+    // A -r or -preload output for no platform takes any object.
+    if platform == 0 {
+        dylibs.for_each(report_dylib);
+        return now;
+    }
 
     // In input order: a bitcode file's placeholder object joins the
     // link ahead of the Mach-O objects, which are staged in parallel.
@@ -2654,8 +2673,8 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
     objs.sort_by_key(|&i| ctx.objs[i].priority);
     for i in objs {
         let obj = &ctx.objs[i];
-        while let Some((_, dylib)) = dylibs.next_if(|&(priority, _)| priority < obj.priority) {
-            warn_dylib(dylib);
+        while let Some(dylib) = dylibs.next_if(|&(priority, ..)| priority < obj.priority) {
+            report_dylib(dylib);
         }
         // An object may declare more than one platform; use the
         // deployment target for the platform being linked. ld-prime
@@ -2676,13 +2695,12 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
             if platform == crate::macho::PLATFORM_FIRMWARE {
                 continue;
             }
-            crate::error!(
+            fatal!(
                 "building for '{}', but linking in object file ({}) built for '{}'",
                 platform_name(platform),
                 resolved_file_name(obj.mf),
                 platform_name(first.platform)
             );
-            continue;
         };
 
         // The SDK version used to compile an input does not constrain
@@ -2703,9 +2721,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
             }
         }
     }
-    for (_, dylib) in dylibs {
-        warn_dylib(dylib);
-    }
+    dylibs.for_each(report_dylib);
     now
 }
 

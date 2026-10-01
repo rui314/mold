@@ -3615,7 +3615,7 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
 /// into its parent's, too - was built for the link's platform, and
 /// returns the minimum OS version it names for that platform (0 for
 /// none).
-fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
+fn check_dylib_platform<E: Target>(ctx: &mut Context<E>, mf: &MappedFile) -> u32 {
     let hdr = MachHeader::read_from(mf.data());
     let mut versions = Vec::new();
     let mut off = size_of::<MachHeader>();
@@ -3645,11 +3645,12 @@ fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
     0
 }
 
-/// Reports a dylib built for none of the link's platform - for
-/// `platforms`, which `name` names - as ld-prime does: a firmware link
-/// takes any platform's library with a warning.
+/// Notes a dylib built for none of the link's platform - for
+/// `platforms`, which `name` names - for ld-prime's message, which it
+/// gives once it has read all the inputs, where it checks the input
+/// with which the dylib came (see passes::check_input_versions).
 fn check_dylib_platforms<E: Target>(
-    ctx: &Context<E>,
+    ctx: &mut Context<E>,
     mf: &MappedFile,
     platforms: &[u32],
     name: &str,
@@ -3662,11 +3663,9 @@ fn check_dylib_platforms<E: Target>(
         platform_name(ctx.args.platform),
         crate::passes::resolved_file_name(mf),
     );
-    if ctx.args.platform == PLATFORM_FIRMWARE {
-        crate::warn!("{msg}");
-    } else {
-        fatal!("{msg}");
-    }
+    // The input's priority, or its parent's for a re-exported library.
+    let priority = ctx.priority_counter + 1;
+    ctx.foreign_platform_dylibs.push((priority, msg));
 }
 
 pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {

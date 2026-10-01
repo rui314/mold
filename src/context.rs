@@ -104,6 +104,11 @@ pub struct Context<E: Target> {
     pub sym_aux: Vec<crate::symbol::SymAux>,
     /// Input-order counter for resolution tie-breaking.
     pub priority_counter: u32,
+    /// The dylibs built for another platform than the link's, by the
+    /// priority of the input they came with and with ld-prime's message,
+    /// which it gives as it checks the inputs' versions (see
+    /// passes::check_input_versions).
+    pub foreign_platform_dylibs: Vec<(u32, String)>,
     /// Files already loaded, so a library named twice (command line
     /// plus auto-link) is read once.
     pub visited_files: std::collections::HashSet<std::path::PathBuf>,
@@ -251,6 +256,7 @@ impl<E: Target> Context<E> {
             internal_obj: None,
             sym_aux: Vec::new(),
             priority_counter: 0,
+            foreign_platform_dylibs: Vec::new(),
             lto_plugin: None,
             lto_modules: Vec::new(),
             lto_obj: None,

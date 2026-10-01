@@ -54,3 +54,25 @@ $mold -arch $ARCH $mac -e _start $t/a.o $t/zip.tbd -o $t/exe5 2> $t/log5
 not grep -q 'building for' $t/log5
 not $mold -arch $ARCH $mac -e _start $t/a.o $t/ios.tbd -o $t/exe6 2> $t/log6
 grep -q "building for 'macOS', but linking in dylib (/.*/$t/ios.tbd) built for 'iOS iOS-simulator'$" $t/log6
+
+# ld-prime checks the inputs' platforms once it has read them all, in
+# input order, objects and dylibs alike, and stops at the first built
+# for another: an input it can't read fails the link before, and those
+# after it go unmentioned.
+not $mold -arch $ARCH $mac -e _start $t/a.o $t/nosuch.o $t/ios.tbd -o $t/exe7 2> $t/log7
+grep -q 'file cannot be open()ed' $t/log7
+not grep -q 'building for' $t/log7
+
+cat <<EOF | $CC -o $t/ios.o -c -xassembler -
+.build_version ios, 15, 0
+.text
+.globl _bar
+_bar:
+  ret
+EOF
+for order in "ios.tbd ios.o" "ios.o ios.tbd"; do
+  set -- $order
+  not $mold -arch $ARCH $mac -e _start $t/a.o $t/$1 $t/$2 -o $t/exe8 2> $t/log8
+  [ "$(grep -c 'building for' $t/log8)" = 1 ]
+  grep -q "(/.*/$t/$1) built for 'iOS" $t/log8
+done
