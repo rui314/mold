@@ -1752,10 +1752,16 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
 }
 
 /// For each dylib, the dylibs of the link it merged as private
-/// re-exports (see `providing_dylib`).
+/// re-exports (see `providing_dylib`). An auto-linked library named by
+/// an @rpath install name is none: ld-prime takes it for the one the
+/// dylib re-exports, which it has loaded already (XCTest's
+/// XCUIAutomation, which UI tests' objects auto-link), and binds its
+/// symbols to the dylib.
 fn merged_providers(dylibs: &[input_files::DylibFile]) -> Vec<Vec<usize>> {
-    let by_name: hashbrown::HashMap<&[u8], usize> =
-        dylibs.iter().enumerate().map(|(i, d)| (d.install_name.as_slice(), i)).collect();
+    let by_name: hashbrown::HashMap<&[u8], usize> = (dylibs.iter().enumerate())
+        .filter(|(_, d)| !(d.is_autolinked && d.install_name.starts_with(b"@rpath/")))
+        .map(|(i, d)| (d.install_name.as_slice(), i))
+        .collect();
     dylibs
         .iter()
         .map(|d| {
