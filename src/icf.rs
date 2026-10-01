@@ -7,9 +7,9 @@
 //! folding cannot be observed. ld-prime folds the functions of
 //! __TEXT,__text that no one can compare the addresses of: those the
 //! compiler marked .weak_def_can_be_hidden (C++ inline functions with
-//! unnamed_addr) that the link hid, whether or not their address is
-//! taken, and any other unexported one whose address is never taken -
-//! mold's --icf=safe.
+//! unnamed_addr) that the link hid and Swift functions, whether or not
+//! their address is taken, and any other unexported one whose address
+//! is never taken - mold's --icf=safe.
 //!
 //! The algorithm follows mold: every candidate gets a hash of its
 //! literal content, and a few refinement rounds rehash each candidate
@@ -22,12 +22,13 @@
 //! leaves apart; either is correct, and ours is the cheaper to find.
 
 use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
 use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, ObjectFile, atom_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::target::Target;
@@ -202,7 +203,6 @@ impl DigestMap {
     /// as the leader. Returns true if the digest was not already present
     /// this round.
     fn insert(&self, digest: Digest, cand: u32) -> bool {
-        use std::sync::atomic::Ordering;
         const BUSY_BIT: u64 = 1 << 48;
         let tag = digest.hi >> 16;
         let value = (self.round << 49) | tag;
@@ -256,7 +256,6 @@ impl DigestMap {
     }
 
     fn find(&self, digest: Digest) -> u32 {
-        use std::sync::atomic::Ordering;
         let value = (self.round << 49) | (digest.hi >> 16);
         let mut i = digest.hi as usize & self.mask;
         loop {
@@ -271,35 +270,81 @@ impl DigestMap {
     }
 }
 
-/// Whether each subsection is a function the link auto-hid: a global,
-/// not private extern, whose definition carries N_WEAK_DEF | N_WEAK_REF
-/// (.weak_def_can_be_hidden), which clang gives an inline function
-/// with unnamed_addr - its address is insignificant by declaration, so
-/// ld64 folds it even where the address is taken. A private extern one
-/// is hidden anyway and is folded as any other hidden function.
-fn auto_hidden_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    let auto_hidden: Vec<AtomicBool> =
-        (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
+/// Whether each subsection is a function whose address is insignificant
+/// by declaration, which ld-prime folds even where the address is taken
+/// or exported: one the link auto-hid or a Swift function (see below).
+fn insignificant_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
+    let flags: Vec<AtomicBool> = (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
     ctx.objs.par_iter().enumerate().for_each(|(i, obj)| {
-        if !obj.is_alive {
-            return;
-        }
-        let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            let sym = &ctx.symbols[sym_id];
-            if !nlist.is_stab()
-                && nlist.n_type & N_PEXT == 0
-                && nlist.n_desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
-                && sym.is_private_extern()
-                && sym.file() == Some(FileId::Obj(i as u32))
-                && let Some(isec) = sym.input_section()
-            {
-                auto_hidden[isec as usize].store(true, Ordering::Relaxed);
-            }
+        if obj.is_alive {
+            mark_auto_hidden(ctx, i, obj, &flags);
+            mark_swift_functions(ctx, i, obj, &flags);
         }
     });
-    auto_hidden.into_iter().map(AtomicBool::into_inner).collect()
+    flags.into_iter().map(AtomicBool::into_inner).collect()
+}
+
+/// Marks the functions of object `i` the link auto-hid: a global, not
+/// private extern, whose definition carries N_WEAK_DEF | N_WEAK_REF
+/// (.weak_def_can_be_hidden), which clang gives an inline function
+/// with unnamed_addr. A private extern one is hidden anyway and is
+/// folded as any other hidden function.
+fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, flags: &[AtomicBool]) {
+    let r = obj.global_range();
+    for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        let sym = &ctx.symbols[sym_id];
+        if !nlist.is_stab()
+            && nlist.n_type & N_PEXT == 0
+            && nlist.n_desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
+            && sym.is_private_extern()
+            && sym.file() == Some(FileId::Obj(i as u32))
+            && let Some(isec) = sym.input_section()
+        {
+            flags[isec as usize].store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Marks the Swift functions of object `i`: those whose atom ld-prime
+/// names (see Context::atom_label) by a symbol Swift mangled, "_$s...".
+/// Swift promises no function an address of its own, so ld-prime folds
+/// one even where its address is taken (a coroutine's resume function,
+/// a value witness) or it is exported; it goes by the atom's name only,
+/// so another label at the function's start that outranks the Swift
+/// one keeps it apart.
+fn mark_swift_functions<E: Target>(
+    ctx: &Context<E>,
+    i: usize,
+    obj: &ObjectFile,
+    flags: &[AtomicBool],
+) {
+    // The labels at a subsection's start, but for an exported one
+    // another object's definition won, with their ranks.
+    let labels = || {
+        obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &sym_id)| {
+            let sym = &ctx.symbols[sym_id];
+            let isec = sym.input_section()?;
+            (!nlist.is_stab()
+                && nlist.n_type() == N_SECT
+                && sym.value == 0
+                && sym.file() == Some(FileId::Obj(i as u32)))
+            .then(|| (isec, atom_name_rank(nlist, sym.name()), sym.name()))
+        })
+    };
+    let is_swift = |name: &str| name.starts_with("_$s");
+
+    // Few objects have any.
+    if !labels().any(|(_, _, name)| is_swift(name)) {
+        return;
+    }
+    let mut labels: Vec<_> = labels().collect();
+    labels.sort_unstable();
+    for (j, &(isec, _, name)) in labels.iter().enumerate() {
+        let names_atom = labels.get(j + 1).is_none_or(|next| next.0 != isec);
+        if names_atom && is_swift(name) {
+            flags[isec as usize].store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Whether a subsection is a function of __TEXT,__text (ld64 folds no
@@ -316,7 +361,6 @@ fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
 /// -keep_duplicates_list names, a local one too, which is neither
 /// folded nor folded into.
 fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
-    use std::sync::atomic::{AtomicBool, Ordering};
     let kept: Vec<AtomicBool> = (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
     let keep = &ctx.args.keep_duplicates;
     if !keep.is_empty() {
@@ -336,14 +380,14 @@ fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
 /// compare, but those -keep_duplicate names.
 fn is_candidate<E: Target>(
     ctx: &Context<E>,
-    auto_hidden: &[bool],
+    insignificant: &[bool],
     kept: &[bool],
     id: usize,
 ) -> bool {
     let isec = &ctx.isecs[id];
     is_text_function(ctx, isec)
         && isec.size != 0
-        && (auto_hidden[id] || !isec.is_address_taken())
+        && (insignificant[id] || !isec.is_address_taken())
         && !kept[id]
 }
 
@@ -590,11 +634,11 @@ fn verify_leaders<E: Target>(
 pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     let _t_all = ctx.timer("icf");
     let mut t = ctx.timer("icf-prep");
-    let auto_hidden = auto_hidden_sections(ctx);
+    let insignificant = insignificant_sections(ctx);
     let kept = kept_sections(ctx);
     let candidates: Vec<usize> = (0..ctx.isecs.len())
         .into_par_iter()
-        .filter(|&i| is_candidate(ctx, &auto_hidden, &kept, i))
+        .filter(|&i| is_candidate(ctx, &insignificant, &kept, i))
         .collect();
     if candidates.len() < 2 {
         return;
