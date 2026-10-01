@@ -1308,9 +1308,9 @@ fn apply_target_triple(args: &mut Args, triple: &str) {
 }
 
 /// The CPU family - "arm64", "x86_64" or another - of an architecture
-/// name ld-prime knows, as $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH takes
-/// them (and -arch, for the targets mold links for); None for one it
-/// doesn't.
+/// name ld-prime knows, as -arch_variant and
+/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH take them (and -arch, for the
+/// targets mold links for); None for one it doesn't.
 fn arch_cpu_family(name: &[u8]) -> Option<&'static str> {
     const ARM64: [&str; 14] = [
         "arm64",
@@ -1794,7 +1794,7 @@ impl OptionWarnings {
 /// manual page gives (which -executable_path, obsolete, has not).
 pub(crate) fn missing_argument(opt: &str) -> String {
     let usage = match opt {
-        "-arch" => "missing <arch>",
+        "-arch" | "-arch_variant" => "missing <arch>",
         "-no_allow_dylib_sub_type_mismatches" => "missing <arch_list>",
         "-e"
         | "-init"
@@ -1980,6 +1980,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut force_not_weak = GlobBuilder::default();
     let mut force_weakness_listed = false;
     let mut dylib_subtype_list: Option<&[u8]> = None;
+    let mut arch_variant = false;
     let mut keep_duplicates = GlobBuilder::default();
     let mut poisoned = GlobBuilder::default();
     let mut unaligned_pointers: Option<Treatment> = None;
@@ -2528,6 +2529,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
             b"-no_allow_dylib_sub_type_mismatches" => {
                 dylib_subtype_list = Some(next_arg(&mut i, name).as_bytes());
+            }
+            // An architecture's variant (of arm64e's pointer
+            // authentication ABI), which no -arch mold links for has.
+            b"-arch_variant" => {
+                let variant = next_arg(&mut i, name).as_bytes();
+                if arch_cpu_family(variant).is_none() {
+                    fatal!("unknown -arch name: {}", display(variant));
+                }
+                arch_variant = true;
             }
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
@@ -3173,6 +3183,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_fatal_warnings(args.fatal_warnings);
     warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    if arch_variant {
+        fatal!("-arch_variant is not supported with -arch {}", target.name);
+    }
     let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
     if let Some(list) = dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
