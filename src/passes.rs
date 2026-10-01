@@ -2646,7 +2646,8 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// The symbols something in the output refers to: the target of a live
-/// relocation, an initializer __init_offsets names (whose pointer is
+/// relocation, the personality of a live function's unwind record or of
+/// its FDE's CIE, an initializer __init_offsets names (whose pointer is
 /// gone), or a name -u, -e or -alias insists on.
 fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::AtomicBool> {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -2659,6 +2660,24 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
             }
         }
     });
+    // A personality is named by an unwind record or a CIE rather than by
+    // a relocation of a subsection, and an undefined one is looked up at
+    // run time under -undefined dynamic_lookup like any other import.
+    let alive = |isec: u32| ctx.isecs[isec as usize].is_alive();
+    let personalities = ctx
+        .unwind_records
+        .iter()
+        .filter(|rec| alive(rec.isec))
+        .filter_map(|rec| rec.personality())
+        .chain(
+            ctx.fdes
+                .iter()
+                .filter(|fde| alive(fde.isec))
+                .filter_map(|fde| ctx.cies[fde.cie as usize].personality),
+        );
+    for id in personalities {
+        referenced[id as usize].store(true, Ordering::Relaxed);
+    }
     for &func in &ctx.init_offsets.init_funcs {
         if let InitFunc::Imported(id) = func {
             referenced[id as usize].store(true, Ordering::Relaxed);
