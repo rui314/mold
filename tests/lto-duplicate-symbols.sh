@@ -22,3 +22,9 @@ grep -A2 "^duplicate symbol '_dup' in:" $t/log2 | sed -e 1d -e "s|$dir||" | sort
 printf '    bc1.o\n    bc2.o\n' | diff - $t/files2
 grep -q ': 1 duplicate symbols$' $t/log2
 not grep -q -e /tmp/lto.o -e lto_codegen $t/log2
+
+# The object LTO made goes by the -object_path_lto path as given, which
+# ld-prime doesn't resolve as it does input files' paths.
+not $CC --ld-path=$mold -flto -o $t/exe3 $t/main.o $t/bc1.o $t/n1.o \
+  -Wl,-object_path_lto,$t/../$(basename $t)/lto.o 2> $t/log3
+grep -q "^    $t/../$(basename $t)/lto.o\$" $t/log3

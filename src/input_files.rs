@@ -194,6 +194,7 @@ impl ObjectFile {
             data: &[],
             parent: None,
             mtime: None,
+            is_lto_output: false,
         }));
         Self {
             mf,

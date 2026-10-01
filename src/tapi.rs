@@ -1379,6 +1379,7 @@ mod tests {
             data: text.as_bytes(),
             parent: None,
             mtime: None,
+            is_lto_output: false,
         }))
     }
 

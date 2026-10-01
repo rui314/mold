@@ -2432,7 +2432,8 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     let first = ctx.objs.len();
     for LtoObject { name, mtime, data } in objects {
         let data = Vec::leak(data);
-        let mf = crate::mapped_file::MappedFile { name, data, parent: None, mtime };
+        let mf =
+            crate::mapped_file::MappedFile { name, data, parent: None, mtime, is_lto_output: true };
         input_files::parse_object(ctx, Box::leak(Box::new(mf)), true);
     }
     ctx.lto_objs = first..ctx.objs.len();
@@ -4168,8 +4169,12 @@ pub(crate) fn resolved_file_name(mf: &MappedFile) -> String {
 }
 
 /// A file's name as resolved_file_name spells it, in bytes: as ld-prime
-/// names files to libLTO too.
+/// names files to libLTO too. An object LTO compiled goes by the name it
+/// was written under.
 fn resolved_file_path(mf: &MappedFile) -> Vec<u8> {
+    if mf.is_lto_output {
+        return path_bytes(&mf.name).to_vec();
+    }
     if let Some(ar) = mf.parent
         && let Some(index) = crate::archive_file::member_index(mf)
     {
