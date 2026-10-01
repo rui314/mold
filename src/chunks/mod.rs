@@ -786,7 +786,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
             ctx.args.platform_sdk,
         ));
     }
-    if !ctx.args.preload {
+    if ctx.args.source_version {
         vec.push(create_source_version_cmd(ctx));
     }
     if ctx.args.is_dylinker() || (ctx.args.output_type == MH_EXECUTE && ctx.args.static_link) {

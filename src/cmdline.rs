@@ -201,6 +201,9 @@ pub struct Args {
     pub data_in_code_info: bool,
     /// -version_load_command: give a -static image LC_BUILD_VERSION.
     pub version_load_command: bool,
+    /// Emit LC_SOURCE_VERSION (from macOS 10.8 on; -add_source_version
+    /// and -no_source_version say otherwise).
+    pub source_version: bool,
     /// -add_split_seg_info: emit LC_SEGMENT_SPLIT_INFO, which lets a
     /// dyld shared cache or kernel collection builder slide the
     /// segments apart. ld64 and ld-prime have no negative form.
@@ -464,6 +467,7 @@ impl Default for Args {
             function_starts: true,
             data_in_code_info: true,
             version_load_command: false,
+            source_version: true,
             add_split_seg_info: false,
             init_offsets: false,
             init: None,
@@ -1137,6 +1141,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut pie: Option<bool> = None;
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
+    let mut source_version: Option<bool> = None;
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
     let mut objc_relative_method_lists: Option<bool> = None;
@@ -1751,6 +1756,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_branch_islands" => args.no_branch_islands = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-function_starts" => function_starts = Some(true),
+            b"-add_source_version" => source_version = Some(true),
+            b"-no_source_version" => source_version = Some(false),
             b"-init_offsets" => args.init_offsets = true,
             b"-init" => args.init = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-data_const" => data_const = Some(true),
@@ -1909,6 +1916,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // asked to, as ld-prime writes it.
     args.function_starts = function_starts.unwrap_or(!args.without_dyld());
     args.data_in_code_info = data_in_code_info.unwrap_or(!args.without_dyld());
+    // LC_SOURCE_VERSION came with macOS 10.8; ld-prime gives an image
+    // for an older one none.
+    args.source_version = source_version.unwrap_or(
+        args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
+    );
 
     // ld-prime signs arm64 macOS images by default and leaves x86_64
     // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
@@ -1931,12 +1943,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing
     // outside its segments but the symbol table (and the local
     // relocations of a -pie one). The options asking for the code
-    // tables, a build version or a signature go unheeded, as does
-    // -rpath, which only dyld would read.
+    // tables, a build or source version or a signature go unheeded, as
+    // does -rpath, which only dyld would read.
     if args.preload {
         args.function_starts = false;
         args.data_in_code_info = false;
         args.version_load_command = false;
+        args.source_version = false;
         args.adhoc_codesign = false;
         args.rpaths.clear();
     }
