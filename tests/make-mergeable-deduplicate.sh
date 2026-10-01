@@ -53,3 +53,48 @@ $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
 $t/exe2 | grep -q '^2 2 27$'
 otool -L $t/exe2 > $t/libs
 not grep -q libfoo $t/libs
+
+# A weak definition's losing copy has no entry, though the winner it
+# coalesced with is a folded function: the name has one.
+cat <<EOF | $CXX -o $t/c.o -c -O1 -xc++ -
+template <int N> struct T { __attribute__((noinline)) static int f(int x) { return x * 13 + 1; } };
+extern "C" int fc(int x) { return T<1>::f(x) + T<2>::f(x + 1); }
+EOF
+cat <<EOF | $CXX -o $t/d.o -c -O1 -xc++ -
+template <int N> struct T { __attribute__((noinline)) static int f(int x) { return x * 13 + 1; } };
+extern "C" int fd(int x) { return T<2>::f(x) + T<3>::f(x + 2); }
+EOF
+cat <<EOF | $CC -o $t/main2.o -c -xc -
+#include <stdio.h>
+int fc(int), fd(int);
+int main() { printf("%d %d\n", fc(1), fd(2)); }
+EOF
+$CXX --ld-path=$mold -shared -o $t/libbar.dylib $t/c.o $t/d.o -Wl,-make_mergeable \
+  -Wl,-deduplicate -Wl,-install_name,@rpath/libbar.dylib
+
+# The names of the record's entries.
+python3 - $t/libbar.dylib > $t/names <<'EOF'
+import struct, sys
+data = open(sys.argv[1], 'rb').read()
+off = 32
+for _ in range(struct.unpack_from('<I', data, 16)[0]):
+    cmd, size, dataoff = struct.unpack_from('<III', data, off)
+    if cmd == 0x36:
+        b = data[dataoff:]
+    off += size
+nents, count = struct.unpack_from('<II', b, 0x60)
+names, _ = struct.unpack_from('<II', b, 0x88)
+for i in range(count):
+    name = struct.unpack_from('<I', b, nents + 40 * i + 12)[0]
+    if name != 0xffffff:
+        at = names + 16 * name
+        start = at + struct.unpack_from('<q', b, at)[0]
+        print(b[start:b.index(b'\0', start)].decode())
+EOF
+[ "$(grep -c '^__ZN1TILi2EE1fEi$' $t/names)" = 1 ]
+[ "$(grep -c '^__ZN1TILi3EE1fEi$' $t/names)" = 1 ]
+
+$CC --ld-path=$mold -o $t/exe3 $t/main2.o -L$t -Wl,-merge-lbar
+$t/exe3 | grep -q '^41 80$'
+$CC -o $t/exe4 $t/main2.o -L$t -Wl,-merge-lbar
+$t/exe4 | grep -q '^41 80$'

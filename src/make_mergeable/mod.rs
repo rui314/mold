@@ -457,7 +457,11 @@ impl<'a, E: Target> Builder<'a, E> {
         let ctx = self.ctx;
         let Some(label) = ctx.atom_label_index(id as usize) else { return };
         let sym_id = obj.symbols[label];
-        if !ctx.folded_atom_names.contains_key(&sym_id) {
+        // (A losing copy of a weak definition, whose symbol is the
+        // winner's, which may be the folded one, has no entry at all.)
+        if !ctx.folded_atom_names.contains_key(&sym_id)
+            || ctx.symbols[sym_id].input_section() != Some(id)
+        {
             return;
         }
         let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
