@@ -91,3 +91,18 @@ $CXX --ld-path=$mold -o $t/exe2 $t/b.o $t/c.o $t/d.o -Wl,-order_file,$t/order
 $t/exe2
 unwind_info $t/exe2 > $t/info2
 grep -qx "personalities $(got_slot $t/exe2 ___gxx_personality_v0) $(got_slot $t/exe2 ___gcc_personality_v0)" $t/info2
+
+# Of two FDEs of one function, ld-prime carries both, but the
+# function's one entry points at the last, 0x34 into __eh_frame.
+{
+  printf '.text\n.globl _main\n.p2align 2\n_main:\n  ret\n.section __TEXT,__eh_frame\n'
+  printf '%s\n' EH_frame0: '.long 20' '.long 0' '.byte 1, 0x7a, 0x52, 0, 1, 0x78, 30, 1, 0x10, 0x0c, 31, 8, 0, 0, 0, 0'
+  for id in 28 56; do
+    printf '%s\n' '.long 24' ".long $id" '.quad _main - .' '.quad 1' '.long 0'
+  done
+  echo .subsections_via_symbols
+} | $CC -c -o $t/e.o -xassembler -
+$CC --ld-path=$mold -o $t/exe3 $t/e.o
+unwind_info $t/exe3 > $t/info3
+grep "^entry $(addr $t/exe3 _main) " $t/info3 > $t/entry3
+[ "$(cat $t/entry3)" = "entry $(addr $t/exe3 _main) 0x${dwarf}000034" ]

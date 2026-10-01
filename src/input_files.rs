@@ -2629,7 +2629,9 @@ impl StagedObject {
             // A covered function's compact record wins; its FDE is only
             // carried. Otherwise the object's own DWARF-mode record now
             // points at the FDE, or, for code, one is synthesized so that
-            // the unwinder can find the FDE through __unwind_info.
+            // the unwinder can find the FDE through __unwind_info. Of
+            // several FDEs of a function, all carried, the last has the
+            // record, as ld-prime's entry points at it.
             if is_covered {
                 continue;
             }
@@ -2640,6 +2642,7 @@ impl StagedObject {
             if !is_code {
                 continue;
             }
+            dwarf_recs.insert((isec, func_offset), self.unwind.len());
             self.unwind.push(UnwindRecord {
                 isec: isec as u32,
                 input_offset: func_offset,
