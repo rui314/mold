@@ -401,6 +401,9 @@ pub struct Args {
     /// -no_zero_fill_sections: zero-fill sections take their space in
     /// the file, as regular sections.
     pub no_zero_fill_sections: bool,
+    /// Whether to warn about a section aligned beyond its segment, as
+    /// it is unless -no_warn_reduced_section_align.
+    pub warn_reduced_section_align: bool,
     /// -section_order: (segment, section names), the sections that
     /// lead their segment, in this order.
     pub section_order: Vec<(String, Vec<String>)>,
@@ -566,6 +569,7 @@ impl Default for Args {
             seg_page_sizes: Vec::new(),
             segment_align: 0,
             no_zero_fill_sections: false,
+            warn_reduced_section_align: true,
             section_order: Vec::new(),
             rename_sections: Vec::new(),
             rename_segments: Vec::new(),
@@ -1541,6 +1545,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 segalign = Some(align);
             }
             b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
+            b"-no_warn_reduced_section_align" => args.warn_reduced_section_align = false,
             b"-section_order" => {
                 let (Some(seg), Some(list)) = (cmdline.get(i + 1), cmdline.get(i + 2)) else {
                     fatal!("-section_order needs <segname> <section-list>");

@@ -1019,13 +1019,15 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
 /// within the section, so one may end up misaligned (a fixup that can't
 /// reach it then fails). Then a section cannot be aligned beyond its
 /// segment's (the page, unless -segalign says otherwise): ld64 reduces
-/// the alignment with a warning (an x86-64 .align 16 asks for 64KB) -
+/// the alignment with a warning (an x86-64 .align 16 asks for 64KB),
+/// which -no_warn_reduced_section_align silences (not -sectalign's) -
 /// but not in a -static or -preload image, which no dyld maps: ld-prime
 /// starts the section's segment on the alignment there (see
 /// lay_out_segments).
 fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     let capped = !ctx.args.relocatable && !ctx.args.static_link;
     let max = ctx.args.segment_align.max(1).trailing_zeros();
+    let warn_capped = ctx.args.warn_reduced_section_align;
     for id in ctx.chunks.clone() {
         let hdr = ctx.chunk_header(id);
         if !hdr.is_sect {
@@ -1051,13 +1053,15 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
             hdr.p2align = p2align;
         }
         if capped && hdr.p2align > max {
-            crate::warn!(
-                "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
-                hdr.segname,
-                hdr.sectname,
-                1u64 << hdr.p2align,
-                1u64 << max
-            );
+            if warn_capped {
+                crate::warn!(
+                    "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
+                    hdr.segname,
+                    hdr.sectname,
+                    1u64 << hdr.p2align,
+                    1u64 << max
+                );
+            }
             hdr.p2align = max;
         }
     }
