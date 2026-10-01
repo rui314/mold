@@ -690,6 +690,10 @@ pub struct Args {
     /// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH, names an architecture of its
     /// CPU type.
     pub dylib_subtypes_must_match: bool,
+    /// The architecture whose dylibs stand in for those of the link's
+    /// that are missing, as $LD_DYLIB_ARCH_FALLBACK names it (see
+    /// dylib_arch_fallback).
+    pub dylib_arch_fallback: Option<String>,
     /// -ignore_optimization_hints: skip LC_LINKER_OPTIMIZATION_HINT
     /// processing.
     pub ignore_optimization_hints: bool,
@@ -993,6 +997,7 @@ impl Default for Args {
             arch_errors_fatal: false,
             allow_sub_type_mismatches: false,
             dylib_subtypes_must_match: false,
+            dylib_arch_fallback: None,
             ignore_optimization_hints: false,
             perf: false,
             warn_duplicate_libraries: true,
@@ -1437,6 +1442,18 @@ fn arch_cpu_family(name: &[u8]) -> Option<&'static str> {
         _ if is(&OTHER) => Some("other"),
         _ => None,
     }
+}
+
+/// The architecture $LD_DYLIB_ARCH_FALLBACK names, as "<arch>:<other>",
+/// for a link for <arch>: a dylib of <other> - thin, or a fat file's
+/// slice where none of the link's is - stands in for a dylib of the
+/// link's own (ld64's means to take armv7k slices for arm64_32). A
+/// value for another architecture, or one naming none ld-prime knows,
+/// names none.
+fn dylib_arch_fallback(arch: &str) -> Option<String> {
+    let env = std::env::var_os("LD_DYLIB_ARCH_FALLBACK")?;
+    let (from, to) = env.to_str()?.split_once(':')?;
+    (from == arch && arch_cpu_family(to.as_bytes()).is_some()).then(|| to.to_string())
 }
 
 /// Whether a ':'-separated list of architecture names, as
@@ -3339,6 +3356,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if let Some(list) = dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
     }
+    args.dylib_arch_fallback = dylib_arch_fallback(target.name);
     // The build system's source version stands in for -source_version
     // unless -no_source_version says there is none (ld-prime reads it
     // even where there is none anyway).

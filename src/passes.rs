@@ -552,7 +552,7 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
 /// -allow_sub_type_mismatches has it take one of another subtype with
 /// a warning instead (see also warn_subtype_mismatches).
 fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
-    let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
+    let Some(arch) = input_files::foreign_arch::<E>(&ctx.args, mf) else { return false };
     if ctx.args.allow_sub_type_mismatches && input_files::is_subtype_mismatch::<E>(mf) {
         let name = input_files::without_fat_arch(path_bytes(&mf.name));
         crate::warn!("linking {arch} file '{}' into {} link", crate::util::display(&name), E::NAME);
@@ -3030,7 +3030,7 @@ pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
     for (i, obj) in ctx.objs.iter().enumerate() {
         if obj.is_alive
             && !ctx.is_internal(i)
-            && let Some(arch) = input_files::foreign_arch::<E>(obj.mf)
+            && let Some(arch) = input_files::foreign_arch::<E>(&ctx.args, obj.mf)
         {
             let name = input_files::without_fat_arch(path_bytes(&obj.mf.name));
             crate::warn!(

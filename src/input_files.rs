@@ -3227,11 +3227,29 @@ fn takes_arch<E: Target>(filetype: u32, cputype: u32, cpusubtype: u32) -> bool {
 }
 
 /// The architecture of a thin object or dylib the link doesn't take
-/// (see takes_arch), which ld-prime ignores with a warning.
-pub fn foreign_arch<E: Target>(mf: &MappedFile) -> Option<&'static str> {
+/// (see takes_arch and is_fallback_dylib), which ld-prime ignores with a
+/// warning.
+pub fn foreign_arch<E: Target>(
+    args: &crate::cmdline::Args,
+    mf: &MappedFile,
+) -> Option<&'static str> {
     let hdr = MachHeader::read_from(mf.data());
-    (!takes_arch::<E>(hdr.filetype, hdr.cputype, hdr.cpusubtype))
-        .then(|| arch_name(hdr.cputype, hdr.cpusubtype))
+    let takes = takes_arch::<E>(hdr.filetype, hdr.cputype, hdr.cpusubtype)
+        || is_fallback_dylib(args, hdr.filetype, hdr.cputype, hdr.cpusubtype);
+    (!takes).then(|| arch_name(hdr.cputype, hdr.cpusubtype))
+}
+
+/// Whether a Mach-O file is a dylib of the architecture
+/// $LD_DYLIB_ARCH_FALLBACK names for one the link's lacks, which the
+/// link takes in its place.
+fn is_fallback_dylib(
+    args: &crate::cmdline::Args,
+    filetype: u32,
+    cputype: u32,
+    cpusubtype: u32,
+) -> bool {
+    filetype == MH_DYLIB
+        && args.dylib_arch_fallback.as_deref() == Some(arch_name(cputype, cpusubtype))
 }
 
 /// Whether a thin file the link doesn't take is of its CPU type all the
@@ -3300,7 +3318,9 @@ pub fn malformed_object(data: &[u8]) -> Option<&'static str> {
 /// one for exactly its architecture first, but for a dylib whose subtype
 /// must match (Args::dylib_subtypes_must_match). With
 /// -allow_sub_type_mismatches, one of another subtype of its CPU type
-/// will do too, as for a thin file (see is_subtype_mismatch).
+/// will do too, as for a thin file (see is_subtype_mismatch); failing
+/// all those, a dylib's slice of $LD_DYLIB_ARCH_FALLBACK's architecture
+/// (see is_fallback_dylib).
 pub fn fat_slice<E: Target>(
     args: &crate::cmdline::Args,
     mf: &'static MappedFile,
@@ -3320,6 +3340,12 @@ pub fn fat_slice<E: Target>(
                 args.allow_sub_type_mismatches
                     && cputype == E::CPUTYPE
                     && arch_name(cputype, cpusubtype) != "arm64e"
+            })
+        })
+        .or_else(|| {
+            slices.iter().find(|&&(cputype, cpusubtype, off, _)| {
+                let filetype = MachHeader::read_from(&mf.data()[off..]).filetype;
+                is_fallback_dylib(args, filetype, cputype, cpusubtype)
             })
         })
         .copied()?;
@@ -4741,7 +4767,7 @@ pub fn exported_class<E: Target>(
             (ld, [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat())
         }
         FileType::Dylib
-            if foreign_arch::<E>(mf).is_none()
+            if foreign_arch::<E>(&ctx.args, mf).is_none()
                 || (ctx.args.allow_sub_type_mismatches && is_subtype_mismatch::<E>(mf)) =>
         {
             let dylib = read_dylib_binary(mf);
