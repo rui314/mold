@@ -2,10 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # macOS before 10.12 checks only SHA-1 page hashes. ld-prime signs an
-# x86-64 image for such a release, or for firmware, with a SHA-1 code
-# directory in the code directory slot and the SHA-256 one as the first
-# alternate (slot 0x1000), and so a -static image of either
-# architecture; an arm64 image dyld loads gets the SHA-256 one alone.
+# image for such a release (of either architecture, though no such
+# release runs arm64 code), or an x86-64 one for firmware, with a SHA-1
+# code directory in the code directory slot and the SHA-256 one as the
+# first alternate (slot 0x1000), and so a -static image of either
+# architecture; any other arm64 image gets the SHA-256 one alone.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _start
@@ -63,3 +64,12 @@ if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/exe5 $t/c.o -mmacosx-version-min=10.12 -Wl,-adhoc_codesign
   [ "$(hash_types $t/exe5)" = "$sha256" ]
 fi
+
+sdk=$(xcrun --show-sdk-path)
+echo 'int main() { return 0; }' | $CC -o $t/d.o -c -xc -
+for v in 10.11 10.12; do
+  $mold -arch $ARCH -syslibroot $sdk -platform_version macos $v 27.0 $t/d.o -lSystem \
+    -o $t/exe-$v -adhoc_codesign 2> /dev/null
+done
+[ "$(hash_types $t/exe-10.11)" = "$sha1" ]
+[ "$(hash_types $t/exe-10.12)" = "$sha256" ]
