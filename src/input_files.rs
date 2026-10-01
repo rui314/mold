@@ -2883,6 +2883,11 @@ impl StagedObject {
             .collect();
         sects.sort_unstable();
         sects.dedup();
+        // The name costs a realpath, and an archive member's a walk of
+        // its archive, so only an object with something to report pays.
+        if sects.is_empty() && !self.data_fde {
+            return UnwindCheck { warnings: Vec::new(), data_fde: None };
+        }
         let file = crate::passes::resolved_file_name(self.mf);
         let warnings = sects
             .into_iter()

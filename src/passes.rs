@@ -896,7 +896,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     drop(t);
     warn_about_sections(&staged);
     let checks: Vec<(bool, bool, input_files::UnwindCheck)> = staged
-        .iter()
+        .par_iter()
         .map(|obj| (obj.failed_at.is_none(), obj.alive, obj.check_unwind_sections()))
         .collect();
 
