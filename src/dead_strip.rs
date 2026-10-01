@@ -521,6 +521,7 @@ fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
             ctx.symbols[id].mark();
         }
     }
+    crate::objc::drop_dead_objc_stubs(ctx);
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
         ctx.symbols[id].mark();
     }

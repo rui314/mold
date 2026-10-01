@@ -471,6 +471,26 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// Drops the _objc_msgSend$<selector> stubs only code -dead_strip took
+/// out called (their symbols unmarked by the live references, see
+/// dead_strip::mark_live_references), as ld-prime makes none for them,
+/// nor their selector references and names.
+pub fn drop_dead_objc_stubs<E: Target>(ctx: &mut Context<E>) {
+    let stubs = std::mem::take(&mut ctx.objc_stubs.symbols);
+    let (live, dead): (Vec<_>, Vec<_>) =
+        stubs.into_iter().partition(|&(id, _)| ctx.symbols[id].is_marked());
+    for (id, _) in dead {
+        ctx.symbols[id].clear_file();
+    }
+    for (idx, &(id, _)) in live.iter().enumerate() {
+        ctx.sym_aux_mut(id).objc_stub_idx = idx as u32;
+    }
+    if live.is_empty() {
+        ctx.objc_stubs.msgsend_sym = None;
+    }
+    ctx.objc_stubs.symbols = live;
+}
+
 /// The synthesized objc stubs call _objc_msgSend through a GOT slot of
 /// their own: ld-prime binds _objc_msgSend twice when a stub or a GOT
 /// load elsewhere needs a slot for it as well. Small stubs branch to
