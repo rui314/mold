@@ -835,7 +835,7 @@ fn symbol_entries<'a, E: Target>(
 
 /// Whether a subsection is an Objective-C method list the linker
 /// rewrote in the relative form.
-fn is_rewritten_method_list<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
+pub(crate) fn is_rewritten_method_list<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
     let isec = &ctx.isecs[isec];
     ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).sectname() == "__objc_methlist"
 }

@@ -220,24 +220,6 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     moves
 }
 
-/// The symbols naming the atoms `moves` moves (see find_moves), with
-/// their subsections, in the order ld-prime comes to them.
-pub(crate) fn moved_symbols<E: Target>(
-    ctx: &Context<E>,
-    moves: &hashbrown::HashMap<u32, Move>,
-) -> Vec<(u32, SymbolId)> {
-    let mut syms = Vec::new();
-    for_each_atom_symbol(ctx, |_, id, atom| {
-        if let Some(isec) = atom.isec
-            && moves.contains_key(&isec)
-        {
-            syms.push(((atom.place, ctx.symbols[id].value), isec, id));
-        }
-    });
-    syms.sort_by_key(|&(place, _, _)| place);
-    syms.into_iter().map(|(_, isec, id)| (isec, id)).collect()
-}
-
 /// Calls `f` with each symbol that names a live atom to ld-prime, with
 /// its object (see atom_named).
 fn for_each_atom_symbol<'a, E: Target>(

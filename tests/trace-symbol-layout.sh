@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# -trace_symbol_layout reports where -move_to_rw_segment,
-# -move_to_ro_segment and -dirty_data_list put each symbol of the atoms
-# they move, on stdout, and the renames that then apply to its section;
-# -trace_symbol_layout_file writes the report into a file instead.
-# (ld-prime reports every other symbol too, which mold doesn't.)
+# -trace_symbol_layout reports on stdout where each symbol of an atom
+# goes: where -move_to_rw_segment, -move_to_ro_segment and
+# -dirty_data_list put the atoms they move, and the renames that then
+# apply to its section; -trace_symbol_layout_file writes the report into
+# a file instead.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int data1 = 1;
 int data2 = 2;
@@ -40,3 +40,39 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-move_to_rw_segment,__FOO,$t/rw.txt \
   -Wl,-trace_symbol_layout_file,$t/none/trace -Wl,-trace_symbol_layout > $t/log3 2> $t/err3
 grep -q "warning: could not open -trace_symbol_layout_file $t/none/trace for writing (2)" $t/err3
 not grep -q symbol $t/log3
+
+# The other symbols get the default mapping, or ld-prime's own moves
+# and the renames - both as one step, -rename_segment's if it applied.
+# The atoms ld-prime makes itself, such as the thread-local variables'
+# descriptors, come last, and the symbols at one place last-defined
+# first. A -r link reports nothing.
+cat <<EOF | $CC -o $t/b.o -c -xc -
+int gdata = 1;
+int *const cptr = &gdata;
+__thread int tlv = 3;
+int get(void) { return tlv; }
+int main() { return *cptr + get(); }
+EOF
+$CC --ld-path=$mold -o $t/exe4 $t/b.o -Wl,-rename_section,__DATA,__data,__DATA,__d2 \
+  -Wl,-rename_segment,__DATA,__D -Wl,-trace_symbol_layout > $t/log4 2> /dev/null
+grep -qx "symbol '_main', use default mapping to __TEXT/__text" $t/log4
+grep -qx "symbol '_gdata', -rename_segment mapped it to __D/__d2" $t/log4
+grep -qx "symbol '_cptr', -data_const mapped it to __DATA_CONST/__const" $t/log4
+tail -1 $t/log4 | grep -qx "symbol '_tlv', -rename_segment mapped it to __D/__thread_vars"
+
+cat <<EOF | $CC -o $t/c.o -c -xassembler -
+.globl _main, _zb, _ab
+.p2align 2
+_main:
+  ret
+lc:
+_zb:
+_ab:
+  ret
+.subsections_via_symbols
+EOF
+$CC --ld-path=$mold -o $t/exe5 $t/c.o -Wl,-trace_symbol_layout > $t/log5 2> /dev/null
+[ "$(sed 's/,.*//' $t/log5 | tr '\n' ' ')" = "symbol '_main' symbol '_zb' symbol '_ab' symbol 'lc' " ]
+
+$mold -r -arch $ARCH -o $t/r.o $t/b.o -trace_symbol_layout > $t/log6
+[ ! -s $t/log6 ]
