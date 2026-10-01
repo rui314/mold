@@ -1652,7 +1652,8 @@ fn check_section_order<E: Target>(ctx: &Context<E>) {
 /// may not carry interposing tuples, which the dyld shared cache
 /// builder refuses. ld-prime finds them as dyld does - a section named
 /// __interpose in a segment whose name starts with __DATA or __AUTH,
-/// by its final name - and rejects even an empty one.
+/// by its final name - and rejects even an empty one, naming the last
+/// in the image.
 fn check_interposing<E: Target>(ctx: &Context<E>) {
     if !ctx.args.shared_region {
         return;
@@ -1662,7 +1663,7 @@ fn check_interposing<E: Target>(ctx: &Context<E>) {
             && hdr.sectname == "__interpose"
             && (hdr.segname.starts_with("__DATA") || hdr.segname.starts_with("__AUTH"))
     };
-    if let Some(hdr) = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).find(is_interpose) {
+    if let Some(hdr) = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).rfind(is_interpose) {
         error!(
             "Shared cache eligible dylib cannot use interposing tuples (found in '{} {}').  \
              Remove interposing tuples, or opt out of the shared cache using the build setting \

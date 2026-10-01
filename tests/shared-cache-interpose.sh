@@ -37,6 +37,12 @@ not $CC --ld-path=$mold -o $t/d.dylib -shared $t/b.o -Wl,-install_name,/usr/lib/
   -Wl,-sectcreate,__AUTH,__interpose,$t/tuples 2> $t/log4
 grep -qF "$(msg __AUTH)" $t/log4
 
+# Of several, ld-prime names the last in the image.
+not $CC --ld-path=$mold -o $t/d.dylib -shared $t/b.o -Wl,-install_name,/usr/lib/libfoo.dylib \
+  -Wl,-sectcreate,__DATA_ZZZ,__interpose,$t/tuples \
+  -Wl,-sectcreate,__DATA_AAA,__interpose,$t/tuples 2> $t/log4
+grep -qF "$(msg __DATA_AAA)" $t/log4
+
 not $CC --ld-path=$mold -o $t/e.bundle -bundle $t/a.o -Wl,-add_split_seg_info 2> $t/log5
 grep -q 'cannot use interposing tuples' $t/log5
 
