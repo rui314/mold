@@ -905,15 +905,20 @@ impl StagedObject {
 /// and the split is used only if it really is partitioned.
 fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<u32> {
     let n = nlists.len() as u32;
+    let is_local = |nl: &NList| nl.is_stab() || !nl.is_extern();
+    // The table's ranges, if they hold what they say (a malformed
+    // object's may not).
     if let Some(d) = dysym
         && d.ilocalsym == 0
         && d.iextdefsym == d.nlocalsym
-        && d.iundefsym == d.iextdefsym + d.nextdefsym
-        && d.iundefsym + d.nundefsym == n
+        && d.iundefsym == d.iextdefsym.wrapping_add(d.nextdefsym)
+        && d.iundefsym as u64 + d.nundefsym as u64 == n as u64
+        && let Some((locals, globals)) = nlists.split_at_checked(d.iextdefsym as usize)
+        && locals.iter().all(is_local)
+        && !globals.iter().any(is_local)
     {
         return Some(d.iextdefsym);
     }
-    let is_local = |nl: &NList| nl.is_stab() || !nl.is_extern();
     let first = nlists.iter().position(|nl| !is_local(nl)).unwrap_or(nlists.len());
     nlists[first..].iter().all(|nl| !is_local(nl)).then_some(first as u32)
 }
@@ -3257,6 +3262,9 @@ fn apply_eh_frame_relocs<E: Target>(
         if off + size > contents.len() {
             beyond_end();
         }
+        if r.is_extern() && r.r_symbolnum() as usize >= nlists.len() {
+            fatal!("r_symbolnum={} out of range in '{file_name}'", r.r_symbolnum());
+        }
         i += 1;
 
         let val = if ty == E::RELOC_SUBTRACTOR {
@@ -3266,6 +3274,9 @@ fn apply_eh_frame_relocs<E: Target>(
                      no pair, in '{file_name}'"
                 );
             };
+            if plus.is_extern() && plus.r_symbolnum() as usize >= nlists.len() {
+                fatal!("r_symbolnum={} out of range in '{file_name}'", plus.r_symbolnum());
+            }
             i += 1;
             target(plus).wrapping_sub(target(r))
         } else if ty == E::RELOC_UNSIGNED {

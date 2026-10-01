@@ -71,6 +71,15 @@ elif mut == 'stab-target':
         strx = u32(symoff + 16 * i)
         if d[stroff + strx:stroff + strx + 3] == b'_x\0':
             d[symoff + 16 * i + 4] = 0x24; print(i)
+elif mut in ('huge-common', 'main-stab'):
+    symoff, nsyms, stroff = u32(symtab[1] + 8), u32(symtab[1] + 12), u32(symtab[1] + 16)
+    for i in range(nsyms):
+        strx = u32(symoff + 16 * i)
+        name = d[stroff + strx:d.index(0, stroff + strx)]
+        if mut == 'huge-common' and name == b'_c':
+            struct.pack_into('<Q', d, symoff + 16 * i + 8, 0xca00000000000000)
+        if mut == 'main-stab' and name == b'_main':
+            d[symoff + 16 * i + 4] = 0x24
 elif mut == 'dice-offset':
     dice = find(0x29)
     set32(u32(dice[1] + 8), 0x100000)
@@ -174,6 +183,25 @@ EOF
 mut dice-offset
 $CC --ld-path=$mold -o $t/exe $t/dice-offset.o 2> $t/dice-offset.log
 grep -q 'warning: atom not found for data-in-code at offset 0x00100000' $t/dice-offset.log
+
+# Nor does mold crash on a tentative definition of an absurd size (its
+# alignment, by its size, is the largest), nor on a debug note among
+# the globals of an object a -r link reads (where an arm64 ld-prime
+# crashes).
+cat <<'EOF' | $CC -o $t/a.o -c -xassembler -
+.comm _c, 8
+.text
+.globl _main
+_main:
+  ret
+EOF
+mut huge-common
+$CC --ld-path=$mold -o $t/exe $t/huge-common.o 2> $t/huge-common.log
+grep -q 'reducing alignment of section __DATA,__common from 0x8000 to 0x' $t/huge-common.log
+mut main-stab
+if [ "$(basename $mold)" != ld ]; then
+  $CC --ld-path=$mold -r -o $t/r.o $t/main-stab.o
+fi
 
 # Whatever is cut off it, mold refuses an object without crashing.
 size=$(wc -c < $t/a.o)

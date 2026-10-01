@@ -107,8 +107,8 @@ impl DataBlob {
 /// method list resolves to, once the output is laid out.
 pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
     match r {
-        ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
-        ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
+        ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize).wrapping_add(off),
+        ObjcRef::Sym(id, addend) => ctx.sym_addr(id).wrapping_add_signed(addend),
         ObjcRef::TailSelref(n) => ctx.objc_selref_addr(n),
         ObjcRef::Null => 0,
     }
