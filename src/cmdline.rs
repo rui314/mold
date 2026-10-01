@@ -3361,6 +3361,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.objc_stubs_small = objc_stubs_small == Some(true);
     resolve_shared_region(target, &mut args);
     resolve_dirty_data(&mut args);
+    resolve_sdk_order_file(&mut args);
 
     args.segment_align = resolve_segment_align(target, &args, segalign);
     resolve_encryptable(&mut args);
@@ -3508,6 +3509,24 @@ fn resolve_dirty_data(args: &mut Args) {
     }
     let segment = "__DATA_DIRTY".to_string();
     args.dirty_data.push(SymbolMove { segment, symbols: symbols.build() });
+}
+
+/// The order of an image no -order_file orders, as ld-prime finds it:
+/// an Apple-internal SDK's file for the -final_output name,
+/// AppleInternal/OrderFiles/<that name>.order under the first
+/// -syslibroot, if there is one (the name as given: a path finds none).
+fn resolve_sdk_order_file(args: &mut Args) {
+    if !args.order_files.is_empty() {
+        return;
+    }
+    let (Some(name), Some(root)) = (&args.final_output, args.syslibroot.first()) else {
+        return;
+    };
+    let path = [root.as_os_str().as_bytes(), b"/AppleInternal/OrderFiles/", name, b".order"];
+    let path = PathBuf::from(std::ffi::OsStr::from_bytes(&path.concat()));
+    if path.is_file() {
+        args.order_files.push(path);
+    }
 }
 
 /// ld-prime's checks of -U and -undefined dynamic_lookup, among the last
