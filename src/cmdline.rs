@@ -517,6 +517,8 @@ pub struct Args {
     pub encryptable: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
+    /// -fatal_warnings, or $LD_TREAT_WARNINGS_AS_ERRORS set to anything
+    /// but 0: a warning fails the link.
     pub fatal_warnings: bool,
     pub demangle: bool,
     /// -undefined dynamic_lookup (or suppress): leave unresolved symbols
@@ -2027,6 +2029,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
         warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
         order_file_statistics: std::env::var_os("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
+        fatal_warnings: std::env::var_os("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
         ..Default::default()
     };
     let mut kind = OutputKind::DynamicExecutable;

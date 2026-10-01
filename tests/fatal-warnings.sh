@@ -42,3 +42,13 @@ rm -f $t/c.o
 not $mold -r -arch $ARCH -o $t/c.o $t/a.o -fatal_warnings -alias_list $t/nosuch 2> $t/log6
 grep -q 'fatal warning(s) induced error (-fatal_warnings)' $t/log6
 [ -f $t/c.o ]
+
+# $LD_TREAT_WARNINGS_AS_ERRORS does as -fatal_warnings, set to anything
+# but 0, even to nothing.
+not env LD_TREAT_WARNINGS_AS_ERRORS=1 $CC --ld-path=$mold $t/a.o -lSystem \
+  -Wl,-warn_duplicate_libraries -o $t/exe 2> $t/log7
+grep -q 'fatal warning(s) induced error (-fatal_warnings)' $t/log7
+not env LD_TREAT_WARNINGS_AS_ERRORS= $CC --ld-path=$mold $t/a.o -lSystem \
+  -Wl,-warn_duplicate_libraries -o $t/exe 2> /dev/null
+LD_TREAT_WARNINGS_AS_ERRORS=0 $CC --ld-path=$mold $t/a.o -lSystem \
+  -Wl,-warn_duplicate_libraries -o $t/exe 2> /dev/null
