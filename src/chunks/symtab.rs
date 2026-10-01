@@ -1028,6 +1028,7 @@ pub fn create_output_symtab<E: Target>(
     // are the strings layout_strings lays out below. The debug notes
     // are not among them: copy_symtab writes them from their plans.
     let nstabs: usize = planned.iter().map(|plan| plan.len()).sum();
+    let nglobals = sorted_globals.len();
     let total = locals.len()
         + ctx.args.add_ast_paths.len()
         + usize::from(nstabs != 0)
@@ -1070,6 +1071,7 @@ pub fn create_output_symtab<E: Target>(
     // locals', then each object's notes' in a block of its own. No note
     // is among the entries, so none shares a string there.
     let t = ctx.timer("symtab-strings");
+    add_indirect_target_names(ctx, &data.entries, &mut names, stabs_start..stabs_start + nglobals);
     let strtab_end = layout_strings(&mut data.entries, &names, stabs_start);
     data.names = names;
 
@@ -1081,7 +1083,6 @@ pub fn create_output_symtab<E: Target>(
         (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
     let strx_of: Vec<AtomicU32> =
         (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
-    let nglobals = sorted_globals.len();
     (0..nplain).into_par_iter().chain(stabs_start..stabs_start + nglobals).for_each(|i| {
         if let (ent, Some(id)) = data.entries[i] {
             let index = if i < stabs_start { i } else { i + nstabs };
@@ -1293,10 +1294,38 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> (&'static [u8], NList,
     (sym.name().as_bytes(), ent, None)
 }
 
+/// Gives each alias of an imported symbol (see make_indirect_aliases),
+/// among the entries in `globals`, the name it stands for as a string of
+/// its own right after its name, as ld-prime lays them out, rather than
+/// the import's: the two as one name with a NUL between. An alias of
+/// the import's own name has only the one.
+fn add_indirect_target_names<E: Target>(
+    ctx: &Context<E>,
+    entries: &[(NList, Option<SymbolId>)],
+    names: &mut [&'static [u8]],
+    globals: std::ops::Range<usize>,
+) {
+    if ctx.indirect_aliases.is_empty() {
+        return;
+    }
+    let targets: hashbrown::HashMap<SymbolId, SymbolId> =
+        ctx.indirect_aliases.iter().copied().collect();
+    for i in globals {
+        if let Some(id) = entries[i].1
+            && let Some(&target) = targets.get(&id)
+            && names[i] != ctx.symbols[target].name().as_bytes()
+        {
+            names[i] =
+                leak_bytes([names[i], b"\0", ctx.symbols[target].name().as_bytes()].concat());
+        }
+    }
+}
+
 /// Makes each alias of an imported symbol an N_INDR entry whose n_value
-/// is the string-table offset of the name it stands for; that name is
-/// in the table already as the import's own entry. The slot is detached
-/// from the symbol so copy_symtab leaves n_value alone.
+/// is the string-table offset of the name it stands for: the string
+/// after its own name (see add_indirect_target_names), or that name
+/// itself. The slot is detached from the symbol so copy_symtab leaves
+/// n_value alone.
 fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) {
     let (stabs_start, nstabs) = (data.stabs_start, data.nstabs);
     let entry = |index: u32| {
@@ -1305,16 +1334,16 @@ fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) 
     };
     for &(alias, target) in &ctx.indirect_aliases {
         let a = data.output_sym_indices[alias as usize];
-        let t = data.output_sym_indices[target as usize];
-        if a == u32::MAX || t == u32::MAX {
+        if a == u32::MAX || data.output_sym_indices[target as usize] == u32::MAX {
             continue;
         }
-        let strx = data.entries[entry(t)].0.n_strx;
+        let name = ctx.symbols[alias].name();
+        let skip = if name == ctx.symbols[target].name() { 0 } else { name.len() + 1 };
         let ent = &mut data.entries[entry(a)];
         ent.0.n_type = N_INDR | N_EXT;
         ent.0.n_sect = 0;
         ent.0.n_desc = 0;
-        ent.0.n_value = strx as u64;
+        ent.0.n_value = (ent.0.n_strx as usize + skip) as u64;
         ent.1 = None;
     }
 }

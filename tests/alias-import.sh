@@ -35,3 +35,12 @@ not grep -q _my_puts $t/nm2
 grep -q 'undefined.*_puts (from libSystem)' $t/nm2
 dyld_info -exports $t/libfoo2.dylib > $t/exports2
 not grep -q _my_puts $t/exports2
+
+# The N_INDR entry's n_value names a string of its own, right after the
+# entry's name, rather than the import's: ld-prime writes _puts twice.
+otool -l $t/libfoo.dylib | awk '/cmd LC_SYMTAB/ { f = 1 } f && /stroff/ { o = $2 }
+  f && /strsize/ { print o, $2; exit }' > $t/symtab
+read stroff strsize < $t/symtab
+dd if=$t/libfoo.dylib bs=1 skip=$stroff count=$strsize 2> /dev/null | tr '\0' '\n' > $t/strtab
+grep -A1 -x _my_puts $t/strtab | tail -1 | grep -qx _puts
+[ "$(grep -c -x _puts $t/strtab)" = 2 ]
