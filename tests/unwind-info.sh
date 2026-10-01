@@ -143,3 +143,16 @@ assert (lsda - iso) // 12 == -(-sum(counts) // 511) + 2, (lsda - iso, sum(counts
 assert all(p % 8 == 0 for p in pages[1:]), pages
 assert len(d) % 8 == 0, len(d)
 EOF2
+
+# ld-prime orders the entries of one address by encoding, whatever the
+# order of their records, so that the unwinder finds the greatest.
+{
+  printf '.text\n.globl _main\n_main:\n  ret\n'
+  echo '.section __LD,__compact_unwind,regular,debug'
+  echo '.p2align 3'
+  rec main 0x02003000; rec main 0x02001000; rec main 0x02002000
+  echo .subsections_via_symbols
+} | $CC -o $t/h.o -c -xassembler -
+$CC --ld-path=$mold -o $t/exe7 $t/h.o
+unwind_entries $t/exe7 > $t/entries7
+[ "$(cut -d' ' -f2 $t/entries7 | tr '\n' ' ')" = '0x2001000 0x2002000 0x2003000 ' ]

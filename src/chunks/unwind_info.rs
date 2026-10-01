@@ -107,10 +107,12 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         }
     }
 
-    // An empty atom shares its address with the function after it, and
-    // comes first, as in the input - the one at the end of a section
-    // too.
-    records.par_sort_by_key(|r| (func_addr(r), r.code_len != 0, r.isec));
+    // ld-prime orders the entries of one address by encoding: an empty
+    // atom's of encoding 0 comes before the function sharing its
+    // address, and of two records for a function (or one at a
+    // section's end and the next section's first), the greater
+    // encoding, which the unwinder finds, comes last.
+    records.par_sort_by_key(|r| (func_addr(r), r.encoding));
 
     // Assign personality indices, encoded in bits 28-29 of the
     // encoding, in order of first use by address.
