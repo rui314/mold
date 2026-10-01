@@ -181,8 +181,12 @@ pub struct Context<E: Target> {
     pub strtab: StrtabSection,
     pub code_signature: CodeSignatureSection,
     /// Sequence number of the next dylib named on the command line or
-    /// by an auto-link option; orders their load commands.
+    /// by an auto-link option, or archive an auto-link option names;
+    /// orders their load commands, and -map's auto-linked files.
     pub dylib_load_seq: u32,
+    /// The archives auto-link options named, with their sequence
+    /// numbers (see dylib_load_seq).
+    pub autolinked_archives: hashbrown::HashMap<std::path::PathBuf, u32>,
     /// Objective-C data records the linker synthesized (see
     /// merge_objc_categories), each placed as the tail of the output
     /// section it names.
@@ -301,6 +305,7 @@ impl<E: Target> Context<E> {
             extra_local_syms: Vec::new(),
             common_first_obj: None,
             dylib_load_seq: 0,
+            autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),
             boundary_syms: Vec::new(),
             why_load: std::collections::HashMap::new(),

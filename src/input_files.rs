@@ -522,6 +522,9 @@ pub struct DylibFile {
     /// with the index of the dylib that stands for the library it binds
     /// to instead (see add_moved_dylibs).
     pub moved_exports: hashbrown::HashMap<&'static str, usize>,
+    /// The files of libraries auto-link options named that merged into
+    /// this one, with their naming sequence numbers (see note_naming).
+    pub named_files: Vec<(u32, PathBuf)>,
     /// Whose install name it has: its own or an older library's.
     pub name_source: NameSource,
 }
@@ -3714,6 +3717,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             merged_reexports,
             merged_files,
             moved_exports,
+            named_files: Vec::new(),
             name_source,
         },
     )
@@ -3926,6 +3930,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             merged_reexports: Vec::new(),
             merged_files: Vec::new(),
             moved_exports: hashbrown::HashMap::new(),
+            named_files: Vec::new(),
             name_source: NameSource::Own,
         },
     )
@@ -4501,6 +4506,7 @@ fn register_tbd<E: Target>(
             merged_reexports,
             merged_files,
             moved_exports,
+            named_files: Vec::new(),
             name_source,
         },
     )
@@ -4557,6 +4563,7 @@ fn add_moved_dylibs<E: Target>(
                     merged_reexports: Vec::new(),
                     merged_files: Vec::new(),
                     moved_exports: hashbrown::HashMap::new(),
+                    named_files: Vec::new(),
                     name_source: NameSource::Moved,
                 };
                 let idx = add_dylib(ctx, dylib);

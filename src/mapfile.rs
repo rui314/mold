@@ -134,17 +134,20 @@ fn name(s: &str) -> Cow<'_, [u8]> {
 /// members that were loaded, where their archive was named, and dylibs,
 /// used or not (-dead_strip_dylibs or not) -, then by install name the
 /// libraries loaded because a dylib re-exports them that something
-/// binds to, and last the dylibs that auto-link options named and
-/// something binds to, in the order ld-prime acts on the options. A
-/// re-exported library named too is listed where it is named, by the
-/// path given. The re-exported
-/// libraries include the private ones a dylib merges (libSystem's
-/// libsystem_c), which ld-prime reads from files of their own and
-/// credits with the symbols they define. Number 0 stands for the
-/// linker, which makes the stubs, the unwind info and such. A bitcode
-/// file is listed as any object, and the object LTO compiled last of
-/// all; ld-prime credits each of the latter's symbols to the bitcode
-/// file it came from, when it can tell (see lto::origins).
+/// binds to, and last the files auto-link options named that something
+/// binds to or loads from, in the order ld-prime acts on the options -
+/// dylibs, and archives' members -, and those their dylibs re-export.
+/// A re-exported library named too is listed where it is named, by the
+/// path given. The re-exported libraries include the private ones a
+/// dylib merges (libSystem's libsystem_c), which ld-prime reads from
+/// files of their own and credits with the symbols they define; an
+/// auto-linked dylib all of whose bound symbols such a library defines
+/// is no file of the link's (libswiftDarwin, which merges
+/// libswift_Builtin_float). Number 0 stands for the linker, which makes
+/// the stubs, the unwind info and such. A bitcode file is listed as any
+/// object, and the object LTO compiled last of all; ld-prime credits
+/// each of the latter's symbols to the bitcode file it came from, when
+/// it can tell (see lto::origins).
 struct MapFiles<'a> {
     paths: Vec<&'a Path>,
     /// The number of each object (0 for the internal one) and dylib.
@@ -170,20 +173,30 @@ impl<'a> MapFiles<'a> {
             Merged(&'a MergedFile),
             Stripped(&'a Path),
         }
+        // A dylib that stands for a library exports moved to is no file:
+        // its symbols count as the file's that moved them, which an
+        // auto-linked one stands for where nothing binds to that.
+        let is_moved = |dylib: &DylibFile| dylib.name_source == NameSource::Moved;
+        let (provided, merged_only) = merged_providers(ctx);
+
         let mut named: Vec<(u32, File)> = Vec::new();
+        let mut autolinked: Vec<((u32, u32), File)> = Vec::new();
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if obj.is_alive && !ctx.is_internal(i) && ctx.lto_obj != Some(i) {
-                named.push((obj.priority, File::Obj(i)));
+            if !obj.is_alive || ctx.is_internal(i) || ctx.lto_obj == Some(i) {
+                continue;
+            }
+            match obj.mf.parent.and_then(|ar| ctx.autolinked_archives.get(&ar.name)) {
+                Some(&seq) => autolinked.push(((seq, obj.priority), File::Obj(i))),
+                None => named.push((obj.priority, File::Obj(i))),
             }
         }
         for input in &ctx.lto_inputs {
             named.push((ctx.objs[input.obj].priority, File::Obj(input.obj)));
         }
-        let mut autolinked: Vec<(u32, File)> = Vec::new();
         for (i, dylib) in ctx.dylibs.iter().enumerate() {
-            if dylib.is_autolinked {
-                autolinked.push((dylib.load_order, File::Dylib(i)));
-            } else if !dylib.is_implicit {
+            if dylib.is_autolinked && !merged_only[i] {
+                autolinked.push(((dylib.load_order, is_moved(dylib) as u32), File::Dylib(i)));
+            } else if !dylib.is_autolinked && !dylib.is_implicit {
                 let priority = dylib.named_at.as_ref().map_or(dylib.priority, |&(p, _)| p);
                 named.push((priority, File::Dylib(i)));
             }
@@ -191,50 +204,34 @@ impl<'a> MapFiles<'a> {
         for (priority, path) in &ctx.stripped_dylibs {
             named.push((*priority, File::Stripped(path)));
         }
-        named.sort_by_key(|(priority, _)| *priority);
-        autolinked.sort_by_key(|(priority, _)| *priority);
 
-        // The merged library that provides each symbol bound to a dylib
-        // that merged some.
-        let mut providers: Vec<Option<hashbrown::HashMap<&str, &MergedFile>>> =
-            (0..ctx.dylibs.len()).map(|_| None).collect();
-        let mut provided: Vec<(SymbolId, &MergedFile)> = Vec::new();
-        for i in 0..ctx.symbols.syms.len() as SymbolId {
-            let sym = &ctx.symbols[i];
-            let Some(FileId::Dylib(d)) = sym.file() else { continue };
-            let Some(dylib) = ctx.dylibs.get(d as usize) else { continue };
-            if dylib.merged_files.is_empty() {
-                continue;
-            }
-            let by_name = providers[d as usize].get_or_insert_with(|| {
-                let mut map = hashbrown::HashMap::new();
-                for file in &dylib.merged_files {
-                    for &name in &file.exports {
-                        map.entry(name).or_insert(file);
-                    }
-                }
-                map
-            });
-            if let Some(&file) = by_name.get(sym.name()) {
-                provided.push((i, file));
-            }
-        }
-
-        // A dylib that stands for a library exports moved to is no file:
-        // its symbols count as the file's that moved them.
-        let is_moved = |dylib: &DylibFile| dylib.name_source == NameSource::Moved;
         let mut implicit: Vec<(&[u8], File)> = Vec::new();
         for (i, dylib) in ctx.dylibs.iter().enumerate() {
             if dylib.is_implicit && !dylib.is_autolinked && !is_moved(dylib) {
                 implicit.push((&dylib.install_name, File::Dylib(i)));
             }
         }
-        for &(_, file) in &provided {
-            if implicit.iter().all(|(name, _)| *name != file.install_name) {
+        // A merged library goes with the dylib that merged it, but where
+        // an auto-link option named it, if one did.
+        let mut seen: hashbrown::HashSet<&[u8]> = hashbrown::HashSet::new();
+        for &(_, d, file) in &provided {
+            let dylib = &ctx.dylibs[d];
+            if implicit.iter().any(|(name, _)| *name == file.install_name)
+                || !seen.insert(&file.install_name)
+            {
+                continue;
+            }
+            if dylib.is_autolinked {
+                let named = dylib.named_files.iter().find(|(_, path)| *path == file.path);
+                let seq = named.map_or(u32::MAX, |&(seq, _)| seq);
+                autolinked.push(((seq, 0), File::Merged(file)));
+            } else {
                 implicit.push((&file.install_name, File::Merged(file)));
             }
         }
+        named.sort_by_key(|(priority, _)| *priority);
         implicit.sort_by_key(|(name, _)| *name);
+        autolinked.sort_by_key(|(key, _)| *key);
 
         let mut files = Self {
             paths: Vec::new(),
@@ -258,8 +255,11 @@ impl<'a> MapFiles<'a> {
                     files.paths.push(&ctx.objs[i].mf.name);
                 }
                 File::Dylib(i) => {
-                    files.dylibs[i] = number;
                     let dylib = &ctx.dylibs[i];
+                    if is_moved(dylib) && files.paths.contains(&dylib.path.as_path()) {
+                        continue;
+                    }
+                    files.dylibs[i] = number;
                     files.paths.push(dylib.named_at.as_ref().map_or(&dylib.path, |(_, path)| path));
                 }
                 File::Stripped(path) => files.paths.push(path),
@@ -269,7 +269,7 @@ impl<'a> MapFiles<'a> {
                 }
             }
         }
-        for (sym, file) in provided {
+        for (sym, _, file) in provided {
             if let Some(&number) = merged_numbers.get(file.install_name.as_slice()) {
                 files.merged.insert(sym, number);
             }
@@ -306,6 +306,46 @@ impl<'a> MapFiles<'a> {
             _ => self.objs[obj],
         }
     }
+}
+
+/// The merged library that provides each symbol bound to a dylib that
+/// merged some, as (symbol, dylib, library), and of each dylib whether
+/// all symbols bound to it are such.
+fn merged_providers<E: Target>(
+    ctx: &Context<E>,
+) -> (Vec<(SymbolId, usize, &MergedFile)>, Vec<bool>) {
+    let mut providers: Vec<Option<hashbrown::HashMap<&str, &MergedFile>>> =
+        (0..ctx.dylibs.len()).map(|_| None).collect();
+    let mut provided = Vec::new();
+    let mut bound = vec![(false, false); ctx.dylibs.len()];
+    for i in 0..ctx.symbols.syms.len() as SymbolId {
+        let sym = &ctx.symbols[i];
+        let Some(FileId::Dylib(d)) = sym.file() else { continue };
+        let d = d as usize;
+        let Some(dylib) = ctx.dylibs.get(d) else { continue };
+        if dylib.merged_files.is_empty() {
+            bound[d].1 = true;
+            continue;
+        }
+        let by_name = providers[d].get_or_insert_with(|| {
+            let mut map = hashbrown::HashMap::new();
+            for file in &dylib.merged_files {
+                for &name in &file.exports {
+                    map.entry(name).or_insert(file);
+                }
+            }
+            map
+        });
+        match by_name.get(sym.name()) {
+            Some(&file) => {
+                provided.push((i, d, file));
+                bound[d].0 = true;
+            }
+            None => bound[d].1 = true,
+        }
+    }
+    let merged_only = bound.into_iter().map(|(merged, own)| merged && !own).collect();
+    (provided, merged_only)
 }
 
 pub fn print_map<E: Target>(ctx: &Context<E>) {

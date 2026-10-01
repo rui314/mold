@@ -285,6 +285,36 @@ struct PendingObject {
     priority: u32,
 }
 
+/// Notes when dylib `idx`, which file `mf` (an auto-link option's or
+/// not) named, was named: its first naming orders its load command
+/// (see dylib_order_key) and -map's auto-linked files, and with it the
+/// libraries its exports moved to (see add_moved_dylibs), the parse
+/// having made those from `first` on. An auto-link option naming a
+/// library that merged into another, whose install name an $ld$previous
+/// directive gives it (libswift_Builtin_float before macOS 15), puts
+/// the file named in -map there too.
+fn note_naming<E: Target>(
+    ctx: &mut Context<E>,
+    first: usize,
+    idx: usize,
+    mf: &MappedFile,
+    autolinked: bool,
+) {
+    let seq = ctx.dylib_load_seq;
+    ctx.dylib_load_seq += 1;
+    for d in &mut ctx.dylibs[first..] {
+        if d.name_source == input_files::NameSource::Moved && d.load_order == u32::MAX {
+            d.load_order = seq;
+        }
+    }
+    let dylib = &mut ctx.dylibs[idx];
+    if dylib.load_order == u32::MAX {
+        dylib.load_order = seq;
+    } else if autolinked && dylib.path != mf.name {
+        dylib.named_files.push((seq, mf.name.clone()));
+    }
+}
+
 /// Gives a dylib what its first naming says (library_namings has merged
 /// what the options naming one library say): -needed_* keeps the load
 /// command under -dead_strip_dylibs, -reexport_* re-exports it, -weak_*
@@ -552,12 +582,7 @@ fn collect_file<E: Target>(
                 }
                 name_dylib(ctx, idx, mf, rc);
             }
-            let dylib = &mut ctx.dylibs[idx];
-            // Ordered by naming sequence.
-            if dylib.load_order == u32::MAX {
-                dylib.load_order = ctx.dylib_load_seq;
-                ctx.dylib_load_seq += 1;
-            }
+            note_naming(ctx, first, idx, mf, rc.autolinked);
         }
         FileType::Archive => {
             // Every member is parsed eagerly; whether it is *live* -
@@ -573,6 +598,10 @@ fn collect_file<E: Target>(
                 && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
             if rc.force_load {
                 ctx.force_loaded.insert(mf.name.clone());
+            }
+            if rc.autolinked {
+                ctx.autolinked_archives.insert(mf.name.clone(), ctx.dylib_load_seq);
+                ctx.dylib_load_seq += 1;
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
