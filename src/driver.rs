@@ -235,14 +235,18 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));
     passes::fix_synthetic_symbols(&mut ctx);
     passes::resolve_entry(&mut ctx);
-    passes::check_removed_swift_metadata_refs(&ctx);
-    passes::print_final_layout(&ctx);
-    crate::error::checkpoint();
+    crate::error::checkpoint_in_layout();
     // The reports, in ld-prime's order (that of its warnings about one
-    // it can't write).
+    // it can't write). An error in the layout found as __LINKEDIT is
+    // laid out fails the link after them (one found before, after the
+    // dependency info alone; see set_osec_offsets), as does a fixup
+    // error, which ld-prime finds as it writes the output.
     crate::mapfile::write_dependency_info(&ctx);
     crate::mapfile::print_map(&ctx);
     crate::mapfile::write_sdk_imports(&ctx);
+    passes::print_final_layout(&ctx);
+    crate::error::checkpoint();
+    passes::check_removed_swift_metadata_refs(&ctx);
 
     // Write the output. The file is created up front, executable, and
     // its ranges are written from background threads as copy_chunks

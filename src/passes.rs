@@ -5547,7 +5547,8 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
 
     // An error ld-prime finds before it lays out __LINKEDIT ends the
     // link there: it prints the layout with __LINKEDIT unsized (see
-    // unsized_linkedit_addr), once or twice (see check_segments).
+    // unsized_linkedit_addr), once or twice (see check_segments), and
+    // writes the dependency info, though not the map.
     let dumps = check_segments(ctx);
     if dumps > 0 {
         ctx.segments[linkedit].cmd.vmaddr = unsized_linkedit_addr(ctx);
@@ -5555,6 +5556,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         for _ in 0..dumps {
             print_final_layout(ctx);
         }
+        crate::mapfile::write_dependency_info(ctx);
         crate::error::checkpoint();
     }
     check_tlv_template(ctx);
