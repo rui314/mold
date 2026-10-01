@@ -1619,9 +1619,18 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
         .filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i))
         .flat_map_iter(|i| {
             let file = files.objs[i];
-            dead_entries_of(ctx, &gone, &files.commons, i, file)
-                .into_iter()
-                .map(move |(key, entry)| (file, key, entry))
+            dead_entries_of(ctx, &gone, &files.commons, i, file).into_iter().map(
+                move |(key, mut entry)| {
+                    // What LTO compiled goes by the bitcode file it is
+                    // credited to (see MapFiles::of_object).
+                    if ctx.is_lto_obj(i)
+                        && let Ok(name) = std::str::from_utf8(&entry.name)
+                    {
+                        entry.file = files.of_object(i, name);
+                    }
+                    (entry.file, key, entry)
+                },
+            )
         })
         .collect();
     // A class category merging gave a list of a kind it had none of

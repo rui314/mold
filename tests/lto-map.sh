@@ -35,3 +35,13 @@ test "$(file_of only_a)" = $a
 test "$(file_of fb)" = $b
 test "$(file_of fn)" = $n
 test "$(file_of both)" = $lto
+
+# An external symbol two files define weakly goes to the one whose
+# definition won, the first, whichever copy LTO kept.
+for f in d e; do
+  echo "__attribute__((weak, noinline)) int shared(int x) { return x * 5; }
+int f$f(int x) { return shared(x); }" | $CC -flto -O2 -c -xc - -o $t/$f.o
+done
+$CC --ld-path=$mold -flto -dynamiclib -o $t/d.dylib $t/e.o $t/d.o -Wl,-map,$t/map
+sed -n '/^# Object files:/,/^# Sections:/p' $t/map > $t/files
+test "$(file_of shared)" = $(num $t/e.o)

@@ -592,11 +592,14 @@ pub struct LtoInput {
     pub strong_defs: Vec<crate::symbol::SymbolId>,
     /// The names the module defined, internal ones included.
     pub defined: Vec<&'static str>,
+    /// The external symbols resolution gave the file's definitions.
+    pub won: Vec<&'static str>,
 }
 
-/// The bitcode file each symbol of the object LTO compiled comes from,
-/// by name, as ld-prime credits the compiled code: to the one file
-/// whose module defined a symbol of that name, internal or not. A name
+/// The bitcode file each symbol of the objects LTO compiled comes from,
+/// by name, as ld-prime credits the compiled code: an external symbol
+/// to the file whose definition won it (the first copy of a weak one),
+/// and another name to the one file whose module defined it. A name
 /// that two did (static functions alike), or none (literals, or a
 /// static LTO renamed to keep it apart), stays the compiled object's.
 pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static str, Option<usize>> {
@@ -610,6 +613,11 @@ pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static str, Option<u
                     }
                 })
                 .or_insert(Some(input.obj));
+        }
+    }
+    for input in inputs {
+        for &name in &input.won {
+            map.insert(name, Some(input.obj));
         }
     }
     map

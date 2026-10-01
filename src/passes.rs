@@ -2547,8 +2547,15 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
                 .filter(|(nlist, _)| nlist.n_type() == N_ABS && nlist.n_desc & N_WEAK_DEF == 0)
                 .map(|(_, &id)| id)
                 .collect();
+            let won = obj
+                .symbols
+                .iter()
+                .filter(|&&id| ctx.symbols[id].file() == Some(FileId::Obj(obj_idx as u32)))
+                .map(|&id| ctx.symbols[id].name())
+                .collect();
             let defined = module.defined;
-            ctx.lto_inputs.push(crate::lto::LtoInput { obj: obj_idx, strong_defs, defined });
+            let input = crate::lto::LtoInput { obj: obj_idx, strong_defs, defined, won };
+            ctx.lto_inputs.push(input);
         }
         let ids = ctx.objs[obj_idx].symbols.clone();
         for id in ids {
