@@ -3,6 +3,7 @@
 pub mod demangle;
 pub mod glob;
 pub mod perf;
+pub(crate) mod siphash;
 
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".
