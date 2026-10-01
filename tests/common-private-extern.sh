@@ -21,3 +21,10 @@ $t/exe
 nm -ap $t/exe > $t/nm
 grep -q ' s _hidden_common$' $t/nm
 grep -q ' S _visible_common$' $t/nm
+
+# A -r output keeps it a private-extern common, -keep_private_externs
+# or not: it allocates no commons, and so demotes none.
+$mold -r -arch $ARCH -o $t/r.o $t/a.o
+nm -m $t/r.o > $t/nm2
+grep -q '(common) (alignment 2^2) private external _hidden_common$' $t/nm2
+grep -q '(common) (alignment 2^2) external _visible_common$' $t/nm2

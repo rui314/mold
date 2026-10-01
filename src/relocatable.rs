@@ -1788,7 +1788,9 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
 /// undefine (-u): a stray `.globl`, a weak or lazy reference nothing
 /// uses, goes. A DTrace symbol stays whatever refers to it, with no
 /// n_desc flags: the final link reads a provider's stability and
-/// typedefs from symbols nothing relocates.
+/// typedefs from symbols nothing relocates. A tentative definition that
+/// is a private external stays one (N_PEXT), -keep_private_externs or
+/// not: a -r link allocates no commons, and so has none to demote.
 fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(NList, SymbolId)> {
     let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
     let undefs = symbols_by_name(ctx, |i| {
@@ -1804,15 +1806,19 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
         .par_iter()
         .map(|&i| {
             let sym = &ctx.symbols[i];
+            let mut n_type = N_UNDF | N_EXT;
             let mut n_desc = 0;
             let mut n_value = 0;
             if sym.is_common() {
                 n_value = sym.value;
                 n_desc |= (sym.common_p2align as u16) << 8;
+                if sym.is_private_extern() {
+                    n_type |= N_PEXT;
+                }
             } else if sym.is_weak_ref() && !crate::dtrace::is_dtrace_symbol(sym.name()) {
                 n_desc |= N_WEAK_REF;
             }
-            (NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value }, i as u32)
+            (NList { n_strx: 0, n_type, n_sect: 0, n_desc, n_value }, i as u32)
         })
         .collect()
 }
