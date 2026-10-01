@@ -239,10 +239,11 @@ pub struct Args {
     /// Whether the dylibs -lazy-l, -lazy_library and -lazy_framework
     /// name load lazily: when the output is for macOS 27 or later.
     pub lazy_load: bool,
-    /// -warn_unused_dylibs / -no_warn_unused_dylibs: warn about linked
-    /// dylibs nothing binds to (by default only for a dylib bound for
-    /// the dyld shared cache).
-    pub warn_unused_dylibs: Option<bool>,
+    /// Whether to warn about linked dylibs nothing binds to:
+    /// -warn_unused_dylibs / -no_warn_unused_dylibs, by default only
+    /// for a dylib bound for the dyld shared cache, where each needless
+    /// load costs every process (resolved at the end of parsing).
+    pub warn_unused_dylibs: bool,
     /// -not_for_dyld_shared_cache: a dylib installed in /usr/lib or
     /// /System/Library that won't go into the dyld shared cache.
     pub not_for_dyld_shared_cache: bool,
@@ -468,7 +469,7 @@ impl Default for Args {
             allowed_undefined: Vec::new(),
             dead_strip_dylibs: false,
             lazy_load: false,
-            warn_unused_dylibs: None,
+            warn_unused_dylibs: false,
             not_for_dyld_shared_cache: false,
             debug_variant: false,
             shared_region: false,
@@ -1129,6 +1130,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
     let mut objc_relative_method_lists: Option<bool> = None;
+    let mut warn_unused_dylibs: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
@@ -1530,8 +1532,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-dead_strip" => args.dead_strip = true,
             b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
-            b"-warn_unused_dylibs" => args.warn_unused_dylibs = Some(true),
-            b"-no_warn_unused_dylibs" => args.warn_unused_dylibs = Some(false),
+            b"-warn_unused_dylibs" => warn_unused_dylibs = Some(true),
+            b"-no_warn_unused_dylibs" => warn_unused_dylibs = Some(false),
             b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
             b"-debug_variant" => args.debug_variant = true,
             b"-no_inits" => args.no_inits = true,
@@ -2062,6 +2064,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
     resolve_shared_region(target, &mut args);
+    args.warn_unused_dylibs =
+        warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
     resolve_kext(target, &mut args);
     complete_segment_order(&mut args);

@@ -2901,15 +2901,13 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 }
 
 /// Warns about each dylib the command line links that nothing binds
-/// to. ld-prime does so by default for a dylib bound for the dyld shared
-/// cache, where each needless load costs every process, and for any
-/// output under -warn_unused_dylibs. A -needed_* or
-/// -reexport_* library is linked on purpose, and libSystem, libc++ and
-/// Foundation, which compiler drivers and project templates link by
-/// habit, are let off.
+/// to, under -warn_unused_dylibs, which a dylib bound for the dyld
+/// shared cache gets by default (see Args::warn_unused_dylibs). A
+/// -needed_* or -reexport_* library is linked on purpose, and
+/// libSystem, libc++ and Foundation, which compiler drivers and project
+/// templates link by habit, are let off.
 fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
-    let for_shared_cache = ctx.args.shared_region && ctx.args.output_type == MH_DYLIB;
-    if !ctx.args.warn_unused_dylibs.unwrap_or(for_shared_cache) {
+    if !ctx.args.warn_unused_dylibs {
         return;
     }
     const EXEMPT: [&[u8]; 3] = [
