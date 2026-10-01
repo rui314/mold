@@ -72,3 +72,12 @@ else
   secs=$(awk '$1 == "sectname" { s = $2 } $1 == "segname" && s { if ($2 == "__DATA") printf "%s ", s; s = "" }' $t/lc)
   [ "$secs" = '__data __got ' ]
 fi
+
+# A kext without relocations of a kind has offset 0 for their table.
+cat <<EOF2 | $CC -o $t/b.o -c -xc -O1 -mkernel -
+int kext_start(void) { return 0; }
+EOF2
+$mold -arch $ARCH -kext $t/b.o -o $t/kext3
+otool -l $t/kext3 | grep -A18 LC_DYSYMTAB > $t/dysymtab
+grep -Eq '^ +locreloff 0$' $t/dysymtab
+grep -Eq '^ +extreloff 0$' $t/dysymtab

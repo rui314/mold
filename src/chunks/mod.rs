@@ -493,11 +493,12 @@ fn create_dysymtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         cmd.indirectsymoff = ctx.indirect_symtab.hdr.fileoff as u32;
         cmd.nindirectsyms = (ctx.indirect_symtab.hdr.size / 4) as u32;
     }
-    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+    // An empty relocation table has offset 0, as in ld-prime's output.
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) && !ctx.local_relocs.locs.is_empty() {
         cmd.locreloff = ctx.local_relocs.hdr.fileoff as u32;
         cmd.nlocrel = ctx.local_relocs.locs.len() as u32;
     }
-    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) && !ctx.extern_relocs.relocs.is_empty() {
         cmd.extreloff = ctx.extern_relocs.hdr.fileoff as u32;
         cmd.nextrel = ctx.extern_relocs.relocs.len() as u32;
     }
