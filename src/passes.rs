@@ -1697,17 +1697,17 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     // auto-linked libraries alphabetically ("-framework AppKit" ...
     // "-lswiftCore", "-lswiftCoreFoundation" ...), which fixes their
     // ordinals too.
-    let mut pending: Vec<Vec<Vec<u8>>> = Vec::new();
+    // (Objects mostly repeat each other's options, which are deduplicated
+    // before they are sorted.)
     let objs = ctx.objs.iter().filter(|obj| obj.is_alive);
-    for opt in
-        ctx.cmdline_linker_options.iter().flatten().chain(objs.flat_map(|obj| &obj.linker_options))
-    {
-        if !ctx.processed_linker_options.contains(opt) {
-            pending.push(opt.clone());
-        }
-    }
+    let opts = ctx.cmdline_linker_options.iter().flatten();
+    let opts: hashbrown::HashSet<&Vec<Vec<u8>>> =
+        opts.chain(objs.flat_map(|obj| &obj.linker_options)).collect();
+    let mut pending: Vec<Vec<Vec<u8>>> = (opts.into_iter())
+        .filter(|opt| !ctx.processed_linker_options.contains(*opt))
+        .cloned()
+        .collect();
     pending.sort();
-    pending.dedup();
     let dylibs_before = ctx.dylibs.len();
     ctx.autolink_priority = ctx.autolink_priority.min(ctx.priority_counter + 1);
 
