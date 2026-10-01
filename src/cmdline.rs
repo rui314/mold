@@ -568,7 +568,10 @@ pub struct Args {
     /// bound on first use (classic dyld info's __la_symbol_ptr and
     /// __stub_helper): resolved at the end of parsing.
     pub lazy_binding: bool,
-    /// -application_extension: mark the image safe for app extensions.
+    /// -application_extension: mark a dylib safe for app extensions. Set
+    /// $LD_APPLICATION_EXTENSION_SAFE or $LD_NO_ENCRYPT (ld64's iOS
+    /// variable, which marks it too) makes that the default, which
+    /// -no_application_extension undoes.
     pub application_extension: bool,
     /// -simulator_support: a dylib simulator processes may load too
     /// (MH_SIM_SUPPORT).
@@ -2030,6 +2033,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
         order_file_statistics: std::env::var_os("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
         fatal_warnings: std::env::var_os("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
+        application_extension: ["LD_APPLICATION_EXTENSION_SAFE", "LD_NO_ENCRYPT"]
+            .iter()
+            .any(|var| std::env::var_os(var).is_some()),
         ..Default::default()
     };
     let mut kind = OutputKind::DynamicExecutable;

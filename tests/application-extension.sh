@@ -16,3 +16,14 @@ not grep -q APP_EXTENSION_SAFE $t/log
 $CC --ld-path=$mold -bundle -o $t/c.bundle $t/a.o -Wl,-application_extension
 otool -hv $t/c.bundle > $t/log
 not grep -q APP_EXTENSION_SAFE $t/log
+
+# Set $LD_APPLICATION_EXTENSION_SAFE or $LD_NO_ENCRYPT, to anything,
+# marks a dylib as the option does, unless -no_application_extension.
+for var in LD_APPLICATION_EXTENSION_SAFE LD_NO_ENCRYPT; do
+  env $var= $CC --ld-path=$mold -shared -o $t/libenv.dylib $t/a.o
+  otool -hv $t/libenv.dylib | grep -q APP_EXTENSION_SAFE
+  env $var=1 $CC --ld-path=$mold -shared -o $t/libenv.dylib $t/a.o \
+    -Wl,-no_application_extension
+  otool -hv $t/libenv.dylib > $t/log
+  not grep -q APP_EXTENSION_SAFE $t/log
+done
