@@ -1053,11 +1053,11 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
 /// segment's (the page, unless -segalign says otherwise): ld64 reduces
 /// the alignment with a warning (an x86-64 .align 16 asks for 64KB),
 /// which -no_warn_reduced_section_align silences (not -sectalign's) -
-/// but not in a -static or -preload image, which no dyld maps: ld-prime
-/// starts the section's segment on the alignment there (see
-/// lay_out_segments).
+/// but not in a -static or -preload image or a kext, which no dyld
+/// maps: ld-prime starts the section's segment on the alignment there
+/// (see segment_start_align).
 fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
-    let capped = !ctx.args.relocatable && !ctx.args.static_link;
+    let capped = !ctx.args.relocatable && !ctx.args.static_link && !ctx.args.is_kext();
     let max = ctx.args.segment_align.max(1).trailing_zeros();
     let warn_capped = ctx.args.warn_reduced_section_align;
     for id in ctx.chunks.clone() {

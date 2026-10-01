@@ -81,3 +81,14 @@ $mold -arch $ARCH -kext $t/b.o -o $t/kext3
 otool -l $t/kext3 | grep -A18 LC_DYSYMTAB > $t/dysymtab
 grep -Eq '^ +locreloff 0$' $t/dysymtab
 grep -Eq '^ +extreloff 0$' $t/dysymtab
+
+# No dyld maps a kext: a -segalign below a section's alignment leaves
+# the alignment be, without a warning, and the section's segment starts
+# on it.
+$mold -arch $ARCH -kext -segalign 0x1 $t/a.o -o $t/kext4 2> $t/log4
+not grep -q 'reducing alignment' $t/log4
+otool -l $t/kext4 | awk '$1 == "sectname" { s = $2 } s == "__data" && $1 == "addr" { a = $2 }
+  s == "__data" && $1 == "align" { print a, $2; exit }' > $t/data4
+read addr align < $t/data4
+[ $align = '2^3' ]
+[ $((addr % 8)) = 0 ]
