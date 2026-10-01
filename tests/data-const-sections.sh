@@ -51,3 +51,33 @@ EOF
 $CC --ld-path=$mold -o $t/exe3 $t/b.o -Wl,-undefined,dynamic_lookup
 sects $t/exe3 > $t/sects3
 grep -q '^__DATA_CONST,__objc_catlist2 0x10000000$' $t/sects3
+
+# ld-prime knows the initializer and terminator lists by their types,
+# as it does non-lazy pointers: a __DATA section of either type moves
+# to __DATA_CONST whatever its name (a regular __mod_term_func stays),
+# and -rename_section names it there.
+cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
+.section __DATA,__myterm,mod_term_funcs
+.p2align 3
+.quad _main
+.section __DATA,__myinit,mod_init_funcs
+.p2align 3
+.quad _main
+.section __DATA,__mod_term_func
+.p2align 3
+.quad 1
+.text
+.globl _main
+_main: ret
+.subsections_via_symbols
+EOF2
+$CC --ld-path=$mold -o $t/exe4 $t/c.o -Wl,-no_fixup_chains \
+  -Wl,-rename_section,__DATA_CONST,__myinit,__X,__init
+sects $t/exe4 > $t/sects4
+grep -q '^__DATA_CONST,__myterm 0x0000000a$' $t/sects4
+grep -q '^__X,__init 0x00000009$' $t/sects4
+grep -q '^__DATA,__mod_term_func 0x00000000$' $t/sects4
+$CC --ld-path=$mold -o $t/exe5 $t/c.o -Wl,-no_fixup_chains -Wl,-no_data_const
+sects $t/exe5 > $t/sects5
+grep -q '^__DATA,__myterm 0x0000000a$' $t/sects5
+grep -q '^__DATA,__myinit 0x00000009$' $t/sects5

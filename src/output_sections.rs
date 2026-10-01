@@ -378,18 +378,20 @@ impl SectionMap {
     /// -rename_segment: with -text_exec (an arm64 kext) every section
     /// of code - pure instructions, in any segment - moves into
     /// __TEXT_EXEC,__text, and data that needs no writes after fixups
-    /// to __DATA_CONST - as do the non-lazy symbol pointers of a
-    /// __DATA section of any name, which ld-prime knows by their type
-    /// (see output_section_flags).
+    /// to __DATA_CONST - as do the non-lazy symbol pointers and the
+    /// initializer and terminator lists of a __DATA section of any
+    /// name, which ld-prime knows by their types (see
+    /// output_section_flags).
     fn builtin_name(self, name: SectionName, flags: u32) -> SectionName {
         if self.text_exec && flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
             return ("__TEXT_EXEC", "__text");
         }
         if !is_standard_section(name.0, name.1, flags) {
-            if name.0 == "__DATA"
-                && flags & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS
-                && self.data_const
-            {
+            let is_const = matches!(
+                flags & SECTION_TYPE,
+                S_NON_LAZY_SYMBOL_POINTERS | S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS
+            );
+            if name.0 == "__DATA" && is_const && self.data_const {
                 return ("__DATA_CONST", name.1);
             }
             return name;
