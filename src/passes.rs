@@ -2013,6 +2013,29 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     true
 }
 
+/// The tentative definitions (common symbols) no definition replaced,
+/// in the order ld-prime lays them out: by the objects' symbol tables,
+/// each where the definition that won (the first of the largest) is.
+fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
+    let mut seen = hashbrown::HashSet::new();
+    let mut out = Vec::new();
+    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+        let r = obj.global_range();
+        for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            let sym = &ctx.symbols[id];
+            if nlist.is_common()
+                && sym.is_common()
+                && !sym.is_defined()
+                && nlist.n_value == sym.value
+                && seen.insert(id)
+            {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
 /// Converts surviving tentative definitions (common symbols) into real
 /// definitions in a synthetic __DATA,__common zero-fill section.
 pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
@@ -2034,11 +2057,8 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
                 })
         })
         .map(|i| i as u32);
-    for i in 0..ctx.symbols.syms.len() {
+    for i in common_symbols_in_order(ctx) {
         let sym = &ctx.symbols[i];
-        if !sym.is_common() || sym.is_defined() {
-            continue;
-        }
         let size = sym.value;
         // An alignment the object gave (.comm's third operand) is kept;
         // without one, ld64 aligns the symbol to its size rounded up to
