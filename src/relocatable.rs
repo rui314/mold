@@ -437,20 +437,24 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     }
     drop(t);
 
-    // After the contents: the relocations, the merged sections' in
-    // output order, then the synthetic sections', and then data in
-    // code, hints, symbols and strings.
+    // After the contents: the relocations, section by section in output
+    // order (x86-64's __eh_frame among the merged ones), and then data
+    // in code, hints, symbols and strings.
     let mut off = align_to(content_end, 8);
     let mut place = |size: usize| {
         off += size as u64;
         off - size as u64
     };
     let mut reloff = vec![0; ctx.output_sections.len()];
-    for &osec in &merged {
-        reloff[osec.index()] = place(relocs[osec.index()].len() * size_of::<MachRel>());
-    }
-    for sec in &mut synthetic {
-        sec.reloff = place(sec.relocs.len() * size_of::<MachRel>());
+    for &s in &sects {
+        match s {
+            Sect::Merged(i) => {
+                reloff[i.index()] = place(relocs[i.index()].len() * size_of::<MachRel>());
+            }
+            Sect::Synthetic(i) => {
+                synthetic[i].reloff = place(synthetic[i].relocs.len() * size_of::<MachRel>());
+            }
+        }
     }
     let layout = FileLayout {
         vmsize,
