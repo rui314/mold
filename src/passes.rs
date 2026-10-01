@@ -2852,11 +2852,19 @@ fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input
 /// ld-prime's diagnostics for static initializers: a warning for each
 /// in a dylib bound for the dyld shared cache, where every process
 /// would run it, unless -no_warn_inits; with -no_inits, an error listing
-/// them all.
+/// them all. A build for profiling has initializers by design: an
+/// object with an __llvm_prf_ section (clang's -fprofile-instr-generate
+/// counters and records) turns both off.
 pub fn check_initializers<E: Target>(ctx: &Context<E>) {
     let args = &ctx.args;
     let warn = args.shared_region && args.output_type == MH_DYLIB && !args.no_warn_inits;
     if !warn && !args.no_inits {
+        return;
+    }
+    let profiling = |obj: &input_files::ObjectFile| {
+        obj.sect_hdrs.iter().any(|hdr| hdr.sectname().starts_with("__llvm_prf_"))
+    };
+    if ctx.objs.iter().any(|obj| obj.is_alive && profiling(obj)) {
         return;
     }
     let inits = initializers(ctx);

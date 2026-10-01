@@ -85,3 +85,13 @@ $CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-add_split_seg_info -Wl,-n
 not grep -q 'static initializer' $t/log
 not $CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o -Wl,-no_inits 2> $t/log
 grep -q 'Static initializers:' $t/log
+
+# A build for profiling, which an object's __llvm_prf_ section tells,
+# has initializers by design: ld-prime checks none.
+cat <<EOF | $CC -o $t/prf.o -c -xassembler -
+.section __DATA,__llvm_prf_cnts
+.quad 0
+EOF
+$CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o $t/prf.o -Wl,-add_split_seg_info 2> $t/log
+not grep -q 'static initializer' $t/log
+$CXX --ld-path=$mold -shared -o $t/g.dylib $t/g.o $t/prf.o -Wl,-no_inits
