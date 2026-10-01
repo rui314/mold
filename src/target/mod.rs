@@ -170,8 +170,10 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const STUB_HELPER_ENTRY_PADDING: u64;
     /// The compact unwind encoding mode meaning "use DWARF instead".
     const UNWIND_MODE_DWARF: u32;
-    /// The size of one __objc_stubs entry.
+    /// The size of one __objc_stubs entry, and of one under
+    /// -objc_stubs_small (see Args::objc_stubs_small).
     const OBJC_STUB_SIZE: u64;
+    const OBJC_SMALL_STUB_SIZE: u64;
     /// The alignment of __lazy_helpers, and whether a symbol's call
     /// helper goes through a __lazy_load_got slot of its own, apart
     /// from the one its GOT loads read (ld-prime's x86-64 ones do).

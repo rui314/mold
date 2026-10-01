@@ -675,6 +675,12 @@ pub struct Args {
     /// -dyld_env: DYLD_xxx=value settings dyld applies as it launches a
     /// main executable (LC_DYLD_ENVIRONMENT), as given.
     pub dyld_envs: Vec<Vec<u8>>,
+    /// -objc_stubs_small: an arm64 _objc_msgSend$<selector> stub loads
+    /// its selector and branches to _objc_msgSend (through its __stubs
+    /// entry, if imported) instead of loading _objc_msgSend from a GOT
+    /// slot of its own (-objc_stubs_fast, the default). ld-prime makes
+    /// x86-64's stubs the same either way.
+    pub objc_stubs_small: bool,
 }
 
 impl Default for Args {
@@ -835,6 +841,7 @@ impl Default for Args {
             make_mergeable: false,
             add_mergeable_debug_hook: false,
             dyld_envs: Vec::new(),
+            objc_stubs_small: false,
         }
     }
 }
@@ -1677,6 +1684,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut x86_64_layout_emulation = false;
     let mut target_triple: Option<&str> = None;
     let mut incompatible_platforms: Option<(u32, u32)> = None;
+    let mut objc_stubs_small: Option<bool> = None;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
 
@@ -2598,6 +2606,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 next_arg(&mut i, name);
             }
 
+            b"-objc_stubs_fast" => objc_stubs_small = Some(false),
+            b"-objc_stubs_small" => objc_stubs_small = Some(true),
+
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
                     .iter()
@@ -2924,8 +2935,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
+    args.objc_stubs_small = objc_stubs_small == Some(true);
     resolve_shared_region(target, &mut args);
     args.unaligned_pointers = resolve_unaligned_pointers(target, &args, unaligned_pointers);
+    args.objc_stubs_small &= target.name == "arm64";
     args.warn_unused_dylibs =
         warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = data_const.unwrap_or_else(|| default_data_const(&args, pie));
@@ -2971,9 +2984,10 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
 /// image records its references between sections
 /// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
 /// optimization hints); it may not look symbols up dynamically, since
-/// the cache builder binds every one to the dylib that exports it; and
-/// ld-prime warns about run paths, which an OS library must not need.
-/// (A flat namespace it refuses earlier: check_dylib_use.)
+/// the cache builder binds every one to the dylib that exports it; nor
+/// may it have small objc stubs, on either architecture; and ld-prime
+/// warns about run paths, which an OS library must not need. (A flat
+/// namespace it refuses earlier: check_dylib_use.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     args.shared_region = shared_region_eligible(target, args);
     if !args.shared_region {
@@ -2985,6 +2999,9 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
             "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
              LD_RUNPATH_SEARCH_PATHS)"
         );
+    }
+    if args.objc_stubs_small {
+        fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
     }
     // (A kext looks up every import.)
     if (args.undefined_dynamic_lookup || !args.allowed_undefined.is_empty()) && !args.is_kext() {

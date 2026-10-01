@@ -531,7 +531,7 @@ impl<E: Target> Context<E> {
                     self.isec_addr(isec) + sym.value
                 } else if self.sym_aux(id).objc_stub_idx != crate::symbol::NO_IDX {
                     self.objc_stubs.hdr.addr
-                        + self.sym_aux(id).objc_stub_idx as u64 * E::OBJC_STUB_SIZE
+                        + self.sym_aux(id).objc_stub_idx as u64 * self.objc_stub_size()
                 } else {
                     sym.value
                 }
@@ -553,6 +553,11 @@ impl<E: Target> Context<E> {
                 }
             }
         }
+    }
+
+    /// The size of one __objc_stubs entry.
+    pub fn objc_stub_size(&self) -> u64 {
+        if self.args.objc_stubs_small { E::OBJC_SMALL_STUB_SIZE } else { E::OBJC_STUB_SIZE }
     }
 
     /// Returns the address of a symbol's __stubs entry.

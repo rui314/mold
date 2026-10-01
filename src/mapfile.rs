@@ -666,9 +666,9 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
 
     let objc_stubs = &ctx.objc_stubs;
     for (i, &(sym, _)) in objc_stubs.symbols.iter().enumerate() {
-        let addr = objc_stubs.hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
+        let addr = objc_stubs.hdr.addr + i as u64 * ctx.objc_stub_size();
         let name = name(ctx.symbols[sym].name());
-        entries.push(MapEntry { addr, size: E::OBJC_STUB_SIZE, file: 0, name });
+        entries.push(MapEntry { addr, size: ctx.objc_stub_size(), file: 0, name });
     }
     if objc_stubs.selrefs.is_some() {
         for i in 0..objc_stubs.symbols.len() + objc_stubs.extra_selrefs.len() {

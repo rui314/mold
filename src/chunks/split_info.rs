@@ -231,7 +231,7 @@ impl<'a, E: Target> Places<'a, E> {
                     Some(
                         self.chunk(
                             ChunkId::ObjcStubs,
-                            aux.objc_stub_idx as u64 * E::OBJC_STUB_SIZE,
+                            aux.objc_stub_idx as u64 * ctx.objc_stub_size(),
                         ),
                     )
                 } else if ctx.is_internal(obj as usize) {
@@ -576,7 +576,7 @@ impl<'a, E: Target> Places<'a, E> {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
             let msgsend_slot = self.got_index(stubs.msgsend_got_idx as usize);
             for i in 0..stubs.symbols.len() {
-                let at = i as u64 * E::OBJC_STUB_SIZE;
+                let at = i as u64 * ctx.objc_stub_size();
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + msgsend), Some(msgsend_slot));
             }

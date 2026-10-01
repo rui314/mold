@@ -1176,10 +1176,13 @@ fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
 /// known here.
 fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if !ctx.objc_stubs.symbols.is_empty() {
-        ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * E::OBJC_STUB_SIZE;
-        // 32-byte stubs on arm64; ld-prime leaves x86-64's byte-aligned.
+        ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * ctx.objc_stub_size();
+        // 32-byte stubs on arm64, small ones word-aligned; ld-prime
+        // leaves x86-64's byte-aligned.
         if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
             ctx.objc_stubs.hdr.p2align = 0;
+        } else if ctx.args.objc_stubs_small {
+            ctx.objc_stubs.hdr.p2align = 2;
         }
         ctx.chunks.push(ChunkId::ObjcStubs);
     }

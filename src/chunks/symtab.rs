@@ -806,7 +806,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
     // NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
     let hdr = &ctx.objc_stubs.hdr;
     for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
-        let addr = hdr.addr + i as u64 * E::OBJC_STUB_SIZE;
+        let addr = hdr.addr + i as u64 * ctx.objc_stub_size();
         let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(hdr.n_sect, addr) };
         ents.push((addr, RANK_PEXT, ctx.symbols[sym].name().as_bytes(), ent, None));
     }

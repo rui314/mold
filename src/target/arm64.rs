@@ -946,6 +946,7 @@ impl Target for Arm64 {
     const STUB_HELPER_ENTRY_PADDING: u64 = 0;
     const UNWIND_MODE_DWARF: u32 = UNWIND_ARM64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 32;
+    const OBJC_SMALL_STUB_SIZE: u64 = 12;
     const LAZY_HELPERS_P2ALIGN: u32 = 2;
     const LAZY_CALL_OWN_SLOT: bool = false;
     const DELAY_STUB_SIZE: u64 = 40;
@@ -1085,8 +1086,24 @@ impl Target for Arm64 {
     }
 
     fn write_objc_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let msgsend_got = ctx.objc_msgsend_got_addr();
+        if ctx.args.objc_stubs_small {
+            let msgsend = ctx.branch_target_addr(ctx.objc_stubs.msgsend_sym.unwrap());
+            for i in 0..ctx.objc_stubs.symbols.len() {
+                let ent = &mut buf[i * 12..];
+                let ent_addr = addr + i as u64 * 12;
+                let sel_addr = ctx.objc_selref_addr(i);
 
+                // adrp x1, sel@PAGE; ldr x1, [x1, sel@PAGEOFF]
+                // b _objc_msgSend
+                write32(&mut ent[0..], 0x9000_0001 | page_offset(sel_addr, ent_addr));
+                write32(&mut ent[4..], 0xf940_0021 | (bits(sel_addr, 11, 3) as u32) << 10);
+                let disp = msgsend.wrapping_sub(ent_addr + 8);
+                write32(&mut ent[8..], 0x1400_0000 | (disp >> 2) as u32 & B_IMM);
+            }
+            return;
+        }
+
+        let msgsend_got = ctx.objc_msgsend_got_addr();
         for i in 0..ctx.objc_stubs.symbols.len() {
             let ent = &mut buf[i * 32..];
             let ent_addr = addr + i as u64 * 32;

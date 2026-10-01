@@ -4019,31 +4019,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         }
 
         match class {
-            // A call to a symbol dyld resolves by weak lookup - one of
-            // this image's own coalescable weak definitions, or a
-            // dylib's weak export - goes through a stub and a GOT slot,
-            // never a lazy pointer, as ld64 does.
-            RelocClass::Branch if ctx.binds_weak_lookup(id) => {
-                add_stub(ctx, id);
-                add_got(ctx, id);
-            }
-            // An x86-64 kext calls an import directly, unless
-            // -kexts_use_stubs: kmutil fills in the call by an external
-            // relocation, or the stub's GOT slot.
-            RelocClass::Branch
-                if ctx.args.is_kext()
-                    && E::CPUTYPE == CPU_TYPE_X86_64
-                    && !ctx.args.kexts_use_stubs => {}
-            RelocClass::Branch if ctx.binds_as_import(id) => {
-                // A stub jumps through the symbol's lazy pointer, or,
-                // without lazy binding, its GOT slot.
-                add_stub(ctx, id);
-                if ctx.args.lazy_binding {
-                    ensure_stub_binder(ctx);
-                } else {
-                    add_got(ctx, id);
-                }
-            }
+            RelocClass::Branch => add_branch_target(ctx, id),
             RelocClass::Got => add_got(ctx, id),
             RelocClass::GotLoad if !ctx.can_relax_got(id) => add_got(ctx, id),
             // A TLV load relaxes to the descriptor's address like a GOT
@@ -4053,6 +4029,35 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             // in ld-prime (no __thread_ptrs section, chained or classic).
             RelocClass::Tlv if !ctx.can_relax_got(id) => add_got(ctx, id),
             _ => {}
+        }
+    }
+}
+
+/// Gives a symbol a call reaches what the call goes through.
+pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
+    // A call to a symbol dyld resolves by weak lookup - one of this
+    // image's own coalescable weak definitions, or a dylib's weak
+    // export - goes through a stub and a GOT slot, never a lazy
+    // pointer, as ld64 does.
+    if ctx.binds_weak_lookup(id) {
+        add_stub(ctx, id);
+        add_got(ctx, id);
+        return;
+    }
+    // An x86-64 kext calls an import directly, unless -kexts_use_stubs:
+    // kmutil fills in the call by an external relocation, or the stub's
+    // GOT slot.
+    if ctx.args.is_kext() && E::CPUTYPE == CPU_TYPE_X86_64 && !ctx.args.kexts_use_stubs {
+        return;
+    }
+    if ctx.binds_as_import(id) {
+        // A stub jumps through the symbol's lazy pointer, or, without
+        // lazy binding, its GOT slot.
+        add_stub(ctx, id);
+        if ctx.args.lazy_binding {
+            ensure_stub_binder(ctx);
+        } else {
+            add_got(ctx, id);
         }
     }
 }

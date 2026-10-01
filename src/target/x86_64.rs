@@ -199,6 +199,8 @@ impl Target for X86_64 {
     const STUB_HELPER_ENTRY_PADDING: u64 = 2;
     const UNWIND_MODE_DWARF: u32 = UNWIND_X86_64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 13;
+    // ld-prime has no small form of x86-64's.
+    const OBJC_SMALL_STUB_SIZE: u64 = 13;
     const LAZY_HELPERS_P2ALIGN: u32 = 0;
     const LAZY_CALL_OWN_SLOT: bool = true;
     const DELAY_STUB_SIZE: u64 = 25;
