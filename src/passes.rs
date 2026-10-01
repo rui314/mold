@@ -4263,7 +4263,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     if ctx.args.preload {
         ctx.mach_header.hdr.addr = ctx.image_base();
         ctx.mach_header.hdr.size = mach_header_size(ctx);
-        fileoff = align_to(ctx.mach_header.hdr.size, ctx.segment_align());
+        fileoff = align_to(ctx.mach_header.hdr.size, ctx.args.segment_align);
     }
     // The other segments follow the header's (or the image base), each
     // on its first section's alignment where that exceeds a page (only
@@ -4306,7 +4306,7 @@ fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static str> {
 /// the file: its -seg_page_size, else the page.
 fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
     let sizes = &ctx.args.seg_page_sizes;
-    sizes.iter().find(|(name, _)| name == segname).map_or(ctx.segment_align(), |&(_, size)| size)
+    sizes.iter().find(|(name, _)| name == segname).map_or(ctx.args.segment_align, |&(_, size)| size)
 }
 
 /// The room a segment takes from the segments after it: its size up to
@@ -4321,7 +4321,7 @@ fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
 /// alignment if greater.
 fn segment_start_align<E: Target>(ctx: &Context<E>, seg_idx: usize) -> u64 {
     let first = ctx.segments[seg_idx].chunks.first().map_or(0, |&id| ctx.chunk_header(id).p2align);
-    ctx.segment_align().max(1 << first)
+    ctx.args.segment_align.max(1 << first)
 }
 
 /// __unwind_info is encoded as __TEXT is laid out, when only __TEXT's
@@ -4357,7 +4357,7 @@ fn layout_segment<E: Target>(
     fileoff: u64,
     vmaddr: u64,
 ) -> u64 {
-    let page = ctx.segment_align();
+    let page = ctx.args.segment_align;
     if ctx.segments[seg_idx].name == "__PAGEZERO" {
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = 0;
@@ -4714,7 +4714,7 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
             .collect();
         let size = ctx.segments[linkedit].cmd.vmsize;
         let base = ctx.image_base();
-        lowest_free_span(base, base, size, ctx.segment_align(), &used).start
+        lowest_free_span(base, base, size, ctx.args.segment_align, &used).start
     };
     move_segment(ctx, linkedit, addr);
 }

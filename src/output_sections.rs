@@ -1025,7 +1025,7 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
 /// lay_out_segments).
 fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     let capped = !ctx.args.relocatable && !ctx.args.static_link;
-    let max = ctx.segment_align().max(1).trailing_zeros();
+    let max = ctx.args.segment_align.max(1).trailing_zeros();
     for id in ctx.chunks.clone() {
         let hdr = ctx.chunk_header(id);
         if !hdr.is_sect {

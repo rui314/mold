@@ -301,7 +301,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
 /// refuses any other with fixups), an x86-64 image's in 4 KiB pages
 /// whatever its segment alignment.
 fn chain_page_size<E: Target>(ctx: &Context<E>) -> u64 {
-    if E::CPUTYPE == CPU_TYPE_X86_64 { 0x1000 } else { ctx.segment_align() }
+    if E::CPUTYPE == CPU_TYPE_X86_64 { 0x1000 } else { ctx.args.segment_align }
 }
 
 /// Writes the fixup chains into the copied output: every fixup word is

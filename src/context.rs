@@ -393,12 +393,6 @@ impl<E: Target> Context<E> {
         self.args.image_base.unwrap_or(self.args.pagezero_size)
     }
 
-    /// The boundary segments start and end on, in memory and in the
-    /// file (see Args::segment_align).
-    pub fn segment_align(&self) -> u64 {
-        self.args.segment_align
-    }
-
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes: it is laid out for them, and
     /// no unaligned pointer turned an x86-64 image's to classic dyld
