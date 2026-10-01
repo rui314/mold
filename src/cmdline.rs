@@ -928,10 +928,21 @@ fn symbol_list(text: &str) -> Vec<String> {
 }
 
 /// ld64 numeric option arguments are hexadecimal, read as strtoull()
-/// reads them: after white space and a sign, with or without a 0x
-/// prefix. One too big is the largest there is, and a negative one
-/// wraps around; anything left over makes it no number.
+/// reads them (see parse_unsigned), with or without a 0x prefix.
 fn hex_number(val: &str) -> Option<u64> {
+    parse_unsigned(val, 16)
+}
+
+/// The decimal arguments of the options ld64 reads with strtoul().
+fn decimal_number(val: &str) -> Option<u64> {
+    parse_unsigned(val, 10)
+}
+
+/// A number as strtoull() reads it in base 10 or 16: after white space
+/// and a sign, in hexadecimal with or without a 0x prefix. One too big
+/// is the largest there is, and a negative one wraps around; anything
+/// left over makes it no number.
+fn parse_unsigned(val: &str, radix: u32) -> Option<u64> {
     let val = val.trim_start_matches(|c: char| c.is_ascii() && is_space(c as u8));
     let (negative, val) = match val.as_bytes().first() {
         Some(b'-') => (true, &val[1..]),
@@ -940,13 +951,13 @@ fn hex_number(val: &str) -> Option<u64> {
     };
     // "0x" is a prefix only before a digit: alone, it is a 0 and an x.
     let digits = match val.strip_prefix("0x").or_else(|| val.strip_prefix("0X")) {
-        Some(rest) if rest.starts_with(|c: char| c.is_ascii_hexdigit()) => rest,
+        Some(rest) if radix == 16 && rest.starts_with(|c: char| c.is_ascii_hexdigit()) => rest,
         _ => val,
     };
-    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
         return None;
     }
-    let num = u64::from_str_radix(digits, 16).unwrap_or(u64::MAX);
+    let num = u64::from_str_radix(digits, radix).unwrap_or(u64::MAX);
     Some(if negative && num != u64::MAX { num.wrapping_neg() } else { num })
 }
 
@@ -1203,7 +1214,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-ios_version_min"
         | "-maccatalyst_version_min"
         | "-objc_abi_version" => "missing <version>",
-        "-mllvm" => "missing <value>",
+        "-mllvm" | "-max_code_deduplicate_passes" => "missing <value>",
+        "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
         "-undefined" => "missing <dynamic_lookup>",
         "-read_only_relocs" => "missing <option>",
         "-target" => "missing <target-triple>",
@@ -1255,6 +1267,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut read_only_relocs: Option<bool> = None;
     let mut headerpad: Option<u64> = None;
     let mut threaded_starts = false;
+    let mut x86_64_layout_emulation = false;
     let mut target_triple: Option<&str> = None;
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut warnings = OptionWarnings::default();
@@ -1796,6 +1809,40 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-allowable_client" => args.allowable_clients.push(bytes(next_arg(&mut i, name))),
             b"-client_name" => args.client_name = Some(bytes(next_arg(&mut i, name))),
             b"-t" => args.trace = true,
+            // ld-prime's reports on its own workings that mold does not
+            // give: the branch islands it inserts, the order file
+            // entries that match nothing, the libraries that re-exports
+            // load (or one of them), the section each symbol goes to
+            // (on stdout, or into a file), a snapshot of the link to
+            // replay it from (in /tmp unless -snapshot_dir says; a
+            // replay passes -no_snapshot not to take another), the atom
+            // graph for Graphviz, the files the link read and the
+            // symbols it took from each, for Apple's build system, and
+            // its output compared to a reference one. -arch_multiple
+            // once named the architecture in ld64's messages, for a link
+            // that is one of several.
+            b"-verbose_branch_islands"
+            | b"-order_file_statistics"
+            | b"-trace_implicit_libraries"
+            | b"-trace_symbol_layout"
+            | b"-no_snapshot"
+            | b"-arch_multiple" => {}
+            b"-trace_implicit_library"
+            | b"-trace_symbol_layout_file"
+            | b"-snapshot_dir"
+            | b"-dot"
+            | b"-trace_file"
+            | b"-trace_file_shared_cache"
+            | b"-trace_symbols_file"
+            | b"-reference_output" => {
+                next_arg(&mut i, name);
+            }
+            // mold never warns about an __eh_frame too large for compact
+            // unwind entries to point into.
+            b"-no_warn_eh_frame_too_large" => {}
+            // ld-prime ignores this with a warning for another target
+            // than arm64, and changes nothing seen in an arm64 image.
+            b"-x86_64_layout_emulation" => x86_64_layout_emulation = true,
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
@@ -1939,6 +1986,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_branch_islands" => args.no_branch_islands = true,
             b"-no_deduplicate" => args.deduplicate = false,
             b"-verbose_deduplicate" => args.verbose_deduplicate = true,
+            // ld-prime folds identical functions in passes, each folding
+            // the callers of those the one before folded, up to this
+            // many (none limits it); mold folds them in one go.
+            b"-max_code_deduplicate_passes" => {
+                if decimal_number(text(name, next_arg(&mut i, name))).is_none() {
+                    fatal!("invalid argument for -max_code_deduplicate_passes");
+                }
+            }
             b"-function_starts" => function_starts = Some(true),
             b"-add_source_version" => source_version = Some(true),
             b"-no_source_version" => source_version = Some(false),
@@ -2072,6 +2127,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.library_paths.push(PathBuf::from(os_str(dir)));
                 } else if let Some(dir) = raw.strip_prefix(b"-F") {
                     args.framework_paths.push(PathBuf::from(os_str(dir)));
+                } else if let Some(mode) = raw.strip_prefix(b"-debug_snapshot") {
+                    // A link snapshot (see -snapshot_dir) in a mode
+                    // after the name, or after a '='.
+                    let mode = mode.strip_prefix(b"=").unwrap_or(mode);
+                    if !matches!(mode, b"" | b"minimal") {
+                        fatal!("unknown debug snapshot mode: {}", display(mode));
+                    }
                 } else if raw.starts_with(b"-O") {
                     // An optimization level, which clang passes on from
                     // its own command line (-O2, -Ofast, -Og, ...).
@@ -2284,6 +2346,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     }
     if args.add_mergeable_debug_hook && args.output_type != MH_DYLIB {
         fatal!("-add_mergeable_debug_hook can only be used with -dylib");
+    }
+    if x86_64_layout_emulation && target.name != "arm64" {
+        crate::warn!(
+            "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
+        );
     }
     warn_platform_options(target, &args, read_only_relocs.is_some());
     args.segment_align = resolve_segment_align(target, &args, segalign);
