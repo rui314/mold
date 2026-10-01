@@ -56,3 +56,12 @@ $t/exe3
 nm -m $t/exe3 | grep ' _helper$' > $t/nm3
 [ "$(grep -c . $t/nm3)" = 2 ]
 grep -q 'non-external (was a private external) _helper$' $t/nm3
+
+# The name of the private extern is listed for a local only if the
+# first local to fold into it has it: here _other comes first.
+$CC --ld-path=$mold -o $t/exe4 $t/main.o $t/a4.o $t/a3.o $t/a1.o $t/a2.o -Wl,-deduplicate
+$t/exe4
+nm -m $t/exe4 > $t/nm4
+[ "$(grep -c ' _helper$' $t/nm4)" = 1 ]
+grep -q 'non-external (was a private external) _helper$' $t/nm4
+grep -q ' _other$' $t/nm4

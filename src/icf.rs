@@ -363,12 +363,15 @@ fn atom_names<E: Target>(
 
 /// The symbols naming the atoms of folded functions, each with whether
 /// ld-prime drops it. It gives a folded function an alias atom of its
-/// own named as the function's atom was (file 0's in -map), but of the
-/// name of the function it folded into it lists only the one of each
-/// scope, local or private extern, in the symbol table - so a name that
-/// functions of internal linkage share across objects (an inline
-/// function's .cold.1 part) is there once. `folded` pairs each folded
-/// subsection, in input order, with the one it folded into.
+/// own named as the function's atom was (file 0's in -map), but one
+/// named as the function it folded into is listed in the symbol table
+/// only if it is the first function of its scope, local or private
+/// extern, to fold into that one, and of another scope than that one's.
+/// So a name that functions of internal linkage share across objects
+/// (an inline function's .cold.1 part) is there once at most, and not
+/// at all after a local of another name folded in first. `folded`
+/// pairs each folded subsection, in input order, with the one it folded
+/// into.
 fn folded_atom_names<E: Target>(
     ctx: &Context<E>,
     folded: &[(usize, usize)],
@@ -390,13 +393,15 @@ fn folded_atom_names<E: Target>(
         .collect();
 
     let scoped = |id: SymbolId| (ctx.symbols[id].name(), ctx.symbols[id].is_extern());
-    let mut listed = hashbrown::HashSet::new();
+    // The scopes of the functions folded into each so far.
+    let mut seen = hashbrown::HashSet::new();
     let mut out = hashbrown::HashMap::new();
     for &(member, leader) in folded {
         let Some(&id) = names.get(&(member as u32)) else { continue };
+        let first = seen.insert((leader, scoped(id).1));
         let dropped = names.get(&(leader as u32)).is_some_and(|&l| {
             let (a, b) = (scoped(id), scoped(l));
-            a.0 == b.0 && (a == b || !listed.insert((leader, a)))
+            a.0 == b.0 && (a == b || !first)
         });
         out.insert(id, dropped);
     }
