@@ -89,12 +89,61 @@ fn release_parallel() {
 }
 
 /// Reports an unrecoverable error and exits, giving the messages held
-/// back first.
+/// back first. Reading the input files, it is one more of their errors
+/// (see hold_input_errors).
 pub fn fatal(msg: fmt::Arguments) -> ! {
     release_held();
     release_layout_error();
-    emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
+    if hold_input_error(msg) {
+        report_input_errors();
+    } else {
+        emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
+    }
     exit_after_cleanup(1);
+}
+
+/// The errors in the input files found so far while they are read, and
+/// whether each came from a worker thread (see hold_input_errors).
+static INPUT_ERRORS: Mutex<Option<Vec<(bool, String)>>> = Mutex::new(None);
+
+/// Holds back the errors from here on, as ld-prime does those it finds
+/// in the input files as it reads them all (in parallel), until
+/// report_input_errors gives them.
+pub fn hold_input_errors() {
+    *INPUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
+}
+
+/// Holds back an error in an input file, if they are held. Returns
+/// whether it did.
+fn hold_input_error(msg: fmt::Arguments) -> bool {
+    let mut held = INPUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(errors) = held.as_mut() else { return false };
+    errors.push((rayon::current_thread_index().is_some(), msg.to_string()));
+    true
+}
+
+/// Gives the errors held back reading the input files as ld-prime does:
+/// one alone, several in one line, "multiple errors: A; B". ld-prime
+/// lists them in whatever order its threads found them; here those
+/// found reading the files in turn come first, in that order, then
+/// those found parsing them in parallel, sorted.
+pub fn report_input_errors() {
+    let held = INPUT_ERRORS.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let Some(mut errors) = held else { return };
+    errors.sort_by(|(p1, m1), (p2, m2)| match (p1, p2) {
+        (true, true) => m1.cmp(m2),
+        _ => p1.cmp(p2),
+    });
+    let msgs: Vec<String> = errors.into_iter().map(|(_, msg)| msg).collect();
+    match msgs.as_slice() {
+        [] => {}
+        [one] => emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{one}")),
+        _ => emit(
+            "mold: error: ",
+            "mold: \x1b[0;1;31merror:\x1b[0m ",
+            format_args!("multiple errors: {}", msgs.join("; ")),
+        ),
+    }
 }
 
 /// A message held back: a warning, or a notice printed bare.
@@ -130,9 +179,12 @@ pub fn drop_held() {
     HELD.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
-/// Reports an error.
+/// Reports an error (or holds it back with the others in the input
+/// files, see hold_input_errors).
 pub fn error(msg: fmt::Arguments) {
-    emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
+    if !hold_input_error(msg) {
+        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
+    }
     HAS_ERROR.store(true, Ordering::Relaxed);
 }
 
