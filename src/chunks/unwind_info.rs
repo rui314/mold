@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::UnwindRecord;
+use crate::input_sections::InputSection;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -402,27 +403,119 @@ pub(crate) fn function_lsda<E: Target>(
 /// that it does not fall under the unwind rules of the function before
 /// it - an empty atom too, such as the empty __text of an object with
 /// only data.
-fn bare_code_records<E: Target>(
-    ctx: &Context<E>,
-    records: &[crate::input_files::UnwindRecord],
-) -> Vec<crate::input_files::UnwindRecord> {
-    use crate::input_files::{UNWIND_NONE, UnwindRecord};
-    let covered: std::collections::HashSet<u32> =
-        records.iter().filter(|r| r.input_offset == 0).map(|r| r.isec).collect();
+///
+/// A record anywhere in an atom is the atom's: its start then gets no
+/// entry, and the code ahead of the record falls under the entry
+/// before. An alternate entry point starts an atom of its own here, so
+/// a record at one is not the subsection's. Without
+/// MH_SUBSECTIONS_VIA_SYMBOLS a section is one subsection, but ld-prime
+/// still cuts it into atoms at its labels (see unsplit_bare_atoms).
+fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<UnwindRecord> {
+    use crate::input_files::UNWIND_NONE;
+    use std::collections::HashMap;
+
+    // Where each subsection's first record is, and for a section of an
+    // object without subsections, where each of its records is.
+    let mut first: HashMap<u32, u32> = HashMap::new();
+    let mut unsplit: HashMap<u32, Vec<u32>> = HashMap::new();
+    for rec in records {
+        let off = first.entry(rec.isec).or_insert(rec.input_offset);
+        *off = (*off).min(rec.input_offset);
+        if !ctx.objs[ctx.isecs[rec.isec as usize].file as usize].subsections_via_symbols {
+            unsplit.entry(rec.isec).or_default().push(rec.input_offset);
+        }
+    }
+
     ctx.isecs
         .par_iter()
         .enumerate()
-        .filter(|&(i, isec)| is_code_atom(ctx, isec) && !covered.contains(&(i as u32)))
-        .map(|(i, isec)| UnwindRecord {
-            isec: i as u32,
-            input_offset: 0,
-            code_len: isec.size,
-            encoding: 0,
-            personality_sym: UNWIND_NONE,
-            lsda_isec: UNWIND_NONE,
-            lsda_off: 0,
-            fde_idx: UNWIND_NONE,
+        .filter(|&(_, isec)| is_code_atom(ctx, isec))
+        .flat_map_iter(|(i, isec)| {
+            let i = i as u32;
+            let obj = &ctx.objs[isec.file as usize];
+            let atoms = if obj.subsections_via_symbols {
+                let bare = match first.get(&i) {
+                    None => true,
+                    Some(0) => false,
+                    Some(&off) => first_alt_entry(obj, isec) <= off,
+                };
+                if bare { vec![(0, isec.size)] } else { Vec::new() }
+            } else {
+                unsplit_bare_atoms(obj, isec, unsplit.get(&i).map_or(&[], Vec::as_slice))
+            };
+            atoms.into_iter().map(move |(off, size)| UnwindRecord {
+                isec: i,
+                input_offset: off,
+                code_len: size,
+                encoding: 0,
+                personality_sym: UNWIND_NONE,
+                lsda_isec: UNWIND_NONE,
+                lsda_off: 0,
+                fde_idx: UNWIND_NONE,
+            })
         })
+        .collect()
+}
+
+/// The offset of the first alternate entry point (N_ALT_ENTRY) inside
+/// a subsection, or u32::MAX if it has none.
+fn first_alt_entry(obj: &crate::input_files::ObjectFile, isec: &InputSection) -> u32 {
+    let lo = isec.input_addr as u64;
+    obj.nlists
+        .iter()
+        .filter(|n| {
+            !n.is_stab()
+                && n.n_type() == N_SECT
+                && n.n_desc & N_ALT_ENTRY != 0
+                && n.n_sect as u32 == isec.shndx + 1
+                && lo < n.n_value
+                && n.n_value < lo + isec.size as u64
+        })
+        .map(|n| (n.n_value - lo) as u32)
+        .min()
+        .unwrap_or(u32::MAX)
+}
+
+/// The atoms, as (offset, size), that have none of the records at
+/// `records` (offsets) in a section of an object without
+/// MH_SUBSECTIONS_VIA_SYMBOLS. ld-prime cuts such a section into atoms
+/// at each label past its start, an alternate entry point's too, as if
+/// symbols split it: the labels at its start name its first atom, and
+/// of several labels at one place, all but the last name empty atoms
+/// (all do at its end). As it does with subsections, it goes by the
+/// labels alone: one inside a function the function's record spans by
+/// its length starts an atom of no unwind info all the same.
+fn unsplit_bare_atoms(
+    obj: &crate::input_files::ObjectFile,
+    isec: &InputSection,
+    records: &[u32],
+) -> Vec<(u32, u32)> {
+    let lo = isec.input_addr as u64;
+    let mut labels: Vec<u32> = obj
+        .nlists
+        .iter()
+        .filter(|n| {
+            !n.is_stab()
+                && n.n_type() == N_SECT
+                && n.n_sect as u32 == isec.shndx + 1
+                && lo < n.n_value
+                && n.n_value <= lo + isec.size as u64
+        })
+        .map(|n| (n.n_value - lo) as u32)
+        .collect();
+    labels.sort_unstable();
+    let mut records = records.to_vec();
+    records.sort_unstable();
+
+    let starts = std::iter::once(0).chain(labels.iter().copied());
+    let ends = labels.iter().copied().chain(std::iter::once(isec.size));
+    starts
+        .zip(ends)
+        .filter(|&(start, end)| {
+            let next = records[records.partition_point(|&off| off < start)..].first();
+            next.is_none_or(|&off| end <= off)
+        })
+        .map(|(start, end)| (start, end - start))
         .collect()
 }
 
