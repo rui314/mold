@@ -117,6 +117,9 @@ pub struct Context<E: Target> {
     /// Files already loaded, so a library named twice (command line
     /// plus auto-link) is read once.
     pub visited_files: std::collections::HashSet<std::path::PathBuf>,
+    /// Under -dependency_info, the files of the libraries loaded as
+    /// another's re-exports, as found (see load_reexports).
+    pub reexport_files: Vec<std::path::PathBuf>,
     /// The loaded libLTO, once a bitcode input has been seen.
     pub lto_plugin: Option<crate::lto::Plugin>,
     /// Bitcode modules registered for LTO.
@@ -277,6 +280,7 @@ impl<E: Target> Context<E> {
             lto_obj: None,
             lto_inputs: Vec::new(),
             visited_files: std::collections::HashSet::new(),
+            reexport_files: Vec::new(),
             processed_linker_options: std::collections::HashSet::new(),
             cmdline_linker_options: None,
             linker_option_warnings: Vec::new(),

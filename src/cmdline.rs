@@ -23,9 +23,14 @@ use crate::util::{display, os_str, page_align};
 /// number (Xcode 26.6 ships ld-1267).
 pub const LD64_COMPAT_VERSION: &str = "1267";
 
+/// The -v banner, which ld-prime also writes as its version in the
+/// -dependency_info file.
+pub const VERSION_BANNER: &str =
+    concat!("mold-macho ", env!("CARGO_PKG_VERSION"), " (compatible with Apple ld64)");
+
 /// Prints the -v banner on stderr, where ld-prime prints its own.
 pub fn print_version() {
-    eprintln!("mold-macho {} (compatible with Apple ld64)", env!("CARGO_PKG_VERSION"));
+    eprintln!("{VERSION_BANNER}");
 }
 
 /// Prints the -version_details JSON on stdout, as ld-prime does.
@@ -309,6 +314,8 @@ pub struct Args {
     pub map: Option<PathBuf>,
     /// -dependency_info: write Xcode's binary dependency listing.
     pub dependency_info: Option<PathBuf>,
+    /// The -filelist files, which the listing names among the inputs.
+    pub filelists: Vec<PathBuf>,
     /// -sdk_imports: Xcode's JSON report of imported APIs.
     pub sdk_imports: Option<PathBuf>,
     /// Whether the image is laid out for chained fixups rather than
@@ -790,6 +797,7 @@ impl Default for Args {
             compatibility_version: encode_version(0, 0, 0),
             map: None,
             dependency_info: None,
+            filelists: Vec::new(),
             sdk_imports: None,
             fixup_chains: false,
             no_fixup_chains: false,
@@ -1591,8 +1599,9 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
 
 /// Reads a -filelist file: one input path per line, in whatever bytes
 /// the file system uses, optionally under a directory given after a
-/// comma in the option's argument.
-fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
+/// comma in the option's argument. Returns the file's path and the
+/// paths.
+fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
     let (path, dir) = match memchr::memchr(b',', arg.as_bytes()) {
         Some(comma) => (
             Path::new(os_str(&arg.as_bytes()[..comma])),
@@ -1604,14 +1613,16 @@ fn read_filelist(arg: &OsStr) -> Vec<PathBuf> {
         let errno = crate::error::errno_text(&e);
         fatal!("-filelist file '{}' could not be opened, {errno}\n", path.display())
     });
-    text.split(|&b| b == b'\n')
+    let files = text
+        .split(|&b| b == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
         .filter(|line| !line.is_empty())
         .map(|line| match dir {
             Some(dir) => dir.join(os_str(line)),
             None => PathBuf::from(os_str(line)),
         })
-        .collect()
+        .collect();
+    (path.to_path_buf(), files)
 }
 
 /// What option parsing needs to know about the target: the driver
@@ -1962,8 +1973,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-make_mergeable" => args.make_mergeable = true,
             b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
             b"-filelist" => {
-                args.inputs
-                    .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
+                let (list, files) = read_filelist(next_arg(&mut i, name));
+                args.inputs.extend(files.into_iter().map(InputArg::File));
+                args.filelists.push(list);
             }
             b"-F" => args.framework_paths.push(path(next_arg(&mut i, name))),
             b"-execute" => {

@@ -77,14 +77,30 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
 }
 
 /// Writes the -dependency_info file: Xcode's incremental build system
-/// reads it to learn which files the link actually consumed. The
-/// format is binary: an opcode byte then a NUL-terminated string -
-/// 0x00 version, 0x10 input file, 0x11 file that was looked up but
-/// missing, 0x40 output file.
+/// reads it to learn which files the link consumed and wrote. The
+/// format is binary: an opcode byte then a NUL-terminated string - 0x00
+/// the linker's version (ld-prime's -v banner, newline and all), 0x10
+/// an input, 0x11 a file looked for and missing, 0x40 an output -, the
+/// entries sorted by opcode and then path, duplicates kept. The inputs
+/// are every file the command line names - objects, archives whether
+/// or not a member loads, dylibs whether or not -dead_strip_dylibs
+/// keeps them, the -bundle_loader -, the -filelist and -sectcreate
+/// files, the libraries auto-link options load, and twice each the
+/// libraries loaded only as another's re-exports (ld-prime records them
+/// as it finds them and as it loads them). The outputs are the image,
+/// the -map and the -sdk_imports file. A file is named as often as it
+/// is spelled differently, and a relative path resolved to the file's
+/// real path, where there is one: an output's, where a previous link
+/// wrote it.
 pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.dependency_info else {
         return;
     };
+    let mut entries: Vec<(u8, Vec<u8>)> = dependency_inputs(ctx);
+    let outputs = [Some(&ctx.args.output), ctx.args.map.as_ref(), ctx.args.sdk_imports.as_ref()];
+    entries.extend(outputs.into_iter().flatten().map(|path| (0x40, dependency_path(path))));
+    entries.sort();
+
     let Ok(file) = std::fs::File::create(path) else {
         crate::warn!("Could not open or create -dependency_info file: {}", path.display());
         return;
@@ -95,24 +111,59 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
         let _ = out.write_all(s);
         let _ = out.write_all(&[0]);
     };
+    emit(0x00, format!("{}\n", crate::cmdline::VERSION_BANNER).as_bytes());
+    for (op, path) in &entries {
+        emit(*op, path);
+    }
+}
 
-    emit(0x00, concat!("mold-macho ", env!("CARGO_PKG_VERSION")).as_bytes());
+/// The -dependency_info file's inputs (see write_dependency_info).
+fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
+    use crate::cmdline::InputArg;
     // The object LTO compiled is no input (a build system can't depend
     // on it), whatever -object_path_lto made of it.
-    let mut inputs: Vec<&Path> = ctx
+    let mut named: Vec<&Path> = ctx
         .objs
         .iter()
         .enumerate()
         .filter(|&(i, o)| o.is_alive && !ctx.is_internal(i) && ctx.lto_obj != Some(i))
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
-    inputs.extend(ctx.visited_files.iter().map(PathBuf::as_path));
-    inputs.sort_unstable();
-    inputs.dedup();
-    for name in inputs {
-        emit(0x10, path_bytes(name));
+    named.extend(ctx.visited_files.iter().map(PathBuf::as_path));
+    named.extend(ctx.args.inputs.iter().filter_map(|arg| match arg {
+        InputArg::BundleLoader(path) => Some(path.as_path()),
+        _ => None,
+    }));
+    named.extend(ctx.args.filelists.iter().map(PathBuf::as_path));
+    named.extend(ctx.args.sectcreate.iter().map(|(_, _, path)| path.as_path()));
+    // A fat file's slice is the file's.
+    let mut named: Vec<Vec<u8>> = named
+        .into_iter()
+        .map(|path| crate::input_files::without_fat_arch(path_bytes(path)))
+        .collect();
+    named.sort_unstable();
+    named.dedup();
+    let named: Vec<Vec<u8>> =
+        named.iter().map(|path| dependency_path(Path::new(crate::util::os_str(path)))).collect();
+
+    let mut reexports: Vec<Vec<u8>> =
+        ctx.reexport_files.iter().map(|path| dependency_path(path)).collect();
+    reexports.sort_unstable();
+    reexports.dedup();
+    reexports.retain(|path| !named.contains(path));
+    let reexports = reexports.into_iter().flat_map(|path| [path.clone(), path]);
+    named.into_iter().chain(reexports).map(|path| (0x10, path)).collect()
+}
+
+/// A path as the -dependency_info file has it: a relative one resolved
+/// to the file's real path, if it exists, an absolute one as it is.
+fn dependency_path(path: &Path) -> Vec<u8> {
+    if !path.is_absolute()
+        && let Ok(real) = std::fs::canonicalize(path)
+    {
+        return path_bytes(&real).to_vec();
     }
-    emit(0x40, path_bytes(&ctx.args.output));
+    path_bytes(path).to_vec()
 }
 
 /// A line of the map's symbol list: an atom's address and size, the

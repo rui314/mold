@@ -3414,6 +3414,14 @@ pub fn without_fat_arch(name: &[u8]) -> Vec<u8> {
 /// document. Returns the install names of the private libraries merged,
 /// with -map or -why_live the files they are, and the exports of theirs
 /// that $ld$previous directives move to older libraries.
+/// Notes the file of a library loaded as another's re-export for the
+/// -dependency_info file, which names it.
+fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
+    if ctx.args.dependency_info.is_some() {
+        ctx.reexport_files.push(path.to_path_buf());
+    }
+}
+
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<(Vec<u8>, PathBuf, Vec<PathBuf>)>,
@@ -3481,9 +3489,12 @@ fn load_reexports<E: Target>(
         {
             // ld-prime names an inlined library by the file it would
             // find for it, where there is one.
-            if ctx.args.trace {
-                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths)
-                    .map(|mf| crate::util::path_bytes(&mf.name).to_vec());
+            if ctx.args.trace || ctx.args.dependency_info.is_some() {
+                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths);
+                if let Some(mf) = found {
+                    note_reexport_file(ctx, &mf.name);
+                }
+                let found = found.map(|mf| crate::util::path_bytes(&mf.name).to_vec());
                 trace_file(ctx, found.as_deref().unwrap_or(&name));
             }
             let mut doc = walk.pool[i].clone();
@@ -3518,6 +3529,7 @@ fn load_reexports<E: Target>(
             continue;
         }
         trace_file(ctx, crate::util::path_bytes(&dep.name));
+        note_reexport_file(ctx, &dep.name);
         // The file found decides by its own install name, which a lookup
         // by leaf name may find to differ from the one re-exported:
         // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it
