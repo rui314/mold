@@ -713,34 +713,39 @@ fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
 }
 
 /// Places the sections' contents in the file from `start`, past the
-/// load commands, returning where they end. File offsets mirror
-/// addresses, except that the address span of a zero-fill section
-/// (with the padding up to the next section) has no file bytes: as in
-/// ld64's output, __bss can sit before __LD,__compact_unwind without
-/// leaving a hole in the file.
+/// load commands, returning where they end. ld-prime packs them: a
+/// zero-fill section takes no file space, and each other one follows
+/// the contents before it with the padding its address has (from the
+/// end of the section before, zero-fill or not) - unless its file
+/// offset is aligned for it already, when it has none. File offsets so
+/// mirror addresses up to the first zero-fill section, or the first
+/// section the file's own alignment lets start early (one 32-byte
+/// aligned where the contents start at 16 mod 32); after those a
+/// section may start unaligned in the file. As in ld64's output, __bss
+/// can sit before __LD,__compact_unwind without leaving a hole.
 fn assign_file_offsets<E: Target>(
     ctx: &mut Context<E>,
     synthetic: &mut [SyntheticSection],
     sects: &[Sect],
     start: u64,
 ) -> u64 {
-    let mut end = start;
-    let mut zerofill_start: Option<u64> = None;
-    let mut skipped = 0;
+    let mut off = start;
+    let mut prev_end = 0;
     for &s in sects {
         let hdr = sect_hdr_mut(ctx, synthetic, s);
+        let pad = hdr.addr - prev_end;
+        prev_end = hdr.addr + hdr.size;
         if hdr.is_zerofill() {
-            zerofill_start.get_or_insert(hdr.addr);
             hdr.fileoff = 0;
             continue;
         }
-        if let Some(zerofill_start) = zerofill_start.take() {
-            skipped += hdr.addr - zerofill_start;
+        if !off.is_multiple_of(1 << hdr.p2align) {
+            off += pad;
         }
-        hdr.fileoff = start + hdr.addr - skipped;
-        end = hdr.fileoff + hdr.size;
+        hdr.fileoff = off;
+        off += hdr.size;
     }
-    end
+    off
 }
 
 /// A section the -r output synthesizes rather than merges from input
