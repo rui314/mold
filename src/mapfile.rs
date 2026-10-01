@@ -1179,10 +1179,10 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// ld-prime counts a thread-local variable's descriptor, which it
 /// rewrites, as its own, and a common symbol as the object's whose
 /// tentative definition won. It credits itself with an atom it rewrote
-/// (a method list in the relative form), and with the alias it makes
-/// of a function folded into an identical one (-deduplicate), which
-/// has no size; an ltmpN label of a weak definition another file's won
-/// names nothing. Also returns the symbols of the entries but those
+/// (a method list in the relative form), with the alias it makes of a
+/// function folded into an identical one (-deduplicate), which has no
+/// size, and with the names -alias gives; an ltmpN label of a weak
+/// definition another file's won names nothing. Also returns the symbols of the entries but those
 /// of fixed-size literals, which come last, where in its subsection the
 /// first symbol is, by subsection, and the rows of the labels of
 /// fixed-size literals that follow the literals' own (see literal_labels).
@@ -1192,6 +1192,15 @@ fn symbol_entries<'a, E: Target>(
 ) -> (NamedEntries<'a>, hashbrown::HashMap<usize, u64>, Vec<MapEntry<'a>>) {
     use crate::chunks::symtab::is_coalesced_away;
     let nlists = defining_nlists(ctx);
+    // The names -alias gives that no object defines itself.
+    let aliases: hashbrown::HashSet<&str> =
+        ctx.args.aliases.iter().map(|(_, alias)| alias.as_str()).collect();
+    let is_alias_name = |obj: u32, id: SymbolId| {
+        aliases.contains(ctx.symbols[id].name())
+            && !nlists
+                .get(&id)
+                .is_some_and(|&(k, _)| ctx.objs[obj as usize].nlists[k as usize].n_type() == N_SECT)
+    };
     let mut syms: Vec<(SymbolId, usize)> = Vec::new();
     let mut literal_syms: Vec<SymbolId> = Vec::new();
     for i in 0..ctx.symbols.syms.len() as SymbolId {
@@ -1222,6 +1231,7 @@ fn symbol_entries<'a, E: Target>(
         // the function's other labels stay their file's.
         let file = match files.commons.get(&(isec as u32)) {
             _ if folded && ctx.folded_atom_names.contains_key(&i) => 0,
+            _ if !aliases.is_empty() && is_alias_name(obj, i) => 0,
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
             None if is_rewritten_method_list(ctx, isec) => 0,

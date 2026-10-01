@@ -37,3 +37,16 @@ grep -q $'^0x00000000\t0x00000000\t\\[  0\\] __mh_dylib_header$' $t/map2
 grep -Eq $'^0x[0-9A-F]+\t0x00000000\t\\[  0\\] section\\$start\\$__TEXT\\$__text$' $t/map2
 grep -Eq $'^0x[0-9A-F]+\t0x00000000\t\\[  0\\] __DATA,__mine$' $t/map2
 not grep -q 'segment\$start' $t/map2
+
+# A name -alias gives is the linker's too, of no size, after the
+# symbol it aliases.
+cat <<EOF | $CC -o $t/c.o -c -xc -
+int foo(void) { return 1; }
+int data1 = 4;
+int main(void) { return foo(); }
+EOF
+$CC --ld-path=$mold -o $t/exe3 $t/c.o -Wl,-alias,_foo,_bar -Wl,-alias,_data1,_data2 \
+  -Wl,-map,$t/map3
+sed -n '/^# Symbols:/,$p' $t/map3 > $t/syms3
+grep -A1 ' _foo$' $t/syms3 | grep -Eq $'\t0x00000000\t\\[  0\\] _bar$'
+grep -A1 ' _data1$' $t/syms3 | grep -Eq $'\t0x00000000\t\\[  0\\] _data2$'
