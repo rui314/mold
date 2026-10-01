@@ -603,7 +603,7 @@ fn collect_file<E: Target>(
         return;
     }
     match get_file_type(mf) {
-        FileType::Object if refuses_malformed(mf) => {}
+        FileType::Object if let Err(why) = check_object(mf) => refuse_malformed(mf, &why),
         FileType::Object => {
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
@@ -686,7 +686,14 @@ fn collect_file<E: Target>(
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
-                if get_file_type(member) == FileType::Object && refuses_malformed(member) {
+                // A member whose load commands are no Mach-O file's is
+                // no object of the link's, which ld-prime passes over.
+                if get_file_type(member) == FileType::Object
+                    && let Err(why) = check_object(member)
+                {
+                    if let crate::malformed::Malformed::Layout(_) = why {
+                        refuse_malformed(member, &why);
+                    }
                     continue;
                 }
                 let alive = rc.force_load
@@ -739,13 +746,18 @@ fn name_again<E: Target>(
     }
 }
 
-/// Refuses an object whose layout runs past the end of the file (see
-/// input_files::malformed_object). Returns whether it did.
-fn refuses_malformed(mf: &MappedFile) -> bool {
-    let Some(why) = input_files::malformed_object(mf.data()) else { return false };
+/// Checks an object's layout as ld-prime does before it reads the
+/// object (see malformed::check_object).
+fn check_object(mf: &MappedFile) -> Result<(), crate::malformed::Malformed> {
+    let data = mf.data();
+    crate::malformed::check_object(data, MachHeader::read_from(data).cputype)
+}
+
+
+/// Refuses a malformed object, naming it twice as ld-prime does.
+fn refuse_malformed(mf: &MappedFile, why: &crate::malformed::Malformed) {
     let name = mf.name.display();
-    error!("{why} in '{name}' in '{name}'");
-    true
+    error!("{} in '{name}' in '{name}'", why.message());
 }
 
 /// Refuses a file the link can't take, by what it is: ld-prime knows a
